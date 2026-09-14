@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout (display only)</title>
+<style>body{font-family:sans-serif;margin:24px} .card{border:1px solid #ccc;padding:12px;margin:8px 0} .card.next-selected{border-color:#000} iframe{width:200px;height:32px;border:1px solid #ccc}</style>
+</head>
+<body>
+<main>
+  <h1>Checkout (display only)</h1>
+  <aside data-next-cart-summary>
+    <h2>Your order</h2>
+    <div data-summary-lines><template><div data-next-package-id=""></div></template></div>
+    <div data-next-toggle-card data-next-package-id="9" class="bump">Add-on package 9 (order bump; not a main-cart selector)</div>
+  </aside>
+  <form data-fixture-checkout>
+    <input data-next-checkout-field="fname" placeholder="First name">
+    <input data-next-checkout-field="lname" placeholder="Last name">
+    <input data-next-checkout-field="email" type="email" placeholder="Email">
+    <input data-next-checkout-field="phone" placeholder="Phone">
+    <select data-next-checkout-field="country"><option value="US">United States</option><option value="CA">Canada</option></select>
+    <input data-next-checkout-field="address1" placeholder="Address">
+    <input data-next-checkout-field="city" placeholder="City">
+    <select data-next-checkout-field="province"><option value="CA">California</option><option value="NY">New York</option></select>
+    <input data-next-checkout-field="postal" placeholder="Postal">
+    <fieldset>
+      <input type="radio" id="combo_mode_credit" name="payment_method" value="credit" checked>
+      <iframe id="spreedly-number-frame-1" title="Card number" srcdoc="&lt;input aria-label=&quot;Card number&quot;&gt;"></iframe>
+      <iframe id="spreedly-cvv-frame-1" title="CVV" srcdoc="&lt;input aria-label=&quot;CVV&quot;&gt;"></iframe>
+      <select data-next-checkout-field="exp-month"><option value="">Month</option><option value="12">12</option></select>
+      <select data-next-checkout-field="exp-year"><option value="">Year</option><option value="2030">2030</option></select>
+    </fieldset>
+    <button type="submit">Complete order</button>
+  </form>
+</main>
+<script src="/sdk-shim.js"></script>
+</body>
+</html>
