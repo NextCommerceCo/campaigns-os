@@ -35,6 +35,21 @@ export function campaignSidecarPaths(targetRepo) {
   };
 }
 
+// The report a printed remediation must name, or null. `checkpoint waive`,
+// `theme waive` and `polish capture` all default to the packet-inferred
+// <target repo>/.campaign-runtime/assembly-report.json, so a command printed
+// for a report that came from anywhere else (--report, or a Build Context
+// binding) has to carry `--report <path>` or it acts on a different report —
+// possibly one that does not exist. Quiet in the common case: null when the
+// report IS that default, so the printed command stays short; the path when
+// it is not, or when the target repo is unknown and the default cannot be
+// ruled out. Doctor's report and the QA runner's both print through this.
+export function explicitReportPath(reportPath, targetRepo) {
+  if (typeof reportPath !== "string" || !reportPath) return null;
+  const inferred = typeof targetRepo === "string" && targetRepo ? campaignSidecarPaths(targetRepo).reportPath : null;
+  return reportPath !== inferred ? reportPath : null;
+}
+
 // Best-effort read of the Build Context for the report binding only: a
 // missing or malformed context binds nothing. A caller that must refuse a
 // malformed context reads it again strictly. Any other read failure (a

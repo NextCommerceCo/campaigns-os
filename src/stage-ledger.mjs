@@ -297,7 +297,18 @@ export function commitAssemblyReport(workspace, mutate, {
     }
     throw new Error(`Assembly Report not found at ${reportPath}; run prepare-build/start first.`);
   }
-  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  // A torn or hand-edited report fails by name: the raw SyntaxError names
+  // neither the file nor the command, and every caller's read of the report
+  // (waivers, the polish merge, the producer stage records) goes through
+  // here. Only the parse is caught; a read failure (EACCES, EISDIR) is not
+  // a malformed report and propagates as itself.
+  const raw = readFileSync(reportPath, "utf8");
+  let report;
+  try {
+    report = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Assembly Report at ${reportPath} is not valid JSON: ${error.message}`);
+  }
   outcome.report = report;
   if (stage && !assemblyReportMatchesPacket(report, workspace?.packet)) {
     outcome.skipped = "identity";

@@ -150,10 +150,18 @@ test("singleLineDetail reports absence rather than an empty string", () => {
   assert.equal(singleLineDetail("   \n\t "), "(no detail reported)");
 });
 
-test("singleLineDetail floors a non-positive or invalid max at one character", () => {
-  assert.equal(singleLineDetail("abc", 0), "\u2026");
-  assert.equal(singleLineDetail("abc", -5), "\u2026");
-  assert.equal(singleLineDetail("abc", 1), "\u2026");
+test("singleLineDetail never exceeds max and never fabricates a lone ellipsis", () => {
+  // A budget of one cannot hold the ellipsis, so the cut is bare; a budget
+  // below one floors at one rather than printing nothing.
+  assert.equal(singleLineDetail("abc", 0), "a");
+  assert.equal(singleLineDetail("abc", -5), "a");
+  assert.equal(singleLineDetail("abc", 1), "a");
+  assert.equal(singleLineDetail("abc", 1.9), "a");
+  assert.equal(singleLineDetail("a", 1), "a");
   assert.equal(singleLineDetail("abc", 2), "a\u2026");
+  for (const max of [0, 1, 2, 3, 4]) {
+    assert.ok(singleLineDetail("abcdef", max).length <= Math.max(1, max), `max=${max}`);
+    assert.notEqual(singleLineDetail("abcdef", max), "\u2026", `max=${max}`);
+  }
   assert.equal(singleLineDetail("abc", Number.NaN), "abc");
 });
