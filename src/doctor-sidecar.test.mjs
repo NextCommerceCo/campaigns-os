@@ -138,6 +138,21 @@ test("standalone doctor does not restate its outcome into a report it did not in
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("standalone doctor never opens a default report it did not inspect, malformed or not, and still refreshes the sidecar", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  const identity = { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug };
+  writeFileSync(join(dir, ".campaign-runtime/build-context.json"), JSON.stringify({ report_path: "custom-report.json" }));
+  writeFileSync(join(dir, "custom-report.json"), JSON.stringify({ identity, stages: {} }));
+  writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "{ not a report\n");
+
+  const result = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  assert.equal(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"), "{ not a report\n", "the default report is untouched");
+  assert.equal(JSON.parse(readFileSync(join(dir, ".campaign-runtime/doctor-output.json"), "utf8")).generated_at, result.generated_at, "the sidecar is this run's");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("standalone doctor executes its packet inspection once when updating the stage ledger", () => {
   const { dir, packetPath } = selfTargetPacketFixture();
   const packet = JSON.parse(readFileSync(packetPath, "utf8"));

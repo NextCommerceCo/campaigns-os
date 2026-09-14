@@ -2734,13 +2734,17 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
       || canonicalExistingPath(resolve(dirname(packetPath), inspectedReportPath)) === canonicalExistingPath(workspace.reportPath);
     // The sidecar is this inspection's result, written whether or not the
     // report gained a new chapter (a re-run restating the outcome already on
-    // disk leaves the report's bytes, and every digest of them, alone).
-    commitAssemblyReport(workspace, (report) => (inspectedIsTarget
-      ? recordDoctorStageOutcome(report, result, {
+    // disk leaves the report's bytes, and every digest of them, alone). A
+    // report this inspection did not read is not opened at all: its state,
+    // malformed included, is not this run's concern.
+    if (inspectedIsTarget) {
+      commitAssemblyReport(workspace, (report) => recordDoctorStageOutcome(report, result, {
         command: `campaigns-os ${args._?.[0] || "doctor"}`,
         doctorOutPath: workspace.doctorOutPath,
-      })
-      : null), { stage: "doctor", refreshDoctor: () => result });
+      }), { stage: "doctor", refreshDoctor: () => result });
+    } else {
+      writeJsonAtomic(workspace.doctorOutPath, result);
+    }
   }
   return result;
 }
