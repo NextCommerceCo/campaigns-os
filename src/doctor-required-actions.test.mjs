@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,9 +30,13 @@ function runDoctorText(packetPath) {
 // page_kit.sdk_version and therefore carries required_actions[].
 // Every doctor run here reads a staged copy of examples/: doctor writes its
 // sidecar into the packet's target, and the checkout is not a scratch dir.
+// The packet reaches its catalog at ../contracts/, so that file is staged
+// beside the copy; without it doctor blocks on assembly.commerce_catalog.path.
 function exampleFixture() {
   const dir = mkdtempSync(join(tmpdir(), "doctor-required-actions-"));
   cpSync(join(ROOT, "examples"), join(dir, "examples"), { recursive: true });
+  mkdirSync(join(dir, "contracts"));
+  cpSync(join(ROOT, "contracts/commerce-surface-catalog.json"), join(dir, "contracts/commerce-surface-catalog.json"));
   return { dir, packetPath: join(dir, "examples/build-packet.basic.json") };
 }
 
@@ -98,6 +102,7 @@ test("text-mode doctor prints no required-actions block when every gate is clear
   const { dir, packetPath } = exampleFixture();
   try {
     const text = runDoctorText(packetPath);
+    assert.match(text, /^Status: READY_WITH_WARNINGS$/m, text);
     assert.equal(/Required actions/.test(text), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
