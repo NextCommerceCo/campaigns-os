@@ -45,10 +45,16 @@ release-ledger entry `surface_version: 1.28.0`.
   local-serve and the deploy URL <url> is localhost: …` once it is, and warns
   `deploy.local_serve_url` when the recorded URL is not a localhost origin.
   `next` at the deploy stage emits the action `Serve the built _site/ output
-  locally (deploy.target is local-serve), then record the localhost URL on
-  deploy.preview_url …` and a serve-locally handoff prompt instead of the
-  ship-to-host one; the QA stage is unchanged. `qa policy set --deploy-target
-  local-serve` records it.
+  locally as the origin root (deploy.target is local-serve), then record the
+  localhost URL on deploy.preview_url …` and a serve-locally handoff prompt
+  instead of the ship-to-host one; both name the directory to serve — `_site/`
+  by default, `_site/<public_route_slug>/` for a root-served campaign
+  (`campaign.route_root: "/"`), since built output always lives under the slug
+  and only the served path shape changes. The QA stage is unchanged. `qa
+  policy set --deploy-target local-serve` records it.
+- Doctor reports a `qa` block that is not an object as the error `qa must be
+  an object when present.` (the removed boolean checks used to be the only
+  thing that tripped on that shape).
 - Run Record fields `remit_result` and `remit_base_kind` (both optional,
   nullable): the classification of what the receiver answered (`stored`,
   `already_stored`, `ok_unparsed_ack`, `refused`, `transport_error`) and the

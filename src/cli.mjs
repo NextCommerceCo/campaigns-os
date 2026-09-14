@@ -3800,7 +3800,8 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   // Test Orders have no permission flag: the two booleans that once gated
   // them left the packet in surface 1.28.0. A packet still carrying them is
   // valid (nothing reads them); doctor says so once so the residue is removed.
-  const removedQaPolicyFields = REMOVED_QA_POLICY_FIELDS.filter((field) => packet.qa && field in packet.qa);
+  if (packet.qa != null && !isObject(packet.qa)) addIssue(errors, "qa", "qa must be an object when present.");
+  const removedQaPolicyFields = REMOVED_QA_POLICY_FIELDS.filter((field) => isObject(packet.qa) && field in packet.qa);
   if (removedQaPolicyFields.length) {
     addIssue(warnings, "qa.removed_policy_fields", `qa.${removedQaPolicyFields.join(" and qa.")} ${removedQaPolicyFields.length > 1 ? "are" : "is"} no longer part of the Build Packet (removed in supported surface 1.28.0; nothing reads ${removedQaPolicyFields.length > 1 ? "them" : "it"}). Delete the field${removedQaPolicyFields.length > 1 ? "s" : ""} from qa; test orders run from --test-order <mode> alone.`);
   }
@@ -8422,7 +8423,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     if (polishCheckpointGate?.status === "blocked") pushPolishCheckpointActions();
   } else if (result.stage === "deploy") {
     if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
-      push("deploy", "manual", null, "Serve the built _site/ output locally (deploy.target is local-serve), then record the localhost URL on deploy.preview_url and stages.deploy in the assembly report. Localhost on any port is a Development domain: SDK allowed, analytics suppressed.");
+      push("deploy", "manual", null, `Serve the built ${localServeDirectory(packet).dir} output locally as the origin root (deploy.target is local-serve), then record the localhost URL on deploy.preview_url and stages.deploy in the assembly report. Localhost on any port is a Development domain: SDK allowed, analytics suppressed.`);
     } else {
       push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"}, then record deploy.preview_url (or production_url) on the packet and stages.deploy in the assembly report.`);
     }
@@ -8618,10 +8619,22 @@ Record Polish on stages.polish before QA:
 If report.theme/context.theme exists, verify source token parity for primary color, CTA, surface, text, font/radius when present, and verify brand-theme.css loads after next-core.css on commerce pages. If the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.`;
 }
 
+// The directory a local-serve deploy serves as the origin root. Built output
+// always lives at _site/<slug>/; route_root only says where it is SERVED
+// from. A root-served funnel therefore serves the campaign subdirectory as
+// the origin root, not _site/ itself, or every root-level route the pages
+// link to would 404 under the slug prefix.
+function localServeDirectory(packet) {
+  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug) || "<public_route_slug>";
+  const rootServed = campaignRouteRoot(packet) === "/";
+  return { dir: rootServed ? `_site/${slug}/` : "_site/", slug, rootServed };
+}
+
 function deployPrompt(packetPath, reportPath, packet) {
   const target = packet.deploy?.target || "unknown";
   const liveUrlPath = packet.deploy?.live_url_path || packet.campaign?.live_url_path || campaignRouteRoot(packet) || "/<slug>/";
   if (target === LOCAL_SERVE_DEPLOY_TARGET) {
+    const { dir: serveDir, slug, rootServed } = localServeDirectory(packet);
     return `Deploy the built campaign by serving it locally (deploy.target is local-serve).
 
 Read first:
@@ -8629,8 +8642,9 @@ Read first:
 - Assembly Report: ${reportPath}
 - Expected live URL path: ${liveUrlPath}
 - Deploy target: ${target}
+- Directory to serve as the origin root: ${serveDir}${rootServed ? " (route_root is \"/\": the funnel is served from the site root, so the campaign subdirectory is the document root)" : " (the funnel is served under /" + slug + "/)"}
 
-Nothing ships anywhere: the page-kit build produces _site/ output and you serve that directory on localhost (any static server, any port) for QA. Localhost on any port is a Campaigns App Development domain, so the SDK initialises there without an origin allowlist entry and Campaigns analytics events are suppressed.
+Nothing ships anywhere: the page-kit build produces _site/ output and you serve ${serveDir} on localhost (any static server, any port) for QA. Localhost on any port is a Campaigns App Development domain, so the SDK initialises there without an origin allowlist entry and Campaigns analytics events are suppressed.
 
 Once the server is up:
 1. Record the localhost URL (origin plus ${liveUrlPath}) on the packet at deploy.preview_url.
