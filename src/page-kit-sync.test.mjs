@@ -1217,3 +1217,24 @@ test("page-kit sync seeds the pin after a scaffold but never moves a configured 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("page-kit sync refuses a BOM-prefixed file as invalid JSON, and warns when --report names no file", () => {
+  const { dir, packetPath, campaignsPath } = fixture();
+  try {
+    // JSON.parse rejects a UTF-8 BOM, so the loader reports invalid_json and
+    // nothing is written; the indent sniff never sees such a file.
+    const original = readFileSync(campaignsPath, "utf8");
+    writeFileSync(campaignsPath, `\uFEFF${original}`);
+    const bom = pageKitSyncCommand({ _: ["page-kit", "sync"], packet: packetPath });
+    assert.equal(bom.ok, false);
+    assert.equal(bom.errors[0].detail.target_status, "invalid_json");
+    writeFileSync(campaignsPath, original);
+
+    const result = pageKitSyncCommand({ _: ["page-kit", "sync"], packet: packetPath, report: join(dir, "no-such-report.json") });
+    assert.equal(result.status, "synced");
+    assert.deepEqual(result.warnings.map((issue) => issue.code), ["page_kit.sync.report_unreadable"]);
+    assert.match(result.warnings[0].message, /no-such-report\.json is not a file/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -4571,10 +4571,17 @@ export function pageKitSyncCommand(args) {
   // read _data/campaigns.json, not the built output.
   let report = null;
   try {
+    // An explicit --report must name a file: a path mangled in transit
+    // (quoting stripped by a shell) would otherwise resolve to nothing and
+    // silently drop the waivers it was meant to carry.
+    const explicitReport = isNonEmptyString(args.report) ? resolve(args.report) : null;
+    if (explicitReport && !(existsSync(explicitReport) && statSync(explicitReport).isFile())) {
+      addIssue(result.warnings, "page_kit.sync.report_unreadable", `--report ${singleLineField(explicitReport)} is not a file; waivers recorded on the Assembly Report were not consulted.`);
+    }
     const workspace = resolveCampaignWorkspace(packetPath, {
       packet,
       followContextPointer: true,
-      reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined,
+      reportPath: explicitReport ?? undefined,
     });
     report = readJsonIfExists(workspace.reportPath);
     result.report_path = workspace.reportPath;
@@ -4603,8 +4610,10 @@ export function pageKitSyncCommand(args) {
     // minified file, mixed indentation, keys JSON.parse reorders), the
     // operator is told the file was normalized, because the printed diff
     // covers only the governed fields.
+    // The loader has already rejected a file JSON.parse refuses (a UTF-8 BOM
+    // included), so the text starts at the opening brace.
     const eol = text.includes("\r\n") ? "\r\n" : "\n";
-    const indent = text.match(/^[\s﻿]*\{\r?\n([ \t]+)"/)?.[1] ?? "  ";
+    const indent = text.match(/^\s*\{\r?\n([ \t]+)"/)?.[1] ?? "  ";
     const trailing = /\r?\n$/.test(text) ? eol : "";
     const serialize = (document) => `${JSON.stringify(document, null, indent).replace(/\n/g, eol)}${trailing}`;
     if (serialize(campaigns) !== text) {
