@@ -1,4 +1,5 @@
 import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
+import { PAGE_KIT_SYNC_COMMAND } from "./page-kit-store-profile.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import {
   assessCheckpointWaivers,
@@ -11,6 +12,33 @@ import {
 import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
 
 export const PAGE_KIT_SDK_VERSION_SCOPE = "page_kit.sdk_version";
+
+// The one rule for reading the CampaignSpec's SDK pin. global_config
+// .sdk_version is the CANONICAL home (33/33 real Map Builder exports declare
+// it there); runtime.sdk_version is an accepted alias seen only in local
+// drafts. Canonical first, alias as fallback. The gate below and `page-kit
+// sync` both consume this, so what the gate expects and what sync writes can
+// never drift apart. `status` is ok | spec_missing | spec_invalid |
+// spec_conflict; `invalid_declarations` names the offending key(s).
+export function resolveSpecSdkPin(spec) {
+  const hasCanonical = spec?.global_config != null && Object.hasOwn(spec.global_config, "sdk_version");
+  const hasAlias = spec?.runtime != null && Object.hasOwn(spec.runtime, "sdk_version");
+  const base = { has_canonical: hasCanonical, has_alias: hasAlias, invalid_declarations: [] };
+  if (!hasCanonical && !hasAlias) return { ...base, value: null, source: null, status: "spec_missing" };
+  const invalidDeclarations = [
+    ...(hasCanonical && !isReleasedSdkVersion(spec.global_config.sdk_version) ? ["global_config.sdk_version"] : []),
+    ...(hasAlias && !isReleasedSdkVersion(spec.runtime.sdk_version) ? ["runtime.sdk_version"] : []),
+  ];
+  if (invalidDeclarations.length) {
+    return { ...base, value: null, source: null, status: "spec_invalid", invalid_declarations: invalidDeclarations };
+  }
+  if (hasCanonical && hasAlias && spec.global_config.sdk_version !== spec.runtime.sdk_version) {
+    return { ...base, value: null, source: null, status: "spec_conflict" };
+  }
+  return hasCanonical
+    ? { ...base, value: spec.global_config.sdk_version, source: "global_config.sdk_version", status: "ok" }
+    : { ...base, value: spec.runtime.sdk_version, source: "runtime.sdk_version", status: "ok" };
+}
 const MISSING_TARGET_STATUSES = new Set(["target_repo_missing", "file_missing", "entry_missing"]);
 
 export function evaluatePageKitSdkVersion({
@@ -21,11 +49,10 @@ export function evaluatePageKitSdkVersion({
   required = true,
   now = new Date().toISOString(),
 } = {}) {
-  // global_config.sdk_version is the CANONICAL CampaignSpec home (33/33 real
-  // Map Builder exports declare it there); runtime.sdk_version is an accepted
-  // alias seen only in local drafts. Read canonical first, alias as fallback.
-  const hasCanonical = spec?.global_config != null && Object.hasOwn(spec.global_config, "sdk_version");
-  const hasAlias = spec?.runtime != null && Object.hasOwn(spec.runtime, "sdk_version");
+  const pin = resolveSpecSdkPin(spec);
+  const { has_canonical: hasCanonical, has_alias: hasAlias } = pin;
+  // The blocked branches below report the raw declaration the spec made, so
+  // the expected version is read back from the spec, not from the resolved pin.
   const expected_sdk_version = hasCanonical
     ? spec.global_config.sdk_version
     : spec?.runtime?.sdk_version;
@@ -89,11 +116,8 @@ export function evaluatePageKitSdkVersion({
       }],
     };
   }
-  const invalidDeclarations = [
-    ...(hasCanonical && !isReleasedSdkVersion(spec.global_config.sdk_version) ? ["global_config.sdk_version"] : []),
-    ...(hasAlias && !isReleasedSdkVersion(spec.runtime.sdk_version) ? ["runtime.sdk_version"] : []),
-  ];
-  if (invalidDeclarations.length) {
+  const invalidDeclarations = pin.invalid_declarations;
+  if (pin.status === "spec_invalid") {
     return {
       id: PAGE_KIT_SDK_VERSION_SCOPE,
       scope: PAGE_KIT_SDK_VERSION_SCOPE,
@@ -120,7 +144,7 @@ export function evaluatePageKitSdkVersion({
       }],
     };
   }
-  if (hasCanonical && hasAlias && spec.global_config.sdk_version !== spec.runtime.sdk_version) {
+  if (pin.status === "spec_conflict") {
     return {
       id: PAGE_KIT_SDK_VERSION_SCOPE,
       scope: PAGE_KIT_SDK_VERSION_SCOPE,
@@ -208,9 +232,9 @@ export function evaluatePageKitSdkVersion({
       },
       required_actions: [{
         id: "repair_target",
-        kind: "edit",
-        command: null,
-        description: `Set ${subject.target_path}[${subject.public_route_slug}].sdk_version to the released CampaignSpec pin, then re-run doctor.`,
+        kind: "command",
+        command: PAGE_KIT_SYNC_COMMAND,
+        description: `Write the released CampaignSpec pin ${expected_sdk_version} into ${subject.target_path}[${subject.public_route_slug}].sdk_version, then re-run doctor.`,
       }],
     };
   }
@@ -247,9 +271,9 @@ export function evaluatePageKitSdkVersion({
       required_actions: waiver ? [] : [
         {
           id: "repair_target",
-          kind: "edit",
-          command: null,
-          description: `Set ${subject.target_path}[${subject.public_route_slug}].sdk_version to ${expected_sdk_version}, then re-run doctor.`,
+          kind: "command",
+          command: PAGE_KIT_SYNC_COMMAND,
+          description: `Write the CampaignSpec pin ${expected_sdk_version} into ${subject.target_path}[${subject.public_route_slug}].sdk_version (currently ${observed_sdk_version}), then re-run doctor.`,
         },
         {
           id: "waive_checkpoint",
