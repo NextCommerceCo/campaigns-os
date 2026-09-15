@@ -146,11 +146,16 @@ export function executableTargetPath(executable) {
     if (error?.code === "ENOENT" || error?.code === "EISDIR") return real;
     throw error;
   }
-  // Only the script argument of a node invocation counts: a `.mjs` named in a
-  // comment or a prologue before the exec line must not win. The path is a
-  // quoted or bare token that starts with a wrapper-relative or absolute prefix
-  // and ends at the quote/whitespace after `.mjs`.
-  const match = text.match(/(?:^|[\s;&|])(?:exec\s+)?(?:"[^"\n]*node(?:\.exe)?"|node(?:\.exe)?)\s+(?:"((?:%~dp0|\$basedir|\$\{basedir\}|\.|\.\.|\/|[A-Za-z]:)[^"\n]*?\.mjs)"|'((?:%~dp0|\$basedir|\$\{basedir\}|\.|\.\.|\/|[A-Za-z]:)[^'\n]*?\.mjs)'|((?:%~dp0|\$basedir|\$\{basedir\}|\.|\.\.|\/|[A-Za-z]:)[^\s"'\n]*?\.mjs))(?=[\s"']|$)/m);
+  // Only the script argument of a node invocation counts, and only on a real
+  // command line: comment lines (`#`, `REM`, `::`) are dropped first so a
+  // `.mjs` or even a `node ./x.mjs` mentioned in a prologue cannot win, and
+  // the invocation must open its logical line (optionally after `exec`, an
+  // `@`, or `&&`/`;`/`|`). The path is a quoted or bare token that starts with
+  // a wrapper-relative or absolute prefix and ends at the quote/whitespace
+  // after `.mjs`.
+  const code = text.split(/\r?\n/).filter((line) => !/^\s*(?:#|@?rem\b|::)/i.test(line)).join("\n");
+  const prefix = String.raw`(?:%~dp0|\$basedir|\$\{basedir\}|\.|\.\.|\/|[A-Za-z]:)`;
+  const match = code.match(new RegExp(String.raw`(?:^|[;&|])\s*@?(?:exec\s+)?(?:"[^"\n]*node(?:\.exe)?"|node(?:\.exe)?)\s+(?:"(${prefix}[^"\n]*?\.mjs)"|'(${prefix}[^'\n]*?\.mjs)'|(${prefix}[^\s"'\n]*?\.mjs))(?=[\s"']|$)`, "m"));
   if (!match) return real;
   const scriptToken = match[1] ?? match[2] ?? match[3];
   const script = scriptToken.replace(/^(%~dp0|\$basedir|\$\{basedir\})[\\/]?/, "");
