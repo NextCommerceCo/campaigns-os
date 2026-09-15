@@ -146,9 +146,14 @@ export function executableTargetPath(executable) {
     if (error?.code === "ENOENT" || error?.code === "EISDIR") return real;
     throw error;
   }
-  const match = text.match(/["']?((?:%~dp0|\$basedir|\$\{basedir\}|\.|\.\.|\/|[A-Za-z]:)[^"'\n]*?\.mjs)["']?/);
+  // Only the script argument of a node invocation counts: a `.mjs` named in a
+  // comment or a prologue before the exec line must not win. The path is a
+  // quoted or bare token that starts with a wrapper-relative or absolute prefix
+  // and ends at the quote/whitespace after `.mjs`.
+  const match = text.match(/(?:^|[\s;&|])(?:exec\s+)?(?:"[^"\n]*node(?:\.exe)?"|node(?:\.exe)?)\s+(?:"((?:%~dp0|\$basedir|\$\{basedir\}|\.|\.\.|\/|[A-Za-z]:)[^"\n]*?\.mjs)"|'((?:%~dp0|\$basedir|\$\{basedir\}|\.|\.\.|\/|[A-Za-z]:)[^'\n]*?\.mjs)'|((?:%~dp0|\$basedir|\$\{basedir\}|\.|\.\.|\/|[A-Za-z]:)[^\s"'\n]*?\.mjs))(?=[\s"']|$)/m);
   if (!match) return real;
-  const script = match[1].replace(/^(%~dp0|\$basedir|\$\{basedir\})[\\/]?/, "");
+  const scriptToken = match[1] ?? match[2] ?? match[3];
+  const script = scriptToken.replace(/^(%~dp0|\$basedir|\$\{basedir\})[\\/]?/, "");
   return realpathOrSelf(resolve(dirname(executable), script.replace(/\\/g, "/")));
 }
 
