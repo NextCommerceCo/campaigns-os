@@ -546,6 +546,14 @@ test("next prints its commands with the consumer install's npx prefix", () => {
     const parsed = JSON.parse(json.stdout);
     const commands = JSON.stringify(parsed);
     assert.match(commands, /"command": ?"npx campaigns-os start /);
+    // The rerun line is complete: every flag start requires, from the packet's
+    // recorded inputs, spelled relative to the packet like the packet does.
+    const rerun = parsed.next_actions.find((action) => action.id === "rerun_prepare_build");
+    assert.ok(rerun, JSON.stringify(parsed.next_actions));
+    assert.equal(
+      rerun.command,
+      `npx campaigns-os start --map-id runtime-packet-demo-k9x2 --source ${relative(campaign, join(ROOT, "examples", "source-html"))} --target . --template-family olympus`,
+    );
     assert.doesNotMatch(commands, /(?<![\w./-])(?<!npx )campaigns-os (?:start|prepare-build|next|doctor|qa|polish|checkpoint) /);
 
     // The same next from the checkout keeps the bare, tested form.
@@ -555,4 +563,23 @@ test("next prints its commands with the consumer install's npx prefix", () => {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(campaign, { recursive: true, force: true });
   }
+});
+
+test("prepareBuildRerunCommand keeps every required flag and shows placeholders for unrecorded inputs", () => {
+  const full = cliModule.prepareBuildRerunCommand({
+    spec: { map_id: "m1", spec_url: "https://campaign-map.nextcommerce.com/api/spec/m1", local_path: "../spec.json" },
+    source_html: { root: "./source" },
+    assembly: { target_repo: ".", template_family: "olympus" },
+  });
+  assert.equal(full, "campaigns-os start --map-id m1 --source ./source --target . --template-family olympus");
+  // A non-default map store is carried as --proxy-base.
+  assert.match(
+    cliModule.prepareBuildRerunCommand({ spec: { map_id: "m1", spec_url: "https://maps.example.test/api/spec/m1" }, source_html: { root: "./source" }, assembly: { target_repo: ".", template_family: "olympus" } }),
+    / --proxy-base https:\/\/maps\.example\.test$/,
+  );
+  // No map id: the local spec path. Missing inputs are placeholders, never dropped.
+  assert.equal(
+    cliModule.prepareBuildRerunCommand({ spec: { local_path: "../spec.json" } }),
+    "campaigns-os start --spec ../spec.json --source <source-dir> --target <target-dir> --template-family <family>",
+  );
 });

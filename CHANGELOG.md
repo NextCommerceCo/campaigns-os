@@ -78,7 +78,15 @@ Notable supported-surface changes are recorded here.
   dropped before dispatch for every command.
 - The `next` recovery prompt for a blocked prepare-build stage names the flags
   a rerun needs: "with the same `--spec`/`--map-id`, `--source`, `--target` and
-  `--template-family` as the original run". Doctor's coverage error for a
+  `--template-family` as the original run", and its `rerun_prepare_build`
+  action is now that complete line, built from the packet's recorded inputs:
+  `--map-id <spec.map_id>` (or `--spec <spec.local_path>` when there is no map
+  id), `--source <source_html.root>`, `--target <assembly.target_repo>`,
+  `--template-family <assembly.template_family>`, plus `--proxy-base <origin>`
+  when `spec.spec_url` is not on the default map store. It used to print
+  `campaigns-os start --map-id <id>` alone, which `start` refuses. An input
+  the packet does not record is printed as an explicit placeholder
+  (`<source-dir>`, `<target-dir>`, `<family>`), never dropped. Doctor's coverage error for a
   Figma-designed page with no source mapping now says "supply the source-html
   manifest for the page (see docs/design-source-package.md) — figma-sections-export
   emits it when you have the Figma design" instead of naming a private

@@ -8387,7 +8387,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     // recovery available and the ledger alone cannot justify it. Divergence
     // already returned above, so reaching here means the ledger and the
     // artifacts agree and the rerun is safe to recommend.
-    push("rerun_prepare_build", "command", `campaigns-os start --map-id ${packet.spec?.map_id || "<map-id>"}`, "Rerun prepare-build/start with the original spec, source, and target inputs to clear the recorded blockers.");
+    push("rerun_prepare_build", "command", prepareBuildRerunCommand(packet), "Rerun prepare-build/start with the original spec, source, and target inputs to clear the recorded blockers.");
     return actions;
   }
   // A blocked theme gate owns the action list for any post-build stage: the
@@ -11258,6 +11258,42 @@ function printDoctorTinyPrompt(result, args) {
 // registered ids are matched longest-first), and the prepare-build recoveries.
 // Rechecks and anything unrecognised belong to no gate.
 const NEXT_ACTION_GATE_PREFIXES = [["theme_gate.", "theme_gate"], ["polish_gate.", "polish_gate"]];
+// The complete, pasteable rerun of prepare-build/start from what the packet
+// recorded: the map id (or the local spec when there is no map id), the
+// source root, the target repo and the locked template family, all relative
+// to the packet as the packet itself spells them. A packet does not record
+// whether the original run passed --spec or --map-id, nor which map store it
+// fetched from, so the map id wins when present and --proxy-base is added
+// only when the spec's recorded URL is not on the default map store. An
+// input the packet lacks is printed as an explicit placeholder, never
+// dropped: a rerun without --source, --target or --template-family is
+// refused, so an incomplete line could not recover anything.
+export function prepareBuildRerunCommand(packet) {
+  const mapId = optionalString(packet?.spec?.map_id);
+  const localSpec = optionalString(packet?.spec?.local_path);
+  // Placeholders stay visibly angle-bracketed; real values are shell-quoted.
+  const arg = (value, placeholder) => (optionalString(value) ? shellToken(value) : placeholder);
+  const parts = ["campaigns-os start"];
+  if (mapId) parts.push(`--map-id ${shellToken(mapId)}`);
+  else if (localSpec) parts.push(`--spec ${shellToken(localSpec)}`);
+  else parts.push("--spec <campaignspec.json>");
+  parts.push(
+    `--source ${arg(packet?.source_html?.root, "<source-dir>")}`,
+    `--target ${arg(packet?.assembly?.target_repo, "<target-dir>")}`,
+    `--template-family ${arg(packet?.assembly?.template_family, "<family>")}`,
+  );
+  const specUrl = optionalString(packet?.spec?.spec_url);
+  if (mapId && specUrl) {
+    try {
+      const origin = new URL(specUrl).origin;
+      if (origin !== DEFAULT_PROXY_BASE) parts.push(`--proxy-base ${shellToken(origin)}`);
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+    }
+  }
+  return parts.join(" ");
+}
+
 const PREPARE_BUILD_ACTION_IDS = new Set(["rerun_prepare_build", "restore_prepare_build_binding"]);
 function nextActionGate(action, gateIds) {
   const id = typeof action?.id === "string" ? action.id : "";
