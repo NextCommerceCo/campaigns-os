@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
   accessSync,
+  chmodSync,
   constants as fsConstants,
   cpSync,
   existsSync,
@@ -233,6 +234,7 @@ import {
 } from "./checkpoint-waiver.mjs";
 import {
   loadPageKitCampaignEntry,
+  PAGE_KIT_CAMPAIGNS_REL_PATH,
   projectPageKitCampaignLoad,
 } from "./page-kit-campaign-config.mjs";
 import {
@@ -244,6 +246,11 @@ import {
   evaluatePageKitSdkVersion,
   PAGE_KIT_SDK_VERSION_SCOPE,
 } from "./page-kit-sdk-version.mjs";
+import {
+  applyPageKitSync,
+  formatSyncValue,
+  planPageKitSync,
+} from "./page-kit-sync.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
 // spec check is authored once and reaches internal teams and agencies alike.
@@ -413,6 +420,7 @@ Usage:
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
+  campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
@@ -1026,6 +1034,16 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     if (args.platform === true) throw new Error("Missing value for --platform");
     const result = installSkills(args.target, Boolean(args["dry-run"]), args.platform);
     writeResult(result, args, 0);
+    return;
+  }
+
+  if (command === "page-kit") {
+    const subcommand = args._[1] || null;
+    if (subcommand !== "sync") throw new Error("Unknown page-kit subcommand. Use: campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json].");
+    const result = pageKitSyncCommand(args);
+    if (args.json) console.log(JSON.stringify(result, null, 2));
+    else for (const line of pageKitSyncTextLines(result)) console.log(line);
+    if (!result.ok) process.exitCode = 2;
     return;
   }
 
@@ -4393,6 +4411,275 @@ export function isLocalhostDevelopmentOrigin(value) {
     return false;
   }
   return url.hostname.toLowerCase() === "localhost";
+}
+
+// `page-kit sync`: write the CampaignSpec's Store Profile fields and SDK pin
+// into the target's _data/campaigns.json entry for the packet's route. This is
+// the recovery the two page-kit gates name: a fresh scaffold seeds the entry
+// with the starter family's demo profile and pin, doctor blocks on
+// page_kit.store_profile (demo residue, unwaivable) and page_kit.sdk_version,
+// and the fix is deterministic — the spec already holds every value. Exactly
+// the ten governed fields are written, only those the spec carries; other
+// fields, other entries and other files are untouched. --dry-run prints the
+// same diff and writes nothing. Exit 2 when the entry or the spec is missing.
+const PAGE_KIT_SYNC_FLAGS = Object.freeze(["packet", "dry-run", "json", "report"]);
+
+export function pageKitSyncCommand(args) {
+  // The one new command that rewrites a tracked data file rejects flags it
+  // does not know (mirroring standardize): a mistyped --dryrun must not fall
+  // through to a real write. --report is accepted because doctor appends it to
+  // the printed command when it inspected a non-default report; it names the
+  // Assembly Report whose waivers are honoured below.
+  const unknown = Object.keys(args).filter((key) => key !== "_" && !PAGE_KIT_SYNC_FLAGS.includes(key));
+  if (unknown.length) {
+    const valueHint = unknown.some((key) => key.includes("=")) ? " A flag takes its value as the next argument (--flag value), not --flag=value." : "";
+    throw new Error(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit sync: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${PAGE_KIT_SYNC_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+  }
+  const packetPath = resolve(requireArg(args, "packet"));
+  // `--dry-run` is a bare flag. The shared parser would read a following
+  // token as its value, so `--dry-run true` must fail rather than quietly
+  // become a real write.
+  if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
+    throw new Error(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
+  }
+  const dryRun = args["dry-run"] === true;
+  const result = {
+    ok: false,
+    action: "page-kit sync",
+    status: "blocked",
+    packet_path: packetPath,
+    public_route_slug: null,
+    target_repo: null,
+    target_path: PAGE_KIT_CAMPAIGNS_REL_PATH,
+    campaigns_path: null,
+    spec_path: null,
+    report_path: null,
+    dry_run: dryRun,
+    written: false,
+    changes: [],
+    unchanged: [],
+    not_in_spec: [],
+    not_synced: [],
+    errors: [],
+    warnings: [],
+    next: `${cmd("doctor")} --packet ${shellToken(packetPath)}`,
+  };
+
+  // Every precondition failure is a structured page_kit.sync.* error with exit
+  // 2, so a --json consumer always gets the result document: an unreadable
+  // packet included.
+  let packet;
+  try {
+    packet = readJson(packetPath);
+  } catch (error) {
+    addIssue(result.errors, "page_kit.sync.packet_invalid", `Build Packet ${packetPath} could not be read as JSON: ${singleLineDetail(error.message)}`);
+    return result;
+  }
+  if (!isObject(packet)) {
+    addIssue(result.errors, "page_kit.sync.packet_invalid", `Build Packet ${packetPath} must be a JSON object.`);
+    return result;
+  }
+  const publicRouteSlug = normalizePublicRouteSlug(packet.campaign?.public_route_slug);
+  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
+  const localSpecPath = packet.spec?.local_path;
+  const specPath = isNonEmptyString(localSpecPath) ? resolveFromFile(packetPath, localSpecPath) : null;
+  result.public_route_slug = publicRouteSlug || null;
+  result.target_repo = targetRepo;
+  result.campaigns_path = targetRepo ? join(targetRepo, PAGE_KIT_CAMPAIGNS_REL_PATH) : null;
+  result.spec_path = specPath;
+
+  if (!publicRouteSlug) {
+    addIssue(result.errors, "page_kit.sync.route_slug_missing", "The packet has no campaign.public_route_slug; the campaigns.json entry to reconcile cannot be named.");
+  }
+
+  let spec = null;
+  if (!specPath) {
+    addIssue(result.errors, "page_kit.sync.spec_missing", "The packet has no local CampaignSpec path (spec.local_path). The spec is the authority for the Store Profile and SDK pin; rerun start/prepare-build with a local exported CampaignSpec.");
+  } else if (!existsSync(specPath)) {
+    addIssue(result.errors, "page_kit.sync.spec_missing", `CampaignSpec local_path does not exist: ${specPath}. Restore or re-export it there, then sync again.`);
+  } else {
+    let parsed;
+    try {
+      parsed = readJson(specPath);
+    } catch (error) {
+      // The parser quotes the file's own bytes in its message; flatten it.
+      addIssue(result.errors, "page_kit.sync.spec_invalid", `CampaignSpec at ${specPath} is not valid JSON (${singleLineDetail(error.message)}). Repair the spec, then sync again.`);
+    }
+    if (parsed !== undefined) {
+      if (isObject(parsed)) spec = parsed;
+      else addIssue(result.errors, "page_kit.sync.spec_invalid", `CampaignSpec at ${specPath} must be a JSON object (an exported CampaignSpec), not ${parsed === null ? "null" : Array.isArray(parsed) ? "an array" : `a ${typeof parsed}`}.`);
+    }
+  }
+  // The spec must be THIS campaign's. Doctor cross-checks the same identity
+  // (campaign.route_slug_identity); without it a stale or copy-pasted
+  // spec.local_path would write another campaign's store profile into this
+  // route with a plausible-looking diff.
+  if (spec && publicRouteSlug) {
+    const specSlug = normalizePublicRouteSlug(
+      optionalString(spec.spec_identity?.public_route_slug)
+      || optionalString(spec.campaign?.slug)
+      || optionalString(spec.campaign?.id),
+    );
+    const specMapId = optionalString(spec.spec_identity?.map_id) || optionalString(spec.map_id);
+    const packetMapId = optionalString(packet.spec?.map_id);
+    if (specSlug && specSlug !== publicRouteSlug) {
+      addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", `CampaignSpec identifies route "${singleLineField(specSlug)}" but the packet's campaign.public_route_slug is "${publicRouteSlug}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
+    } else if (specMapId && packetMapId && specMapId !== packetMapId) {
+      addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", `CampaignSpec spec_identity.map_id "${singleLineField(specMapId)}" does not match the packet's spec.map_id "${singleLineField(packetMapId)}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
+    }
+  }
+
+  const load = loadPageKitCampaignEntry({ targetRepo, publicRouteSlug });
+  if (load.status !== "ok") {
+    const where = result.campaigns_path || PAGE_KIT_CAMPAIGNS_REL_PATH;
+    const messages = {
+      target_repo_missing: `Target repo does not exist: ${packet.assembly?.target_repo || "(assembly.target_repo not set)"}.`,
+      file_missing: `${where} does not exist. Scaffold the campaign first (setup: campaign-init writes the file), then sync.`,
+      entry_missing: `${where} has no entry for "${publicRouteSlug || "<public-route-slug>"}". Scaffold the route first (setup: campaign-init registers it), then sync.`,
+      invalid_json: `${where} is not valid JSON; repair the file, then sync.`,
+      root_not_object: `${where} root must be an object keyed by public route slug; repair the file, then sync.`,
+      entry_not_object: `${where}["${publicRouteSlug}"] must be an object; repair the entry, then sync.`,
+    };
+    addIssue(result.errors, "page_kit.sync.entry_missing", messages[load.status] || `${where} entry is unavailable (${load.status}).`, { target_status: load.status });
+  }
+  if (result.errors.length) return result;
+
+  // The write lands on the file the path RESOLVES to, and that file must live
+  // inside the target repo: a `_data` or `campaigns.json` symlink pointing
+  // elsewhere would otherwise let a checked-in link redirect the write into
+  // another repository while the output names the legitimate path.
+  const realCampaignsPath = realpathSync(result.campaigns_path);
+  const realTargetRepo = realpathSync(targetRepo);
+  if (realCampaignsPath !== realTargetRepo && !realCampaignsPath.startsWith(`${realTargetRepo}${sep}`)) {
+    addIssue(result.errors, "page_kit.sync.target_escapes_repo", `${result.campaigns_path} resolves to ${realCampaignsPath}, outside the target repo ${realTargetRepo}. page-kit sync writes only inside the packet's target repo; nothing was written.`);
+    return result;
+  }
+  result.campaigns_path = realCampaignsPath;
+
+  // One read serves both the plan and the write, so the diff printed is the
+  // diff applied even if the file changes underneath a slow operator.
+  const text = readFileSync(result.campaigns_path, "utf8");
+  const campaigns = JSON.parse(text);
+  const entry = campaigns[publicRouteSlug];
+
+  // The Assembly Report doctor would read (the one the Build Context binds,
+  // or --report): its waivers[] and stage ledger decide two things. A gate
+  // under an active named-human waiver is a human decision sync must not
+  // reverse, so its fields are left as the waiver accepted them. And a
+  // terminal build means _site/ was rendered from the entry being rewritten,
+  // so the operator is told a rebuild is owed: doctor's two page-kit gates
+  // read _data/campaigns.json, not the built output.
+  let report = null;
+  try {
+    const workspace = resolveCampaignWorkspace(packetPath, {
+      packet,
+      followContextPointer: true,
+      reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined,
+    });
+    report = readJsonIfExists(workspace.reportPath);
+    result.report_path = workspace.reportPath;
+  } catch (error) {
+    addIssue(result.warnings, "page_kit.sync.report_unreadable", `The Assembly Report could not be read (${singleLineDetail(error.message)}); waivers recorded there were not consulted.`);
+  }
+  const targetLoad = { status: "ok", public_route_slug: publicRouteSlug, target_path: PAGE_KIT_CAMPAIGNS_REL_PATH, entry };
+  const waivers = Array.isArray(report?.waivers) ? report.waivers : [];
+  const waivedGates = [
+    evaluatePageKitStoreProfile({ specCampaign: spec.campaign || {}, targetLoad, waivers }),
+    evaluatePageKitSdkVersion({ spec, targetLoad, waivers }),
+  ].filter((gate) => gate.status === "waived").map((gate) => ({ scope: gate.scope, waived_by: gate.waiver?.waived_by || null }));
+  const plan = planPageKitSync({ spec, entry, waivedGates });
+  result.changes = plan.changes;
+  result.unchanged = plan.unchanged;
+  result.not_in_spec = plan.not_in_spec;
+  result.not_synced = plan.not_synced;
+  for (const row of plan.not_synced) {
+    addIssue(result.warnings, `page_kit.sync.${row.field}_not_synced`, `${row.field} was not written: ${row.detail}`, { reason: row.reason });
+  }
+
+  if (plan.changes.length && !dryRun) {
+    // The entry is edited in place and the document re-serialized with the
+    // file's own top-level indentation, line ending and trailing newline. When
+    // that round trip would not have reproduced the file byte for byte (a
+    // minified file, mixed indentation, keys JSON.parse reorders), the
+    // operator is told the file was normalized, because the printed diff
+    // covers only the governed fields.
+    const eol = text.includes("\r\n") ? "\r\n" : "\n";
+    const indent = text.match(/^[\s﻿]*\{\r?\n([ \t]+)"/)?.[1] ?? "  ";
+    const trailing = /\r?\n$/.test(text) ? eol : "";
+    const serialize = (document) => `${JSON.stringify(document, null, indent).replace(/\n/g, eol)}${trailing}`;
+    if (serialize(campaigns) !== text) {
+      addIssue(result.warnings, "page_kit.sync.file_reformatted", `${result.campaigns_path} was re-serialized with ${indent === "\t" ? "tab" : `${indent.length}-space`} indentation; formatting outside the governed fields (key order, whitespace, number spelling) may differ from the original. Review the file diff before committing.`);
+    }
+    applyPageKitSync(campaigns, publicRouteSlug, plan);
+    // Staged through a temp file and rename, as the sidecar writers are, so an
+    // interrupted write can never leave the page-kit data file half-written.
+    const tmpPath = join(dirname(result.campaigns_path), `.${basename(result.campaigns_path)}.${randomUUID()}.tmp`);
+    try {
+      writeFileSync(tmpPath, serialize(campaigns), { flag: "wx" });
+      // The replacement keeps the original's permission bits.
+      chmodSync(tmpPath, statSync(result.campaigns_path).mode & 0o7777);
+      renameSync(tmpPath, result.campaigns_path);
+    } finally {
+      rmSync(tmpPath, { force: true });
+    }
+    result.written = true;
+    if (stageIsTerminal(report?.stages?.assembly?.status)) {
+      addIssue(result.warnings, "page_kit.sync.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}), and the built output was rendered from the entry just rewritten: its store profile links, phone and Campaign Cart loader pin are now stale. Re-run the build stage before polish, deploy or QA; doctor's page-kit gates read ${PAGE_KIT_CAMPAIGNS_REL_PATH}, not _site/.`);
+      result.next = `${cmd("doctor")} --packet ${shellToken(packetPath)}, then rebuild: set stages.assembly.status back to "pending" on the Assembly Report and run ${cmd("next")} --packet ${shellToken(packetPath)}`;
+    }
+    // The retained doctor snapshot (if any) now predates the entry it judged.
+    // The data file is already written, so a failure here is a warning on the
+    // result, never a thrown error that hides the write.
+    try {
+      markDoctorSidecarStale(targetRepo, {
+        command: "page-kit sync",
+        reason: `page-kit sync rewrote ${PAGE_KIT_CAMPAIGNS_REL_PATH}[${publicRouteSlug}] after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+      });
+    } catch (error) {
+      addIssue(result.warnings, "page_kit.sync.doctor_sidecar_not_marked", `${PAGE_KIT_CAMPAIGNS_REL_PATH} was written, but the retained doctor snapshot could not be marked stale (${singleLineDetail(error.message)}); re-run doctor before trusting it.`);
+    }
+  }
+  // `partial`: the governed fields the spec carries were written (or would
+  // be), but something the target cannot be made authoritative for remains,
+  // so doctor will still block. Exit stays 0 — the write itself succeeded —
+  // and the warnings say what to repair in the spec.
+  result.status = plan.not_synced.length
+    ? "partial"
+    : plan.changes.length ? (dryRun ? "dry_run" : "synced") : "unchanged";
+  result.ok = true;
+  return result;
+}
+
+export function pageKitSyncTextLines(result) {
+  const lines = [`Status: ${result.status === "dry_run" ? "DRY RUN" : String(result.status || "unknown").toUpperCase()}`];
+  if (result.campaigns_path) lines.push(`Target: ${singleLineField(result.campaigns_path)}[${result.public_route_slug || "<public-route-slug>"}]`);
+  if (result.spec_path) lines.push(`Spec: ${result.spec_path}`);
+  if (result.errors?.length) {
+    lines.push("Errors:");
+    for (const issue of result.errors) lines.push(`- ${formatIssueSummary(issue)}`);
+    return lines;
+  }
+  if (result.status === "partial") {
+    lines.push(`Partial: ${result.not_synced.map((row) => row.field).join(", ")} could not be made spec-authoritative (see Warnings); doctor will still block on ${result.not_synced.length === 1 ? "it" : "them"}.`);
+  }
+  if (result.changes?.length) {
+    lines.push(result.dry_run
+      ? `Changes (dry run, nothing written): ${result.changes.length}`
+      : `Changes written: ${result.changes.length}`);
+    for (const row of result.changes) {
+      lines.push(`- ${row.field}: ${formatSyncValue(row.before)} -> ${formatSyncValue(row.after)}  (from ${row.source})`);
+    }
+  } else {
+    lines.push("Changes: none (every governed field the spec carries already matches)");
+  }
+  if (result.unchanged?.length) lines.push(`Unchanged: ${result.unchanged.map((row) => row.field).join(", ")}`);
+  if (result.not_in_spec?.length) lines.push(`Not in spec (left as they are): ${result.not_in_spec.join(", ")}`);
+  if (result.warnings?.length) {
+    lines.push("Warnings:");
+    for (const issue of result.warnings) lines.push(`- ${formatIssueSummary(issue)}`);
+  }
+  if (result.next) lines.push(`Next: ${result.next}`);
+  return lines;
 }
 
 function validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildState) {
@@ -8402,7 +8689,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
         push(
           `checkpoint.${gate.id}.${suffix}`,
           action.kind,
-          command,
+          asInvocation(command),
           action.description,
           action.id === "waive_checkpoint" ? {} : { required: true },
         );

@@ -56,7 +56,8 @@ test("text-mode doctor prints the remediation for a blocked checkpoint gate", ()
     // The blocker itself was always printed; the remediation was not.
     assert.match(text, /\[page_kit\.sdk_version\] Target SDK version 0\.4\.38 does not match/);
     assert.match(text, /^Required actions:$/m);
-    assert.match(text, /^- \[page_kit\.sdk_version\] Set _data\/campaigns\.json\[runtime-packet-demo\]\.sdk_version to /m);
+    // The target repair is the reconcile command, spelled with this run's packet.
+    assert.match(text, /^- \[page_kit\.sdk_version\] campaigns-os page-kit sync --packet /m);
     assert.match(text, /^- \[page_kit\.sdk_version\] campaigns-os checkpoint waive --packet /m);
     // The printed waiver command names this run's packet, not the placeholder.
     assert.equal(text.includes("--packet <packet>"), false);

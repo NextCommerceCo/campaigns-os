@@ -1844,9 +1844,11 @@ function gateClearingHint(gates) {
     .flatMap((gate) => (Array.isArray(gate.required_actions) ? gate.required_actions.filter(isPlainObject) : []));
   const unique = [];
   for (const action of actions) {
-    // Prefer the runnable command; fall back to the manual instruction, which
-    // is what a kind: "manual" action carries instead of one.
-    const text = singleLineFragment(action.command) || singleLineFragment(action.description);
+    // The rendering rule doctor and next use, minus the packet: the verdict
+    // is a public artifact that never carries a local path, so the
+    // `--packet <packet>` placeholder stays and only the install prefix is
+    // applied; a kind: "manual" action falls back to its instruction.
+    const text = singleLineFragment(requiredActionText(action));
     if (text && !unique.includes(text)) unique.push(text);
   }
   // Deduplicated BEFORE the cap, and truncation is measured against that count:

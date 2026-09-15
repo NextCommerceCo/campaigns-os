@@ -188,6 +188,16 @@ test("a stale-assembly polish blocker is told to re-run Build, which is what cle
   assert.doesNotMatch(result.verdict.browser.reason, /[Rr]e-run Polish/);
 });
 
+test("the clearing hint renders a registry command through the install prefix and keeps the packet placeholder", () => {
+  // The page-kit gates publish `campaigns-os page-kit sync --packet <packet>`.
+  // The verdict is public and never carries a local path, so the placeholder
+  // stays; from a checkout the prefix is the bare form.
+  const hint = gateClearingHint([{
+    required_actions: [{ id: "repair_target", kind: "command", command: "campaigns-os page-kit sync --packet <packet>", description: "Write the spec values." }],
+  }]);
+  assert.match(hint, /campaigns-os page-kit sync --packet <packet>/);
+});
+
 test("the clearing hint quotes the gate and never invents a repair", () => {
   // Nothing published: the notice sends the reader to the gate rather than
   // guessing, and in particular does not offer a waiver.
