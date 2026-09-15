@@ -2,6 +2,131 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.29.0] - 2026-09-15
+
+Additive: one new CLI command, `page-kit`, joins the supported argv surface.
+
+### Added
+
+- `campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run]
+  [--json]` reconciles the target's `_data/campaigns.json` entry from the
+  CampaignSpec. A fresh page-kit scaffold (`npx campaign-init …`) seeds the
+  route's entry with the starter family's demo store profile (a
+  `demo.29next.com` storefront and legal links, the demo phone) and the
+  family's SDK pin; because `src/<route>/` then exists the toolkit marks setup
+  skipped, and doctor blocks on `page_kit.store_profile` (demo residue, which
+  is unwaivable by design) and `page_kit.sdk_version`. Until now the only
+  recovery was step 5 of the orchestration skill telling an agent to edit the
+  file by hand from prose. Now the spec is applied by a command: it writes the
+  nine Store Profile fields the spec carries (`campaign.store_name`,
+  `store_url`, `store_terms`, `store_privacy`, `store_contact`,
+  `store_returns`, `store_shipping`, `store_phone`, `store_phone_tel`,
+  normalized the way the gate compares them; a target that differs only in
+  surrounding whitespace or Unicode normalization already passes and is
+  reported unchanged) and `sdk_version` (`global_config.sdk_version`, else
+  the `runtime.sdk_version` alias, resolved by the same
+  `resolveSpecSdkPin` rule the gate uses) into the entry for the packet's
+  `campaign.public_route_slug`, prints a field-by-field `before -> after`
+  diff with each value's spec source, and touches nothing else: a governed
+  field the spec does not carry is left as it is (doctor's `target_only`
+  warning still applies), non-governed keys keep their values and order,
+  other routes are untouched, and no other file is written. The file is
+  edited in place, re-serialized with its own top-level indentation, line
+  ending (CRLF kept) and trailing newline, staged through a temp file and
+  rename with the original permission bits, and written only at the path
+  `_data/campaigns.json` resolves to inside the target repo; when the round
+  trip would not have reproduced the file byte for byte (a minified file,
+  mixed indentation) a `page_kit.sync.file_reformatted` warning says so,
+  because the printed diff covers only the governed fields. `--dry-run`
+  prints the same diff and writes nothing; `--dry-run <value>` is rejected
+  rather than silently becoming a write. Exit 0 on success and on a no-op
+  re-run (`Status: UNCHANGED`); exit 2 with a `page_kit.sync.*` error and
+  nothing written when the packet cannot be read or is not an object
+  (`packet_invalid`), the packet has no route slug (`route_slug_missing`),
+  the spec is absent, unreadable or not an object (`spec_missing`,
+  `spec_invalid`), the spec identifies another campaign
+  (`spec_identity_mismatch`: `spec_identity.public_route_slug`, else
+  `campaign.slug`/`id`, disagreeing with the packet's route, or
+  `spec_identity.map_id` disagreeing with the packet's `spec.map_id`), the
+  target entry is unavailable (`entry_missing` with the loader status
+  `target_repo_missing`, `file_missing`, `entry_missing`, `invalid_json`,
+  `root_not_object`, `entry_not_object`), or the resolved file lies outside
+  the target repo through a symlink (`target_escapes_repo`). The spec is the
+  authority, but the target is made authoritative only from a usable spec
+  value: a non-released or conflicting pin (`spec_invalid`, `spec_conflict`),
+  a field of the wrong type (`spec_invalid_type`), a URL field that is not an
+  http(s) URL (`not_http_url`), a `store_phone_tel` that is not a `tel:` URI
+  of digits, spaces, dashes, parens and dots (`not_tel_uri`), a value with
+  control characters (`control_characters`), the starter demo value itself
+  in the spec (`demo_residue`), and starter demo residue in a field the spec
+  does not carry (`demo_residue_not_in_spec`) are never written; each lands
+  in `not_synced[]` with its reason and a `page_kit.sync.<field>_not_synced`
+  warning naming the spec field to fix, and the run's status is `partial`
+  (exit 0: the writes that could happen did; doctor will still block).
+  `store_contact` may also be a `mailto:` address. A gate under an active
+  named-human checkpoint waiver is a human decision sync does not reverse:
+  its fields land in `not_synced[]` with reason `waived` naming
+  `waived_by`, and the target stays as the waiver accepted it. Sync reads the
+  Assembly Report doctor would (the one the Build Context binds, else the
+  default sidecar, or `--report <path>`); a report it cannot read is a
+  `page_kit.sync.report_unreadable` warning. Unknown flags are rejected
+  (`Unknown flag for page-kit sync: --dryrun. … Known flags: --packet,
+  --dry-run, --json, --report`) rather than ignored. A write marks the
+  retained doctor snapshot stale (a failure to do so is a
+  `page_kit.sync.doctor_sidecar_not_marked` warning, never a lost result),
+  and when the report records a terminal build a `page_kit.sync.build_stale`
+  warning says `_site/` was rendered from the old entry and `next` points at
+  the rebuild.
+  `--json` emits the result document (`action`, `status` `synced | dry_run |
+  unchanged | partial | blocked`, `written`, `changes[]`, `unchanged[]`,
+  `not_in_spec[]`, `not_synced[]`, `errors[]`, `warnings[]`, `next`). The
+  command is not pipeline-advancing, so it never records a deviation.
+
+### Changed
+
+- Doctor and `next` name `page-kit sync` as the recovery for the two page-kit
+  gates. The `repair_target` action of `page_kit.store_profile` and
+  `page_kit.sdk_version` was `kind: "edit"` with `command: null` and a
+  description telling the operator to update the file; it is now `kind:
+  "command"` with `command: "campaigns-os page-kit sync --packet <packet>"`,
+  so doctor's `Required actions:` block, `next`'s `next_actions[]` at
+  `doctor-blocked` (ids `checkpoint.page_kit.store_profile.repair_target` and
+  `checkpoint.page_kit.sdk_version.repair_target`), and the emitted
+  `required_actions[].command` all print the pasteable command with the real
+  packet path, spelled for the install it came from (`npx campaigns-os
+  page-kit sync …` from a campaign folder). For `page_kit.sdk_version` this
+  covers the `target_missing`, `target_invalid`, and mismatch states; for
+  `page_kit.store_profile` it covers every blocker the target can be made
+  authoritative for (`demo_residue`, `target_missing`, `mismatch`,
+  `target_invalid_type`, each with a usable spec value: present, an http(s)
+  URL for URL fields, a `tel:` URI for `store_phone_tel`, no control
+  characters, and not the demo value itself). Any other blocker keeps an edit
+  action naming the spec field and the reason (`spec_invalid_type`,
+  `not_http_url`, `not_tel_uri`, `control_characters`, `demo_residue`,
+  `missing`), since sync cannot repair the spec and would otherwise be
+  recommended for a state it cannot end; a target-side defect the spec does
+  not carry (a demo or malformed target value with no spec field behind it)
+  is described as a target edit, with adding the field to the spec and
+  syncing as the alternative. The QA runner's browser-skipped notice renders
+  gate actions through the same install-prefix rule doctor and `next` use
+  (the `--packet <packet>` placeholder stays: the verdict is a public artifact
+  that never carries a local path). The
+  `doctor-blocked` checkpoint actions in `next` are now also passed through
+  the install-prefix helper, like every other printed command since
+  1.28.0+agent.1.
+- Skill `next-campaigns-os` 1.0.10 → 1.0.11: step 5 no longer tells the agent
+  to correct `_data/campaigns.json` by hand; it names `page-kit sync`
+  (`--dry-run` first), what a `PARTIAL` status means, and that demo residue
+  is replaced this way.
+- `contracts/supported-surface.json` `cli_commands` gains `page-kit`;
+  `docs/supported-surface.md` names it and its one subcommand.
+  `docs/build-packet.md` documents the command under the Page Kit Store
+  Profile checkpoint and points the SDK-version checkpoint at it. The README
+  and `docs/quickstart.md` "first verdict is BLOCKED" paragraphs say the demo
+  values are the scaffold-seeded profile and pin and name the command that
+  replaces them. `docs/orientation-contract-reference.md` and
+  `docs/runtime-readiness.md` are regenerated for surface `1.29.0`.
+
 ## [1.28.0+agent.1] - 2026-09-15
 
 ### Added
