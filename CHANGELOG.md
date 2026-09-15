@@ -7,10 +7,10 @@ Notable supported-surface changes are recorded here.
 ### Added
 
 - `tooling status` recognises a package install as a supported install mode.
-  Until now the command assumed a git checkout: run from a toolkit folder
-  (`npm install github:NextCommerceCo/campaigns-os#<sha>`), an `npx` cache, or
-  a consumer's `node_modules` it reported `Git freshness unavailable: git
-  rev-parse failed` with the raw git error, told the operator to use `npm run
+  Until now the command assumed a git checkout: run from a campaign folder
+  that pins the toolkit as a devDependency, an `npx` cache, or any other
+  `node_modules` it reported `Git freshness unavailable: git rev-parse
+  failed` with the raw git error, told the operator to use `npm run
   campaigns-os -- ...`, and described the package as a private checkout. Now
   the result carries an `install` block — `mode` (`checkout`, `npx_cache`,
   `node_modules`, `package_directory`), `mode_label`, `location`, and `pinned`
@@ -18,37 +18,56 @@ Notable supported-surface changes are recorded here.
   mode: package install (node_modules), pinned at <version> @ <sha12>` or
   `Install mode: git checkout at <path>`. The pinned commit is derived from
   what npm recorded at install time (`gitHead` in package.json, else the
-  resolved git URL for the package in the install root's
-  `node_modules/.package-lock.json` or `package-lock.json`); when none is
-  recorded the line says `pinned commit not derivable` and a warning asks the
-  operator to compare the package version by hand. In package mode the `git`
-  block is `status: not_applicable` (its `head` is the pinned commit, and no
-  git warning is emitted) and `package.registry.status` is
-  `not_applicable_package_install`. `cli.invocation` and the new
-  `cli.invocation_prefix` name the form that works where the operator is:
-  `npm run campaigns-os -- <command>` from a checkout (unchanged), `npx --yes
-  github:NextCommerceCo/campaigns-os#<sha12> <command>` from an npx cache, and
-  bare `campaigns-os <command>` from a toolkit folder or consumer install,
-  whose `node_modules/.bin` the new `cli.bin_dir` names; when that binary is
-  not on PATH the warning gives the exact `export PATH="<bin_dir>:$PATH"` line.
-  The skill-refresh action uses the same prefix. A package directory that
-  happens to sit inside someone else's git repository (a consumer project, a
-  dotfiles-managed home) is a package install, not a checkout: only a root
-  that is the top level of its own worktree is reported as a checkout, so the
-  enclosing repository's branch is never presented as the toolkit's. The
-  checkout branch of the logic is unchanged apart from the additive fields.
+  resolved git URL for the package in any enclosing install root's
+  `node_modules/.package-lock.json` or `package-lock.json`, so a nested
+  dependency keeps its pin); when none is recorded the line says `pinned
+  commit not derivable` and a warning asks the operator to compare the
+  package version by hand. In package mode the `git` block is `status:
+  not_applicable` (its `head` is the pinned commit, and no git warning is
+  emitted) and `package.registry.status` is `not_applicable_package_install`.
+  `cli.invocation` and the new `cli.invocation_prefix` name the form that runs
+  this copy where the operator is: `npm run campaigns-os -- <command>` from a
+  checkout (unchanged), `npx --yes github:NextCommerceCo/campaigns-os#<sha12>
+  <command>` from an npx cache, `npx campaigns-os <command>` from a consumer
+  `node_modules` install, and bare `campaigns-os <command>` only when this
+  install's own `node_modules/.bin` (the new `cli.bin_dir`) is what PATH
+  resolves first. `cli.global_binary` gains `resolves_to` and
+  `matches_local_bin`; its `status` is `found_other_install` when the
+  `campaigns-os` first on PATH is a different install, and the consumer-mode
+  warning for that case, or for no binary on PATH, points back to `npx
+  campaigns-os <command>` from the folder that pins the toolkit — no PATH
+  edit. The skill-refresh action uses the same prefix. A package directory
+  that happens to sit inside someone else's git repository (a consumer
+  project, a dotfiles-managed home) is a package install, not a checkout: only
+  a root that is the top level of its own worktree is reported as a checkout,
+  so the enclosing repository's branch is never presented as the toolkit's.
+  The checkout branch of the logic is unchanged apart from the additive fields.
+- Every command the toolkit prints for an operator or agent to copy is spelled
+  for the install it came from. `next` (text and `--json`: `next_actions[]
+  .command`, gate `required_actions[].command`, the prompt and the tiny
+  prompt), doctor's required actions, checkpoint/theme/polish results and the
+  prepare-build summary rewrite the canonical bare `campaigns-os <command>`
+  into `npx campaigns-os <command>` from a consumer install, `npx --yes
+  <spec> <command>` from an npx cache, and leave it bare from a checkout or
+  when this install's own `.bin` is first on PATH. Skill names
+  (`next-campaigns-os-setup`), file names (`campaigns-os.mjs`), prose, and
+  already-prefixed forms are untouched; internal bookkeeping (deviation
+  tracking, gate registries) keeps the canonical spelling. The browser-missing
+  errors from `polish capture` and `qa run --browser` use the same spelling:
+  `Run \`npx campaigns-os qa install-browser\`, then …` from a consumer
+  install, `Run \`npm run qa:install-browser\` from the checkout (or
+  \`campaigns-os qa install-browser\`), then …` from a checkout.
 - `campaigns-os qa install-browser`: the one-time Playwright Chromium install,
   runnable from any install mode. It drives the Playwright CLI bundled with
   this package (`install chromium`), so the browser matches the Playwright the
-  QA and polish producers load; `--json` reports `status: installed` or
-  `install_failed` with the exit code. `npm run qa:install-browser` still
-  exists as the checkout script and does the same thing. The commands `next`
-  prints at the QA stage, the polish handoff prompt, the QA handoff prompt,
-  the `polish.hidden_eager_media.install_browser` gate action, and the
-  browser-missing errors from `polish capture` and `qa run --browser` now name
-  `campaigns-os qa install-browser` (the errors add "or `npm run
-  qa:install-browser` from a checkout"), so the recovery an operator is told
-  to run works outside a checkout. Because the gate action now starts with
+  QA and polish producers load; plain output is `Status:`, `Command:` and the
+  note (`Exit code:` on failure), and `--json` keeps stdout as the result
+  document (`status: installed` or `install_failed` with `exit_code`) with the
+  child's download progress routed to stderr. `npm run qa:install-browser`
+  still exists as the checkout script and does the same thing. The commands
+  `next` prints at the QA stage, the polish handoff prompt, the QA handoff
+  prompt, and the `polish.hidden_eager_media.install_browser` gate action now
+  name `qa install-browser`. Because the gate action now starts with
   `campaigns-os qa`, `qa` counts as an expected command during a polish stage
   whose browser is missing.
 - The CLI accepts a leading `campaigns-os` token as its own program name.
@@ -58,31 +77,24 @@ Notable supported-surface changes are recorded here.
   dropped before dispatch for every command.
 - The `next` recovery prompt for a blocked prepare-build stage names the flags
   a rerun needs: "with the same `--spec`/`--map-id`, `--source`, `--target` and
-  `--template-family` as the original run".
+  `--template-family` as the original run". Doctor's coverage error for a
+  Figma-designed page with no source mapping now says "supply the source-html
+  manifest for the page (see docs/design-source-package.md) — figma-sections-export
+  emits it when you have the Figma design" instead of naming a private
+  `npm run handoff` script.
 - `AGENTS.md` states that the runtime recipe covers checkout preparation and
-  that a pinned package install into a tools folder (or one-shot `npx`) is the
-  supported way to run the toolkit without a checkout, under the same pin
-  discipline; a recipe kind for package installs is not published yet. README
-  Quick Start and `docs/quickstart.md` make that folder install the primary
-  path — a per-pin folder, `npm install --prefix
-  "$HOME/campaigns-os-toolkit/<sha>" github:NextCommerceCo/campaigns-os#<sha>`
-  with its `node_modules/.bin` on PATH — in the order
-  orient (read the contracts at one commit) → `install-skills` → `start`, with
-  `--map-id <id>` beside `--spec`, the npm 10 abbreviated-sha note for `npx`,
-  and the clone path under "Contributor / local checkout". `CONTEXT.md` and
-  `docs/entry-points.md` replace two named people and one named merchant in
-  worked examples with anonymous operators.
-- `tooling status` also checks that the `campaigns-os` first on PATH resolves
-  to the install it is inspecting: `cli.global_binary` gains `resolves_to` and
-  `matches_local_bin`, its `status` is `found_other_install` when another
-  install shadows this one, and a package-mode warning names both paths and
-  the `export PATH=…` fix (from an npx cache, whose `.bin` is ephemeral, the
-  fix named is the pinned `npx --yes <spec> <command>` form). `derivePackagePin` walks every enclosing install
-  root, so a nested dependency recorded only in the project lockfile still
-  reports its pin. `qa install-browser --json` routes Playwright's download
-  progress to stderr so stdout is the result document alone; without `--json`
-  it prints `Status:`, `Command:`, and the note (and `Exit code:` on failure)
-  rather than the QA verdict format.
+  that the toolkit pinned as a devDependency of the campaign folder (run
+  through `npx campaigns-os …`) is the supported way to run it without a
+  checkout, under the same pin discipline; a recipe kind for package installs
+  is not published yet. README Quick Start and `docs/quickstart.md` make that
+  the primary path — page-kit bootstrap (`npm init -y && npm i
+  next-campaign-page-kit && npx campaign-init --non-interactive …`), then `npm
+  i -D "github:NextCommerceCo/campaigns-os#<sha>"`, then `npx campaigns-os
+  tooling status` / `install-skills` / `start` / `next` — in the order orient
+  (read the contracts at one commit) → `install-skills` → `start`, with
+  `--map-id <id>` beside `--spec`, and the clone path under "Contributor /
+  local checkout". `CONTEXT.md` and `docs/entry-points.md` replace two named
+  people and one named merchant in worked examples with anonymous operators.
 
 ## [1.28.0] - 2026-09-14
 

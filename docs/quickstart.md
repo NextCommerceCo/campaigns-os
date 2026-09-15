@@ -5,8 +5,10 @@ This path is optimized for a developer using Claude Code or another AI coding to
 ## Install without a clone
 
 Requirements: Node `>=20.19.0` and npm 10 or 11 (Node 22 ships npm 10). The
-primary way to run Campaigns OS is a pinned install into a toolkit folder on
-your PATH; nothing is cloned and nothing is installed globally.
+primary way to run Campaigns OS is pinned as a devDependency of the campaign
+folder — a page-kit project — and run through `npx campaigns-os …` from that
+folder. Nothing is cloned, nothing goes on PATH, and the pin is committed in
+`package.json`, so CI and the deploy host install the same commit.
 
 Do the steps in this order:
 
@@ -14,81 +16,58 @@ Do the steps in this order:
    `contracts/release-ledger.json` and `CHANGELOG.md` on GitHub at one commit.
    That is a read of declarative data, not a run of toolkit code. Keep the
    commit sha.
-2. **Install the toolkit, preflight, and install skills** at that sha.
+2. **Pin the toolkit, preflight, and install skills** at that sha.
 3. **Start** at that sha.
 
+New campaign folder:
+
 ```bash
-PIN="<sha>"
-TOOLKIT="$HOME/campaigns-os-toolkit/$PIN"
-mkdir -p "$TOOLKIT"
-npm install --prefix "$TOOLKIT" "github:NextCommerceCo/campaigns-os#$PIN"
-export PATH="$TOOLKIT/node_modules/.bin:$PATH"
-campaigns-os tooling status
+mkdir "<route>" && cd "<route>"
+npm init -y && npm i next-campaign-page-kit
+npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
 ```
 
-Repeat the `PIN`, `TOOLKIT`, and `PATH` lines in each new shell, or add them
-to your shell profile. `PIN` is the commit you oriented on, so the code that
-runs is the code whose contracts you read; without a pin you would get the
-default branch as of that moment, which may be ahead of what you reviewed.
-Each pin gets its own folder under `~/campaigns-os-toolkit/`, so moving to a
-newer commit is re-orienting on it and running the same lines with the new
-`PIN` — the old folder stays intact. npm records the resolved commit in the
-folder's `package-lock.json`; that record is what `tooling status` reads back.
-The `export PATH` line is what makes the bare `campaigns-os …` commands that
-`next` prints resolve.
+Existing page-kit campaign: `cd` into it (its `package.json` declares
+`next-campaign-page-kit`). Then, in the campaign folder:
 
-Verified on npm 10.9.8 and 11.19.1 with a full 40-character sha: the install
-takes about 10 s on a warm machine (it clones the commit and runs the
-package's own build step), and `campaigns-os`, `playwright` and the other bins
-land in `$TOOLKIT/node_modules/.bin`. `npm install -g github:…` is not an alternative
-on either major — the nested build install inherits global mode and fails —
-which is why the toolkit lives in a folder on PATH.
+```bash
+npm i -D "github:NextCommerceCo/campaigns-os#<sha>"
+npx campaigns-os tooling status
+```
 
-The QA browser is a one-time `campaigns-os qa install-browser` from any
-install mode; it uses the Playwright bundled with this package. A pin older than
-that command shows `playwright install chromium` instead, which is equivalent
-only from the toolkit folder's PATH, where `playwright` resolves to the bundled
-copy.
+`#<sha>` is the commit you oriented on, so the code that runs is the code
+whose contracts you read; without a pin you would get the default branch as
+of that moment, which may be ahead of what you reviewed. npm records the
+resolved commit in the folder's `package.json` and `package-lock.json`; that
+record is what `tooling status` reads back. The install runs the package's
+own build step (about 7 s on a warm machine, verified on npm 10.9.8 and
+11.19.1 with a full 40-character sha). To move to a newer commit, re-orient on
+it and run `npm i -D "github:NextCommerceCo/campaigns-os#<new-sha>"` again.
+`npm install -g github:…` is not an alternative on either npm major — the
+nested build install inherits global mode and fails — which is one reason the
+toolkit lives in the campaign folder.
 
 `tooling status` is the preflight for "am I current?". It names the install
 mode and checks package identity, CLI entrypoint, and installed Campaigns OS
 skills:
 
-- From the toolkit folder it reports `Install mode: package install
+- From a campaign folder it reports `Install mode: package install
   (node_modules), pinned at <version> @ <sha>`; git freshness is
   `not_applicable` because the pinned commit is the freshness answer, and
-  there is no npm dist-tag to compare against. If `campaigns-os` is not on
-  PATH, or the one on PATH is a different install from the one inspected, it
-  prints the exact `export PATH=…` line to run.
-- From `npx` it reports `Install mode: package install (npx cache), pinned at
-  <version> @ <sha>`.
+  there is no npm dist-tag to compare against. Commands are spelled `npx
+  campaigns-os <command>` (bare `campaigns-os` only when this install's own
+  `node_modules/.bin` is what PATH resolves first); if a different install of
+  the toolkit is on PATH, it says so and points you back to `npx`.
 - From a git checkout it reports `Install mode: git checkout at <path>` plus
   branch, upstream, ahead/behind, and whether the tree is dirty.
 
-Exit code 2 from `tooling status` means attention is required — usually that
-installed skills are stale — and the output prints the exact refresh command
-for the mode you ran it in.
+Exit code 2 from `tooling status` means attention is required — on a fresh
+profile that is the not-yet-installed skills — and the output prints the exact
+refresh command for the mode you ran it in.
 
-### One-shot alternative: `npx`
-
-To run a single command without installing anything:
-
-```bash
-npx --yes --package=github:NextCommerceCo/campaigns-os#<sha> campaigns-os tooling status
-```
-
-Same pin discipline. On npm 10 use an abbreviated sha of 7–12 characters here
-— the full form fails with `GitFetcher requires an Arborist constructor to
-pack a tarball`; npm 11 accepts any length. Each run resolves the git spec
-before it looks at the npx cache, so a cached install does not guarantee that
-the clone-and-build step, or the network, is skipped on later runs; the folder
-install is primary partly for that reason. Two things to know: the commands
-`next` prints are bare `campaigns-os …`, so prefix each one with the same `npx
---yes --package=… campaigns-os` form; and prefer `--package=` over the
-positional `npx --yes <spec> campaigns-os <command>`, which passes the literal
-`campaigns-os` through to the binary — pins that include release-ledger entry
-`RL-0093` read that as the program name, older pins reject it as an unknown
-command.
+Everything the toolkit prints for you to run (`next`, gate remediations, the
+browser-missing hints) is spelled for the install it came from: `npx
+campaigns-os …` from a campaign folder, bare `campaigns-os …` from a checkout.
 
 ## Contributor / local checkout
 
@@ -104,10 +83,11 @@ npm run campaigns-os -- tooling status
 ```
 
 Every `npm run campaigns-os -- <command>` example in this repository is the
-checkout form. From the toolkit folder the same command is `campaigns-os
+checkout form. From a campaign folder the same command is `npx campaigns-os
 <command>`; the arguments are identical. `npm run qa:install-browser`, a
-checkout script, is `campaigns-os qa install-browser` from any install mode. A
-fresh `git pull`
+checkout script, is `npx campaigns-os qa install-browser` from a campaign
+folder (`npx playwright install chromium` does the same thing). A fresh `git
+pull`
 does not refresh copied agent skills in either mode; `tooling status` tells
 you when they are stale.
 
@@ -116,21 +96,21 @@ you when they are stale.
 After installing or updating the CLI, refresh the Campaigns OS skills in Claude Code:
 
 ```bash
-campaigns-os install-skills
+npx campaigns-os install-skills --platform claude
 ```
 
-By default, this syncs bundled `skills/*` directories from the installed package into `~/.claude/skills/<skill-name>/` and reports which skills were created, updated, or unchanged. Preview changes without writing files:
+This syncs bundled `skills/*` directories from the installed package into `~/.claude/skills/<skill-name>/` (`--platform codex` writes `~/.codex/skills`), replacing same-name folders, and reports which skills were created, updated, or unchanged. Restart the agent afterwards. Preview changes without writing files:
 
 ```bash
-campaigns-os install-skills --dry-run
+npx campaigns-os install-skills --dry-run
 ```
 
 Use `--platform` for other local agent profiles:
 
 ```bash
-campaigns-os install-skills --platform codex
-campaigns-os install-skills --platform agents
-campaigns-os install-skills --platform all --dry-run
+npx campaigns-os install-skills --platform codex
+npx campaigns-os install-skills --platform agents
+npx campaigns-os install-skills --platform all --dry-run
 ```
 
 If `tooling status` reports stale skills, run the refresh command it prints —
@@ -236,7 +216,7 @@ computing `source_hash`; the "Selecting the wrapper policy at intake" section of
 >
 > Three ways out, any of which is enough:
 >
-> - `campaigns-os telemetry off` — machine-level, sticks.
+> - `npx campaigns-os telemetry off` — machine-level, sticks.
 > - `CAMPAIGNS_OS_TELEMETRY=off` — per shell or per CI job.
 > - `--no-remit` on the remitting command (`qa run`, `run-record`, `run end`).
 >
@@ -252,25 +232,22 @@ computing `source_hash`; the "Selecting the wrapper policy at intake" section of
 > contract: [Run Telemetry](./workflow-findings-sidecar.md).
 
 ```bash
-mkdir -p <campaign-folder>
-campaigns-os start \
-  --map-id <your-map-id> \
-  --target <campaign-folder> \
-  --source <your-page-html> \
-  --template-family olympus
+mkdir -p source
+npx campaigns-os start --map-id <map-id> --target . --source ./source --template-family <family>
 ```
 
-`--map-id <id>` starts from a map saved in Campaign Map Builder; `--spec
-<campaignspec.json>` starts from a locally exported CampaignSpec instead. One of
-the two is required. `--target` must be a directory: with `--spec` a missing
-one is refused (`Target repo is not a directory`) rather than created, hence
-the `mkdir -p`. `--source` is always required: the
-folder of prepared HTML/CSS/assets for the pages you are building, with a
-source manifest carrying desktop and mobile screenshot proof for each designed
-page — see [Design Source Package](./design-source-package.md). Pages that use
-the starter family's own design are declared out of source scope (manifest
-`skip_reason`, or CampaignSpec `build_scope.mode: "partial"`), never left out of
-`--source`.
+`--map-id <id>` starts from a map saved in Campaign Map Builder (add
+`--proxy-base <origin>` when the map was saved on a non-production map store);
+`--spec <campaignspec.json>` starts from a locally exported CampaignSpec
+instead. One of the two is required. `--target .` is the campaign folder, the
+page-kit project that pins the toolkit; with `--spec` it must already be a
+directory (`Target repo is not a directory` otherwise). `--source` is always
+required: the folder of prepared HTML/CSS/assets for the pages you are
+building, with a source manifest carrying desktop and mobile screenshot proof
+for each designed page — see [Design Source Package](./design-source-package.md).
+It must exist even when every page is template stock; those pages are declared
+out of source scope (manifest `skip_reason`, or CampaignSpec
+`build_scope.mode: "partial"`), never left out of `--source`.
 
 `start` creates the packet, context, report, doctor output, and target-repo agent context. It does not edit campaign pages, deploy, run QA, or place test orders.
 
@@ -287,8 +264,8 @@ available, the build context records `context.theme` and the target repo gets
 To inspect or generate the optional commerce-page brand bridge:
 
 ```bash
-campaigns-os theme inspect --packet <campaign-folder>/campaign-runtime.build.json --json
-campaigns-os theme generate --packet <campaign-folder>/campaign-runtime.build.json --json
+npx campaigns-os theme inspect --packet ./campaign-runtime.build.json --json
+npx campaigns-os theme generate --packet ./campaign-runtime.build.json --json
 ```
 
 Use `--theme-policy auto` on `start` / `prepare-build` only when you want
@@ -298,16 +275,23 @@ source tokens. Generated CSS is root-variable-only and must be loaded after
 
 ## Continue In Your AI Tool
 
-Run:
+Run `next` after `start` and after every stage, and do what it prints — the
+commands are already spelled for this install:
 
 ```bash
-campaigns-os next setup --packet <campaign-folder>/campaign-runtime.build.json
+npx campaigns-os next --packet ./campaign-runtime.build.json --json
+```
+
+When it names the setup stage, that is:
+
+```bash
+npx campaigns-os next setup --packet ./campaign-runtime.build.json
 ```
 
 If doctor says setup is not required, run:
 
 ```bash
-campaigns-os next build --packet <campaign-folder>/campaign-runtime.build.json
+npx campaigns-os next build --packet ./campaign-runtime.build.json
 ```
 
 Paste the generated handoff into your AI tool. From here the build is
@@ -336,13 +320,13 @@ Build is not launch readiness. A complete run still needs:
 - typed-card test-order proof via `--test-order common` (global test cards bypass the gateway; no permission/approval needed — depth is the only control)
 
 ```bash
-campaigns-os qa install-browser
-campaigns-os polish capture --packet <campaign-folder>/campaign-runtime.build.json --base-url <served-current-build-url>
-campaigns-os qa resolve --packet <campaign-folder>/campaign-runtime.build.json
-campaigns-os qa run --packet <campaign-folder>/campaign-runtime.build.json --base-url https://preview.example.com/campaign/ --browser --test-order common
+npx campaigns-os qa install-browser
+npx campaigns-os polish capture --packet ./campaign-runtime.build.json --base-url <served-current-build-url>
+npx campaigns-os qa resolve --packet ./campaign-runtime.build.json
+npx campaigns-os qa run --packet ./campaign-runtime.build.json --base-url https://preview.example.com/campaign/ --browser --test-order common
 ```
 
-`campaigns-os qa install-browser` (`npm run qa:install-browser` from a checkout)
+`npx campaigns-os qa install-browser` (`npm run qa:install-browser` from a checkout; `npx playwright install chromium` is the same step)
 is a one-time local setup step after install/update. It installs the Chromium
 binary used by package-owned polish capture and QA.
 Run it before `polish capture`, `--browser`, or `--test-order`; the CLI will tell

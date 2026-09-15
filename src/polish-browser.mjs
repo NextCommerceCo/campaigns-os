@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import { applyInvocationPrefix, invocationPrefixFor } from "./install-mode.mjs";
+import { dirname as installModeDirname, resolve as installModeResolve } from "node:path";
+import { fileURLToPath as installModeFileUrl } from "node:url";
+const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(import.meta.url)), "..");
 
 import {
   captureOrigin,
@@ -609,7 +613,7 @@ function polishBrowserMissing(kind) {
     ].join(" ")
     : [
       "Playwright Chromium is not installed for Campaigns OS polish capture.",
-      "Run `campaigns-os qa install-browser` (or `npm run qa:install-browser` from a checkout), then rerun `campaigns-os polish capture`.",
+      installBrowserHint("polish"),
     ].join(" "));
 }
 
@@ -846,4 +850,16 @@ export async function createPolishBrowserAdapter({
       return closePromise;
     },
   };
+}
+
+// The browser-install step spelled for the install this package runs from:
+// the checkout script from a checkout, otherwise `qa install-browser` through
+// the prefix that runs THIS copy (see install-mode.mjs).
+function installBrowserHint(kind) {
+  const rerun = kind === "polish" ? "then rerun `campaigns-os polish capture`." : "then rerun the QA command.";
+  const prefix = invocationPrefixFor(PACKAGE_ROOT);
+  const install = prefix === "campaigns-os"
+    ? "Run `npm run qa:install-browser` from the checkout (or `campaigns-os qa install-browser`),"
+    : `Run \`${prefix} qa install-browser\`,`;
+  return applyInvocationPrefix(`${install} ${rerun}`, prefix);
 }

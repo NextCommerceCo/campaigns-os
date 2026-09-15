@@ -327,7 +327,7 @@ test("a package directory inside someone else's git repository is a package inst
 function stageRealPackageInstall(installRoot) {
   const pkgRoot = join(installRoot, "node_modules", "@nextcommerce", "campaigns-os");
   mkdirSync(pkgRoot, { recursive: true });
-  for (const entry of ["bin", "src", "campaign-spec", "contracts", "schemas", "skills", "skills.json", "package.json"]) {
+  for (const entry of ["agents", "bin", "src", "campaign-spec", "contracts", "schemas", "skills", "skills.json", "package.json"]) {
     cpSync(join(ROOT, entry), join(pkgRoot, entry), { recursive: true, dereference: true });
   }
   symlinkSync(join(ROOT, "node_modules"), join(pkgRoot, "node_modules"), "dir");
@@ -370,14 +370,16 @@ test("tooling status from a package install is ready, names the pin, and gives p
     assert.equal(json.git.status, "not_applicable");
     assert.equal(json.git.head, PIN_SHA);
     assert.equal(json.package.registry.status, "not_applicable_package_install");
-    // A tools-folder install runs the bare binary from node_modules/.bin.
-    assert.equal(json.cli.invocation, "campaigns-os <command>");
+    // A consumer install (the toolkit pinned as a devDependency) runs through
+    // npm's bin resolution; nothing of this install is on PATH here.
+    assert.equal(json.cli.invocation, "npx campaigns-os <command>");
     assert.equal(json.cli.bin_dir, join(installRoot, "node_modules", ".bin"));
     assert.ok(json.ready.some((line) => line.includes("package install (node_modules), pinned at 0.1.0-alpha.0 @ 236d7fc454c8")));
     // No checkout-only noise: no "Git freshness unavailable", no "use npm run campaigns-os".
     assert.equal(json.warnings.some((warning) => /Git freshness unavailable|npm run campaigns-os/.test(warning)), false);
-    // PATH was scrubbed above, so the one useful warning is the PATH hint.
-    assert.ok(json.warnings.some((warning) => warning.includes(`export PATH="${join(installRoot, "node_modules", ".bin")}:$PATH"`)));
+    // PATH was scrubbed above, so the one useful warning is the npx hint — no PATH ritual.
+    assert.ok(json.warnings.some((warning) => warning.includes("run commands as `npx campaigns-os <command>`")));
+    assert.equal(json.warnings.some((warning) => warning.includes("export PATH")), false);
     assert.deepEqual(json.actions, []);
 
     // A stale skill still surfaces, and the repair command is the package-mode one.
@@ -389,7 +391,7 @@ test("tooling status from a package install is ready, names the pin, and gives p
     assert.equal(stale.status, 2);
     const staleJson = JSON.parse(stale.stdout);
     assert.ok(staleJson.actions.some((action) =>
-      action.startsWith("Refresh installed skills: campaigns-os install-skills --target")));
+      action.startsWith("Refresh installed skills: npx campaigns-os install-skills --target")));
 
     const human = spawnSync(process.execPath, [pkgCli, "tooling", "status", "--target", target], {
       cwd: installRoot,
@@ -456,7 +458,8 @@ test("tooling status warns when the campaigns-os on PATH is a different install 
     assert.equal(json.cli.global_binary.path, foreignBin);
     assert.ok(json.warnings.some((warning) =>
       warning.includes("is a different install from the one inspected here")
-      && warning.includes(`export PATH="${join(installRoot, "node_modules", ".bin")}:$PATH"`)));
+      && warning.includes("run commands as `npx campaigns-os <command>`")));
+    assert.equal(json.cli.invocation, "npx campaigns-os <command>");
 
     // The same install's own .bin first on PATH: found, no warning.
     const binDir = join(installRoot, "node_modules", ".bin");
@@ -470,6 +473,8 @@ test("tooling status warns when the campaigns-os on PATH is a different install 
     const matched = JSON.parse(match.stdout);
     assert.equal(matched.cli.global_binary.status, "found");
     assert.equal(matched.cli.global_binary.matches_local_bin, true);
+    // This install's own .bin resolves first, so the bare binary is the right spelling.
+    assert.equal(matched.cli.invocation, "campaigns-os <command>");
     assert.equal(matched.warnings.some((warning) => /different install|not on PATH/.test(warning)), false);
   } finally {
     for (const dir of [installRoot, other, target]) rmSync(dir, { recursive: true, force: true });
@@ -507,5 +512,44 @@ test("tooling status in an npx cache names the pinned npx form when another camp
     assert.equal(warning.includes("export PATH"), false, warning);
   } finally {
     for (const dir of [cache, other, target]) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Printed commands are spelled for the install they come from. A consumer
+// install prints `npx campaigns-os …`; the checkout keeps the bare form.
+test("next prints its commands with the consumer install's npx prefix", () => {
+  const installRoot = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-pkg-next-")));
+  const campaign = mkdtempSync(join(tmpdir(), "campaigns-os-pkg-next-target-"));
+  try {
+    const pkgRoot = stageRealPackageInstall(installRoot);
+    const pkgCli = join(pkgRoot, "bin", "campaigns-os.mjs");
+    const env = { ...process.env, PATH: "/usr/bin:/bin" };
+    const start = spawnSync(process.execPath, [
+      pkgCli, "start",
+      "--spec", join(ROOT, "examples", "campaignspec.v42.basic.json"),
+      "--source", join(ROOT, "examples", "source-html"),
+      "--target", campaign, "--template-family", "olympus", "--no-run-session",
+    ], { cwd: campaign, encoding: "utf8", env });
+    assert.equal(start.status, 2, start.stderr);
+    const packet = join(campaign, "campaign-runtime.build.json");
+
+    const text = spawnSync(process.execPath, [pkgCli, "next", "--packet", packet], { cwd: campaign, encoding: "utf8", env });
+    // The example inputs block at intake, so next prints the prepare-build
+    // recovery: its commands carry the consumer prefix, none stay bare.
+    assert.match(text.stdout, /npx campaigns-os (?:start|prepare-build)/);
+    assert.doesNotMatch(text.stdout, /(?<![\w./-])(?<!npx )campaigns-os (?:start|prepare-build|next|doctor) /);
+
+    const json = spawnSync(process.execPath, [pkgCli, "next", "--packet", packet, "--json"], { cwd: campaign, encoding: "utf8", env });
+    const parsed = JSON.parse(json.stdout);
+    const commands = JSON.stringify(parsed);
+    assert.match(commands, /"command": ?"npx campaigns-os start /);
+    assert.doesNotMatch(commands, /(?<![\w./-])(?<!npx )campaigns-os (?:start|prepare-build|next|doctor|qa|polish|checkpoint) /);
+
+    // The same next from the checkout keeps the bare, tested form.
+    const checkout = runCli(["next", "--packet", packet]);
+    assert.match(checkout.stdout, /(?<!npx )campaigns-os start --map-id/);
+  } finally {
+    rmSync(installRoot, { recursive: true, force: true });
+    rmSync(campaign, { recursive: true, force: true });
   }
 });

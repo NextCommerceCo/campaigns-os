@@ -131,6 +131,7 @@ import {
   formatStandardizationReportMarkdown,
 } from "./standardization-report.mjs";
 import { singleLineDetail, singleLineField } from "./text-safety.mjs";
+import { applyInvocationPrefix, derivePackagePin, invocationPrefixFor, localInstallStatus, resolveInvocation } from "./install-mode.mjs";
 import {
   campaignRouteRoot,
   isAbsoluteHttpUrl,
@@ -257,6 +258,7 @@ import {
 } from "../campaign-spec/dist/index.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+export { derivePackagePin, localInstallStatus };
 const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
 const CONTEXT_SCHEMA = "campaign-runtime-build-context/v0";
 const REPORT_SCHEMA = "campaign-runtime-assembly-report/v0";
@@ -5850,7 +5852,7 @@ function coverageErrorMessage(page) {
   if (designSource) {
     const fileUrl = optionalString(designSource.file_url);
     if (designSource.type === "figma" && fileUrl) {
-      return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}; run figma-sections-export (npm run handoff -- <slug>) to emit the source-html manifest, then rerun prepare-build.`;
+      return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}; supply the source-html manifest for the page (see docs/design-source-package.md) — figma-sections-export emits it when you have the Figma design — then rerun prepare-build.`;
     }
     if (designSource.type === "ai-generated") {
       const fileUrlHint = fileUrl ? ` (design reference: ${fileUrl})` : "";
@@ -9307,10 +9309,13 @@ function toolingCommand(args) {
 
   if (install.mode === "checkout" && cli.global_binary.status === "not_found") {
     warnings.push("No global campaigns-os binary was found; use `npm run campaigns-os -- ...` from this checkout or `node ./bin/campaigns-os.mjs ...`.");
+  } else if (install.mode === "node_modules" && cli.global_binary.status !== "found") {
+    // A consumer install runs through npm's bin resolution; no PATH ritual.
+    warnings.push(cli.global_binary.status === "found_other_install"
+      ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${install.location}); run commands as \`npx campaigns-os <command>\` from the folder that pins this toolkit so this copy runs.`
+      : `campaigns-os is not on PATH; run commands as \`npx campaigns-os <command>\` from the folder that pins this toolkit (npm resolves node_modules/.bin), or call node ${cli.local_bin} directly.`);
   } else if (install.mode !== "checkout" && install.mode !== "npx_cache" && cli.global_binary.status === "not_found") {
-    warnings.push(cli.bin_dir
-      ? `campaigns-os is not on PATH; run export PATH="${cli.bin_dir}:$PATH" so the printed commands resolve, or call node ${cli.local_bin} directly.`
-      : `campaigns-os is not on PATH; call node ${cli.local_bin} directly.`);
+    warnings.push(`campaigns-os is not on PATH; call node ${cli.local_bin} directly.`);
   } else if (install.mode !== "checkout" && cli.global_binary.status === "found_other_install") {
     // An npx cache is ephemeral: never tell the operator to put its .bin on
     // PATH. The pinned npx form is what makes the inspected copy run.
@@ -9345,174 +9350,16 @@ function toolingCommand(args) {
   };
 }
 
-const PACKAGE_INSTALL_MODE_LABELS = Object.freeze({
-  checkout: "git checkout",
-  npx_cache: "package install (npx cache)",
-  node_modules: "package install (node_modules)",
-  package_directory: "package install",
-});
-
-const PUBLIC_GIT_SOURCE = "github:NextCommerceCo/campaigns-os";
-
-function realpathOrSelf(path) {
-  try {
-    return realpathSync(path);
-  } catch (error) {
-    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return path;
-    throw error;
-  }
-}
-
-// Is `root` the top level of its own git worktree? A package directory can
-// sit INSIDE someone else's repository (a consumer's node_modules, a home
-// directory under dotfiles control), and `git -C root` would happily answer
-// for that outer repository. Only a root that IS the worktree top level is a
-// checkout of this toolkit.
-function isOwnGitCheckout(root) {
-  const inside = runCommand("git", ["-C", root, "rev-parse", "--is-inside-work-tree"]);
-  if (!inside.ok || inside.stdout !== "true") return false;
-  const top = runCommand("git", ["-C", root, "rev-parse", "--show-toplevel"]);
-  if (!top.ok || !top.stdout) return false;
-  return realpathOrSelf(top.stdout) === realpathOrSelf(root);
-}
-
-// Locate the nearest enclosing `node_modules` directory, so the install root
-// beside it can be read for the resolved package pin.
-function enclosingNodeModules(root) {
-  let cursor = root;
-  for (;;) {
-    const parent = dirname(cursor);
-    if (parent === cursor) return null;
-    if (basename(parent) === "node_modules") return parent;
-    cursor = parent;
-  }
-}
-
-function pinFromResolved(resolved, version) {
-  if (typeof resolved !== "string") return null;
-  const match = resolved.match(/#([0-9a-f]{7,40})$/i);
-  if (!match) return null;
-  const commit = match[1].toLowerCase();
-  const source = resolved.match(/github\.com[/:]([^/]+)\/([^/#]+?)(?:\.git)?(?:#|$)/i);
-  return {
-    version: version || null,
-    commit,
-    resolved,
-    spec: source ? `github:${source[1]}/${source[2]}#${commit.slice(0, 12)}` : null,
-  };
-}
-
-// Derive "which commit is this package?" for a non-checkout install. npm
-// records the resolved git URL, sha included, in the install root's hidden
-// lockfile (`node_modules/.package-lock.json`) and in `package-lock.json`;
-// `npm pack` additionally stamps `gitHead` into the packed package.json.
-export function derivePackagePin(root, pkg = {}) {
-  if (typeof pkg.gitHead === "string" && /^[0-9a-f]{7,40}$/i.test(pkg.gitHead)) {
-    return { version: pkg.version || null, commit: pkg.gitHead.toLowerCase(), resolved: null, spec: `${PUBLIC_GIT_SOURCE}#${pkg.gitHead.slice(0, 12)}` };
-  }
-  // A nested dependency (project/node_modules/consumer/node_modules/<pkg>) is
-  // recorded in the PROJECT's lockfile under its full relative path, so walk
-  // every enclosing install root outward, recomputing the key per root.
-  let nodeModules = enclosingNodeModules(root);
-  while (nodeModules) {
-    const installRoot = dirname(nodeModules);
-    const key = relative(installRoot, root).split(sep).join("/");
-    for (const lockPath of [join(nodeModules, ".package-lock.json"), join(installRoot, "package-lock.json")]) {
-      if (!existsSync(lockPath)) continue;
-      let lock;
-      try {
-        lock = JSON.parse(readFileSync(lockPath, "utf8"));
-      } catch (error) {
-        if (error instanceof SyntaxError) continue;
-        throw error;
-      }
-      const entry = lock?.packages?.[key];
-      const pin = pinFromResolved(entry?.resolved, entry?.version || pkg.version);
-      if (pin) return pin;
-    }
-    nodeModules = enclosingNodeModules(installRoot);
-  }
-  return null;
-}
-
-export function localInstallStatus(root, pkg = {}) {
-  if (isOwnGitCheckout(root)) {
-    return {
-      mode: "checkout",
-      mode_label: PACKAGE_INSTALL_MODE_LABELS.checkout,
-      location: root,
-      pinned: null,
-      summary: `Install mode: git checkout at ${root}.`,
-    };
-  }
-  const mode = root.split(sep).includes("_npx")
-    ? "npx_cache"
-    : enclosingNodeModules(root)
-      ? "node_modules"
-      : "package_directory";
-  const pinned = derivePackagePin(root, pkg);
-  const pinText = pinned
-    ? `pinned at ${pinned.version || "unknown version"} @ ${pinned.commit.slice(0, 12)}`
-    : `version ${pkg.version || "unknown"}, pinned commit not derivable`;
-  return {
-    mode,
-    mode_label: PACKAGE_INSTALL_MODE_LABELS[mode],
-    location: root,
-    pinned,
-    summary: `Install mode: ${PACKAGE_INSTALL_MODE_LABELS[mode]}, ${pinText}.`,
-  };
-}
-
 function localCliStatus(pkg, install = { mode: "checkout", pinned: null }) {
-  const binRel = isObject(pkg.bin)
-    ? pkg.bin["campaigns-os"]
-    : typeof pkg.bin === "string"
-      ? pkg.bin
-      : null;
-  const localBin = binRel ? resolve(ROOT, binRel) : null;
-  const globalPath = findExecutableOnPath("campaigns-os");
-  // How the operator should spell a command where they are: the checkout
-  // script from a checkout, the npx form from an npx cache (nothing is on
-  // PATH), and the bare binary from a tools-folder or consumer install, whose
-  // node_modules/.bin is what goes on PATH.
-  const invocationPrefix = install.mode === "checkout"
-    ? "npm run campaigns-os --"
-    : install.mode === "npx_cache" && install.pinned?.spec
-      ? `npx --yes ${install.pinned.spec}`
-      : "campaigns-os";
-  const nodeModules = install.mode === "checkout" ? null : enclosingNodeModules(ROOT);
-  // "found" is not enough: the executable first on PATH may belong to ANOTHER
-  // install of this toolkit, so bare commands would run a different commit
-  // from the one just inspected. Resolve the PATH hit through its shim/symlink
-  // and compare it with this package's own bin.
-  const globalTarget = globalPath ? executableTargetPath(globalPath) : null;
-  const matches = Boolean(globalTarget && localBin && realpathOrSelf(globalTarget) === realpathOrSelf(localBin));
+  const resolved = resolveInvocation(ROOT, pkg, install);
   return {
-    local_bin: localBin,
-    local_bin_exists: Boolean(localBin && existsSync(localBin)),
-    invocation: `${invocationPrefix} <command>`,
-    invocation_prefix: invocationPrefix,
-    bin_dir: nodeModules ? join(nodeModules, ".bin") : null,
-    global_binary: globalPath
-      ? { status: matches ? "found" : "found_other_install", path: globalPath, resolves_to: globalTarget, matches_local_bin: matches }
-      : { status: "not_found", path: null, resolves_to: null, matches_local_bin: false },
+    local_bin: resolved.local_bin,
+    local_bin_exists: resolved.local_bin_exists,
+    invocation: `${resolved.prefix} <command>`,
+    invocation_prefix: resolved.prefix,
+    bin_dir: resolved.bin_dir,
+    global_binary: resolved.global_binary,
   };
-}
-
-// The file a PATH executable ultimately runs: a symlink (node_modules/.bin on
-// POSIX) is followed; an npm cmd-shim is read for the script it execs. Falls
-// back to the executable itself when neither applies.
-function executableTargetPath(executable) {
-  const real = realpathOrSelf(executable);
-  if (real !== executable || process.platform !== "win32") return real;
-  try {
-    const shim = readFileSync(executable, "utf8");
-    const match = shim.match(/"([^"]+\.mjs)"/);
-    return match ? resolve(dirname(executable), match[1]) : real;
-  } catch (error) {
-    if (error?.code === "ENOENT" || error?.code === "EISDIR") return real;
-    throw error;
-  }
 }
 
 function localGitStatus(root) {
@@ -9569,30 +9416,7 @@ function runCommand(command, args) {
   }
 }
 
-function findExecutableOnPath(name) {
-  const pathEnv = process.env.PATH || "";
-  const extensions = process.platform === "win32"
-    ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
-    : [""];
-  for (const dir of pathEnv.split(delimiter).filter(Boolean)) {
-    for (const ext of extensions) {
-      const candidate = join(dir, process.platform === "win32" && !name.toLowerCase().endsWith(ext.toLowerCase()) ? `${name}${ext}` : name);
-      if (isExecutableFile(candidate)) return candidate;
-    }
-  }
-  return null;
-}
 
-function isExecutableFile(candidate) {
-  if (!existsSync(candidate)) return false;
-  if (process.platform === "win32") return true;
-  try {
-    accessSync(candidate, fsConstants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // A retired record only ever removes OUR stale copy: the destination SKILL.md
 // must carry the retired id as its frontmatter name AND a description starting
@@ -9784,11 +9608,19 @@ function addIssue(collection, code, message, detail = null) {
   collection.push(detail ? { code, message, detail } : { code, message });
 }
 
+// Everything printed for an operator or agent to copy is spelled for the
+// install it came from (see install-mode.mjs); internal bookkeeping keeps the
+// canonical bare `campaigns-os <command>` form.
+function forPrinting(result) {
+  return applyInvocationPrefix(result, invocationPrefixFor(ROOT), knownCommands());
+}
+
 function writeResult(result, args, failureCode) {
+  const printed = forPrinting(result);
   if (args.json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(printed, null, 2));
   } else {
-    printResult(result);
+    printResult(printed);
   }
   if (failureCode) process.exitCode = failureCode;
 }
@@ -11554,10 +11386,11 @@ export function doctorRequiredActionLines(result) {
 
 function printNextTinyPrompt(result, args) {
   if (args.json) return;
-  for (const line of nextTinyPromptLines(result)) console.log(line);
+  for (const line of nextTinyPromptLines(forPrinting(result))) console.log(line);
 }
 
-function printPrepareResult(result, args) {
+function printPrepareResult(rawResult, args) {
+  const result = forPrinting(rawResult);
   if (args.json) {
     console.log(JSON.stringify(result, null, 2));
     if (result.doctor && !result.doctor.ok) process.exitCode = 2;

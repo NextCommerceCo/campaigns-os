@@ -21,7 +21,10 @@ The toolkit is contract-backed: starter templates describe which parts are reusa
 
 ## Quick Start
 
-You do not need to clone this repository to use it. Requirements: Node
+You do not need to clone this repository to use it. The toolkit is pinned as a
+devDependency of the campaign folder (a page-kit project) and runs through
+`npx campaigns-os …` from that folder — the pin is committed in `package.json`,
+so CI and the deploy host install the same commit. Requirements: Node
 `>=20.19.0` and npm 10 or 11 (Node 22 ships npm 10). Three steps, in this
 order:
 
@@ -30,83 +33,79 @@ order:
    `contracts/release-ledger.json` and `CHANGELOG.md` on GitHub at one commit,
    and keep that commit's sha. Orientation is a read of declarative data; it
    never executes toolkit code.
-2. **Install the toolkit and its agent skills** from that same commit.
+2. **Pin the toolkit and install its agent skills** from that same commit.
 3. **Start a build** from that same commit.
 
 ```bash
-PIN="<sha>"
-TOOLKIT="$HOME/campaigns-os-toolkit/$PIN"
-mkdir -p "$TOOLKIT"
-npm install --prefix "$TOOLKIT" "github:NextCommerceCo/campaigns-os#$PIN"
-export PATH="$TOOLKIT/node_modules/.bin:$PATH"
-campaigns-os tooling status
-campaigns-os install-skills --platform all
+mkdir "<route>" && cd "<route>"
+npm init -y && npm i next-campaign-page-kit
+npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
+npm i -D "github:NextCommerceCo/campaigns-os#<sha>"
+npx campaigns-os tooling status
+npx campaigns-os install-skills --platform claude
+mkdir -p source
 ```
 
-Repeat the `PIN`, `TOOLKIT`, and `PATH` lines in each new shell, or add them
-to your shell profile. `PIN` is the commit you oriented on, so the code that
-runs is the code whose contracts you read; each pin gets its own folder, so
-two pins never overwrite each other. npm records the resolved commit in that
-folder's `package-lock.json`, which is how `tooling status` can print
-`Install mode: package install (node_modules), pinned at <version> @ <sha>`.
-On a fresh profile that first `tooling status` exits 2 with `ATTENTION_REQUIRED`
-and one action, the `install-skills` line — it is telling you the skills are
-not installed yet, not that the install failed; run it again after
-`install-skills` for `READY`. The install runs the package's own build step
-(about 10 s), and the `export PATH` line is what makes the bare `campaigns-os
-…` commands that `next` prints resolve. The QA browser is a one-time `campaigns-os qa install-browser`, which uses
-the Playwright bundled with this package. A pin older than this command shows
-`playwright install chromium` instead; that is equivalent only from the toolkit
-folder's PATH, where `playwright` resolves to the bundled copy. Restart your agent session after
-`install-skills`.
+For an existing page-kit campaign, skip the first three lines and `cd` into it
+(its `package.json` already declares `next-campaign-page-kit`). `#<sha>` is
+the commit you oriented on, so the code that runs is the code whose contracts
+you read; npm records the resolved commit in the folder's `package.json` and
+`package-lock.json`, which is how `tooling status` can print `Install mode:
+package install (node_modules), pinned at <version> @ <sha>`. The install runs
+the package's own build step (about 7 s). On a fresh profile that first
+`tooling status` exits 2 with `ATTENTION_REQUIRED` and one action, the
+`install-skills` line — it is telling you the skills are not installed yet,
+not that the install failed; run it again after `install-skills` for `READY`.
+`install-skills` writes `~/.claude/skills` (`--platform codex` writes
+`~/.codex/skills`), replacing same-name folders; restart the agent after.
+Prepared page HTML goes in `./source`, which must exist even when every page is
+template stock. To move to a newer commit, re-orient on it and run `npm i -D
+"github:NextCommerceCo/campaigns-os#<new-sha>"` again.
 
 > **Heads up — `start` turns on run telemetry, and remit is ON by default.**
 > The first `start` opens a run session in the target folder and, unless you
 > opt out, the session's Run Record is remitted to the Campaigns telemetry
 > endpoint with the packet's Campaigns API key. Opt out with
-> `campaigns-os telemetry off`, `CAMPAIGNS_OS_TELEMETRY=off`, or `--no-remit`
-> on the remitting command; capture stays local either way. The full note —
-> endpoint, payload, what `off` changes, and `--no-run-session` — is in
-> [docs/quickstart.md](docs/quickstart.md) above the first `start`; the
+> `npx campaigns-os telemetry off`, `CAMPAIGNS_OS_TELEMETRY=off`, or
+> `--no-remit` on the remitting command; capture stays local either way. The
+> full note — endpoint, payload, what `off` changes, and `--no-run-session` —
+> is in [docs/quickstart.md](docs/quickstart.md) above the first `start`; the
 > contract is [Run Telemetry](docs/workflow-findings-sidecar.md).
 
 ```bash
-# Start from a saved Campaign Map Builder map (or --spec <campaignspec.json> for a local export).
-mkdir -p <campaign-folder>
-campaigns-os start \
-  --map-id <your-map-id> \
-  --target <campaign-folder> \
-  --source <your-page-html> \
-  --template-family olympus
+npx campaigns-os start --map-id <map-id> --target . --source ./source --template-family <family>
+npx campaigns-os next --packet ./campaign-runtime.build.json --json
 ```
 
-`--source` is always required: the folder of prepared HTML/CSS/assets for the
-pages you are building, with a source manifest that carries desktop and mobile
-screenshot proof for each designed page
+`--map-id <id>` starts from a map saved in Campaign Map Builder (add
+`--proxy-base <origin>` when the map was saved on a non-production map store);
+`--spec <campaignspec.json>` starts from a local export instead. `--source` is
+always required: the folder of prepared HTML/CSS/assets for the pages you are
+building, with a source manifest that carries desktop and mobile screenshot
+proof for each designed page
 ([Design Source Package](docs/design-source-package.md)). Pages that use the
 starter family's own design are declared, not omitted — see the template-stock
-note below. `--target` must be a directory; with `--spec` a missing one is
-refused (`Target repo is not a directory`), so the `mkdir -p` above is not
-optional there.
+note below.
 
 `start` ends by running doctor, and doctor's first verdict on a fresh target is
 normally `BLOCKED` with a list of what to supply — missing screenshot proof,
 demo values to replace, a scaffold to run. That list is the intake checklist,
-not a failed install. Everything after `start` is agent-driven: `campaigns-os
-next --packet <campaign-folder>/campaign-runtime.build.json` names the skill
-and the exact commands for the next stage, which is why `install-skills` comes
-first.
+not a failed install. Everything after `start` is agent-driven: after `start`
+and after every stage, run `next` and do what it prints — it names the skill
+and the exact commands for the next stage, already spelled `npx campaigns-os
+…` for this install, which is why `install-skills` comes first. The browser
+for polish capture and QA is a one-time `npx campaigns-os qa install-browser`
+(`npx playwright install chromium` does the same thing and is what a pin older
+than that command shows).
 
 ### Other ways to run it
 
-The toolkit folder above is the primary path. For one command without
-installing anything, `npx --yes --package=github:NextCommerceCo/campaigns-os#<sha>
-campaigns-os <command> …` runs the same pinned commit (the commands `next`
-prints then need that prefix); to change the toolkit, use a checkout —
-[docs/quickstart.md](docs/quickstart.md) covers both, with the npm 10/11
-caveats. Every `npm run campaigns-os -- <command> …` example in this
-repository is the checkout form; from the toolkit folder the same command is
-`campaigns-os <command> …` with identical arguments.
+The pinned devDependency above is the primary path. To change the toolkit, use
+a checkout ([docs/quickstart.md](docs/quickstart.md)): every `npm run
+campaigns-os -- <command> …` example in this repository is that checkout form,
+and from a campaign folder the same command is `npx campaigns-os <command> …`
+with identical arguments (`npm run qa:install-browser` is the checkout's
+`qa install-browser`).
 
 From a checkout, the same first run uses the bundled example inputs:
 
