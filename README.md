@@ -54,9 +54,10 @@ and one action, the `install-skills` line — it is telling you the skills are
 not installed yet, not that the install failed; run it again after
 `install-skills` for `READY`. The install runs the package's own build step
 (about 10 s), and the `export PATH` line is what makes the bare `campaigns-os
-…` commands that `next` prints resolve. The QA browser is a one-time `campaigns-os qa install-browser`; `playwright
-install chromium` (bare, on that PATH) does the same thing and is what a pin
-older than this command shows. Restart your agent session after
+…` commands that `next` prints resolve. The QA browser is a one-time `campaigns-os qa install-browser`, which uses
+the Playwright bundled with this package. A pin older than this command shows
+`playwright install chromium` instead; that is equivalent only from the toolkit
+folder's PATH, where `playwright` resolves to the bundled copy. Restart your agent session after
 `install-skills`.
 
 > **Heads up — `start` turns on run telemetry, and remit is ON by default.**

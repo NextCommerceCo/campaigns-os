@@ -45,8 +45,10 @@ on either major — the nested build install inherits global mode and fails —
 which is why the toolkit lives in a folder on PATH.
 
 The QA browser is a one-time `campaigns-os qa install-browser` from any
-install mode; `playwright install chromium` (bare, on that PATH) does the same
-thing and is what a pin older than that command shows.
+install mode; it uses the Playwright bundled with this package. A pin older than
+that command shows `playwright install chromium` instead, which is equivalent
+only from the toolkit folder's PATH, where `playwright` resolves to the bundled
+copy.
 
 `tooling status` is the preflight for "am I current?". It names the install
 mode and checks package identity, CLI entrypoint, and installed Campaigns OS

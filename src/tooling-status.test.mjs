@@ -475,3 +475,37 @@ test("tooling status warns when the campaigns-os on PATH is a different install 
     for (const dir of [installRoot, other, target]) rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("tooling status in an npx cache names the pinned npx form when another campaigns-os is on PATH", () => {
+  // npx lays the package out under <cache>/_npx/<hash>/node_modules; there is
+  // no .bin to put on PATH, so the fix is the pinned npx invocation, never
+  // "node <bin>" and never a PATH export.
+  const cache = mkdtempSync(join(tmpdir(), "campaigns-os-npx-other-"));
+  const installRoot = join(cache, "_npx", "abc123");
+  mkdirSync(installRoot, { recursive: true });
+  const other = mkdtempSync(join(tmpdir(), "campaigns-os-other-bin-"));
+  const target = mkdtempSync(join(tmpdir(), "campaigns-os-npx-other-skills-"));
+  try {
+    const pkgRoot = stageRealPackageInstall(installRoot);
+    installCurrentSkills(target);
+    const foreignBin = join(other, "campaigns-os");
+    writeFileSync(foreignBin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const result = spawnSync(process.execPath, [join(pkgRoot, "bin", "campaigns-os.mjs"), "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${other}:/usr/bin:/bin` },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const json = JSON.parse(result.stdout);
+    assert.equal(json.install.mode, "npx_cache");
+    assert.equal(json.cli.global_binary.status, "found_other_install");
+    const warning = json.warnings.find((line) => line.includes("is a different install from the one inspected here"));
+    assert.ok(warning, JSON.stringify(json.warnings));
+    assert.ok(warning.includes(`${json.cli.invocation_prefix} <command>`), warning);
+    assert.ok(warning.includes(json.install.location), warning);
+    assert.equal(warning.includes("call node "), false, warning);
+    assert.equal(warning.includes("export PATH"), false, warning);
+  } finally {
+    for (const dir of [cache, other, target]) rmSync(dir, { recursive: true, force: true });
+  }
+});

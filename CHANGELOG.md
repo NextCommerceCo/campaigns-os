@@ -76,7 +76,8 @@ Notable supported-surface changes are recorded here.
   to the install it is inspecting: `cli.global_binary` gains `resolves_to` and
   `matches_local_bin`, its `status` is `found_other_install` when another
   install shadows this one, and a package-mode warning names both paths and
-  the `export PATH=…` fix. `derivePackagePin` walks every enclosing install
+  the `export PATH=…` fix (from an npx cache, whose `.bin` is ephemeral, the
+  fix named is the pinned `npx --yes <spec> <command>` form). `derivePackagePin` walks every enclosing install
   root, so a nested dependency recorded only in the project lockfile still
   reports its pin. `qa install-browser --json` routes Playwright's download
   progress to stderr so stdout is the result document alone; without `--json`

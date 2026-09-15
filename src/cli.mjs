@@ -9312,9 +9312,13 @@ function toolingCommand(args) {
       ? `campaigns-os is not on PATH; run export PATH="${cli.bin_dir}:$PATH" so the printed commands resolve, or call node ${cli.local_bin} directly.`
       : `campaigns-os is not on PATH; call node ${cli.local_bin} directly.`);
   } else if (install.mode !== "checkout" && cli.global_binary.status === "found_other_install") {
-    warnings.push(cli.bin_dir
-      ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${cli.local_bin}); bare commands would run that other copy. Run export PATH="${cli.bin_dir}:$PATH" to put this install first.`
-      : `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${cli.local_bin}); call node ${cli.local_bin} directly.`);
+    // An npx cache is ephemeral: never tell the operator to put its .bin on
+    // PATH. The pinned npx form is what makes the inspected copy run.
+    warnings.push(install.mode === "npx_cache"
+      ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${install.location}); bare commands would run that other copy. Use \`${cli.invocation_prefix} <command>\` so the pinned copy runs.`
+      : cli.bin_dir
+        ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${cli.local_bin}); bare commands would run that other copy. Run export PATH="${cli.bin_dir}:$PATH" to put this install first.`
+        : `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${cli.local_bin}); call node ${cli.local_bin} directly.`);
   }
 
   if (git.status === "ok" && git.dirty) {
