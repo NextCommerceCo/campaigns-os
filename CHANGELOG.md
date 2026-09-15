@@ -28,10 +28,11 @@ Notable supported-surface changes are recorded here.
   `cli.invocation` and the new `cli.invocation_prefix` name the form that runs
   this copy where the operator is: `npm run campaigns-os -- <command>` from a
   checkout (unchanged), `npx --yes github:NextCommerceCo/campaigns-os#<sha12>
-  <command>` from an npx cache, `npx campaigns-os <command>` from a consumer
-  `node_modules` install, and bare `campaigns-os <command>` only when this
-  install's own `node_modules/.bin` (the new `cli.bin_dir`) is what PATH
-  resolves first. `cli.global_binary` gains `resolves_to` and
+  <command>` from an npx cache, and `npx campaigns-os <command>` from a
+  consumer `node_modules` install — always, since `npx` itself puts
+  `node_modules/.bin` (the new `cli.bin_dir`) on PATH for the duration of a
+  command, so a match seen there says nothing about the operator's shell.
+  `cli.global_binary` gains `resolves_to` and
   `matches_local_bin`; its `status` is `found_other_install` when the
   `campaigns-os` first on PATH is a different install, and the consumer-mode
   warning for that case, or for no binary on PATH, points back to `npx
@@ -48,8 +49,8 @@ Notable supported-surface changes are recorded here.
   prompt), doctor's required actions, checkpoint/theme/polish results and the
   prepare-build summary rewrite the canonical bare `campaigns-os <command>`
   into `npx campaigns-os <command>` from a consumer install, `npx --yes
-  <spec> <command>` from an npx cache, and leave it bare from a checkout or
-  when this install's own `.bin` is first on PATH. Skill names
+  <spec> <command>` from an npx cache, and leave it bare from a checkout.
+  Skill names
   (`next-campaigns-os-setup`), file names (`campaigns-os.mjs`), prose, and
   already-prefixed forms are untouched; internal bookkeeping (deviation
   tracking, gate registries) keeps the canonical spelling. The browser-missing

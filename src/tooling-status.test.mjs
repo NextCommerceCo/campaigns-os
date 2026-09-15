@@ -473,8 +473,11 @@ test("tooling status warns when the campaigns-os on PATH is a different install 
     const matched = JSON.parse(match.stdout);
     assert.equal(matched.cli.global_binary.status, "found");
     assert.equal(matched.cli.global_binary.matches_local_bin, true);
-    // This install's own .bin resolves first, so the bare binary is the right spelling.
-    assert.equal(matched.cli.invocation, "campaigns-os <command>");
+    // Even with this install's own .bin first on PATH (which is exactly what
+    // `npx` arranges for the duration of a command), a consumer install is
+    // spelled through npx: a bare command pasted into the operator's shell
+    // would not resolve.
+    assert.equal(matched.cli.invocation, "npx campaigns-os <command>");
     assert.equal(matched.warnings.some((warning) => /different install|not on PATH/.test(warning)), false);
   } finally {
     for (const dir of [installRoot, other, target]) rmSync(dir, { recursive: true, force: true });

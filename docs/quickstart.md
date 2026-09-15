@@ -55,9 +55,8 @@ skills:
   (node_modules), pinned at <version> @ <sha>`; git freshness is
   `not_applicable` because the pinned commit is the freshness answer, and
   there is no npm dist-tag to compare against. Commands are spelled `npx
-  campaigns-os <command>` (bare `campaigns-os` only when this install's own
-  `node_modules/.bin` is what PATH resolves first); if a different install of
-  the toolkit is on PATH, it says so and points you back to `npx`.
+  campaigns-os <command>`; if a different install of the toolkit is on PATH,
+  it says so and points you back to `npx`.
 - From a git checkout it reports `Install mode: git checkout at <path>` plus
   branch, upstream, ahead/behind, and whether the tree is dirty.
 
