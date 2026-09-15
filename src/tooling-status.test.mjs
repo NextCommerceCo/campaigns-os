@@ -1,20 +1,24 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  cpSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import * as cliModule from "./cli.mjs";
+import * as cliInstallMode from "./install-mode.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -196,5 +200,463 @@ test("a removable retired Campaigns OS skill remains actionable", () => {
     assert.deepEqual(snapshotTree(target), before, "dry-run retirement must leave the target intact");
   } finally {
     rmSync(target, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Install mode: a package install (npx cache, a consumer's node_modules) is a
+// supported way to run the toolkit, not a broken checkout. `tooling status`
+// must name it, derive the pinned commit npm recorded, and never report an
+// enclosing repository that is not this toolkit's as the toolkit's own git
+// state.
+// ---------------------------------------------------------------------------
+
+const PIN_SHA = "236d7fc454c877e3c07337237ee9e19303c5cc15";
+
+function writeFakePackageInstall(installRoot, { lockfile = "hidden", resolved, gitHead } = {}) {
+  const pkgRoot = join(installRoot, "node_modules", "@nextcommerce", "campaigns-os");
+  mkdirSync(pkgRoot, { recursive: true });
+  const pkg = { name: "@nextcommerce/campaigns-os", version: "0.1.0-alpha.0" };
+  if (gitHead) pkg.gitHead = gitHead;
+  writeFileSync(join(pkgRoot, "package.json"), JSON.stringify(pkg));
+  const lock = {
+    name: "npx",
+    lockfileVersion: 3,
+    packages: {
+      "node_modules/@nextcommerce/campaigns-os": {
+        version: "0.1.0-alpha.0",
+        ...(resolved ? { resolved } : {}),
+      },
+    },
+  };
+  if (lockfile === "hidden") {
+    writeFileSync(join(installRoot, "node_modules", ".package-lock.json"), JSON.stringify(lock));
+  } else if (lockfile === "root") {
+    writeFileSync(join(installRoot, "package-lock.json"), JSON.stringify(lock));
+  }
+  return pkgRoot;
+}
+
+test("derivePackagePin reads the resolved git sha npm recorded for a package install", () => {
+  const installRoot = mkdtempSync(join(tmpdir(), "campaigns-os-pin-"));
+  try {
+    const pkgRoot = writeFakePackageInstall(installRoot, {
+      resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+    });
+    const pin = cliModule.derivePackagePin(pkgRoot, JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")));
+    assert.equal(pin.commit, PIN_SHA);
+    assert.equal(pin.version, "0.1.0-alpha.0");
+    assert.equal(pin.spec, `github:NextCommerceCo/campaigns-os#${PIN_SHA.slice(0, 12)}`);
+  } finally {
+    rmSync(installRoot, { recursive: true, force: true });
+  }
+});
+
+test("derivePackagePin falls back to package-lock.json, then gitHead, and reports null when nothing is recorded", () => {
+  const fromRootLock = mkdtempSync(join(tmpdir(), "campaigns-os-pin-root-"));
+  const fromGitHead = mkdtempSync(join(tmpdir(), "campaigns-os-pin-githead-"));
+  const nothing = mkdtempSync(join(tmpdir(), "campaigns-os-pin-none-"));
+  try {
+    const rootLockPkg = writeFakePackageInstall(fromRootLock, {
+      lockfile: "root",
+      resolved: `git+https://github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+    });
+    assert.equal(cliModule.derivePackagePin(rootLockPkg, {}).commit, PIN_SHA);
+
+    const gitHeadPkg = writeFakePackageInstall(fromGitHead, { lockfile: "none", gitHead: PIN_SHA });
+    const gitHeadPin = cliModule.derivePackagePin(gitHeadPkg, JSON.parse(readFileSync(join(gitHeadPkg, "package.json"), "utf8")));
+    assert.equal(gitHeadPin.commit, PIN_SHA);
+    assert.equal(gitHeadPin.spec, `github:NextCommerceCo/campaigns-os#${PIN_SHA.slice(0, 12)}`);
+
+    // A registry-shaped resolved URL carries no commit: honest null, not a guess.
+    const nothingPkg = writeFakePackageInstall(nothing, {
+      resolved: "https://registry.npmjs.org/@nextcommerce/campaigns-os/-/campaigns-os-0.1.0-alpha.0.tgz",
+    });
+    assert.equal(cliModule.derivePackagePin(nothingPkg, {}), null);
+  } finally {
+    for (const dir of [fromRootLock, fromGitHead, nothing]) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("localInstallStatus classifies an npx cache, a consumer node_modules, and this checkout", () => {
+  const npxRoot = mkdtempSync(join(tmpdir(), "campaigns-os-mode-"));
+  try {
+    // npx lays the package out under <cache>/_npx/<hash>/node_modules/.
+    const npxInstall = join(npxRoot, "_npx", "0123abcd0123abcd");
+    const npxPkg = writeFakePackageInstall(npxInstall, {
+      resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+    });
+    const npx = cliModule.localInstallStatus(npxPkg, { version: "0.1.0-alpha.0" });
+    assert.equal(npx.mode, "npx_cache");
+    assert.equal(npx.pinned.commit, PIN_SHA);
+    assert.match(npx.summary, /package install \(npx cache\), pinned at 0\.1\.0-alpha\.0 @ 236d7fc454c8/);
+
+    const consumerPkg = writeFakePackageInstall(join(npxRoot, "consumer"), { lockfile: "none" });
+    const consumer = cliModule.localInstallStatus(consumerPkg, { version: "0.1.0-alpha.0" });
+    assert.equal(consumer.mode, "node_modules");
+    assert.equal(consumer.pinned, null);
+    assert.match(consumer.summary, /pinned commit not derivable/);
+
+    const checkout = cliModule.localInstallStatus(ROOT, { version: "0.1.0-alpha.0" });
+    assert.equal(checkout.mode, "checkout");
+    assert.equal(checkout.pinned, null);
+  } finally {
+    rmSync(npxRoot, { recursive: true, force: true });
+  }
+});
+
+test("a package directory inside someone else's git repository is a package install, not a checkout", () => {
+  const outer = mkdtempSync(join(tmpdir(), "campaigns-os-outer-repo-"));
+  try {
+    // The enclosing repository (a consumer project, a dotfiles-managed home)
+    // is not this toolkit's checkout; `git -C <pkg>` would answer for it.
+    const init = spawnSync("git", ["-C", outer, "init", "-q"], { encoding: "utf8" });
+    assert.equal(init.status, 0, init.stderr);
+    const pkgRoot = writeFakePackageInstall(outer, {
+      resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+    });
+    const status = cliModule.localInstallStatus(pkgRoot, { version: "0.1.0-alpha.0" });
+    assert.equal(status.mode, "node_modules");
+    assert.equal(status.pinned.commit, PIN_SHA);
+  } finally {
+    rmSync(outer, { recursive: true, force: true });
+  }
+});
+
+// Lay the real package out the way npm does (`<install>/node_modules/@nextcommerce/campaigns-os`)
+// with its dependencies reachable, so the spawned CLI runs in package mode.
+function stageRealPackageInstall(installRoot) {
+  const pkgRoot = join(installRoot, "node_modules", "@nextcommerce", "campaigns-os");
+  mkdirSync(pkgRoot, { recursive: true });
+  for (const entry of ["agents", "bin", "src", "campaign-spec", "contracts", "schemas", "skills", "skills.json", "package.json"]) {
+    cpSync(join(ROOT, entry), join(pkgRoot, entry), { recursive: true, dereference: true });
+  }
+  symlinkSync(join(ROOT, "node_modules"), join(pkgRoot, "node_modules"), "dir");
+  writeFileSync(join(installRoot, "node_modules", ".package-lock.json"), JSON.stringify({
+    name: "npx",
+    lockfileVersion: 3,
+    packages: {
+      "node_modules/@nextcommerce/campaigns-os": {
+        version: "0.1.0-alpha.0",
+        resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+      },
+    },
+  }));
+  return pkgRoot;
+}
+
+test("tooling status from a package install is ready, names the pin, and gives package-mode commands", () => {
+  // realpath: node resolves the main module through symlinks (macOS /var -> /private/var),
+  // and the reported bin_dir follows that resolved root.
+  const installRoot = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-pkg-e2e-")));
+  const target = mkdtempSync(join(tmpdir(), "campaigns-os-pkg-e2e-skills-"));
+  try {
+    const pkgRoot = stageRealPackageInstall(installRoot);
+    const pkgCli = join(pkgRoot, "bin", "campaigns-os.mjs");
+    installCurrentSkills(target);
+
+    // The leading `campaigns-os` token is what `npx --yes <spec> campaigns-os
+    // tooling status` hands the bin; it is the program name, not a command.
+    const run = spawnSync(process.execPath, [pkgCli, "campaigns-os", "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: "/usr/bin:/bin" },
+    });
+    assert.equal(run.status, 0, run.stderr);
+    const json = JSON.parse(run.stdout);
+    assert.equal(json.ok, true);
+    assert.equal(json.status, "ready");
+    assert.equal(json.install.mode, "node_modules");
+    assert.equal(json.install.pinned.commit, PIN_SHA);
+    assert.equal(json.git.status, "not_applicable");
+    assert.equal(json.git.head, PIN_SHA);
+    assert.equal(json.package.registry.status, "not_applicable_package_install");
+    // A consumer install (the toolkit pinned as a devDependency) runs through
+    // npm's bin resolution; nothing of this install is on PATH here.
+    assert.equal(json.cli.invocation, "npx campaigns-os <command>");
+    assert.equal(json.cli.bin_dir, join(installRoot, "node_modules", ".bin"));
+    assert.ok(json.ready.some((line) => line.includes("package install (node_modules), pinned at 0.1.0-alpha.0 @ 236d7fc454c8")));
+    // No checkout-only noise: no "Git freshness unavailable", no "use npm run campaigns-os".
+    assert.equal(json.warnings.some((warning) => /Git freshness unavailable|npm run campaigns-os/.test(warning)), false);
+    // PATH was scrubbed above, so the one useful warning is the npx hint — no PATH ritual.
+    assert.ok(json.warnings.some((warning) => warning.includes("run commands as `npx campaigns-os <command>`")));
+    assert.equal(json.warnings.some((warning) => warning.includes("export PATH")), false);
+    assert.deepEqual(json.actions, []);
+
+    // A stale skill still surfaces, and the repair command is the package-mode one.
+    writeFileSync(join(target, "next-campaigns-build", "SKILL.md"), "stale bundled skill\n");
+    const stale = spawnSync(process.execPath, [pkgCli, "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+    });
+    assert.equal(stale.status, 2);
+    const staleJson = JSON.parse(stale.stdout);
+    assert.ok(staleJson.actions.some((action) =>
+      action.startsWith("Refresh installed skills: npx campaigns-os install-skills --target")));
+
+    const human = spawnSync(process.execPath, [pkgCli, "tooling", "status", "--target", target], {
+      cwd: installRoot,
+      encoding: "utf8",
+    });
+    assert.match(human.stdout, /Install mode: package install \(node_modules\), pinned at 0\.1\.0-alpha\.0 @ 236d7fc454c8\./);
+  } finally {
+    rmSync(installRoot, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("a leading campaigns-os token is the program name for every command", () => {
+  const withToken = runCli(["campaigns-os", "install-skills", "--target", join(tmpdir(), "campaigns-os-never-written"), "--dry-run", "--json"]);
+  assert.equal(withToken.status, 0, withToken.stderr);
+  assert.equal(withToken.json.status, "dry_run");
+  const help = runCli(["campaigns-os"]);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /Usage:/);
+});
+
+test("derivePackagePin finds a nested dependency's pin in the project lockfile", () => {
+  const project = mkdtempSync(join(tmpdir(), "campaigns-os-pin-nested-"));
+  try {
+    const nested = join(project, "node_modules", "consumer", "node_modules", "@nextcommerce", "campaigns-os");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, "package.json"), JSON.stringify({ name: "@nextcommerce/campaigns-os", version: "0.1.0-alpha.0" }));
+    writeFileSync(join(project, "package-lock.json"), JSON.stringify({
+      lockfileVersion: 3,
+      packages: {
+        "node_modules/consumer": { version: "1.0.0" },
+        "node_modules/consumer/node_modules/@nextcommerce/campaigns-os": {
+          version: "0.1.0-alpha.0",
+          resolved: `git+https://github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+        },
+      },
+    }));
+    assert.equal(cliModule.derivePackagePin(nested, {})?.commit, PIN_SHA);
+    assert.equal(cliModule.localInstallStatus(nested, {}).pinned.commit, PIN_SHA);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("tooling status warns when the campaigns-os on PATH is a different install from the one inspected", () => {
+  const installRoot = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-pkg-other-")));
+  const other = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-other-bin-")));
+  const target = mkdtempSync(join(tmpdir(), "campaigns-os-pkg-other-skills-"));
+  try {
+    const pkgRoot = stageRealPackageInstall(installRoot);
+    installCurrentSkills(target);
+    // Another install's executable, earlier on PATH.
+    const foreignBin = join(other, "campaigns-os");
+    writeFileSync(foreignBin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+    const mismatch = spawnSync(process.execPath, [join(pkgRoot, "bin", "campaigns-os.mjs"), "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${other}:/usr/bin:/bin` },
+    });
+    assert.equal(mismatch.status, 0, mismatch.stderr);
+    const json = JSON.parse(mismatch.stdout);
+    assert.equal(json.cli.global_binary.status, "found_other_install");
+    assert.equal(json.cli.global_binary.path, foreignBin);
+    assert.ok(json.warnings.some((warning) =>
+      warning.includes("is a different install from the one inspected here")
+      && warning.includes("run commands as `npx campaigns-os <command>`")));
+    assert.equal(json.cli.invocation, "npx campaigns-os <command>");
+
+    // The same install's own .bin first on PATH: found, no warning.
+    const binDir = join(installRoot, "node_modules", ".bin");
+    mkdirSync(binDir, { recursive: true });
+    symlinkSync(join(pkgRoot, "bin", "campaigns-os.mjs"), join(binDir, "campaigns-os"));
+    const match = spawnSync(process.execPath, [join(pkgRoot, "bin", "campaigns-os.mjs"), "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${binDir}:${other}:/usr/bin:/bin` },
+    });
+    const matched = JSON.parse(match.stdout);
+    assert.equal(matched.cli.global_binary.status, "found");
+    assert.equal(matched.cli.global_binary.matches_local_bin, true);
+    // Even with this install's own .bin first on PATH (which is exactly what
+    // `npx` arranges for the duration of a command), a consumer install is
+    // spelled through npx: a bare command pasted into the operator's shell
+    // would not resolve.
+    assert.equal(matched.cli.invocation, "npx campaigns-os <command>");
+    assert.equal(matched.warnings.some((warning) => /different install|not on PATH/.test(warning)), false);
+  } finally {
+    for (const dir of [installRoot, other, target]) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("tooling status in an npx cache names the pinned npx form when another campaigns-os is on PATH", () => {
+  // npx lays the package out under <cache>/_npx/<hash>/node_modules; there is
+  // no .bin to put on PATH, so the fix is the pinned npx invocation, never
+  // "node <bin>" and never a PATH export.
+  const cache = mkdtempSync(join(tmpdir(), "campaigns-os-npx-other-"));
+  const installRoot = join(cache, "_npx", "abc123def4567890");
+  mkdirSync(installRoot, { recursive: true });
+  const other = mkdtempSync(join(tmpdir(), "campaigns-os-other-bin-"));
+  const target = mkdtempSync(join(tmpdir(), "campaigns-os-npx-other-skills-"));
+  try {
+    const pkgRoot = stageRealPackageInstall(installRoot);
+    installCurrentSkills(target);
+    const foreignBin = join(other, "campaigns-os");
+    writeFileSync(foreignBin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const result = spawnSync(process.execPath, [join(pkgRoot, "bin", "campaigns-os.mjs"), "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${other}:/usr/bin:/bin` },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const json = JSON.parse(result.stdout);
+    assert.equal(json.install.mode, "npx_cache");
+    assert.equal(json.cli.global_binary.status, "found_other_install");
+    const warning = json.warnings.find((line) => line.includes("is a different install from the one inspected here"));
+    assert.ok(warning, JSON.stringify(json.warnings));
+    assert.ok(warning.includes(`${json.cli.invocation_prefix} <command>`), warning);
+    assert.ok(warning.includes(json.install.location), warning);
+    assert.equal(warning.includes("call node "), false, warning);
+    assert.equal(warning.includes("export PATH"), false, warning);
+  } finally {
+    for (const dir of [cache, other, target]) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Printed commands are spelled for the install they come from. A consumer
+// install prints `npx campaigns-os …`; the checkout keeps the bare form.
+test("next prints its commands with the consumer install's npx prefix", () => {
+  const installRoot = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-pkg-next-")));
+  // The campaign folder name deliberately contains a bare command spelling:
+  // a path, a quoted argument or a data value is never rewritten.
+  const campaign = mkdtempSync(join(tmpdir(), "campaigns-os build assets-"));
+  try {
+    const pkgRoot = stageRealPackageInstall(installRoot);
+    const pkgCli = join(pkgRoot, "bin", "campaigns-os.mjs");
+    const env = { ...process.env, PATH: "/usr/bin:/bin" };
+    const start = spawnSync(process.execPath, [
+      pkgCli, "start",
+      "--spec", join(ROOT, "examples", "campaignspec.v42.basic.json"),
+      "--source", join(ROOT, "examples", "source-html"),
+      "--target", campaign, "--template-family", "olympus", "--no-run-session",
+    ], { cwd: campaign, encoding: "utf8", env });
+    assert.equal(start.status, 2, start.stderr);
+    const packet = join(campaign, "campaign-runtime.build.json");
+
+    const text = spawnSync(process.execPath, [pkgCli, "next", "--packet", packet], { cwd: campaign, encoding: "utf8", env });
+    // The example inputs block at intake, so next prints the prepare-build
+    // recovery: its commands carry the consumer prefix, none stay bare.
+    assert.match(text.stdout, /npx campaigns-os (?:start|prepare-build)/);
+    assert.doesNotMatch(text.stdout, /(?<![\w./-])(?<!npx )campaigns-os (?:start|prepare-build|next|doctor) /);
+
+    const json = spawnSync(process.execPath, [pkgCli, "next", "--packet", packet, "--json"], { cwd: campaign, encoding: "utf8", env });
+    const parsed = JSON.parse(json.stdout);
+    const commands = JSON.stringify(parsed);
+    assert.match(commands, /"command": ?"npx campaigns-os start /);
+    // The rerun line is complete: every flag start requires, from the packet's
+    // recorded inputs, spelled relative to the packet like the packet does.
+    const rerun = parsed.next_actions.find((action) => action.id === "rerun_prepare_build");
+    assert.ok(rerun, JSON.stringify(parsed.next_actions));
+    // Spec-based run: replayed as --spec, absolute quoted paths, exactly one prefix.
+    assert.equal(
+      rerun.command,
+      `npx campaigns-os start --spec ${join(ROOT, "examples", "campaignspec.v42.basic.json")} --source ${join(ROOT, "examples", "source-html")} --target '${campaign}' --template-family olympus`,
+    );
+    assert.equal((rerun.command.match(/npx campaigns-os /g) || []).length, 1);
+    assert.doesNotMatch(rerun.description, /predates/);
+    // The folder name survives verbatim everywhere it appears in the payload.
+    assert.ok(json.stdout.includes(campaign));
+    assert.equal(json.stdout.includes("npx campaigns-os build assets"), false);
+    assert.match(rerun.command, /--target '[^']*campaigns-os build assets[^']*'/);
+    assert.doesNotMatch(commands, /(?<![\w./-])(?<!npx )campaigns-os (?:start|prepare-build|next|doctor|qa|polish|checkpoint) /);
+
+    // The same next from the checkout keeps the bare, tested form.
+    const checkout = runCli(["next", "--packet", packet]);
+    assert.match(checkout.stdout, /(?<!npx )campaigns-os start --spec /);
+  } finally {
+    rmSync(installRoot, { recursive: true, force: true });
+    rmSync(campaign, { recursive: true, force: true });
+  }
+});
+
+test("prepareBuildRerunCommand replays the recorded intake with absolute quoted paths, and falls back to the packet", () => {
+  const target = "/work/campaign folder";
+  const context = { intake: {
+    spec_source: "local", spec_path: "../exports/edited export.json", map_id: null, proxy_base: null,
+    source_root: "./source", target_repo: ".", template_family: "olympus",
+    brief_path: "./brief.yaml", design_manifest_path: "../manifest.json",
+    allow_uncertified_template: "family under review", wrapper_policy: "preserve_document_wrappers",
+  } };
+  const local = cliModule.prepareBuildRerunCommand({ packet: {}, packetPath: join(target, "campaign-runtime.build.json"), context, targetRepo: target });
+  assert.equal(
+    local.command,
+    "campaigns-os start --spec '/work/exports/edited export.json' --source '/work/campaign folder/source' --target '/work/campaign folder' --template-family olympus --brief '/work/campaign folder/brief.yaml' --design-manifest /work/manifest.json --allow-uncertified-template 'family under review' --wrapper-policy preserve_document_wrappers",
+  );
+  // A local spec that is gone is still printed, with a note to restore it.
+  assert.ok(local.notes.some((note) => note.includes("no longer exists")), local.notes.join(" "));
+
+  // A remote fetch replays the map id, with --proxy-base only for a non-default store.
+  const remote = cliModule.prepareBuildRerunCommand({ packet: {}, packetPath: join(target, "campaign-runtime.build.json"), targetRepo: target, context: { intake: {
+    spec_source: "remote", spec_path: null, map_id: "m1", proxy_base: "https://maps.example.test", source_root: "./source", target_repo: ".", template_family: "olympus",
+  } } });
+  assert.equal(remote.command, "campaigns-os start --map-id m1 --source '/work/campaign folder/source' --target '/work/campaign folder' --template-family olympus --proxy-base https://maps.example.test");
+  assert.deepEqual(remote.notes, []);
+  const defaultStore = cliModule.prepareBuildRerunCommand({ packet: {}, packetPath: join(target, "p.json"), targetRepo: target, context: { intake: {
+    spec_source: "cache", map_id: "m1", proxy_base: "https://campaign-map.nextcommerce.com", source_root: "./source", target_repo: ".", template_family: "olympus",
+  } } });
+  assert.doesNotMatch(defaultStore.command, /--proxy-base/);
+
+  // No intake recorded (a packet from before it existed): packet fields, packet-relative, with a provenance note.
+  const legacy = cliModule.prepareBuildRerunCommand({
+    packet: { spec: { map_id: "m1", spec_url: "https://campaign-map.nextcommerce.com/api/spec/m1", local_path: "../spec.json" }, source_html: { root: "./source" }, assembly: { target_repo: ".", template_family: "olympus" } },
+    packetPath: join(target, "campaign-runtime.build.json"),
+  });
+  assert.equal(legacy.command, "campaigns-os start --map-id m1 --source '/work/campaign folder/source' --target '/work/campaign folder' --template-family olympus");
+  assert.ok(legacy.notes.some((note) => note.includes("predates recorded intake provenance")));
+  // Missing inputs are placeholders, never dropped.
+  assert.equal(
+    cliModule.prepareBuildRerunCommand({ packet: { spec: { local_path: "../spec.json" } } }).command,
+    "campaigns-os start --spec ../spec.json --source <source-dir> --target <target-dir> --template-family <family>",
+  );
+});
+
+test("install diagnostics: wrapper shims resolve to the script and _npx in a project path is not the npx cache", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-shims-")));
+  try {
+    const script = join(dir, "node_modules", "@nextcommerce", "campaigns-os", "bin", "campaigns-os.mjs");
+    mkdirSync(dirname(script), { recursive: true });
+    writeFileSync(script, "// cli\n");
+    const binDir = join(dir, "node_modules", ".bin");
+    mkdirSync(binDir, { recursive: true });
+    // pnpm-style POSIX shell wrapper (not a symlink).
+    writeFileSync(join(binDir, "campaigns-os"), `#!/bin/sh\nbasedir=$(dirname "$0")\nexec node "$basedir/../@nextcommerce/campaigns-os/bin/campaigns-os.mjs" "$@"\n`, { mode: 0o755 });
+    // npm cmd-shim (Windows).
+    writeFileSync(join(binDir, "campaigns-os.cmd"), `@ECHO off\r\nnode "%~dp0\\..\\@nextcommerce\\campaigns-os\\bin\\campaigns-os.mjs" %*\r\n`);
+    const { resolveInvocation, localInstallStatus } = cliInstallMode;
+    const pkgRoot = join(dir, "node_modules", "@nextcommerce", "campaigns-os");
+    const withWrapper = resolveInvocation(pkgRoot, { bin: { "campaigns-os": "./bin/campaigns-os.mjs" } }, { mode: "node_modules", pinned: null });
+    // Whatever PATH holds, the wrapper in this test dir must resolve to the script.
+    assert.equal(cliInstallMode.executableTargetPath(join(binDir, "campaigns-os")), script);
+    assert.equal(cliInstallMode.executableTargetPath(join(binDir, "campaigns-os.cmd")), script);
+    assert.equal(withWrapper.prefix, "npx campaigns-os");
+    // A `.mjs` named in a comment or prologue before the exec line must not
+    // win: only the script argument of the node invocation is the target.
+    writeFileSync(join(binDir, "campaigns-os-noisy"), `#!/bin/sh\n# built by build.mjs; see ./tools/gen.mjs\nbasedir=$(dirname "$0")\ncase "$basedir" in *.mjs) ;; esac\nexec node  "$basedir/../@nextcommerce/campaigns-os/bin/campaigns-os.mjs" "$@"\n`, { mode: 0o755 });
+    assert.equal(cliInstallMode.executableTargetPath(join(binDir, "campaigns-os-noisy")), script);
+    writeFileSync(join(binDir, "campaigns-os-noisy.cmd"), `@ECHO off\r\nREM generated by shim.mjs\r\n"%~dp0\\node.exe" "%~dp0\\..\\@nextcommerce\\campaigns-os\\bin\\campaigns-os.mjs" %*\r\n`);
+    assert.equal(cliInstallMode.executableTargetPath(join(binDir, "campaigns-os-noisy.cmd")), script);
+    // A comment line that itself reads like an invocation must not win either.
+    writeFileSync(join(binDir, "campaigns-os-comment-node"), `#!/bin/sh\n# generated by build.mjs; requires node ./cli.mjs to bootstrap\nbasedir=$(dirname "$0")\nexec node "$basedir/../@nextcommerce/campaigns-os/bin/campaigns-os.mjs" "$@"\n`, { mode: 0o755 });
+    assert.equal(cliInstallMode.executableTargetPath(join(binDir, "campaigns-os-comment-node")), script);
+    writeFileSync(join(binDir, "campaigns-os-comment-node.cmd"), `@ECHO off\r\nREM run with node .\\cli.mjs when debugging\r\n:: node ./other.mjs\r\nnode "%~dp0\\..\\@nextcommerce\\campaigns-os\\bin\\campaigns-os.mjs" %*\r\n`);
+    assert.equal(cliInstallMode.executableTargetPath(join(binDir, "campaigns-os-comment-node.cmd")), script);
+    // No node invocation at all: the wrapper itself is the target.
+    writeFileSync(join(binDir, "campaigns-os-plain"), `#!/bin/sh\n# mentions build.mjs only\nexit 0\n`, { mode: 0o755 });
+    assert.equal(cliInstallMode.executableTargetPath(join(binDir, "campaigns-os-plain")), join(binDir, "campaigns-os-plain"));
+
+    const projectWithNpx = join(dir, "_npx", "my-project", "node_modules", "@nextcommerce", "campaigns-os");
+    mkdirSync(projectWithNpx, { recursive: true });
+    assert.equal(localInstallStatus(projectWithNpx, {}).mode, "node_modules");
+    const realCache = join(dir, "_npx", "0123456789abcdef", "node_modules", "@nextcommerce", "campaigns-os");
+    mkdirSync(realCache, { recursive: true });
+    assert.equal(localInstallStatus(realCache, {}).mode, "npx_cache");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

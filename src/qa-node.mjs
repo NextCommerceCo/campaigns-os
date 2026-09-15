@@ -15,6 +15,17 @@ import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { invocationPrefixFor } from "./install-mode.mjs";
+import { dirname as installModeDirname, resolve as installModeResolve } from "node:path";
+import { fileURLToPath as installModeFileUrl } from "node:url";
+const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(import.meta.url)), "..");
+// Commands this module produces are spelled for the install they come from
+// (see install-mode.mjs), once, at the producer.
+function cmd(verb, rest = "") {
+  return `${invocationPrefixFor(PACKAGE_ROOT)} ${verb}${rest ? ` ${rest}` : ""}`;
+}
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
@@ -84,6 +95,7 @@ Usage:
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
   campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--browser]   # L7: QA a built _site/ with no packet/spec
+  campaigns-os qa install-browser [--json]   # one-time: install the package-owned Playwright Chromium (same as npm run qa:install-browser from a checkout)
 
 Options:
   --fixture <path>                Parity-capture fixture (required by qa parity).
@@ -119,7 +131,8 @@ Options:
   --no-remit                     When an ambient run session is active, write the local Run Record but skip Run Telemetry remit.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
-                                  Requires one-time setup: npm run qa:install-browser.
+                                  Requires one-time setup: campaigns-os qa install-browser
+                                  (npm run qa:install-browser from a checkout).
   --headed                        Show the Playwright browser window when --browser is set.
   --browser-width <px>            Browser viewport width. Default: 1440.
   --browser-height <px>           Browser viewport height. Default: 1200.
@@ -139,7 +152,8 @@ Options:
                                   "tiers:full" cross every tier with those path shapes. --select-package
                                   <ref[:qty],...> narrows a tiers run to the listed declared tiers;
                                   --apply-coupon is incompatible (tiers derives coupons from the spec).
-                                  Requires one-time setup: npm run qa:install-browser.
+                                  Requires one-time setup: campaigns-os qa install-browser
+                                  (npm run qa:install-browser from a checkout).
   --max-test-orders <n>           Accidental-flood guard for planned browser order paths (not a permission gate). Default: 6.
   --max-order-creations <n>       Hard bound on REAL order creations in this run, reserved before each submit
                                   click. Default: the planned path count. A path whose failure is confirmed to
@@ -168,7 +182,8 @@ Options:
   --analytics-baseline <url>      Analytics-parity leg (opt-in): URL of the legacy funnel to diff against (e.g. the
                                   legacy receipt/thank-you page). Launches a Playwright browser to capture the live
                                   dataLayer + GTM/pixel tag-fires on both URLs and diffs them into parity assertions.
-                                  Requires one-time setup: npm run qa:install-browser.
+                                  Requires one-time setup: campaigns-os qa install-browser
+                                  (npm run qa:install-browser from a checkout).
   --analytics-candidate <url>     Analytics-PARITY leg only: explicit candidate receipt URL paired with the
                                   --analytics-baseline legacy receipt (receipt-capture pairing). When omitted,
                                   the parity candidate and correctness root-inventory phase capture the URL
@@ -213,7 +228,7 @@ export async function runQaCli(args, { ambient = null } = {}) {
     return result;
   }
   if (subcommand === "policy") {
-    if (args._[2] !== "set") throw new Error("Unknown qa policy command. Use: campaigns-os qa policy set --packet <campaign-runtime.build.json>");
+    if (args._[2] !== "set") throw new Error(`Unknown qa policy command. Use: ${cmd("qa")} policy set --packet <campaign-runtime.build.json>`);
     const result = updateQaPolicy(args);
     output(result, args);
     return result;
@@ -228,7 +243,66 @@ export async function runQaCli(args, { ambient = null } = {}) {
     output(result, args);
     return result;
   }
+  if (subcommand === "install-browser") {
+    const result = installQaBrowser({ json: Boolean(args.json) });
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      for (const line of installBrowserTextLines(result)) console.log(line);
+    }
+    process.exitCode = result.ok ? 0 : 1;
+    return result;
+  }
   throw new Error(`Unknown qa command: ${subcommand}`);
+}
+
+// The package-owned browser install, runnable from any install mode. It is
+// the same step as `npm run qa:install-browser` (a checkout script), but a
+// global or npx install has no checkout to run scripts in, and the printed
+// recovery commands must work where the operator actually is. It drives the
+// Playwright CLI bundled with THIS package so the browser matches the
+// Playwright version the QA and polish producers load.
+export function installBrowserTextLines(result) {
+  const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`];
+  if (result.command) lines.push(`Command: ${result.command}`);
+  if (Number.isInteger(result.exit_code) && !result.ok) lines.push(`Exit code: ${result.exit_code}`);
+  if (result.note) lines.push(result.note);
+  return lines;
+}
+
+export function installQaBrowser({ spawn = spawnSync, json = false } = {}) {
+  const require = createRequire(import.meta.url);
+  let playwrightCli;
+  try {
+    // playwright's exports map does not expose cli.js; its package.json is
+    // exported, and the CLI lives beside it (package.json "bin": "cli.js").
+    playwrightCli = join(dirname(require.resolve("playwright/package.json")), "cli.js");
+    if (!existsSync(playwrightCli)) throw Object.assign(new Error("playwright/cli.js is missing"), { code: "MODULE_NOT_FOUND" });
+  } catch (error) {
+    if (error?.code !== "MODULE_NOT_FOUND") throw error;
+    return {
+      ok: false,
+      status: "playwright_missing",
+      command: null,
+      note: `The playwright dependency is not installed beside this package; reinstall the package (or run npm install in a checkout), then rerun ${cmd("qa")} install-browser.`,
+    };
+  }
+  // Playwright reports download progress on stdout. In --json mode stdout is
+  // the result document, so the child's stdout is routed to stderr (fd 2);
+  // otherwise the operator sees the progress inline.
+  const run = spawn(process.execPath, [playwrightCli, "install", "chromium"], {
+    stdio: json ? ["inherit", 2, "inherit"] : "inherit",
+  });
+  const ok = run.status === 0;
+  return {
+    ok,
+    status: ok ? "installed" : "install_failed",
+    command: `${process.execPath} ${playwrightCli} install chromium`,
+    exit_code: run.status,
+    note: ok
+      ? "Playwright Chromium is installed for this package; browser QA and polish capture can run."
+      : `Playwright browser install exited ${run.status}; rerun ${cmd("qa")} install-browser after fixing the reported error.`,
+  };
 }
 
 async function resolveQaInputs(args, {
@@ -1576,7 +1650,7 @@ export function buildQaCloseoutActions({ packetPath = null, localPath = null, ru
       kind: "command",
       required: true,
       stage: "qa",
-      command: `campaigns-os run-record --packet ${shellToken(packetPath)}${verdictRef}${remitRef} --json`,
+      command: `${cmd("run-record")} --packet ${shellToken(packetPath)}${verdictRef}${remitRef} --json`,
       description: `Assemble the durable Run Record closeout for this QA workflow, including blocked outcomes. If an active session remains open after a blocked attempt, repair and re-test first (or use run end to close manually); a ready attempt auto-assembles one record that references every attempt.${sessionNote}`,
     },
   ];
@@ -1612,7 +1686,7 @@ function updateQaPolicy(args) {
     // doctor sidecar (if any) now predates them.
     markDoctorSidecarStale(targetRepoFor(packetPath, packet), {
       command: "qa policy set",
-      reason: "The Build Packet changed after this doctor snapshot (qa policy set). Re-run campaigns-os doctor (or next) for current state.",
+      reason: `The Build Packet changed after this doctor snapshot (qa policy set). Re-run ${cmd("doctor")} (or next) for current state.`,
     });
   }
   return {
@@ -1687,7 +1761,7 @@ export function qaWaive(args) {
     // #171: the waiver changes what the next qa run concludes; the retained
     // doctor sidecar (if any) now predates this report edit.
     command: "qa waive",
-    staleReason: "A QA assertion waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+    staleReason: `A QA assertion waiver was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
   });
   return {
     ok: true,
@@ -2830,7 +2904,7 @@ function output(value, args) {
       console.log(`QA portal: ${value.dashboard_url}`);
     } else if (value.publish_skipped && value.publish_decision?.reason === "consent_off") {
       console.log(`QA portal: publish skipped — telemetry consent is off, so this non-portal-managed verdict stays local.`);
-      console.log(`  Destination would be ${value.publish_decision.destination}. Opt in for this run with --post-verdict, or enable with \`campaigns-os telemetry on\`.`);
+      console.log(`  Destination would be ${value.publish_decision.destination}. Opt in for this run with --post-verdict, or enable with \`${cmd("telemetry")} on\`.`);
     } else if (value.publish_skipped) {
       console.log(`QA portal: publish skipped (--no-post-verdict); local verdict only.`);
     } else {
@@ -2842,7 +2916,7 @@ function output(value, args) {
         console.log(`  ${action.description}`);
       }
     }
-    console.log(`Workflow finding? campaigns-os findings add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
+    console.log(`Workflow finding? ${cmd("findings")} add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
     return;
   }
   console.log(`QA resolve complete.`);
@@ -3010,12 +3084,12 @@ function qaRunCommandFromResolve(value) {
   const base = shellToken(value.base_url);
   const proxy = value.proxy_base ? ` --proxy-base ${shellToken(value.proxy_base)}` : "";
   if (value.packet_path) {
-    return `campaigns-os qa run --packet ${shellToken(value.packet_path)}${proxy} --base-url ${base} --browser --test-order common`;
+    return `${cmd("qa")} run --packet ${shellToken(value.packet_path)}${proxy} --base-url ${base} --browser --test-order common`;
   }
   if (isLocalFilePath(value.spec_source)) {
-    return `campaigns-os qa run ${shellToken(value.map_id)} --spec ${shellToken(value.spec_source)}${proxy} --base-url ${base} --browser --test-order common`;
+    return `${cmd("qa")} run ${shellToken(value.map_id)} --spec ${shellToken(value.spec_source)}${proxy} --base-url ${base} --browser --test-order common`;
   }
-  return `campaigns-os qa run ${shellToken(value.map_id)}${proxy} --base-url ${base} --browser --test-order common`;
+  return `${cmd("qa")} run ${shellToken(value.map_id)}${proxy} --base-url ${base} --browser --test-order common`;
 }
 
 function isLocalFilePath(value) {

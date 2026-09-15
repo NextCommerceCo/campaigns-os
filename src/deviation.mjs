@@ -29,12 +29,24 @@ const EXPECTED_COMMANDS_BY_STAGE = Object.freeze({
   done: ["run-record"],
 });
 
+// The command word of a produced command line, whichever install prefix it
+// was spelled with (bare `campaigns-os`, `npx campaigns-os`, `npm run
+// campaigns-os --`, or `npx --yes <git-spec>` from an npx cache).
+export function commandWord(command) {
+  if (typeof command !== "string") return null;
+  const stripped = command
+    .replace(/^npx\s+--yes\s+\S+\s+/, "campaigns-os ")
+    .replace(/^npx\s+campaigns-os\s+/, "campaigns-os ")
+    .replace(/^npm\s+run\s+campaigns-os\s+--\s+/, "campaigns-os ");
+  return stripped.match(/^campaigns-os\s+([a-z-]+)/)?.[1] || null;
+}
+
 export function expectedCommandsForStage(stage, requiredActions = []) {
   const base = EXPECTED_COMMANDS_BY_STAGE[stage] || [];
   // Gate required_actions name exact commands ("campaigns-os theme generate
   // ..."); their command words are expected too.
   const fromActions = requiredActions
-    .map((action) => (typeof action?.command === "string" ? action.command.match(/^campaigns-os\s+([a-z-]+)/)?.[1] : null))
+    .map((action) => commandWord(action?.command))
     .filter(Boolean);
   return [...new Set([...base, ...fromActions])];
 }

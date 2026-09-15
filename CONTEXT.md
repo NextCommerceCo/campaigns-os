@@ -624,8 +624,8 @@ the Learning Trail and can cross-reference formal artifacts."
 **Domain Expert**: "That's enough Campaign Run Identity for capture. Add more
 context later if it becomes available."
 
-**Developer**: "Brett reported the Spec-driven flow worked, but there is no
-formal evidence packet."
+**Developer**: "The operator reported the Spec-driven flow worked, but there
+is no formal evidence packet."
 
 **Domain Expert**: "Capture it with Evidence Quality `operator report`. Useful
 human signal belongs in the Learning Trail."
@@ -655,7 +655,7 @@ system."
 **Domain Expert**: "Agency Campaigns OS Operators may see Tiny Prompts and
 Workflow Findings. Shoppers and merchant-facing approval viewers should not."
 
-**Developer**: "What made Brett's Vitae Charm run work?"
+**Developer**: "What made that operator's run work?"
 
 **Domain Expert**: "Spec-Driven Campaign Development. When the CampaignSpec was
 accurate, the core checkout and upsell logic had rails."

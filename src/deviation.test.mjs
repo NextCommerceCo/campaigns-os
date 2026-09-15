@@ -68,3 +68,13 @@ test("deviation journal round-trips and tolerates junk lines", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("commandWord reads the verb through every install prefix", async () => {
+  const { commandWord } = await import("./deviation.mjs");
+  assert.equal(commandWord("campaigns-os next --packet p.json"), "next");
+  assert.equal(commandWord("npx campaigns-os qa run --packet p.json"), "qa");
+  assert.equal(commandWord("npm run campaigns-os -- polish capture"), "polish");
+  assert.equal(commandWord("npx --yes github:NextCommerceCo/campaigns-os#236d7fc454c8 theme generate"), "theme");
+  assert.equal(commandWord("npm run qa:install-browser"), null);
+  assert.equal(commandWord(null), null);
+});

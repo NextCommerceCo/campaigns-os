@@ -454,7 +454,7 @@ test("missing Chromium persists browser_unavailable and prints the install-brows
     assert.ok(result.checkpoint.required_actions.some(
       (action) => action.id === "polish.hidden_eager_media.install_browser",
     ));
-    assert.match(output, /Required action: npm run qa:install-browser/);
+    assert.match(output, /Required action: campaigns-os qa install-browser/);
     assert.doesNotMatch(JSON.stringify(result), /PRIVATE_BROWSER_PATH|private\/tmp/);
   } finally {
     rmSync(f.dir, { recursive: true, force: true });
