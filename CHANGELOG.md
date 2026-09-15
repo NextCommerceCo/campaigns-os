@@ -43,21 +43,45 @@ Notable supported-surface changes are recorded here.
   a root that is the top level of its own worktree is reported as a checkout,
   so the enclosing repository's branch is never presented as the toolkit's.
   The checkout branch of the logic is unchanged apart from the additive fields.
-- Every command the toolkit prints for an operator or agent to copy is spelled
-  for the install it came from. `next` (text and `--json`: `next_actions[]
-  .command`, gate `required_actions[].command`, the prompt and the tiny
-  prompt), doctor's required actions, checkpoint/theme/polish results and the
-  prepare-build summary rewrite the canonical bare `campaigns-os <command>`
-  into `npx campaigns-os <command>` from a consumer install, `npx --yes
-  <spec> <command>` from an npx cache, and leave it bare from a checkout.
-  Skill names
-  (`next-campaigns-os-setup`), file names (`campaigns-os.mjs`), prose, and
-  already-prefixed forms are untouched; internal bookkeeping (deviation
-  tracking, gate registries) keeps the canonical spelling. The browser-missing
-  errors from `polish capture` and `qa run --browser` use the same spelling:
-  `Run \`npx campaigns-os qa install-browser\`, then …` from a consumer
-  install, `Run \`npm run qa:install-browser\` from the checkout (or
-  \`campaigns-os qa install-browser\`), then …` from a checkout.
+- Every command the toolkit produces for an operator or agent to copy is
+  spelled, at the point it is produced, for the install it comes from: `npx
+  campaigns-os <command>` from a consumer install, `npx --yes <spec>
+  <command>` from an npx cache, bare from a checkout. That covers `next` (text
+  and `--json`: `next_actions[].command`, gate `required_actions[].command`
+  as they are emitted, the prompt and the tiny prompt), doctor's required
+  actions and tiny prompt, checkpoint/theme/polish remediation text, the
+  prepare-build summary, the run-session and run-record closeout commands, QA
+  handoff and closeout commands, the `qa install-browser` notes, and the
+  browser-missing errors from `polish capture` and `qa run --browser` (`Run
+  \`npx campaigns-os qa install-browser\`, then …` from a consumer install;
+  `Run \`npm run qa:install-browser\` from the checkout (or
+  \`campaigns-os qa install-browser\`), then …` from a checkout). Result
+  payloads are never rewritten after the fact: a path, a quoted argument or
+  a data value that contains the words `campaigns-os build` is left exactly as
+  it is, and gate registries keep the canonical bare spelling for internal
+  bookkeeping (deviation tracking reads the command word through any of the
+  prefixes).
+- The build context records the intake as it was passed, in a new additive
+  `intake` block: `spec_source` (`local` | `remote` | `cache`), `spec_path`
+  (for a local spec), `map_id`, `proxy_base`, `source_root`, `target_repo`,
+  `template_family`, `brief_path`, `design_manifest_path`,
+  `allow_uncertified_template`, `wrapper_policy` and `packet_path` — paths
+  target-relative like the rest of the context. `next` replays it in the
+  `rerun_prepare_build` action: a local spec is replayed as `--spec` (printed
+  even when the file is gone, with a note to restore it), a fetched map as
+  `--map-id` plus `--proxy-base` when the store was not the default, and the
+  optional flags come back verbatim; every path is emitted absolute and
+  shell-quoted so the line runs from any working directory. A packet from
+  before `intake` existed falls back to the packet's own fields — the map id
+  is replayed, `--proxy-base` is inferred from `spec.spec_url`, and the action
+  description says the optional flags could not be replayed. The Build
+  Packet schema is unchanged (its `spec` block is closed; the context's root
+  is open).
+- `tooling status` diagnostics: a PATH executable that is an npm cmd-shim
+  (`%~dp0`) or a pnpm/yarn shell wrapper is resolved to the script it execs
+  before it is compared with this install's own binary, and only
+  `<cache>/_npx/<hash>/node_modules/…` counts as the npx cache — a project
+  that merely has `_npx` in its path is a `node_modules` install.
 - `campaigns-os qa install-browser`: the one-time Playwright Chromium install,
   runnable from any install mode. It drives the Playwright CLI bundled with
   this package (`install chromium`), so the browser matches the Playwright the
@@ -88,8 +112,8 @@ Notable supported-surface changes are recorded here.
   the packet does not record is printed as an explicit placeholder
   (`<source-dir>`, `<target-dir>`, `<family>`), never dropped. Doctor's coverage error for a
   Figma-designed page with no source mapping now says "supply the source-html
-  manifest for the page (see docs/design-source-package.md) — figma-sections-export
-  emits it when you have the Figma design" instead of naming a private
+  manifest for the page (see docs/design-source-package.md) — the exporter
+  that produced the design emits it" instead of naming a private
   `npm run handoff` script.
 - `AGENTS.md` states that the runtime recipe covers checkout preparation and
   that the toolkit pinned as a devDependency of the campaign folder (run

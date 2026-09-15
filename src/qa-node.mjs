@@ -17,6 +17,15 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { invocationPrefixFor } from "./install-mode.mjs";
+import { dirname as installModeDirname, resolve as installModeResolve } from "node:path";
+import { fileURLToPath as installModeFileUrl } from "node:url";
+const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(import.meta.url)), "..");
+// Commands this module produces are spelled for the install they come from
+// (see install-mode.mjs), once, at the producer.
+function cmd(verb, rest = "") {
+  return `${invocationPrefixFor(PACKAGE_ROOT)} ${verb}${rest ? ` ${rest}` : ""}`;
+}
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
@@ -219,7 +228,7 @@ export async function runQaCli(args, { ambient = null } = {}) {
     return result;
   }
   if (subcommand === "policy") {
-    if (args._[2] !== "set") throw new Error("Unknown qa policy command. Use: campaigns-os qa policy set --packet <campaign-runtime.build.json>");
+    if (args._[2] !== "set") throw new Error(`Unknown qa policy command. Use: ${cmd("qa")} policy set --packet <campaign-runtime.build.json>`);
     const result = updateQaPolicy(args);
     output(result, args);
     return result;
@@ -275,7 +284,7 @@ export function installQaBrowser({ spawn = spawnSync, json = false } = {}) {
       ok: false,
       status: "playwright_missing",
       command: null,
-      note: "The playwright dependency is not installed beside this package; reinstall the package (or run npm install in a checkout), then rerun campaigns-os qa install-browser.",
+      note: `The playwright dependency is not installed beside this package; reinstall the package (or run npm install in a checkout), then rerun ${cmd("qa")} install-browser.`,
     };
   }
   // Playwright reports download progress on stdout. In --json mode stdout is
@@ -292,7 +301,7 @@ export function installQaBrowser({ spawn = spawnSync, json = false } = {}) {
     exit_code: run.status,
     note: ok
       ? "Playwright Chromium is installed for this package; browser QA and polish capture can run."
-      : `Playwright browser install exited ${run.status}; rerun campaigns-os qa install-browser after fixing the reported error.`,
+      : `Playwright browser install exited ${run.status}; rerun ${cmd("qa")} install-browser after fixing the reported error.`,
   };
 }
 
@@ -1641,7 +1650,7 @@ export function buildQaCloseoutActions({ packetPath = null, localPath = null, ru
       kind: "command",
       required: true,
       stage: "qa",
-      command: `campaigns-os run-record --packet ${shellToken(packetPath)}${verdictRef}${remitRef} --json`,
+      command: `${cmd("run-record")} --packet ${shellToken(packetPath)}${verdictRef}${remitRef} --json`,
       description: `Assemble the durable Run Record closeout for this QA workflow, including blocked outcomes. If an active session remains open after a blocked attempt, repair and re-test first (or use run end to close manually); a ready attempt auto-assembles one record that references every attempt.${sessionNote}`,
     },
   ];
@@ -1677,7 +1686,7 @@ function updateQaPolicy(args) {
     // doctor sidecar (if any) now predates them.
     markDoctorSidecarStale(targetRepoFor(packetPath, packet), {
       command: "qa policy set",
-      reason: "The Build Packet changed after this doctor snapshot (qa policy set). Re-run campaigns-os doctor (or next) for current state.",
+      reason: `The Build Packet changed after this doctor snapshot (qa policy set). Re-run ${cmd("doctor")} (or next) for current state.`,
     });
   }
   return {
@@ -1752,7 +1761,7 @@ export function qaWaive(args) {
     // #171: the waiver changes what the next qa run concludes; the retained
     // doctor sidecar (if any) now predates this report edit.
     command: "qa waive",
-    staleReason: "A QA assertion waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+    staleReason: `A QA assertion waiver was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
   });
   return {
     ok: true,
@@ -2895,7 +2904,7 @@ function output(value, args) {
       console.log(`QA portal: ${value.dashboard_url}`);
     } else if (value.publish_skipped && value.publish_decision?.reason === "consent_off") {
       console.log(`QA portal: publish skipped — telemetry consent is off, so this non-portal-managed verdict stays local.`);
-      console.log(`  Destination would be ${value.publish_decision.destination}. Opt in for this run with --post-verdict, or enable with \`campaigns-os telemetry on\`.`);
+      console.log(`  Destination would be ${value.publish_decision.destination}. Opt in for this run with --post-verdict, or enable with \`${cmd("telemetry")} on\`.`);
     } else if (value.publish_skipped) {
       console.log(`QA portal: publish skipped (--no-post-verdict); local verdict only.`);
     } else {
@@ -2907,7 +2916,7 @@ function output(value, args) {
         console.log(`  ${action.description}`);
       }
     }
-    console.log(`Workflow finding? campaigns-os findings add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
+    console.log(`Workflow finding? ${cmd("findings")} add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
     return;
   }
   console.log(`QA resolve complete.`);
@@ -3075,12 +3084,12 @@ function qaRunCommandFromResolve(value) {
   const base = shellToken(value.base_url);
   const proxy = value.proxy_base ? ` --proxy-base ${shellToken(value.proxy_base)}` : "";
   if (value.packet_path) {
-    return `campaigns-os qa run --packet ${shellToken(value.packet_path)}${proxy} --base-url ${base} --browser --test-order common`;
+    return `${cmd("qa")} run --packet ${shellToken(value.packet_path)}${proxy} --base-url ${base} --browser --test-order common`;
   }
   if (isLocalFilePath(value.spec_source)) {
-    return `campaigns-os qa run ${shellToken(value.map_id)} --spec ${shellToken(value.spec_source)}${proxy} --base-url ${base} --browser --test-order common`;
+    return `${cmd("qa")} run ${shellToken(value.map_id)} --spec ${shellToken(value.spec_source)}${proxy} --base-url ${base} --browser --test-order common`;
   }
-  return `campaigns-os qa run ${shellToken(value.map_id)}${proxy} --base-url ${base} --browser --test-order common`;
+  return `${cmd("qa")} run ${shellToken(value.map_id)}${proxy} --base-url ${base} --browser --test-order common`;
 }
 
 function isLocalFilePath(value) {

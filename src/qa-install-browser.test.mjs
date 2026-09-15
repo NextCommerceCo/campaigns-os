@@ -116,16 +116,3 @@ test("qa install-browser --json keeps stdout as the result document and routes c
   assert.equal(plain.status, 0, plain.stderr);
   assert.match(plain.stdout, /Downloading Chromium 1\/3/);
 });
-
-test("applyInvocationPrefix rewrites only bare command spellings", async () => {
-  const { applyInvocationPrefix } = await import("./install-mode.mjs");
-  const prefix = "npx campaigns-os";
-  assert.equal(applyInvocationPrefix("campaigns-os next --packet p.json", prefix), "npx campaigns-os next --packet p.json");
-  assert.equal(applyInvocationPrefix("Run `campaigns-os qa install-browser`, then `campaigns-os polish capture`.", prefix), "Run `npx campaigns-os qa install-browser`, then `npx campaigns-os polish capture`.");
-  // Already-prefixed forms, skill names, file names and prose are untouched.
-  for (const untouched of ["npx campaigns-os next", "npm run campaigns-os -- next", "next-campaigns-os-setup", "node bin/campaigns-os.mjs next", "campaigns-os is not on PATH", "Campaigns OS next stage"]) {
-    assert.equal(applyInvocationPrefix(untouched, prefix), untouched);
-  }
-  assert.deepEqual(applyInvocationPrefix({ a: ["campaigns-os run end"], b: 1, c: null }, prefix), { a: ["npx campaigns-os run end"], b: 1, c: null });
-  assert.equal(applyInvocationPrefix("campaigns-os next", "campaigns-os"), "campaigns-os next");
-});

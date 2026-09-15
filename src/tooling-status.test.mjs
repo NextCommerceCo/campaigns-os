@@ -13,11 +13,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import * as cliModule from "./cli.mjs";
+import * as cliInstallMode from "./install-mode.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -281,7 +282,7 @@ test("localInstallStatus classifies an npx cache, a consumer node_modules, and t
   const npxRoot = mkdtempSync(join(tmpdir(), "campaigns-os-mode-"));
   try {
     // npx lays the package out under <cache>/_npx/<hash>/node_modules/.
-    const npxInstall = join(npxRoot, "_npx", "0123abcd");
+    const npxInstall = join(npxRoot, "_npx", "0123abcd0123abcd");
     const npxPkg = writeFakePackageInstall(npxInstall, {
       resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
     });
@@ -489,7 +490,7 @@ test("tooling status in an npx cache names the pinned npx form when another camp
   // no .bin to put on PATH, so the fix is the pinned npx invocation, never
   // "node <bin>" and never a PATH export.
   const cache = mkdtempSync(join(tmpdir(), "campaigns-os-npx-other-"));
-  const installRoot = join(cache, "_npx", "abc123");
+  const installRoot = join(cache, "_npx", "abc123def4567890");
   mkdirSync(installRoot, { recursive: true });
   const other = mkdtempSync(join(tmpdir(), "campaigns-os-other-bin-"));
   const target = mkdtempSync(join(tmpdir(), "campaigns-os-npx-other-skills-"));
@@ -522,7 +523,9 @@ test("tooling status in an npx cache names the pinned npx form when another camp
 // install prints `npx campaigns-os …`; the checkout keeps the bare form.
 test("next prints its commands with the consumer install's npx prefix", () => {
   const installRoot = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-pkg-next-")));
-  const campaign = mkdtempSync(join(tmpdir(), "campaigns-os-pkg-next-target-"));
+  // The campaign folder name deliberately contains a bare command spelling:
+  // a path, a quoted argument or a data value is never rewritten.
+  const campaign = mkdtempSync(join(tmpdir(), "campaigns-os build assets-"));
   try {
     const pkgRoot = stageRealPackageInstall(installRoot);
     const pkgCli = join(pkgRoot, "bin", "campaigns-os.mjs");
@@ -550,36 +553,96 @@ test("next prints its commands with the consumer install's npx prefix", () => {
     // recorded inputs, spelled relative to the packet like the packet does.
     const rerun = parsed.next_actions.find((action) => action.id === "rerun_prepare_build");
     assert.ok(rerun, JSON.stringify(parsed.next_actions));
+    // Spec-based run: replayed as --spec, absolute quoted paths, exactly one prefix.
     assert.equal(
       rerun.command,
-      `npx campaigns-os start --map-id runtime-packet-demo-k9x2 --source ${relative(campaign, join(ROOT, "examples", "source-html"))} --target . --template-family olympus`,
+      `npx campaigns-os start --spec ${join(ROOT, "examples", "campaignspec.v42.basic.json")} --source ${join(ROOT, "examples", "source-html")} --target '${campaign}' --template-family olympus`,
     );
+    assert.equal((rerun.command.match(/npx campaigns-os /g) || []).length, 1);
+    assert.doesNotMatch(rerun.description, /predates/);
+    // The folder name survives verbatim everywhere it appears in the payload.
+    assert.ok(json.stdout.includes(campaign));
+    assert.equal(json.stdout.includes("npx campaigns-os build assets"), false);
+    assert.match(rerun.command, /--target '[^']*campaigns-os build assets[^']*'/);
     assert.doesNotMatch(commands, /(?<![\w./-])(?<!npx )campaigns-os (?:start|prepare-build|next|doctor|qa|polish|checkpoint) /);
 
     // The same next from the checkout keeps the bare, tested form.
     const checkout = runCli(["next", "--packet", packet]);
-    assert.match(checkout.stdout, /(?<!npx )campaigns-os start --map-id/);
+    assert.match(checkout.stdout, /(?<!npx )campaigns-os start --spec /);
   } finally {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(campaign, { recursive: true, force: true });
   }
 });
 
-test("prepareBuildRerunCommand keeps every required flag and shows placeholders for unrecorded inputs", () => {
-  const full = cliModule.prepareBuildRerunCommand({
-    spec: { map_id: "m1", spec_url: "https://campaign-map.nextcommerce.com/api/spec/m1", local_path: "../spec.json" },
-    source_html: { root: "./source" },
-    assembly: { target_repo: ".", template_family: "olympus" },
-  });
-  assert.equal(full, "campaigns-os start --map-id m1 --source ./source --target . --template-family olympus");
-  // A non-default map store is carried as --proxy-base.
-  assert.match(
-    cliModule.prepareBuildRerunCommand({ spec: { map_id: "m1", spec_url: "https://maps.example.test/api/spec/m1" }, source_html: { root: "./source" }, assembly: { target_repo: ".", template_family: "olympus" } }),
-    / --proxy-base https:\/\/maps\.example\.test$/,
-  );
-  // No map id: the local spec path. Missing inputs are placeholders, never dropped.
+test("prepareBuildRerunCommand replays the recorded intake with absolute quoted paths, and falls back to the packet", () => {
+  const target = "/work/campaign folder";
+  const context = { intake: {
+    spec_source: "local", spec_path: "../exports/edited export.json", map_id: null, proxy_base: null,
+    source_root: "./source", target_repo: ".", template_family: "olympus",
+    brief_path: "./brief.yaml", design_manifest_path: "../manifest.json",
+    allow_uncertified_template: "family under review", wrapper_policy: "preserve_document_wrappers",
+  } };
+  const local = cliModule.prepareBuildRerunCommand({ packet: {}, packetPath: join(target, "campaign-runtime.build.json"), context, targetRepo: target });
   assert.equal(
-    cliModule.prepareBuildRerunCommand({ spec: { local_path: "../spec.json" } }),
+    local.command,
+    "campaigns-os start --spec '/work/exports/edited export.json' --source '/work/campaign folder/source' --target '/work/campaign folder' --template-family olympus --brief '/work/campaign folder/brief.yaml' --design-manifest /work/manifest.json --allow-uncertified-template 'family under review' --wrapper-policy preserve_document_wrappers",
+  );
+  // A local spec that is gone is still printed, with a note to restore it.
+  assert.ok(local.notes.some((note) => note.includes("no longer exists")), local.notes.join(" "));
+
+  // A remote fetch replays the map id, with --proxy-base only for a non-default store.
+  const remote = cliModule.prepareBuildRerunCommand({ packet: {}, packetPath: join(target, "campaign-runtime.build.json"), targetRepo: target, context: { intake: {
+    spec_source: "remote", spec_path: null, map_id: "m1", proxy_base: "https://maps.example.test", source_root: "./source", target_repo: ".", template_family: "olympus",
+  } } });
+  assert.equal(remote.command, "campaigns-os start --map-id m1 --source '/work/campaign folder/source' --target '/work/campaign folder' --template-family olympus --proxy-base https://maps.example.test");
+  assert.deepEqual(remote.notes, []);
+  const defaultStore = cliModule.prepareBuildRerunCommand({ packet: {}, packetPath: join(target, "p.json"), targetRepo: target, context: { intake: {
+    spec_source: "cache", map_id: "m1", proxy_base: "https://campaign-map.nextcommerce.com", source_root: "./source", target_repo: ".", template_family: "olympus",
+  } } });
+  assert.doesNotMatch(defaultStore.command, /--proxy-base/);
+
+  // No intake recorded (a packet from before it existed): packet fields, packet-relative, with a provenance note.
+  const legacy = cliModule.prepareBuildRerunCommand({
+    packet: { spec: { map_id: "m1", spec_url: "https://campaign-map.nextcommerce.com/api/spec/m1", local_path: "../spec.json" }, source_html: { root: "./source" }, assembly: { target_repo: ".", template_family: "olympus" } },
+    packetPath: join(target, "campaign-runtime.build.json"),
+  });
+  assert.equal(legacy.command, "campaigns-os start --map-id m1 --source '/work/campaign folder/source' --target '/work/campaign folder' --template-family olympus");
+  assert.ok(legacy.notes.some((note) => note.includes("predates recorded intake provenance")));
+  // Missing inputs are placeholders, never dropped.
+  assert.equal(
+    cliModule.prepareBuildRerunCommand({ packet: { spec: { local_path: "../spec.json" } } }).command,
     "campaigns-os start --spec ../spec.json --source <source-dir> --target <target-dir> --template-family <family>",
   );
+});
+
+test("install diagnostics: wrapper shims resolve to the script and _npx in a project path is not the npx cache", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-shims-")));
+  try {
+    const script = join(dir, "node_modules", "@nextcommerce", "campaigns-os", "bin", "campaigns-os.mjs");
+    mkdirSync(dirname(script), { recursive: true });
+    writeFileSync(script, "// cli\n");
+    const binDir = join(dir, "node_modules", ".bin");
+    mkdirSync(binDir, { recursive: true });
+    // pnpm-style POSIX shell wrapper (not a symlink).
+    writeFileSync(join(binDir, "campaigns-os"), `#!/bin/sh\nbasedir=$(dirname "$0")\nexec node "$basedir/../@nextcommerce/campaigns-os/bin/campaigns-os.mjs" "$@"\n`, { mode: 0o755 });
+    // npm cmd-shim (Windows).
+    writeFileSync(join(binDir, "campaigns-os.cmd"), `@ECHO off\r\nnode "%~dp0\\..\\@nextcommerce\\campaigns-os\\bin\\campaigns-os.mjs" %*\r\n`);
+    const { resolveInvocation, localInstallStatus } = cliInstallMode;
+    const pkgRoot = join(dir, "node_modules", "@nextcommerce", "campaigns-os");
+    const withWrapper = resolveInvocation(pkgRoot, { bin: { "campaigns-os": "./bin/campaigns-os.mjs" } }, { mode: "node_modules", pinned: null });
+    // Whatever PATH holds, the wrapper in this test dir must resolve to the script.
+    assert.equal(cliInstallMode.executableTargetPath(join(binDir, "campaigns-os")), script);
+    assert.equal(cliInstallMode.executableTargetPath(join(binDir, "campaigns-os.cmd")), script);
+    assert.equal(withWrapper.prefix, "npx campaigns-os");
+
+    const projectWithNpx = join(dir, "_npx", "my-project", "node_modules", "@nextcommerce", "campaigns-os");
+    mkdirSync(projectWithNpx, { recursive: true });
+    assert.equal(localInstallStatus(projectWithNpx, {}).mode, "node_modules");
+    const realCache = join(dir, "_npx", "0123456789abcdef", "node_modules", "@nextcommerce", "campaigns-os");
+    mkdirSync(realCache, { recursive: true });
+    assert.equal(localInstallStatus(realCache, {}).mode, "npx_cache");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

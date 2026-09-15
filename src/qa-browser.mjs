@@ -1,5 +1,5 @@
 import { launchPackageChromium } from "./browser-launch.mjs";
-import { applyInvocationPrefix, invocationPrefixFor } from "./install-mode.mjs";
+import { invocationPrefixFor } from "./install-mode.mjs";
 import { dirname as installModeDirname, resolve as installModeResolve } from "node:path";
 import { fileURLToPath as installModeFileUrl } from "node:url";
 const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(import.meta.url)), "..");
@@ -6335,10 +6335,10 @@ export const __qaBrowserTestHooks = Object.freeze({
 // the checkout script from a checkout, otherwise `qa install-browser` through
 // the prefix that runs THIS copy (see install-mode.mjs).
 function installBrowserHint(kind) {
-  const rerun = kind === "polish" ? "then rerun `campaigns-os polish capture`." : "then rerun the QA command.";
   const prefix = invocationPrefixFor(PACKAGE_ROOT);
+  const rerun = kind === "polish" ? `then rerun \`${prefix} polish capture\`.` : "then rerun the QA command.";
   const install = prefix === "campaigns-os"
     ? "Run `npm run qa:install-browser` from the checkout (or `campaigns-os qa install-browser`),"
     : `Run \`${prefix} qa install-browser\`,`;
-  return applyInvocationPrefix(`${install} ${rerun}`, prefix);
+  return `${install} ${rerun}`;
 }

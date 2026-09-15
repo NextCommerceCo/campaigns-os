@@ -41,7 +41,7 @@ mkdir "<route>" && cd "<route>"
 npm init -y && npm i next-campaign-page-kit
 npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
 npm i -D "github:NextCommerceCo/campaigns-os#<sha>"
-npx campaigns-os tooling status
+npx campaigns-os tooling status --platform claude
 npx campaigns-os install-skills --platform claude
 mkdir -p source
 ```
@@ -53,9 +53,11 @@ you read; npm records the resolved commit in the folder's `package.json` and
 `package-lock.json`, which is how `tooling status` can print `Install mode:
 package install (node_modules), pinned at <version> @ <sha>`. The install runs
 the package's own build step (about 7 s). On a fresh profile that first
-`tooling status` exits 2 with `ATTENTION_REQUIRED` and one action, the
-`install-skills` line — it is telling you the skills are not installed yet,
-not that the install failed; run it again after `install-skills` for `READY`.
+`tooling status --platform claude` exits 2 with `ATTENTION_REQUIRED` and one
+action, the `install-skills` line — it is telling you the skills are not
+installed yet, not that the install failed; run it again after
+`install-skills` for `READY`. Without `--platform`, status checks every agent
+profile (Claude, Codex, shared) and stays at exit 2 until each is installed.
 `install-skills` writes `~/.claude/skills` (`--platform codex` writes
 `~/.codex/skills`), replacing same-name folders; restart the agent after.
 Prepared page HTML goes in `./source`, which must exist even when every page is
@@ -94,9 +96,12 @@ not a failed install. Everything after `start` is agent-driven: after `start`
 and after every stage, run `next` and do what it prints — it names the skill
 and the exact commands for the next stage, already spelled `npx campaigns-os
 …` for this install, which is why `install-skills` comes first. The browser
-for polish capture and QA is a one-time `npx campaigns-os qa install-browser`
-(`npx playwright install chromium` does the same thing and is what a pin older
-than that command shows).
+for polish capture and QA is a one-time `npx campaigns-os qa install-browser`,
+which installs the browser for the Playwright this toolkit bundles. A pin
+older than that command shows `npx playwright install chromium` instead; that
+is equivalent only when `npx playwright` resolves to the toolkit's Playwright
+(a campaign that depends on its own Playwright version gets that one's
+browser instead), so prefer `qa install-browser` on pins that have it.
 
 ### Other ways to run it
 

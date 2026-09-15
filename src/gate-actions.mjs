@@ -11,6 +11,10 @@
 // polish-node imports and so could not import from. A leaf: shell-token only.
 
 import { shellToken } from "./shell-token.mjs";
+import { invocationPrefixFor } from "./install-mode.mjs";
+import { dirname as installModeDirname, resolve as installModeResolve } from "node:path";
+import { fileURLToPath as installModeFileUrl } from "node:url";
+const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(import.meta.url)), "..");
 
 // The recorded actions of the hidden eager-media checkpoint, keyed by the
 // short name each producer reaches for. The gate evaluators publish these
@@ -77,6 +81,12 @@ export function requiredActionText(action, { packetPath = null, reportPath = nul
   let command = substitutePacket(template, packetPath);
   if (command && reportPath && templateDeclares(template, "--packet") && !templateDeclares(template, "--report")) {
     command = `${command} --report ${shellToken(reportPath)}`;
+  }
+  // Registry commands are stored bare; the printed text is spelled for the
+  // install this package runs from (bare from a checkout, `npx campaigns-os`
+  // from a campaign folder), once, here.
+  if (command && command.startsWith("campaigns-os ")) {
+    return `${invocationPrefixFor(PACKAGE_ROOT)} ${command.slice("campaigns-os ".length)}`;
   }
   if (command) return command;
   return typeof action?.description === "string" && action.description ? action.description : null;

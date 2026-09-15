@@ -106,7 +106,12 @@ export function localInstallStatus(root, pkg = {}) {
       summary: `Install mode: git checkout at ${root}.`,
     };
   }
-  const mode = root.split(sep).includes("_npx")
+  // npm's exec cache lays packages out as <cache>/_npx/<hex hash>/node_modules/<pkg>;
+  // a project that merely has `_npx` somewhere in its path is not that.
+  const segments = root.split(sep);
+  const npxIndex = segments.indexOf("_npx");
+  const inNpxCache = npxIndex >= 0 && /^[0-9a-f]{8,}$/i.test(segments[npxIndex + 1] || "") && segments[npxIndex + 2] === "node_modules";
+  const mode = inNpxCache
     ? "npx_cache"
     : enclosingNodeModules(root)
       ? "node_modules"
@@ -128,17 +133,23 @@ export function localInstallStatus(root, pkg = {}) {
 // The file a PATH executable ultimately runs: a symlink (node_modules/.bin on
 // POSIX) is followed; an npm cmd-shim is read for the script it execs. Falls
 // back to the executable itself when neither applies.
-function executableTargetPath(executable) {
+export function executableTargetPath(executable) {
   const real = realpathOrSelf(executable);
-  if (real !== executable || process.platform !== "win32") return real;
+  if (real !== executable) return real;
+  // Not a symlink: an npm cmd-shim (Windows, `%~dp0`-relative), a pnpm/yarn
+  // shell wrapper, or the script itself. Read a small text wrapper for the
+  // script it execs; anything else is the executable.
+  let text;
   try {
-    const shim = readFileSync(executable, "utf8");
-    const match = shim.match(/"([^"]+\.mjs)"/);
-    return match ? resolve(dirname(executable), match[1]) : real;
+    text = readFileSync(executable, "utf8").slice(0, 4096);
   } catch (error) {
     if (error?.code === "ENOENT" || error?.code === "EISDIR") return real;
     throw error;
   }
+  const match = text.match(/["']?((?:%~dp0|\$basedir|\$\{basedir\}|\.|\.\.|\/|[A-Za-z]:)[^"'\n]*?\.mjs)["']?/);
+  if (!match) return real;
+  const script = match[1].replace(/^(%~dp0|\$basedir|\$\{basedir\})[\\/]?/, "");
+  return realpathOrSelf(resolve(dirname(executable), script.replace(/\\/g, "/")));
 }
 
 function findExecutableOnPath(name) {
@@ -249,25 +260,3 @@ export function invocationPrefixFor(root, pkg = null) {
 // emitted for an operator or agent to copy is rewritten. Skill names such as
 // next-campaigns-os-setup, file names (campaigns-os.mjs), and already-prefixed
 // forms (`npx campaigns-os`, `npm run campaigns-os --`) are left alone.
-const DEFAULT_COMMAND_WORDS = ["start", "prepare-build", "build", "polish", "checkpoint", "doctor", "bundle", "next", "theme", "tooling", "install-skills", "install-agent-context", "validate-assembly-report", "telemetry", "standardize", "qa", "findings", "run-record", "run"];
-const patternCache = new Map();
-
-function bareCommandPattern(commands) {
-  const key = commands.join("|");
-  if (!patternCache.has(key)) {
-    patternCache.set(key, new RegExp(`(?<![\\w./-])(?<!npx )campaigns-os(?= (?:${key})\\b)`, "g"));
-  }
-  return patternCache.get(key);
-}
-
-export function applyInvocationPrefix(value, prefix, commands = DEFAULT_COMMAND_WORDS) {
-  if (!prefix || prefix === "campaigns-os") return value;
-  if (typeof value === "string") return value.replace(bareCommandPattern(commands), prefix);
-  if (Array.isArray(value)) return value.map((item) => applyInvocationPrefix(item, prefix, commands));
-  if (value && typeof value === "object") {
-    const out = {};
-    for (const [key, item] of Object.entries(value)) out[key] = applyInvocationPrefix(item, prefix, commands);
-    return out;
-  }
-  return value;
-}

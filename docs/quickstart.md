@@ -32,7 +32,7 @@ Existing page-kit campaign: `cd` into it (its `package.json` declares
 
 ```bash
 npm i -D "github:NextCommerceCo/campaigns-os#<sha>"
-npx campaigns-os tooling status
+npx campaigns-os tooling status --platform claude
 ```
 
 `#<sha>` is the commit you oriented on, so the code that runs is the code
@@ -62,7 +62,9 @@ skills:
 
 Exit code 2 from `tooling status` means attention is required — on a fresh
 profile that is the not-yet-installed skills — and the output prints the exact
-refresh command for the mode you ran it in.
+refresh command for the mode you ran it in. Pass the same `--platform` to
+status that you install skills for; without it, status checks every agent
+profile and stays at exit 2 until each is installed.
 
 Everything the toolkit prints for you to run (`next`, gate remediations, the
 browser-missing hints) is spelled for the install it came from: `npx
@@ -85,8 +87,9 @@ Every `npm run campaigns-os -- <command>` example in this repository is the
 checkout form. From a campaign folder the same command is `npx campaigns-os
 <command>`; the arguments are identical. `npm run qa:install-browser`, a
 checkout script, is `npx campaigns-os qa install-browser` from a campaign
-folder (`npx playwright install chromium` does the same thing). A fresh `git
-pull`
+folder (`npx playwright install chromium` is equivalent only when it resolves
+to the toolkit's own Playwright; prefer `qa install-browser` on pins that have
+it). A fresh `git pull`
 does not refresh copied agent skills in either mode; `tooling status` tells
 you when they are stale.
 
@@ -325,7 +328,7 @@ npx campaigns-os qa resolve --packet ./campaign-runtime.build.json
 npx campaigns-os qa run --packet ./campaign-runtime.build.json --base-url https://preview.example.com/campaign/ --browser --test-order common
 ```
 
-`npx campaigns-os qa install-browser` (`npm run qa:install-browser` from a checkout; `npx playwright install chromium` is the same step)
+`npx campaigns-os qa install-browser` (`npm run qa:install-browser` from a checkout; `npx playwright install chromium` only when it resolves to the toolkit's Playwright)
 is a one-time local setup step after install/update. It installs the Chromium
 binary used by package-owned polish capture and QA.
 Run it before `polish capture`, `--browser`, or `--test-order`; the CLI will tell
