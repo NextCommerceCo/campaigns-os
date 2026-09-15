@@ -19,7 +19,7 @@ import {
   PAGE_KIT_STORE_PROFILE_FIELDS,
   storeProfileSpecValueProblem,
 } from "./page-kit-store-profile.mjs";
-import { resolveSpecSdkPin } from "./page-kit-sdk-version.mjs";
+import { resolveSpecSdkPin, sdkPinWriteDecision } from "./page-kit-sdk-version.mjs";
 
 export const PAGE_KIT_SYNC_FIELDS = Object.freeze([...PAGE_KIT_STORE_PROFILE_FIELDS, "sdk_version"]);
 
@@ -108,7 +108,16 @@ export function planPageKitSync({ spec, entry, waivedGates = [] } = {}) {
     const row = { field: "sdk_version", before, after: sdk.value, source: sdk.source };
     if (before === sdk.value) unchanged.push(row);
     else if (sdkWaiver) notSynced.push({ field: "sdk_version", reason: "waived", detail: waivedDetail("sdk_version", sdkWaiver, "page_kit.sdk_version") });
-    else changes.push(row);
+    else if (sdkPinWriteDecision({ expected: sdk.value, observed: before, entry: target }) === "target_newer") {
+      // A configured campaign whose repo pin is ahead of the spec: the bump
+      // happened in the repo and the Map/spec is stale. Writing the spec's
+      // pin would undo it silently.
+      notSynced.push({
+        field: "sdk_version",
+        reason: "target_newer",
+        detail: `the target pin ${before} is newer than the CampaignSpec pin ${sdk.value} and the entry is no longer in scaffold state; the repo pin moved and the Map/spec is stale. Re-save the Map (or edit the spec) to ${before}, or record the page_kit.sdk_version waiver to keep the divergence; page-kit sync only seeds the pin after a scaffold and never moves a configured campaign's pin backwards.`,
+      });
+    } else changes.push(row);
   } else if (sdk.status === "spec_missing") {
     notInSpec.push("sdk_version");
   } else {

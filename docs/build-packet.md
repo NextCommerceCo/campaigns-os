@@ -67,10 +67,20 @@ reconcile as the gate's `repair_target` action:
 campaigns-os page-kit sync --packet campaign-runtime.build.json [--dry-run] [--json]
 ```
 
-The CampaignSpec is the authority. `page-kit sync` writes the nine Store
-Profile fields the spec carries (`campaign.store_*`) and `sdk_version`
-(`global_config.sdk_version`, or the `runtime.sdk_version` alias when the
-canonical key is absent) into `_data/campaigns.json[public_route_slug]`,
+The CampaignSpec is the authority for the Store Profile: those values are
+authored in the Map, never in the repo, so `page-kit sync` writes the nine
+fields the spec carries (`campaign.store_*`) unconditionally. The SDK pin is
+different. On an existing campaign the repo pin moves first and the Map/spec
+is stale until someone re-saves it, so a spec → repo write would undo a bump
+silently; sync therefore **seeds** `sdk_version` (`global_config.sdk_version`,
+or the `runtime.sdk_version` alias when the canonical key is absent): it
+writes the pin while the entry is still in scaffold state (the starter demo
+store profile is still in it) or when the target pin is older than the
+spec's, and refuses to move a configured campaign's pin backwards
+(`not_synced`, reason `target_newer`, naming both versions and pointing at
+re-saving the Map or the `page_kit.sdk_version` waiver). Whether the durable
+direction for the pin is repo → Map is an open decision this command does not
+pre-empt. Both go into `_data/campaigns.json[public_route_slug]`,
 prints a field-by-field before/after diff, and touches nothing else: a
 governed field the spec does not carry is left as it is (doctor's
 `target_only` warning still applies), non-governed keys keep their values and
@@ -169,10 +179,13 @@ campaigns-os checkpoint waive \
 
 Changing either version makes the decision stale. The same named-human,
 bounded-decision, visibility, and privacy rules described for Store Profile
-apply. A target pin that is missing, malformed, or simply different from a
-valid spec pin is repaired by the same `campaigns-os page-kit sync --packet
-<campaign-runtime.build.json>` described above, which doctor and `next` print
-as the gate's `repair_target` action.
+apply. A target pin that is missing, malformed, or behind a valid spec pin
+(or still the scaffold's seeded pin beside the demo store profile) is repaired
+by the same `campaigns-os page-kit sync --packet <campaign-runtime.build.json>`
+described above, which doctor and `next` print as the gate's `repair_target`
+action. A configured campaign whose pin is newer than the spec's gets an edit
+action instead: re-save the Map (or edit the spec) to the repo pin, or record
+the waiver; sync never moves that pin backwards.
 
 ### Polish hidden eager-media checkpoint
 

@@ -8,7 +8,7 @@ import { test } from "node:test";
 
 import { checkpointWaive, doctorPacket, nextStage, pageKitSyncCommand, pageKitSyncTextLines } from "./cli.mjs";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
-import { evaluatePageKitSdkVersion, resolveSpecSdkPin } from "./page-kit-sdk-version.mjs";
+import { evaluatePageKitSdkVersion, resolveSpecSdkPin, sdkPinWriteDecision } from "./page-kit-sdk-version.mjs";
 import { stageRealPackageInstall } from "./package-install-fixture.mjs";
 import { evaluatePageKitStoreProfile, PAGE_KIT_SYNC_COMMAND } from "./page-kit-store-profile.mjs";
 import {
@@ -528,7 +528,9 @@ test("a target_invalid_type Store Profile blocker alone still routes to page-kit
   // The target holds a number where a string belongs: not demo residue, not
   // a mismatch, and not waivable, but the spec value is a string so writing
   // it over the target is exactly the repair.
-  const entry = { ...SCAFFOLD_ENTRY, ...SPEC.campaign, store_name: 12345 };
+  // A configured entry (the spec's values already in it, so no demo
+  // residue) with one non-string field and a pin behind the spec's.
+  const entry = { ...SCAFFOLD_ENTRY, ...SPEC.campaign, store_name: 12345, sdk_version: "0.4.30" };
   const targetLoad = { status: "ok", public_route_slug: "acme-glow", target_path: "_data/campaigns.json", entry };
   const gate = evaluatePageKitStoreProfile({ specCampaign: SPEC.campaign, targetLoad });
   assert.equal(gate.status, "blocked");
@@ -543,7 +545,7 @@ test("a target_invalid_type Store Profile blocker alone still routes to page-kit
   const plan = planPageKitSync({ spec: SPEC, entry });
   assert.deepEqual(plan.changes.map((row) => [row.field, row.before, row.after]), [
     ["store_name", 12345, "Acme Glow"],
-    ["sdk_version", "0.4.38", "0.4.36"],
+    ["sdk_version", "0.4.30", "0.4.36"],
   ]);
   const campaigns = { "acme-glow": entry };
   applyPageKitSync(campaigns, "acme-glow", plan);
@@ -666,16 +668,18 @@ test("page-kit sync keeps the file's own indentation and does not add a trailing
     });
     assert.equal(text, JSON.stringify(expected, null, 4), "byte-identical to the same document re-serialized at the file's indent");
 
-    // Tabs are an indent too.
+    // Tabs are an indent too. The entry is now configured (no demo residue)
+    // and its pin is 0.4.36, so the spec must move FORWARD for sync to write
+    // it: a configured campaign's pin is never moved backwards.
     writeFileSync(campaignsPath, `${JSON.stringify(readJson(campaignsPath), null, "\t")}\n`);
     const spec = readJson(join(dir, "campaignspec.v42.basic.json"));
-    spec.global_config.sdk_version = "0.4.35";
+    spec.global_config.sdk_version = "0.4.37";
     writeJson(join(dir, "campaignspec.v42.basic.json"), spec);
     assert.equal(pageKitSyncCommand({ _: ["page-kit", "sync"], packet: packetPath }).status, "synced");
     const tabbed = readFileSync(campaignsPath, "utf8");
     assert.match(tabbed, /^\{\n\t"/);
     assert.ok(tabbed.endsWith("}\n"));
-    assert.equal(readJson(campaignsPath)[slug].sdk_version, "0.4.35");
+    assert.equal(readJson(campaignsPath)[slug].sdk_version, "0.4.37");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1166,4 +1170,50 @@ test("the gate's edit action separates target-side defects from spec-side ones",
   const mixedRepair = mixed.required_actions.find((action) => action.id === "repair_target");
   assert.match(mixedRepair.description, /Remove or correct .*\.store_phone/);
   assert.match(mixedRepair.description, /Repair the CampaignSpec Store Profile field\(s\) store_returns \(not_http_url\)/);
+});
+
+test("page-kit sync seeds the pin after a scaffold but never moves a configured campaign's pin backwards", () => {
+  // Fresh scaffold: the template seeds a pin NEWER than the spec's, beside
+  // the demo store profile. That is the case sync exists for, so it writes.
+  const scaffold = planPageKitSync({ spec: SPEC, entry: SCAFFOLD_ENTRY });
+  assert.deepEqual(scaffold.changes.find((row) => row.field === "sdk_version"), { field: "sdk_version", before: "0.4.38", after: "0.4.36", source: "global_config.sdk_version" });
+
+  // Configured campaign (no demo residue), repo pin ahead of the spec: the
+  // bump happened in the repo and the Map is stale. Refused by name.
+  const bumped = planPageKitSync({ spec: SPEC, entry: { ...NON_DEMO_ENTRY, sdk_version: "0.4.38" } });
+  assert.equal(bumped.changes.some((row) => row.field === "sdk_version"), false);
+  assert.deepEqual(bumped.not_synced.map((row) => [row.field, row.reason]), [["sdk_version", "target_newer"]]);
+  assert.match(bumped.not_synced[0].detail, /0\.4\.38 is newer than the CampaignSpec pin 0\.4\.36/);
+  assert.match(bumped.not_synced[0].detail, /page_kit\.sdk_version waiver/);
+
+  // Configured campaign behind the spec: the spec's newer pin is written.
+  const behind = planPageKitSync({ spec: SPEC, entry: { ...NON_DEMO_ENTRY, sdk_version: "0.4.30" } });
+  assert.ok(behind.changes.some((row) => row.field === "sdk_version" && row.after === "0.4.36"));
+  assert.equal(sdkPinWriteDecision({ expected: "0.4.36", observed: "0.4.36", entry: NON_DEMO_ENTRY }), "write");
+  assert.equal(sdkPinWriteDecision({ expected: "0.4.36", observed: "0.5.0", entry: NON_DEMO_ENTRY }), "target_newer");
+  assert.equal(sdkPinWriteDecision({ expected: "0.4.36", observed: "1.0.0", entry: SCAFFOLD_ENTRY }), "write");
+
+  // The gate agrees: sync is named only where sync would write.
+  const targetLoad = (entry) => ({ status: "ok", public_route_slug: "acme-glow", target_path: "_data/campaigns.json", entry });
+  const gateScaffold = evaluatePageKitSdkVersion({ spec: SPEC, targetLoad: targetLoad(SCAFFOLD_ENTRY) });
+  assert.equal(gateScaffold.required_actions.find((action) => action.id === "repair_target").command, PAGE_KIT_SYNC_COMMAND);
+  const gateBumped = evaluatePageKitSdkVersion({ spec: SPEC, targetLoad: targetLoad({ ...NON_DEMO_ENTRY, sdk_version: "0.4.38" }) });
+  assert.equal(gateBumped.status, "blocked");
+  const repair = gateBumped.required_actions.find((action) => action.id === "repair_target");
+  assert.equal(repair.kind, "edit");
+  assert.equal(repair.command, null);
+  assert.match(repair.description, /newer than the CampaignSpec pin/);
+  assert.ok(gateBumped.required_actions.some((action) => action.id === "waive_checkpoint"), "the waiver lane is still offered");
+
+  // End to end on the fixture: a configured, bumped campaign keeps its pin
+  // and the run is partial.
+  const { dir, packetPath, campaignsPath, slug } = fixture({ entry: { ...NON_DEMO_ENTRY, sdk_version: "0.4.38" } });
+  try {
+    const result = pageKitSyncCommand({ _: ["page-kit", "sync"], packet: packetPath });
+    assert.equal(result.status, "partial");
+    assert.equal(readJson(campaignsPath)[slug].sdk_version, "0.4.38");
+    assert.deepEqual(result.not_synced.map((row) => row.reason), ["target_newer"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

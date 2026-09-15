@@ -23,10 +23,18 @@ Additive: one new CLI command, `page-kit`, joins the supported argv surface.
   `store_returns`, `store_shipping`, `store_phone`, `store_phone_tel`,
   normalized the way the gate compares them; a target that differs only in
   surrounding whitespace or Unicode normalization already passes and is
-  reported unchanged) and `sdk_version` (`global_config.sdk_version`, else
-  the `runtime.sdk_version` alias, resolved by the same
-  `resolveSpecSdkPin` rule the gate uses) into the entry for the packet's
-  `campaign.public_route_slug`, prints a field-by-field `before -> after`
+  reported unchanged) into the entry for the packet's
+  `campaign.public_route_slug`, and **seeds** `sdk_version`
+  (`global_config.sdk_version`, else the `runtime.sdk_version` alias,
+  resolved by the same `resolveSpecSdkPin` rule the gate uses): the pin is
+  written while the entry is still in scaffold state (the starter demo store
+  profile is still in it) or when the target pin is older than the spec's; a
+  configured campaign whose pin is newer than the spec's is never moved
+  backwards (on an existing campaign the repo pin moves first and the
+  Map/spec is stale until re-saved, so spec → repo would undo the bump) and
+  lands in `not_synced[]` with reason `target_newer`, naming both versions
+  and pointing at re-saving the Map or the `page_kit.sdk_version` waiver.
+  It prints a field-by-field `before -> after`
   diff with each value's spec source, and touches nothing else: a governed
   field the spec does not carry is left as it is (doctor's `target_only`
   warning still applies), non-governed keys keep their values and order,
@@ -95,7 +103,11 @@ Additive: one new CLI command, `page-kit`, joins the supported argv surface.
   `required_actions[].command` all print the pasteable command with the real
   packet path, spelled for the install it came from (`npx campaigns-os
   page-kit sync …` from a campaign folder). For `page_kit.sdk_version` this
-  covers the `target_missing`, `target_invalid`, and mismatch states; for
+  covers the `target_missing`, `target_invalid`, and mismatch states where
+  sync would write (the target pin is behind the spec's, or the entry is
+  still in scaffold state); a configured campaign whose pin is newer than
+  the spec's keeps an edit action (re-save the Map to the repo pin, or
+  record the waiver). For
   `page_kit.store_profile` it covers every blocker the target can be made
   authoritative for (`demo_residue`, `target_missing`, `mismatch`,
   `target_invalid_type`, each with a usable spec value: present, an http(s)

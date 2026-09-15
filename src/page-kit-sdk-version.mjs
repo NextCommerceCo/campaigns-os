@@ -1,5 +1,10 @@
 import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
-import { PAGE_KIT_SYNC_COMMAND } from "./page-kit-store-profile.mjs";
+import {
+  isDemoResidue,
+  normalizeStoreProfileValue,
+  PAGE_KIT_STORE_PROFILE_FIELDS,
+  PAGE_KIT_SYNC_COMMAND,
+} from "./page-kit-store-profile.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import {
   assessCheckpointWaivers,
@@ -40,6 +45,29 @@ export function resolveSpecSdkPin(spec) {
     : { ...base, value: spec.runtime.sdk_version, source: "runtime.sdk_version", status: "ok" };
 }
 const MISSING_TARGET_STATUSES = new Set(["target_repo_missing", "file_missing", "entry_missing"]);
+
+// Whether `page-kit sync` may write the spec's pin over the target's. The
+// spec is the authority for the Store Profile in every case (those values are
+// authored in the Map, never in the repo), but the SDK pin is different: on an
+// existing campaign the repo pin moves first and the Map/spec is stale until
+// someone re-saves it, so spec -> repo would silently undo a bump. Sync
+// therefore SEEDS the pin: it writes when the entry is still in scaffold
+// state (the starter demo store profile is still in it) or the target pin is
+// older than the spec's, and refuses to move a configured campaign's pin
+// backwards. Both released versions are canonical MAJOR.MINOR.PATCH here.
+export function sdkPinWriteDecision({ expected, observed, entry }) {
+  const scaffoldState = PAGE_KIT_STORE_PROFILE_FIELDS.some((field) => (
+    typeof entry?.[field] === "string" && isDemoResidue(field, normalizeStoreProfileValue(entry[field]))
+  ));
+  if (scaffoldState) return "write";
+  if (!isReleasedSdkVersion(observed) || !isReleasedSdkVersion(expected)) return "write";
+  const compare = (a, b) => {
+    const [am, an, ap] = a.split(".").map(Number);
+    const [bm, bn, bp] = b.split(".").map(Number);
+    return am - bm || an - bn || ap - bp;
+  };
+  return compare(observed, expected) > 0 ? "target_newer" : "write";
+}
 
 export function evaluatePageKitSdkVersion({
   spec,
@@ -269,12 +297,19 @@ export function evaluatePageKitSdkVersion({
       waiver,
       waiver_assessment,
       required_actions: waiver ? [] : [
-        {
-          id: "repair_target",
-          kind: "command",
-          command: PAGE_KIT_SYNC_COMMAND,
-          description: `Write the CampaignSpec pin ${expected_sdk_version} into ${subject.target_path}[${subject.public_route_slug}].sdk_version (currently ${observed_sdk_version}), then re-run doctor.`,
-        },
+        sdkPinWriteDecision({ expected: expected_sdk_version, observed: observed_sdk_version, entry: targetEntry }) === "write"
+          ? {
+            id: "repair_target",
+            kind: "command",
+            command: PAGE_KIT_SYNC_COMMAND,
+            description: `Write the CampaignSpec pin ${expected_sdk_version} into ${subject.target_path}[${subject.public_route_slug}].sdk_version (currently ${observed_sdk_version}), then re-run doctor.`,
+          }
+          : {
+            id: "repair_target",
+            kind: "edit",
+            command: null,
+            description: `${subject.target_path}[${subject.public_route_slug}].sdk_version ${observed_sdk_version} is newer than the CampaignSpec pin ${expected_sdk_version}: the repo pin moved and the Map/spec is stale. Re-save the Map (or edit the spec) to ${observed_sdk_version} and re-run doctor; page-kit sync will not move a configured campaign's pin backwards. To keep the divergence deliberately, record the waiver below.`,
+          },
         {
           id: "waive_checkpoint",
           kind: "command",
