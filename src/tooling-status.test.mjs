@@ -19,6 +19,7 @@ import { test } from "node:test";
 
 import * as cliModule from "./cli.mjs";
 import * as cliInstallMode from "./install-mode.mjs";
+import { PIN_SHA, stageRealPackageInstall } from "./package-install-fixture.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -211,7 +212,6 @@ test("a removable retired Campaigns OS skill remains actionable", () => {
 // state.
 // ---------------------------------------------------------------------------
 
-const PIN_SHA = "236d7fc454c877e3c07337237ee9e19303c5cc15";
 
 function writeFakePackageInstall(installRoot, { lockfile = "hidden", resolved, gitHead } = {}) {
   const pkgRoot = join(installRoot, "node_modules", "@nextcommerce", "campaigns-os");
@@ -325,26 +325,6 @@ test("a package directory inside someone else's git repository is a package inst
 
 // Lay the real package out the way npm does (`<install>/node_modules/@nextcommerce/campaigns-os`)
 // with its dependencies reachable, so the spawned CLI runs in package mode.
-function stageRealPackageInstall(installRoot) {
-  const pkgRoot = join(installRoot, "node_modules", "@nextcommerce", "campaigns-os");
-  mkdirSync(pkgRoot, { recursive: true });
-  for (const entry of ["agents", "bin", "src", "campaign-spec", "contracts", "schemas", "skills", "skills.json", "package.json"]) {
-    cpSync(join(ROOT, entry), join(pkgRoot, entry), { recursive: true, dereference: true });
-  }
-  symlinkSync(join(ROOT, "node_modules"), join(pkgRoot, "node_modules"), "dir");
-  writeFileSync(join(installRoot, "node_modules", ".package-lock.json"), JSON.stringify({
-    name: "npx",
-    lockfileVersion: 3,
-    packages: {
-      "node_modules/@nextcommerce/campaigns-os": {
-        version: "0.1.0-alpha.0",
-        resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
-      },
-    },
-  }));
-  return pkgRoot;
-}
-
 test("tooling status from a package install is ready, names the pin, and gives package-mode commands", () => {
   // realpath: node resolves the main module through symlinks (macOS /var -> /private/var),
   // and the reported bin_dir follows that resolved root.

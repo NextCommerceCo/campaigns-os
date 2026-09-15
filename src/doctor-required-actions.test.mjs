@@ -25,9 +25,10 @@ function runDoctorText(packetPath) {
 }
 
 // The fixture is the shipped example tree with one field changed: the target
-// page-kit pins a newer SDK than the CampaignSpec, which is the drift the
-// starter families produce whenever a spec keeps an older pin. It blocks
-// page_kit.sdk_version and therefore carries required_actions[].
+// page-kit pins an OLDER SDK than the CampaignSpec, so the mismatch blocks
+// page_kit.sdk_version and its repair is the sync command (a configured
+// campaign whose pin is newer than the spec's gets an edit action instead;
+// sync never moves such a pin backwards).
 // Every doctor run here reads a staged copy of examples/: doctor writes its
 // sidecar into the packet's target, and the checkout is not a scratch dir.
 // The packet reaches its catalog at ../contracts/, so that file is staged
@@ -50,13 +51,14 @@ function sdkPinMismatchFixture(targetVersion) {
 }
 
 test("text-mode doctor prints the remediation for a blocked checkpoint gate", () => {
-  const { dir, packetPath } = sdkPinMismatchFixture("0.4.38");
+  const { dir, packetPath } = sdkPinMismatchFixture("0.4.17");
   try {
     const text = runDoctorText(packetPath);
     // The blocker itself was always printed; the remediation was not.
-    assert.match(text, /\[page_kit\.sdk_version\] Target SDK version 0\.4\.38 does not match/);
+    assert.match(text, /\[page_kit\.sdk_version\] Target SDK version 0\.4\.17 does not match/);
     assert.match(text, /^Required actions:$/m);
-    assert.match(text, /^- \[page_kit\.sdk_version\] Set _data\/campaigns\.json\[runtime-packet-demo\]\.sdk_version to /m);
+    // The target repair is the reconcile command, spelled with this run's packet.
+    assert.match(text, /^- \[page_kit\.sdk_version\] campaigns-os page-kit sync --packet /m);
     assert.match(text, /^- \[page_kit\.sdk_version\] campaigns-os checkpoint waive --packet /m);
     // The printed waiver command names this run's packet, not the placeholder.
     assert.equal(text.includes("--packet <packet>"), false);
@@ -73,7 +75,7 @@ test("text-mode doctor prints the remediation for a blocked checkpoint gate", ()
 // subprocess so the assertable interface and the operator's stdout cannot
 // drift apart.
 test("text-mode doctor stdout is exactly resultTextLines plus doctorTinyPromptLines", () => {
-  const { dir, packetPath } = sdkPinMismatchFixture("0.4.38");
+  const { dir, packetPath } = sdkPinMismatchFixture("0.4.17");
   try {
     const text = runDoctorText(packetPath);
     const result = doctorCommand({ packet: packetPath, "no-write": true });

@@ -57,6 +57,77 @@ target) is never waivable: the gate names the residue fields, offers no waive
 command for them, and `checkpoint waive` refuses with those fields until the
 values are replaced.
 
+The repair is a command. A fresh page-kit scaffold (`campaign-init`) seeds the
+route's entry with the starter family's demo profile and pin, so this gate and
+the SDK-version gate below block on every first run; the values that clear
+them already exist in the CampaignSpec, and doctor and `next` print the
+reconcile as the gate's `repair_target` action:
+
+```bash
+campaigns-os page-kit sync --packet campaign-runtime.build.json [--dry-run] [--json]
+```
+
+The CampaignSpec is the authority for the Store Profile: those values are
+authored in the Map, never in the repo, so `page-kit sync` writes the nine
+fields the spec carries (`campaign.store_*`) unconditionally. The SDK pin is
+different. On an existing campaign the repo pin moves first and the Map/spec
+is stale until someone re-saves it, so a spec → repo write would undo a bump
+silently; sync therefore **seeds** `sdk_version` (`global_config.sdk_version`,
+or the `runtime.sdk_version` alias when the canonical key is absent): it
+writes the pin while the entry is still in scaffold state (the starter demo
+store profile is still in it) or when the target pin is older than the
+spec's, and refuses to move a configured campaign's pin backwards
+(`not_synced`, reason `target_newer`, naming both versions and pointing at
+re-saving the Map or the `page_kit.sdk_version` waiver). Whether the durable
+direction for the pin is repo → Map is an open decision this command does not
+pre-empt. Both go into `_data/campaigns.json[public_route_slug]`,
+prints a field-by-field before/after diff, and touches nothing else: a
+governed field the spec does not carry is left as it is (doctor's
+`target_only` warning still applies), non-governed keys keep their values and
+order, other routes and other files are not written. The file is edited in
+place and re-serialized with its own top-level indentation, line ending and
+trailing newline; when that round trip would not have reproduced the file
+byte for byte (a minified file, mixed indentation), a
+`page_kit.sync.file_reformatted` warning says so, because the printed diff
+covers only the governed fields. `--dry-run` prints the same diff without
+writing. Exit 0 on success (including a no-op re-run); exit 2 with
+`page_kit.sync.*` error codes and nothing written when the packet cannot be
+read, the target entry or the spec is missing or not an object, the spec
+identifies another campaign (`spec_identity.public_route_slug` or `map_id`
+disagreeing with the packet: `page_kit.sync.spec_identity_mismatch`), or the
+resolved `_data/campaigns.json` lies outside the target repo through a symlink
+(`page_kit.sync.target_escapes_repo`).
+
+The spec is the authority, but the target is made authoritative only from a
+usable spec value. States the target cannot be made authoritative for are
+reported as `not_synced` with a reason, never written, and the run's status
+is `partial` (exit 0, since the writes that could happen did; doctor will
+still block): a conflicting or non-released spec pin; a spec field of the
+wrong type (`spec_invalid_type`, doctor's own blocker); a URL field that is
+not an http(s) URL or a `store_phone_tel` that is not a `tel:` URI of digits,
+spaces, dashes, parens and dots (templates put both into `href` attributes,
+where escaping does not neutralize another scheme); a value with control
+characters; the starter demo value itself in the spec; and starter demo
+residue in a governed field the spec does not carry (doctor blocks on that
+residue without a waiver, and sync has no spec value to write over it). For
+every one of those the gate's `repair_target` action is an edit naming the
+spec field, not the sync command, so `next` never loops on a repair that
+cannot make progress. Fix the spec, then sync again. (`store_contact` may
+also be a `mailto:` address, the one non-http value templates render as a
+contact link.) A gate under an active named-human waiver is a human decision
+sync does not reverse: its fields are reported `not_synced` with reason
+`waived` naming who waived, and the target stays as the waiver accepted it
+until the waiver is withdrawn from the Assembly Report. Sync reads the report
+doctor would (the one the Build Context binds, or `--report <path>`, which
+doctor appends to the printed command when it inspected a non-default
+report); unknown flags are rejected rather than ignored, so a mistyped
+`--dry-run` cannot become a write. After a write the retained doctor
+snapshot is marked stale; when the report records a terminal build, a
+`page_kit.sync.build_stale` warning says the rendered `_site/` was built
+from the old entry and points at the rebuild, because doctor's page-kit gates
+read `_data/campaigns.json`, not the built output. Re-run `doctor` and both
+gates report `pass` without a waiver.
+
 An intentional, evidence-backed mismatch or missing value may be accepted with
 the first gate in the staged checkpoint registry:
 
@@ -108,7 +179,13 @@ campaigns-os checkpoint waive \
 
 Changing either version makes the decision stale. The same named-human,
 bounded-decision, visibility, and privacy rules described for Store Profile
-apply.
+apply. A target pin that is missing, malformed, or behind a valid spec pin
+(or still the scaffold's seeded pin beside the demo store profile) is repaired
+by the same `campaigns-os page-kit sync --packet <campaign-runtime.build.json>`
+described above, which doctor and `next` print as the gate's `repair_target`
+action. A configured campaign whose pin is newer than the spec's gets an edit
+action instead: re-save the Map (or edit the spec) to the repo pin, or record
+the waiver; sync never moves that pin backwards.
 
 ### Polish hidden eager-media checkpoint
 
