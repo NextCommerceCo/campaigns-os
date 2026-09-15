@@ -6217,7 +6217,7 @@ function qaBrowserMissing(kind, error) {
     ].join(" ")
     : [
       "Playwright Chromium is not installed for Campaigns OS browser QA.",
-      "Run `npm run qa:install-browser` from the campaigns-os repo, then rerun the QA command.",
+      "Run `campaigns-os qa install-browser` (or `npm run qa:install-browser` from a checkout), then rerun the QA command.",
       "This is required before using `--browser` or `--test-order`.",
     ].join(" "));
 }

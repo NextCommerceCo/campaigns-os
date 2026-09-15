@@ -609,7 +609,7 @@ function polishBrowserMissing(kind) {
     ].join(" ")
     : [
       "Playwright Chromium is not installed for Campaigns OS polish capture.",
-      "Run `npm run qa:install-browser` from the campaigns-os repo, then rerun `campaigns-os polish capture`.",
+      "Run `campaigns-os qa install-browser` (or `npm run qa:install-browser` from a checkout), then rerun `campaigns-os polish capture`.",
     ].join(" "));
 }
 

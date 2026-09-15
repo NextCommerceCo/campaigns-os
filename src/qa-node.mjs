@@ -15,6 +15,8 @@ import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
@@ -84,6 +86,7 @@ Usage:
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
   campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--browser]   # L7: QA a built _site/ with no packet/spec
+  campaigns-os qa install-browser [--json]   # one-time: install the package-owned Playwright Chromium (same as npm run qa:install-browser from a checkout)
 
 Options:
   --fixture <path>                Parity-capture fixture (required by qa parity).
@@ -119,7 +122,8 @@ Options:
   --no-remit                     When an ambient run session is active, write the local Run Record but skip Run Telemetry remit.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
-                                  Requires one-time setup: npm run qa:install-browser.
+                                  Requires one-time setup: campaigns-os qa install-browser
+                                  (npm run qa:install-browser from a checkout).
   --headed                        Show the Playwright browser window when --browser is set.
   --browser-width <px>            Browser viewport width. Default: 1440.
   --browser-height <px>           Browser viewport height. Default: 1200.
@@ -139,7 +143,8 @@ Options:
                                   "tiers:full" cross every tier with those path shapes. --select-package
                                   <ref[:qty],...> narrows a tiers run to the listed declared tiers;
                                   --apply-coupon is incompatible (tiers derives coupons from the spec).
-                                  Requires one-time setup: npm run qa:install-browser.
+                                  Requires one-time setup: campaigns-os qa install-browser
+                                  (npm run qa:install-browser from a checkout).
   --max-test-orders <n>           Accidental-flood guard for planned browser order paths (not a permission gate). Default: 6.
   --max-order-creations <n>       Hard bound on REAL order creations in this run, reserved before each submit
                                   click. Default: the planned path count. A path whose failure is confirmed to
@@ -168,7 +173,8 @@ Options:
   --analytics-baseline <url>      Analytics-parity leg (opt-in): URL of the legacy funnel to diff against (e.g. the
                                   legacy receipt/thank-you page). Launches a Playwright browser to capture the live
                                   dataLayer + GTM/pixel tag-fires on both URLs and diffs them into parity assertions.
-                                  Requires one-time setup: npm run qa:install-browser.
+                                  Requires one-time setup: campaigns-os qa install-browser
+                                  (npm run qa:install-browser from a checkout).
   --analytics-candidate <url>     Analytics-PARITY leg only: explicit candidate receipt URL paired with the
                                   --analytics-baseline legacy receipt (receipt-capture pairing). When omitted,
                                   the parity candidate and correctness root-inventory phase capture the URL
@@ -228,7 +234,49 @@ export async function runQaCli(args, { ambient = null } = {}) {
     output(result, args);
     return result;
   }
+  if (subcommand === "install-browser") {
+    const result = installQaBrowser();
+    output(result, args);
+    process.exitCode = result.ok ? 0 : 1;
+    return result;
+  }
   throw new Error(`Unknown qa command: ${subcommand}`);
+}
+
+// The package-owned browser install, runnable from any install mode. It is
+// the same step as `npm run qa:install-browser` (a checkout script), but a
+// global or npx install has no checkout to run scripts in, and the printed
+// recovery commands must work where the operator actually is. It drives the
+// Playwright CLI bundled with THIS package so the browser matches the
+// Playwright version the QA and polish producers load.
+export function installQaBrowser({ spawn = spawnSync } = {}) {
+  const require = createRequire(import.meta.url);
+  let playwrightCli;
+  try {
+    // playwright's exports map does not expose cli.js; its package.json is
+    // exported, and the CLI lives beside it (package.json "bin": "cli.js").
+    playwrightCli = join(dirname(require.resolve("playwright/package.json")), "cli.js");
+    if (!existsSync(playwrightCli)) throw Object.assign(new Error("playwright/cli.js is missing"), { code: "MODULE_NOT_FOUND" });
+  } catch (error) {
+    if (error?.code !== "MODULE_NOT_FOUND") throw error;
+    return {
+      ok: false,
+      status: "playwright_missing",
+      command: null,
+      note: "The playwright dependency is not installed beside this package; reinstall the package (or run npm install in a checkout), then rerun campaigns-os qa install-browser.",
+    };
+  }
+  const run = spawn(process.execPath, [playwrightCli, "install", "chromium"], { stdio: "inherit" });
+  const ok = run.status === 0;
+  return {
+    ok,
+    status: ok ? "installed" : "install_failed",
+    command: `${process.execPath} ${playwrightCli} install chromium`,
+    exit_code: run.status,
+    note: ok
+      ? "Playwright Chromium is installed for this package; browser QA and polish capture can run."
+      : `Playwright browser install exited ${run.status}; rerun campaigns-os qa install-browser after fixing the reported error.`,
+  };
 }
 
 async function resolveQaInputs(args, {

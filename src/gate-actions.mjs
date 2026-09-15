@@ -25,8 +25,8 @@ export const HIDDEN_EAGER_MEDIA_ACTIONS = Object.freeze({
   install_browser: Object.freeze({
     id: "polish.hidden_eager_media.install_browser",
     kind: "command",
-    command: "npm run qa:install-browser",
-    description: "Install the package-owned Playwright Chromium runtime before rerunning polish capture.",
+    command: "campaigns-os qa install-browser",
+    description: "Install the package-owned Playwright Chromium runtime before rerunning polish capture (npm run qa:install-browser from a checkout).",
   }),
   waive: Object.freeze({
     id: "polish.hidden_eager_media.waive",

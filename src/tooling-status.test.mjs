@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  cpSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -197,4 +200,213 @@ test("a removable retired Campaigns OS skill remains actionable", () => {
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Install mode: a package install (npx cache, a consumer's node_modules) is a
+// supported way to run the toolkit, not a broken checkout. `tooling status`
+// must name it, derive the pinned commit npm recorded, and never report an
+// enclosing repository that is not this toolkit's as the toolkit's own git
+// state.
+// ---------------------------------------------------------------------------
+
+const PIN_SHA = "236d7fc454c877e3c07337237ee9e19303c5cc15";
+
+function writeFakePackageInstall(installRoot, { lockfile = "hidden", resolved, gitHead } = {}) {
+  const pkgRoot = join(installRoot, "node_modules", "@nextcommerce", "campaigns-os");
+  mkdirSync(pkgRoot, { recursive: true });
+  const pkg = { name: "@nextcommerce/campaigns-os", version: "0.1.0-alpha.0" };
+  if (gitHead) pkg.gitHead = gitHead;
+  writeFileSync(join(pkgRoot, "package.json"), JSON.stringify(pkg));
+  const lock = {
+    name: "npx",
+    lockfileVersion: 3,
+    packages: {
+      "node_modules/@nextcommerce/campaigns-os": {
+        version: "0.1.0-alpha.0",
+        ...(resolved ? { resolved } : {}),
+      },
+    },
+  };
+  if (lockfile === "hidden") {
+    writeFileSync(join(installRoot, "node_modules", ".package-lock.json"), JSON.stringify(lock));
+  } else if (lockfile === "root") {
+    writeFileSync(join(installRoot, "package-lock.json"), JSON.stringify(lock));
+  }
+  return pkgRoot;
+}
+
+test("derivePackagePin reads the resolved git sha npm recorded for a package install", () => {
+  const installRoot = mkdtempSync(join(tmpdir(), "campaigns-os-pin-"));
+  try {
+    const pkgRoot = writeFakePackageInstall(installRoot, {
+      resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+    });
+    const pin = cliModule.derivePackagePin(pkgRoot, JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")));
+    assert.equal(pin.commit, PIN_SHA);
+    assert.equal(pin.version, "0.1.0-alpha.0");
+    assert.equal(pin.spec, `github:NextCommerceCo/campaigns-os#${PIN_SHA.slice(0, 12)}`);
+  } finally {
+    rmSync(installRoot, { recursive: true, force: true });
+  }
+});
+
+test("derivePackagePin falls back to package-lock.json, then gitHead, and reports null when nothing is recorded", () => {
+  const fromRootLock = mkdtempSync(join(tmpdir(), "campaigns-os-pin-root-"));
+  const fromGitHead = mkdtempSync(join(tmpdir(), "campaigns-os-pin-githead-"));
+  const nothing = mkdtempSync(join(tmpdir(), "campaigns-os-pin-none-"));
+  try {
+    const rootLockPkg = writeFakePackageInstall(fromRootLock, {
+      lockfile: "root",
+      resolved: `git+https://github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+    });
+    assert.equal(cliModule.derivePackagePin(rootLockPkg, {}).commit, PIN_SHA);
+
+    const gitHeadPkg = writeFakePackageInstall(fromGitHead, { lockfile: "none", gitHead: PIN_SHA });
+    const gitHeadPin = cliModule.derivePackagePin(gitHeadPkg, JSON.parse(readFileSync(join(gitHeadPkg, "package.json"), "utf8")));
+    assert.equal(gitHeadPin.commit, PIN_SHA);
+    assert.equal(gitHeadPin.spec, `github:NextCommerceCo/campaigns-os#${PIN_SHA.slice(0, 12)}`);
+
+    // A registry-shaped resolved URL carries no commit: honest null, not a guess.
+    const nothingPkg = writeFakePackageInstall(nothing, {
+      resolved: "https://registry.npmjs.org/@nextcommerce/campaigns-os/-/campaigns-os-0.1.0-alpha.0.tgz",
+    });
+    assert.equal(cliModule.derivePackagePin(nothingPkg, {}), null);
+  } finally {
+    for (const dir of [fromRootLock, fromGitHead, nothing]) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("localInstallStatus classifies an npx cache, a consumer node_modules, and this checkout", () => {
+  const npxRoot = mkdtempSync(join(tmpdir(), "campaigns-os-mode-"));
+  try {
+    // npx lays the package out under <cache>/_npx/<hash>/node_modules/.
+    const npxInstall = join(npxRoot, "_npx", "0123abcd");
+    const npxPkg = writeFakePackageInstall(npxInstall, {
+      resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+    });
+    const npx = cliModule.localInstallStatus(npxPkg, { version: "0.1.0-alpha.0" });
+    assert.equal(npx.mode, "npx_cache");
+    assert.equal(npx.pinned.commit, PIN_SHA);
+    assert.match(npx.summary, /package install \(npx cache\), pinned at 0\.1\.0-alpha\.0 @ 236d7fc454c8/);
+
+    const consumerPkg = writeFakePackageInstall(join(npxRoot, "consumer"), { lockfile: "none" });
+    const consumer = cliModule.localInstallStatus(consumerPkg, { version: "0.1.0-alpha.0" });
+    assert.equal(consumer.mode, "node_modules");
+    assert.equal(consumer.pinned, null);
+    assert.match(consumer.summary, /pinned commit not derivable/);
+
+    const checkout = cliModule.localInstallStatus(ROOT, { version: "0.1.0-alpha.0" });
+    assert.equal(checkout.mode, "checkout");
+    assert.equal(checkout.pinned, null);
+  } finally {
+    rmSync(npxRoot, { recursive: true, force: true });
+  }
+});
+
+test("a package directory inside someone else's git repository is a package install, not a checkout", () => {
+  const outer = mkdtempSync(join(tmpdir(), "campaigns-os-outer-repo-"));
+  try {
+    // The enclosing repository (a consumer project, a dotfiles-managed home)
+    // is not this toolkit's checkout; `git -C <pkg>` would answer for it.
+    const init = spawnSync("git", ["-C", outer, "init", "-q"], { encoding: "utf8" });
+    assert.equal(init.status, 0, init.stderr);
+    const pkgRoot = writeFakePackageInstall(outer, {
+      resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+    });
+    const status = cliModule.localInstallStatus(pkgRoot, { version: "0.1.0-alpha.0" });
+    assert.equal(status.mode, "node_modules");
+    assert.equal(status.pinned.commit, PIN_SHA);
+  } finally {
+    rmSync(outer, { recursive: true, force: true });
+  }
+});
+
+// Lay the real package out the way npm does (`<install>/node_modules/@nextcommerce/campaigns-os`)
+// with its dependencies reachable, so the spawned CLI runs in package mode.
+function stageRealPackageInstall(installRoot) {
+  const pkgRoot = join(installRoot, "node_modules", "@nextcommerce", "campaigns-os");
+  mkdirSync(pkgRoot, { recursive: true });
+  for (const entry of ["bin", "src", "campaign-spec", "contracts", "schemas", "skills", "skills.json", "package.json"]) {
+    cpSync(join(ROOT, entry), join(pkgRoot, entry), { recursive: true, dereference: true });
+  }
+  symlinkSync(join(ROOT, "node_modules"), join(pkgRoot, "node_modules"), "dir");
+  writeFileSync(join(installRoot, "node_modules", ".package-lock.json"), JSON.stringify({
+    name: "npx",
+    lockfileVersion: 3,
+    packages: {
+      "node_modules/@nextcommerce/campaigns-os": {
+        version: "0.1.0-alpha.0",
+        resolved: `git+ssh://git@github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+      },
+    },
+  }));
+  return pkgRoot;
+}
+
+test("tooling status from a package install is ready, names the pin, and gives package-mode commands", () => {
+  // realpath: node resolves the main module through symlinks (macOS /var -> /private/var),
+  // and the reported bin_dir follows that resolved root.
+  const installRoot = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-pkg-e2e-")));
+  const target = mkdtempSync(join(tmpdir(), "campaigns-os-pkg-e2e-skills-"));
+  try {
+    const pkgRoot = stageRealPackageInstall(installRoot);
+    const pkgCli = join(pkgRoot, "bin", "campaigns-os.mjs");
+    installCurrentSkills(target);
+
+    // The leading `campaigns-os` token is what `npx --yes <spec> campaigns-os
+    // tooling status` hands the bin; it is the program name, not a command.
+    const run = spawnSync(process.execPath, [pkgCli, "campaigns-os", "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: "/usr/bin:/bin" },
+    });
+    assert.equal(run.status, 0, run.stderr);
+    const json = JSON.parse(run.stdout);
+    assert.equal(json.ok, true);
+    assert.equal(json.status, "ready");
+    assert.equal(json.install.mode, "node_modules");
+    assert.equal(json.install.pinned.commit, PIN_SHA);
+    assert.equal(json.git.status, "not_applicable");
+    assert.equal(json.git.head, PIN_SHA);
+    assert.equal(json.package.registry.status, "not_applicable_package_install");
+    // A tools-folder install runs the bare binary from node_modules/.bin.
+    assert.equal(json.cli.invocation, "campaigns-os <command>");
+    assert.equal(json.cli.bin_dir, join(installRoot, "node_modules", ".bin"));
+    assert.ok(json.ready.some((line) => line.includes("package install (node_modules), pinned at 0.1.0-alpha.0 @ 236d7fc454c8")));
+    // No checkout-only noise: no "Git freshness unavailable", no "use npm run campaigns-os".
+    assert.equal(json.warnings.some((warning) => /Git freshness unavailable|npm run campaigns-os/.test(warning)), false);
+    // PATH was scrubbed above, so the one useful warning is the PATH hint.
+    assert.ok(json.warnings.some((warning) => warning.includes(`export PATH="${join(installRoot, "node_modules", ".bin")}:$PATH"`)));
+    assert.deepEqual(json.actions, []);
+
+    // A stale skill still surfaces, and the repair command is the package-mode one.
+    writeFileSync(join(target, "next-campaigns-build", "SKILL.md"), "stale bundled skill\n");
+    const stale = spawnSync(process.execPath, [pkgCli, "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+    });
+    assert.equal(stale.status, 2);
+    const staleJson = JSON.parse(stale.stdout);
+    assert.ok(staleJson.actions.some((action) =>
+      action.startsWith("Refresh installed skills: campaigns-os install-skills --target")));
+
+    const human = spawnSync(process.execPath, [pkgCli, "tooling", "status", "--target", target], {
+      cwd: installRoot,
+      encoding: "utf8",
+    });
+    assert.match(human.stdout, /Install mode: package install \(node_modules\), pinned at 0\.1\.0-alpha\.0 @ 236d7fc454c8\./);
+  } finally {
+    rmSync(installRoot, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("a leading campaigns-os token is the program name for every command", () => {
+  const withToken = runCli(["campaigns-os", "install-skills", "--target", join(tmpdir(), "campaigns-os-never-written"), "--dry-run", "--json"]);
+  assert.equal(withToken.status, 0, withToken.stderr);
+  assert.equal(withToken.json.status, "dry_run");
+  const help = runCli(["campaigns-os"]);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /Usage:/);
 });

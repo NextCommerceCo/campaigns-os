@@ -61,6 +61,19 @@ is a refusal, not a value to interpret. And a prepared runtime can build and
 type-check but **cannot run browser QA** — preparation suppresses lifecycle
 scripts, which is also what suppresses the browser download.
 
+The recipe describes preparing a runtime from a **checkout**. A **pinned
+package install into a tools folder** — `npm install
+github:NextCommerceCo/campaigns-os#<sha>` in a folder whose
+`node_modules/.bin` goes on PATH (or, one-shot, `npx --yes
+--package=github:NextCommerceCo/campaigns-os#<sha> campaigns-os …`) — is the
+supported way to *run* the toolkit without a checkout, under the same pin
+discipline: the sha is the one you oriented on, and npm records the resolved
+commit in that folder's lockfile. It runs the package's own lifecycle script
+at install time, so it is not a recipe execution and makes no claim under the
+recipe's output checks; `tooling status` reports it as `Install mode: package
+install …` with the pinned commit read back from the lockfile. A recipe kind
+for package installs is not published yet.
+
 ## Supported versus internal
 
 `contracts/supported-surface.json` is the machine authority and

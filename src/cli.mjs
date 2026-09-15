@@ -395,7 +395,7 @@ Usage:
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
-  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # repo/package/skill freshness preflight
+  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # install-mode (checkout or pinned package), git, and skill freshness preflight
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next --packet <json> [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
@@ -511,6 +511,12 @@ function closestCommand(input) {
 
 export async function main(argv) {
   const args = parseArgs(argv);
+  // `npx --yes -p <spec> campaigns-os <command>` and `npx --yes <spec>
+  // campaigns-os <command>` both hand the bin its own name as the first
+  // positional. Treat that leading token as the program name, not a command,
+  // so the package-install invocation the docs give cannot fail with
+  // "Unknown command: campaigns-os".
+  if (args._[0] === "campaigns-os") args._.shift();
   const command = args._[0] || "help";
 
   // Ambient run session (Tier 3): when `run start` is active, every command
@@ -7906,7 +7912,7 @@ export function nextStage(stage, args, ambient = null) {
     : prepareBuildGate?.binding_failure
       ? prepareBuildGate.reason
       : prepareBuildGate?.stage
-        ? "Resolve the prepare-build blockers recorded in the assembly report, then rerun `campaigns-os prepare-build` or `campaigns-os start` before continuing."
+        ? "Resolve the prepare-build blockers recorded in the assembly report, then rerun `campaigns-os prepare-build` or `campaigns-os start` with the same `--spec`/`--map-id`, `--source`, `--target` and `--template-family` as the original run before continuing."
         : prepareBuildGate?.reason || "Restore the lifecycle assembly report before continuing.";
   // Closeout recognition and purchase-proof coverage are both derived from
   // artifacts already on disk. Both are best-effort reads: orchestration must
@@ -8452,7 +8458,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     push("advance", "command", `campaigns-os next --packet ${packetPath} --json`, "Advance to QA once the deploy URL is recorded.");
   } else if (result.stage === "qa") {
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
-    push("install_browser", "command", "npm run qa:install-browser", "Install the Playwright browser once after install/update.");
+    push("install_browser", "command", "campaigns-os qa install-browser", "Install the Playwright browser once after install/update (npm run qa:install-browser from a checkout).");
     push("qa_run", "command", `campaigns-os qa run --packet ${packetPath} --base-url ${url} --browser --test-order common`, "Run browser + typed-card QA and publish the verdict.");
   } else if (result.stage === "done") {
     // #171: run-record closeout is a REQUIRED terminal action, not an
@@ -8619,7 +8625,7 @@ Read first:
 Compare source and Campaign Build Brief decisions against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, and capture desktop/mobile screenshots.
 
 Before marking Polish complete, install the package-owned browser once and run the page-load producer against the served build:
-- npm run qa:install-browser
+- campaigns-os qa install-browser
 - campaigns-os polish capture --packet ${packetPath} --base-url <served-build-url>
 
 The producer covers every mapped route at fixed desktop/mobile viewports and attaches stages.polish.evidence.visual_review.page_load to the current Assembly Report. Never hand-author or copy page_load. A missing, stale, malformed, incomplete, cache/service-worker-observed, or over-threshold result keeps Polish/deploy/QA blocked; repair and recapture, or use the exact named-human checkpoint waiver only for a complete hidden eager-media finding.
@@ -8722,7 +8728,7 @@ Build Packet: ${packetPath}
 Assembly Report: ${reportPath}
 Campaign Build Brief: ${briefPath}
 Browser install command:
-npm run qa:install-browser
+campaigns-os qa install-browser
 
 Node QA command:
 campaigns-os qa run --packet ${packetPath} --base-url ${url} --browser --test-order common
@@ -9225,24 +9231,51 @@ function toolingCommand(args) {
   const skillStatus = installSkills(args.target, true, args.platform || "all");
   const skillActions = classifyToolingSkillActions(skillStatus.skills || []);
   const staleSkills = skillActions.actionable;
-  const git = localGitStatus(ROOT);
-  const cli = localCliStatus(pkg);
+  const install = localInstallStatus(ROOT, pkg);
+  // The git axis is a checkout-only question. A package install (npx cache,
+  // a consumer's node_modules, a global install) has no upstream of its own,
+  // and any git repository enclosing it belongs to someone else — reporting
+  // that repository's branch as this package's freshness would be a lie.
+  const git = install.mode === "checkout"
+    ? localGitStatus(ROOT)
+    : {
+        status: "not_applicable",
+        reason: `${install.mode_label}; freshness is the pinned commit, not a git upstream`,
+        root: null,
+        branch: null,
+        head: install.pinned?.commit || null,
+        upstream: null,
+        ahead: null,
+        behind: null,
+        dirty: false,
+        note: install.pinned?.commit
+          ? "This package is pinned at the resolved commit; re-run with a newer pin to update."
+          : "No pinned commit could be derived for this package location; compare the package version manually.",
+      };
+  const cli = localCliStatus(pkg, install);
   const packageStatus = {
     name: pkg.name || null,
     version: pkg.version || null,
     private: Boolean(pkg.private),
-    registry: pkg.private
+    registry: install.mode !== "checkout"
       ? {
           checked: false,
-          status: "not_applicable_private_package",
-          note: "This checkout is private; npm does not automatically provide latest tooling.",
+          status: "not_applicable_package_install",
+          note: "Installed as a package pinned at a commit; there is no npm dist-tag to compare against. Re-run with a newer pin to update.",
         }
-      : {
-          checked: false,
-          status: "not_checked",
-          note: "Registry freshness is not checked by tooling status; compare package manager lockfiles in the consuming repo.",
-        },
+      : pkg.private
+        ? {
+            checked: false,
+            status: "not_applicable_private_package",
+            note: "This checkout is private; npm does not automatically provide latest tooling.",
+          }
+        : {
+            checked: false,
+            status: "not_checked",
+            note: "Registry freshness is not checked by tooling status; compare package manager lockfiles in the consuming repo.",
+          },
   };
+  const ready = [install.summary];
   const actions = [];
   const warnings = [];
 
@@ -9255,21 +9288,29 @@ function toolingCommand(args) {
     }
   }
 
-  if (git.status === "ok" && git.behind > 0) {
-    actions.push("Update this checkout before running a dogfood build: git pull --ff-only (or wt sync in a worktree).");
-  } else if (git.status !== "ok") {
-    warnings.push(`Git freshness unavailable: ${git.reason}.`);
-  } else if (!git.upstream) {
-    warnings.push("No git upstream is configured for this checkout; remote freshness is advisory only.");
+  if (install.mode === "checkout") {
+    if (git.status === "ok" && git.behind > 0) {
+      actions.push("Update this checkout before running a dogfood build: git pull --ff-only (or wt sync in a worktree).");
+    } else if (git.status !== "ok") {
+      warnings.push(`Git freshness unavailable: ${git.reason}.`);
+    } else if (!git.upstream) {
+      warnings.push("No git upstream is configured for this checkout; remote freshness is advisory only.");
+    }
+  } else if (!install.pinned?.commit) {
+    warnings.push(`No pinned commit could be derived for this ${install.mode_label}; the package version is ${pkg.version || "unknown"}. Compare it against the commit you oriented on before relying on it.`);
   }
 
   if (staleSkills.length) {
     const skillArgs = args.target ? ["--target", args.target] : ["--platform", args.platform || "all"];
-    actions.push(`Refresh installed skills: npm run campaigns-os -- install-skills ${skillArgs.join(" ")}. Restart local agent sessions afterwards.`);
+    actions.push(`Refresh installed skills: ${cli.invocation_prefix} install-skills ${skillArgs.join(" ")}. Restart local agent sessions afterwards.`);
   }
 
-  if (cli.global_binary.status === "not_found") {
+  if (install.mode === "checkout" && cli.global_binary.status === "not_found") {
     warnings.push("No global campaigns-os binary was found; use `npm run campaigns-os -- ...` from this checkout or `node ./bin/campaigns-os.mjs ...`.");
+  } else if (install.mode !== "checkout" && install.mode !== "npx_cache" && cli.global_binary.status === "not_found") {
+    warnings.push(cli.bin_dir
+      ? `campaigns-os is not on PATH; run export PATH="${cli.bin_dir}:$PATH" so the printed commands resolve, or call node ${cli.local_bin} directly.`
+      : `campaigns-os is not on PATH; call node ${cli.local_bin} directly.`);
   }
 
   if (git.status === "ok" && git.dirty) {
@@ -9281,6 +9322,7 @@ function toolingCommand(args) {
   return {
     ok,
     status: ok ? "ready" : "attention_required",
+    install,
     package: packageStatus,
     git,
     cli,
@@ -9289,12 +9331,126 @@ function toolingCommand(args) {
       stale_count: staleSkills.length,
       status: skillStatus,
     },
+    ready,
     actions,
     warnings,
   };
 }
 
-function localCliStatus(pkg) {
+const PACKAGE_INSTALL_MODE_LABELS = Object.freeze({
+  checkout: "git checkout",
+  npx_cache: "package install (npx cache)",
+  node_modules: "package install (node_modules)",
+  package_directory: "package install",
+});
+
+const PUBLIC_GIT_SOURCE = "github:NextCommerceCo/campaigns-os";
+
+function realpathOrSelf(path) {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return path;
+    throw error;
+  }
+}
+
+// Is `root` the top level of its own git worktree? A package directory can
+// sit INSIDE someone else's repository (a consumer's node_modules, a home
+// directory under dotfiles control), and `git -C root` would happily answer
+// for that outer repository. Only a root that IS the worktree top level is a
+// checkout of this toolkit.
+function isOwnGitCheckout(root) {
+  const inside = runCommand("git", ["-C", root, "rev-parse", "--is-inside-work-tree"]);
+  if (!inside.ok || inside.stdout !== "true") return false;
+  const top = runCommand("git", ["-C", root, "rev-parse", "--show-toplevel"]);
+  if (!top.ok || !top.stdout) return false;
+  return realpathOrSelf(top.stdout) === realpathOrSelf(root);
+}
+
+// Locate the nearest enclosing `node_modules` directory, so the install root
+// beside it can be read for the resolved package pin.
+function enclosingNodeModules(root) {
+  let cursor = root;
+  for (;;) {
+    const parent = dirname(cursor);
+    if (parent === cursor) return null;
+    if (basename(parent) === "node_modules") return parent;
+    cursor = parent;
+  }
+}
+
+function pinFromResolved(resolved, version) {
+  if (typeof resolved !== "string") return null;
+  const match = resolved.match(/#([0-9a-f]{7,40})$/i);
+  if (!match) return null;
+  const commit = match[1].toLowerCase();
+  const source = resolved.match(/github\.com[/:]([^/]+)\/([^/#]+?)(?:\.git)?(?:#|$)/i);
+  return {
+    version: version || null,
+    commit,
+    resolved,
+    spec: source ? `github:${source[1]}/${source[2]}#${commit.slice(0, 12)}` : null,
+  };
+}
+
+// Derive "which commit is this package?" for a non-checkout install. npm
+// records the resolved git URL, sha included, in the install root's hidden
+// lockfile (`node_modules/.package-lock.json`) and in `package-lock.json`;
+// `npm pack` additionally stamps `gitHead` into the packed package.json.
+export function derivePackagePin(root, pkg = {}) {
+  if (typeof pkg.gitHead === "string" && /^[0-9a-f]{7,40}$/i.test(pkg.gitHead)) {
+    return { version: pkg.version || null, commit: pkg.gitHead.toLowerCase(), resolved: null, spec: `${PUBLIC_GIT_SOURCE}#${pkg.gitHead.slice(0, 12)}` };
+  }
+  const nodeModules = enclosingNodeModules(root);
+  if (!nodeModules) return null;
+  const installRoot = dirname(nodeModules);
+  const key = relative(installRoot, root).split(sep).join("/");
+  for (const lockPath of [join(nodeModules, ".package-lock.json"), join(installRoot, "package-lock.json")]) {
+    if (!existsSync(lockPath)) continue;
+    let lock;
+    try {
+      lock = JSON.parse(readFileSync(lockPath, "utf8"));
+    } catch (error) {
+      if (error instanceof SyntaxError) continue;
+      throw error;
+    }
+    const entry = lock?.packages?.[key];
+    const pin = pinFromResolved(entry?.resolved, entry?.version || pkg.version);
+    if (pin) return pin;
+  }
+  return null;
+}
+
+export function localInstallStatus(root, pkg = {}) {
+  if (isOwnGitCheckout(root)) {
+    return {
+      mode: "checkout",
+      mode_label: PACKAGE_INSTALL_MODE_LABELS.checkout,
+      location: root,
+      pinned: null,
+      summary: `Install mode: git checkout at ${root}.`,
+    };
+  }
+  const mode = root.split(sep).includes("_npx")
+    ? "npx_cache"
+    : enclosingNodeModules(root)
+      ? "node_modules"
+      : "package_directory";
+  const pinned = derivePackagePin(root, pkg);
+  const pinText = pinned
+    ? `pinned at ${pinned.version || "unknown version"} @ ${pinned.commit.slice(0, 12)}`
+    : `version ${pkg.version || "unknown"}, pinned commit not derivable`;
+  return {
+    mode,
+    mode_label: PACKAGE_INSTALL_MODE_LABELS[mode],
+    location: root,
+    pinned,
+    summary: `Install mode: ${PACKAGE_INSTALL_MODE_LABELS[mode]}, ${pinText}.`,
+  };
+}
+
+function localCliStatus(pkg, install = { mode: "checkout", pinned: null }) {
   const binRel = isObject(pkg.bin)
     ? pkg.bin["campaigns-os"]
     : typeof pkg.bin === "string"
@@ -9302,10 +9458,22 @@ function localCliStatus(pkg) {
       : null;
   const localBin = binRel ? resolve(ROOT, binRel) : null;
   const globalPath = findExecutableOnPath("campaigns-os");
+  // How the operator should spell a command where they are: the checkout
+  // script from a checkout, the npx form from an npx cache (nothing is on
+  // PATH), and the bare binary from a tools-folder or consumer install, whose
+  // node_modules/.bin is what goes on PATH.
+  const invocationPrefix = install.mode === "checkout"
+    ? "npm run campaigns-os --"
+    : install.mode === "npx_cache" && install.pinned?.spec
+      ? `npx --yes ${install.pinned.spec}`
+      : "campaigns-os";
+  const nodeModules = install.mode === "checkout" ? null : enclosingNodeModules(ROOT);
   return {
     local_bin: localBin,
     local_bin_exists: Boolean(localBin && existsSync(localBin)),
-    invocation: "npm run campaigns-os -- <command>",
+    invocation: `${invocationPrefix} <command>`,
+    invocation_prefix: invocationPrefix,
+    bin_dir: nodeModules ? join(nodeModules, ".bin") : null,
     global_binary: globalPath
       ? { status: "found", path: globalPath }
       : { status: "not_found", path: null },
@@ -9611,7 +9779,7 @@ const SAFE_POLISH_CHECKPOINT_REASONS = new Map([
 ]);
 const SAFE_POLISH_CHECKPOINT_ACTIONS = new Map([
   ["polish.hidden_eager_media.capture", "campaigns-os polish capture --packet <packet> --base-url <url>"],
-  ["polish.hidden_eager_media.install_browser", "npm run qa:install-browser"],
+  ["polish.hidden_eager_media.install_browser", "campaigns-os qa install-browser"],
   ["polish.hidden_eager_media.waive", "campaigns-os checkpoint waive --packet <packet> --gate polish.hidden_eager_media --reason \"<why>\" --waived-by \"<named human>\" --review-condition \"<trigger>\""],
   ["polish.hidden_eager_media.repair", "Repair the reported media, then recapture."],
   ["polish.hidden_eager_media.repair_authority", "Repair packet/report authority and the mapped route plan, then recapture."],
