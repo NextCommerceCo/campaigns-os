@@ -48,3 +48,71 @@ test("qa install-browser is dispatched by the CLI and listed in qa help", () => 
   assert.notEqual(unknown.status, 0);
   assert.match(unknown.stderr, /Unknown qa command: install-browsers/);
 });
+
+// The default (non-JSON) output path is the one every printed recovery
+// command reaches. It must not go through the QA verdict formatter.
+test("qa install-browser prints its own text lines on success and failure without --json", async () => {
+  const { runQaCli } = await import("./qa-node.mjs");
+  const lines = [];
+  const original = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    const ok = await withSpawn(() => ({ status: 0 }), () => runQaCli({ _: ["qa", "install-browser"] }));
+    assert.equal(ok.ok, true);
+    assert.equal(lines[0], "Status: INSTALLED");
+    assert.ok(lines.some((line) => line.startsWith("Command: ")));
+    assert.ok(lines.some((line) => line.includes("Playwright Chromium is installed")));
+    assert.equal(lines.some((line) => /Map ID|funnels|QA resolve/.test(line)), false);
+
+    lines.length = 0;
+    const failed = await withSpawn(() => ({ status: 7 }), () => runQaCli({ _: ["qa", "install-browser"] }));
+    assert.equal(failed.ok, false);
+    assert.equal(lines[0], "Status: INSTALL_FAILED");
+    assert.ok(lines.includes("Exit code: 7"));
+    assert.equal(process.exitCode, 1);
+    process.exitCode = 0;
+  } finally {
+    console.log = original;
+  }
+});
+
+// runQaCli builds installQaBrowser with the real spawnSync; swap the module
+// binding for the duration of one call.
+async function withSpawn(fake, run) {
+  const childProcess = await import("node:child_process");
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = childProcess.default.spawnSync;
+  childProcess.default.spawnSync = fake;
+  syncBuiltinESMExports();
+  try {
+    return await run();
+  } finally {
+    childProcess.default.spawnSync = real;
+    syncBuiltinESMExports();
+  }
+}
+
+test("qa install-browser --json keeps stdout as the result document and routes child progress to stderr", () => {
+  // A real child that prints download-style progress on stdout, driven through
+  // the CLI so the fd routing is exercised end to end.
+  const script = `
+    import { installQaBrowser } from ${JSON.stringify(new URL("./qa-node.mjs", import.meta.url).href)};
+    import { spawnSync } from "node:child_process";
+    const result = installQaBrowser({
+      json: true,
+      spawn: (_cmd, _args, options) => spawnSync(process.execPath, ["-e", "console.log('Downloading Chromium 1/3...'); console.log('Chromium downloaded')"], options),
+    });
+    console.log(JSON.stringify(result));
+  `;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  const parsed = JSON.parse(run.stdout);
+  assert.equal(parsed.ok, true);
+  assert.match(run.stderr, /Downloading Chromium 1\/3/);
+  assert.doesNotMatch(run.stdout, /Downloading/);
+
+  // Without --json the progress stays on stdout for the operator.
+  const plain = spawnSync(process.execPath, ["--input-type=module", "-e", script.replace("json: true,", "json: false,")], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(plain.status, 0, plain.stderr);
+  assert.match(plain.stdout, /Downloading Chromium 1\/3/);
+});

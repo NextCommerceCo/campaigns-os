@@ -235,8 +235,12 @@ export async function runQaCli(args, { ambient = null } = {}) {
     return result;
   }
   if (subcommand === "install-browser") {
-    const result = installQaBrowser();
-    output(result, args);
+    const result = installQaBrowser({ json: Boolean(args.json) });
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      for (const line of installBrowserTextLines(result)) console.log(line);
+    }
     process.exitCode = result.ok ? 0 : 1;
     return result;
   }
@@ -249,7 +253,15 @@ export async function runQaCli(args, { ambient = null } = {}) {
 // recovery commands must work where the operator actually is. It drives the
 // Playwright CLI bundled with THIS package so the browser matches the
 // Playwright version the QA and polish producers load.
-export function installQaBrowser({ spawn = spawnSync } = {}) {
+export function installBrowserTextLines(result) {
+  const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`];
+  if (result.command) lines.push(`Command: ${result.command}`);
+  if (Number.isInteger(result.exit_code) && !result.ok) lines.push(`Exit code: ${result.exit_code}`);
+  if (result.note) lines.push(result.note);
+  return lines;
+}
+
+export function installQaBrowser({ spawn = spawnSync, json = false } = {}) {
   const require = createRequire(import.meta.url);
   let playwrightCli;
   try {
@@ -266,7 +278,12 @@ export function installQaBrowser({ spawn = spawnSync } = {}) {
       note: "The playwright dependency is not installed beside this package; reinstall the package (or run npm install in a checkout), then rerun campaigns-os qa install-browser.",
     };
   }
-  const run = spawn(process.execPath, [playwrightCli, "install", "chromium"], { stdio: "inherit" });
+  // Playwright reports download progress on stdout. In --json mode stdout is
+  // the result document, so the child's stdout is routed to stderr (fd 2);
+  // otherwise the operator sees the progress inline.
+  const run = spawn(process.execPath, [playwrightCli, "install", "chromium"], {
+    stdio: json ? ["inherit", 2, "inherit"] : "inherit",
+  });
   const ok = run.status === 0;
   return {
     ok,

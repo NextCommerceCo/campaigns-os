@@ -18,31 +18,35 @@ Do the steps in this order:
 3. **Start** at that sha.
 
 ```bash
-mkdir -p ~/campaigns-os-toolkit && cd ~/campaigns-os-toolkit
-npm install github:NextCommerceCo/campaigns-os#<sha>
-export PATH="$HOME/campaigns-os-toolkit/node_modules/.bin:$PATH"
+PIN="<sha>"
+TOOLKIT="$HOME/campaigns-os-toolkit/$PIN"
+mkdir -p "$TOOLKIT"
+npm install --prefix "$TOOLKIT" "github:NextCommerceCo/campaigns-os#$PIN"
+export PATH="$TOOLKIT/node_modules/.bin:$PATH"
 campaigns-os tooling status
 ```
 
-`#<sha>` pins the commit you oriented on, so the code that runs is the code
-whose contracts you read. Without it you get the default branch as of that
-moment, which may be ahead of what you reviewed. npm records the resolved
-commit in the folder's `package-lock.json`; that record is what `tooling
-status` reads back. The `export PATH` line is what makes the bare
-`campaigns-os …` commands that `next` prints resolve — add it to your shell
-profile to keep it. To update, re-orient on a newer sha and run `npm install
-github:NextCommerceCo/campaigns-os#<new-sha>` in the same folder.
+Repeat the `PIN`, `TOOLKIT`, and `PATH` lines in each new shell, or add them
+to your shell profile. `PIN` is the commit you oriented on, so the code that
+runs is the code whose contracts you read; without a pin you would get the
+default branch as of that moment, which may be ahead of what you reviewed.
+Each pin gets its own folder under `~/campaigns-os-toolkit/`, so moving to a
+newer commit is re-orienting on it and running the same lines with the new
+`PIN` — the old folder stays intact. npm records the resolved commit in the
+folder's `package-lock.json`; that record is what `tooling status` reads back.
+The `export PATH` line is what makes the bare `campaigns-os …` commands that
+`next` prints resolve.
 
 Verified on npm 10.9.8 and 11.19.1 with a full 40-character sha: the install
 takes about 10 s on a warm machine (it clones the commit and runs the
 package's own build step), and `campaigns-os`, `playwright` and the other bins
-land in `node_modules/.bin`. `npm install -g github:…` is not an alternative
+land in `$TOOLKIT/node_modules/.bin`. `npm install -g github:…` is not an alternative
 on either major — the nested build install inherits global mode and fails —
 which is why the toolkit lives in a folder on PATH.
 
-The QA browser from this install is `playwright install chromium` (bare, on
-that PATH); `campaigns-os qa install-browser` is the same step from any install
-mode.
+The QA browser is a one-time `campaigns-os qa install-browser` from any
+install mode; `playwright install chromium` (bare, on that PATH) does the same
+thing and is what a pin older than that command shows.
 
 `tooling status` is the preflight for "am I current?". It names the install
 mode and checks package identity, CLI entrypoint, and installed Campaigns OS
@@ -52,7 +56,8 @@ skills:
   (node_modules), pinned at <version> @ <sha>`; git freshness is
   `not_applicable` because the pinned commit is the freshness answer, and
   there is no npm dist-tag to compare against. If `campaigns-os` is not on
-  PATH it prints the exact `export PATH=…` line to run.
+  PATH, or the one on PATH is a different install from the one inspected, it
+  prints the exact `export PATH=…` line to run.
 - From `npx` it reports `Install mode: package install (npx cache), pinned at
   <version> @ <sha>`.
 - From a git checkout it reports `Install mode: git checkout at <path>` plus
@@ -72,14 +77,16 @@ npx --yes --package=github:NextCommerceCo/campaigns-os#<sha> campaigns-os toolin
 
 Same pin discipline. On npm 10 use an abbreviated sha of 7–12 characters here
 — the full form fails with `GitFetcher requires an Arborist constructor to
-pack a tarball`; npm 11 accepts any length. The first run clones and builds
-the commit into the npx cache; later runs reuse it. Two things to know: the
-commands `next` prints are bare `campaigns-os …`, so prefix each one with the
-same `npx --yes --package=… campaigns-os` form; and prefer `--package=` over
-the positional `npx --yes <spec> campaigns-os <command>`, which passes the
-literal `campaigns-os` through to the binary — pins from supported surface
-1.28.0+agent.1 onward read that as the program name, older pins reject it as
-an unknown command.
+pack a tarball`; npm 11 accepts any length. Each run resolves the git spec
+before it looks at the npx cache, so a cached install does not guarantee that
+the clone-and-build step, or the network, is skipped on later runs; the folder
+install is primary partly for that reason. Two things to know: the commands
+`next` prints are bare `campaigns-os …`, so prefix each one with the same `npx
+--yes --package=… campaigns-os` form; and prefer `--package=` over the
+positional `npx --yes <spec> campaigns-os <command>`, which passes the literal
+`campaigns-os` through to the binary — pins that include release-ledger entry
+`RL-0093` read that as the program name, older pins reject it as an unknown
+command.
 
 ## Contributor / local checkout
 
@@ -97,8 +104,8 @@ npm run campaigns-os -- tooling status
 Every `npm run campaigns-os -- <command>` example in this repository is the
 checkout form. From the toolkit folder the same command is `campaigns-os
 <command>`; the arguments are identical. `npm run qa:install-browser`, a
-checkout script, is `playwright install chromium` from the toolkit folder or
-`campaigns-os qa install-browser` from any install mode. A fresh `git pull`
+checkout script, is `campaigns-os qa install-browser` from any install mode. A
+fresh `git pull`
 does not refresh copied agent skills in either mode; `tooling status` tells
 you when they are stale.
 
@@ -253,8 +260,9 @@ campaigns-os start \
 
 `--map-id <id>` starts from a map saved in Campaign Map Builder; `--spec
 <campaignspec.json>` starts from a locally exported CampaignSpec instead. One of
-the two is required. `--target` must be an existing directory (`start` refuses
-a missing one rather than creating it). `--source` is always required: the
+the two is required. `--target` must be a directory: with `--spec` a missing
+one is refused (`Target repo is not a directory`) rather than created, hence
+the `mkdir -p`. `--source` is always required: the
 folder of prepared HTML/CSS/assets for the pages you are building, with a
 source manifest carrying desktop and mobile screenshot proof for each designed
 page — see [Design Source Package](./design-source-package.md). Pages that use

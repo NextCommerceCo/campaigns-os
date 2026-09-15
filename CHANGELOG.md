@@ -64,13 +64,24 @@ Notable supported-surface changes are recorded here.
   supported way to run the toolkit without a checkout, under the same pin
   discipline; a recipe kind for package installs is not published yet. README
   Quick Start and `docs/quickstart.md` make that folder install the primary
-  path — `mkdir -p ~/campaigns-os-toolkit && cd ~/campaigns-os-toolkit`, `npm
-  install github:NextCommerceCo/campaigns-os#<sha>`, `export
-  PATH="$HOME/campaigns-os-toolkit/node_modules/.bin:$PATH"` — in the order
+  path — a per-pin folder, `npm install --prefix
+  "$HOME/campaigns-os-toolkit/<sha>" github:NextCommerceCo/campaigns-os#<sha>`
+  with its `node_modules/.bin` on PATH — in the order
   orient (read the contracts at one commit) → `install-skills` → `start`, with
-  a "Ways to run it" table, `--map-id <id>` beside `--spec`, the npm 10
-  abbreviated-sha note for `npx`, and the clone path under "Contributor /
-  local checkout".
+  `--map-id <id>` beside `--spec`, the npm 10 abbreviated-sha note for `npx`,
+  and the clone path under "Contributor / local checkout". `CONTEXT.md` and
+  `docs/entry-points.md` replace two named people and one named merchant in
+  worked examples with anonymous operators.
+- `tooling status` also checks that the `campaigns-os` first on PATH resolves
+  to the install it is inspecting: `cli.global_binary` gains `resolves_to` and
+  `matches_local_bin`, its `status` is `found_other_install` when another
+  install shadows this one, and a package-mode warning names both paths and
+  the `export PATH=…` fix. `derivePackagePin` walks every enclosing install
+  root, so a nested dependency recorded only in the project lockfile still
+  reports its pin. `qa install-browser --json` routes Playwright's download
+  progress to stderr so stdout is the result document alone; without `--json`
+  it prints `Status:`, `Command:`, and the note (and `Exit code:` on failure)
+  rather than the QA verdict format.
 
 ## [1.28.0] - 2026-09-14
 

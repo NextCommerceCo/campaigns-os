@@ -46,7 +46,7 @@ template family ships, possibly with light brand tweaks.
 - **When to use:** initial scaffold, A/B variant testing on top of
   an existing template, no-design-yet builds where the team will add
   design later.
-- **Realistic example:** Sam's nanosocks scaffold pass — clone
+- **Realistic example:** a single-product scaffold pass — clone
   `olympus-mv-single-step`, fill spec, ship. Design overlay comes in
   a separate later pass.
 

@@ -410,3 +410,68 @@ test("a leading campaigns-os token is the program name for every command", () =>
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /Usage:/);
 });
+
+test("derivePackagePin finds a nested dependency's pin in the project lockfile", () => {
+  const project = mkdtempSync(join(tmpdir(), "campaigns-os-pin-nested-"));
+  try {
+    const nested = join(project, "node_modules", "consumer", "node_modules", "@nextcommerce", "campaigns-os");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, "package.json"), JSON.stringify({ name: "@nextcommerce/campaigns-os", version: "0.1.0-alpha.0" }));
+    writeFileSync(join(project, "package-lock.json"), JSON.stringify({
+      lockfileVersion: 3,
+      packages: {
+        "node_modules/consumer": { version: "1.0.0" },
+        "node_modules/consumer/node_modules/@nextcommerce/campaigns-os": {
+          version: "0.1.0-alpha.0",
+          resolved: `git+https://github.com/NextCommerceCo/campaigns-os.git#${PIN_SHA}`,
+        },
+      },
+    }));
+    assert.equal(cliModule.derivePackagePin(nested, {})?.commit, PIN_SHA);
+    assert.equal(cliModule.localInstallStatus(nested, {}).pinned.commit, PIN_SHA);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("tooling status warns when the campaigns-os on PATH is a different install from the one inspected", () => {
+  const installRoot = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-pkg-other-")));
+  const other = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-other-bin-")));
+  const target = mkdtempSync(join(tmpdir(), "campaigns-os-pkg-other-skills-"));
+  try {
+    const pkgRoot = stageRealPackageInstall(installRoot);
+    installCurrentSkills(target);
+    // Another install's executable, earlier on PATH.
+    const foreignBin = join(other, "campaigns-os");
+    writeFileSync(foreignBin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+    const mismatch = spawnSync(process.execPath, [join(pkgRoot, "bin", "campaigns-os.mjs"), "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${other}:/usr/bin:/bin` },
+    });
+    assert.equal(mismatch.status, 0, mismatch.stderr);
+    const json = JSON.parse(mismatch.stdout);
+    assert.equal(json.cli.global_binary.status, "found_other_install");
+    assert.equal(json.cli.global_binary.path, foreignBin);
+    assert.ok(json.warnings.some((warning) =>
+      warning.includes("is a different install from the one inspected here")
+      && warning.includes(`export PATH="${join(installRoot, "node_modules", ".bin")}:$PATH"`)));
+
+    // The same install's own .bin first on PATH: found, no warning.
+    const binDir = join(installRoot, "node_modules", ".bin");
+    mkdirSync(binDir, { recursive: true });
+    symlinkSync(join(pkgRoot, "bin", "campaigns-os.mjs"), join(binDir, "campaigns-os"));
+    const match = spawnSync(process.execPath, [join(pkgRoot, "bin", "campaigns-os.mjs"), "tooling", "status", "--target", target, "--json"], {
+      cwd: installRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${binDir}:${other}:/usr/bin:/bin` },
+    });
+    const matched = JSON.parse(match.stdout);
+    assert.equal(matched.cli.global_binary.status, "found");
+    assert.equal(matched.cli.global_binary.matches_local_bin, true);
+    assert.equal(matched.warnings.some((warning) => /different install|not on PATH/.test(warning)), false);
+  } finally {
+    for (const dir of [installRoot, other, target]) rmSync(dir, { recursive: true, force: true });
+  }
+});

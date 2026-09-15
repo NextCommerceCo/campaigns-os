@@ -62,8 +62,8 @@ type-check but **cannot run browser QA** — preparation suppresses lifecycle
 scripts, which is also what suppresses the browser download.
 
 The recipe describes preparing a runtime from a **checkout**. A **pinned
-package install into a tools folder** — `npm install
-github:NextCommerceCo/campaigns-os#<sha>` in a folder whose
+package install into a tools folder** — `npm install --prefix <folder>
+github:NextCommerceCo/campaigns-os#<sha>` into a per-pin folder whose
 `node_modules/.bin` goes on PATH (or, one-shot, `npx --yes
 --package=github:NextCommerceCo/campaigns-os#<sha> campaigns-os …`) — is the
 supported way to *run* the toolkit without a checkout, under the same pin

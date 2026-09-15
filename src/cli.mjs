@@ -9311,6 +9311,10 @@ function toolingCommand(args) {
     warnings.push(cli.bin_dir
       ? `campaigns-os is not on PATH; run export PATH="${cli.bin_dir}:$PATH" so the printed commands resolve, or call node ${cli.local_bin} directly.`
       : `campaigns-os is not on PATH; call node ${cli.local_bin} directly.`);
+  } else if (install.mode !== "checkout" && cli.global_binary.status === "found_other_install") {
+    warnings.push(cli.bin_dir
+      ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${cli.local_bin}); bare commands would run that other copy. Run export PATH="${cli.bin_dir}:$PATH" to put this install first.`
+      : `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${cli.local_bin}); call node ${cli.local_bin} directly.`);
   }
 
   if (git.status === "ok" && git.dirty) {
@@ -9402,22 +9406,27 @@ export function derivePackagePin(root, pkg = {}) {
   if (typeof pkg.gitHead === "string" && /^[0-9a-f]{7,40}$/i.test(pkg.gitHead)) {
     return { version: pkg.version || null, commit: pkg.gitHead.toLowerCase(), resolved: null, spec: `${PUBLIC_GIT_SOURCE}#${pkg.gitHead.slice(0, 12)}` };
   }
-  const nodeModules = enclosingNodeModules(root);
-  if (!nodeModules) return null;
-  const installRoot = dirname(nodeModules);
-  const key = relative(installRoot, root).split(sep).join("/");
-  for (const lockPath of [join(nodeModules, ".package-lock.json"), join(installRoot, "package-lock.json")]) {
-    if (!existsSync(lockPath)) continue;
-    let lock;
-    try {
-      lock = JSON.parse(readFileSync(lockPath, "utf8"));
-    } catch (error) {
-      if (error instanceof SyntaxError) continue;
-      throw error;
+  // A nested dependency (project/node_modules/consumer/node_modules/<pkg>) is
+  // recorded in the PROJECT's lockfile under its full relative path, so walk
+  // every enclosing install root outward, recomputing the key per root.
+  let nodeModules = enclosingNodeModules(root);
+  while (nodeModules) {
+    const installRoot = dirname(nodeModules);
+    const key = relative(installRoot, root).split(sep).join("/");
+    for (const lockPath of [join(nodeModules, ".package-lock.json"), join(installRoot, "package-lock.json")]) {
+      if (!existsSync(lockPath)) continue;
+      let lock;
+      try {
+        lock = JSON.parse(readFileSync(lockPath, "utf8"));
+      } catch (error) {
+        if (error instanceof SyntaxError) continue;
+        throw error;
+      }
+      const entry = lock?.packages?.[key];
+      const pin = pinFromResolved(entry?.resolved, entry?.version || pkg.version);
+      if (pin) return pin;
     }
-    const entry = lock?.packages?.[key];
-    const pin = pinFromResolved(entry?.resolved, entry?.version || pkg.version);
-    if (pin) return pin;
+    nodeModules = enclosingNodeModules(installRoot);
   }
   return null;
 }
@@ -9468,6 +9477,12 @@ function localCliStatus(pkg, install = { mode: "checkout", pinned: null }) {
       ? `npx --yes ${install.pinned.spec}`
       : "campaigns-os";
   const nodeModules = install.mode === "checkout" ? null : enclosingNodeModules(ROOT);
+  // "found" is not enough: the executable first on PATH may belong to ANOTHER
+  // install of this toolkit, so bare commands would run a different commit
+  // from the one just inspected. Resolve the PATH hit through its shim/symlink
+  // and compare it with this package's own bin.
+  const globalTarget = globalPath ? executableTargetPath(globalPath) : null;
+  const matches = Boolean(globalTarget && localBin && realpathOrSelf(globalTarget) === realpathOrSelf(localBin));
   return {
     local_bin: localBin,
     local_bin_exists: Boolean(localBin && existsSync(localBin)),
@@ -9475,9 +9490,25 @@ function localCliStatus(pkg, install = { mode: "checkout", pinned: null }) {
     invocation_prefix: invocationPrefix,
     bin_dir: nodeModules ? join(nodeModules, ".bin") : null,
     global_binary: globalPath
-      ? { status: "found", path: globalPath }
-      : { status: "not_found", path: null },
+      ? { status: matches ? "found" : "found_other_install", path: globalPath, resolves_to: globalTarget, matches_local_bin: matches }
+      : { status: "not_found", path: null, resolves_to: null, matches_local_bin: false },
   };
+}
+
+// The file a PATH executable ultimately runs: a symlink (node_modules/.bin on
+// POSIX) is followed; an npm cmd-shim is read for the script it execs. Falls
+// back to the executable itself when neither applies.
+function executableTargetPath(executable) {
+  const real = realpathOrSelf(executable);
+  if (real !== executable || process.platform !== "win32") return real;
+  try {
+    const shim = readFileSync(executable, "utf8");
+    const match = shim.match(/"([^"]+\.mjs)"/);
+    return match ? resolve(dirname(executable), match[1]) : real;
+  } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "EISDIR") return real;
+    throw error;
+  }
 }
 
 function localGitStatus(root) {
