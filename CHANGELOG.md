@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.29.0+agent.2] - 2026-09-16
+
+### Changed
+
+- Spec-hash identity is compared one way everywhere (#328): `src/spec-identity.mjs`
+  now owns `normalizeSpecHash` (trim, lower-case, strip one leading `sha256:`,
+  empty to `null`), `specHashesMatch` (both sides present and equal after
+  normalisation; two missing hashes never match) and `specHashOf` (the
+  `spec_hash` / `spec_identity.spec_hash` lookup). The Commercial Journey
+  `deriveState` freshness check, the sidecar-bundle `spec_hash` and
+  `spec_material_hash` identity checks, and the Commercial Journey and QA
+  parity report `spec_hash` fields all go through it. A calculation whose
+  `spec_hash` differs from the Map's only by prefix, hex case or surrounding
+  whitespace is now `Exact` instead of `Stale`, and a sidecar bundle whose
+  producers spell the same hash differently no longer reports
+  `bundle.identity.spec_hash_mismatch` / `spec_material_hash_mismatch`. Other
+  identity fields (`map_id`, slugs, paths) keep their exact compare. The
+  module stays internal this release; a package export lands with the next
+  supported-surface bump.
+
 ## [1.29.0+agent.1] - 2026-09-16
 
 ### Changed
