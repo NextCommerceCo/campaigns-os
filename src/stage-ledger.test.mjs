@@ -10,6 +10,9 @@ import {
   assemblyReportMatchesPacket,
   commitAssemblyReport,
   deriveAssemblyReportSummary,
+  QA_GATE_PLACEHOLDER_TEXT_RESIDUE,
+  qaGateEvidence,
+  qaGatePassedForCurrentBuild,
   producerStageOutcomeUnchanged,
   recordProducerStageOutcome,
 } from "./stage-ledger.mjs";
@@ -579,6 +582,21 @@ test("assemblyReportMatchesPacket compares map id and public route slug, absent 
   assert.equal(assemblyReportMatchesPacket(null, packet), false);
   assert.equal(assemblyReportMatchesPacket([], packet), false);
 });
+
+test("qaGatePassedForCurrentBuild holds only while the QA-recorded fingerprint is the assembly's current one", () => {
+  const fp = `sha256:${"a".repeat(64)}`;
+  const report = (evidence) => ({ stages: { qa: { status: "completed", evidence } } });
+  const pass = { source_build_fingerprint: fp, gates: { [QA_GATE_PLACEHOLDER_TEXT_RESIDUE]: { status: "pass" } } };
+  assert.deepEqual(qaGateEvidence(report(pass), QA_GATE_PLACEHOLDER_TEXT_RESIDUE), { status: "pass", source_build_fingerprint: fp });
+  assert.equal(qaGateEvidence(report(["operator note"]), QA_GATE_PLACEHOLDER_TEXT_RESIDUE), null, "array-shaped operator evidence is not gate evidence");
+  assert.equal(qaGateEvidence(report(undefined), QA_GATE_PLACEHOLDER_TEXT_RESIDUE), null);
+  assert.equal(qaGatePassedForCurrentBuild(report(pass), QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: fp }), true);
+  assert.equal(qaGatePassedForCurrentBuild(report(pass), QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: `sha256:${"b".repeat(64)}` }), false, "a rebuild revokes the pass");
+  assert.equal(qaGatePassedForCurrentBuild(report(pass), QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: null }), false, "no current fingerprint, no pass");
+  assert.equal(qaGatePassedForCurrentBuild(report({ ...pass, gates: { [QA_GATE_PLACEHOLDER_TEXT_RESIDUE]: { status: "fail" } } }), QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: fp }), false);
+  assert.equal(qaGatePassedForCurrentBuild(report({ gates: { [QA_GATE_PLACEHOLDER_TEXT_RESIDUE]: { status: "pass" } } }), QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: fp }), false, "a pass with no recorded fingerprint proves nothing about this build");
+});
+
 
 // The report's top-level status / next / blockers are derived from its stages
 // on every write, so they can never lag the ladder.
