@@ -916,11 +916,16 @@ the entry page, and the run remembers the answer per checkout URL: a
 `tiers:*` plan that drives the same checkout once per tier probes it on the
 first path only, and every later path reads the stored answer
 (`selection_surface_probe: reused` in the step evidence, `loaded` on the path
-that ran the probe). When a surface is present the step is `skipped` with that
-reason and `opened_checkout` keeps the page the probe left on the checkout
+that ran the probe). A probe whose page-side read failed is tagged
+`selection_surface_probe: failed` with the error in
+`selection_surface_probe_error`; the path proceeds to the entry page as
+before, but the evidence says the read broke rather than that the checkout
+carries nothing, and the failure is never stored for later paths. When a
+surface is present the step is `skipped` with that reason and
+`opened_checkout` keeps the page the probe left on the checkout
 (`already on checkout from the selector probe; not re-opened`), opening the
-checkout itself only when the path reused a stored answer and never loaded it;
-the rest of the ladder is unchanged — existing families run exactly as they
+checkout itself only when no prior path ran the probe and left the page on
+the checkout; the rest of the ladder is unchanged — existing families run exactly as they
 did, with the checkout loaded once per path rather than twice. That matters
 because every checkout load boots the SDK and fires its page-view events into
 the same capture the analytics legs and the receipt capture read, so a second
@@ -953,8 +958,9 @@ Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
 `landing_resolution` (`routes_into_checkout`, `entry_page_fallback`,
 `first_page_fallback`), `control_text`, `control_kind` (`add_to_cart` or
 `checkout_link`), `package_id`, `sdk_ready`, `arrived_url`, the
-`checkout_selection_surface` probe result, and `selection_surface_probe`
-(`loaded` or `reused`). The failure codes are
+`checkout_selection_surface` probe result, `selection_surface_probe`
+(`loaded`, `reused`, or `failed`), and `selection_surface_probe_error` when it
+failed. The failure codes are
 `cart_entry_unresolved` (no selection surface on checkout and no entry page
 resolves from the topology), `cart_entry_control_missing` (the entry page
 renders no control, or none carrying the requested ref), and

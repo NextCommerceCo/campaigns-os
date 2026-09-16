@@ -171,7 +171,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       runId,
       // The topologies travel with the options so each attempt can resolve the
       // funnel's cart-entry page for the checkout it drives (campaigns-os#206).
-      options: { ...options, creationBudget, topologies, selectorProbeCache: createSelectorProbeCache() },
+      options: { ...options, creationBudget, topologies },
     });
     return {
       orders: dispatched.orders,
@@ -195,9 +195,10 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
   const creationBudget = options.creationBudget || createOrderCreationBudget({ plans, args });
   const runSingle = options.runSingleTestOrder || runSingleBrowserTestOrder;
   const recover = options.recoverCreatedOrder || recoverCreatedOrder;
-  // One selector-probe cache per run: the checkout is probed for a selection
-  // surface once per checkout URL, and every later path reads the answer.
-  const selectorProbeCache = options.selectorProbeCache || createSelectorProbeCache();
+  // One selector-probe cache per run, created here and nowhere else: the
+  // checkout is probed for a selection surface once per checkout URL, and
+  // every later path reads the answer.
+  const selectorProbeCache = createSelectorProbeCache();
   const attemptOptions = { ...options, creationBudget, selectorProbeCache };
   const receiptAnalytics = {
     plannedPlanIds: plans.map((plan) => planId(plan)),
@@ -2873,7 +2874,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
         args: planArgs,
         deadline: orderDeadline,
         reserveOrderCreation,
-        selectorProbeCache: options.selectorProbeCache || null,
+        selectorProbeCache: options.selectorProbeCache,
       }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
       `order-path:${planId(normalizedPlan)}`,
@@ -3232,18 +3233,34 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   // that is the design half of #206). The probe's load is the checkout's only
   // load before the entry page, and the run remembers the answer per checkout
   // URL so later paths of the same plan do not load the checkout to ask again.
+  //
+  // The probe's outcome is tagged, never collapsed: a page-side read that
+  // failed (context destroyed, navigation in flight) is `failed` with the
+  // error, not the same empty shape a real read of a selector-less checkout
+  // returns. The path still proceeds to the entry page, as it did before, but
+  // the evidence says the read broke, and the failure is never cached.
   const cached = selectorProbeCache?.get(checkoutPage.url) || null;
   let surface = cached;
+  let probe = cached ? "reused" : "loaded";
+  let probeError = null;
   if (!surface) {
     await gotoAndSettle(page, checkoutPage.url, args);
-    const probed = await page.evaluate(checkoutSelectionSurfaceScript()).then((value) => ({ value }), () => ({ value: null }));
-    surface = probed.value || { count: 0, kinds: {}, excluded: 0 };
-    if (probed.value) selectorProbeCache?.set(checkoutPage.url, probed.value);
+    const probed = await page.evaluate(checkoutSelectionSurfaceScript())
+      .then((value) => ({ value }), (error) => ({ value: null, error: error?.message || String(error) }));
+    if (probed.value) {
+      surface = probed.value;
+      selectorProbeCache?.set(checkoutPage.url, probed.value);
+    } else {
+      surface = { count: 0, kinds: {}, excluded: 0 };
+      probe = "failed";
+      probeError = probed.error || "unknown error";
+    }
   }
+  const probeEvidence = { selection_surface_probe: probe, ...(probeError ? { selection_surface_probe_error: probeError } : {}) };
   if (surface.count > 0) {
     return {
       skip: `checkout carries its own package selection surface (${summarizeSelectionSurface(surface)}); cart is entered on checkout${cached ? " (probe answer reused from an earlier path of this run)" : ""}`,
-      evidence: { checkout_selection_surface: surface, selection_surface_probe: cached ? "reused" : "loaded" },
+      evidence: { checkout_selection_surface: surface, ...probeEvidence },
     };
   }
   if (!entryPage?.url) {
@@ -3298,7 +3315,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
       sdk_ready: sdkReady,
       arrived_url: redactUrlQuery(safePageUrl(page)),
       checkout_selection_surface: surface,
-      selection_surface_probe: cached ? "reused" : "loaded",
+      ...probeEvidence,
     },
   };
 }

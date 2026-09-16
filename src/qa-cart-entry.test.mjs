@@ -9,6 +9,8 @@ import {
   CART_ENTRY_STEP,
   assessCartBeforeSubmit,
   cartEntryHrefFor,
+  cartEntryControlsScript,
+  checkoutSelectionSurfaceScript,
   chooseCartEntryControl,
   codedError,
   isCartEntryCode,
@@ -491,16 +493,24 @@ const { enterCartViaLanding, openCheckoutForPath, createSelectorProbeCache } = _
 const landing = { page_id: "landing", page_type: "landing", order: 1, url: `${BASE}/`, expected_next_url: checkout.url, resolution: "routes_into_checkout" };
 const LOAD_ARGS = Object.freeze({ "browser-timeout": 1000 });
 
-function fakePage({ surface, controls = [] }) {
+// `evaluate` picks by script identity: the two page-side scripts the entry
+// step runs come from the exported factories (fresh closures per call, so the
+// fake keys on their source text) rather than sniffing the params shape. `waitForURL` rejects asynchronously
+// like Playwright does, so the production catch is the one that fires.
+function fakePage({ surface, controls = [], navigates = true }) {
   const loads = [];
   let current = "about:blank";
   const noop = async () => {};
   const locator = () => ({
     nth: () => ({
       scrollIntoViewIfNeeded: noop,
-      click: async () => { current = checkout.url; },
+      click: async () => { if (navigates) current = checkout.url; },
     }),
   });
+  const scripts = new Map([
+    [String(checkoutSelectionSurfaceScript()), () => surface],
+    [String(cartEntryControlsScript()), () => controls],
+  ]);
   return {
     loads,
     loadsOf: (url) => loads.filter((entry) => entry === url).length,
@@ -509,9 +519,14 @@ function fakePage({ surface, controls = [] }) {
     waitForLoadState: noop,
     waitForTimeout: noop,
     waitForFunction: async () => true,
-    waitForURL: async (predicate) => { if (!predicate(current)) throw new Error("not at checkout"); },
+    waitForURL: (predicate) => new Promise((resolve, reject) => {
+      setImmediate(() => (predicate(current) ? resolve() : reject(new Error("Timeout 1000ms exceeded."))));
+    }),
     locator,
-    evaluate: async (script, params) => (params?.selector ? controls : surface),
+    evaluate: (script) => {
+      const answer = scripts.get(String(script));
+      return answer ? Promise.resolve(answer()) : Promise.reject(new Error(`unexpected page script: ${String(script).slice(0, 40)}`));
+    },
   };
 }
 
@@ -573,16 +588,34 @@ test("a multi-path plan on a landing-entry family probes once; later paths go st
   assert.deepEqual(second.loads, [landing.url], "no checkout load at all on the second path");
 });
 
-test("a probe whose page-side read failed is not remembered: the next path probes again", async () => {
+test("a probe whose page-side read failed is tagged as failed, not read as an empty checkout, and is not remembered", async () => {
   const selectorProbeCache = createSelectorProbeCache();
   const broken = fakePage({ surface: NO_SURFACE, controls: ADD_TO_CART });
-  broken.evaluate = async (script, params) => { if (params?.selector) return ADD_TO_CART; throw new Error("context destroyed"); };
-  await runEntryAndOpen(broken, { selectorProbeCache });
+  const evaluate = broken.evaluate;
+  broken.evaluate = (script) => (String(script) === String(checkoutSelectionSurfaceScript()) ? Promise.reject(new Error("Execution context was destroyed")) : evaluate(script));
+  const brokenRun = await runEntryAndOpen(broken, { selectorProbeCache });
+  assert.equal(brokenRun.entry.entered, true, "the path still proceeds to the entry page");
+  assert.equal(brokenRun.entry.evidence.selection_surface_probe, "failed");
+  assert.equal(brokenRun.entry.evidence.selection_surface_probe_error, "Execution context was destroyed");
   assert.equal(selectorProbeCache.get(checkout.url), null);
   const next = fakePage({ surface: SELECTOR_SURFACE });
   const nextRun = await runEntryAndOpen(next, { selectorProbeCache });
   assert.equal(nextRun.entry.evidence.selection_surface_probe, "loaded");
   assert.equal(next.loadsOf(checkout.url), 1);
+});
+
+test("a click that never reaches the checkout fails by name through the production navigation wait, not as a bare timeout", async () => {
+  const page = fakePage({ surface: NO_SURFACE, controls: ADD_TO_CART, navigates: false });
+  await assert.rejects(
+    enterCartViaLanding({ page, checkoutPage: checkout, entryPage: landing, selectedPackages: [], args: LOAD_ARGS, budget, selectorProbeCache: null }),
+    (error) => {
+      assert.equal(error.code, CART_ENTRY_CODES.ENTRY_NO_NAVIGATION);
+      assert.match(error.message, /^cart_entry_no_navigation: clicked "Claim" on the entry page but the page did not reach/);
+      assert.match(error.message, /now at https:\/\/campaign\.example\/\)/);
+      return true;
+    },
+  );
+  assert.deepEqual(page.loads, [checkout.url, landing.url]);
 });
 
 test("the probe cache keys on the canonical checkout URL, so a trailing-slash or query spelling is the same checkout", async () => {

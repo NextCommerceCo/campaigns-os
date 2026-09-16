@@ -20,8 +20,9 @@ Notable supported-surface changes are recorded here.
   `selection_surface_probe: loaded` on the path that ran the probe and
   `reused` on the rest; a reused answer on a selector family opens the
   checkout once in `opened_checkout`, and on a landing-entry family goes
-  straight to the landing page. A probe whose page-side read failed is not
-  remembered.
+  straight to the landing page. A probe whose page-side read failed is tagged
+  `selection_surface_probe: failed` with `selection_surface_probe_error`, is
+  never read as an empty checkout, and is not remembered.
 - `docs/qa-and-test-orders.md` names the selector probe and its single load.
 
 ## [1.29.0+agent.1] - 2026-09-16

@@ -3548,8 +3548,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.29.0+agent.13",
-      "changelog_sha256": "cea984c66a6a82e1039576d63422a35ea1406f3e180049e0c7c5b253dd44cf54",
-      "agent_impact": "The typed-card runner (qa run --test-order) loads the checkout once per order path instead of twice. The entered_via_landing step's selector probe is the checkout's only load on a path: when the probe finds a selection surface, opened_checkout records detail \"already on checkout from the selector probe; not re-opened\" (previously no detail) rather than loading the same URL again; on a landing-entry family the probe load is followed only by the landing page and the SDK's own navigation. A multi-path plan (tiers:*, several coupons) probes each checkout URL once per run and reuses the answer on later paths; entered_via_landing evidence gains selection_surface_probe: \"loaded\" on the path that ran the probe and \"reused\" on the rest, and a reused skip detail ends with \"(probe answer reused from an earlier path of this run)\". A reused answer on a selector family opens the checkout once in opened_checkout (detail null, as before); on a landing-entry family the path goes straight to the landing page. A consumer counting SDK page-view events in the analytics-correctness or receipt capture will see one checkout view per path where it saw two; one matching opened_checkout.detail === null on selector families must accept the new detail string. Step names, statuses, order and failure codes are unchanged. No schema, flag or command change.",
+      "changelog_sha256": "c42b8ff7fdaa46121613e531cc16cc55f5d226a195228c718ce64ffefa8aaab9",
+      "agent_impact": "The typed-card runner (qa run --test-order) loads the checkout once per order path instead of twice. The entered_via_landing step's selector probe is the checkout's only load on a path: when the probe finds a selection surface, opened_checkout records detail \"already on checkout from the selector probe; not re-opened\" (previously no detail) rather than loading the same URL again; on a landing-entry family the probe load is followed only by the landing page and the SDK's own navigation. A multi-path plan (tiers:*, several coupons) probes each checkout URL once per run and reuses the answer on later paths; entered_via_landing evidence gains selection_surface_probe: \"loaded\" on the path that ran the probe and \"reused\" on the rest (\"failed\" plus selection_surface_probe_error when the page-side read broke; that path proceeds to the entry page as before and the failure is never reused), and a reused skip detail ends with \"(probe answer reused from an earlier path of this run)\". A reused answer on a selector family opens the checkout once in opened_checkout (detail null, as before); on a landing-entry family the path goes straight to the landing page. A consumer counting SDK page-view events in the analytics-correctness or receipt capture will see one checkout view per path where it saw two; one matching opened_checkout.detail === null on selector families must accept the new detail string. Step names, statuses, order and failure codes are unchanged. No schema, flag or command change.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -3557,10 +3557,10 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "The entered_via_landing section names the selector probe, states that its load is the checkout's only load before the entry page and that opened_checkout reuses it on selector families, documents the per-run reuse across paths of a multi-path plan, and lists the selection_surface_probe evidence value (loaded or reused)."
+          "summary": "The entered_via_landing section names the selector probe, states that its load is the checkout's only load before the entry page and that opened_checkout reuses it on selector families, documents the per-run reuse across paths of a multi-path plan, and lists the selection_surface_probe evidence value (loaded, reused, or failed with selection_surface_probe_error)."
         }
       ],
-      "entry_sha256": "d7954057d223119ded7b7627e3fc81a0e1251e2b2f59eadbdafcf4fb17f37f2c"
+      "entry_sha256": "ae69ef37cd6133f0d867ae58a8de7f1917f8329c6e4b3e250c02469edc66a912"
     }
   ]
 }
