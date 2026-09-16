@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
-import { anyAssemblyReportStageBlocked, commitAssemblyReport, recordProducerStageOutcome, withDerivedAssemblyReportSummary } from "./stage-ledger.mjs";
+import { anyAssemblyReportStageBlocked, applyDerivedAssemblyReportSummary, commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -2487,7 +2487,7 @@ function prepareBuild(args, options = {}) {
   // The top-level status/next/blockers are derived from the stages by the same
   // function every later commit of the report runs (stage-ledger.mjs), so
   // prepare-build's first write and a producer's last write spell them alike.
-  const report = withDerivedAssemblyReportSummary(createAssemblyReport({
+  const report = applyDerivedAssemblyReportSummary(createAssemblyReport({
     packetPath,
     contextPath,
     reportPath,
@@ -2649,7 +2649,7 @@ function createAssemblyReport({
     run_id: `asm_${Date.now()}`,
     generated_at: new Date().toISOString(),
     // status, blockers and next are restated from the stages by
-    // withDerivedAssemblyReportSummary before the report is written; the
+    // applyDerivedAssemblyReportSummary before the report is written; the
     // seeds here only keep the schema's required keys in their usual order.
     status: "prepared",
     identity: {
@@ -7878,17 +7878,21 @@ function prepareBuildGateIssue(report, { required = false, reportPath = null, bi
   const topLevelDspBlockers = (Array.isArray(report?.blockers) ? report.blockers : [])
     .filter((blocker) => blocker?.code === "DESIGN_SOURCE_PACKAGE_NOT_READY");
   const contradictoryBlockers = uniquePrepareBuildBlockers([...stageBlockers, ...topLevelDspBlockers]);
-  // report.status is derived from every stage, so "blocked" beside a terminal
-  // prepare_build is only a contradiction when no stage at all is blocked: a
-  // blocked QA stage legitimately reads blocked at the top level.
-  const unexplainedBlockedStatus = report?.status === "blocked" && !anyAssemblyReportStageBlocked(report);
+  // report.status is derived from the stages on every write, so a report that
+  // has been through commitAssemblyReport reads "blocked" if and only if some
+  // stage is blocked, and a blocked QA or doctor stage beside a terminal
+  // prepare_build is not a contradiction. The case below can only be a report
+  // written before the summary was derived (or hand-edited since): a
+  // top-level "blocked" that no recorded stage explains. It is still a
+  // contradiction to refuse on, and the next commit of the report heals it.
+  const blockedStatusFromPreDerivationReport = report?.status === "blocked" && !anyAssemblyReportStageBlocked(report);
   if (stageIsTerminal(status) && (
-    unexplainedBlockedStatus
+    blockedStatusFromPreDerivationReport
     || stageBlockers.length > 0
     || topLevelDspBlockers.length > 0
   )) {
     const contradictions = [
-      ...(unexplainedBlockedStatus ? ["report.status=blocked"] : []),
+      ...(blockedStatusFromPreDerivationReport ? ["report.status=blocked"] : []),
       ...(stageBlockers.length ? [`stages.prepare_build.blockers=${stageBlockers.length}`] : []),
       ...(topLevelDspBlockers.length ? [`top-level DSP blockers=${topLevelDspBlockers.length}`] : []),
     ];

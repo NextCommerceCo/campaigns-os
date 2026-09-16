@@ -13,11 +13,13 @@ Notable supported-surface changes are recorded here.
   `blockers: []` beside a `stages.qa` recorded `completed_with_warnings` or
   `blocked`, so a reader of the top level saw a campaign that had not started.
   `status` is now `blocked` while any recorded stage is blocked, `completed`
-  once every ladder stage (setup, build, polish, deploy, qa) is terminal, and
-  `prepared` otherwise; `blockers` is the union of the `blockers[]` of the
-  stages currently blocked, so a blocker cleared by a re-run leaves the top
-  level with its stage; a doctor recorded blocked and later passed reads
-  `prepared` again.
+  only once every recorded stage — `prepare_build` and `doctor` included, not
+  just the ladder — is terminal, and `prepared` otherwise, so a report whose
+  doctor never recorded an outcome (`prepare-build --no-doctor`) reads
+  `prepared` with `next.stage: "doctor"` even after the whole ladder has run;
+  `blockers` is the union of the `blockers[]` of the stages currently blocked,
+  so a blocker cleared by a re-run leaves the top level with its stage; a
+  doctor recorded blocked and later passed reads `prepared` again.
 
 ### Changed
 
@@ -25,7 +27,10 @@ Notable supported-surface changes are recorded here.
   sidecar and `campaigns-os next` already use: `next.stage` is the first
   non-terminal stage in ladder order (`setup`, `build`, `polish`, `deploy`,
   `qa`, then `done`), `prepare-build` / `doctor-blocked` when that gate is
-  blocked, `next.owner` is the owning skill (`next-campaigns-os-setup`,
+  blocked, `doctor` when the ladder is exhausted but doctor never recorded an
+  outcome (a pending doctor does not hold the ladder mid-run, exactly as the
+  picker does not walk it, but it does hold `done`), `next.owner` is the
+  owning skill (`next-campaigns-os-setup`,
   `next-campaigns-build`, `next-campaigns-polish`, `next-campaigns-qa`,
   `next-campaigns-os`), and `next.blocked: true` is present when the named
   stage is the one holding the ladder. A reader that branched on
@@ -37,7 +42,11 @@ Notable supported-surface changes are recorded here.
 - `next` and doctor no longer call a terminal `stages.prepare_build` beside
   `status: "blocked"` a contradiction when another stage (QA, doctor) is the
   one blocked; the `report.status=blocked` contradiction now fires only when
-  no recorded stage is blocked.
+  no recorded stage is blocked, which after this change can only be a report
+  written before the summary was derived or hand-edited since.
+- `commitAssemblyReport` refuses with a `TypeError` a mutator that returns
+  anything other than a report object, `null` or `undefined`, instead of
+  writing whatever came back.
 - A report written before this change heals on its next commit (the first
   stage record or operator edit rewrites the summary once); after that an
   unchanged re-record still leaves the file's bytes alone.
