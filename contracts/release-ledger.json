@@ -3996,6 +3996,51 @@
         }
       ],
       "entry_sha256": "f0e8db2b5f3d171ecf925bc032584003543e697f89078422d61b964d7df954a7"
+    },
+    {
+      "id": "RL-0108",
+      "sequence": 108,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.30.0+agent.1",
+      "changelog_sha256": "8f0cc9f1c67ae4e2c03ec347e2a040ece9ceb163c875323b4ddb111e91155424",
+      "agent_impact": "The package can now be installed from the npm registry, including globally (npm install -g @nextcommerce/campaigns-os), in place of a git-sha pin; package.json version is 1.30.0 and from here equals surface_version, enforced by check:supported-surface. playwright is an optionalDependency: every default install still carries it, and an install that omitted it is told the install command by polish capture, qa run and qa install-browser instead of failing on import. QA verdicts now stamp the real package version as their runtime. The tarball no longer ships tests, examples, scripts, non-surface docs or check-script fixtures; every supported-surface path still ships. No export, command, flag, schema or exit code changed.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "private removed, version 0.1.0-alpha.0 -> 1.30.0 (equals surface_version), publishConfig public + provenance, repository/homepage/bugs declared; playwright moved to optionalDependencies; files[] trimmed to the consumer-read set with the surface docs plus docs/polish-evidence.md listed by path."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lockfile follows playwright moving from dependencies to optionalDependencies; no resolved version changed."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "version 0.1.0-alpha.0 -> 1.30.0 to match package.json."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "Package version line reads 1.30.0 and states that it equals surface_version and is the published npm version; +agent.N sections are not published on their own."
+        },
+        {
+          "class": "workflow",
+          "path": ".github/workflows/publish.yml",
+          "surface_entry": null,
+          "summary": "New: on a v<version> tag push, an unprivileged job checks tag == package.json version == surface_version and that the commit is on main, runs the full check and packs; an environment-gated job with the only OIDC grant publishes that tarball via npm trusted publishing."
+        }
+      ],
+      "entry_sha256": "e4fca0c5196fa8992e4610f09d28b5efed4ab1a59de1f6bd9ff58a641feeb570"
     }
   ]
 }

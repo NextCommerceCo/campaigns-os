@@ -2,7 +2,10 @@
 
 This repo uses independent compatibility versions:
 
-- package version: `0.1.0-alpha.0`
+- package version: `1.30.0` — equals `surface_version` in
+  `contracts/supported-surface.json` (`check:supported-surface` enforces it)
+  and is the version published to the npm registry; `+agent.N` changelog
+  sections are same-surface changes and are not published on their own
 - Build Packet: `campaign-runtime-build-packet/v0`
 - Build Context: `campaign-runtime-build-context/v0`
 - Assembly Report: `campaign-runtime-assembly-report/v0`

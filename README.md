@@ -46,6 +46,24 @@ npx campaigns-os install-skills --platform claude
 mkdir -p source
 ```
 
+The toolkit is also published to npm as `@nextcommerce/campaigns-os`, so the
+CLI can be installed once, globally, instead of pinned per campaign:
+
+```bash
+npm install -g @nextcommerce/campaigns-os
+campaigns-os tooling status --platform claude
+```
+
+A global install ships without a browser. Polish capture and QA need the
+Playwright Chromium: run `campaigns-os qa install-browser` once. Playwright
+itself is an optional dependency, installed by default; an install that
+omitted it (`--omit=optional`) is told exactly that by the commands that need
+it, and every other command runs without it.
+Releases are cut by pushing a `v<version>` tag that matches `package.json`
+and `surface_version` on a commit on `main`; `.github/workflows/publish.yml`
+runs the full check in an unprivileged job and publishes the verified tarball
+with provenance from a second, environment-gated job.
+
 For an existing page-kit campaign, skip the first three lines and `cd` into it
 (its `package.json` already declares `next-campaign-page-kit`). `#<sha>` is
 the commit you oriented on, so the code that runs is the code whose contracts

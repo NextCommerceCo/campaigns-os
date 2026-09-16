@@ -2,6 +2,50 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.30.0+agent.1] - 2026-09-16
+
+### Changed
+
+- The package is publishable to the npm registry as `@nextcommerce/campaigns-os`
+  and installable globally (`npm install -g @nextcommerce/campaigns-os`).
+  `private: true` is gone, `publishConfig.access` is `public` with provenance,
+  `repository`/`homepage`/`bugs` are declared, and `package.json` `version` is
+  `1.30.0`: it now equals `surface_version` (the supported-surface release the
+  CHANGELOG is keyed to) instead of the `0.1.0-alpha.0` developer-preview
+  literal it had carried since the first commit; `check:supported-surface`
+  fails a surface bump that forgets `package.json`. `compatibility.json` and
+  `docs/versioning.md` say the same. `.github/workflows/publish.yml` publishes
+  on a `v<version>` tag push: an unprivileged job checks the tag against
+  `package.json` and `surface_version`, requires the commit to be on `main`,
+  runs the full `npm run check` and packs; a second job in the `npm-publish`
+  environment, holding the only OIDC grant and installing nothing, publishes
+  that exact tarball via npm trusted publishing (prereleases under the `next`
+  dist-tag; an already-published version is a no-op). Actions are SHA-pinned.
+  No export, command, flag, schema or exit code changed; a consumer pinned to
+  a git sha is unaffected.
+- `playwright` moved from `dependencies` to `optionalDependencies`. Every
+  install still gets it by default (registry, global, and git-sha pins alike),
+  the Chromium binary stays a one-time `campaigns-os qa install-browser`, and
+  an install that omitted it (`--omit=optional`, or a failed optional install)
+  no longer fails at import: `polish capture`, `qa run` and `qa install-browser`
+  share one recovery hint, exported from `src/browser-launch.mjs`, naming the
+  install command for the place campaigns-os is installed. Only a genuinely
+  absent package (`ERR_MODULE_NOT_FOUND`) takes that branch; a present but
+  broken Playwright surfaces its own error, and polish capture now carries the
+  original error like QA does. Playwright remains the only supported browser
+  driver.
+- QA verdicts identify their producing runtime from `package.json` (now
+  `campaigns-os-node-qa@1.30.0`) instead of a literal that had stayed at
+  `0.1.0-alpha.0`.
+- The tarball ships only what an installed consumer reads: `src/*.test.mjs`,
+  `examples/`, `scripts/`, the non-surface `docs/` pages and the check-script
+  fixtures under `contracts/fixtures/` (`campaign-specs`, `expected`,
+  `legacy-migration`, `template-residue`) are excluded (556 -> 298 files,
+  8.4 MB -> 4.7 MB unpacked). Every path in `contracts/supported-surface.json`
+  still ships, plus `docs/polish-evidence.md` (referenced by the polish skill);
+  the docs are listed by exact path in `files[]`, and `check:pack` asserts both
+  the surface's presence and the exclusions against the extracted tarball.
+
 ## [1.30.0] - 2026-09-16
 
 ### Added
