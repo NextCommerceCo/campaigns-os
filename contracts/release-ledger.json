@@ -3546,6 +3546,84 @@
       "sequence": 96,
       "date": "2026-09-16",
       "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.3",
+      "changelog_sha256": "2888da443aeafa1da6064c2e7adc8b5f06b1186fdb402ba1ec6852e7bd9ec182",
+      "agent_impact": "prepare-build now writes assembly.commerce_catalog.path: null when the catalog is the toolkit's default contracts/commerce-surface-catalog.json (#324); previously it wrote a packet-relative path into the checkout that ran the command, which was dead on any other machine or with the toolkit installed as a package. An agent reading the packet must treat null as \"the running toolkit's catalog\"; a string path is still an operator --commerce-catalog relative to the packet. doctor and qa run resolve null to the running toolkit's catalog, and also resolve a recorded path that does not exist but is named commerce-surface-catalog.json (a packet prepared before this change) to the same file: doctor no longer emits the blocker [assembly.commerce_catalog.path] Commerce catalog is required but not found. for that state and instead adds a ready line starting \"Commerce catalog resolved to the running toolkit's copy; the packet's recorded path <path> does not exist here\" ending \"Re-run prepare-build to clear the machine-local path.\" A dead path with any other file name still blocks with the same message as before. No warning, flag, exit code or schema change (the schema already allowed null).",
+      "compatibility": "compatible",
+      "migration": "Existing packets keep working: a machine-local catalog path resolves to the running toolkit's catalog with a ready line. Re-run prepare-build to record null. Consumers that parsed assembly.commerce_catalog.path as a non-empty string must accept null.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "assembly.commerce_catalog.path is null when the catalog is the toolkit's default; an explicit --commerce-catalog is still recorded packet-relative."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "A null catalog path, or a dead path named commerce-surface-catalog.json, resolves to the running toolkit's catalog; the dead-path case adds a ready line naming the stale path and the prepare-build repair instead of the assembly.commerce_catalog.path blocker."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa run loads the commerce structure contract through the same resolver, so a null or stale catalog path no longer yields missing_catalog_path / missing_catalog."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "New Commerce Catalog section: null path = toolkit default, string path = operator catalog relative to the packet, stale machine-local path = resolved with a ready line and cleared by re-running prepare-build."
+        }
+      ],
+      "entry_sha256": "679dcd1ec8ec2939e16f1acd6afe71a8e6ab06acbc20ffdd0bff35ca137baebe"
+    },
+    {
+      "id": "RL-0097",
+      "sequence": 97,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.4",
+      "changelog_sha256": "783354b6526720d1be396edc1d37e0df823c309a9ca7c550229220f0a272194d",
+      "agent_impact": "run-record with no --run-id and no active run session now re-emits the most recent Run Record on disk for the packet's campaign under that record's run_id instead of minting a fresh id (#328); resolution is --run-id > active session > newest record whose identity.map_id and identity.campaign_slug match the packet > minted. An agent that ran the closeout action next prints, or re-ran run-record after run end, therefore no longer forks a second record: a record whose remit landed is left as written (written: false, remit.result not_contacted, as an explicit --run-id over it already behaved) and an unremitted one is reassembled under the same id. The --json summary carries a new envelope field run_id_source (explicit | session | latest_record | minted) and the text output prints \"Run ID: <id> (<source>)\", preceded on a latest_record run by a one-line notice naming the id, --new-run and --list; the Run Record schema is unchanged and never carries the source. New flags: --new-run mints regardless of disk state (refused beside --run-id, exit non-zero, stderr \"--new-run and --run-id are exclusive\"); --list prints every record for the campaign newest first (run_id, created_at, remit_state, remit_result, remit_endpoint, record_path) plus the id a plain run would use and its source, and assembles, writes and sends nothing (list: true, written: false, remit.sent: false). next's required run_record_closeout command carries --new-run when the record it judged stale_predates_evidence or outdated_artifacts is the campaign's newest record, and its description names the superseded id; for no_record and foreign_campaign the plain command is unchanged. An agent that expected a sessionless run-record to always produce a new run_id must pass --new-run.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run-record",
+          "summary": "With no --run-id and no active session, run-record re-emits the newest matching Run Record under its run_id rather than minting; the summary gains run_id_source and a latest_record notice; new --new-run mints on request and --list inspects the ids on disk without writing or sending."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "The required run_record_closeout command carries --new-run, and its description names the superseded record, when the newest record for the campaign was judged stale_predates_evidence or outdated_artifacts."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Documents run_id resolution (explicit, session, latest_record, minted), run_id_source on the envelope, --new-run, --list, the sessionless behaviour after a QA auto-end, and the closeout reason codes that print --new-run."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The run-record mention names the run_id resolution order and the --new-run and --list flags."
+        }
+      ],
+      "entry_sha256": "cca07c2448e4cda192e77e9e7cadc730a84fc5107403a9943cb885163bbf13af"
+    },
+    {
+      "id": "RL-0098",
+      "sequence": 98,
+      "date": "2026-09-16",
+      "kind": "release",
       "surface_version": "1.30.0",
       "changelog_section": "1.30.0",
       "changelog_sha256": "ea4b17f9e33ab112ec7f80d594a9afd008527550fcc548b9209132bd48f48b23",
@@ -3590,7 +3668,7 @@
           "summary": "Regenerated: supported surface at generation time 1.30.0."
         }
       ],
-      "entry_sha256": "87eb39afee8ca5c5c36ac2bc5011f83446275882942235d6518fa1aa41d3c8ab"
+      "entry_sha256": "2a5b9d924f7cced09433af00ccd1f85f5a442cb64fad59a4419f5171188f8933"
     }
   ]
 }
