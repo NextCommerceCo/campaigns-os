@@ -55,8 +55,9 @@ export const COMMERCE_CATALOG_FILE_NAME = "commerce-surface-catalog.json";
 // toolkit's own file relative to the packet (a chain of ../ into the checkout
 // that ran prepare-build), which is dead on any other machine or with the
 // toolkit installed as a package. Readers resolve that to the running
-// toolkit's catalog, and `source` says which case applied so doctor can tell
-// the operator without blocking.
+// toolkit's catalog, and `source` says which of the four cases applied
+// (toolkit_default, packet, stale_packet_path, missing_packet_path) so doctor
+// can tell the operator without blocking.
 export function resolvePacketCommerceCatalogPath(packetPath, catalogInfo = {}) {
   const recorded = typeof catalogInfo?.path === "string" && catalogInfo.path.length > 0 ? catalogInfo.path : null;
   if (!recorded) {
@@ -69,7 +70,10 @@ export function resolvePacketCommerceCatalogPath(packetPath, catalogInfo = {}) {
   if (basename(recorded) === COMMERCE_CATALOG_FILE_NAME) {
     return { path: defaultCommerceCatalogPath(), source: "stale_packet_path", recorded };
   }
-  return { path: resolved, source: "packet", recorded };
+  // The operator named a file that is not there and is not the toolkit
+  // catalog: keep the resolved path so the caller's missing-file check names
+  // it, and say plainly that nothing resolved.
+  return { path: resolved, source: "missing_packet_path", recorded };
 }
 
 // Overridable so tests can sandbox the allowlist against a fixture private

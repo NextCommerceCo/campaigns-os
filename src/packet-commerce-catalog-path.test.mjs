@@ -134,3 +134,12 @@ test("a dead path that does not name the catalog file still blocks", () => {
     rmSync(fixture.dir, { recursive: true, force: true });
   }
 });
+
+test("a recorded path that is neither present nor the toolkit catalog resolves as missing_packet_path", () => {
+  const dir = mkdtempSync(join(tmpdir(), "packet-catalog-missing-"));
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  const resolution = resolvePacketCommerceCatalogPath(packetPath, { required: true, path: "./contracts/other-catalog.json" });
+  assert.equal(resolution.source, "missing_packet_path");
+  assert.equal(resolution.path, join(dir, "contracts", "other-catalog.json"));
+  assert.equal(resolution.recorded, "./contracts/other-catalog.json");
+});
