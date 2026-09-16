@@ -85,14 +85,14 @@ function sdkGate(result) {
 }
 
 test("doctor and next block an SDK-pin mismatch with exact repair and waiver actions", () => {
-  const { dir, packetPath } = fixture({ specVersion: "0.4.36", targetVersion: "0.4.37" });
+  const { dir, packetPath } = fixture({ specVersion: "0.4.37", targetVersion: "0.4.36" });
   try {
     const doctor = doctorPacket(packetPath);
     assert.equal(doctor.errors.some((issue) => issue.code === "page_kit.sdk_version"), true);
     assert.equal(sdkGate(doctor).status, "blocked");
     assert.deepEqual(sdkGate(doctor).state, {
-      expected: "0.4.36",
-      observed: "0.4.37",
+      expected: "0.4.37",
+      observed: "0.4.36",
     });
 
     const next = nextStage(null, { _: ["next"], packet: packetPath, "no-write": true });
@@ -105,10 +105,32 @@ test("doctor and next block an SDK-pin mismatch with exact repair and waiver act
   }
 });
 
+test("doctor and next treat a repo pin ahead of the spec as advisory, and QA projects it as a warning (#413)", () => {
+  const { dir, packetPath } = fixture({ specVersion: "0.4.37", targetVersion: "0.4.38" });
+  try {
+    const doctor = doctorPacket(packetPath);
+    assert.equal(doctor.errors.some((issue) => issue.code.startsWith("page_kit.sdk_version")), false, JSON.stringify(doctor.errors));
+    const gate = sdkGate(doctor);
+    assert.equal(gate.status, "pass");
+    assert.equal(gate.code, "page_kit.sdk_version.repo_newer");
+    assert.deepEqual(gate.state, { expected: "0.4.37", observed: "0.4.38" });
+    const warning = doctor.warnings.find((issue) => issue.code === "page_kit.sdk_version.repo_newer");
+    assert.ok(warning, "the advisory is a doctor warning");
+    assert.match(warning.message, /Re-save the Map/);
+    assert.ok(doctor.ready.some((line) => /0\.4\.38 is what ships/.test(line)), JSON.stringify(doctor.ready));
+
+    const next = nextStage(null, { _: ["next"], packet: packetPath, "no-write": true });
+    assert.notEqual(next.stage, "doctor-blocked");
+    assert.equal(next.next_actions.some((action) => action.id.startsWith("checkpoint.page_kit.sdk_version")), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("an SDK-pin waiver stays visible without masking a simultaneous Store Profile blocker", () => {
   const { dir, packetPath, targetRepo, reportPath, campaignsPath } = fixture({
-    specVersion: "0.4.36",
-    targetVersion: "0.4.37",
+    specVersion: "0.4.37",
+    targetVersion: "0.4.36",
   });
   try {
     const campaigns = readJson(campaignsPath);
@@ -161,7 +183,7 @@ test("an SDK-pin waiver stays visible without masking a simultaneous Store Profi
     assert.equal(onlyWaived.ok, true, JSON.stringify(onlyWaived.errors, null, 2));
     assert.equal(onlyWaived.status, "ready_with_waivers");
 
-    campaigns["runtime-packet-demo"].sdk_version = "0.4.36";
+    campaigns["runtime-packet-demo"].sdk_version = "0.4.37";
     writeJson(campaignsPath, campaigns);
     const corrected = doctorPacket(packetPath);
     assert.equal(sdkGate(corrected).status, "pass");
@@ -345,7 +367,7 @@ test("a valid packet-local spec runs the full doctor registry and each checkpoin
 });
 
 test("doctor keeps malformed, expired, foreign-slug, and wrong-pair SDK decisions visible but inert", () => {
-  const { dir, packetPath, reportPath } = fixture({ specVersion: "0.4.36", targetVersion: "0.4.37" });
+  const { dir, packetPath, reportPath } = fixture({ specVersion: "0.4.37", targetVersion: "0.4.36" });
   try {
     checkpointWaive({
       _: ["checkpoint", "waive"],

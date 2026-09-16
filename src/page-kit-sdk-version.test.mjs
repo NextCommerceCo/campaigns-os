@@ -186,8 +186,8 @@ test("a missing or invalid target SDK pin is a non-waivable blocker", () => {
 
 test("an exact released SDK pair mismatch is fingerprinted and waivable", () => {
   const gate = evaluatePageKitSdkVersion({
-    spec: { runtime: { sdk_version: "0.4.36" } },
-    targetLoad: targetLoad("0.4.37", { public_route_slug: "/merchant/" }),
+    spec: { runtime: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.36", { public_route_slug: "/merchant/" }),
   });
 
   assert.equal(gate.status, "blocked");
@@ -198,8 +198,8 @@ test("an exact released SDK pair mismatch is fingerprinted and waivable", () => 
     target_path: "_data/campaigns.json",
   });
   assert.deepEqual(gate.state, {
-    expected: "0.4.36",
-    observed: "0.4.37",
+    expected: "0.4.37",
+    observed: "0.4.36",
   });
   assert.match(gate.state_fingerprint, /^sha256:[a-f0-9]{64}$/);
   assert.deepEqual(gate.required_actions.map((action) => action.id), [
@@ -210,8 +210,8 @@ test("an exact released SDK pair mismatch is fingerprinted and waivable", () => 
 
 test("an exact current named-human waiver is visible through the safe projection", () => {
   const blocked = evaluatePageKitSdkVersion({
-    spec: { runtime: { sdk_version: "0.4.36" } },
-    targetLoad: targetLoad("0.4.37"),
+    spec: { runtime: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.36"),
   });
   const waiver = createCheckpointWaiver(blocked, {
     reason: "Intentional SDK pin for compatibility testing",
@@ -225,8 +225,8 @@ test("an exact current named-human waiver is visible through the safe projection
     nested: { secret: "also-private" },
   };
   const gate = evaluatePageKitSdkVersion({
-    spec: { runtime: { sdk_version: "0.4.36" } },
-    targetLoad: targetLoad("0.4.37"),
+    spec: { runtime: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.36"),
     waivers: [rawWaiver],
     now: "2026-08-19T01:00:00.000Z",
   });
@@ -248,8 +248,8 @@ test("an exact current named-human waiver is visible through the safe projection
 
 test("malformed, expired, foreign-slug, and wrong-pair decisions remain inert while a clean pair ignores history", () => {
   const blocked = evaluatePageKitSdkVersion({
-    spec: { runtime: { sdk_version: "0.4.36" } },
-    targetLoad: targetLoad("0.4.37"),
+    spec: { runtime: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.36"),
   });
   const base = createCheckpointWaiver(blocked, {
     reason: "Intentional SDK pin",
@@ -270,8 +270,8 @@ test("malformed, expired, foreign-slug, and wrong-pair decisions remain inert wh
     { ...expired, private_token: "expired-secret" },
   ];
   const stillBlocked = evaluatePageKitSdkVersion({
-    spec: { runtime: { sdk_version: "0.4.36" } },
-    targetLoad: targetLoad("0.4.37"),
+    spec: { runtime: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.36"),
     waivers,
     now: "2026-08-19T00:00:00.000Z",
   });
@@ -294,4 +294,80 @@ test("malformed, expired, foreign-slug, and wrong-pair decisions remain inert wh
     active: null,
     inert_counts: { stale: 0, foreign: 0, malformed: 0, expired: 0 },
   });
+});
+
+test("a configured campaign whose repo pin is ahead of the spec passes with an advisory, not a blocker (#413)", () => {
+  const gate = evaluatePageKitSdkVersion({
+    spec: { global_config: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.38", {
+      public_route_slug: "merchant",
+      entry: { sdk_version: "0.4.38", store_url: "https://merchant.example/", store_name: "Merchant" },
+    }),
+  });
+
+  assert.equal(gate.status, "pass");
+  assert.equal(gate.code, "page_kit.sdk_version.repo_newer");
+  assert.equal(gate.waivable, false);
+  assert.equal(gate.expected_sdk_version, "0.4.37");
+  assert.equal(gate.observed_sdk_version, "0.4.38");
+  assert.deepEqual(gate.state, { expected: "0.4.37", observed: "0.4.38" });
+  assert.match(gate.state_fingerprint, /^sha256:[a-f0-9]{64}$/);
+  assert.match(gate.reason, /the repo pin is what ships/);
+  assert.deepEqual(gate.required_actions, []);
+  assert.deepEqual(gate.advisory_actions.map((action) => action.id), ["refresh_spec"]);
+  assert.match(gate.advisory_actions[0].description, /0\.4\.38/);
+});
+
+test("a scaffold entry that still carries the starter pin blocks even when that pin is ahead of the spec", () => {
+  // The starter family's demo store profile marks scaffold state; there the
+  // pin is the template's, not a bump, so sync seeds it and doctor blocks.
+  const gate = evaluatePageKitSdkVersion({
+    spec: { global_config: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.38", {
+      entry: { sdk_version: "0.4.38", store_url: "https://demo.29next.com/", store_name: "Demo Store" },
+    }),
+  });
+
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, PAGE_KIT_SDK_VERSION_SCOPE);
+  assert.equal(gate.required_actions.find((action) => action.id === "repair_target").kind, "command");
+});
+
+test("a target pin that is not a released version blocks whatever the spec says", () => {
+  const gate = evaluatePageKitSdkVersion({
+    spec: { global_config: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.39-rc.1", {
+      entry: { sdk_version: "0.4.39-rc.1", store_url: "https://merchant.example/", store_name: "Merchant" },
+    }),
+  });
+
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "page_kit.sdk_version.target_invalid");
+  assert.equal(gate.waivable, false);
+});
+
+test("the advisory repo-newer state still reports inert waiver history instead of hiding it", () => {
+  const targetLoadBumped = targetLoad("0.4.38", {
+    entry: { sdk_version: "0.4.38", store_url: "https://merchant.example/", store_name: "Merchant" },
+  });
+  // A decision recorded for an earlier pair (the repo was at 0.4.36 when a
+  // human waived it) is stale against the current fingerprint.
+  const earlier = evaluatePageKitSdkVersion({
+    spec: { global_config: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.36", { entry: { sdk_version: "0.4.36", store_url: "https://merchant.example/", store_name: "Merchant" } }),
+  });
+  const stale = createCheckpointWaiver(
+    { scope: PAGE_KIT_SDK_VERSION_SCOPE, subject: earlier.subject, state_fingerprint: earlier.state_fingerprint },
+    { reason: "Intentional pin", waivedBy: "Jordan Lee", reviewCondition: "Review before launch", now: "2026-08-18T00:00:00.000Z" },
+  );
+  const gate = evaluatePageKitSdkVersion({
+    spec: { global_config: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoadBumped,
+    waivers: [stale],
+    now: "2026-08-19T00:00:00.000Z",
+  });
+  assert.equal(gate.status, "pass");
+  assert.equal(gate.code, "page_kit.sdk_version.repo_newer");
+  assert.equal(gate.waiver, null);
+  assert.deepEqual(gate.waiver_assessment.inert_counts, { stale: 1, foreign: 0, malformed: 0, expired: 0 });
 });

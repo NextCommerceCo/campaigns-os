@@ -1312,6 +1312,7 @@ function sdkVersionGateAssertion(gate) {
     waiver: gate.waiver,
     waiver_assessment: gate.waiver_assessment,
     required_actions: gate.required_actions,
+    ...(Array.isArray(gate.advisory_actions) ? { advisory_actions: gate.advisory_actions } : {}),
   };
   if (gate.status === "blocked") {
     return assertion({
@@ -1345,6 +1346,18 @@ function sdkVersionGateAssertion(gate) {
       page,
       status: STATUS.SKIPPED,
       expected: "Packet QA evaluates SDK-pin parity before runtime work",
+      actual: gate.reason,
+      evidence,
+    });
+  }
+  if (gate.code === "page_kit.sdk_version.repo_newer") {
+    return assertion({
+      id: PAGE_KIT_SDK_VERSION_SCOPE,
+      family: "api-metadata",
+      page,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: `Target ${PAGE_KIT_CAMPAIGNS_REL_PATH} declares the released SDK version that ships; a CampaignSpec pin behind it is a stale build hint`,
       actual: gate.reason,
       evidence,
     });

@@ -273,7 +273,48 @@ export function evaluatePageKitSdkVersion({
       subject,
       state,
     });
+    // Direction of authority (#413): the repo pin is what the funnel serves,
+    // the spec field is a build hint. A configured campaign whose repo pin is
+    // NEWER than the spec's (both released, no scaffold residue — the same
+    // decision `page-kit sync` uses to refuse moving it backwards) is a
+    // completed bump the Map has not been re-saved for: advisory, not a
+    // blocker, with the re-save as the action. The repo BEHIND the spec, or
+    // a scaffold that still carries the starter pin, stays a blocker with
+    // sync as the repair; a non-released target pin was refused above.
     const checkpoint = { scope: PAGE_KIT_SDK_VERSION_SCOPE, subject, state_fingerprint };
+    if (sdkPinWriteDecision({ expected: expected_sdk_version, observed: observed_sdk_version, entry: targetEntry }) === "target_newer") {
+      // Nothing is waived here (there is nothing to waive), but the waiver
+      // history is still assessed so a stale, foreign, malformed or expired
+      // record recorded against an earlier pair keeps surfacing as inert
+      // rather than silently vanishing the moment the state turns advisory.
+      const waiver_assessment = projectCheckpointWaiverAssessment(
+        assessCheckpointWaivers(waivers, checkpoint, { now }),
+        checkpoint,
+      );
+      return {
+        id: PAGE_KIT_SDK_VERSION_SCOPE,
+        scope: PAGE_KIT_SDK_VERSION_SCOPE,
+        status: "pass",
+        code: "page_kit.sdk_version.repo_newer",
+        reason: `Target SDK version ${observed_sdk_version} is newer than the CampaignSpec pin ${expected_sdk_version}; the repo pin is what ships, so the build proceeds. Re-save the Map's Build hints (Campaign Cart SDK version) to ${observed_sdk_version} so the exported spec stops reading stale.`,
+        waivable: false,
+        subject,
+        state,
+        state_fingerprint,
+        expected_sdk_version,
+        observed_sdk_version,
+        expected_source,
+        waiver: null,
+        waiver_assessment,
+        required_actions: [],
+        advisory_actions: [{
+          id: "refresh_spec",
+          kind: "edit",
+          command: null,
+          description: `Re-save the Map's Build hints field (Campaign Cart SDK version) to ${observed_sdk_version}, or edit ${expected_source} in the spec, and re-export; nothing in the repo needs to change.`,
+        }],
+      };
+    }
     const waiver_assessment = projectCheckpointWaiverAssessment(
       assessCheckpointWaivers(waivers, checkpoint, { now }),
       checkpoint,
@@ -297,19 +338,12 @@ export function evaluatePageKitSdkVersion({
       waiver,
       waiver_assessment,
       required_actions: waiver ? [] : [
-        sdkPinWriteDecision({ expected: expected_sdk_version, observed: observed_sdk_version, entry: targetEntry }) === "write"
-          ? {
-            id: "repair_target",
-            kind: "command",
-            command: PAGE_KIT_SYNC_COMMAND,
-            description: `Write the CampaignSpec pin ${expected_sdk_version} into ${subject.target_path}[${subject.public_route_slug}].sdk_version (currently ${observed_sdk_version}), then re-run doctor.`,
-          }
-          : {
-            id: "repair_target",
-            kind: "edit",
-            command: null,
-            description: `${subject.target_path}[${subject.public_route_slug}].sdk_version ${observed_sdk_version} is newer than the CampaignSpec pin ${expected_sdk_version}: the repo pin moved and the Map/spec is stale. Re-save the Map (or edit the spec) to ${observed_sdk_version} and re-run doctor; page-kit sync will not move a configured campaign's pin backwards. To keep the divergence deliberately, record the waiver below.`,
-          },
+        {
+          id: "repair_target",
+          kind: "command",
+          command: PAGE_KIT_SYNC_COMMAND,
+          description: `Write the CampaignSpec pin ${expected_sdk_version} into ${subject.target_path}[${subject.public_route_slug}].sdk_version (currently ${observed_sdk_version}), then re-run doctor.`,
+        },
         {
           id: "waive_checkpoint",
           kind: "command",

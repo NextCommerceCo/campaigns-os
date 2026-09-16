@@ -412,7 +412,7 @@ finding carries a **cause class**, and the report leads with the tally.
 | `caused_by_change` | This finding was not in the previous run for this campaign, or it was there with a different status. |
 | `pre_existing` | The identical finding, with the identical status, was in the previous run. The change under test did not introduce it. |
 | `test_environment` | The runner itself classified this as an environment outcome, not a campaign defect: the order-creation budget safety stop, or a `<leg>:runner` capture failure. |
-| `upstream_drift` | An already-detected disagreement between the SDK version the CampaignSpec pins and the version the target carries (`page_kit.sdk_version`, `page_kit.sdk_version.waived`, `page_kit.sdk_version.spec_conflict`). |
+| `upstream_drift` | An already-detected disagreement between the SDK version the CampaignSpec pins and the version the target carries (`page_kit.sdk_version`, `page_kit.sdk_version.repo_newer`, `page_kit.sdk_version.waived`, `page_kit.sdk_version.spec_conflict`). |
 | `unknown` | No class could be assigned from recorded data. `cause_reason` says why. |
 
 Two fields ride each finding: `cause` (one of the five) and `cause_reason` (a

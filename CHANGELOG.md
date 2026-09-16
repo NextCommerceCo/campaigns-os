@@ -2,6 +2,42 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.29.0+agent.1] - 2026-09-16
+
+### Changed
+
+- The `page_kit.sdk_version` checkpoint has a direction of authority (#413):
+  the repo pin (`_data/campaigns.json[<route>].sdk_version`) is the version
+  the funnel serves and the CampaignSpec's `global_config.sdk_version` is a
+  build hint. A configured campaign whose repo pin is newer than the spec's
+  (both canonical released versions, the starter demo store profile gone
+  from the entry — the same decision `page-kit sync` uses to refuse moving
+  the pin backwards) no longer blocks doctor, `next` or QA. Doctor passes the
+  gate with a `page_kit.sdk_version.repo_newer` warning and the ready line
+  `Target campaigns.json SDK version <repo> is what ships; the CampaignSpec
+  pin <spec> is a stale build hint.`; the gate object carries `status: pass`,
+  that code, the fingerprinted expected/observed state, `required_actions:
+  []` and a new `advisory_actions: [{ id: "refresh_spec", kind: "edit" }]`
+  telling the operator to re-save the Map's Build hints field (Campaign Cart
+  SDK version) to the repo pin. `next` at doctor-blocked no longer emits
+  `checkpoint.page_kit.sdk_version.*` actions for this state, and QA's
+  `page_kit.sdk_version` assertion projects it as `warn` (severity `warn`)
+  instead of a blocker `fail`, so a version bump proven on the repo runs
+  through QA with one edit, build, prove. Until now this state blocked with
+  an edit action and a waiver lane, so every bump on a spec-driven campaign
+  was two edits in two tools or a named-human waiver. The waiver lane stays
+  for the blocked mismatch (target behind the spec, or the scaffold's seeded
+  pin beside the demo store profile — still repaired by `page-kit sync`), a
+  non-released target pin still blocks non-waivably, and the spec-side
+  blockers (missing, invalid, conflicting declarations) are unchanged.
+  `finding-cause` classifies the new code as `upstream_drift` beside the
+  blocking form. `page-kit sync`'s `target_newer` detail now says doctor
+  reports the state as a warning. `docs/build-packet.md` documents the
+  direction and the four outcomes; `docs/qa-and-test-orders.md` lists the
+  code under `upstream_drift`. Writing the repo pin back to the Map after a
+  bump (the end state that removes the warning) needs a Map Builder write API
+  and stays on #413.
+
 ## [1.29.0] - 2026-09-15
 
 Additive: one new CLI command, `page-kit`, joins the supported argv surface.

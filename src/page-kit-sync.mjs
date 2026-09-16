@@ -115,7 +115,7 @@ export function planPageKitSync({ spec, entry, waivedGates = [] } = {}) {
       notSynced.push({
         field: "sdk_version",
         reason: "target_newer",
-        detail: `the target pin ${before} is newer than the CampaignSpec pin ${sdk.value} and the entry is no longer in scaffold state; the repo pin moved and the Map/spec is stale. Re-save the Map (or edit the spec) to ${before}, or record the page_kit.sdk_version waiver to keep the divergence; page-kit sync only seeds the pin after a scaffold and never moves a configured campaign's pin backwards.`,
+        detail: `the target pin ${before} is newer than the CampaignSpec pin ${sdk.value} and the entry is no longer in scaffold state; the repo pin moved and the Map/spec is stale. Doctor treats the repo pin as what ships and reports this as a warning, not a blocker; re-save the Map (or edit the spec) to ${before} to clear it. page-kit sync only seeds the pin after a scaffold and never moves a configured campaign's pin backwards.`,
       });
     } else changes.push(row);
   } else if (sdk.status === "spec_missing") {

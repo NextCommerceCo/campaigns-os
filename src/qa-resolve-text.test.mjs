@@ -154,7 +154,7 @@ test("qa resolve text prints the waiver command against the --report it evaluate
     cpSync(join(ROOT, "examples"), join(dir, "examples"), { recursive: true });
     const campaignsPath = join(dir, "examples/target-page-kit/_data/campaigns.json");
     const campaigns = JSON.parse(readFileSync(campaignsPath, "utf8"));
-    campaigns["runtime-packet-demo"].sdk_version = "0.4.38";
+    campaigns["runtime-packet-demo"].sdk_version = "0.4.17";
     writeFileSync(campaignsPath, `${JSON.stringify(campaigns, null, 2)}\n`);
     const packetPath = join(dir, "examples/build-packet.basic.json");
     const reportPath = join(dir, "reports/custom-report.json");
