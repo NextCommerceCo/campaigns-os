@@ -28,6 +28,7 @@ Notable supported-surface changes are recorded here.
   rendered-text verdict stands` instead of the warning, and `next` no longer
   prints the `Replace literal template placeholder text …` action. A rebuild
   or a failed gate brings the warning and the action back.
+
 ## [1.29.0+agent.5] - 2026-09-16
 
 ### Added
