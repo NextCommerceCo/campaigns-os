@@ -458,6 +458,31 @@ from the Assembly-recorded value, `campaigns-os next` routes back to Build befor
 Polish. Polish must review a build made from the current material source context;
 it should not repair or certify a build made from stale design inputs.
 
+`stages.assembly.build_fingerprint` is the fingerprint of the built OUTPUT, not
+of its inputs: it changes exactly when the bytes under `_site/<public_route_slug>/`
+change, so a toolkit or template upgrade that renders different output from
+identical source reads as a different build, and identical output on any machine
+at any path yields the same value. The algorithm (`sha256-manifest/v1`): list every
+file under the built route root, path relative to that root with `/` separators,
+sorted by code point; for each file emit one `<path>\n<sha256-hex>\n` pair; the
+fingerprint is `sha256:` plus the SHA-256 of that manifest. Nothing is excluded by
+default (Page Kit writes only rendered HTML and copied assets into `_site/`, nothing
+it timestamps); `.campaign-runtime/page-kit-build-summary.json` lives outside the
+root and is not hashed. Build does not type the value: after page-kit build it runs
+`campaigns-os doctor --packet <packet> --json` and copies
+`derived.build_output_fingerprint.value` (with `.file_count` and `.status`) onto
+`stages.assembly.build_fingerprint`. Doctor recomputes the value on every run
+(`built_output.fingerprint`): a match is a ready line, a missing record is the
+warning `built_output.fingerprint_missing` carrying the value to record, and a
+recorded value the output no longer matches is `built_output.fingerprint_stale`
+(blocking once assembly is complete). The polish gate, QA, and `polish capture`
+compare evidence against that recomputed value, so evidence bound to a build whose
+output has since changed is `polish.output_drift` even when the recorded string
+still matches (`polish.stale` stays the code for evidence stamped against an older
+recorded build). `polish capture` refuses by name when the built route root is
+missing, unreadable, or drifted; symbolic links are never build output and are
+skipped by the walk.
+
 A stale or missing Assembly Source Package Fingerprint is waivable only as an
 exceptional Source Freshness Waiver. The waiver must be structured in
 `waivers[]`, with `scope: "assembly_source_package_freshness"` or an

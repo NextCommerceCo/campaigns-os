@@ -359,7 +359,7 @@ function commandMentionsBuild(stage, evidence) {
   return commands.some((entry) => /next-campaigns-build|campaigns-os\s+next\s+build/i.test(String(isObject(entry) ? entry.command || entry.name || "" : entry)));
 }
 
-function evaluateStructuredPolishGate({ report, required = false, now = Date.now() } = {}) {
+function evaluateStructuredPolishGate({ report, required = false, now = Date.now(), currentOutputFingerprint = null } = {}) {
   if (!isObject(report)) {
     return required
       ? {
@@ -521,6 +521,32 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
       required_actions: requiredActions,
     };
   }
+  // The value the evidence must match is the fingerprint of the output on
+  // disk when the caller could recompute it (doctor, QA), not the string build
+  // recorded: evidence that matches a recorded value the output has since
+  // drifted from is stale in exactly the same way.
+  const outputFingerprint = normalizeString(currentOutputFingerprint);
+  if (outputFingerprint && outputFingerprint !== buildFingerprint) {
+    return {
+      status: "blocked",
+      code: "polish.output_drift",
+      reason: `Built output no longer matches stages.assembly.build_fingerprint (recorded ${buildFingerprint}, current ${outputFingerprint}); polish evidence is bound to a build that no longer exists. Re-run build, then next-campaigns-polish before QA.`,
+      build_fingerprint: buildFingerprint,
+      current_output_fingerprint: outputFingerprint,
+      source_build_fingerprint: sourceFingerprint,
+      source_package_material_fingerprint: currentSourcePackageFingerprint,
+      assembly_source_package_material_fingerprint: assemblySourcePackageFingerprint,
+      waiver: sourcePackageFreshnessWaiver,
+      required_actions: mergeRequiredActions([
+        {
+          id: "rerun_build",
+          kind: "skill",
+          command: "next-campaigns-build",
+          description: "Re-run Build (page-kit build) and record the current output fingerprint (doctor --json derived.build_output_fingerprint.value) on stages.assembly.build_fingerprint before Polish.",
+        },
+      ], requiredActions),
+    };
+  }
   if (sourceFingerprint !== buildFingerprint) {
     return {
       status: "blocked",
@@ -657,8 +683,9 @@ export function evaluatePolishGate({
   required = false,
   now = Date.now(),
   hiddenEagerMediaGate = undefined,
+  currentOutputFingerprint = null,
 } = {}) {
-  const base = evaluateStructuredPolishGate({ report, required, now });
+  const base = evaluateStructuredPolishGate({ report, required, now, currentOutputFingerprint });
   if (!terminalAssembly(report)) return base;
   if (hiddenEagerMediaGate === undefined && !required) return base;
 
