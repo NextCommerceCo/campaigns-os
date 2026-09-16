@@ -16,7 +16,7 @@ import {
   redirectChainRecord,
   singleResponseRecord,
 } from "./polish-capture.mjs";
-import { launchPackageChromium } from "./browser-launch.mjs";
+import { launchPackageChromium, PLAYWRIGHT_INSTALL_HINT } from "./browser-launch.mjs";
 import {
   boundedPolishDeadline,
   POLISH_BROWSER_CELL_DEADLINE_MS,
@@ -605,11 +605,13 @@ async function drainProtocolEvents() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-function polishBrowserMissing(kind) {
+function polishBrowserMissing(kind, error) {
   return browserUnavailableError(kind === "package"
     ? [
       "Playwright is not installed for Campaigns OS polish capture.",
-      "Run `npm install` from the campaigns-os repo, then rerun `campaigns-os polish capture`.",
+      PLAYWRIGHT_INSTALL_HINT,
+      "Then rerun `campaigns-os polish capture`.",
+      `Original error: ${error instanceof Error ? error.message : String(error)}`,
     ].join(" ")
     : [
       "Playwright Chromium is not installed for Campaigns OS polish capture.",

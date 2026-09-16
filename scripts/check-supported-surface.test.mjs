@@ -38,6 +38,14 @@ test("a fully intact surface validates clean", () => {
   assert.deepEqual(validateSurface(surface, harness()), []);
 });
 
+test("package.json version must equal surface_version when it is provided", () => {
+  const surface = loadSurface(surfaceText(), "m");
+  assert.deepEqual(validateSurface(surface, harness({ packageJson: { ...packageJson, version: "1.0.0" } })), []);
+  const errors = validateSurface(surface, harness({ packageJson: { ...packageJson, version: "0.9.0" } }));
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /package\.json version 0\.9\.0 does not equal surface_version 1\.0\.0/);
+});
+
 test("a hashed schema edit without a manifest update fails with the new hash in the message", () => {
   const surface = loadSurface(surfaceText(), "m");
   const errors = validateSurface(

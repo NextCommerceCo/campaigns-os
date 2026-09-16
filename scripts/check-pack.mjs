@@ -5,7 +5,7 @@
 // that the exports map points there, that the bundle is importable and runs,
 // and that no source .ts / tests / fixtures leak into the tarball. We extract
 // rather than `npm install` the tarball so this stays offline and fast (a full
-// install would pull the package's playwright dependency).
+// install would fetch every dependency from the registry, playwright included).
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -99,6 +99,27 @@ try {
     (f) => /\.ts$/.test(f) && !/\.d\.ts$/.test(f) || /(^|\/)(test|fixtures)\//.test(f)
   );
   if (leaked.length) fail(`dev files leaked into tarball: ${leaked.slice(0, 8).join(", ")}`);
+
+  // 3b. The rest of the tarball is as lean as files[] and the nested
+  // .npmignore files (src/, contracts/fixtures/) promise: no tests beside the
+  // sources, no checkers, no examples, none of the check-only fixture
+  // directories, and docs/ is exactly the set files[] names — so a lost
+  // .npmignore or a files[] edit shows up here rather than on npmjs.com.
+  const packedAll = walk(pkgRoot);
+  const stray = packedAll.filter((f) =>
+    /\.test\.mjs$/.test(f) ||
+    /^(scripts|examples)\//.test(f) ||
+    /^contracts\/fixtures\/(campaign-specs|expected|legacy-migration|template-residue)\//.test(f)
+  );
+  if (stray.length) fail(`check-only files leaked into tarball: ${stray.slice(0, 8).join(", ")}`);
+  const declaredDocs = pkg.files.filter((entry) => entry.startsWith("docs/")).sort();
+  const packedDocs = packedAll.filter((f) => f.startsWith("docs/")).sort();
+  if (JSON.stringify(declaredDocs) !== JSON.stringify(packedDocs)) {
+    fail(`docs/ in tarball differs from files[]: packed ${packedDocs.length}, declared ${declaredDocs.length}`);
+  }
+  if (pkg.private) fail("package.json is still private: true — npm publish would refuse it");
+  if (pkg.dependencies?.playwright) fail("playwright is back in dependencies; it must stay an optionalDependency");
+  if (!pkg.optionalDependencies?.playwright) fail("playwright is missing from optionalDependencies");
 
   // 4. The packed bundle imports and runs (ESM consumer path).
   const mod = await import(distEntry);

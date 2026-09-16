@@ -1368,7 +1368,7 @@ test("browser QA names its own rerun command for a missing Playwright package or
 
   const packageMissing = qaBrowserMissing("package", new Error("Cannot find package 'playwright'"));
   assert.match(packageMissing.message, /^Playwright is not installed for Campaigns OS\./);
-  assert.match(packageMissing.message, /Run `npm install` from the campaigns-os repo, then rerun QA\./);
+  assert.match(packageMissing.message, /Playwright is an optional dependency and is not installed beside this package.*Then rerun QA\./);
   assert.match(packageMissing.message, /Original error: Cannot find package 'playwright'$/);
 
   const browserMissing = qaBrowserMissing("browser", new Error("Executable doesn't exist at /private/tmp/chromium"));

@@ -1,0 +1,137 @@
+name: Publish to npm
+
+# Publishes @nextcommerce/campaigns-os when a `v<semver>` tag is pushed.
+#
+# Two jobs on purpose. `verify` runs the full `npm run check` (which ends in
+# the offline pack check) and packs the tarball, with NO publishing authority:
+# it installs and executes dependencies, and a compromised one must not be
+# able to mint the OIDC token. `publish` holds `id-token: write`, installs
+# nothing, runs no lifecycle scripts, and publishes the exact tarball `verify`
+# produced. It also runs in the `npm-publish` environment so required
+# reviewers can be attached to it in the repository settings.
+#
+# Gates before anything is published: the tag equals package.json `version`
+# and contracts/supported-surface.json `surface_version`; the tagged commit is
+# on `main`; the version is not already on the registry (a re-run of a
+# successful publish is a no-op, not an E403).
+#
+# Auth is npm trusted publishing (OIDC): the npmjs.com package settings name
+# this repository + this workflow file as a trusted publisher, so no long-lived
+# token lives in GitHub secrets, and provenance (publishConfig.provenance)
+# attaches a Sigstore attestation linking the tarball to this run.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: campaigns-os
+          fetch-depth: 0
+      - name: Tag matches package.json and the supported surface, and sits on main
+        id: version
+        working-directory: campaigns-os
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p 'require("./package.json").version')"
+          surface="$(node -p 'require("./contracts/supported-surface.json").surface_version')"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag v$tag does not match package.json version $version"
+            exit 1
+          fi
+          if [ "$version" != "$surface" ]; then
+            echo "::error::package.json version $version does not match surface_version $surface"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::tagged commit $GITHUB_SHA is not on main; publish only from main"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      # Same templates pin as ci.yml: check-template-doctrine validates against
+      # the commit the vendored catalog snapshot was built from.
+      - name: Resolve templates pin from catalog provenance
+        id: pin
+        run: |
+          sha="$(jq -r '._synced_from_sha // empty' campaigns-os/contracts/commerce-surface-catalog.json)"
+          if [ -z "$sha" ]; then
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "ref=$sha" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::catalog _synced_from_sha is malformed ('$sha'); expected a 40-char commit SHA."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: NextCommerceCo/campaign-cart-starter-templates
+          ref: ${{ steps.pin.outputs.ref }}
+          path: campaign-cart-starter-templates
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - run: npm ci --ignore-scripts
+        working-directory: campaigns-os
+      - run: npm run check
+        working-directory: campaigns-os
+        env:
+          STARTER_TEMPLATES_PATH: ${{ github.workspace }}/campaign-cart-starter-templates
+      # `npm run check` built campaign-spec/dist; pack the tree as verified.
+      - name: Pack the verified tree
+        id: pack
+        working-directory: campaigns-os
+        run: |
+          tarball="$(npm pack --ignore-scripts --json | jq -r '.[0].filename')"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tarball
+          path: campaigns-os/${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      # Trusted publishing needs npm >= 11.5.1; Node 24 bundles a newer npm,
+      # this makes the precondition visible in the log rather than assumed.
+      - run: npm --version
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: tarball
+      - name: Publish unless this version is already on the registry
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          TARBALL: ${{ needs.verify.outputs.tarball }}
+        run: |
+          if npm view "@nextcommerce/campaigns-os@$VERSION" version >/dev/null 2>&1; then
+            echo "@nextcommerce/campaigns-os@$VERSION is already published; nothing to do."
+            exit 0
+          fi
+          # A prerelease (1.31.0-rc.1) must not become `latest`; npm 11 refuses
+          # to publish one without an explicit dist-tag anyway.
+          case "$VERSION" in
+            *-*) tag=next ;;
+            *)   tag=latest ;;
+          esac
+          npm publish "$TARBALL" --tag "$tag"

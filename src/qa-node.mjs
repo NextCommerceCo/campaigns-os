@@ -15,6 +15,7 @@ import { absentOrMalformed } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { PLAYWRIGHT_INSTALL_HINT } from "./browser-launch.mjs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -82,7 +83,10 @@ import {
   unavailableCommercialReport,
 } from "./qa-commercial-parity.mjs";
 
-const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
+// The producing runtime identity on every verdict. Read from package.json so
+// a verdict names the release that made it; a literal here outlived three
+// hundred releases as `0.1.0-alpha.0`.
+const RUNTIME = `campaigns-os-node-qa@${JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version}`;
 const QA_VERDICT_ASSERTION_LIMIT = 500;
 
 const HELP = `campaigns-os qa — Node/npm spec-aware QA
@@ -290,7 +294,7 @@ export function installQaBrowser({ spawn = spawnSync, json = false } = {}) {
       ok: false,
       status: "playwright_missing",
       command: null,
-      note: `The playwright dependency is not installed beside this package; reinstall the package (or run npm install in a checkout), then rerun ${cmd("qa")} install-browser.`,
+      note: PLAYWRIGHT_INSTALL_HINT,
     };
   }
   // Playwright reports download progress on stdout. In --json mode stdout is

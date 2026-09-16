@@ -15,6 +15,24 @@ export const MISSING_BROWSER_KINDS = Object.freeze({
   BROWSER: "browser",
 });
 
+// One recovery hint for the missing-package case, shared by browser QA, polish
+// capture and `qa install-browser` so the three surfaces cannot drift. The
+// package declares playwright as an optional dependency: a normal install has
+// it, an `--omit=optional` install or a failed optional install does not, and
+// it must be installed where campaigns-os resolves from — beside the package,
+// not in an unrelated global prefix.
+export const PLAYWRIGHT_INSTALL_HINT =
+  "Playwright is an optional dependency and is not installed beside this package. " +
+  "Install it where campaigns-os is installed (`npm install playwright` in that project, " +
+  "or `npm install -g playwright` for a global install), then run `campaigns-os qa install-browser`.";
+
+// Only a genuinely absent package is the "package" kind. A playwright that is
+// present but broken (interrupted install, exports-map mismatch) must surface
+// its own error rather than a reinstall hint that would not help.
+export function isMissingPackageError(error) {
+  return error?.code === "ERR_MODULE_NOT_FOUND" || error?.code === "MODULE_NOT_FOUND";
+}
+
 export function isMissingBrowserError(error) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   return MISSING_BROWSER_PATTERN.test(message);
@@ -47,7 +65,8 @@ export async function launchPackageChromium({
     try {
       chromium = await importChromium();
     } catch (error) {
-      throw onMissing(MISSING_BROWSER_KINDS.PACKAGE, error);
+      if (isMissingPackageError(error)) throw onMissing(MISSING_BROWSER_KINDS.PACKAGE, error);
+      throw error;
     }
   }
   if (signal?.aborted) throw signal.reason ?? new Error("Campaigns OS browser launch was abandoned before launch.");
