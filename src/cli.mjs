@@ -22,6 +22,7 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
+import { describeSdkIgnoredMetaTags, sdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
@@ -5070,13 +5071,32 @@ export function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, 
     .filter(({ metaTags }) => isObject(metaTags) && Object.keys(metaTags).length > 0);
   if (expectedPages.length === 0) return;
 
-  const allExpectedTags = [...new Set(expectedPages.flatMap(({ metaTags }) => Object.keys(metaTags)))].sort();
+  // A spec key the SDK does not read (sdk-meta-tags.mjs, the list QA reads
+  // too) is a stale Map page hint, not a tag the build owes: it is never
+  // required and never `missing`, whether or not it rendered. One advisory
+  // per page names the keys and the reason, so the fix is an edit to the
+  // Map, not the build; it does not wait for built output.
+  for (const { page, metaTags } of expectedPages) {
+    const ignoredTags = Object.keys(metaTags).filter((name) => sdkIgnoredMetaTag(name));
+    if (ignoredTags.length === 0) continue;
+    addIssue(
+      warnings,
+      "sdk_hints.meta_tags.ignored_by_sdk",
+      `CampaignSpec page "${page.id}" lists SDK meta tag(s) the Campaign Cart SDK does not read; remove from the Map's page hints: ${describeSdkIgnoredMetaTags(ignoredTags)}.`,
+      { page_id: page.id, tags: ignoredTags }
+    );
+  }
+
+  const allExpectedTags = [...new Set(expectedPages.flatMap(({ metaTags }) => Object.keys(metaTags)))]
+    .filter((name) => !sdkIgnoredMetaTag(name))
+    .sort();
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
 
   if (!siteRoot || !existsSync(siteRoot)) {
+    if (allExpectedTags.length === 0) return;
     addIssue(
       warnings,
       "sdk_hints.meta_tags",
@@ -5111,6 +5131,7 @@ export function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, 
     const content = readFileSync(builtPath, "utf8");
 
     for (const [name, expectedValue] of Object.entries(metaTags)) {
+      if (sdkIgnoredMetaTag(name)) continue;
       const actualValue = extractMetaContent(content, name);
       if (!isNonEmptyString(actualValue)) {
         addIssue(

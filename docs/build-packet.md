@@ -39,6 +39,16 @@ declares `campaign.route_root: "/"`. Rules:
 - The CampaignSpec may carry the same declaration at `campaign.route_root` (or
   `spec_identity.route_root`); `prepare-build` copies it onto the packet and
   defaults `live_url_path` to `/`.
+- Two `sdk_hints.meta_tags` keys older Map exports still carry, `next-currency`
+  and `next-predictive-address`, are not read by the Campaign Cart SDK (the
+  list is `src/sdk-meta-tags.mjs`; QA reads the same one). Doctor never
+  requires them from the built page: a spec that lists one gets a single
+  advisory warning per page, `sdk_hints.meta_tags.ignored_by_sdk`, naming the
+  key and the reason (`remove from the Map's page hints; the SDK does not read
+  it`), whether or not the tag rendered and before `_site/` exists. They are
+  never `sdk_hints.meta_tags.missing` and never appear in the pre-build
+  "CampaignSpec expects SDK meta tags (...)" list. The fix is an edit to the
+  Map's page hints, not to the build.
 
 Page-kit also needs `campaign.store_url` for `_data/campaigns.json`. Additional Store Profile fields live under `campaign.store_*` as optional storefront/legal metadata because they are operator-entered, not Campaigns API data.
 

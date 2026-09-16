@@ -29,6 +29,7 @@ function cmd(verb, rest = "") {
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { normalizeSdkMetaName, sdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
@@ -2453,11 +2454,15 @@ async function runPageChecks(page, args, {
     const actual = actualMeta[name] || null;
     const unsupportedHint = unsupportedSdkMetaHint(name);
     if (unsupportedHint) {
+      // A spec key the SDK does not read is a stale Map page hint, whether or
+      // not the tag rendered: nothing for a human to review, so `warn`, never
+      // `manual_review`. Doctor reports the same key as
+      // sdk_hints.meta_tags.ignored_by_sdk from the same list.
       assertions.push(assertion({
         id: `meta:${page.page_id}:${name}`,
         family: "meta-tags",
         page,
-        status: STATUS.MANUAL_REVIEW,
+        status: STATUS.WARN,
         severity: SEVERITY.WARN,
         expected: unsupportedHint.expected,
         actual: actual
@@ -3387,26 +3392,14 @@ function isRoutingMetaTag(name) {
 // and surrounding whitespace so a stray-space tag lands on the intended branch
 // instead of falling through to the strict comparison as a BLOCKER.
 function normalizeMetaName(name) {
-  return String(name || "").trim().toLowerCase();
+  return normalizeSdkMetaName(name);
 }
 
+// The SDK-ignored list lives in sdk-meta-tags.mjs and doctor reads the same
+// map, so QA and doctor can never disagree about which spec keys the SDK
+// reads. Returns the map entry ({ expected, actual, note }) or null.
 function unsupportedSdkMetaHint(name) {
-  const normalized = normalizeMetaName(name);
-  if (normalized === "next-currency") {
-    return {
-      expected: "Campaign Cart currency from the currency URL parameter, remembered session choice, or SDK default",
-      actual: "No page-level currency override to verify",
-      note: "Campaign Cart does not read a next-currency meta tag. Currency behavior is optional and must be verified through the documented URL/session/default flow.",
-    };
-  }
-  if (normalized === "next-predictive-address") {
-    return {
-      expected: "window.nextConfig.addressConfig.enableAutocomplete",
-      actual: "Autocomplete config requires browser/config review",
-      note: "Campaign Cart does not read a next-predictive-address meta tag. Predictive address is optional and configured through window.nextConfig.addressConfig.enableAutocomplete.",
-    };
-  }
-  return null;
+  return sdkIgnoredMetaTag(name);
 }
 
 function metaTagMatches(name, actual, expected) {

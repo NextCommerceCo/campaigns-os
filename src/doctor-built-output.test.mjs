@@ -212,6 +212,79 @@ test("root-served: built meta expectation composes against '/' (no phantom /<slu
   });
 });
 
+// A CampaignSpec key the Campaign Cart SDK does not read (next-currency,
+// next-predictive-address; the list in sdk-meta-tags.mjs) is a stale Map page
+// hint. Doctor must not require it from the build: no `missing` error when the
+// page renders without it, one advisory naming the key and the reason instead.
+test("built meta: an SDK-ignored spec tag is advisory, never missing", () => {
+  withTempDir((dir) => {
+    const builtPath = join(dir, "_site", SLUG, "checkout", "index.html");
+    mkdirSync(dirname(builtPath), { recursive: true });
+    writeFileSync(builtPath, `<html><head><meta name="next-page-type" content="checkout"></head><body data-next-checkout>x</body></html>`);
+    const spec = {
+      funnel_pages: [
+        {
+          id: "checkout",
+          type: "checkout",
+          page_url: "checkout/",
+          enabled: true,
+          sdk_hints: { meta_tags: { "next-page-type": "checkout", "next-currency": "USD", "next-predictive-address": "true" } },
+        },
+      ],
+    };
+    const buildState = { report: { stages: { assembly: { status: "completed" } } } };
+    const errors = [], warnings = [], ready = [];
+    validateBuiltSdkMetaTags(spec, PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+
+    assert.deepEqual(errors, [], "an ignored tag is never a missing error");
+    assert.equal(codes(warnings).includes("sdk_hints.meta_tags.missing"), false);
+    const advisories = warnings.filter((issue) => issue.code === "sdk_hints.meta_tags.ignored_by_sdk");
+    assert.equal(advisories.length, 1);
+    assert.deepEqual(advisories[0].detail, { page_id: "checkout", tags: ["next-currency", "next-predictive-address"] });
+    assert.match(advisories[0].message, /remove from the Map's page hints/);
+    assert.match(advisories[0].message, /"next-currency" \(Campaign Cart does not read a next-currency meta tag; remove it from the Map's page hints\./);
+    assert.match(advisories[0].message, /"next-predictive-address" \(Campaign Cart does not read a next-predictive-address meta tag/);
+    assert.ok(ready.some((note) => note.includes("Built SDK meta tags checked")));
+  });
+});
+
+test("built meta: a rendered SDK-ignored tag still gets the advisory, and a tag the SDK reads is still required", () => {
+  withTempDir((dir) => {
+    const builtPath = join(dir, "_site", SLUG, "checkout", "index.html");
+    mkdirSync(dirname(builtPath), { recursive: true });
+    writeFileSync(builtPath, `<html><head><meta name="next-currency" content="USD"></head><body data-next-checkout>x</body></html>`);
+    const spec = {
+      funnel_pages: [
+        { id: "checkout", type: "checkout", page_url: "checkout/", enabled: true, sdk_hints: { meta_tags: { "next-page-type": "checkout", "next-currency": "USD" } } },
+      ],
+    };
+    const buildState = { report: { stages: { assembly: { status: "completed" } } } };
+    const errors = [], warnings = [], ready = [];
+    validateBuiltSdkMetaTags(spec, PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+
+    assert.deepEqual(codes(errors), ["sdk_hints.meta_tags.missing"]);
+    assert.match(errors[0].message, /"next-page-type"/);
+    assert.equal(warnings.filter((issue) => issue.code === "sdk_hints.meta_tags.ignored_by_sdk").length, 1);
+  });
+});
+
+test("built meta: before _site exists the pre-build warning lists only tags the SDK reads", () => {
+  withTempDir((dir) => {
+    const spec = {
+      funnel_pages: [
+        { id: "checkout", type: "checkout", page_url: "checkout/", enabled: true, sdk_hints: { meta_tags: { "next-page-type": "checkout", "next-currency": "USD" } } },
+        { id: "upsell", type: "upsell", page_url: "upsell/", enabled: true, sdk_hints: { meta_tags: { "next-predictive-address": "true" } } },
+      ],
+    };
+    const errors = [], warnings = [], ready = [];
+    validateBuiltSdkMetaTags(spec, PACKET, errors, warnings, ready, { target_repo: dir });
+    const pending = warnings.find((issue) => issue.code === "sdk_hints.meta_tags");
+    assert.ok(pending);
+    assert.match(pending.message, /\(next-page-type\)/);
+    assert.equal(warnings.filter((issue) => issue.code === "sdk_hints.meta_tags.ignored_by_sdk").length, 2);
+  });
+});
+
 test("R2-B2 page-kit assets: detects unconverted /assets built references", () => {
   const hits = collectPageKitAssetPathViolations(`
     <script src="/assets/config.js"></script>
