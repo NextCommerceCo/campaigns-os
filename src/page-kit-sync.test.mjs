@@ -1187,6 +1187,9 @@ test("page-kit sync seeds the pin after a scaffold but never moves a configured 
   assert.deepEqual(bumped.not_synced.map((row) => [row.field, row.reason]), [["sdk_version", "target_newer"]]);
   assert.match(bumped.not_synced[0].detail, /0\.4\.38 is newer than the CampaignSpec pin 0\.4\.36/);
   assert.match(bumped.not_synced[0].detail, /warning, not a blocker/);
+  // That sentence describes doctor, so the gate is pinned to it below: the
+  // same entry and spec must evaluate to the advisory repo_newer pass
+  // (gateBumped), or the detail text is lying about what doctor will do.
 
   // Configured campaign behind the spec: the spec's newer pin is written.
   const behind = planPageKitSync({ spec: SPEC, entry: { ...NON_DEMO_ENTRY, sdk_version: "0.4.30" } });
@@ -1200,7 +1203,7 @@ test("page-kit sync seeds the pin after a scaffold but never moves a configured 
   const gateScaffold = evaluatePageKitSdkVersion({ spec: SPEC, targetLoad: targetLoad(SCAFFOLD_ENTRY) });
   assert.equal(gateScaffold.required_actions.find((action) => action.id === "repair_target").command, PAGE_KIT_SYNC_COMMAND);
   const gateBumped = evaluatePageKitSdkVersion({ spec: SPEC, targetLoad: targetLoad({ ...NON_DEMO_ENTRY, sdk_version: "0.4.38" }) });
-  assert.equal(gateBumped.status, "pass", "a configured campaign ahead of the spec is advisory (#413)");
+  assert.equal(gateBumped.status, "pass", "a configured campaign ahead of the spec is advisory (#413), as the not_synced detail above promises");
   assert.equal(gateBumped.code, "page_kit.sdk_version.repo_newer");
   assert.deepEqual(gateBumped.required_actions, []);
   const refresh = gateBumped.advisory_actions.find((action) => action.id === "refresh_spec");

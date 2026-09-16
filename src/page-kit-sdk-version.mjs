@@ -281,7 +281,16 @@ export function evaluatePageKitSdkVersion({
     // blocker, with the re-save as the action. The repo BEHIND the spec, or
     // a scaffold that still carries the starter pin, stays a blocker with
     // sync as the repair; a non-released target pin was refused above.
+    const checkpoint = { scope: PAGE_KIT_SDK_VERSION_SCOPE, subject, state_fingerprint };
     if (sdkPinWriteDecision({ expected: expected_sdk_version, observed: observed_sdk_version, entry: targetEntry }) === "target_newer") {
+      // Nothing is waived here (there is nothing to waive), but the waiver
+      // history is still assessed so a stale, foreign, malformed or expired
+      // record recorded against an earlier pair keeps surfacing as inert
+      // rather than silently vanishing the moment the state turns advisory.
+      const waiver_assessment = projectCheckpointWaiverAssessment(
+        assessCheckpointWaivers(waivers, checkpoint, { now }),
+        checkpoint,
+      );
       return {
         id: PAGE_KIT_SDK_VERSION_SCOPE,
         scope: PAGE_KIT_SDK_VERSION_SCOPE,
@@ -296,10 +305,7 @@ export function evaluatePageKitSdkVersion({
         observed_sdk_version,
         expected_source,
         waiver: null,
-        waiver_assessment: {
-          active: null,
-          inert_counts: { stale: 0, foreign: 0, malformed: 0, expired: 0 },
-        },
+        waiver_assessment,
         required_actions: [],
         advisory_actions: [{
           id: "refresh_spec",
@@ -309,7 +315,6 @@ export function evaluatePageKitSdkVersion({
         }],
       };
     }
-    const checkpoint = { scope: PAGE_KIT_SDK_VERSION_SCOPE, subject, state_fingerprint };
     const waiver_assessment = projectCheckpointWaiverAssessment(
       assessCheckpointWaivers(waivers, checkpoint, { now }),
       checkpoint,

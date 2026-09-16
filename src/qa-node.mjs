@@ -1312,6 +1312,7 @@ function sdkVersionGateAssertion(gate) {
     waiver: gate.waiver,
     waiver_assessment: gate.waiver_assessment,
     required_actions: gate.required_actions,
+    ...(Array.isArray(gate.advisory_actions) ? { advisory_actions: gate.advisory_actions } : {}),
   };
   if (gate.status === "blocked") {
     return assertion({

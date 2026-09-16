@@ -345,3 +345,29 @@ test("a target pin that is not a released version blocks whatever the spec says"
   assert.equal(gate.code, "page_kit.sdk_version.target_invalid");
   assert.equal(gate.waivable, false);
 });
+
+test("the advisory repo-newer state still reports inert waiver history instead of hiding it", () => {
+  const targetLoadBumped = targetLoad("0.4.38", {
+    entry: { sdk_version: "0.4.38", store_url: "https://merchant.example/", store_name: "Merchant" },
+  });
+  // A decision recorded for an earlier pair (the repo was at 0.4.36 when a
+  // human waived it) is stale against the current fingerprint.
+  const earlier = evaluatePageKitSdkVersion({
+    spec: { global_config: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoad("0.4.36", { entry: { sdk_version: "0.4.36", store_url: "https://merchant.example/", store_name: "Merchant" } }),
+  });
+  const stale = createCheckpointWaiver(
+    { scope: PAGE_KIT_SDK_VERSION_SCOPE, subject: earlier.subject, state_fingerprint: earlier.state_fingerprint },
+    { reason: "Intentional pin", waivedBy: "Jordan Lee", reviewCondition: "Review before launch", now: "2026-08-18T00:00:00.000Z" },
+  );
+  const gate = evaluatePageKitSdkVersion({
+    spec: { global_config: { sdk_version: "0.4.37" } },
+    targetLoad: targetLoadBumped,
+    waivers: [stale],
+    now: "2026-08-19T00:00:00.000Z",
+  });
+  assert.equal(gate.status, "pass");
+  assert.equal(gate.code, "page_kit.sdk_version.repo_newer");
+  assert.equal(gate.waiver, null);
+  assert.deepEqual(gate.waiver_assessment.inert_counts, { stale: 1, foreign: 0, malformed: 0, expired: 0 });
+});
