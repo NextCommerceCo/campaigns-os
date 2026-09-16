@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.29.0+agent.11] - 2026-09-16
+## [1.29.0+agent.9] - 2026-09-16
 
 ### Changed
 
@@ -30,6 +30,7 @@ Notable supported-surface changes are recorded here.
 - README and `docs/migration-sidecar-bundle.md` now say plainly that
   `conformant` means the sidecars agree with each other and the contract and
   says nothing about whether doctor or QA passed; read the warnings for that.
+
 ## [1.29.0+agent.7] - 2026-09-16
 
 ### Fixed
