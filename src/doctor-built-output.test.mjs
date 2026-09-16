@@ -401,6 +401,84 @@ test("H3.1 doctor: clean built output yields a ready line, no warning", () => {
   });
 });
 
+test("H3.1 doctor: a term inside an attribute value, script, style or comment is not rendered text", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "checkout.html"), [
+      "<html><head><style>/* TODO tidy */ .x{}</style>",
+      '<script>var label = "Product Name";</script></head>',
+      "<body><!-- Lorem -->",
+      '<label>Email <input type="email" placeholder="Placeholder"></label>',
+      '<div data-hint="Lorem ipsum">Cold Brew Concentrate</div>',
+      "</body></html>",
+    ].join("\n"));
+    const warnings = [];
+    const ready = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, ready, { target_output_dir: target });
+    assert.equal(codes(warnings).includes("template_contract.placeholder_text_residue"), false, JSON.stringify(warnings));
+    assert.ok(ready.some((note) => note.includes("no literal template placeholder text")));
+  });
+});
+
+test("H3.1 doctor: visible placeholder text still warns, with the source line of the rendered text", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "checkout.html"), [
+      "<html><head><script>",
+      "// several",
+      "// script lines",
+      "</script></head><body>",
+      '<input placeholder="Placeholder">',
+      "<p>Lorem ipsum dolor.</p>",
+      "</body></html>",
+    ].join("\n"));
+    const warnings = [];
+    const ready = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, ready, { target_output_dir: target });
+    const warning = warnings.find((w) => w.code === "template_contract.placeholder_text_residue");
+    assert.ok(warning, "visible Lorem must still warn");
+    assert.match(warning.message, /\(Lorem\)/, "only the rendered term is named, not the attribute value");
+    assert.match(warning.message, /checkout\.html:6 "Lorem"/, "the line points at the rendered text");
+  });
+});
+
+test("H3.1 doctor: a recorded browser gate pass on the current build demotes the warning to a ready line", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "index.html"), "<p>Lorem ipsum dolor.</p>");
+    const fingerprint = `sha256:${"a".repeat(64)}`;
+    const reportFor = (seen) => ({
+      stages: {
+        assembly: { status: "completed", build_fingerprint: fingerprint },
+        qa: { status: "completed", evidence: { source_build_fingerprint: seen, gates: { placeholder_text_residue: { status: "pass", pages_checked: 1, pages_failed: 0 } } } },
+      },
+    });
+
+    const passed = { warnings: [], ready: [] };
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, passed.warnings, passed.ready, { target_output_dir: target }, { report: reportFor(fingerprint) });
+    assert.equal(codes(passed.warnings).includes("template_contract.placeholder_text_residue"), false);
+    assert.ok(passed.ready.some((note) => note.includes("browser residue gate passed on this build")), JSON.stringify(passed.ready));
+
+    // A rebuild changes the fingerprint: the pass no longer covers this build.
+    const rebuilt = { warnings: [], ready: [] };
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, rebuilt.warnings, rebuilt.ready, { target_output_dir: target }, { report: reportFor(`sha256:${"b".repeat(64)}`) });
+    assert.ok(codes(rebuilt.warnings).includes("template_contract.placeholder_text_residue"));
+
+    // A failed gate, or a QA stage that never ran the gate, leaves the warning alone.
+    const failed = { warnings: [], ready: [] };
+    const failedReport = reportFor(fingerprint);
+    failedReport.stages.qa.evidence.gates.placeholder_text_residue.status = "fail";
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, failed.warnings, failed.ready, { target_output_dir: target }, { report: failedReport });
+    assert.ok(codes(failed.warnings).includes("template_contract.placeholder_text_residue"));
+    const silent = { warnings: [], ready: [] };
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, silent.warnings, silent.ready, { target_output_dir: target }, { report: { stages: { assembly: { build_fingerprint: fingerprint }, qa: { status: "completed" } } } });
+    assert.ok(codes(silent.warnings).includes("template_contract.placeholder_text_residue"));
+  });
+});
+
 test("H3.1 doctor: includes/layouts are skipped, no contract terms is a no-op", () => {
   withTempDir((dir) => {
     const target = join(dir, "_site", SLUG);

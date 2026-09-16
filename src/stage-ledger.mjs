@@ -1,6 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
+import { STATUS as QA_STATUS } from "./qa-verdict.mjs";
 import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
+import {
+  ASSEMBLY_REPORT_STAGE_KEYS,
+  NEXT_STAGE_CONTRACTS,
+  NEXT_STAGE_OWNERS,
+  stageIsBlocked,
+  stageIsTerminal,
+} from "./orchestration-stage-contract.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
 
@@ -204,6 +212,164 @@ export function recordProducerStageOutcome(report, {
   return updated;
 }
 
+// The gates that sit before the ladder, in the order the `next` picker
+// consults them: a blocked prepare-build or a blocked doctor holds every
+// stage behind it (`blockedStage`). Neither is a ladder step — a pending
+// doctor (prepare-build with --no-doctor, or a report written before doctor
+// ran) does not hold the ladder, exactly as the picker does not walk it — but
+// it does hold "done": the report only reads completed once every recorded
+// stage is terminal, and a gate that never recorded an outcome is named
+// (`pendingStage`) once the ladder has nothing left to run.
+const PRE_LADDER_GATES = Object.freeze([
+  Object.freeze({ reportKey: "prepare_build", blockedStage: "prepare-build", pendingStage: "prepare-build" }),
+  Object.freeze({ reportKey: "doctor", blockedStage: "doctor-blocked", pendingStage: "doctor" }),
+]);
+
+function stageOf(report, key) {
+  const stage = report?.stages?.[key];
+  return isPlainObject(stage) ? stage : null;
+}
+
+function stageBlockers(stage) {
+  return Array.isArray(stage?.blockers) ? stage.blockers : [];
+}
+
+/**
+ * True when any recorded stage on `report` has status "blocked".
+ */
+export function anyAssemblyReportStageBlocked(report) {
+  return ASSEMBLY_REPORT_STAGE_KEYS.some((key) => stageIsBlocked(stageOf(report, key)?.status));
+}
+
+// `ownerKey` is the NEXT_STAGE_OWNERS row to spell the owner from; it differs
+// from `stage` only for a pending doctor, which the picker has no row for
+// (it names doctor-blocked alone) and which the same operator skill owns.
+function nextBlock(stage, action, { ownerKey = stage, ...extras } = {}) {
+  const owners = NEXT_STAGE_OWNERS[ownerKey];
+  return { stage, owner: owners.default_skill, action, ...extras };
+}
+
+/**
+ * The Assembly Report's top-level summary, computed from the stage ledger it
+ * carries and nothing else. Every write of the report restates it
+ * (commitAssemblyReport, and prepare-build's initial write), so the summary
+ * can never lag the stages: before this it was written once by prepare-build
+ * and a finished ladder still read `status: "prepared"`, `next.stage:
+ * "setup"`, `blockers: []` beside a blocked or completed QA stage.
+ *
+ * - `status`: "blocked" when any recorded stage is blocked; "completed" only
+ *   when every recorded stage — the pre-ladder gates (prepare_build, doctor)
+ *   included — is terminal; otherwise "prepared". A freshly prepared report
+ *   whose doctor never ran therefore never reads completed, whatever the
+ *   ladder says.
+ * - `next`: the first stage that is not terminal, in the order the `next`
+ *   command walks — a blocked prepare-build ("prepare-build"), a blocked
+ *   doctor ("doctor-blocked"), then the ladder in NEXT_STAGE_CONTRACTS order.
+ *   A pending gate does not hold the ladder (the picker does not walk it) but
+ *   is named once the ladder is exhausted ("doctor" for a doctor that never
+ *   recorded an outcome), and only when every recorded stage is terminal does
+ *   `next.stage` read "done". `next.stage` uses the picker's vocabulary (the
+ *   `next <stage>` argument, so "build" not "assembly"), `next.owner` names
+ *   the skill that owns the stage, and `next.blocked` is true when the named
+ *   stage is the one holding the ladder. This is the ledger's own position
+ *   only: the `next` command additionally folds in live gates (doctor
+ *   findings, purchase-proof coverage, the polish gate) and stays the
+ *   authority for what runs next.
+ * - `blockers`: the union of the `blockers[]` of every stage currently
+ *   blocked, in stage order, exact duplicates collapsed. A stage that was
+ *   blocked and later passed contributes nothing, so a blocker cleared by a
+ *   re-run leaves the top level with the stage. The entries are the stage's
+ *   own blocker values, not copies: the summary is computed for a write, and
+ *   the report is serialized right after.
+ *
+ * Pure: reads `report`, returns a fresh summary, copies nothing else.
+ */
+export function deriveAssemblyReportSummary(report) {
+  if (!isPlainObject(report)) throw new TypeError("deriveAssemblyReportSummary requires an Assembly Report object.");
+  const blockers = [];
+  const seen = new Set();
+  for (const key of ASSEMBLY_REPORT_STAGE_KEYS) {
+    const stage = stageOf(report, key);
+    if (!stageIsBlocked(stage?.status)) continue;
+    for (const blocker of stageBlockers(stage)) {
+      const id = JSON.stringify(canonicalize(blocker));
+      if (seen.has(id)) continue;
+      seen.add(id);
+      blockers.push(blocker);
+    }
+  }
+  const anyBlocked = anyAssemblyReportStageBlocked(report);
+
+  let next = null;
+  for (const gate of PRE_LADDER_GATES) {
+    if (!stageIsBlocked(stageOf(report, gate.reportKey)?.status)) continue;
+    next = nextBlock(gate.blockedStage, `Stage "${gate.reportKey}" is blocked; resolve its blockers before any stage runs.`, { blocked: true });
+    break;
+  }
+  if (!next) {
+    for (const { cliStage, reportKey } of NEXT_STAGE_CONTRACTS) {
+      const status = stageOf(report, reportKey)?.status;
+      if (stageIsBlocked(status)) {
+        next = nextBlock(cliStage, `Stage "${reportKey}" is blocked; unblock it, then run ${cliStage}.`, { blocked: true });
+        break;
+      }
+      if (!stageIsTerminal(status)) {
+        next = nextBlock(cliStage, `Run ${cliStage} with this packet.`);
+        break;
+      }
+    }
+  }
+  if (!next) {
+    for (const gate of PRE_LADDER_GATES) {
+      if (stageIsTerminal(stageOf(report, gate.reportKey)?.status)) continue;
+      next = nextBlock(gate.pendingStage, `Stage "${gate.reportKey}" has not recorded a terminal outcome; run it before treating the report as complete.`, { ownerKey: gate.blockedStage });
+      break;
+    }
+  }
+  if (!next) next = nextBlock("done", "Every stage is terminal; run next to confirm the closeout actions.");
+
+  const status = anyBlocked ? "blocked" : next.stage === "done" ? "completed" : "prepared";
+  return { status, next, blockers };
+}
+
+/**
+ * Restate `report`'s derived summary (`status`, `next`, `blockers`) from its
+ * stages, in place, and return it. The report is the caller's own object
+ * (the fresh one prepare-build built, or the copy a producer's
+ * recordProducerStageOutcome already made), so nothing is cloned here.
+ */
+export function applyDerivedAssemblyReportSummary(report) {
+  return Object.assign(report, deriveAssemblyReportSummary(report));
+}
+
+// QA-owned gate evidence on the qa stage. The QA producer records, beside
+// its verdict identity, the build it ran against and the outcome of gates a
+// static doctor scan can only approximate (`gates.placeholder_text_residue`,
+// from summarizePlaceholderTextGate). Doctor reads it back through
+// qaGatePassedForCurrentBuild: a pass counts only while
+// stages.assembly.build_fingerprint still equals the fingerprint QA saw, so a
+// rebuild silently revokes it. Evidence is a QA-owned field, so the next QA
+// record replaces it wholesale — a stale pass cannot outlive the run that
+// recorded it.
+export const QA_GATE_PLACEHOLDER_TEXT_RESIDUE = "placeholder_text_residue";
+
+export function qaGateEvidence(report, gate) {
+  const evidence = report?.stages?.qa?.evidence;
+  if (!isPlainObject(evidence) || !isPlainObject(evidence.gates)) return null;
+  const outcome = evidence.gates[gate];
+  if (!isPlainObject(outcome)) return null;
+  return {
+    status: optionalString(outcome.status),
+    source_build_fingerprint: optionalString(evidence.source_build_fingerprint),
+  };
+}
+
+export function qaGatePassedForCurrentBuild(report, gate, { buildFingerprint }) {
+  const outcome = qaGateEvidence(report, gate);
+  const current = optionalString(buildFingerprint);
+  return Boolean(outcome && outcome.status === QA_STATUS.PASS && current && outcome.source_build_fingerprint === current);
+}
+
 /**
  * True when `report` is this packet's Assembly Report: the identity block
  * names the packet's map id and public route slug (both absent on both sides
@@ -314,8 +480,20 @@ export function commitAssemblyReport(workspace, mutate, {
     outcome.skipped = "identity";
     return finish();
   }
-  const next = mutate(report);
-  if (next === null || next === undefined || (stage && producerStageOutcomeUnchanged(report, next, stage))) {
+  const mutated = mutate(report);
+  if (mutated === null || mutated === undefined) {
+    outcome.skipped = "unchanged";
+    return finish();
+  }
+  if (!isPlainObject(mutated)) throw new TypeError("commitAssemblyReport mutate(report) must return an Assembly Report object, null, or undefined.");
+  // The summary is restated on every write, so a report whose top level lags
+  // its stages (written before the summary was derived) heals on the next
+  // commit; after that the restatement is a no-op and the unchanged check
+  // below keeps the file's bytes alone. `mutated` is the mutator's own object
+  // (every mutator in this repo returns a copy), so the restatement is in
+  // place rather than a second deep clone.
+  const next = applyDerivedAssemblyReportSummary(mutated);
+  if (stage && producerStageOutcomeUnchanged(report, next, stage)) {
     outcome.skipped = "unchanged";
     return finish();
   }

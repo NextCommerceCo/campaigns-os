@@ -301,7 +301,11 @@ one QA writes into — provided the context's `packet_path` names that packet;
 a context naming another packet binds nothing. `theme waive`, `checkpoint
 waive`, `polish capture`,
 `findings harvest`, `run-record` and `run status` act on the default location
-unless `--report` names another.
+unless `--report` names another. `run-record` keys its record on a `run_id`
+resolved as `--run-id`, else the active run session, else the most recent Run
+Record already on disk for this packet's campaign (re-emitted in place), else
+a freshly minted id; `--new-run` mints on request and `--list` prints the ids
+on disk without writing (see docs/workflow-findings-sidecar.md).
 
 The packet's top-level `generated_at` (ISO-8601 UTC, `Z` suffix) is stamped by
 `prepare-build` on every new packet. Downstream freshness — campaigns-agent's
@@ -557,7 +561,12 @@ localhost Development-domain behavior, non-localhost SDK allowlist requirement,
 order path depth, and operator approval state. Test cards still need no
 permission gate; the explicit field prevents agents from re-litigating proof
 depth in chat. Doctor checks the full field set in both packet and report
-artifacts when present. The `qa` block carries no permission booleans:
+artifacts when present. `order_path_depth` is seeded `common` and set with
+`--order-path-depth <off|common|full>` on `prepare-build`/`start` or later
+with `qa policy set --order-path-depth <depth>`, which also refreshes the
+report mirror; a packet whose depth disagrees with its report mirror draws the
+advisory `qa.proof_policy.order_path_depth_drift` warning naming that command
+(see `docs/qa-and-test-orders.md`, "Purchase-proof coverage"). The `qa` block carries no permission booleans:
 `qa.test_orders_allowed` and `qa.sandbox_test_card_confirmed`, which no command
 read, were removed in supported surface 1.28.0, and doctor warns
 (`qa.removed_policy_fields`) on a packet that still carries either.
@@ -775,6 +784,30 @@ spec validation warns when it's set on non-upsell pages, but the
 consumer surfaces it verbatim and lets the build stage decide what
 to do with it.
 
+## Commerce Catalog (`assembly.commerce_catalog`)
+
+`assembly.commerce_catalog` names the commerce-surface catalog the build and
+doctor read for the locked template family (`required`, `family`, `version`,
+`path`).
+
+- `path: null` means the toolkit's own catalog
+  (`contracts/commerce-surface-catalog.json` of the `campaigns-os` that is
+  running). This is what `prepare-build` records by default. The catalog
+  travels with the toolkit, not with the campaign, so the packet does not
+  record where one machine's checkout or package install kept it, and the
+  same packet resolves on any machine and under `npx campaigns-os`.
+- A string `path` is an operator-supplied `--commerce-catalog <path>`,
+  recorded relative to the packet (keep it inside the campaign repo). Doctor
+  resolves it against the packet's directory and blocks on
+  `assembly.commerce_catalog.path` when it does not exist.
+- Packets prepared before `null` was recorded carry the toolkit catalog as a
+  packet-relative path that climbs into the checkout that ran `prepare-build`
+  (`../../../campaigns-os/contracts/commerce-surface-catalog.json`). When such a
+  path does not exist but its file name is `commerce-surface-catalog.json`,
+  doctor and QA resolve it to the running toolkit's catalog and doctor prints
+  a `ready` line saying the packet still carries a machine-local path. That
+  is never a blocker; re-running `prepare-build` records `null`.
+
 ## Orchestration Loop (`campaigns-os next`)
 
 `campaigns-os next` (no stage argument) is the agentic orchestration primitive. It reads the current packet, doctor, and assembly report state from disk and tells you which stage should run next. Each call re-reads state, so the loop is idempotent and recoverable across sessions / machines.
@@ -841,6 +874,8 @@ Stage order: `setup → build → polish → deploy → qa`. The picker walks th
 | qa | `stages.qa` | spec-aware QA (next-campaigns-qa) |
 
 The CLI stage name is `build` but the report keys the same stage as `assembly` — the picker handles the translation. Both names refer to the same lifecycle step.
+
+The Assembly Report's top-level `status`, `next` and `blockers` are derived from its `stages` on every write of the report (prepare-build's first write and every stage record after it), never carried forward from an earlier write. `status` is `blocked` while any recorded stage is blocked, `completed` only once every recorded stage (`prepare_build` and `doctor` included) is terminal, and `prepared` otherwise. `next.stage` is the first non-terminal stage in the order above, in the `next <stage>` vocabulary (`setup`, `build`, `polish`, `deploy`, `qa`, then `done`; a blocked prepare-build or doctor names `prepare-build` / `doctor-blocked`; a doctor that never recorded an outcome does not hold the ladder but is named `doctor` once the ladder is exhausted, so a `prepare-build --no-doctor` report never reads `completed`), `next.owner` is the skill that owns it, and `next.blocked` is present and true when that stage is the one holding the ladder. `blockers` is the union of the `blockers[]` of the stages currently blocked, so a blocker cleared by a re-run leaves the top level with its stage. The report's `next` is the ledger's own position; `campaigns-os next` additionally folds in live gates (doctor findings, purchase-proof coverage, the polish gate) and remains the authority for what runs next.
 
 Result shape (with `--json`):
 

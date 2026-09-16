@@ -18,7 +18,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { nextStage, recordQaStageOutcome } from "./cli.mjs";
+import { doctorPacket, nextStage, recordQaStageOutcome } from "./cli.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 
@@ -119,7 +119,7 @@ function target({ prefix = "closeout-evidence-", orderPathDepth = "common", muta
 
 // A synthesized verdict. Not copied from any run: no merchant, campaign, order
 // or customer value appears anywhere in this repository.
-function verdict({ runId, completedAt, orders = 1 }) {
+function verdict({ runId, completedAt, orders = 1, assertions = [] }) {
   return {
     schema_version: "1.0",
     run_id: runId,
@@ -128,7 +128,7 @@ function verdict({ runId, completedAt, orders = 1 }) {
     started_at: completedAt,
     completed_at: completedAt,
     disposition: "ready",
-    assertions: [],
+    assertions,
     exceptions: [],
     test_orders: Array.from({ length: orders }, (unused, index) => ({
       path: "accept",
@@ -144,8 +144,8 @@ function verdict({ runId, completedAt, orders = 1 }) {
 }
 
 // The producer, writing real files exactly as `qa run` does.
-function runProducer({ dir, packetPath }, { runId, completedAt, orders = 1 }) {
-  const built = verdict({ runId, completedAt, orders });
+function runProducer({ dir, packetPath }, { runId, completedAt, orders = 1, assertions = [] }) {
+  const built = verdict({ runId, completedAt, orders, assertions });
   const localDir = join(dir, "qa-output", MAP_ID);
   mkdirSync(localDir, { recursive: true });
   const localPath = join(localDir, `${runId}.json`);
@@ -322,4 +322,149 @@ test("a satisfied record in one target never satisfies another", () => {
   // Neither run may reach into the other's records directory.
   assert.equal(existsSync(join(b.dir, ".campaign-runtime/run-records")), false);
   assert.deepEqual(readdirSync(join(a.dir, ".campaign-runtime/run-records")), ["run_synth_targeta01.json"]);
+});
+
+// The packet's declared order-path depth and the report's mirror of it. A
+// packet edited by hand after prepare-build leaves the mirror behind; the
+// coverage assessment then reads the depth as unknown, and until now nothing
+// named the command that puts the two back together.
+test("a hand-edited packet depth is named by doctor and next with the one command that reconciles it", () => {
+  const fixture = target({ prefix: "closeout-evidence-drift-" });
+  const packet = JSON.parse(readFileSync(fixture.packetPath, "utf8"));
+  packet.qa.proof_policy.order_path_depth = "off";
+  writeFileSync(fixture.packetPath, JSON.stringify(packet, null, 2));
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 0 });
+
+  const doctor = JSON.parse(execFileSync("node", [CLI, "doctor", "--packet", fixture.packetPath, "--json"], { encoding: "utf8" }));
+  const warning = (doctor.warnings || []).find((issue) => issue.code === "qa.proof_policy.order_path_depth_drift");
+  assert.ok(warning, `doctor must warn about the drift: ${JSON.stringify(doctor.warnings)}`);
+  assert.equal((doctor.errors || []).some((issue) => issue.code.startsWith("qa.proof_policy")), false, "drift is advisory, never a blocker");
+  const command = `qa policy set --packet ${fixture.packetPath} --order-path-depth off`;
+  assert.ok(warning.message.includes(command), `the warning names the reconciling command: ${warning.message}`);
+  assert.doesNotMatch(warning.message, /Reconcile the packet and the report before/);
+
+  const result = runNext(fixture.packetPath);
+  const advisory = action(result, "purchase_proof_unknown");
+  assert.ok(advisory, "next still surfaces the unknown coverage");
+  assert.equal(advisory.kind, "command");
+  assert.ok(advisory.command.endsWith(command), advisory.command);
+  assert.equal(advisory.required, undefined, "the action stays advisory");
+  // One action, one text: next's description carries doctor's warning verbatim.
+  assert.ok(advisory.description.includes(warning.message), `${advisory.description}\n---\n${warning.message}`);
+});
+
+test("qa policy set --order-path-depth off writes the packet field and the report mirror, and a no-order run then reaches done", () => {
+  const fixture = target({ prefix: "closeout-evidence-set-depth-" });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 0 });
+  assert.equal(runNext(fixture.packetPath).stage, "qa", "a declared common depth with zero order paths holds at qa");
+
+  const set = JSON.parse(execFileSync("node", [CLI, "qa", "policy", "set", "--packet", fixture.packetPath, "--order-path-depth", "off", "--json"], { encoding: "utf8" }));
+  assert.deepEqual(set.changed, ["order_path_depth", "report.proof_policy.order_path_depth"]);
+  assert.equal(set.policy.qa.order_path_depth, "off");
+  assert.equal(set.report_mirror.written, true);
+  assert.equal(JSON.parse(readFileSync(fixture.packetPath, "utf8")).qa.proof_policy.order_path_depth, "off");
+  const report = readReport(fixture.reportPath);
+  assert.equal(report.proof_policy.order_path_depth, "off", "the report mirror follows the packet");
+  assert.equal(report.proof_policy.typed_card_depth, "common", "the rest of the mirror is untouched");
+
+  const doctor = JSON.parse(execFileSync("node", [CLI, "doctor", "--packet", fixture.packetPath, "--json"], { encoding: "utf8" }));
+  assert.equal((doctor.warnings || []).some((issue) => issue.code === "qa.proof_policy.order_path_depth_drift"), false);
+  const result = runNext(fixture.packetPath);
+  assert.equal(result.stage, "done", result.picked_reason);
+  assert.equal(action(result, "purchase_proof_unknown"), null);
+
+  // Re-stating the same depth is a no-op on both artifacts.
+  const again = JSON.parse(execFileSync("node", [CLI, "qa", "policy", "set", "--packet", fixture.packetPath, "--order-path-depth", "off", "--json"], { encoding: "utf8" }));
+  assert.deepEqual(again.changed, []);
+  assert.equal(again.report_mirror.written, false);
+});
+
+test("qa policy set --order-path-depth re-states the packet's value into a lagging report mirror", () => {
+  const fixture = target({ prefix: "closeout-evidence-restate-" });
+  const packet = JSON.parse(readFileSync(fixture.packetPath, "utf8"));
+  packet.qa.proof_policy.order_path_depth = "off";
+  writeFileSync(fixture.packetPath, JSON.stringify(packet, null, 2));
+  assert.equal(readReport(fixture.reportPath).proof_policy.order_path_depth, "common");
+
+  const set = JSON.parse(execFileSync("node", [CLI, "qa", "policy", "set", "--packet", fixture.packetPath, "--order-path-depth", "off", "--json"], { encoding: "utf8" }));
+  assert.deepEqual(set.changed, ["report.proof_policy.order_path_depth"], "the packet already held off; only the mirror moved");
+  assert.equal(readReport(fixture.reportPath).proof_policy.order_path_depth, "off");
+});
+
+
+// The browser placeholder-text gate, as qa-browser emits it, for one page.
+function placeholderTextAssertion(pageId, status) {
+  return {
+    id: `template-residue:${pageId}:placeholder-text`,
+    family: "template_residue",
+    page_id: pageId,
+    status,
+    expected: "no literal template placeholder text in rendered output",
+    actual: status === "pass" ? "no placeholder text rendered" : "placeholder text rendered: Lorem",
+  };
+}
+
+function residueWarning(result) {
+  return (result.warnings || []).find((issue) => issue.code === "template_contract.placeholder_text_residue") || null;
+}
+
+function residueAction(doctor) {
+  return (doctor.next?.actions || []).find((line) => /placeholder text/.test(line)) || null;
+}
+
+test("a recorded browser residue pass on the current build retires the doctor's static placeholder warning until a rebuild", () => {
+  const fixture = target();
+  // Rendered copy the static scan flags; the browser gate is the authority on
+  // whether it is actually visible.
+  const pageDir = join(fixture.dir, "target-page-kit", "src", SLUG);
+  mkdirSync(pageDir, { recursive: true });
+  writeFileSync(join(pageDir, "checkout.html"), "<html><body><p>Lorem ipsum dolor.</p></body></html>\n");
+
+  const before = doctorPacket(fixture.packetPath);
+  assert.ok(residueWarning(before), "before QA, the static scan warns");
+  assert.ok(residueAction(before), "and next.actions asks for the replacement");
+
+  runProducer(fixture, {
+    runId: "SYNTHRUN000000000000000001",
+    completedAt: "2026-09-11T02:00:00.000Z",
+    assertions: [placeholderTextAssertion("checkout", "pass"), placeholderTextAssertion("landing", "pass")],
+  });
+  const qa = readReport(fixture.reportPath).stages.qa;
+  assert.deepEqual(qa.evidence, {
+    source_build_fingerprint: BUILD_FINGERPRINT,
+    gates: { placeholder_text_residue: { status: "pass", pages_checked: 2, pages_failed: 0 } },
+  });
+
+  const after = doctorPacket(fixture.packetPath);
+  assert.equal(residueWarning(after), null, "the browser verdict outranks the static scan on the build it judged");
+  assert.equal(residueAction(after), null, "next.actions stops asking for a fix QA cleared");
+  assert.ok(after.ready.some((note) => note.includes("browser residue gate passed on this build")), JSON.stringify(after.ready));
+  assert.equal(residueWarning(runNext(fixture.packetPath)), null, "next carries the same doctor read");
+
+  // A rebuild moves the fingerprint: the recorded pass no longer covers it.
+  const report = readReport(fixture.reportPath);
+  report.stages.assembly.build_fingerprint = `sha256:${"c".repeat(64)}`;
+  writeFileSync(fixture.reportPath, JSON.stringify(report, null, 2));
+  const rebuilt = doctorPacket(fixture.packetPath);
+  assert.ok(residueWarning(rebuilt), "a new build has no browser verdict yet");
+  assert.ok(residueAction(rebuilt));
+});
+
+test("a browser residue failure, or a run that never reached the gate, leaves the static warning in place", () => {
+  const fixture = target();
+  const pageDir = join(fixture.dir, "target-page-kit", "src", SLUG);
+  mkdirSync(pageDir, { recursive: true });
+  writeFileSync(join(pageDir, "checkout.html"), "<html><body><p>Lorem ipsum dolor.</p></body></html>\n");
+
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z" });
+  assert.equal(readReport(fixture.reportPath).stages.qa.evidence, undefined, "no gate ran, so nothing is recorded as passed");
+  assert.ok(residueWarning(doctorPacket(fixture.packetPath)));
+
+  runProducer(fixture, {
+    runId: "SYNTHRUN000000000000000002",
+    completedAt: "2026-09-11T03:00:00.000Z",
+    assertions: [placeholderTextAssertion("checkout", "fail"), placeholderTextAssertion("landing", "pass")],
+  });
+  assert.equal(readReport(fixture.reportPath).stages.qa.evidence.gates.placeholder_text_residue.status, "fail");
+  assert.ok(residueWarning(doctorPacket(fixture.packetPath)));
 });
