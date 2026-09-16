@@ -52,6 +52,7 @@ Notable supported-surface changes are recorded here.
   unchanged re-record still leaves the file's bytes alone.
 - `docs/build-packet.md` documents the derived summary under the
   orchestration loop.
+
 ## [1.29.0+agent.6] - 2026-09-16
 
 ### Fixed
