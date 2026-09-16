@@ -39,13 +39,19 @@ Notable supported-surface changes are recorded here.
   output fingerprint, not the recorded string. `evaluatePolishGate` takes
   `currentOutputFingerprint`; doctor and QA supply it from `_site/<slug>/`, and
   when the output has drifted from `stages.assembly.build_fingerprint` the
-  gate is `polish.stale` with `current_output_fingerprint` and a
-  `rerun_build` action ahead of `run_polish`, even when
-  `source_build_fingerprint` still equals the recorded value. `polish capture`
-  refuses by name (`built output under _site/<slug>/ no longer matches
-  stages.assembly.build_fingerprint (recorded …, current …)`) and its capture
-  binding carries `assembly.output_fingerprint`, so an output that changes
-  during the browser pass fails the unchanged-binding check after it.
+  gate is the new code `polish.output_drift` with `current_output_fingerprint`
+  and a `rerun_build` action ahead of `run_polish`, even when
+  `source_build_fingerprint` still equals the recorded value (`polish.stale`
+  stays the code for evidence stamped against an older recorded build).
+  `polish capture` refuses by name in three cases — no built route root
+  (`built output root _site/<slug>/ is missing under the target repo`), an
+  output the walk cannot read (`could not be read to fingerprint it (<code>:
+  …)`), and drift (`built output under _site/<slug>/ no longer matches
+  stages.assembly.build_fingerprint (recorded …, current …)`) — never an
+  uncaught filesystem error and never a null binding; its capture binding
+  carries `assembly.output_fingerprint`, so an output that changes during the
+  browser pass fails the unchanged-binding check after it. Symbolic links
+  inside the output are never build output: the walk skips them.
 
 ## [1.29.0+agent.1] - 2026-09-16
 

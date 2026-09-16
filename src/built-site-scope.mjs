@@ -248,12 +248,18 @@ export function synthesizeMinimalBuildPacket({
 // value. Page Kit (0.2.0) writes only rendered HTML and copied assets into
 // _site/, nothing it timestamps, so nothing is excluded by default; `exclude`
 // takes root-relative paths for a consumer whose build does stamp a file.
+// Symbolic links are never build output and are skipped, not followed.
 export const BUILD_FINGERPRINT_ALGORITHM = "sha256-manifest/v1";
 
 function listFilesRelative(root) {
   const files = [];
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      // Symlinks are not build output: page-kit writes files and copies
+      // assets, never links. A link is skipped rather than followed, so a
+      // link into the source tree (or a loop) can neither leak input bytes
+      // into the value nor hang the walk.
+      if (entry.isSymbolicLink()) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) files.push(relative(root, full).split(sep).join("/"));

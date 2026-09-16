@@ -463,8 +463,11 @@ warning `built_output.fingerprint_missing` carrying the value to record, and a
 recorded value the output no longer matches is `built_output.fingerprint_stale`
 (blocking once assembly is complete). The polish gate, QA, and `polish capture`
 compare evidence against that recomputed value, so evidence bound to a build whose
-output has since changed is `polish.stale` even when the recorded string still
-matches.
+output has since changed is `polish.output_drift` even when the recorded string
+still matches (`polish.stale` stays the code for evidence stamped against an older
+recorded build). `polish capture` refuses by name when the built route root is
+missing, unreadable, or drifted; symbolic links are never build output and are
+skipped by the walk.
 
 A stale or missing Assembly Source Package Fingerprint is waivable only as an
 exceptional Source Freshness Waiver. The waiver must be structured in

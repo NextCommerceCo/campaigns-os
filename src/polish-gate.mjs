@@ -529,7 +529,7 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
   if (outputFingerprint && outputFingerprint !== buildFingerprint) {
     return {
       status: "blocked",
-      code: "polish.stale",
+      code: "polish.output_drift",
       reason: `Built output no longer matches stages.assembly.build_fingerprint (recorded ${buildFingerprint}, current ${outputFingerprint}); polish evidence is bound to a build that no longer exists. Re-run build, then next-campaigns-polish before QA.`,
       build_fingerprint: buildFingerprint,
       current_output_fingerprint: outputFingerprint,

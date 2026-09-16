@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -267,5 +267,26 @@ test("computeBuildFingerprint: exclusions are root-relative and reported; a miss
     assert.equal(missing.ok, false);
     assert.equal(missing.fingerprint, null);
     assert.match(missing.error, /does not exist/);
+  });
+});
+
+test("computeBuildFingerprint: symbolic links are not build output and are neither hashed nor followed", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "_site", "s");
+    writeTree(root, FINGERPRINT_TREE);
+    const before = computeBuildFingerprint(root);
+    // A link to a file outside the tree, a link to a directory outside the
+    // tree, and a link loop back to the root: none changes the value or the
+    // file count, and the loop does not hang the walk.
+    mkdirSync(join(dir, "source"), { recursive: true });
+    writeFileSync(join(dir, "source", "input.html"), "<html>input</html>");
+    symlinkSync(join(dir, "source", "input.html"), join(root, "linked-file.html"));
+    symlinkSync(join(dir, "source"), join(root, "linked-dir"));
+    symlinkSync(root, join(root, "loop"));
+    const after = computeBuildFingerprint(root);
+    assert.equal(after.fingerprint, before.fingerprint);
+    assert.equal(after.file_count, before.file_count);
+    assert.equal(after.manifest.includes("linked-file.html"), false);
+    assert.equal(after.manifest.includes("linked-dir"), false);
   });
 });

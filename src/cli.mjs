@@ -5171,6 +5171,10 @@ export function validateBuildOutputFingerprint(packet, errors, warnings, ready, 
   if (!existsSync(siteRoot) || !statSync(siteRoot).isDirectory()) return;
 
   const current = computeBuildFingerprint(siteRoot);
+  // The root was a directory a moment ago; if it is not one now (removed
+  // between the check and the walk) there is no output to fingerprint and no
+  // verdict to give, the same skip as a missing root.
+  if (!current.ok) return;
   const recorded = currentBuildFingerprint(buildState.report);
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
   const status = !recorded ? "missing" : recorded === current.fingerprint ? "pass" : "stale";

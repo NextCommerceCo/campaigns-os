@@ -105,7 +105,7 @@ test("polish gate compares against the recomputed output fingerprint when the ca
 
   const drifted = evaluatePolishGate({ report, currentOutputFingerprint: "sha256:output-now" });
   assert.equal(drifted.status, "blocked");
-  assert.equal(drifted.code, "polish.stale");
+  assert.equal(drifted.code, "polish.output_drift");
   assert.equal(drifted.build_fingerprint, FINGERPRINT);
   assert.equal(drifted.current_output_fingerprint, "sha256:output-now");
   assert.match(drifted.reason, /no longer matches stages\.assembly\.build_fingerprint/);
@@ -629,6 +629,7 @@ const GATE_BLOCKER_CODES = [
   "polish.self_certified",
   "polish.source_build_fingerprint_missing",
   "polish.stale",
+  "polish.output_drift",
   "polish.source_package_material_fingerprint_missing",
   "polish.source_package_stale",
   "polish.completed_at_missing",

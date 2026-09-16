@@ -330,13 +330,7 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
   // an output that has drifted from what build recorded would be evidence
   // about a build that no longer exists, and an output that changes during the
   // browser pass fails the unchanged-binding assertion after it.
-  const outputFingerprint = computeBuildFingerprint(join(resolve(targetRepo), "_site", slug));
-  if (outputFingerprint.ok && outputFingerprint.fingerprint !== buildFingerprint) {
-    throw new Error(
-      `polish capture refuses: built output under _site/${slug}/ no longer matches stages.assembly.build_fingerprint `
-      + `(recorded ${buildFingerprint}, current ${outputFingerprint.fingerprint}). Re-run build and record the current fingerprint first.`,
-    );
-  }
+  const outputFingerprint = boundOutputFingerprint(join(resolve(targetRepo), "_site", slug), slug, buildFingerprint);
   const runId = nonemptyString(report.run_id);
   const reportPacketPath = nonemptyString(report?.inputs?.packet_path);
   if (!runId || !reportPacketPath) {
@@ -372,7 +366,7 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
       assembly: {
         status: nonemptyString(assembly.status),
         build_fingerprint: buildFingerprint,
-        output_fingerprint: outputFingerprint.ok ? outputFingerprint.fingerprint : null,
+        output_fingerprint: outputFingerprint,
         source_package_material_fingerprint: assemblySourcePackageMaterialFingerprint(report),
       },
       current_source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report),
@@ -414,6 +408,37 @@ export function mergePolishPageLoadEvidence(report, pageLoad) {
       },
     },
   };
+}
+
+// The fingerprint of the built output the capture binds to. Every way of not
+// having one is a named refusal, parallel to the missing recorded value: no
+// built route root (build has not run here), an output the walk cannot read
+// (permissions, a file vanishing mid-walk), or an output that no longer
+// matches what build recorded. None of them may surface as an uncaught
+// filesystem error, and none may bind as a null.
+function boundOutputFingerprint(outputRoot, slug, buildFingerprint) {
+  let current;
+  try {
+    current = computeBuildFingerprint(outputRoot);
+  } catch (error) {
+    throw new Error(
+      `polish capture refuses: built output under _site/${slug}/ could not be read to fingerprint it `
+      + `(${error?.code || error?.name || "error"}: ${error?.message || error}). Re-run build so the output is readable, then capture.`,
+    );
+  }
+  if (!current.ok) {
+    throw new Error(
+      `polish capture refuses: built output root _site/${slug}/ is missing under the target repo, so there is no build to bind the capture to. `
+      + "Run page-kit build and record stages.assembly.build_fingerprint first.",
+    );
+  }
+  if (current.fingerprint !== buildFingerprint) {
+    throw new Error(
+      `polish capture refuses: built output under _site/${slug}/ no longer matches stages.assembly.build_fingerprint `
+      + `(recorded ${buildFingerprint}, current ${current.fingerprint}). Re-run build and record the current fingerprint first.`,
+    );
+  }
+  return current.fingerprint;
 }
 
 function currentBuildFingerprint(report) {
