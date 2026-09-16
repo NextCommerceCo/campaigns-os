@@ -2,6 +2,40 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.29.0+agent.5] - 2026-09-16
+
+### Added
+
+- `--order-path-depth <off|common|full>` sets `qa.proof_policy.order_path_depth`,
+  which until now had no setter: `prepare-build`/`start`/`build` seed the
+  packet with it (default still `common`), and `qa policy set
+  --order-path-depth <depth>` changes it later. One accepted-values set; a
+  bare flag or any other value is refused before anything is written
+  (`qa policy set: unsupported --order-path-depth "tiers". Accepted values:
+  off, common, full.`). `qa policy set` also refreshes the assembly report's
+  `proof_policy.order_path_depth` mirror through the same ledger write every
+  other report edit uses (the doctor sidecar is stamped stale), reports it in
+  `changed[]` as `report.proof_policy.order_path_depth` and in a new
+  `report_mirror` object, and re-states the packet's value into a lagging
+  mirror even when the packet already holds it. The `policy` snapshot gains
+  `qa.order_path_depth`. With `off` on both sides a `qa run --test-order off`
+  pass reaches `next: done`.
+
+### Changed
+
+- Doctor warns `qa.proof_policy.order_path_depth_drift` (advisory, never a
+  blocker) when the packet's declared depth and the report's mirror disagree —
+  the state a hand-edited packet leaves behind, which `next` reads as unknown
+  coverage and could not clear. The warning, the coverage `reason` and the
+  `next` `purchase_proof_unknown` action carry one text naming the one
+  command that reconciles them (`qa policy set --packet <packet>
+  --order-path-depth <packet value>`; the placeholder `<off|common|full>` when
+  the packet holds a value the setter refuses), and that `next` action is now
+  `kind: command` with the runnable command instead of a manual step reading
+  "Reconcile the packet and the report before treating either depth as
+  proved." `docs/qa-and-test-orders.md` and `docs/build-packet.md` describe
+  the setter and the drift warning.
+
 ## [1.29.0+agent.1] - 2026-09-16
 
 ### Changed

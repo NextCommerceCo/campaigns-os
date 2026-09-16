@@ -23,6 +23,7 @@ import { basename, delimiter, dirname, extname, isAbsolute, join, relative, reso
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
+import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
@@ -403,15 +404,15 @@ Usage:
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
-                     [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
+                     [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                              [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
-                             [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]
+                             [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]
   campaigns-os build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
-                     [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
+                     [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
@@ -435,7 +436,7 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
-  campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--json]
+  campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]   # --order-path-depth writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
@@ -1428,13 +1429,15 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createProofPolicy() {
+// `orderPathDepth` is the operator's `--order-path-depth` (validated by
+// parseOrderPathDepthFlag against ORDER_PATH_DEPTHS); the seed is `common`.
+function createProofPolicy({ orderPathDepth = null } = {}) {
   return {
     browser_qa_required: true,
     typed_card_depth: "common",
     localhost_development_domain_allowed: true,
     non_localhost_origin_allowlist_required: true,
-    order_path_depth: "common",
+    order_path_depth: orderPathDepth || "common",
     operator_approval_state: "not_required_global_test_cards",
     qa_portal_publish_default: true,
   };
@@ -2063,6 +2066,7 @@ function prepareBuild(args, options = {}) {
   // behind for a bad argument.
   const wrapperPolicyFlag = parseWrapperPolicyFlag(args);
   const designManifestPath = parseDesignManifestFlag(args);
+  const orderPathDepthFlag = parseOrderPathDepthFlag(args, { command: "prepare-build" });
 
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
@@ -2273,7 +2277,7 @@ function prepareBuild(args, options = {}) {
   const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
   const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
   const adapterDecisions = createAdapterDecisions({ commerceZoneFindings, wrapperPolicy: wrapperPolicy.value });
-  const proofPolicy = createProofPolicy();
+  const proofPolicy = createProofPolicy({ orderPathDepth: orderPathDepthFlag });
 
   const packet = {
     schema_version: PACKET_SCHEMA,
@@ -3821,7 +3825,7 @@ const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "qa.proof_policy",
     phase: "qa",
-    run: ({ packet, warnings, ready }) => validateProofPolicy(packet, warnings, ready),
+    run: ({ packet, packetPath, report, warnings, ready }) => validateProofPolicy(packet, warnings, ready, { report, packetPath }),
   },
   {
     id: "build_brief.artifact",
@@ -4131,13 +4135,35 @@ function validateAdapterContracts(packet, packetPath, spec, errors, warnings, re
   });
 }
 
-function validateProofPolicy(packet, warnings, ready) {
+function validateProofPolicy(packet, warnings, ready, { report = null, packetPath = null } = {}) {
   const policy = packet.qa?.proof_policy;
   if (!policy) {
     addIssue(warnings, "qa.proof_policy", "qa.proof_policy is missing. New packets make browser QA, typed-card depth, SDK origin allowlist state, order path depth, and approval state explicit.");
     return;
   }
   validateProofPolicyObject(policy, "qa.proof_policy", warnings, ready, { requireBrowserQa: true });
+  // The report's proof_policy is a mirror written at prepare-build. A packet
+  // edited afterwards (by hand, or by an older `qa policy set` that never
+  // refreshed the mirror) leaves the two disagreeing, and
+  // assessPurchaseProofCoverage then reads the depth as unknown — so `next`
+  // could not reach done and nothing named the fix. Advisory, never a
+  // blocker: the warning carries the one command that reconciles them.
+  const drift = orderPathDepthDrift(packet, report);
+  if (drift) {
+    addIssue(warnings, ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText({ packetDepth: drift.packet, reportDepth: drift.report, packetPath }));
+  }
+}
+
+// The packet's declared order-path depth beside the report's mirror when the
+// two disagree (case-insensitively), else null. One comparison for doctor,
+// the coverage assessment and `next`.
+function orderPathDepthDrift(packet, report) {
+  const packetDepth = optionalString(packet?.qa?.proof_policy?.order_path_depth);
+  const reportDepth = optionalString(report?.proof_policy?.order_path_depth);
+  if (packetDepth && reportDepth && packetDepth.toLowerCase() !== reportDepth.toLowerCase()) {
+    return { packet: packetDepth, report: reportDepth };
+  }
+  return null;
 }
 
 function validateBuildBrief(packet, packetPath, spec, context, errors, warnings, ready) {
@@ -8063,15 +8089,18 @@ export function assessPurchaseProofCoverage({ packet = null, report = null } = {
   // trustworthy in that state, so the coverage is genuinely unknown: advisory,
   // never a silent unblock, and named loudly enough that an operator can see
   // which two artifacts to reconcile.
-  if (packetDepth && reportDepth && packetDepth.toLowerCase() !== reportDepth.toLowerCase()) {
+  const drift = orderPathDepthDrift(packet, report);
+  if (drift) {
     return {
       state: "unknown",
       // Neither side is trustworthy, so there is no single declared depth to
       // report; both values are exposed structurally so a consumer never has
       // to parse the reason to learn that the two artifacts disagree.
       declared_depth: null,
-      declared_depths: { packet: packetDepth, report: reportDepth },
-      reason: `The build packet declares an order-path depth of "${packetDepth}" while the assembly report's mirror of it reads "${reportDepth}". Reconcile the packet and the report before treating either depth as proved.`,
+      declared_depths: { packet: drift.packet, report: drift.report },
+      // The reason names the one command that reconciles them (the same text
+      // doctor's warning carries); the packet path is substituted by `next`.
+      reason: orderPathDepthDriftText({ packetDepth: drift.packet, reportDepth: drift.report }),
     };
   }
   const declared = packetDepth || reportDepth;
@@ -8849,12 +8878,28 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     // is too old to say either way, say so — an unknown must never turn into a
     // new block on a campaign that was already finished.
     if (purchaseProof?.state === "unknown") {
-      push(
-        "purchase_proof_unknown",
-        "manual",
-        null,
-        `Purchase-proof coverage is unknown for this run: ${purchaseProof.reason || "the QA stage records no purchase-proof summary."} ${describeDeclaredDepth(purchaseProof)}; re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
-      );
+      const depths = purchaseProof.declared_depths;
+      const drift = depths?.packet && depths?.report && depths.packet.toLowerCase() !== depths.report.toLowerCase()
+        ? { packetDepth: depths.packet, reportDepth: depths.report }
+        : null;
+      if (drift) {
+        // The packet and its report mirror disagree: the action IS the
+        // reconciling command (doctor's warning names the same one), not a
+        // manual step that leaves the operator to find it.
+        push(
+          "purchase_proof_unknown",
+          "command",
+          requiredActionText(orderPathDepthReconcileAction(drift), { packetPath }),
+          `Purchase-proof coverage is unknown for this run: ${orderPathDepthDriftText({ ...drift, packetPath })} ${describeDeclaredDepth(purchaseProof)}; once they agree, re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
+        );
+      } else {
+        push(
+          "purchase_proof_unknown",
+          "manual",
+          null,
+          `Purchase-proof coverage is unknown for this run: ${purchaseProof.reason || "the QA stage records no purchase-proof summary."} ${describeDeclaredDepth(purchaseProof)}; re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
+        );
+      }
     }
   }
   return actions;
