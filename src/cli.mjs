@@ -167,7 +167,7 @@ import {
   attestationBlockers,
   BRIEF_PAYLOAD_REL_PATH,
 } from "./content-residue.mjs";
-import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
+import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import {
   assessTemplateFreshness,
   defaultSdkSupportPolicy,
@@ -2079,6 +2079,12 @@ function prepareBuild(args, options = {}) {
   // would never use ("Link demeter ... " on an olympus-mv-two-step packet).
   const designSourceTemplateFamily = templateFamily;
   const commerceCatalogPath = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
+  // The toolkit's own catalog is not recorded on the packet (path: null): it
+  // ships with every install, so a packet-relative path to this checkout's
+  // copy would only be right on the machine that ran prepare-build. An
+  // operator-supplied --commerce-catalog inside the campaign repo is recorded
+  // relative to the packet, as before.
+  const commerceCatalogIsToolkitDefault = resolve(commerceCatalogPath) === resolve(defaultCommerceCatalogPath());
   const commerceCatalog = resolveCommerceCatalog(commerceCatalogPath);
   const templateLocked = Boolean(explicitTemplateFamily) && !isUnresolvedTemplateFamily(templateFamily);
   // Certified-template gate, enforced at the entry point: a decided family
@@ -2328,7 +2334,7 @@ function prepareBuild(args, options = {}) {
         required: true,
         family: templateLocked ? templateFamily : null,
         version: null,
-        path: relFromFile(packetPath, commerceCatalogPath),
+        path: commerceCatalogIsToolkitDefault ? null : relFromFile(packetPath, commerceCatalogPath),
       },
       compatible_outputs: ["static-html", "campaign-cart-sdk"],
     },
@@ -6692,10 +6698,20 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
   const familyAutomatable = isAutomatableTemplateFamily(family);
   const catalogInfo = packet.assembly?.commerce_catalog || {};
   if (catalogInfo.required !== true) return;
-  const catalogPath = resolveFromFile(packetPath, catalogInfo.path || "../contracts/commerce-surface-catalog.json");
+  const catalogResolution = resolvePacketCommerceCatalogPath(packetPath, catalogInfo);
+  const catalogPath = catalogResolution.path;
   if (!catalogPath || !existsSync(catalogPath)) {
     addIssue(errors, "assembly.commerce_catalog.path", "Commerce catalog is required but not found.");
     return;
+  }
+  if (catalogResolution.source === "stale_packet_path") {
+    // Not a warning: the catalog resolved and nothing about the build changes.
+    // The line tells the operator the packet still names one machine's
+    // checkout, and that a re-prepare records the toolkit default (null).
+    ready.push(
+      `Commerce catalog resolved to the running toolkit's copy; the packet's recorded path ${catalogResolution.recorded} ` +
+      "does not exist here (it names the checkout that ran prepare-build). Re-run prepare-build to clear the machine-local path.",
+    );
   }
   const catalog = resolveCommerceCatalog(catalogPath);
   if (familyAutomatable && catalog.agentContractVersion !== 1) {

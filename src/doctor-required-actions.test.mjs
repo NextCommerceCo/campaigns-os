@@ -31,8 +31,9 @@ function runDoctorText(packetPath) {
 // sync never moves such a pin backwards).
 // Every doctor run here reads a staged copy of examples/: doctor writes its
 // sidecar into the packet's target, and the checkout is not a scratch dir.
-// The packet reaches its catalog at ../contracts/, so that file is staged
-// beside the copy; without it doctor blocks on assembly.commerce_catalog.path.
+// The packet's catalog path is null (the running toolkit's own catalog); a
+// copy is still staged at ../contracts/ so the layout matches an explicit
+// packet-relative catalog as well.
 function exampleFixture() {
   const dir = mkdtempSync(join(tmpdir(), "doctor-required-actions-"));
   cpSync(join(ROOT, "examples"), join(dir, "examples"), { recursive: true });
