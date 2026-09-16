@@ -1,0 +1,6 @@
+# Only the fixtures named in contracts/supported-surface.json ship (orientation,
+# sidecar-bundle, runtime-recipe). The rest are check-script inputs.
+/campaign-specs/
+/expected/
+/legacy-migration/
+/template-residue/

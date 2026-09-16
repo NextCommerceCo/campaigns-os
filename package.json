@@ -1,8 +1,20 @@
 {
   "name": "@nextcommerce/campaigns-os",
-  "version": "0.1.0-alpha.0",
-  "private": true,
+  "version": "1.30.0",
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NextCommerceCo/campaigns-os.git"
+  },
+  "homepage": "https://github.com/NextCommerceCo/campaigns-os#readme",
+  "bugs": {
+    "url": "https://github.com/NextCommerceCo/campaigns-os/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "sideEffects": false,
   "bin": {
@@ -77,8 +89,10 @@
     "acorn": "^8.18.0",
     "ajv": "^8.20.0",
     "parse5": "^7.3.0",
-    "playwright": "^1.62.1",
     "yaml": "^2.9.0"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.62.1"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
@@ -88,11 +102,24 @@
     "bin",
     "campaign-spec",
     "contracts",
-    "docs",
-    "examples",
+    "docs/brand-theme-bridge.md",
+    "docs/build-packet.md",
+    "docs/campaign-build-brief.md",
+    "docs/campaign-standardization-report.md",
+    "docs/campaigns-os-build-flow.md",
+    "docs/design-source-package.md",
+    "docs/legacy-migration.md",
+    "docs/migration-sidecar-bundle.md",
+    "docs/orientation-contract-reference.md",
+    "docs/polish-evidence.md",
+    "docs/qa-and-test-orders.md",
+    "docs/release-ledger-authoring-guide.md",
+    "docs/runtime-readiness.md",
+    "docs/supported-surface.md",
+    "docs/versioning.md",
+    "docs/workflow-findings-sidecar.md",
     "prompts",
     "schemas",
-    "scripts",
     "skills.sh",
     "skills",
     "skills.json",

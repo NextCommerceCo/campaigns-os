@@ -1,4 +1,4 @@
-import { launchPackageChromium } from "./browser-launch.mjs";
+import { launchPackageChromium, PLAYWRIGHT_INSTALL_HINT } from "./browser-launch.mjs";
 import { invocationPrefixFor } from "./install-mode.mjs";
 import { dirname as installModeDirname, resolve as installModeResolve } from "node:path";
 import { fileURLToPath as installModeFileUrl } from "node:url";
@@ -6456,7 +6456,8 @@ function qaBrowserMissing(kind, error) {
   return new Error(kind === "package"
     ? [
       "Playwright is not installed for Campaigns OS.",
-      "Run `npm install` from the campaigns-os repo, then rerun QA.",
+      PLAYWRIGHT_INSTALL_HINT,
+      "Then rerun QA.",
       `Original error: ${error instanceof Error ? error.message : String(error)}`,
     ].join(" ")
     : [

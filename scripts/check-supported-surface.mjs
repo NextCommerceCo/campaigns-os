@@ -81,6 +81,18 @@ export function loadSurface(text, label) {
 export function validateSurface(surface, { readFile, fileExists, packageJson, commands, listSchemaFiles = () => [] }) {
   const errors = [];
 
+  // The registry line tracks the surface line: package.json `version` is the
+  // published npm version and must equal surface_version, so a surface bump
+  // that forgets package.json fails here in PR CI rather than at the tag gate
+  // of the publish workflow. Callers that pass no `version` (fixtures for the
+  // other checks) opt out.
+  if (typeof packageJson.version === "string" && packageJson.version !== surface.surface_version) {
+    errors.push(
+      `package.json version ${packageJson.version} does not equal surface_version ${surface.surface_version} — ` +
+        "the npm release line tracks the supported surface; bump both in the same PR",
+    );
+  }
+
   for (const [path, entry] of Object.entries(surface.hashed)) {
     if (!entry || typeof entry.sha256 !== "string" || !entry.sha256) {
       errors.push(`${path}: malformed hashed entry — expected { "sha256": "<hex>" }`);

@@ -1,6 +1,6 @@
 {
   "package": "@nextcommerce/campaigns-os",
-  "version": "0.1.0-alpha.0",
+  "version": "1.30.0",
   "status": "developer-preview",
   "contracts": {
     "campaign_spec": "4.2-4.3",
