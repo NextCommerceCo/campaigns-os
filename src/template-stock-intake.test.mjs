@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { deriveAssemblyReportSummary } from "./stage-ledger.mjs";
 
 // Template-stock intake on a family without published Template Reference
 // proof, proven on the two-step fixture family. Two mechanics:
@@ -148,6 +149,12 @@ test("a declared template-stock page clears intake on a family without Template 
   assert.equal(report.stages.prepare_build.status, "completed_partial");
   assert.deepEqual(report.blockers, []);
   assert.deepEqual(
+    { status: report.status, next: report.next, blockers: report.blockers },
+    deriveAssemblyReportSummary(report),
+    "the first write and every later commit derive the summary the same way",
+  );
+  assert.equal(report.next.stage, report.stages.setup.status === "pending" ? "setup" : "build");
+  assert.deepEqual(
     report.stages.prepare_build.declared_out_of_scope.map((skip) => skip.page_id),
     ["select"],
   );
@@ -188,6 +195,14 @@ test("the Template Reference TODO for an undeclared page names the locked family
   const report = readReport(fixture);
   assert.equal(report.status, "blocked", "an undeclared page with no source still blocks");
   assert.ok(report.blockers.some((blocker) => blocker.code === "MISSING_SOURCE_PAGE" && blocker.page_id === "select"));
+  // prepare-build's first write spells the summary the way every later commit
+  // of the report does: the blocked gate is named in the `next` vocabulary.
+  assert.deepEqual(
+    { status: report.status, next: report.next, blockers: report.blockers },
+    deriveAssemblyReportSummary(report),
+  );
+  assert.equal(report.next.stage, "prepare-build");
+  assert.equal(report.next.owner, "next-campaigns-os");
 
   const dsp = readDsp(fixture);
   const todo = dsp.source_todos.find((entry) => entry.id === "link-select-template-reference");

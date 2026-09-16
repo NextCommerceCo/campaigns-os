@@ -36,6 +36,9 @@ async function chromiumAvailable() {
 async function serveFixture(name) {
   const dir = join(FIXTURES, name);
   const orders = [];
+  // Page-HTML loads by page name: every checkout load is an SDK boot and a
+  // page-view fire, so the tests count them.
+  const pageLoads = { landing: 0, checkout: 0, receipt: 0 };
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
     const send = (status, body, type = "text/html; charset=utf-8") => {
@@ -66,6 +69,7 @@ async function serveFixture(name) {
     }
     const page = /^\/x\/(landing|checkout|receipt)\/?$/.exec(url.pathname);
     if (page) {
+      pageLoads[page[1]] += 1;
       try {
         return send(200, await readFile(join(dir, `${page[1]}.html`)));
       } catch {
@@ -79,6 +83,7 @@ async function serveFixture(name) {
   return {
     base,
     orders,
+    pageLoads,
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
@@ -143,6 +148,8 @@ browserTest("landing-entry: the runner enters through the landing page, the SDK 
     empty: false, source: "window.next", count: 1, line_count: 1, package_ids: ["1"],
   });
   assert.equal(server.orders.length, 1, "exactly one order was posted");
+  assert.equal(server.pageLoads.checkout, 2, "the selector probe and the SDK's own navigation from the landing page; nothing re-opened it");
+  assert.equal(server.pageLoads.landing, 1);
   assert.equal(assertion.status, "pass", assertion.actual);
   assert.equal(assertion.evidence.line_count, 1);
 });
@@ -176,7 +183,7 @@ browserTest("checkout-selector: a checkout that selects for itself skips the ent
   // changed shape.
   const shape = rest.map(({ step, status, detail = null }) => ({ step, status, detail }));
   assert.deepEqual(shape, [
-    { step: "opened_checkout", status: "ok", detail: null },
+    { step: "opened_checkout", status: "ok", detail: "already on checkout from the selector probe; not re-opened" },
     { step: "selected_bundle", status: "ok", detail: "default bundle selection" },
     { step: "bump_state", status: "ok", detail: "1 bump toggle(s), 0 active" },
     { step: "customer_fields_filled", status: "ok", detail: null },
@@ -189,6 +196,7 @@ browserTest("checkout-selector: a checkout that selects for itself skips the ent
     { step: "receipt_reached", status: "ok", detail: `${server.base}/x/receipt/` },
     { step: "receipt_rendered", status: "ok", detail: "1 buyer-visible rendered item candidate(s) across 1 populated receipt container(s)" },
   ]);
+  assert.equal(server.pageLoads.checkout, 1, "the selector probe's load is the path's only checkout load");
   assert.equal(assertion.status, "pass", assertion.actual);
 });
 

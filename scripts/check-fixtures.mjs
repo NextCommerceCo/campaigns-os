@@ -324,7 +324,12 @@ try {
   assertRelativePath(generatedPacket.spec.local_path, "packet.spec.local_path");
   assertRelativePath(generatedPacket.source_html.root, "packet.source_html.root");
   assertRelativePath(generatedPacket.assembly.target_repo, "packet.assembly.target_repo");
-  assertRelativePath(generatedPacket.assembly.commerce_catalog.path, "packet.assembly.commerce_catalog.path");
+  // The toolkit's own catalog is never recorded on the packet: it ships with
+  // every install, so the packet carries null rather than a path into the
+  // checkout that happened to run prepare-build.
+  if (generatedPacket.assembly.commerce_catalog.path !== null) {
+    throw new Error(`packet.assembly.commerce_catalog.path should be null for the toolkit catalog, got ${generatedPacket.assembly.commerce_catalog.path}`);
+  }
 
   const generatedContext = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
   assertRelativePath(generatedContext.spec.path, "context.spec.path");

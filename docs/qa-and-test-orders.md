@@ -223,7 +223,7 @@ npm run campaigns-os -- qa run \
   --base-url https://preview.example.com/campaign/
 ```
 
-The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags`, writes a local verdict JSON under `<target-repo>/qa-output/<map-id>/<run-id>.json` (the packet's `assembly.target_repo`, else the packet's directory; `--output-dir` overrides it, and a packet-less run uses `qa-output/` under the current directory), and returns exit code `4` when the verdict is blocked. The target's managed ignore block lists `qa-output/`, because full verdicts carry live storefront URLs; the committed form is the `.campaign-runtime/qa-verdict.json` projection.
+The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags` (a key the Campaign Cart SDK does not read, `next-currency` or `next-predictive-address` from `src/sdk-meta-tags.mjs`, is a `warn` row at severity `warn` carrying the shared note, never `manual_review` and never a blocker, whether or not the tag rendered; doctor reports the same key as `sdk_hints.meta_tags.ignored_by_sdk`), writes a local verdict JSON under `<target-repo>/qa-output/<map-id>/<run-id>.json` (the packet's `assembly.target_repo`, else the packet's directory; `--output-dir` overrides it, and a packet-less run uses `qa-output/` under the current directory), and returns exit code `4` when the verdict is blocked. The target's managed ignore block lists `qa-output/`, because full verdicts carry live storefront URLs; the committed form is the `.campaign-runtime/qa-verdict.json` projection.
 
 ### Automatic commercial parity
 
@@ -886,6 +886,24 @@ happened has to be numbers, not the orders themselves. `all_orders_test_mode` is
 `null`, not `false`, when nothing ran: "no order left test mode" and "no order
 ran" are different facts.
 
+Beside it, `stages.qa.evidence` carries the build the verdict judged and the
+outcome of the gates doctor's static scan can only approximate:
+
+```json
+"evidence": {
+  "source_build_fingerprint": "sha256:…",
+  "gates": { "placeholder_text_residue": { "status": "pass", "pages_checked": 2, "pages_failed": 0 } }
+}
+```
+
+A gate that did not run on that verdict is absent, never `pass`. Doctor reads
+`gates.placeholder_text_residue` back while `stages.assembly.build_fingerprint`
+still matches `source_build_fingerprint`: a recorded pass demotes the
+`template_contract.placeholder_text_residue` warning to a ready line and drops
+the matching `next` action; a rebuild or a failed gate brings the warning back
+(see `docs/template-family-contracts.md`). `evidence` is a QA-owned field, so
+the next QA record replaces it wholesale.
+
 `next` compares the declared depth against what was exercised:
 
 | Declared `order_path_depth` | `order_paths_executed` | `next` |
@@ -900,9 +918,22 @@ has no `purchase_proof`, and an unknown must never retroactively un-finish a
 campaign that was already complete. Unknown is advisory; only an explicit zero
 holds the pipeline at `qa`.
 
-If a no-order run is what you intend, declare it: set
-`qa.proof_policy.order_path_depth` to `off` on the packet. That is a deliberate,
-inspectable statement rather than a silent gap.
+If a no-order run is what you intend, declare it:
+`qa policy set --packet <packet> --order-path-depth off` (or
+`prepare-build`/`start ... --order-path-depth off` when the packet is first
+written). The setter accepts `off`, `common` or `full`, writes
+`qa.proof_policy.order_path_depth`, and — when the target already carries an
+assembly report — refreshes the report's `proof_policy` mirror in the same run.
+That is a deliberate, inspectable statement rather than a silent gap, and with
+`off` on both sides a `qa run --test-order off` pass reaches `next: done`.
+
+Do not hand-edit the packet's depth: the assembly report mirrors
+`qa.proof_policy` from prepare-build, and when the two disagree `next` reads
+the depth as unknown and cannot reach `done`. Doctor warns
+(`qa.proof_policy.order_path_depth_drift`, advisory, never a blocker) and the
+`next` `purchase_proof_unknown` action becomes a runnable command, both naming
+the same fix: `qa policy set --packet <packet> --order-path-depth <packet
+value>`, which re-states the packet's value into the mirror.
 
 ### Step-ladder evidence
 
@@ -926,14 +957,31 @@ off. Opening the checkout URL directly on the second shape used to run every
 fill step green and then sit in `order_submitted` for the full step budget,
 because the SDK never posts an order for an empty cart.
 
-The step opens the checkout and probes it for a main-cart selection surface:
+The step runs the **selector probe**: it loads the checkout once and reads it
+for a main-cart selection surface —
 `[data-next-bundle-selector]`, `[data-next-cart-selector]`, or a
 `[data-next-package-id]` card, **not** counting anything inside the rendered
 `[data-next-cart-summary]`, order-bump toggles, upsell-context selectors, or
-unrendered `<template>` content. When a surface is present the step is
-`skipped` with that reason, `opened_checkout` opens the checkout as before, and
-the rest of the ladder is unchanged — existing families run exactly as they
-did. When none is present the runner resolves the funnel's entry page from the
+unrendered `<template>` content. That load is the checkout's only load before
+the entry page, and the run remembers the answer per checkout URL: a
+`tiers:*` plan that drives the same checkout once per tier probes it on the
+first path only, and every later path reads the stored answer
+(`selection_surface_probe: reused` in the step evidence, `loaded` on the path
+that ran the probe). A probe whose page-side read failed is tagged
+`selection_surface_probe: failed` with the error in
+`selection_surface_probe_error`; the path proceeds to the entry page as
+before, but the evidence says the read broke rather than that the checkout
+carries nothing, and the failure is never stored for later paths. When a
+surface is present the step is `skipped` with that reason and
+`opened_checkout` keeps the page the probe left on the checkout
+(`already on checkout from the selector probe; not re-opened`), opening the
+checkout itself only when no prior path ran the probe and left the page on
+the checkout; the rest of the ladder is unchanged — existing families run exactly as they
+did, with the checkout loaded once per path rather than twice. That matters
+because every checkout load boots the SDK and fires its page-view events into
+the same capture the analytics legs and the receipt capture read, so a second
+load of the same URL was counted as the campaign's own traffic. When no
+surface is present the runner resolves the funnel's entry page from the
 same topology the rest of the ladder uses (the page whose `expected_next_url`
 is the checkout, preferring a `select`/`landing`/`product` page and then the
 lowest `order`; failing that, the topology's first entry-like page before the
@@ -960,8 +1008,10 @@ cart away. `opened_checkout` then records the arrival instead of re-opening.
 Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
 `landing_resolution` (`routes_into_checkout`, `entry_page_fallback`,
 `first_page_fallback`), `control_text`, `control_kind` (`add_to_cart` or
-`checkout_link`), `package_id`, `sdk_ready`, `arrived_url`, and the
-`checkout_selection_surface` probe result. The failure codes are
+`checkout_link`), `package_id`, `sdk_ready`, `arrived_url`, the
+`checkout_selection_surface` probe result, `selection_surface_probe`
+(`loaded`, `reused`, or `failed`), and `selection_surface_probe_error` when it
+failed. The failure codes are
 `cart_entry_unresolved` (no selection surface on checkout and no entry page
 resolves from the topology), `cart_entry_control_missing` (the entry page
 renders no control, or none carrying the requested ref), and

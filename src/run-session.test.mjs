@@ -805,7 +805,9 @@ test("runSessionEndArgs: every flag help documents for run-record is carried or 
   assert.ok(line, "help names run-record");
   const documented = [...line.matchAll(/--([a-z-]+)/g)].map((match) => match[1]);
   assert.ok(documented.length > 5, `help documents run-record's flags: ${documented.join(", ")}`);
-  const closerOwned = new Set(["packet", "run-id", "lifecycle-journal"]);
+  // The closer names the run id itself, so the id-resolution flags (--new-run)
+  // and the inspection-only mode (--list) are its to withhold, not to carry.
+  const closerOwned = new Set(["packet", "run-id", "lifecycle-journal", "new-run", "list"]);
   const extraArgs = Object.fromEntries(documented.map((flag) => [flag, `carried:${flag}`]));
   const endArgs = runSessionEndArgs({ run_id: "run_1", lifecycle_journal: "/p/lc.jsonl" }, "/p/packet.json", extraArgs);
   const dropped = documented.filter((flag) => !closerOwned.has(flag) && endArgs[flag] !== `carried:${flag}`);

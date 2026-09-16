@@ -11,11 +11,11 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { formatPolishCaptureText, main, polishCaptureCommand } from "./cli.mjs";
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import { createCheckpointWaiver } from "./checkpoint-waiver.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint, mergePolishPageLoadEvidence } from "./polish-node.mjs";
 
 const EXAMPLES = new URL("../examples/", import.meta.url);
-const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 
 function mainDocumentResponse(url, viewport, overrides = {}) {
   return {
@@ -53,13 +53,18 @@ function fixture({ explicitReport = false } = {}) {
   packet.campaign.route_root = "/runtime-packet-demo/";
   packet.assembly.target_repo = "target-page-kit";
   writeJson(packetPath, packet);
+  // The built output the capture binds to; the report records its fingerprint
+  // the way build does, from the output.
+  const builtRoot = join(targetRepo, "_site", packet.campaign.public_route_slug);
+  mkdirSync(join(builtRoot, "landing"), { recursive: true });
+  writeFileSync(join(builtRoot, "landing", "index.html"), "<html><body>Landing</body></html>");
 
   const report = readJson(new URL("assembly-report.example.json", EXAMPLES));
   report.identity.map_id = packet.spec.map_id;
   report.identity.public_route_slug = packet.campaign.public_route_slug;
   report.inputs.packet_path = "../campaign-runtime.build.json";
   report.stages.assembly.status = "completed";
-  report.stages.assembly.build_fingerprint = BUILD_FINGERPRINT;
+  report.stages.assembly.build_fingerprint = computeBuildFingerprint(builtRoot).fingerprint;
   report.stages.polish.status = "completed_with_warnings";
   report.stages.polish.evidence = {
     visual_review: { screenshots: ["qa-output/landing-desktop.png"] },

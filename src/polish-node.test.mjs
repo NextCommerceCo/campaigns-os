@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 
 import {
   assertPolishCaptureBindingUnchanged,
@@ -12,7 +17,15 @@ import {
   POLISH_CAPTURE_VIEWPORTS,
 } from "./polish-node.mjs";
 
-const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
+// A built output the capture bindings can bind to: the binding refuses a
+// missing route root and a recorded fingerprint the output does not match, so
+// the recorded value in every fixture report is the output's real value.
+const BUILT_REPO = mkdtempSync(join(tmpdir(), "campaigns-os-polish-node-"));
+mkdirSync(join(BUILT_REPO, "_site", "merchant", "landing"), { recursive: true });
+writeFileSync(join(BUILT_REPO, "_site", "merchant", "landing", "index.html"), "<html><body>Landing</body></html>");
+const BUILT_PACKET_PATH = join(BUILT_REPO, "campaign-runtime.build.json");
+const BUILD_FINGERPRINT = computeBuildFingerprint(join(BUILT_REPO, "_site", "merchant")).fingerprint;
+test.after(() => rmSync(BUILT_REPO, { recursive: true, force: true }));
 
 function mainDocumentResponse(url, overrides = {}) {
   return {
@@ -407,6 +420,67 @@ test("producer-to-gate source history retains a hidden at-load transfer after dy
   assert.equal(recordedCheckpoint(packet, initiallyVisible).status, "pass");
 });
 
+test("capture binding refuses a built output that drifted from the recorded fingerprint and pins the output during the browser pass", () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const report = completedReport();
+  const plan = planPolishCapture({ packet, baseUrl: "http://127.0.0.1:4173" });
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-polish-binding-"));
+  try {
+    const outputRoot = join(dir, "_site", "merchant", "landing");
+    mkdirSync(outputRoot, { recursive: true });
+    // A different output from the shared fixture's, so the shared recorded
+    // value is a stale record here.
+    writeFileSync(join(outputRoot, "index.html"), "<html><body>Landing (rebuilt)</body></html>");
+    const paths = { packetPath: join(dir, "campaign-runtime.build.json"), targetRepo: dir };
+
+    // No built route root at all: refused by name, never bound as a null.
+    assert.throws(
+      () => createPolishCaptureBinding({ packet, report, plan, packetPath: paths.packetPath, targetRepo: join(dir, "unbuilt") }),
+      /built output root _site\/merchant\/ is missing under the target repo/,
+    );
+
+    // Recorded string differs from the output on disk: refused by name.
+    assert.throws(
+      () => createPolishCaptureBinding({ packet, report, plan, ...paths }),
+      /built output under _site\/merchant\/ no longer matches stages\.assembly\.build_fingerprint/,
+    );
+
+    // Recorded the way build records it: bound, and the binding carries the
+    // output value so a rebuild mid-capture fails the unchanged assertion.
+    const current = computeBuildFingerprint(join(dir, "_site", "merchant")).fingerprint;
+    const bound = structuredClone(report);
+    bound.stages.assembly.build_fingerprint = current;
+    const initial = createPolishCaptureBinding({ packet, report: bound, plan, ...paths });
+    assert.equal(initial.report.assembly.output_fingerprint, current);
+
+    writeFileSync(join(outputRoot, "index.html"), "<html><body>Landing v2</body></html>");
+    assert.throws(
+      () => createPolishCaptureBinding({ packet, report: bound, plan, ...paths }),
+      /no longer matches/,
+    );
+
+    // An output the walk cannot read is a named refusal, not an uncaught
+    // filesystem error.
+    if (process.getuid?.() !== 0) {
+      chmodSync(join(outputRoot, "index.html"), 0o000);
+      try {
+        assert.throws(
+          () => createPolishCaptureBinding({ packet, report: bound, plan, ...paths }),
+          /could not be read to fingerprint it \(EACCES/,
+        );
+      } finally {
+        chmodSync(join(outputRoot, "index.html"), 0o644);
+      }
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("capture binding permits unrelated report updates and page-load merge preserves the latest report", () => {
   const packet = packetWithPages([{
     page_id: "landing",
@@ -419,8 +493,8 @@ test("capture binding permits unrelated report updates and page-load merge prese
     packet,
     report,
     plan,
-    packetPath: "/tmp/campaign/campaign-runtime.build.json",
-    targetRepo: "/tmp/campaign",
+    packetPath: BUILT_PACKET_PATH,
+    targetRepo: BUILT_REPO,
   });
 
   const latest = structuredClone(report);
@@ -430,8 +504,8 @@ test("capture binding permits unrelated report updates and page-load merge prese
     packet,
     report: latest,
     plan,
-    packetPath: "/tmp/campaign/campaign-runtime.build.json",
-    targetRepo: "/tmp/campaign",
+    packetPath: BUILT_PACKET_PATH,
+    targetRepo: BUILT_REPO,
   });
   assert.doesNotThrow(() => assertPolishCaptureBindingUnchanged(binding, latestBinding));
 
@@ -461,8 +535,8 @@ test("capture binding requires explicit resolved packet and target identities", 
   const plan = planPolishCapture({ packet, baseUrl: "http://127.0.0.1:4173" });
 
   for (const paths of [
-    { packetPath: null, targetRepo: "/tmp/campaign" },
-    { packetPath: "/tmp/campaign/campaign-runtime.build.json", targetRepo: null },
+    { packetPath: null, targetRepo: BUILT_REPO },
+    { packetPath: BUILT_PACKET_PATH, targetRepo: null },
   ]) {
     assert.throws(
       () => createPolishCaptureBinding({ packet, report, plan, ...paths }),
@@ -503,8 +577,8 @@ test("capture binding rejects governing report, packet, plan, and page_load chan
   report.stages.assembly.source_package_material_fingerprint = `sha256:${"c".repeat(64)}`;
   const baseUrl = "http://127.0.0.1:4173";
   const options = {
-    packetPath: "/tmp/campaign/campaign-runtime.build.json",
-    targetRepo: "/tmp/campaign",
+    packetPath: BUILT_PACKET_PATH,
+    targetRepo: BUILT_REPO,
   };
   const initial = createPolishCaptureBinding({
     packet,
@@ -539,7 +613,7 @@ test("capture binding rejects governing report, packet, plan, and page_load chan
         });
         assertPolishCaptureBindingUnchanged(initial, current);
       },
-      /attachment refused|identity to match/i,
+      /attachment refused|identity to match|no longer matches stages\.assembly\.build_fingerprint/i,
     );
   }
 });
@@ -557,8 +631,8 @@ test("a malformed existing page_load is replaceable but remains conflict-token b
     packet,
     report,
     plan,
-    packetPath: "/tmp/campaign/campaign-runtime.build.json",
-    targetRepo: "/tmp/campaign",
+    packetPath: BUILT_PACKET_PATH,
+    targetRepo: BUILT_REPO,
   });
   const pageLoad = {
     schema_version: "campaigns-os-polish-page-load/v0",
@@ -572,8 +646,8 @@ test("a malformed existing page_load is replaceable but remains conflict-token b
     packet,
     report: changed,
     plan,
-    packetPath: "/tmp/campaign/campaign-runtime.build.json",
-    targetRepo: "/tmp/campaign",
+    packetPath: BUILT_PACKET_PATH,
+    targetRepo: BUILT_REPO,
   });
   assert.throws(() => assertPolishCaptureBindingUnchanged(binding, changedBinding), /attachment refused/i);
 });
@@ -860,8 +934,8 @@ test("capture binding accepts missing polish evidence ancestors and preserves a 
   const options = {
     packet,
     plan,
-    packetPath: "/tmp/campaign/campaign-runtime.build.json",
-    targetRepo: "/tmp/campaign",
+    packetPath: BUILT_PACKET_PATH,
+    targetRepo: BUILT_REPO,
   };
 
   for (const mutate of [
@@ -895,8 +969,8 @@ test("capture binding verifies packet and target path identities after resolving
     packet,
     report,
     plan,
-    packetPath: "/tmp/campaign/campaign-runtime.build.json",
-    targetRepo: "/tmp/campaign",
+    packetPath: BUILT_PACKET_PATH,
+    targetRepo: BUILT_REPO,
   };
 
   assert.doesNotThrow(() => createPolishCaptureBinding(options));
@@ -926,8 +1000,8 @@ test("capture binding rejects incompatible report ancestors, unfinished assembly
   const options = {
     packet,
     plan,
-    packetPath: "/tmp/campaign/campaign-runtime.build.json",
-    targetRepo: "/tmp/campaign",
+    packetPath: BUILT_PACKET_PATH,
+    targetRepo: BUILT_REPO,
   };
   const cases = [
     {

@@ -98,6 +98,20 @@ test("polish gate blocks stale polish evidence", () => {
   assert.equal(gate.code, "polish.stale");
 });
 
+test("polish gate compares against the recomputed output fingerprint when the caller supplies one", () => {
+  const report = baseReport(validPolish({ source_build_fingerprint: FINGERPRINT }));
+  assert.equal(evaluatePolishGate({ report, currentOutputFingerprint: FINGERPRINT }).status, "pass");
+  assert.equal(evaluatePolishGate({ report, currentOutputFingerprint: null }).status, "pass");
+
+  const drifted = evaluatePolishGate({ report, currentOutputFingerprint: "sha256:output-now" });
+  assert.equal(drifted.status, "blocked");
+  assert.equal(drifted.code, "polish.output_drift");
+  assert.equal(drifted.build_fingerprint, FINGERPRINT);
+  assert.equal(drifted.current_output_fingerprint, "sha256:output-now");
+  assert.match(drifted.reason, /no longer matches stages\.assembly\.build_fingerprint/);
+  assert.deepEqual(drifted.required_actions.map((action) => action.id), ["rerun_build", "run_polish"]);
+});
+
 test("polish gate blocks when assembly lacks current source package fingerprint", () => {
   const report = baseReport(validPolish(), {
     design_source_package: { material_fingerprint: SOURCE_PACKAGE_FINGERPRINT },
@@ -615,6 +629,7 @@ const GATE_BLOCKER_CODES = [
   "polish.self_certified",
   "polish.source_build_fingerprint_missing",
   "polish.stale",
+  "polish.output_drift",
   "polish.source_package_material_fingerprint_missing",
   "polish.source_package_stale",
   "polish.completed_at_missing",
