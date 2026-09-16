@@ -10,7 +10,7 @@
  * checkout pages.
  */
 
-import { specHashOf, specHashesMatch } from "./spec-identity.mjs";
+import { specHashOf, specHashesMatch } from "./spec-hash.mjs";
 
 export const CALC_LABEL = "Campaigns-calculated · before tax";
 export const CALCULATED_PAIR_EVIDENCE = "calculated_pair";
