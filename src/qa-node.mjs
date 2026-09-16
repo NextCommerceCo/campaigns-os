@@ -1,6 +1,7 @@
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
+import { parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import {
   isAbsoluteHttpUrl,
   normalizePageKitRoute,
@@ -29,6 +30,7 @@ function cmd(verb, rest = "") {
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
@@ -43,7 +45,7 @@ import {
 } from "../campaign-spec/dist/index.js";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { probeRouteUrls, ROUTE_PROBE_DEFAULT_TIMEOUT_MS } from "./qa-route-probe.mjs";
-import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
+import { resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
@@ -89,7 +91,7 @@ Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
   campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--json]
-  campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--json]
+  campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
@@ -164,6 +166,10 @@ Options:
   --preview-url <url>             qa policy set: persist packet deploy.preview_url.
   --production-url <url>          qa policy set: persist packet deploy.production_url.
   --deploy-target <target>        qa policy set: persist packet deploy.target.
+  --order-path-depth <depth>      qa policy set: persist packet qa.proof_policy.order_path_depth (off, common or full)
+                                  and refresh the assembly report's proof_policy mirror when one exists, so the
+                                  two never disagree. "off" declares an intentional no-order run: a
+                                  --test-order off pass then owes no purchase proof and next can reach done.
   --step-timeout-ms <ms>          Typed-card test-order per-step timeout. Default: 45000.
   --order-timeout-ms <ms>         Typed-card test-order per-path overall timeout. Default: 240000.
   --theme-waive <reason>          Waive a blocked theme gate for this run with an explicit operator reason
@@ -688,9 +694,12 @@ export function resolveQaInputsFromSite(args) {
 
 function loadCommerceStructureContract({ packet, packetPath, templateFamily }) {
   if (!packet || !packetPath || !templateFamily) return null;
-  const catalogPathValue = packet.assembly?.commerce_catalog?.path;
-  if (!catalogPathValue) return { family: templateFamily, status: "missing_catalog_path", pages: {} };
-  const catalogPath = resolveFromFile(packetPath, catalogPathValue);
+  // A null path is the toolkit's own catalog; a recorded path that is dead
+  // here but names the catalog file also falls back to it (see
+  // resolvePacketCommerceCatalogPath).
+  const catalogResolution = resolvePacketCommerceCatalogPath(packetPath, packet.assembly?.commerce_catalog);
+  const catalogPathValue = catalogResolution.recorded;
+  const catalogPath = catalogResolution.path;
   if (!catalogPath || !existsSync(catalogPath)) return { family: templateFamily, status: "missing_catalog", pages: {} };
   try {
     const catalog = resolveCommerceCatalog(catalogPath);
@@ -1684,23 +1693,51 @@ function updateQaPolicy(args) {
   // script still passing them gets told so instead of a silent no-op.
   const removedFlags = REMOVED_QA_POLICY_FLAGS.filter((flag) => flag in args);
   if (removedFlags.length) {
-    throw new Error(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders run from --test-order <mode> alone; there is no permission flag). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url.`);
+    throw new Error(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders run from --test-order <mode> alone; there is no permission flag). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth.`);
   }
+  // Validated with the other argv checks, before anything is written.
+  const orderPathDepth = parseOrderPathDepthFlag(args, { command: "qa policy set" });
 
   const changed = [];
   setOptionalBoolean(packet.campaign, "allowed_domains_confirmed", args, "allowed-domains-confirmed", changed);
   setOptionalString(packet.deploy, "preview_url", args, "preview-url", changed);
   setOptionalString(packet.deploy, "production_url", args, "production-url", changed);
   setOptionalString(packet.deploy, "target", args, "deploy-target", changed);
+  if (orderPathDepth) {
+    packet.qa.proof_policy = isPlainObject(packet.qa.proof_policy) ? packet.qa.proof_policy : {};
+    setIfChanged(packet.qa.proof_policy, "order_path_depth", orderPathDepth, changed);
+  }
 
+  const staleReason = `The Build Packet changed after this doctor snapshot (qa policy set). Re-run ${cmd("doctor")} (or next) for current state.`;
   if (changed.length) {
     writeJson(packetPath, packet);
     // #171: packet edits change what doctor would conclude; the retained
     // doctor sidecar (if any) now predates them.
     markDoctorSidecarStale(targetRepoFor(packetPath, packet), {
       command: "qa policy set",
-      reason: `The Build Packet changed after this doctor snapshot (qa policy set). Re-run ${cmd("doctor")} (or next) for current state.`,
+      reason: staleReason,
     });
+  }
+  // The assembly report mirrors qa.proof_policy from prepare-build, and
+  // assessPurchaseProofCoverage reads a packet/report disagreement as an
+  // unknown depth that holds `next` short of done. Whenever a depth is set,
+  // the mirror is refreshed through the same ledger write every other report
+  // edit uses — even when the packet already held that value, so a hand-edited
+  // packet whose mirror lags is reconciled by re-stating the packet's value.
+  // A packet with no report yet (pre-prepare-build) is left alone.
+  let reportMirror = null;
+  if (orderPathDepth) {
+    const workspace = resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true });
+    if (existsSync(workspace.reportPath)) {
+      const outcome = commitAssemblyReport(workspace, (report) => {
+        const mirror = isPlainObject(report.proof_policy) ? report.proof_policy : {};
+        if (mirror.order_path_depth === orderPathDepth) return null;
+        report.proof_policy = { ...mirror, order_path_depth: orderPathDepth };
+        return report;
+      }, { command: "qa policy set", staleReason });
+      reportMirror = { report_path: outcome.reportPath, written: outcome.written, order_path_depth: orderPathDepth };
+      if (outcome.written) changed.push("report.proof_policy.order_path_depth");
+    }
   }
   return {
     ok: true,
@@ -1708,6 +1745,7 @@ function updateQaPolicy(args) {
     packet_path: packetPath,
     changed,
     policy: policySnapshot(packet),
+    ...(reportMirror ? { report_mirror: reportMirror } : {}),
   };
 }
 
@@ -2453,11 +2491,15 @@ async function runPageChecks(page, args, {
     const actual = actualMeta[name] || null;
     const unsupportedHint = unsupportedSdkMetaHint(name);
     if (unsupportedHint) {
+      // A spec key the SDK does not read is a stale Map page hint, whether or
+      // not the tag rendered: nothing for a human to review, so `warn`, never
+      // `manual_review`. Doctor reports the same key as
+      // sdk_hints.meta_tags.ignored_by_sdk from the same list.
       assertions.push(assertion({
         id: `meta:${page.page_id}:${name}`,
         family: "meta-tags",
         page,
-        status: STATUS.MANUAL_REVIEW,
+        status: STATUS.WARN,
         severity: SEVERITY.WARN,
         expected: unsupportedHint.expected,
         actual: actual
@@ -3231,6 +3273,9 @@ function policySnapshot(packet) {
       preview_url: packet.deploy?.preview_url ?? null,
       production_url: packet.deploy?.production_url ?? null,
     },
+    qa: {
+      order_path_depth: packet.qa?.proof_policy?.order_path_depth ?? null,
+    },
   };
 }
 
@@ -3387,26 +3432,14 @@ function isRoutingMetaTag(name) {
 // and surrounding whitespace so a stray-space tag lands on the intended branch
 // instead of falling through to the strict comparison as a BLOCKER.
 function normalizeMetaName(name) {
-  return String(name || "").trim().toLowerCase();
+  return normalizeSdkMetaName(name);
 }
 
+// The SDK-ignored list lives in sdk-meta-tags.mjs and doctor reads the same
+// map, so QA and doctor can never disagree about which spec keys the SDK
+// reads. Returns the map entry ({ expected, actual, note }) or null.
 function unsupportedSdkMetaHint(name) {
-  const normalized = normalizeMetaName(name);
-  if (normalized === "next-currency") {
-    return {
-      expected: "Campaign Cart currency from the currency URL parameter, remembered session choice, or SDK default",
-      actual: "No page-level currency override to verify",
-      note: "Campaign Cart does not read a next-currency meta tag. Currency behavior is optional and must be verified through the documented URL/session/default flow.",
-    };
-  }
-  if (normalized === "next-predictive-address") {
-    return {
-      expected: "window.nextConfig.addressConfig.enableAutocomplete",
-      actual: "Autocomplete config requires browser/config review",
-      note: "Campaign Cart does not read a next-predictive-address meta tag. Predictive address is optional and configured through window.nextConfig.addressConfig.enableAutocomplete.",
-    };
-  }
-  return null;
+  return lookupSdkIgnoredMetaTag(name);
 }
 
 function metaTagMatches(name, actual, expected) {

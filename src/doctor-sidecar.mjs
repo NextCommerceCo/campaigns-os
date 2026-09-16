@@ -47,3 +47,15 @@ export function markDoctorSidecarStale(targetBaseDir, { command = null, reason =
   writeJsonAtomic(path, stamped);
   return path;
 }
+
+// The retained doctor sidecar records its own verdict twice: `ok` (boolean)
+// and `status` ("ready", "ready_with_warnings", "ready_with_waivers",
+// "blocked"). A bundle consumer must read that verdict rather than treat the
+// sidecar's presence, schema validity, or freshness as readiness: a blocked
+// doctor run is a perfectly well-formed artifact whose content says the
+// campaign cannot proceed. Either signal blocks; a sidecar that is not an
+// object reports nothing (its shape is the schema check's job, not this one's).
+export function doctorSidecarBlocked(sidecar) {
+  if (!sidecar || typeof sidecar !== "object" || Array.isArray(sidecar)) return false;
+  return sidecar.status === "blocked" || sidecar.ok === false;
+}
