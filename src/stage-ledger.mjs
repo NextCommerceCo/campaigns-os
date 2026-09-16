@@ -1,6 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
+import {
+  ASSEMBLY_REPORT_STAGE_KEYS,
+  NEXT_STAGE_CONTRACTS,
+  NEXT_STAGE_OWNERS,
+  stageIsBlocked,
+  stageIsTerminal,
+} from "./orchestration-stage-contract.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
 
@@ -204,6 +211,112 @@ export function recordProducerStageOutcome(report, {
   return updated;
 }
 
+// The gates that sit before the ladder, in the order the `next` picker
+// consults them: a blocked prepare-build or a blocked doctor holds every
+// stage behind it. Neither is a ladder step — a pending doctor (prepare-build
+// with --no-doctor, or a report written before doctor ran) does not hold the
+// ladder, exactly as the picker does not walk it.
+const PRE_LADDER_GATES = Object.freeze([
+  Object.freeze({ reportKey: "prepare_build", cliStage: "prepare-build" }),
+  Object.freeze({ reportKey: "doctor", cliStage: "doctor-blocked" }),
+]);
+
+function stageOf(report, key) {
+  const stage = report?.stages?.[key];
+  return isPlainObject(stage) ? stage : null;
+}
+
+function stageBlockers(stage) {
+  return Array.isArray(stage?.blockers) ? stage.blockers : [];
+}
+
+/**
+ * True when any recorded stage on `report` has status "blocked".
+ */
+export function anyAssemblyReportStageBlocked(report) {
+  return ASSEMBLY_REPORT_STAGE_KEYS.some((key) => stageIsBlocked(stageOf(report, key)?.status));
+}
+
+function nextBlock(cliStage, action, extras = {}) {
+  const owners = NEXT_STAGE_OWNERS[cliStage];
+  return { stage: cliStage, owner: owners.default_skill, action, ...extras };
+}
+
+/**
+ * The Assembly Report's top-level summary, computed from the stage ledger it
+ * carries and nothing else. Every write of the report restates it
+ * (commitAssemblyReport, and prepare-build's initial write), so the summary
+ * can never lag the stages: before this it was written once by prepare-build
+ * and a finished ladder still read `status: "prepared"`, `next.stage:
+ * "setup"`, `blockers: []` beside a blocked or completed QA stage.
+ *
+ * - `status`: "blocked" when any recorded stage is blocked; "completed" when
+ *   every ladder stage (setup, build, polish, deploy, qa) is terminal and no
+ *   pre-ladder gate is blocked; otherwise "prepared".
+ * - `next`: the first stage that is not terminal, in the order the `next`
+ *   command walks — a blocked prepare-build ("prepare-build"), a blocked
+ *   doctor ("doctor-blocked"), then the ladder in NEXT_STAGE_CONTRACTS order,
+ *   then "done". `next.stage` uses the picker's vocabulary (the `next <stage>`
+ *   argument, so "build" not "assembly"), `next.owner` names the skill that
+ *   owns the stage, and `next.blocked` is true when the named stage is the one
+ *   holding the ladder. This is the ledger's own position only: the `next`
+ *   command additionally folds in live gates (doctor findings, purchase-proof
+ *   coverage, the polish gate) and stays the authority for what runs next.
+ * - `blockers`: the union of the `blockers[]` of every stage currently
+ *   blocked, in stage order, exact duplicates collapsed. A stage that was
+ *   blocked and later passed contributes nothing, so a blocker cleared by a
+ *   re-run leaves the top level with the stage.
+ */
+export function deriveAssemblyReportSummary(report) {
+  if (!isPlainObject(report)) throw new TypeError("deriveAssemblyReportSummary requires an Assembly Report object.");
+  const blockers = [];
+  const seen = new Set();
+  for (const key of ASSEMBLY_REPORT_STAGE_KEYS) {
+    const stage = stageOf(report, key);
+    if (!stageIsBlocked(stage?.status)) continue;
+    for (const blocker of stageBlockers(stage)) {
+      const id = JSON.stringify(canonicalize(blocker));
+      if (seen.has(id)) continue;
+      seen.add(id);
+      blockers.push(JSON.parse(JSON.stringify(blocker)));
+    }
+  }
+  const anyBlocked = anyAssemblyReportStageBlocked(report);
+
+  let next = null;
+  for (const gate of PRE_LADDER_GATES) {
+    if (!stageIsBlocked(stageOf(report, gate.reportKey)?.status)) continue;
+    next = nextBlock(gate.cliStage, `Stage "${gate.reportKey}" is blocked; resolve its blockers before any stage runs.`, { blocked: true });
+    break;
+  }
+  if (!next) {
+    for (const { cliStage, reportKey } of NEXT_STAGE_CONTRACTS) {
+      const status = stageOf(report, reportKey)?.status;
+      if (stageIsBlocked(status)) {
+        next = nextBlock(cliStage, `Stage "${reportKey}" is blocked; unblock it, then run ${cliStage}.`, { blocked: true });
+        break;
+      }
+      if (!stageIsTerminal(status)) {
+        next = nextBlock(cliStage, `Run ${cliStage} with this packet.`);
+        break;
+      }
+    }
+  }
+  if (!next) next = nextBlock("done", "Every stage is terminal; run next to confirm the closeout actions.");
+
+  const status = anyBlocked ? "blocked" : next.stage === "done" ? "completed" : "prepared";
+  return { status, next, blockers };
+}
+
+/**
+ * A copy of `report` with its derived summary (`status`, `next`, `blockers`)
+ * restated from its stages. Everything else on the report passes through.
+ */
+export function withDerivedAssemblyReportSummary(report) {
+  const copy = JSON.parse(JSON.stringify(report));
+  return { ...copy, ...deriveAssemblyReportSummary(copy) };
+}
+
 /**
  * True when `report` is this packet's Assembly Report: the identity block
  * names the packet's map id and public route slug (both absent on both sides
@@ -314,7 +427,12 @@ export function commitAssemblyReport(workspace, mutate, {
     outcome.skipped = "identity";
     return finish();
   }
-  const next = mutate(report);
+  const mutated = mutate(report);
+  // The summary is restated on every write, so a report whose top level lags
+  // its stages (written before the summary was derived) heals on the next
+  // commit; after that the restatement is a no-op and the unchanged check
+  // below keeps the file's bytes alone.
+  const next = mutated === null || mutated === undefined ? mutated : withDerivedAssemblyReportSummary(mutated);
   if (next === null || next === undefined || (stage && producerStageOutcomeUnchanged(report, next, stage))) {
     outcome.skipped = "unchanged";
     return finish();

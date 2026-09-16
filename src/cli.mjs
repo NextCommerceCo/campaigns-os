@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
-import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { anyAssemblyReportStageBlocked, commitAssemblyReport, recordProducerStageOutcome, withDerivedAssemblyReportSummary } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -208,7 +208,11 @@ import {
 import {
   ASSEMBLY_REPORT_STAGE_KEYS,
   NEXT_STAGE_ORDER,
+  NEXT_STAGE_OWNERS,
+  STAGE_TERMINAL_STATUS_PREFIXES,
   reportKeyForCliStage,
+  stageIsBlocked,
+  stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
@@ -2480,7 +2484,10 @@ function prepareBuild(args, options = {}) {
     ];
   }
 
-  const report = createAssemblyReport({
+  // The top-level status/next/blockers are derived from the stages by the same
+  // function every later commit of the report runs (stage-ledger.mjs), so
+  // prepare-build's first write and a producer's last write spell them alike.
+  const report = withDerivedAssemblyReportSummary(createAssemblyReport({
     packetPath,
     contextPath,
     reportPath,
@@ -2495,7 +2502,7 @@ function prepareBuild(args, options = {}) {
     declaredScopeSkips,
     buildScopeReasonsInvalid,
     templateSelection,
-  });
+  }));
 
   publishPrepareBuildJsonOutputs([
     { label: "Build Packet", path: packetPath, value: packet },
@@ -2641,7 +2648,10 @@ function createAssemblyReport({
     schema_version: REPORT_SCHEMA,
     run_id: `asm_${Date.now()}`,
     generated_at: new Date().toISOString(),
-    status: blockers.length ? "blocked" : "prepared",
+    // status, blockers and next are restated from the stages by
+    // withDerivedAssemblyReportSummary before the report is written; the
+    // seeds here only keep the schema's required keys in their usual order.
+    status: "prepared",
     identity: {
       map_id: packet.spec.map_id,
       public_route_slug: packet.campaign.public_route_slug,
@@ -2723,13 +2733,7 @@ function createAssemblyReport({
         : []),
       ...sourceAssetWarningsForReport(context.source?.asset_crawl),
     ],
-    next: blockers.length
-      ? { stage: "collect-inputs", owner: "operator", action: "Resolve source/page blockers before build." }
-      : {
-          stage: scaffoldRequired ? "setup" : "assembly",
-          owner: scaffoldRequired ? "next-campaigns-os-setup" : "next-campaigns-build",
-          action: scaffoldRequired ? "Run setup before build." : "Run build with this packet and context.",
-        },
+    next: null,
   };
 }
 
@@ -7603,30 +7607,14 @@ function validateAssemblyProofPolicy(policy, warnings, ready) {
 }
 
 // The orchestration stage contract lives in orchestration-stage-contract.mjs so
-// report producers, validators, and the `next` picker share one deterministic
-// source for stage order and CLI-stage/report-key translation.
-/**
- * Status values that count as terminal under PREFIX matching — so
- * "completed", "completed_with_warnings", and "completed_partial" all
- * count as terminal under "completed". This matches how the existing
- * stages already report sub-statuses (see report.stages.assembly.status
- * shapes in src/cli.mjs and qa/shared/qa-verdict.js). Renamed from
- * STAGE_TERMINAL_STATUSES to make the prefix-matching contract explicit.
- */
-const STAGE_TERMINAL_STATUS_PREFIXES = Object.freeze(["completed", "skipped"]);
+// report producers, validators, the `next` picker and the Assembly Report's
+// derived summary share one deterministic source for stage order, terminal
+// status prefixes, stage owners and CLI-stage/report-key translation.
 const POLISH_GATE_BUILD_RERUN_CODES = Object.freeze(new Set([
   "polish.assembly_source_package_fingerprint_missing",
   "polish.assembly_source_package_stale",
 ]));
 
-function stageIsTerminal(status) {
-  const normalized = String(status || "");
-  return STAGE_TERMINAL_STATUS_PREFIXES.some((t) => normalized.startsWith(t));
-}
-
-function stageIsBlocked(status) {
-  return String(status || "") === "blocked";
-}
 
 function polishGateRequiresBuild(polishGate) {
   return polishGate?.status === "blocked" && POLISH_GATE_BUILD_RERUN_CODES.has(polishGate.code);
@@ -7890,13 +7878,17 @@ function prepareBuildGateIssue(report, { required = false, reportPath = null, bi
   const topLevelDspBlockers = (Array.isArray(report?.blockers) ? report.blockers : [])
     .filter((blocker) => blocker?.code === "DESIGN_SOURCE_PACKAGE_NOT_READY");
   const contradictoryBlockers = uniquePrepareBuildBlockers([...stageBlockers, ...topLevelDspBlockers]);
+  // report.status is derived from every stage, so "blocked" beside a terminal
+  // prepare_build is only a contradiction when no stage at all is blocked: a
+  // blocked QA stage legitimately reads blocked at the top level.
+  const unexplainedBlockedStatus = report?.status === "blocked" && !anyAssemblyReportStageBlocked(report);
   if (stageIsTerminal(status) && (
-    report?.status === "blocked"
+    unexplainedBlockedStatus
     || stageBlockers.length > 0
     || topLevelDspBlockers.length > 0
   )) {
     const contradictions = [
-      ...(report?.status === "blocked" ? ["report.status=blocked"] : []),
+      ...(unexplainedBlockedStatus ? ["report.status=blocked"] : []),
       ...(stageBlockers.length ? [`stages.prepare_build.blockers=${stageBlockers.length}`] : []),
       ...(topLevelDspBlockers.length ? [`top-level DSP blockers=${topLevelDspBlockers.length}`] : []),
     ];
@@ -9247,17 +9239,9 @@ function sourcePreparationAction(errors, warnings) {
 // next: doctor used to carry its own decider with its own vocabulary
 // (collect-inputs / assembly / complete) and its own gating, which knew
 // neither purchase proof nor the prepare-build gate, and listed the stage it
-// recommended inside blocked_stages.
-export const DOCTOR_NEXT_STAGE_OWNERS = Object.freeze({
-  "prepare-build": { owner: "operator", default_skill: "next-campaigns-os" },
-  "doctor-blocked": { owner: "operator", default_skill: "next-campaigns-os" },
-  setup: { owner: "setup", default_skill: "next-campaigns-os-setup" },
-  build: { owner: "build", default_skill: "next-campaigns-build" },
-  polish: { owner: "polish", default_skill: "next-campaigns-polish" },
-  deploy: { owner: "operator", default_skill: "next-campaigns-os" },
-  qa: { owner: "qa", default_skill: "next-campaigns-qa" },
-  done: { owner: "qa", default_skill: "next-campaigns-os" },
-});
+// recommended inside blocked_stages. The table itself lives on the stage
+// contract so the Assembly Report's derived `next` spells owners the same way.
+export const DOCTOR_NEXT_STAGE_OWNERS = NEXT_STAGE_OWNERS;
 
 // The code -> action strings doctor prints under `Next:`. They describe the
 // repairs the findings ask for and are independent of which stage the picker

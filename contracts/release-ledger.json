@@ -3540,6 +3540,45 @@
         }
       ],
       "entry_sha256": "610cfb6dc40b6e02eb027f8e3bc3c4a2a67563bc4f2a1ef1c8689206ac29727a"
+    },
+    {
+      "id": "RL-0096",
+      "sequence": 96,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.7",
+      "changelog_sha256": "dc155cb640f37177ec00e5a91ec70da6f05c9bce27ba5fcff4e601a5a0d21429",
+      "agent_impact": "The Assembly Report's top-level status, next and blockers are now derived from stages on every write (prepare-build's first write and every stage record or operator edit after it) instead of written once by prepare-build. status reads blocked while any recorded stage is blocked, completed once every ladder stage (setup, build, polish, deploy, qa) is terminal, and prepared otherwise; before this a finished ladder still read status prepared, next.stage setup and blockers [] beside a stages.qa of completed_with_warnings or blocked. blockers is the union of the blockers[] of the stages currently blocked. next uses the next <stage> vocabulary: next.stage is the first non-terminal ladder stage (setup, build, polish, deploy, qa, done) or prepare-build / doctor-blocked when that gate is blocked, next.owner is the owning skill, and next.blocked true marks the stage holding the ladder. A consumer that branched on next.stage === 'assembly' must branch on 'build', on 'collect-inputs' on 'prepare-build', and one that expected status 'prepared' for a finished campaign must accept 'completed'. next and doctor no longer treat a terminal stages.prepare_build beside status blocked as a contradiction when another stage is the one blocked. A report written before this change is rewritten once on its next commit; an unchanged re-record still leaves the file's bytes alone. The report schema is unchanged (status is a free string, next keeps stage/owner/action).",
+      "compatibility": "compatible",
+      "migration": "Readers of the Assembly Report's next.stage: rename assembly -> build and collect-inputs -> prepare-build. Readers of report.status: a finished campaign now reads completed, not prepared; blocked can come from any stage, so read stages.<key>.status for which one. Nothing to do for consumers that read stages directly.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "The initial Assembly Report's status, next and blockers come from the same derivation every later commit runs; next names prepare-build (owner next-campaigns-os) when the prepare_build stage is blocked, otherwise setup or build."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "A terminal stages.prepare_build beside report.status blocked is a contradiction only when no recorded stage is blocked; a blocked QA or doctor stage no longer trips the prepare-build gate."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "Same prepare-build gate narrowing as next; the doctor and qa stage records now restate the report's top-level status, next and blockers on every write."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The orchestration loop section documents the derived top-level status, next and blockers of the Assembly Report and the next vocabulary they use."
+        }
+      ],
+      "entry_sha256": "092041d12152ad3fe2b91dbfd2bb51251a304c9c6e4fef1ec8c4a11d9addfe8e"
     }
   ]
 }

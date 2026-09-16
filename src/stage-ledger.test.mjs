@@ -8,8 +8,10 @@ import { join } from "node:path";
 import {
   assemblyReportMatchesPacket,
   commitAssemblyReport,
+  deriveAssemblyReportSummary,
   producerStageOutcomeUnchanged,
   recordProducerStageOutcome,
+  withDerivedAssemblyReportSummary,
 } from "./stage-ledger.mjs";
 
 function report() {
@@ -576,4 +578,121 @@ test("assemblyReportMatchesPacket compares map id and public route slug, absent 
   assert.equal(assemblyReportMatchesPacket({ stages: {} }, { campaign: {} }), true);
   assert.equal(assemblyReportMatchesPacket(null, packet), false);
   assert.equal(assemblyReportMatchesPacket([], packet), false);
+});
+
+// The report's top-level status / next / blockers are derived from its stages
+// on every write, so they can never lag the ladder.
+
+const LADDER = ["prepare_build", "doctor", "setup", "assembly", "polish", "deploy", "qa"];
+
+function ladderReport(statuses = {}, { status = "prepared", next = { stage: "setup", owner: "next-campaigns-os-setup", action: "Run setup before build." } } = {}) {
+  const stages = Object.fromEntries(LADDER.map((stage) => [stage, {
+    stage,
+    status: statuses[stage] ?? "completed",
+    inputs: [],
+    outputs: [],
+    commands: [],
+    blockers: [],
+    warnings: [],
+  }]));
+  return { identity: { map_id: "map_1", public_route_slug: "demo" }, status, blockers: [], evidence: [], stages, next };
+}
+
+test("a finished ladder no longer reads prepared/setup: status, next and blockers are re-derived on every commit", () => {
+  // The on-disk report carries the summary prepare-build wrote first, and every stage since has completed.
+  const stale = ladderReport({ qa: "pending" });
+  const { dir, workspace } = workspaceFixture({ report: stale });
+  const outcome = commitAssemblyReport(workspace, (report) => recordProducerStageOutcome(report, {
+    stage: "qa",
+    disposition: "ready_with_warnings",
+    timestamp: "2026-09-16T00:00:00.000Z",
+    command: "campaigns-os qa run",
+  }), { stage: "qa", refreshDoctor: () => null });
+  assert.equal(outcome.written, true);
+  const written = readJson(workspace.reportPath);
+  assert.equal(written.stages.qa.status, "completed_with_warnings");
+  assert.equal(written.status, "completed", "every ladder stage is terminal, so the report is completed, not prepared");
+  assert.equal(written.next.stage, "done");
+  assert.equal(written.next.owner, "next-campaigns-os");
+  assert.deepEqual(written.blockers, []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a blocked qa stage reads blocked at the top level and names qa next, carrying the stage's blockers", () => {
+  const { dir, workspace } = workspaceFixture({ report: ladderReport({ qa: "pending" }) });
+  commitAssemblyReport(workspace, (report) => recordProducerStageOutcome(report, {
+    stage: "qa",
+    disposition: "blocked",
+    timestamp: "2026-09-16T00:00:00.000Z",
+    command: "campaigns-os qa run",
+    blockers: ["checkout assertion failed"],
+  }), { stage: "qa", refreshDoctor: () => null });
+  const written = readJson(workspace.reportPath);
+  assert.equal(written.status, "blocked");
+  assert.equal(written.next.stage, "qa");
+  assert.equal(written.next.blocked, true);
+  assert.deepEqual(written.blockers, ["checkout assertion failed"]);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("the summary follows the latest outcome: a doctor recorded blocked and later passed clears the top level", () => {
+  const { dir, workspace } = workspaceFixture({ report: ladderReport({ doctor: "pending", setup: "pending", assembly: "pending", polish: "pending", deploy: "pending", qa: "pending" }) });
+  const doctor = (disposition, blockers, timestamp) => (report) => recordProducerStageOutcome(report, {
+    stage: "doctor",
+    disposition,
+    timestamp,
+    command: "campaigns-os doctor",
+    blockers,
+  });
+  commitAssemblyReport(workspace, doctor("blocked", ["store profile missing"], "2026-09-16T00:00:00.000Z"), { stage: "doctor", refreshDoctor: () => null });
+  const blocked = readJson(workspace.reportPath);
+  assert.equal(blocked.status, "blocked");
+  assert.equal(blocked.next.stage, "doctor-blocked");
+  assert.deepEqual(blocked.blockers, ["store profile missing"]);
+
+  commitAssemblyReport(workspace, doctor("ready", [], "2026-09-16T00:10:00.000Z"), { stage: "doctor", refreshDoctor: () => null });
+  const passed = readJson(workspace.reportPath);
+  assert.equal(passed.status, "prepared");
+  assert.equal(passed.next.stage, "setup", "the first non-terminal ladder stage, in the order next walks");
+  assert.equal(passed.next.owner, "next-campaigns-os-setup");
+  assert.deepEqual(passed.blockers, [], "a blocker cleared by the re-run leaves the top level with the stage");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("an operator edit restates the summary too, and a summary that is already current does not move the file", () => {
+  const { dir, workspace } = workspaceFixture({ report: ladderReport() });
+  const restate = (timestamp) => (report) => recordProducerStageOutcome(report, {
+    stage: "qa",
+    disposition: "ready",
+    timestamp,
+    command: "campaigns-os qa run",
+  });
+  const first = commitAssemblyReport(workspace, (report) => restate("2026-09-16T00:00:00.000Z")({ ...report, note: "edited" }), { command: "unit waive", staleReason: "unit reason" });
+  assert.equal(first.written, true);
+  assert.equal(readJson(workspace.reportPath).status, "completed");
+  const bytes = readFileSync(workspace.reportPath, "utf8");
+  const rerun = commitAssemblyReport(workspace, restate("2026-09-16T01:00:00.000Z"), { stage: "qa", refreshDoctor: () => null });
+  assert.deepEqual([rerun.written, rerun.skipped], [false, "unchanged"]);
+  assert.equal(readFileSync(workspace.reportPath, "utf8"), bytes);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("deriveAssemblyReportSummary walks the ladder in next's order and collapses duplicate blockers", () => {
+  const partway = deriveAssemblyReportSummary(ladderReport({ polish: "pending", deploy: "pending", qa: "pending" }));
+  assert.deepEqual([partway.status, partway.next.stage, partway.next.owner], ["prepared", "polish", "next-campaigns-polish"]);
+  assert.equal(partway.next.blocked, undefined);
+
+  const skipped = deriveAssemblyReportSummary(ladderReport({ setup: "skipped", assembly: "pending", polish: "pending", deploy: "pending", qa: "pending" }));
+  assert.equal(skipped.next.stage, "build", "the report's next uses the next <stage> vocabulary, so assembly is named build");
+
+  const gate = ladderReport({ prepare_build: "blocked", setup: "pending", assembly: "pending", polish: "pending", deploy: "pending", qa: "pending" });
+  const blocker = { code: "MISSING_SOURCE_PAGE", message: "no source for checkout" };
+  gate.stages.prepare_build.blockers = [blocker, { ...blocker }];
+  const blocked = deriveAssemblyReportSummary(gate);
+  assert.deepEqual([blocked.status, blocked.next.stage, blocked.next.owner, blocked.next.blocked], ["blocked", "prepare-build", "next-campaigns-os", true]);
+  assert.deepEqual(blocked.blockers, [blocker]);
+
+  const completed = withDerivedAssemblyReportSummary(ladderReport());
+  assert.deepEqual([completed.status, completed.next.stage], ["completed", "done"]);
+  assert.throws(() => deriveAssemblyReportSummary(null), /Assembly Report object/);
 });
