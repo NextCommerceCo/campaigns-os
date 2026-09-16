@@ -29,7 +29,7 @@ function cmd(verb, rest = "") {
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
-import { normalizeSdkMetaName, sdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
+import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
@@ -3399,7 +3399,7 @@ function normalizeMetaName(name) {
 // map, so QA and doctor can never disagree about which spec keys the SDK
 // reads. Returns the map entry ({ expected, actual, note }) or null.
 function unsupportedSdkMetaHint(name) {
-  return sdkIgnoredMetaTag(name);
+  return lookupSdkIgnoredMetaTag(name);
 }
 
 function metaTagMatches(name, actual, expected) {

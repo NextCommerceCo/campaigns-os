@@ -32,9 +32,14 @@ export function normalizeSdkMetaName(name) {
 }
 
 // The map entry for an SDK-ignored meta tag, or null for a tag the SDK reads.
-export function sdkIgnoredMetaTag(name) {
+export function lookupSdkIgnoredMetaTag(name) {
   const normalized = normalizeSdkMetaName(name);
   return Object.hasOwn(SDK_IGNORED_META_TAGS, normalized) ? SDK_IGNORED_META_TAGS[normalized] : null;
+}
+
+// Boolean form for the filter/branch sites that only need to know.
+export function isSdkIgnoredMetaTag(name) {
+  return lookupSdkIgnoredMetaTag(name) !== null;
 }
 
 // One doctor-facing line for a set of ignored tags listed on a page: names each

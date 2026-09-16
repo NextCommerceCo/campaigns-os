@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { SDK_IGNORED_META_TAGS, describeSdkIgnoredMetaTags, sdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
+import { SDK_IGNORED_META_TAGS, describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
 
 const { unsupportedSdkMetaHint } = __qaNodeTestHooks;
@@ -11,10 +11,12 @@ test("the SDK-ignored meta-tag list names exactly the keys the SDK does not read
   for (const entry of Object.values(SDK_IGNORED_META_TAGS)) {
     assert.match(entry.note, /^Campaign Cart does not read a next-[a-z-]+ meta tag; remove it from the Map's page hints\./);
   }
-  assert.equal(sdkIgnoredMetaTag(" Next-Currency "), SDK_IGNORED_META_TAGS["next-currency"]);
-  assert.equal(sdkIgnoredMetaTag("next-page-type"), null);
-  assert.equal(sdkIgnoredMetaTag("next-success-url"), null);
-  assert.equal(sdkIgnoredMetaTag(undefined), null);
+  assert.equal(lookupSdkIgnoredMetaTag(" Next-Currency "), SDK_IGNORED_META_TAGS["next-currency"]);
+  assert.equal(lookupSdkIgnoredMetaTag("next-page-type"), null);
+  assert.equal(lookupSdkIgnoredMetaTag("next-success-url"), null);
+  assert.equal(lookupSdkIgnoredMetaTag(undefined), null);
+  assert.equal(isSdkIgnoredMetaTag("NEXT-PREDICTIVE-ADDRESS"), true);
+  assert.equal(isSdkIgnoredMetaTag("next-api-key"), false);
 });
 
 test("doctor's advisory line names each ignored tag with the shared note", () => {
