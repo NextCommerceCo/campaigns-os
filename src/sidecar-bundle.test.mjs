@@ -204,6 +204,28 @@ test("legacy bundles compare raw producer hashes once and never compare QA seman
   assert.equal(drifted.errors.filter((finding) => finding.code === "bundle.identity.spec_hash_mismatch").length, 1);
 }));
 
+test("a prefix-only spelling difference in spec hashes is not identity drift", () => withFixture((root) => {
+  const hex = "a".repeat(64);
+  const contextPath = join(root, ".campaign-runtime/build-context.json");
+  const reportPath = join(root, ".campaign-runtime/assembly-report.json");
+  const qaPath = join(root, ".campaign-runtime/qa-verdict.json");
+  const context = readJson(contextPath);
+  const report = readJson(reportPath);
+  const qa = readJson(qaPath);
+  context.spec.material_hash = `sha256:${hex}`;
+  report.identity.spec_material_hash = hex.toUpperCase();
+  qa.spec_hash = `SHA256:${hex}`;
+  context.spec.hash = `sha256:${"d".repeat(64)}`;
+  report.identity.spec_hash = "D".repeat(64);
+  writeJson(contextPath, context);
+  writeJson(reportPath, report);
+  writeJson(qaPath, qa);
+
+  const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
+  const identityFindings = result.errors.filter((finding) => finding.code.startsWith("bundle.identity.spec_"));
+  assert.deepEqual(identityFindings, [], JSON.stringify(result.errors, null, 2));
+}));
+
 test("changed spec material, foreign QA, and partially regenerated identities fail closed", () => {
   const cases = [
     {

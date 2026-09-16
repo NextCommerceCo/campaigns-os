@@ -10,6 +10,8 @@
  * checkout pages.
  */
 
+import { specHashOf, specHashesMatch } from "./spec-identity.mjs";
+
 export const CALC_LABEL = "Campaigns-calculated · before tax";
 export const CALCULATED_PAIR_EVIDENCE = "calculated_pair";
 
@@ -150,10 +152,6 @@ function catalogImportedAt(mapDoc) {
     ?? null;
 }
 
-function specHash(mapDoc) {
-  return mapDoc?.spec_hash ?? mapDoc?.spec_identity?.spec_hash ?? null;
-}
-
 function descriptor(page, mapDoc, role, lines, options = {}) {
   const funnel = findFunnel(mapDoc, page);
   const suffix = options.id_suffix ? `:${options.id_suffix}` : "";
@@ -176,7 +174,7 @@ function descriptor(page, mapDoc, role, lines, options = {}) {
       known_offer_codes: options.known_offer_codes || [],
       page_rows: options.page_rows || [],
       decline_condition: declineCondition(mapDoc, page),
-      spec_hash: specHash(mapDoc),
+      spec_hash: specHashOf(mapDoc),
       catalog_imported_at: catalogImportedAt(mapDoc),
       planned_rows: options.planned_rows || [],
     },
@@ -350,7 +348,7 @@ export function deriveState(result, meta = {}) {
   const resultCatalog = calculated.catalog_imported_at ?? result?.catalog_imported_at;
   const resultCalculatedAt = calculated.calculated_at ?? result?.calculated_at ?? meta?.calculated_at;
 
-  if (present(resultSpecHash) && present(meta?.spec_hash) && String(resultSpecHash) !== String(meta.spec_hash)) {
+  if (present(resultSpecHash) && present(meta?.spec_hash) && !specHashesMatch(resultSpecHash, meta.spec_hash)) {
     return PricingState.Stale;
   }
   if (present(resultCatalog) && present(meta?.catalog_imported_at) && String(resultCatalog) !== String(meta.catalog_imported_at)) {

@@ -1,6 +1,7 @@
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
+import { parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import {
   isAbsoluteHttpUrl,
   normalizePageKitRoute,
@@ -43,7 +44,7 @@ import {
 } from "../campaign-spec/dist/index.js";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { probeRouteUrls, ROUTE_PROBE_DEFAULT_TIMEOUT_MS } from "./qa-route-probe.mjs";
-import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
+import { resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
@@ -89,7 +90,7 @@ Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
   campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--json]
-  campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--json]
+  campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
@@ -164,6 +165,10 @@ Options:
   --preview-url <url>             qa policy set: persist packet deploy.preview_url.
   --production-url <url>          qa policy set: persist packet deploy.production_url.
   --deploy-target <target>        qa policy set: persist packet deploy.target.
+  --order-path-depth <depth>      qa policy set: persist packet qa.proof_policy.order_path_depth (off, common or full)
+                                  and refresh the assembly report's proof_policy mirror when one exists, so the
+                                  two never disagree. "off" declares an intentional no-order run: a
+                                  --test-order off pass then owes no purchase proof and next can reach done.
   --step-timeout-ms <ms>          Typed-card test-order per-step timeout. Default: 45000.
   --order-timeout-ms <ms>         Typed-card test-order per-path overall timeout. Default: 240000.
   --theme-waive <reason>          Waive a blocked theme gate for this run with an explicit operator reason
@@ -688,9 +693,12 @@ export function resolveQaInputsFromSite(args) {
 
 function loadCommerceStructureContract({ packet, packetPath, templateFamily }) {
   if (!packet || !packetPath || !templateFamily) return null;
-  const catalogPathValue = packet.assembly?.commerce_catalog?.path;
-  if (!catalogPathValue) return { family: templateFamily, status: "missing_catalog_path", pages: {} };
-  const catalogPath = resolveFromFile(packetPath, catalogPathValue);
+  // A null path is the toolkit's own catalog; a recorded path that is dead
+  // here but names the catalog file also falls back to it (see
+  // resolvePacketCommerceCatalogPath).
+  const catalogResolution = resolvePacketCommerceCatalogPath(packetPath, packet.assembly?.commerce_catalog);
+  const catalogPathValue = catalogResolution.recorded;
+  const catalogPath = catalogResolution.path;
   if (!catalogPath || !existsSync(catalogPath)) return { family: templateFamily, status: "missing_catalog", pages: {} };
   try {
     const catalog = resolveCommerceCatalog(catalogPath);
@@ -1684,23 +1692,51 @@ function updateQaPolicy(args) {
   // script still passing them gets told so instead of a silent no-op.
   const removedFlags = REMOVED_QA_POLICY_FLAGS.filter((flag) => flag in args);
   if (removedFlags.length) {
-    throw new Error(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders run from --test-order <mode> alone; there is no permission flag). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url.`);
+    throw new Error(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders run from --test-order <mode> alone; there is no permission flag). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth.`);
   }
+  // Validated with the other argv checks, before anything is written.
+  const orderPathDepth = parseOrderPathDepthFlag(args, { command: "qa policy set" });
 
   const changed = [];
   setOptionalBoolean(packet.campaign, "allowed_domains_confirmed", args, "allowed-domains-confirmed", changed);
   setOptionalString(packet.deploy, "preview_url", args, "preview-url", changed);
   setOptionalString(packet.deploy, "production_url", args, "production-url", changed);
   setOptionalString(packet.deploy, "target", args, "deploy-target", changed);
+  if (orderPathDepth) {
+    packet.qa.proof_policy = isPlainObject(packet.qa.proof_policy) ? packet.qa.proof_policy : {};
+    setIfChanged(packet.qa.proof_policy, "order_path_depth", orderPathDepth, changed);
+  }
 
+  const staleReason = `The Build Packet changed after this doctor snapshot (qa policy set). Re-run ${cmd("doctor")} (or next) for current state.`;
   if (changed.length) {
     writeJson(packetPath, packet);
     // #171: packet edits change what doctor would conclude; the retained
     // doctor sidecar (if any) now predates them.
     markDoctorSidecarStale(targetRepoFor(packetPath, packet), {
       command: "qa policy set",
-      reason: `The Build Packet changed after this doctor snapshot (qa policy set). Re-run ${cmd("doctor")} (or next) for current state.`,
+      reason: staleReason,
     });
+  }
+  // The assembly report mirrors qa.proof_policy from prepare-build, and
+  // assessPurchaseProofCoverage reads a packet/report disagreement as an
+  // unknown depth that holds `next` short of done. Whenever a depth is set,
+  // the mirror is refreshed through the same ledger write every other report
+  // edit uses — even when the packet already held that value, so a hand-edited
+  // packet whose mirror lags is reconciled by re-stating the packet's value.
+  // A packet with no report yet (pre-prepare-build) is left alone.
+  let reportMirror = null;
+  if (orderPathDepth) {
+    const workspace = resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true });
+    if (existsSync(workspace.reportPath)) {
+      const outcome = commitAssemblyReport(workspace, (report) => {
+        const mirror = isPlainObject(report.proof_policy) ? report.proof_policy : {};
+        if (mirror.order_path_depth === orderPathDepth) return null;
+        report.proof_policy = { ...mirror, order_path_depth: orderPathDepth };
+        return report;
+      }, { command: "qa policy set", staleReason });
+      reportMirror = { report_path: outcome.reportPath, written: outcome.written, order_path_depth: orderPathDepth };
+      if (outcome.written) changed.push("report.proof_policy.order_path_depth");
+    }
   }
   return {
     ok: true,
@@ -1708,6 +1744,7 @@ function updateQaPolicy(args) {
     packet_path: packetPath,
     changed,
     policy: policySnapshot(packet),
+    ...(reportMirror ? { report_mirror: reportMirror } : {}),
   };
 }
 
@@ -3230,6 +3267,9 @@ function policySnapshot(packet) {
       target: packet.deploy?.target ?? null,
       preview_url: packet.deploy?.preview_url ?? null,
       production_url: packet.deploy?.production_url ?? null,
+    },
+    qa: {
+      order_path_depth: packet.qa?.proof_policy?.order_path_depth ?? null,
     },
   };
 }

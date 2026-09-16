@@ -23,10 +23,11 @@ import { basename, delimiter, dirname, extname, isAbsolute, join, relative, reso
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
+import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
-import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
-import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
-import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
+import { anyAssemblyReportStageBlocked, applyDerivedAssemblyReportSummary, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, qaGatePassedForCurrentBuild, recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { SESSION_ENDING_DISPOSITIONS, summarizePlaceholderTextGate, summarizePurchaseProof } from "./qa-verdict.mjs";
+import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
   appendFinding,
   buildFinding,
@@ -165,9 +166,10 @@ import {
   collectRenderedHtmlFiles,
   evaluateProofAssets,
   attestationBlockers,
+  visibleText,
   BRIEF_PAYLOAD_REL_PATH,
 } from "./content-residue.mjs";
-import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
+import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import {
   assessTemplateFreshness,
   defaultSdkSupportPolicy,
@@ -208,11 +210,16 @@ import {
 import {
   ASSEMBLY_REPORT_STAGE_KEYS,
   NEXT_STAGE_ORDER,
+  NEXT_STAGE_OWNERS,
+  STAGE_TERMINAL_STATUS_PREFIXES,
   reportKeyForCliStage,
+  stageIsBlocked,
+  stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
   assessAssemblySourcePackageFreshnessWaivers,
+  currentBuildFingerprint,
   evaluatePolishGate,
 } from "./polish-gate.mjs";
 import {
@@ -403,15 +410,15 @@ Usage:
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
-                     [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
+                     [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                              [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
-                             [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]
+                             [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]
   campaigns-os build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
-                     [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
+                     [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
@@ -435,12 +442,13 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
-  campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--json]
+  campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]   # --order-path-depth writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
-  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--new-run] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--list] [--json]
+    run_id: --run-id > the active run session > the most recent Run Record for this packet's campaign (re-emitted in place; a remitted one is left as written) > freshly minted. --new-run always mints; --list prints the run ids on disk for this packet (id, created_at, remit state, path) and, like --no-write, writes and sends nothing.
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
@@ -797,6 +805,10 @@ export function recordQaStageOutcome(args, result) {
       // The producer knows its own run id and must restate it, or the stage
       // keeps a previous run's identity beside this run's status and outputs.
       identity: { verdict_run_id: optionalString(verdict.run_id) },
+      // Which build this verdict judged, and the gates whose browser outcome
+      // the doctor's static scan defers to (qaGatePassedForCurrentBuild). A
+      // gate that never ran is left out, so silence never reads as a pass.
+      evidence: qaStageGateEvidence(verdict, report),
       // Counts-only: never order ids, refs, emails or URLs (see
       // summarizePurchaseProof). This is what lets `next` tell a real purchase
       // path from a `--test-order off` diagnostic.
@@ -825,6 +837,14 @@ export function recordQaStageOutcome(args, result) {
     process.stderr.write(`[campaigns-os] QA stage ledger update skipped: ${error.message}\n`);
     return false;
   }
+}
+
+function qaStageGateEvidence(verdict, report) {
+  const gates = {};
+  const placeholderText = summarizePlaceholderTextGate(verdict);
+  if (placeholderText) gates[QA_GATE_PLACEHOLDER_TEXT_RESIDUE] = placeholderText;
+  if (!Object.keys(gates).length) return null;
+  return { source_build_fingerprint: currentBuildFingerprint(report), gates };
 }
 
 // What the auto-end says when the attempt does NOT end the session. Every
@@ -1431,13 +1451,15 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createProofPolicy() {
+// `orderPathDepth` is the operator's `--order-path-depth` (validated by
+// parseOrderPathDepthFlag against ORDER_PATH_DEPTHS); the seed is `common`.
+function createProofPolicy({ orderPathDepth = null } = {}) {
   return {
     browser_qa_required: true,
     typed_card_depth: "common",
     localhost_development_domain_allowed: true,
     non_localhost_origin_allowlist_required: true,
-    order_path_depth: "common",
+    order_path_depth: orderPathDepth || "common",
     operator_approval_state: "not_required_global_test_cards",
     qa_portal_publish_default: true,
   };
@@ -2066,6 +2088,7 @@ function prepareBuild(args, options = {}) {
   // behind for a bad argument.
   const wrapperPolicyFlag = parseWrapperPolicyFlag(args);
   const designManifestPath = parseDesignManifestFlag(args);
+  const orderPathDepthFlag = parseOrderPathDepthFlag(args, { command: "prepare-build" });
 
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
@@ -2082,6 +2105,12 @@ function prepareBuild(args, options = {}) {
   // would never use ("Link demeter ... " on an olympus-mv-two-step packet).
   const designSourceTemplateFamily = templateFamily;
   const commerceCatalogPath = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
+  // The toolkit's own catalog is not recorded on the packet (path: null): it
+  // ships with every install, so a packet-relative path to this checkout's
+  // copy would only be right on the machine that ran prepare-build. An
+  // operator-supplied --commerce-catalog inside the campaign repo is recorded
+  // relative to the packet, as before.
+  const commerceCatalogIsToolkitDefault = resolve(commerceCatalogPath) === resolve(defaultCommerceCatalogPath());
   const commerceCatalog = resolveCommerceCatalog(commerceCatalogPath);
   const templateLocked = Boolean(explicitTemplateFamily) && !isUnresolvedTemplateFamily(templateFamily);
   // Certified-template gate, enforced at the entry point: a decided family
@@ -2276,7 +2305,7 @@ function prepareBuild(args, options = {}) {
   const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
   const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
   const adapterDecisions = createAdapterDecisions({ commerceZoneFindings, wrapperPolicy: wrapperPolicy.value });
-  const proofPolicy = createProofPolicy();
+  const proofPolicy = createProofPolicy({ orderPathDepth: orderPathDepthFlag });
 
   const packet = {
     schema_version: PACKET_SCHEMA,
@@ -2331,7 +2360,7 @@ function prepareBuild(args, options = {}) {
         required: true,
         family: templateLocked ? templateFamily : null,
         version: null,
-        path: relFromFile(packetPath, commerceCatalogPath),
+        path: commerceCatalogIsToolkitDefault ? null : relFromFile(packetPath, commerceCatalogPath),
       },
       compatible_outputs: ["static-html", "campaign-cart-sdk"],
     },
@@ -2483,7 +2512,10 @@ function prepareBuild(args, options = {}) {
     ];
   }
 
-  const report = createAssemblyReport({
+  // The top-level status/next/blockers are derived from the stages by the same
+  // function every later commit of the report runs (stage-ledger.mjs), so
+  // prepare-build's first write and a producer's last write spell them alike.
+  const report = applyDerivedAssemblyReportSummary(createAssemblyReport({
     packetPath,
     contextPath,
     reportPath,
@@ -2498,7 +2530,7 @@ function prepareBuild(args, options = {}) {
     declaredScopeSkips,
     buildScopeReasonsInvalid,
     templateSelection,
-  });
+  }));
 
   publishPrepareBuildJsonOutputs([
     { label: "Build Packet", path: packetPath, value: packet },
@@ -2644,7 +2676,10 @@ function createAssemblyReport({
     schema_version: REPORT_SCHEMA,
     run_id: `asm_${Date.now()}`,
     generated_at: new Date().toISOString(),
-    status: blockers.length ? "blocked" : "prepared",
+    // status, blockers and next are restated from the stages by
+    // applyDerivedAssemblyReportSummary before the report is written; the
+    // seeds here only keep the schema's required keys in their usual order.
+    status: "prepared",
     identity: {
       map_id: packet.spec.map_id,
       public_route_slug: packet.campaign.public_route_slug,
@@ -2726,13 +2761,7 @@ function createAssemblyReport({
         : []),
       ...sourceAssetWarningsForReport(context.source?.asset_crawl),
     ],
-    next: blockers.length
-      ? { stage: "collect-inputs", owner: "operator", action: "Resolve source/page blockers before build." }
-      : {
-          stage: scaffoldRequired ? "setup" : "assembly",
-          owner: scaffoldRequired ? "next-campaigns-os-setup" : "next-campaigns-build",
-          action: scaffoldRequired ? "Run setup before build." : "Run build with this packet and context.",
-        },
+    next: null,
   };
 }
 
@@ -3824,7 +3853,7 @@ const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "qa.proof_policy",
     phase: "qa",
-    run: ({ packet, warnings, ready }) => validateProofPolicy(packet, warnings, ready),
+    run: ({ packet, packetPath, report, warnings, ready }) => validateProofPolicy(packet, warnings, ready, { report, packetPath }),
   },
   {
     id: "build_brief.artifact",
@@ -4134,13 +4163,32 @@ function validateAdapterContracts(packet, packetPath, spec, errors, warnings, re
   });
 }
 
-function validateProofPolicy(packet, warnings, ready) {
+function validateProofPolicy(packet, warnings, ready, { report = null, packetPath = null } = {}) {
   const policy = packet.qa?.proof_policy;
   if (!policy) {
     addIssue(warnings, "qa.proof_policy", "qa.proof_policy is missing. New packets make browser QA, typed-card depth, SDK origin allowlist state, order path depth, and approval state explicit.");
     return;
   }
   validateProofPolicyObject(policy, "qa.proof_policy", warnings, ready, { requireBrowserQa: true });
+  // The report's proof_policy is a mirror written at prepare-build. A packet
+  // edited afterwards (by hand, or by an older `qa policy set` that never
+  // refreshed the mirror) leaves the two disagreeing, and
+  // assessPurchaseProofCoverage then reads the depth as unknown — so `next`
+  // could not reach done and nothing named the fix. Advisory, never a
+  // blocker: the warning carries the one command that reconciles them.
+  const drift = orderPathDepthDrift(packet, report);
+  if (drift) {
+    addIssue(warnings, ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText({ packetDepth: drift.packet, reportDepth: drift.report, packetPath }));
+  }
+}
+
+// The packet's declared order-path depth beside the report's mirror when the
+// two disagree, else null. The comparison itself is the leaf's
+// orderPathDepthsDisagree, which `next` also asks of a coverage result.
+function orderPathDepthDrift(packet, report) {
+  const packetDepth = optionalString(packet?.qa?.proof_policy?.order_path_depth);
+  const reportDepth = optionalString(report?.proof_policy?.order_path_depth);
+  return orderPathDepthsDisagree(packetDepth, reportDepth) ? { packet: packetDepth, report: reportDepth } : null;
 }
 
 function validateBuildBrief(packet, packetPath, spec, context, errors, warnings, ready) {
@@ -6695,10 +6743,20 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
   const familyAutomatable = isAutomatableTemplateFamily(family);
   const catalogInfo = packet.assembly?.commerce_catalog || {};
   if (catalogInfo.required !== true) return;
-  const catalogPath = resolveFromFile(packetPath, catalogInfo.path || "../contracts/commerce-surface-catalog.json");
+  const catalogResolution = resolvePacketCommerceCatalogPath(packetPath, catalogInfo);
+  const catalogPath = catalogResolution.path;
   if (!catalogPath || !existsSync(catalogPath)) {
     addIssue(errors, "assembly.commerce_catalog.path", "Commerce catalog is required but not found.");
     return;
+  }
+  if (catalogResolution.source === "stale_packet_path") {
+    // Not a warning: the catalog resolved and nothing about the build changes.
+    // The line tells the operator the packet still names one machine's
+    // checkout, and that a re-prepare records the toolkit default (null).
+    ready.push(
+      `Commerce catalog resolved to the running toolkit's copy; the packet's recorded path ${catalogResolution.recorded} ` +
+      "does not exist here (it names the checkout that ran prepare-build). Re-run prepare-build to clear the machine-local path.",
+    );
   }
   const catalog = resolveCommerceCatalog(catalogPath);
   if (familyAutomatable && catalog.agentContractVersion !== 1) {
@@ -6729,7 +6787,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     // H3.1/H3.2: pre-QA warnings off the family brand contract. Doctor warns
     // (the fix happens during build/polish); browser QA enforces the same
     // placeholder-text terms as a blocker in the verdict.
-    validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived);
+    validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived, { report: buildState.report });
     validateBuiltDemoAssetFidelity(brandContract, warnings, ready, derived);
   } else {
     for (const value of contract.frontmatter?.demoOnlyValues || []) {
@@ -6994,31 +7052,43 @@ function validateBuiltContractResidue(contract, warnings, ready, derived, spec =
 // H3.1 (doctor surface): literal placeholder TEXT in built HTML. Word-boundary
 // matched off the family brand contract's placeholder_text_residue.terms, so
 // the doctor warning and the browser QA blocker key off one declared term set.
-// Scans rendered HTML (not the includes/layouts the family ships) — broad net
-// pre-QA; the browser gate narrows to visible text and blocks.
-export function validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived) {
+// Scans the VISIBLE text of each page (not the includes/layouts the family
+// ships), the same surface the browser gate reads: an `<input
+// placeholder="Placeholder">` hint, a data-* hook, a comment or a script
+// string is not rendered copy and must not warn where QA would pass.
+//
+// `report`: once QA has recorded this gate as passed on the current build
+// (qaGatePassedForCurrentBuild), the browser's verdict outranks this static
+// approximation — any remaining static hit demotes to a ready line instead of
+// a warning, so `next` stops asking for a fix QA already cleared. A rebuild
+// changes the fingerprint and the warning returns until QA runs again.
+export function validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived, { report = null } = {}) {
   const config = placeholderTextResidueConfig(brandContract);
   if (!config) return;
   const targetOutputDir = derived.target_output_dir;
   if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return;
   const hits = collectPlaceholderTextResidueMatches(targetOutputDir, config.terms);
-  if (hits.length) {
-    const terms = [...new Set(hits.map((hit) => hit.label))].join(", ");
-    addIssue(
-      warnings,
-      "template_contract.placeholder_text_residue",
-      `Assembly is recorded complete, but built output still contains literal template placeholder text (${terms}): ${summarizeCopyMatches(hits)}. Replace with CampaignSpec/design copy; browser QA blocks on these terms.`,
-    );
-  } else {
+  if (!hits.length) {
     ready.push("Built target output has no literal template placeholder text");
+    return;
   }
+  const terms = [...new Set(hits.map((hit) => hit.label))].join(", ");
+  if (report && qaGatePassedForCurrentBuild(report, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: currentBuildFingerprint(report) })) {
+    ready.push(`Static scan still sees placeholder-term text (${terms}: ${summarizeCopyMatches(hits)}), but the browser residue gate passed on this build; QA's rendered-text verdict stands.`);
+    return;
+  }
+  addIssue(
+    warnings,
+    "template_contract.placeholder_text_residue",
+    `Assembly is recorded complete, but built output still contains literal template placeholder text (${terms}): ${summarizeCopyMatches(hits)}. Replace with CampaignSpec/design copy; browser QA blocks on these terms.`,
+  );
 }
 
 function collectPlaceholderTextResidueMatches(root, terms) {
   const matches = [];
   for (const file of collectHtmlFiles(root)) {
     if (file.path.includes("_includes/") || file.path.includes("_layouts/")) continue;
-    const content = readHtmlScanText(join(root, file.path));
+    const content = visibleText(readHtmlScanText(join(root, file.path)), { keepLines: true });
     for (const match of placeholderTextResidueMatches(content, terms)) {
       matches.push({
         surface: "target",
@@ -7606,30 +7676,14 @@ function validateAssemblyProofPolicy(policy, warnings, ready) {
 }
 
 // The orchestration stage contract lives in orchestration-stage-contract.mjs so
-// report producers, validators, and the `next` picker share one deterministic
-// source for stage order and CLI-stage/report-key translation.
-/**
- * Status values that count as terminal under PREFIX matching — so
- * "completed", "completed_with_warnings", and "completed_partial" all
- * count as terminal under "completed". This matches how the existing
- * stages already report sub-statuses (see report.stages.assembly.status
- * shapes in src/cli.mjs and qa/shared/qa-verdict.js). Renamed from
- * STAGE_TERMINAL_STATUSES to make the prefix-matching contract explicit.
- */
-const STAGE_TERMINAL_STATUS_PREFIXES = Object.freeze(["completed", "skipped"]);
+// report producers, validators, the `next` picker and the Assembly Report's
+// derived summary share one deterministic source for stage order, terminal
+// status prefixes, stage owners and CLI-stage/report-key translation.
 const POLISH_GATE_BUILD_RERUN_CODES = Object.freeze(new Set([
   "polish.assembly_source_package_fingerprint_missing",
   "polish.assembly_source_package_stale",
 ]));
 
-function stageIsTerminal(status) {
-  const normalized = String(status || "");
-  return STAGE_TERMINAL_STATUS_PREFIXES.some((t) => normalized.startsWith(t));
-}
-
-function stageIsBlocked(status) {
-  return String(status || "") === "blocked";
-}
 
 function polishGateRequiresBuild(polishGate) {
   return polishGate?.status === "blocked" && POLISH_GATE_BUILD_RERUN_CODES.has(polishGate.code);
@@ -7893,13 +7947,21 @@ function prepareBuildGateIssue(report, { required = false, reportPath = null, bi
   const topLevelDspBlockers = (Array.isArray(report?.blockers) ? report.blockers : [])
     .filter((blocker) => blocker?.code === "DESIGN_SOURCE_PACKAGE_NOT_READY");
   const contradictoryBlockers = uniquePrepareBuildBlockers([...stageBlockers, ...topLevelDspBlockers]);
+  // report.status is derived from the stages on every write, so a report that
+  // has been through commitAssemblyReport reads "blocked" if and only if some
+  // stage is blocked, and a blocked QA or doctor stage beside a terminal
+  // prepare_build is not a contradiction. The case below can only be a report
+  // written before the summary was derived (or hand-edited since): a
+  // top-level "blocked" that no recorded stage explains. It is still a
+  // contradiction to refuse on, and the next commit of the report heals it.
+  const blockedStatusFromPreDerivationReport = report?.status === "blocked" && !anyAssemblyReportStageBlocked(report);
   if (stageIsTerminal(status) && (
-    report?.status === "blocked"
+    blockedStatusFromPreDerivationReport
     || stageBlockers.length > 0
     || topLevelDspBlockers.length > 0
   )) {
     const contradictions = [
-      ...(report?.status === "blocked" ? ["report.status=blocked"] : []),
+      ...(blockedStatusFromPreDerivationReport ? ["report.status=blocked"] : []),
       ...(stageBlockers.length ? [`stages.prepare_build.blockers=${stageBlockers.length}`] : []),
       ...(topLevelDspBlockers.length ? [`top-level DSP blockers=${topLevelDspBlockers.length}`] : []),
     ];
@@ -8066,15 +8128,18 @@ export function assessPurchaseProofCoverage({ packet = null, report = null } = {
   // trustworthy in that state, so the coverage is genuinely unknown: advisory,
   // never a silent unblock, and named loudly enough that an operator can see
   // which two artifacts to reconcile.
-  if (packetDepth && reportDepth && packetDepth.toLowerCase() !== reportDepth.toLowerCase()) {
+  const drift = orderPathDepthDrift(packet, report);
+  if (drift) {
     return {
       state: "unknown",
       // Neither side is trustworthy, so there is no single declared depth to
       // report; both values are exposed structurally so a consumer never has
       // to parse the reason to learn that the two artifacts disagree.
       declared_depth: null,
-      declared_depths: { packet: packetDepth, report: reportDepth },
-      reason: `The build packet declares an order-path depth of "${packetDepth}" while the assembly report's mirror of it reads "${reportDepth}". Reconcile the packet and the report before treating either depth as proved.`,
+      declared_depths: { packet: drift.packet, report: drift.report },
+      // The reason names the one command that reconciles them (the same text
+      // doctor's warning carries); the packet path is substituted by `next`.
+      reason: orderPathDepthDriftText({ packetDepth: drift.packet, reportDepth: drift.report }),
     };
   }
   const declared = packetDepth || reportDepth;
@@ -8846,18 +8911,46 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
       const why = runRecordCloseout
         ? ` No usable record was found for this packet (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || ""}`.trimEnd()
         : "";
-      push("run_record_closeout", "command", `${cmd("run-record")} --packet ${shellToken(packetPath)} --json`, `Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.${why}`, { required: true });
+      // With no session, run-record re-emits the newest record for this
+      // campaign in place. When that record is the one just judged stale or
+      // outdated, re-emitting it changes nothing (a remitted record is final),
+      // so the closeout must mint: --new-run. With no matching record at all
+      // the plain command mints on its own.
+      const supersededReason = runRecordCloseout?.reason_code === "stale_predates_evidence" || runRecordCloseout?.reason_code === "outdated_artifacts";
+      const supersedes = supersededReason ? " --new-run" : "";
+      const superseded = supersededReason
+        ? ` The existing record ${runRecordCloseout.record_id || "(unnamed)"} stays as written; --new-run opens a new run id for the current evidence instead of re-emitting it.`
+        : "";
+      push("run_record_closeout", "command", `${cmd("run-record")} --packet ${shellToken(packetPath)}${supersedes} --json`, `Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.${why}${superseded}`, { required: true });
     }
     // `--test-order off` is a diagnostic, not purchase proof. When the report
     // is too old to say either way, say so — an unknown must never turn into a
     // new block on a campaign that was already finished.
     if (purchaseProof?.state === "unknown") {
-      push(
-        "purchase_proof_unknown",
-        "manual",
-        null,
-        `Purchase-proof coverage is unknown for this run: ${purchaseProof.reason || "the QA stage records no purchase-proof summary."} ${describeDeclaredDepth(purchaseProof)}; re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
-      );
+      const depths = purchaseProof.declared_depths;
+      const drift = orderPathDepthsDisagree(depths?.packet, depths?.report)
+        ? { packetDepth: depths.packet, reportDepth: depths.report }
+        : null;
+      if (drift) {
+        // The packet and its report mirror disagree: the action IS the
+        // reconciling command (doctor's warning names the same one), not a
+        // manual step that leaves the operator to find it. Rendered once and
+        // handed to both the action and its prose.
+        const command = requiredActionText(orderPathDepthReconcileAction(drift), { packetPath });
+        push(
+          "purchase_proof_unknown",
+          "command",
+          command,
+          `Purchase-proof coverage is unknown for this run: ${orderPathDepthDriftText({ ...drift, command })} ${describeDeclaredDepth(purchaseProof)}; once they agree, re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
+        );
+      } else {
+        push(
+          "purchase_proof_unknown",
+          "manual",
+          null,
+          `Purchase-proof coverage is unknown for this run: ${purchaseProof.reason || "the QA stage records no purchase-proof summary."} ${describeDeclaredDepth(purchaseProof)}; re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
+        );
+      }
     }
   }
   return actions;
@@ -9250,17 +9343,9 @@ function sourcePreparationAction(errors, warnings) {
 // next: doctor used to carry its own decider with its own vocabulary
 // (collect-inputs / assembly / complete) and its own gating, which knew
 // neither purchase proof nor the prepare-build gate, and listed the stage it
-// recommended inside blocked_stages.
-export const DOCTOR_NEXT_STAGE_OWNERS = Object.freeze({
-  "prepare-build": { owner: "operator", default_skill: "next-campaigns-os" },
-  "doctor-blocked": { owner: "operator", default_skill: "next-campaigns-os" },
-  setup: { owner: "setup", default_skill: "next-campaigns-os-setup" },
-  build: { owner: "build", default_skill: "next-campaigns-build" },
-  polish: { owner: "polish", default_skill: "next-campaigns-polish" },
-  deploy: { owner: "operator", default_skill: "next-campaigns-os" },
-  qa: { owner: "qa", default_skill: "next-campaigns-qa" },
-  done: { owner: "qa", default_skill: "next-campaigns-os" },
-});
+// recommended inside blocked_stages. The table itself lives on the stage
+// contract so the Assembly Report's derived `next` spells owners the same way.
+export const DOCTOR_NEXT_STAGE_OWNERS = NEXT_STAGE_OWNERS;
 
 // The code -> action strings doctor prints under `Next:`. They describe the
 // repairs the findings ask for and are independent of which stage the picker
@@ -10918,8 +11003,92 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   const journal = readJournal(journalPath);
   const agentUsage = parseAgentUsageArgs(args);
 
-  // run_id: explicit flag > active run session > freshly minted.
-  const runId = optionalString(args["run-id"]) || ambient?.session?.run_id || mintRunId();
+  // run_id: explicit flag > --new-run (mint) > active run session > the most
+  // recent Run Record on disk for this packet's campaign > freshly minted.
+  // Once `run end` has cleared the session nothing ambient names the run any
+  // more, and minting here would file a SECOND record for a run that already
+  // has one — every re-run after close (the closeout action `next` prints, a
+  // re-emit after a sidecar fix) forked the run's identity that way. A record
+  // the receiver already holds is final (left as written, below), so
+  // re-resolving to its id is safe; minting is what happens only when no
+  // record for this campaign exists, or when --new-run asks for it. The
+  // source travels on the stdout envelope only: the record's schema is
+  // hashed surface and does not carry it.
+  if (args["new-run"] === true && optionalString(args["run-id"])) {
+    throw new Error("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
+  }
+  const listOnly = args.list === true;
+  // The directory is scanned only when something reads it: --list, or an id
+  // that nothing else names. An explicit --run-id, --new-run or an open
+  // session decides without it, and a target with a long history pays no I/O
+  // for a decision already made.
+  const needsDiskScan = listOnly || (!optionalString(args["run-id"]) && args["new-run"] !== true && !isNonEmptyString(ambient?.session?.run_id));
+  const targetRecords = needsDiskScan ? readRunRecordsForTarget(baseDir) : [];
+  const latestRecordEntry = needsDiskScan ? latestMatchingRunRecord(targetRecords, packet) : null;
+  let runId;
+  let runIdSource;
+  if (optionalString(args["run-id"])) {
+    runId = optionalString(args["run-id"]);
+    // `run end` and the QA auto-end name the session's id explicitly while the
+    // session is still ambient; that is the session's id, not an operator's.
+    runIdSource = runId === ambient?.session?.run_id ? "session" : "explicit";
+  } else if (args["new-run"] === true) {
+    runId = mintRunId();
+    runIdSource = "minted";
+  } else if (isNonEmptyString(ambient?.session?.run_id)) {
+    runId = ambient.session.run_id;
+    runIdSource = "session";
+  } else if (isNonEmptyString(latestRecordEntry?.record?.run_id)) {
+    runId = latestRecordEntry.record.run_id;
+    runIdSource = "latest_record";
+  } else {
+    runId = mintRunId();
+    runIdSource = "minted";
+  }
+  const latestRecordNotice = runIdSource === "latest_record"
+    ? `Run ID ${runId} is the most recent Run Record for this campaign; re-emitting it in place. Pass --new-run to start a new run under a fresh id, or --list to see every record for this packet.`
+    : null;
+
+  // --list is inspection only: the run ids this packet's campaign has on disk,
+  // newest first, with when each was created and where its remit stands. It
+  // is --no-write with the assembly skipped — nothing is read into a record,
+  // nothing is written, nothing is sent. The same identity match as the
+  // resolution above; a matching record without a run_id is listed as
+  // `(unnamed)` so the operator sees why it was not the one re-emitted.
+  if (listOnly) {
+    const records = targetRecords
+      .filter((entry) => isObject(entry?.record) && identityMatches(entry.record, packet))
+      .map((entry) => ({
+        run_id: optionalString(entry.record.run_id),
+        created_at: optionalString(entry.record.created_at),
+        remit_state: optionalString(entry.record.remit_state),
+        remit_result: optionalString(entry.record.remit_result),
+        remit_endpoint: optionalString(entry.record.remit_endpoint),
+        record_path: entry.path,
+      }));
+    const summary = {
+      ok: true,
+      action: "run-record",
+      list: true,
+      written: false,
+      run_id: runId,
+      run_id_source: runIdSource,
+      records,
+      remit: { result: null, http_status: null, base_kind: null, sent: false, preserved: false },
+    };
+    if (silent) return summary;
+    if (args.json) {
+      console.log(JSON.stringify(summary, null, 2));
+      return summary;
+    }
+    console.log(`Run Records for this packet's campaign: ${records.length}`);
+    for (const entry of records) {
+      console.log(`  ${entry.run_id || "(unnamed)"}  created ${entry.created_at || "(unknown)"}  remit ${entry.remit_state || "(absent)"}${entry.remit_result ? ` (${entry.remit_result})` : ""}  ${entry.record_path}`);
+    }
+    console.log(`Next run-record without --run-id would use: ${runId} (${runIdSource}).`);
+    console.log("List only (--list). No record written, no remit.");
+    return summary;
+  }
   const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
 
   // Embed the aggregated command-lifecycle signal for this run from the
@@ -11049,6 +11218,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
       written: false,
       record_path: prior.path,
       record: prior.record,
+      run_id_source: runIdSource,
       remit: { result: REMIT_RESULTS.not_contacted, http_status: null, base_kind: null, sent: false, preserved: true },
     };
     if (silent) return summary;
@@ -11056,8 +11226,9 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
       console.log(JSON.stringify(summary, null, 2));
       return summary;
     }
+    if (latestRecordNotice) console.log(latestRecordNotice);
     console.log(`Run Record already closed and remitted for run ${prior.record.run_id}; left as written.`);
-    console.log(`Run ID: ${prior.record.run_id}`);
+    console.log(`Run ID: ${prior.record.run_id} (${runIdSource})`);
     console.log(`Remit: ok (already stored at the receiver for this run id; not re-sent) -> ${prior.record.remit_endpoint || DEFAULT_RUNS_ENDPOINT}`);
     console.log(`Kept: ${prior.path}`);
     return summary;
@@ -11133,6 +11304,11 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     written: write,
     record_path: recordPath,
     record,
+    // How run_id was chosen: explicit (--run-id), session (the active run
+    // session), latest_record (the newest Run Record on disk for this
+    // campaign, re-emitted in place) or minted (a fresh id: --new-run, or no
+    // record exists yet). Envelope only — never on the record.
+    run_id_source: runIdSource,
     // The send's classification and where it went, which the record's schema
     // does not carry: `result` is one of stored, already_stored,
     // ok_unparsed_ack, refused, transport_error (this run's send),
@@ -11152,8 +11328,9 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     console.log(JSON.stringify(summary, null, 2));
     return summary;
   }
+  if (latestRecordNotice) console.log(latestRecordNotice);
   console.log(`Run Record assembled.`);
-  console.log(`Run ID: ${record.run_id}`);
+  console.log(`Run ID: ${record.run_id} (${runIdSource})`);
   console.log(`Consent: ${record.consent_state} (${record.consent_source})${consent.scope_mismatch ? ` — file consent is scoped to ${consent.consent_scope || "(unscoped)"}, not ${consent.requested_scope}; consent to this endpoint with: ${scopedConsentCommand(consent.requested_scope)}` : ""}${consent.scope_bypassed ? ` — ${TELEMETRY_ENV_VAR} bypasses scope checking for ${consent.scope}` : ""}`);
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);

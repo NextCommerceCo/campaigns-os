@@ -116,7 +116,7 @@
       "required": true,
       "family": "olympus",
       "version": "2",
-      "path": "../contracts/commerce-surface-catalog.json"
+      "path": null
     },
     "compatible_outputs": ["static-html", "campaign-cart-sdk"]
   },

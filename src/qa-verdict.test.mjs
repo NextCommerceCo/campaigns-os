@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { createVerdict, deriveExceptions, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, summarizePurchaseProof, validateVerdict } from "./qa-verdict.mjs";
+import { createVerdict, deriveExceptions, isPlaceholderTextAssertion, PLACEHOLDER_TEXT_ASSERTION_SUFFIX, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, summarizePlaceholderTextGate, summarizePurchaseProof, validateVerdict } from "./qa-verdict.mjs";
 
 const baseVerdict = {
   runId: "RUN1",
@@ -352,4 +352,15 @@ test("createVerdict carries a cause summary when one is supplied, and omits it o
   const summary = { schema_version: "campaigns-os-finding-cause/v0", total: 3, counts: { caused_by_change: 1, pre_existing: 2 }, prior_run_id: "qa_prior", comparison: "prior_run" };
   assert.deepEqual(createVerdict({ ...baseVerdict, causeSummary: summary }).cause_summary, summary);
   assert.equal("cause_summary" in createVerdict({ ...baseVerdict }), false);
+});
+
+test("summarizePlaceholderTextGate reads only the placeholder-text assertions and never reports a pass from silence", () => {
+  const page = (id, status) => ({ id: `template-residue:${id}${PLACEHOLDER_TEXT_ASSERTION_SUFFIX}`, family: "template_residue", status });
+  assert.equal(summarizePlaceholderTextGate(null), null);
+  assert.equal(summarizePlaceholderTextGate({ assertions: [] }), null);
+  assert.equal(summarizePlaceholderTextGate({ assertions: [{ id: "template-residue:checkout:demo-assets", family: "template_residue", status: STATUS.PASS }] }), null, "a sibling residue gate is not this gate");
+  assert.equal(summarizePlaceholderTextGate({ assertions: [page("checkout", STATUS.SKIPPED)] }), null, "a skipped gate did not run");
+  assert.deepEqual(summarizePlaceholderTextGate({ assertions: [page("checkout", STATUS.PASS), page("landing", STATUS.PASS)] }), { status: "pass", pages_checked: 2, pages_failed: 0 });
+  assert.deepEqual(summarizePlaceholderTextGate({ assertions: [page("checkout", STATUS.FAIL), page("landing", STATUS.PASS)] }), { status: "fail", pages_checked: 2, pages_failed: 1 });
+  assert.equal(isPlaceholderTextAssertion({ id: "pricing:checkout:placeholder-text" }), false, "the family prefix is part of the id");
 });
