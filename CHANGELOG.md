@@ -38,6 +38,7 @@ Notable supported-surface changes are recorded here.
   `--no-write` (`list: true`, `written: false`, `remit.sent: false` in
   `--json`; the text output ends `List only (--list). No record written, no
   remit.`).
+
 ## [1.29.0+agent.3] - 2026-09-16
 
 ### Changed
