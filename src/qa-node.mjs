@@ -46,7 +46,7 @@ import {
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { probeRouteUrls, ROUTE_PROBE_DEFAULT_TIMEOUT_MS } from "./qa-route-probe.mjs";
 import { resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
-import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
+import { computeBuildFingerprint, resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
@@ -809,6 +809,23 @@ function loadRuntimeArtifact(packetPath, name) {
   }
 }
 
+// The fingerprint of the built output on disk right now (null when the packet
+// or the built route root cannot be resolved), so the polish gate binds QA to
+// the output QA is about to test rather than to the string build recorded.
+function currentBuiltOutputFingerprint(packetPath) {
+  if (!packetPath) return null;
+  try {
+    const packet = readJson(packetPath);
+    const slug = stringArg(packet?.campaign?.public_route_slug);
+    if (!slug) return null;
+    const current = computeBuildFingerprint(join(targetRepoFor(packetPath, packet), "_site", slug));
+    return current.ok ? current.fingerprint : null;
+  } catch (error) {
+    if (absentOrMalformed(error)) return null;
+    throw error;
+  }
+}
+
 function resolvePolishGate({
   packetPath,
   report: reportOverride = undefined,
@@ -817,7 +834,12 @@ function resolvePolishGate({
   const report = reportOverride === undefined
     ? loadRuntimeArtifact(packetPath, "assembly-report.json")
     : reportOverride;
-  const gate = evaluatePolishGate({ report, required: true, hiddenEagerMediaGate });
+  const gate = evaluatePolishGate({
+    report,
+    required: true,
+    hiddenEagerMediaGate,
+    currentOutputFingerprint: currentBuiltOutputFingerprint(packetPath),
+  });
   gate.scope_source = report ? "assembly_report" : "missing_assembly_report";
   return gate;
 }
