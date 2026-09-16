@@ -3747,6 +3747,45 @@
         }
       ],
       "entry_sha256": "f9d3bb90c21a7117f5a067dcbb40f13be9a46855d121f557597bd4e7edda5a18"
+    },
+    {
+      "id": "RL-0101",
+      "sequence": 101,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.8",
+      "changelog_sha256": "3caf28c2ad488d6d232ebe1f3c5e9ebdc6f52f233927ff21ce5a64431d961163",
+      "agent_impact": "Doctor no longer requires the two CampaignSpec sdk_hints.meta_tags keys the Campaign Cart SDK does not read, next-currency and next-predictive-address, from the built page. A spec that lists one (older Map exports do) now yields one advisory warning per page, code sdk_hints.meta_tags.ignored_by_sdk, message `CampaignSpec page \"<id>\" lists SDK meta tag(s) the Campaign Cart SDK does not read; remove from the Map's page hints: \"<tag>\" (<note>); ...`, detail { page_id, tags: [...] }, emitted whether or not the tag rendered and before _site/ exists; those keys never produce sdk_hints.meta_tags.missing (previously an error once assembly was complete) and are dropped from the pre-build `CampaignSpec expects SDK meta tags (...)` list. qa's meta:<page>:<tag> assertion for the same keys is now status warn, severity warn, instead of manual_review; its actual (`<value> (present but ignored by Campaign Cart)` or the shared placeholder) and evidence.note keep their shape, and the note text now reads `Campaign Cart does not read a <tag> meta tag; remove it from the Map's page hints. ...`. A consumer that counted manual_review rows as human work has two fewer per page. The remedy for both is an edit to the Map's page hints, not to the build. No schema, flag or command change; src/sdk-meta-tags.mjs is implementation.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "validateBuiltSdkMetaTags emits one sdk_hints.meta_tags.ignored_by_sdk warning per page listing next-currency or next-predictive-address, never a sdk_hints.meta_tags.missing error for them, and omits them from the pre-build expected-tags list."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "The meta:<page>:<tag> assertion for an SDK-ignored key is warn (severity warn) with the shared note, never manual_review."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents sdk_hints.meta_tags.ignored_by_sdk and that the two SDK-ignored keys are never required or missing."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The sdk_hints.meta_tags check names the two SDK-ignored keys as warn rows carrying the shared note, never manual_review."
+        }
+      ],
+      "entry_sha256": "d9653acb46915869996997745b32ce6141c7a02b4f6ab9a71a1f709192c50a32"
     }
   ]
 }
