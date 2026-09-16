@@ -38,6 +38,50 @@ Notable supported-surface changes are recorded here.
   `--no-write` (`list: true`, `written: false`, `remit.sent: false` in
   `--json`; the text output ends `List only (--list). No record written, no
   remit.`).
+## [1.29.0+agent.3] - 2026-09-16
+
+### Changed
+
+- `prepare-build` records `assembly.commerce_catalog.path: null` when the
+  catalog in use is the toolkit's own `contracts/commerce-surface-catalog.json`
+  (the default), instead of a packet-relative path that climbs into whichever
+  checkout ran the command (`../../../campaigns-os/contracts/…`). The catalog
+  ships with the toolkit, so a null path resolves to the running toolkit's
+  copy on every machine and under `npx campaigns-os` (#324). An explicit
+  `--commerce-catalog <path>` is still recorded relative to the packet.
+- Doctor and `qa run` read a null `assembly.commerce_catalog.path` as the
+  running toolkit's catalog. A recorded path that does not exist but whose
+  file name is `commerce-surface-catalog.json` (a packet prepared before this
+  change, moved to another machine) also resolves to the running toolkit's
+  catalog: doctor no longer blocks with
+  `[assembly.commerce_catalog.path] Commerce catalog is required but not found.`
+  and instead prints the ready line `Commerce catalog resolved to the running
+  toolkit's copy; the packet's recorded path <path> does not exist here (it
+  names the checkout that ran prepare-build). Re-run prepare-build to clear
+  the machine-local path.` A dead path with any other file name still blocks.
+- `docs/build-packet.md` gains a Commerce Catalog section describing the three
+  path states (null, operator path, stale machine-local path) and
+  `examples/build-packet.basic.json` carries `path: null`.
+
+## [1.29.0+agent.2] - 2026-09-16
+
+### Changed
+
+- Spec-hash identity is compared one way everywhere (#328): `src/spec-identity.mjs`
+  now owns `normalizeSpecHash` (trim, lower-case, strip one leading `sha256:`,
+  empty to `null`), `specHashesMatch` (both sides present and equal after
+  normalisation; two missing hashes never match) and `specHashOf` (the
+  `spec_hash` / `spec_identity.spec_hash` lookup). The Commercial Journey
+  `deriveState` freshness check, the sidecar-bundle `spec_hash` and
+  `spec_material_hash` identity checks, and the Commercial Journey and QA
+  parity report `spec_hash` fields all go through it. A calculation whose
+  `spec_hash` differs from the Map's only by prefix, hex case or surrounding
+  whitespace is now `Exact` instead of `Stale`, and a sidecar bundle whose
+  producers spell the same hash differently no longer reports
+  `bundle.identity.spec_hash_mismatch` / `spec_material_hash_mismatch`. Other
+  identity fields (`map_id`, slugs, paths) keep their exact compare. The
+  module stays internal this release; a package export lands with the next
+  supported-surface bump.
 
 ## [1.29.0+agent.1] - 2026-09-16
 

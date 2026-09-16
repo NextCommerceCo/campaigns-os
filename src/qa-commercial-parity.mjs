@@ -1,4 +1,5 @@
 import { runWithDeadline } from "./deadline.mjs";
+import { specHashOf } from "./spec-identity.mjs";
 import {
   CommercialJourneyLimitError,
   PricingState,
@@ -432,10 +433,6 @@ function captureIssues(captures) {
   return issues;
 }
 
-function journeySpecHash(spec) {
-  return spec?.spec_hash ?? spec?.spec_identity?.spec_hash ?? null;
-}
-
 function compactReport(report, journey, plan, executed, issues, observedClaims, claimLimit, plannedScenarioCount = plan.length) {
   const exactPages = array(journey?.pages).filter((page) => page?.state === PricingState.Exact).length;
   const stalePages = array(journey?.pages).filter((page) => page?.state === PricingState.Stale).length;
@@ -617,7 +614,7 @@ export async function runCommercialParity({
     executed.map((entry) => entry.envelope),
     resolved?.rawSpec || resolved?.spec || {},
     {
-      spec_hash: journeySpecHash(resolved?.rawSpec || resolved?.spec),
+      spec_hash: specHashOf(resolved?.rawSpec || resolved?.spec),
       catalog_imported_at: catalogImportedAt(resolved?.rawSpec || resolved?.spec),
     },
   );
