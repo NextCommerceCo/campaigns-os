@@ -2,6 +2,23 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.29.0+agent.15] - 2026-09-16
+
+### Fixed
+
+- The public `./commercial-journey` export no longer reaches `node:crypto`
+  (#328). The spec-hash comparators it uses (`normalizeSpecHash`,
+  `specHashesMatch`, `specHashOf`) moved out of `src/spec-identity.mjs` — whose
+  `specMaterialHash` needs `node:crypto` — into a dependency-free leaf,
+  `src/spec-hash.mjs`; `src/spec-identity.mjs` re-exports them, so its
+  existing importers are unchanged. A browser-targeted bundle (esbuild, Vite)
+  that imports `@nextcommerce/campaigns-os/commercial-journey` builds again
+  without a `node:crypto` alias or shim; the static import graph of
+  `./commercial-journey`, `./commercial-parity` and `./text-safety` is now
+  guarded by a test that fails naming the first file and `node:` specifier it
+  reaches. `src/spec-hash.mjs` is not a new package export; the supported
+  surface is unchanged.
+
 ## [1.29.0+agent.13] - 2026-09-16
 
 ### Added

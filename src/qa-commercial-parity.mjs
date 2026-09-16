@@ -1,5 +1,5 @@
 import { runWithDeadline } from "./deadline.mjs";
-import { specHashOf } from "./spec-identity.mjs";
+import { specHashOf } from "./spec-hash.mjs";
 import {
   CommercialJourneyLimitError,
   PricingState,
