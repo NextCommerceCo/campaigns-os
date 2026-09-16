@@ -86,14 +86,18 @@ function qaVerdictDigests(record) {
     .filter(Boolean);
 }
 
-function identityMatches(record, packet) {
+/**
+ * Whether `record` was written for the campaign `packet` describes: same map id
+ * and same public route slug. Both sides must actually assert an identity. An
+ * identity-less record is not evidence about THIS campaign, so it can never
+ * satisfy closeout — and `run-record` never re-emits under its id.
+ */
+export function identityMatches(record, packet) {
   const mapId = text(packet?.spec?.map_id);
   const slug = text(packet?.campaign?.public_route_slug);
   const identity = isObject(record?.identity) ? record.identity : {};
   const recordMapId = text(identity.map_id);
   const recordSlug = text(identity.campaign_slug);
-  // Both sides must actually assert an identity. An identity-less record is
-  // not evidence about THIS campaign, so it can never satisfy closeout.
   if (!mapId || !slug || !recordMapId || !recordSlug) return false;
   return recordMapId === mapId && recordSlug === slug;
 }
@@ -140,17 +144,10 @@ export function assessRunRecordCloseout({
     return outcome("no_record", "No readable Run Record exists for this target; the run has no durable record yet.");
   }
 
-  const matching = readable.filter((entry) => identityMatches(entry.record, packet));
-  if (!matching.length) {
+  const entry = latestMatchingRunRecord(readable, packet);
+  if (!entry) {
     return outcome("foreign_campaign", "Run Records exist under this target, but none carries this packet's map id and public route slug.");
   }
-
-  // Newest matching record wins. A record with an unparseable created_at sorts
-  // last: it cannot prove it is current, so it is never preferred over one that
-  // can. Records are then judged strictly — the newest is the only candidate,
-  // so an older good record cannot mask a newer broken one.
-  const sorted = [...matching].sort((a, b) => (parseTime(b.record.created_at) ?? -1) - (parseTime(a.record.created_at) ?? -1));
-  const entry = sorted[0];
   const record = entry.record;
 
   const createdAt = parseTime(record.created_at);
@@ -191,6 +188,26 @@ export function assessRunRecordCloseout({
   return outcome("satisfied", remitState === "skipped"
     ? "A matching, current Run Record is closed locally (remit skipped: consent off or --no-remit)."
     : "A matching, current Run Record is closed and remitted.", entry);
+}
+
+/**
+ * The newest Run Record among `records` that belongs to `packet`'s campaign
+ * (identityMatches), or null when none does. Newest matching record wins. A
+ * record with an unparseable created_at sorts last: it cannot prove it is
+ * current, so it is never preferred over one that can. The assessor then
+ * judges only this entry — so an older good record cannot mask a newer broken
+ * one — and `run-record` re-emits under its id when no session names one.
+ *
+ * @param {Array}  records  `{ path, record }` entries; non-object records are
+ *                          ignored.
+ * @param {object} packet   the Build Packet whose campaign the record must match.
+ */
+export function latestMatchingRunRecord(records, packet) {
+  const matching = (Array.isArray(records) ? records : [])
+    .filter((entry) => isObject(entry?.record) && identityMatches(entry.record, packet));
+  if (!matching.length) return null;
+  const sorted = [...matching].sort((a, b) => (parseTime(b.record.created_at) ?? -1) - (parseTime(a.record.created_at) ?? -1));
+  return sorted[0];
 }
 
 /** Reason codes whose remedy is recovering the EXISTING record, not a new one. */

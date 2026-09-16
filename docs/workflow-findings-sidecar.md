@@ -255,6 +255,27 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
   (`remit.preserved: true`) when it may not — `--no-remit` or consent off
   over a failed remit does not file it as `skipped`. Only a `--no-write` run
   reads nothing, because it writes and sends nothing.
+- **Which `run_id` a run-record is keyed on** — `--run-id` names it; without
+  one the active run session's id is used; without a session, the most recent
+  Run Record on disk for this packet's campaign (same `identity.map_id` and
+  `identity.campaign_slug` as the packet — the closeout-recognition match
+  below, newest `created_at` first) is re-emitted under **its** id; only when
+  no such record exists is a fresh id minted. `run end` clears the session,
+  so before this every run-record after close minted, and the closeout
+  action `next` prints or a re-emit after a sidecar fix filed a second Run
+  Record for a run that already had one. The summary says which happened:
+  `run_id_source` is `explicit`, `session`, `latest_record` or `minted`, in
+  `--json` and on the text `Run ID: <id> (<source>)` line, and a
+  `latest_record` run first prints `Run ID <id> is the most recent Run Record
+  for this campaign; re-emitting it in place. Pass --new-run to start a new
+  run under a fresh id, or --list to see every record for this packet.` The
+  source is on the command's envelope only, never on the record. `--new-run`
+  mints regardless of what is on disk (it is refused beside `--run-id`).
+  `--list` is inspection: it prints, newest first, every record for this
+  packet's campaign (`run_id`, `created_at`, `remit_state`, `remit_result`,
+  `remit_endpoint`, `record_path`), then the id the next plain run would use
+  and its source, and — like `--no-write` — assembles, writes and sends
+  nothing (`list: true`, `written: false`, `remit.sent: false` in `--json`).
 - **The stored copy states its outcome** — the record the receiver holds is,
   by construction, one whose send landed, so the body sent carries
   `remit_state: "ok"`, `remit_attempted: true`, `remit_ok: true`, the
@@ -385,8 +406,9 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   share its id, and assembling an interim record is useful while spending the
   session's one accepted POST on it is not. A session-ending verdict auto-ends
   in the same process, before the printed command can run, so there the command
-  mints its own `run_id` and remits normally — as it does with no session at
-  all. One exported set decides which dispositions end a session, read by both
+  finds no session and resolves the `run_id` the way any sessionless run does
+  (below): to the record the auto-end just wrote, which it re-emits in place —
+  and leaves as written when its remit landed. One exported set decides which dispositions end a session, read by both
   the auto-end and the closeout, so the two cannot disagree about who owns the
   `run_id`. When
   an auto-end's own remit does not close, the auto-end says so and names the
@@ -455,10 +477,10 @@ newer broken one.
 | Code | `next` emits |
 |---|---|
 | `satisfied` | a non-required `run_record_present` action naming the record and its path |
-| `no_record` | the required `run_record_closeout` |
-| `foreign_campaign` | the required `run_record_closeout` |
-| `stale_predates_evidence` | the required `run_record_closeout` |
-| `outdated_artifacts` | the required `run_record_closeout` |
+| `no_record` | the required `run_record_closeout` (the plain command; with no record for this campaign, `run-record` mints) |
+| `foreign_campaign` | the required `run_record_closeout` (plain; the records on disk belong to other campaigns and are never reused) |
+| `stale_predates_evidence` | the required `run_record_closeout` carrying `--new-run`: the superseded record is the newest one for the campaign, so the plain command would re-emit it in place |
+| `outdated_artifacts` | the required `run_record_closeout` carrying `--new-run`, for the same reason |
 | `remit_failed` | the required `run_record_remit_recovery` |
 | `remit_incomplete` | the required `run_record_remit_recovery` |
 
@@ -486,6 +508,11 @@ replaces the unsent record with a thinner one and sends that. Re-sending the
 persisted record is not implemented. Until it is, treat the local file as the
 durable artifact and recover the remit only for a run whose record the current
 disk state can still reproduce.
+
+The plain closeout command (no `--run-id`) is not a way around this: with no
+session it resolves to the same newest record and re-emits it in place, so it
+reaches a new id only through `--new-run` or when no record for the campaign
+exists. `run-record --list` shows which ids exist before choosing.
 
 An active run session still wins: with an ambient session open, `done` emits the
 required `run end` exactly as before, satisfied or not.

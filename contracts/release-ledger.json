@@ -3540,6 +3540,45 @@
         }
       ],
       "entry_sha256": "610cfb6dc40b6e02eb027f8e3bc3c4a2a67563bc4f2a1ef1c8689206ac29727a"
+    },
+    {
+      "id": "RL-0096",
+      "sequence": 96,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.4",
+      "changelog_sha256": "783354b6526720d1be396edc1d37e0df823c309a9ca7c550229220f0a272194d",
+      "agent_impact": "run-record with no --run-id and no active run session now re-emits the most recent Run Record on disk for the packet's campaign under that record's run_id instead of minting a fresh id (#328); resolution is --run-id > active session > newest record whose identity.map_id and identity.campaign_slug match the packet > minted. An agent that ran the closeout action next prints, or re-ran run-record after run end, therefore no longer forks a second record: a record whose remit landed is left as written (written: false, remit.result not_contacted, as an explicit --run-id over it already behaved) and an unremitted one is reassembled under the same id. The --json summary carries a new envelope field run_id_source (explicit | session | latest_record | minted) and the text output prints \"Run ID: <id> (<source>)\", preceded on a latest_record run by a one-line notice naming the id, --new-run and --list; the Run Record schema is unchanged and never carries the source. New flags: --new-run mints regardless of disk state (refused beside --run-id, exit non-zero, stderr \"--new-run and --run-id are exclusive\"); --list prints every record for the campaign newest first (run_id, created_at, remit_state, remit_result, remit_endpoint, record_path) plus the id a plain run would use and its source, and assembles, writes and sends nothing (list: true, written: false, remit.sent: false). next's required run_record_closeout command carries --new-run when the record it judged stale_predates_evidence or outdated_artifacts is the campaign's newest record, and its description names the superseded id; for no_record and foreign_campaign the plain command is unchanged. An agent that expected a sessionless run-record to always produce a new run_id must pass --new-run.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run-record",
+          "summary": "With no --run-id and no active session, run-record re-emits the newest matching Run Record under its run_id rather than minting; the summary gains run_id_source and a latest_record notice; new --new-run mints on request and --list inspects the ids on disk without writing or sending."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "The required run_record_closeout command carries --new-run, and its description names the superseded record, when the newest record for the campaign was judged stale_predates_evidence or outdated_artifacts."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Documents run_id resolution (explicit, session, latest_record, minted), run_id_source on the envelope, --new-run, --list, the sessionless behaviour after a QA auto-end, and the closeout reason codes that print --new-run."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The run-record mention names the run_id resolution order and the --new-run and --list flags."
+        }
+      ],
+      "entry_sha256": "8bad4903af95fb5b11c0e31504c8ee1a2fb3f6b7f370ee11b75a7f5f7d2e553d"
     }
   ]
 }

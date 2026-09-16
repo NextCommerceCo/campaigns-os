@@ -2,6 +2,43 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.29.0+agent.4] - 2026-09-16
+
+### Changed
+
+- `run-record` with no `--run-id` and no active run session re-emits the most
+  recent Run Record for this packet's campaign under that record's `run_id`
+  instead of minting a new one (#328). `run end` clears the session, so every
+  run-record after close minted — the closeout action `next` prints at stage
+  `done`, the command a session-ending `qa run` prints, and any re-emit after
+  fixing a sidecar each filed a second Run Record for a run that already had
+  one. Resolution is now `--run-id` > the active session > the newest record
+  on disk whose `identity.map_id` and `identity.campaign_slug` match the packet
+  (the same match closeout recognition uses) > a fresh id; a record whose remit
+  landed stays final and is left as written, exactly as an explicit `--run-id`
+  over it already did. The `--json` summary carries `run_id_source`
+  (`explicit` | `session` | `latest_record` | `minted`) and the text output
+  prints `Run ID: <id> (<source>)`; a `latest_record` run first prints `Run ID
+  <id> is the most recent Run Record for this campaign; re-emitting it in
+  place. Pass --new-run to start a new run under a fresh id, or --list to see
+  every record for this packet.` The source rides the command's envelope only;
+  the Run Record schema is unchanged.
+- New `run-record --new-run` mints a fresh `run_id` regardless of what is on
+  disk (refused beside `--run-id`: `--new-run and --run-id are exclusive`).
+  `next` puts it on the required `run_record_closeout` command when the record
+  it judged `stale_predates_evidence` or `outdated_artifacts` is the newest
+  one for the campaign, since the plain command would now re-emit that record
+  in place; the description names the superseded id. With no matching record
+  (`no_record`, `foreign_campaign`) the plain command is printed and mints on
+  its own.
+- New `run-record --list` prints, newest first, every Run Record on disk for
+  this packet's campaign — `run_id`, `created_at`, `remit_state`,
+  `remit_result`, `remit_endpoint`, `record_path` — then the id a plain run
+  would use and its source, and assembles, writes and sends nothing, like
+  `--no-write` (`list: true`, `written: false`, `remit.sent: false` in
+  `--json`; the text output ends `List only (--list). No record written, no
+  remit.`).
+
 ## [1.29.0+agent.1] - 2026-09-16
 
 ### Changed
