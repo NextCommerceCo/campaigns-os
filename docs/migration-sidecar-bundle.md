@@ -24,14 +24,15 @@ campaign cannot proceed, and a blocked QA verdict is schema-valid.
 
 Read readiness from two places instead:
 
-- `stage_blocked` is `true` when the doctor sidecar records a blocked run
-  (`status: blocked` or `ok: false`), or, under `--require-qa`, when the QA
-  verdict's `disposition` is `blocked`.
-- The findings. A blocked doctor emits `bundle.doctor_output.blocked` as a
-  warning by default (the bundle is still conformant) and as an error under
-  `--require-qa` (a QA-complete handoff cannot ride a blocked doctor, so the
-  bundle is nonconformant and the command exits 2). A blocked QA verdict emits
-  `bundle.qa_verdict.blocked` as an error under `--require-qa`.
+- The findings. A doctor sidecar recording a blocked run (`status: blocked`
+  or `ok: false`) emits `bundle.doctor_output.blocked`; a QA verdict whose
+  `disposition` is `blocked` emits `bundle.qa_verdict.blocked`. Both are
+  warnings by default (the bundle is still conformant) and errors under
+  `--require-qa` (a QA-complete handoff cannot ride either block, so the bundle
+  is nonconformant and the command exits 2).
+- `stage_blocked` keeps its published meaning: `true` only when a required
+  QA verdict (`--require-qa`) is blocked. The doctor case is carried by the
+  finding alone until a schema bump widens the field.
 
 The text report prints a `Readiness:` line directly under `Status:` that reads
 those fields for you. The remedy for a blocked doctor is to resolve its errors

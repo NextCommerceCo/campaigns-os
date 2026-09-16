@@ -295,8 +295,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
   // cannot proceed. Conformance is not readiness: surface the block as a
   // warning by default and, under --require-qa, as an error, because a
   // QA-complete handoff cannot ride a doctor that refused the build.
-  const doctorBlocked = doctorSidecarBlocked(doctor);
-  if (doctorBlocked) {
+  if (doctorSidecarBlocked(doctor)) {
     (requireQa ? errors : warnings).push(artifactFinding(
       "bundle.doctor_output.blocked",
       "doctor_output",
@@ -324,11 +323,17 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
         ));
       }
     }
-    if (requireQa && qaVerdict.disposition === "blocked") {
-      errors.push(artifactFinding(
+    // A blocked verdict on disk is always reported, so the Readiness line
+    // reads it whether or not QA is part of conformance; --require-qa is what
+    // turns the same finding into an error, because only then does the bundle
+    // claim QA-complete handoff.
+    if (qaVerdict.disposition === "blocked") {
+      (requireQa ? errors : warnings).push(artifactFinding(
         "bundle.qa_verdict.blocked",
         "qa_verdict",
-        "QA Verdict is schema-valid but blocked, so it cannot satisfy QA-complete handoff.",
+        requireQa
+          ? "QA Verdict is schema-valid but blocked, so it cannot satisfy QA-complete handoff."
+          : "QA Verdict is schema-valid but blocked; the bundle is conformant, but the campaign is not QA-ready.",
         "Resolve the failing QA blockers and promote the resulting named verdict explicitly.",
       ));
     }
@@ -351,7 +356,10 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
     bundle_id: SIDECAR_BUNDLE_CONTRACT.bundle_id,
     ok: errors.length === 0,
     status: errors.length === 0 ? "conformant" : "nonconformant",
-    stage_blocked: doctorBlocked || (requireQa && qaVerdict?.disposition === "blocked"),
+    // stage_blocked keeps its published meaning (a required QA verdict is
+    // blocked); the doctor case is carried by the bundle.doctor_output.blocked
+    // finding until the conformance schema is bumped to widen it.
+    stage_blocked: requireQa && qaVerdict?.disposition === "blocked",
     root,
     packet_generated_at: packet?.generated_at ?? null,
     material_digest: materialDigest,
@@ -363,8 +371,9 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
 
 // One line, distinct from `status`, for the operator reading text output:
 // "conformant" only says the sidecars agree with each other and the contract.
-// Whether doctor or QA passed is carried by stage_blocked and the findings, and
-// this line reads those so nobody has to infer readiness from "ok: true".
+// Whether doctor or QA passed is carried by the blocked findings (and, for a
+// required QA verdict, stage_blocked); this line reads those so nobody has to
+// infer readiness from "ok: true".
 export function sidecarBundleReadinessLine(result) {
   const blockers = [...(result.errors || []), ...(result.warnings || [])]
     .filter((finding) => finding.code === "bundle.doctor_output.blocked" || finding.code === "bundle.qa_verdict.blocked")
