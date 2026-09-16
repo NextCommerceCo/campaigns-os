@@ -26,6 +26,7 @@ Notable supported-surface changes are recorded here.
 - `docs/build-packet.md` gains a Commerce Catalog section describing the three
   path states (null, operator path, stale machine-local path) and
   `examples/build-packet.basic.json` carries `path: null`.
+
 ## [1.29.0+agent.2] - 2026-09-16
 
 ### Changed
