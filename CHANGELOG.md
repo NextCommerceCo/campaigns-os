@@ -30,6 +30,32 @@ Notable supported-surface changes are recorded here.
 - README and `docs/migration-sidecar-bundle.md` now say plainly that
   `conformant` means the sidecars agree with each other and the contract and
   says nothing about whether doctor or QA passed; read the warnings for that.
+## [1.29.0+agent.8] - 2026-09-16
+
+### Changed
+
+- Doctor no longer requires the two CampaignSpec `sdk_hints.meta_tags` keys
+  the Campaign Cart SDK does not read, `next-currency` and
+  `next-predictive-address`, from the built page. Until now a spec that still
+  carried them (older Map exports do; the Map Builder stopped emitting both)
+  failed `validateBuiltSdkMetaTags` with `sdk_hints.meta_tags.missing` on every
+  page, while QA marked the same tags `present but ignored by Campaign Cart`,
+  so the spec, doctor and QA disagreed about the same two keys on every such
+  campaign. Doctor now emits one advisory warning per page,
+  `sdk_hints.meta_tags.ignored_by_sdk`, naming the key(s) and the reason
+  (`Campaign Cart does not read a next-currency meta tag; remove it from the
+  Map's page hints. ...`), whether or not the tag rendered and before `_site/`
+  exists; the keys never appear in the pre-build `CampaignSpec expects SDK
+  meta tags (...)` list. Detail carries `{ page_id, tags }`. The fix is an
+  edit to the Map's page hints, not to the build.
+- QA's `meta:<page>:<tag>` row for those two keys is now `status: warn`
+  (severity `warn`) instead of `manual_review`: there is nothing for a human
+  to review. Its `actual` and `evidence.note` are unchanged in shape and the
+  note text now comes from the one shared list.
+- New leaf module `src/sdk-meta-tags.mjs` exports `SDK_IGNORED_META_TAGS`
+  (`{ tag: { expected, actual, note } }`), `sdkIgnoredMetaTag(name)` and
+  `describeSdkIgnoredMetaTags(names)`; doctor and QA both import it, so the
+  two surfaces read one list. Implementation, not supported surface.
 
 ## [1.29.0+agent.7] - 2026-09-16
 
