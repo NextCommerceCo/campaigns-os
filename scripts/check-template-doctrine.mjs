@@ -22,6 +22,7 @@
  *     adds the sibling via actions/checkout.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
@@ -29,6 +30,7 @@ import { resolveStarterTemplatesSource } from "./starter-templates-path.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 const skillPath = resolve(root, "skills/next-campaigns-build/SKILL.md");
+const sharedContractPath = resolve(root, "contracts/template-brand-contract.shared-commerce.v0.json");
 const catalogPath = resolve(root, "contracts/commerce-surface-catalog.json");
 // Validate the partials at the commit the vendored catalog was synced from —
 // the tree CI checks out — not whatever a local sibling checkout happens to be
@@ -125,12 +127,20 @@ if (doctrine.size === 0) {
 //    layout/landing-section files costs a few extra string ops but never produces
 //    false positives. Earlier glob-based scoping missed _layouts/ at depth 3 — a
 //    coverage gap better solved by widening than by maintaining brittle globs.
+// One filter for every directory scan of the templates tree: the partials walk
+// and the family listing below must skip the same entries, or a stray
+// node_modules/ or build output under src/ becomes a "family" that ships no
+// assets and the hash check verifies nothing for it.
+function isScannedDir(entry) {
+  return entry !== "node_modules" && entry !== "_site" && !entry.startsWith(".");
+}
+
 function walk(dir, acc = []) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     const stat = statSync(full);
     if (stat.isDirectory()) {
-      if (entry === "node_modules" || entry === "_site" || entry.startsWith(".")) continue;
+      if (!isScannedDir(entry)) continue;
       walk(full, acc);
     } else if (entry.endsWith(".html")) {
       acc.push(full);
@@ -190,7 +200,68 @@ for (const path of partials) {
   }
 }
 
-// 4. Report.
+// 4. Payment-chrome asset hashes. The shared-commerce contract records the
+//    sha256 of each chrome asset as the starter ships it
+//    (default_residue.payment_chrome.asset_sha256, pinned by asset_pin.sha);
+//    browser QA compares served bytes against them to tell an untouched strip
+//    from one edited in place. A hash that no longer matches the pinned tree
+//    would read every deployed copy of the starter asset as edited, so the
+//    contract is checked against the same pinned checkout the partials are.
+//    The pin recorded in the contract must be the catalog pin: one commit
+//    describes the shipped bytes, not two. Skipped (with a note) when the tree
+//    under test is not at the pin, since a drifted sibling proves nothing.
+const hashViolations = [];
+let hashedAssets = 0;
+const hashedFamilies = new Set();
+{
+  const contract = existsSync(sharedContractPath) ? JSON.parse(readFileSync(sharedContractPath, "utf8")) : null;
+  const chrome = contract?.default_residue?.payment_chrome;
+  const hashes = chrome?.asset_sha256 && typeof chrome.asset_sha256 === "object" ? chrome.asset_sha256 : {};
+  const contractPin = chrome?.asset_pin?.sha ?? null;
+  if (Object.keys(hashes).length > 0) {
+    if (pinSha !== null && contractPin !== pinSha) {
+      hashViolations.push(
+        `${relative(root, sharedContractPath)}: payment_chrome.asset_pin.sha is ${shortSha(contractPin)}, ` +
+          `the catalog pin _synced_from_sha is ${shortSha(pinSha)}. Re-hash the assets at the catalog pin and record it.`,
+      );
+    }
+    const atPin = templatesSource.kind === "sibling_at_pin" || templatesSource.kind === "pinned_archive" || templatesSource.kind === "override";
+    if (!atPin) {
+      console.warn(`  note: payment_chrome.asset_sha256 not verified (templates tree is not at the catalog pin).`);
+    } else {
+      const families = readdirSync(join(templatesRoot, "src")).filter(
+        (entry) => isScannedDir(entry) && statSync(join(templatesRoot, "src", entry)).isDirectory(),
+      );
+      for (const [asset, expected] of Object.entries(hashes)) {
+        for (const family of families) {
+          const file = join(templatesRoot, "src", family, "assets", asset);
+          if (!existsSync(file)) continue;
+          hashedAssets += 1;
+          hashedFamilies.add(family);
+          const actual = createHash("sha256").update(readFileSync(file)).digest("hex");
+          if (actual !== String(expected).toLowerCase()) {
+            hashViolations.push(`src/${family}/assets/${asset}: sha256 ${actual} at the pin; contract records ${expected}.`);
+          }
+        }
+        if (!families.some((family) => existsSync(join(templatesRoot, "src", family, "assets", asset)))) {
+          hashViolations.push(`${asset}: hashed in the contract but no family ships it at the pin.`);
+        }
+      }
+    }
+  }
+}
+if (hashViolations.length > 0) {
+  console.error(`check-template-doctrine: ${hashViolations.length} payment-chrome asset hash(es) disagree with the pinned starter templates.\n`);
+  for (const line of hashViolations) console.error(`  ${line}`);
+  console.error(
+    `\nRe-hash each asset at the catalog pin (sha256 of the file bytes) into ` +
+      `contracts/template-brand-contract.shared-commerce.v0.json default_residue.payment_chrome.asset_sha256, ` +
+      `and set asset_pin.sha to that commit.`,
+  );
+  process.exit(1);
+}
+
+// 5. Report.
 if (violations.length > 0) {
   console.error(
     `check-template-doctrine: ${violations.length} partial(s) disagree with build-skill doctrine.\n`,
@@ -214,7 +285,7 @@ const doctrinePairs = [...doctrine.entries()]
   .join(", ");
 console.log(
   `Template doctrine check passed (${doctrine.size} doctrine pair(s): ${doctrinePairs}; ` +
-    `${partials.length} partials scanned).`,
+    `${partials.length} partials scanned; ${hashedAssets} payment-chrome asset hash(es) verified across ${hashedFamilies.size} famil${hashedFamilies.size === 1 ? "y" : "ies"}).`,
 );
 if (templatesSource.kind !== "sibling_unpinned") {
   console.log(`  ${templatesSourceLine(templatesSource)}`);

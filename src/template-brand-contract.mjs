@@ -52,6 +52,10 @@ function loadTemplateBrandContractFile(path, seen = new Set()) {
 // instead of re-implementing cycle-detection/merge.
 export function resolveContractExtendsChain(contract, { dir, label = dir, seen = new Set() } = {}) {
   if (seen.has(label)) throw templateBrandContractError("extends_cycle", `Template brand contract extends cycle at ${label}.`);
+  // The outermost call sees the fully merged contract; validation that spans
+  // parent and child fields (a family adding a chrome asset the shared hash
+  // map does not cover) has to run there, not per file.
+  const outermost = seen.size === 0;
   seen.add(label);
   if (!isPlainObject(contract) || contract.schema_version !== TEMPLATE_BRAND_CONTRACT_SCHEMA) {
     throw templateBrandContractError(
@@ -60,14 +64,17 @@ export function resolveContractExtendsChain(contract, { dir, label = dir, seen =
     );
   }
   const parentRef = typeof contract.extends === "string" && contract.extends.trim() ? contract.extends.trim() : null;
-  if (!parentRef) return contract;
-  const parentPath = join(dir, parentRef);
-  if (!existsSync(parentPath)) {
-    throw templateBrandContractError("extends_missing_parent", `Template brand contract ${label} extends missing file "${parentRef}".`);
+  let resolved = contract;
+  if (parentRef) {
+    const parentPath = join(dir, parentRef);
+    if (!existsSync(parentPath)) {
+      throw templateBrandContractError("extends_missing_parent", `Template brand contract ${label} extends missing file "${parentRef}".`);
+    }
+    resolved = mergeContractObjects(loadTemplateBrandContractFile(parentPath, seen), contract);
+    delete resolved.extends;
   }
-  const merged = mergeContractObjects(loadTemplateBrandContractFile(parentPath, seen), contract);
-  delete merged.extends;
-  return merged;
+  if (outermost) paymentChromeAssetHashes(resolved.default_residue?.payment_chrome, { label });
+  return resolved;
 }
 
 function templateBrandContractError(code, message, cause = undefined) {
@@ -276,6 +283,48 @@ export function paymentChromeArtifacts(chrome, method) {
     return !methodTokens.some((candidate) => normalized.includes(candidate));
   });
   return { selectors, assets };
+}
+
+// The shipped bytes of each chrome asset, by basename: `payment_chrome.asset_sha256`
+// keyed by the same path `assets[]` lists, lower-cased hex. Browser QA hashes the
+// bytes a page actually serves against this map, which is what tells an untouched
+// starter strip (residue, whatever its markup says) from one edited in place
+// (manual review).
+//
+// Strict, and run at contract load: a hash that is not 64 hex chars, or a
+// listed asset the map does not cover, throws with the asset named. A dropped
+// or missing hash would send that asset back to the markup token match — the
+// path this map exists to close — and a contract author would learn of the
+// typo only from a deployed strip reading as edited. A contract with no
+// `asset_sha256` at all declares no hashes (every asset uses the token match),
+// which keeps a privately-sourced contract that predates the field loadable.
+export function paymentChromeAssetHashes(chrome, { label = "template brand contract" } = {}) {
+  const byBasename = new Map();
+  if (!isPlainObject(chrome) || chrome.asset_sha256 === undefined) return byBasename;
+  if (!isPlainObject(chrome.asset_sha256)) {
+    throw templateBrandContractError("payment_chrome_hash_invalid", `${label}: default_residue.payment_chrome.asset_sha256 must be an object keyed by asset path.`);
+  }
+  for (const [asset, digest] of Object.entries(chrome.asset_sha256)) {
+    const basename = String(asset || "").split("/").pop();
+    const hex = typeof digest === "string" ? digest.trim().toLowerCase() : "";
+    if (!basename || !/^[0-9a-f]{64}$/.test(hex)) {
+      throw templateBrandContractError(
+        "payment_chrome_hash_invalid",
+        `${label}: default_residue.payment_chrome.asset_sha256["${asset}"] is not a 64-char hex sha256 (${JSON.stringify(digest)}).`,
+      );
+    }
+    byBasename.set(basename, hex);
+  }
+  for (const asset of Array.isArray(chrome.assets) ? chrome.assets : []) {
+    const basename = String(asset || "").split("/").pop();
+    if (basename && !byBasename.has(basename)) {
+      throw templateBrandContractError(
+        "payment_chrome_hash_missing",
+        `${label}: default_residue.payment_chrome.assets lists "${asset}" with no asset_sha256 entry; record the sha256 of the shipped file or drop the asset.`,
+      );
+    }
+  }
+  return byBasename;
 }
 
 // Pure, static: the markers in rendered checkout HTML that say a payment method

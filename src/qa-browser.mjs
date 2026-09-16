@@ -3,6 +3,7 @@ import { invocationPrefixFor } from "./install-mode.mjs";
 import { dirname as installModeDirname, resolve as installModeResolve } from "node:path";
 import { fileURLToPath as installModeFileUrl } from "node:url";
 const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(import.meta.url)), "..");
+import { createHash } from "node:crypto";
 import { runWithDeadline } from "./deadline.mjs";
 import { PLACEHOLDER_TEXT_ASSERTION_SUFFIX, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import {
@@ -48,6 +49,7 @@ import {
   normalizeCssColor,
   paletteResidueStyleChecks,
   paymentChromeArtifacts,
+  paymentChromeAssetHashes,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
@@ -1734,17 +1736,19 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
       // Shared across every method on this page: the same strip is commonly
       // attributed to all of them.
       const assetTextCache = new Map();
+      const shippedHashes = paymentChromeAssetHashes(chrome);
       const allSelectors = [...new Set([...artifactsByMethod.values()].flatMap((artifacts) => artifacts.selectors))];
       const allVisibleMatches = await collectVisibleSelectorMatches(browserPage, allSelectors);
       for (const method of unsupported) {
         const artifacts = artifactsByMethod.get(method);
         const visibleMatches = allVisibleMatches.filter((match) => artifacts.selectors.includes(match.selector));
-        const { residue, edited } = await partitionReferencedAssets(browserPage, {
+        const { residue, edited, starter } = await partitionReferencedAssets(browserPage, {
           html,
           pageUrl: page.url,
           referencedAssets: referencedAssetBasenames(html, artifacts.assets),
           method,
           cache: assetTextCache,
+          shippedHashes,
         });
         assertions.push(paymentChromeResidueAssertion({
           page,
@@ -1753,6 +1757,7 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
           visibleMatches,
           referencedAssets: residue,
           editedAssets: edited,
+          starterAssets: starter,
           severity,
         }));
       }
@@ -2024,13 +2029,29 @@ function referencedAssetBasenames(html, assets) {
 // longer carried any chrome, and the repair loop's remedy then deleted a
 // cards-only trust strip that was fine.
 //
-// Token match, not byte comparison against the template's shipped asset: this
-// runner reads a deployed page and has no checkout of the template to compare
-// against. What it can ask is whether the bytes actually served still mention
-// the method — which is the question the assertion is really asking.
+// This token match is the FALLBACK, for a contract entry that carries no
+// shipped hash. It cannot be the primary test: the shipped
+// upsell-payment-logos.svg draws its PayPal wordmark as bare path data with no
+// <text>, <title>, aria-label or id naming the method, so on its own this
+// reads the untouched starter strip as "edited" and the residue it exists to
+// catch as manual review. The byte hash (assetBytesMatchShipped) settles
+// untouched-vs-edited; this only speaks when no hash is on record.
 function assetTextCarriesMethod(text, method) {
   const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
   return compact(text).includes(compact(method));
+}
+
+// The primary test: are the served bytes the starter's own? The contract
+// records the sha256 of each chrome asset as shipped (payment_chrome.asset_sha256,
+// hashed from the starter-templates checkout at the catalog pin), so the
+// runner does not need a checkout of the template to compare against — one
+// digest of what the page served is enough. The digest is over the served
+// bytes exactly as fetched (fetchAssetBytes), the same bytes
+// check-template-doctrine hashes off disk, so the two can only disagree when
+// the file really differs.
+function assetBytesMatchShipped(bytes, shipped) {
+  if (!Buffer.isBuffer(bytes) || typeof shipped !== "string") return false;
+  return createHash("sha256").update(bytes).digest("hex") === shipped;
 }
 
 // SVG only, and deliberately. A raster or a font tells us nothing by its bytes,
@@ -2075,9 +2096,16 @@ function referencedAssetUrl(html, basename, pageUrl) {
 // the ones that no longer do. Anything we could not read — not textual, no
 // resolvable URL, a failed or non-OK fetch — stays residue: an asset we cannot
 // see into must never be cleared by our inability to see into it.
-async function partitionReferencedAssets(browserPage, { html, pageUrl, referencedAssets, method, cache, assetBounds }) {
+//
+// With a shipped hash on record (shippedHashes, basename -> sha256), the served
+// bytes decide: equal is the untouched starter asset, residue, also listed under
+// `starter` so the verdict can say why; different is edited in place, unless the
+// edited bytes still name the method, which is residue still. Without a hash the
+// token match alone decides, as before.
+async function partitionReferencedAssets(browserPage, { html, pageUrl, referencedAssets, method, cache, assetBounds, shippedHashes }) {
   const residue = [];
   const edited = [];
+  const starter = [];
   for (const basename of referencedAssets) {
     if (!isTextualAsset(basename)) {
       residue.push(basename);
@@ -2095,18 +2123,24 @@ async function partitionReferencedAssets(browserPage, { html, pageUrl, reference
     // a cache may overlap, and a value cache would let both miss and both fetch.
     let pending = cache instanceof Map ? cache.get(url) : undefined;
     if (pending === undefined) {
-      pending = fetchAssetText(browserPage, url, assetBounds);
+      pending = fetchAssetBytes(browserPage, url, assetBounds);
       if (cache instanceof Map) cache.set(url, pending);
     }
-    const text = await pending;
-    if (text === null) {
+    const bytes = await pending;
+    if (bytes === null) {
       residue.push(basename);
       continue;
     }
-    if (assetTextCarriesMethod(text, method)) residue.push(basename);
+    const shipped = shippedHashes instanceof Map ? shippedHashes.get(basename) : undefined;
+    if (shipped && assetBytesMatchShipped(bytes, shipped)) {
+      residue.push(basename);
+      starter.push(basename);
+      continue;
+    }
+    if (assetTextCarriesMethod(bytes.toString("utf8"), method)) residue.push(basename);
     else edited.push(basename);
   }
-  return { residue, edited };
+  return { residue, edited, starter };
 }
 
 // Bounds on one referenced-asset read. The assets this reads are payment-logo
@@ -2130,7 +2164,14 @@ const ASSET_FETCH_MAX_BYTES = 2 * 1024 * 1024;
 // ceiling is enforced on what actually arrives, chunk by chunk — Content-Length
 // is honoured when it already exceeds the cap, but a missing or understated
 // header changes nothing. Reader and timer are released on every exit.
-async function readBoundedAssetText({ target, timeoutMs, maxBytes }) {
+//
+// `raw: true` returns the body's bytes base64-encoded instead of decoded text.
+// evaluate() carries only JSON-serialisable values, so bytes cross as a string;
+// the caller decodes them to a Buffer. The residue check hashes those bytes,
+// and they have to be the served bytes — not a TextDecoder round-trip, which
+// drops a BOM and rewrites invalid sequences — or the digest can never agree
+// with the one the doctrine check takes over the file on disk.
+async function readBoundedAssetText({ target, timeoutMs, maxBytes, raw = false }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const aborted = new Promise((_, reject) => {
@@ -2150,17 +2191,27 @@ async function readBoundedAssetText({ target, timeoutMs, maxBytes }) {
     // checked. Refuse it; unreadable is residue, never a pass.
     if (!response.body || typeof response.body.getReader !== "function") return null;
     reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    const decoder = raw ? null : new TextDecoder();
     let received = 0;
     let text = "";
+    let binary = "";
     for (;;) {
       const { done, value } = await Promise.race([reader.read(), aborted]);
       if (done) break;
       received += value?.byteLength || 0;
       if (received > maxBytes) return null;
-      text += decoder.decode(value, { stream: true });
+      if (raw) {
+        // One code unit per byte; sliced so a large chunk cannot overflow the
+        // argument list of fromCharCode.
+        const bytes = value instanceof Uint8Array ? value : new Uint8Array(value || 0);
+        for (let offset = 0; offset < bytes.length; offset += 8192) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(offset, offset + 8192));
+        }
+      } else {
+        text += decoder.decode(value, { stream: true });
+      }
     }
-    return text + decoder.decode();
+    return raw ? btoa(binary) : text + decoder.decode();
   } catch {
     return null;
   } finally {
@@ -2179,12 +2230,34 @@ async function readBoundedAssetText({ target, timeoutMs, maxBytes }) {
 // navigating can leave evaluate() pending past any in-page timer. So the
 // whole call is raced once more, with a little headroom for the in-page
 // deadline to fire first and report normally.
-async function fetchAssetText(browserPage, url, { timeoutMs = ASSET_FETCH_TIMEOUT_MS, maxBytes = ASSET_FETCH_MAX_BYTES } = {}) {
+//
+// Resolves to the served bytes as a Buffer, or null when unreadable. The
+// in-page read returns them base64-encoded; anything that is not a decodable
+// base64 string is unreadable.
+async function fetchAssetBytes(browserPage, url, { timeoutMs = ASSET_FETCH_TIMEOUT_MS, maxBytes = ASSET_FETCH_MAX_BYTES } = {}) {
   const inPage = Promise.resolve()
-    .then(() => browserPage.evaluate(readBoundedAssetText, { target: url, timeoutMs, maxBytes }))
-    .then((text) => (typeof text === "string" ? text : null))
+    .then(() => browserPage.evaluate(readBoundedAssetText, { target: url, timeoutMs, maxBytes, raw: true }))
+    .then((encoded) => decodeAssetBase64(encoded))
     .catch(() => null);
   return settleDiagnosticWithin(inPage, timeoutMs + 1000, null);
+}
+
+function decodeAssetBase64(encoded) {
+  if (typeof encoded !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 !== 0) return null;
+  return Buffer.from(encoded, "base64");
+}
+
+// The residue row's list: starter assets first, each tagged inline so the
+// reader sees which items are the unmodified starter bytes without matching a
+// trailing clause back to the list; then the other referenced assets, then the
+// visible selectors.
+function residueItems({ visibleMatches, referencedAssets, starterAssets }) {
+  const starter = new Set(starterAssets);
+  return [
+    ...referencedAssets.filter((basename) => starter.has(basename)).map((basename) => `${basename} [starter]`),
+    ...referencedAssets.filter((basename) => !starter.has(basename)),
+    ...visibleMatches.map((match) => match.selector),
+  ];
 }
 
 function paymentChromeResidueAssertion({
@@ -2195,6 +2268,7 @@ function paymentChromeResidueAssertion({
   referencedAssets,
   severity,
   editedAssets = [],
+  starterAssets = [],
 }) {
   const offending = visibleMatches.length > 0 || referencedAssets.length > 0;
   // No residue, but an asset the contract names is still referenced and no
@@ -2214,7 +2288,7 @@ function paymentChromeResidueAssertion({
     ...outcome,
     expected: `no ${method} chrome: method is not in CampaignSpec available_payment_methods/available_express_payment_methods`,
     actual: offending
-      ? `residue found: ${[...visibleMatches.map((match) => match.selector), ...referencedAssets].join(", ")}`
+      ? `residue found: ${residueItems({ visibleMatches, referencedAssets, starterAssets }).join(", ")}`
       : editedOnly
         ? `edited in place: ${editedAssets.join(", ")} still referenced but no longer carries ${method} chrome — confirm the removal was intended, and remove or rename the asset so QA stops keying on the basename`
         : `no ${method} chrome rendered or referenced`,
@@ -2225,6 +2299,7 @@ function paymentChromeResidueAssertion({
       visible_matches: visibleMatches,
       referenced_assets: referencedAssets,
       edited_assets: editedAssets,
+      starter_assets: starterAssets,
       page_url: page.url,
     },
   });
@@ -6357,8 +6432,10 @@ export const __qaBrowserTestHooks = Object.freeze({
   referencedAssetBasenames,
   referencedAssetUrl,
   assetTextCarriesMethod,
+  assetBytesMatchShipped,
   partitionReferencedAssets,
-  fetchAssetText,
+  fetchAssetBytes,
+  decodeAssetBase64,
   readBoundedAssetText,
   ASSET_FETCH_TIMEOUT_MS,
   ASSET_FETCH_MAX_BYTES,
