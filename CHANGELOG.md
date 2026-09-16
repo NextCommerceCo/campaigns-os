@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.29.0+agent.8] - 2026-09-16
+## [1.29.0+agent.13] - 2026-09-16
 
 ### Added
 
@@ -83,6 +83,7 @@ Notable supported-surface changes are recorded here.
   the second check), `docs/build-packet.md`'s deploy-target section and
   `docs/polish-evidence.md`'s `capture_incomplete` row describe the same
   path.
+
 ## [1.29.0+agent.11] - 2026-09-16
 
 ### Changed
