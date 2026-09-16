@@ -22,7 +22,7 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
-import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
+import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
@@ -148,6 +148,20 @@ import {
   PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND,
   readPageKitBuildSummary,
 } from "./page-kit-build-summary.mjs";
+import {
+  isLocalServePacket,
+  LOCAL_PROOF_BUILD_COMMAND,
+  LOCAL_PROOF_BUILD_ENVIRONMENT,
+  LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD,
+  LOCAL_PROOF_BUILD_ENVIRONMENT_SCOPE,
+  LOCAL_PROOF_NEVER_EDIT_RULE,
+  LOCAL_PROOF_PARITY_COMMAND,
+  LOCAL_PROOF_PARITY_FIELD,
+  LOCAL_PROOF_PARITY_SCOPE,
+  recordedBuildEnvironment,
+  recordedProductionParity,
+  runProductionParityCheck,
+} from "./local-proof.mjs";
 import {
   contractHasPaletteResidueChecks,
   demoAssetConfig,
@@ -421,6 +435,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
+  campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
@@ -452,6 +467,7 @@ Usage:
 
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
+  Local proof mode: under deploy.target local-serve the build stage renders the DEVELOPMENT environment (\`CPK_ENV=development npx campaign-build --json > .campaign-runtime/page-kit-build-summary.json\`, recorded as stages.assembly.evidence.build_environment) into _site/, and polish capture, browser QA and typed-card orders run against that served output; starter templates gate every vendor loader on the environment, and a production build's protocol-relative loaders (//host/...) fail over a plain-HTTP local serve. \`page-kit parity\` then proves the pin on the production render before commit; the PR preview is the second check. The toolkit never proposes editing a generated include to make a local capture pass.
   Wrapper policy: \`start\`/\`prepare-build\`/\`build\` seed source_html.adapter_contract.wrapper_policy from --wrapper-policy, else the source-html manifest's wrapper_policy key, else strip_document_wrappers. Selecting preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking, so raw-HTML source can be handed over without a wrapper-stripping pass (docs/source-adapters.md).
   Design manifest: \`start\`/\`prepare-build\`/\`build\` read the source-html manifest from <source>/.campaigns-os/source-html-manifest.json; --design-manifest <path> reads it from anywhere else instead (a read-only source root keeps its proof and skip declarations in a file the operator owns). pages[].path stays relative to --source. Doctor re-reads the manifest the Design Source Package recorded.
   Template-stock pages: a page declared out of source scope (manifest skip_reason, or CampaignSpec build_scope.mode "partial") is template stock — its assembly decision carries template_stock: true and the locked family, intake demands no design source for it, and the build stage materialises it from that family's stock page (docs/design-source-package.md "Template-stock pages").
@@ -1039,10 +1055,14 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "page-kit") {
     const subcommand = args._[1] || null;
-    if (subcommand !== "sync") throw new Error("Unknown page-kit subcommand. Use: campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json].");
-    const result = pageKitSyncCommand(args);
+    // Spelled as inequalities: knownCommands() harvests the top-level
+    // command literals from this function by an equality pattern that a
+    // subcommand equality would also match.
+    if (subcommand !== "sync" && subcommand !== "parity") throw new Error("Unknown page-kit subcommand. Use: campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json], or campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json].");
+    const parity = subcommand !== "sync";
+    const result = parity ? pageKitParityCommand(args) : pageKitSyncCommand(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else for (const line of pageKitSyncTextLines(result)) console.log(line);
+    else for (const line of parity ? pageKitParityTextLines(result) : pageKitSyncTextLines(result)) console.log(line);
     if (!result.ok) process.exitCode = 2;
     return;
   }
@@ -3940,6 +3960,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     } else {
       addIssue(warnings, "deploy.local_serve_url", `deploy.target is local-serve but the recorded deploy URL ${deployUrl} is not a localhost or loopback origin. Record the served localhost URL, or set deploy.target to where that origin is actually hosted.`);
     }
+    validateLocalProof(packet, buildState?.report || null, errors, warnings, ready);
   } else if (packet.campaign?.allowed_domains_confirmed !== true) {
     if (isLocalhostDevelopmentOrigin(deployUrl)) {
       ready.push("Deploy URL is localhost; Campaigns App treats localhost on any port as a Development domain, so SDK initialization is allowed and analytics are suppressed for local QA.");
@@ -4659,6 +4680,164 @@ export function pageKitSyncCommand(args) {
   return result;
 }
 
+const PAGE_KIT_PARITY_FLAGS = Object.freeze(["packet", "json", "report"]);
+
+// Local proof mode, second half: the served development output was proven;
+// this proves that the production render of the same source differs from it
+// only in what the environment gate contributes, and that the Campaign Cart
+// pin is the same in both. Both renders go to temp directories through the
+// target's own page-kit; nothing under the target is written except the
+// result on the Assembly Report.
+export function pageKitParityCommand(args) {
+  const unknown = Object.keys(args).filter((key) => key !== "_" && !PAGE_KIT_PARITY_FLAGS.includes(key));
+  if (unknown.length) {
+    throw new Error(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit parity: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${PAGE_KIT_PARITY_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+  }
+  if (args.report === true) throw new Error("Missing value for --report");
+  const packetPath = resolve(requireArg(args, "packet"));
+  const result = {
+    ok: false,
+    action: "page-kit parity",
+    status: "blocked",
+    packet_path: packetPath,
+    public_route_slug: null,
+    target_repo: null,
+    proven_root: "_site/",
+    report_path: null,
+    written: false,
+    parity: null,
+    errors: [],
+    warnings: [],
+    next: `${cmd("doctor")} --packet ${shellToken(packetPath)}`,
+  };
+  let packet;
+  try {
+    packet = readJson(packetPath);
+  } catch (error) {
+    addIssue(result.errors, "local_proof.parity.packet_invalid", `Build Packet ${packetPath} could not be read as JSON: ${singleLineDetail(error.message)}`);
+    return result;
+  }
+  if (!isObject(packet)) {
+    addIssue(result.errors, "local_proof.parity.packet_invalid", `Build Packet ${packetPath} must be a JSON object.`);
+    return result;
+  }
+  const publicRouteSlug = normalizePublicRouteSlug(packet.campaign?.public_route_slug);
+  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
+  result.public_route_slug = publicRouteSlug || null;
+  result.target_repo = targetRepo;
+  if (!publicRouteSlug) {
+    addIssue(result.errors, "local_proof.parity.route_slug_missing", "The packet has no campaign.public_route_slug; the rendered output to compare lives at _site/<public_route_slug>/ and cannot be named.");
+    return result;
+  }
+  if (!isLocalServePacket(packet)) {
+    addIssue(result.errors, "local_proof.parity.not_local_serve", `deploy.target is ${JSON.stringify(packet.deploy?.target ?? null)}, not local-serve. Production parity compares the served DEVELOPMENT build in _site/ with a production render of the same source; under any other target _site/ is the production build itself and there is nothing to prove. Set it with ${cmd("qa")} policy set --packet ${shellToken(packetPath)} --deploy-target local-serve if this campaign is proven locally.`);
+    return result;
+  }
+  if (!targetRepo || !existsSync(targetRepo)) {
+    addIssue(result.errors, "local_proof.parity.target_missing", `Target repo does not exist: ${packet.assembly?.target_repo || "(assembly.target_repo not set)"}.`);
+    return result;
+  }
+  const workspace = resolveCampaignWorkspace(packetPath, {
+    packet,
+    reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined,
+    followContextPointer: false,
+  });
+  result.report_path = workspace.reportPath;
+  const report = readJsonIfExists(workspace.reportPath);
+  if (!report) {
+    addIssue(result.errors, "local_proof.parity.report_missing", `No Assembly Report at ${workspace.reportPath}; run prepare-build/start first, then the build stage in development.`);
+    return result;
+  }
+  if (!stageIsTerminal(report?.stages?.assembly?.status)) {
+    addIssue(result.errors, "local_proof.parity.build_pending", `stages.assembly.status is ${JSON.stringify(report?.stages?.assembly?.status ?? null)}; run the build stage first (${LOCAL_PROOF_BUILD_COMMAND}) and record it on the Assembly Report.`);
+    return result;
+  }
+  const environment = recordedBuildEnvironment(report);
+  if (environment !== LOCAL_PROOF_BUILD_ENVIRONMENT) {
+    addIssue(result.warnings, LOCAL_PROOF_BUILD_ENVIRONMENT_SCOPE, environment
+      ? `${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} is "${singleLineField(environment)}", not "${LOCAL_PROOF_BUILD_ENVIRONMENT}". If _site/ is a production build, the comparison below fails as proven_output_stale on the first environment-gated line; rebuild with ${LOCAL_PROOF_BUILD_COMMAND} and record the environment.`
+      : `${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} is not recorded. The build stage under local-serve renders the development environment (${LOCAL_PROOF_BUILD_COMMAND}) and records it there; the comparison below assumes _site/ is that render.`);
+  }
+  const load = loadPageKitCampaignEntry({ targetRepo, publicRouteSlug });
+  const expectedSdkVersion = load.status === "ok" && typeof load.entry?.sdk_version === "string" ? load.entry.sdk_version : null;
+  if (!expectedSdkVersion) {
+    addIssue(result.warnings, "local_proof.parity.sdk_version_unread", `${PAGE_KIT_CAMPAIGNS_REL_PATH}[${publicRouteSlug}].sdk_version could not be read (${load.status}); the rendered pin is checked for consistency across environments but not against the data file.`);
+  }
+  const parity = runProductionParityCheck({
+    targetRepo,
+    slug: publicRouteSlug,
+    provenRoot: join(targetRepo, "_site"),
+    expectedSdkVersion,
+  });
+  parity.build_fingerprint = optionalString(report?.stages?.assembly?.build_fingerprint) || null;
+  parity.proven_root = "_site/";
+  result.parity = parity;
+  if (parity.status === "unavailable") {
+    addIssue(result.errors, "local_proof.parity.unavailable", `Production parity could not be checked: ${parity.summary}`);
+    return result;
+  }
+  // Recorded on the assembly stage's free-form evidence, pass or fail, so
+  // doctor reports the same row on every run until the next check replaces
+  // it. The doctor sidecar is stamped stale: its local_proof rows predate this.
+  try {
+    commitAssemblyReport(workspace, (current) => {
+      const assembly = isObject(current?.stages?.assembly) ? current.stages.assembly : null;
+      if (!assembly) throw new Error("the Assembly Report has no stages.assembly to record parity on.");
+      const evidence = isObject(assembly.evidence) ? assembly.evidence : {};
+      const localProof = isObject(evidence.local_proof) ? evidence.local_proof : {};
+      return {
+        ...current,
+        stages: {
+          ...current.stages,
+          assembly: { ...assembly, evidence: { ...evidence, local_proof: { ...localProof, production_parity: parity } } },
+        },
+      };
+    }, {
+      command: "page-kit parity",
+      staleReason: `Local proof production parity was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+    });
+    result.written = true;
+  } catch (error) {
+    addIssue(result.warnings, "local_proof.parity.report_not_written", `Parity was checked but could not be recorded on ${workspace.reportPath}: ${singleLineDetail(error.message)}. Doctor will keep reporting ${LOCAL_PROOF_PARITY_SCOPE} as unrecorded.`);
+  }
+  if (parity.status === "fail") {
+    addIssue(result.errors, LOCAL_PROOF_PARITY_SCOPE, `Production parity FAILED: ${parity.summary} ${LOCAL_PROOF_NEVER_EDIT_RULE}`);
+    return result;
+  }
+  result.status = "pass";
+  result.ok = true;
+  result.next = `commit the source, then open the PR: the preview deploy is the second check. ${cmd("doctor")} --packet ${shellToken(packetPath)} reports ${LOCAL_PROOF_PARITY_SCOPE} from the recorded result.`;
+  return result;
+}
+
+export function pageKitParityTextLines(result) {
+  const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`];
+  if (result.target_repo) lines.push(`Target: ${singleLineField(result.target_repo)} (${result.proven_root}${result.public_route_slug || "<public-route-slug>"}/ proven in development)`);
+  if (result.report_path) lines.push(`Report: ${singleLineField(result.report_path)}${result.written ? ` (${LOCAL_PROOF_PARITY_FIELD} recorded)` : ""}`);
+  const parity = result.parity;
+  if (parity && (parity.status === "pass" || parity.status === "fail")) {
+    lines.push(`Parity: ${parity.summary}`);
+    for (const page of Array.isArray(parity.pages) ? parity.pages : []) {
+      const gated = page.gated_inserted_lines + page.gated_removed_lines;
+      lines.push(`- ${page.route}: pin ${page.sdk_version ?? "not rendered"}; environment-gated lines ${gated}${page.gated_hosts?.length ? ` (${page.gated_hosts.join(", ")})` : ""}`);
+    }
+    if (parity.first_difference) {
+      const diff = parity.first_difference;
+      lines.push(`First non-gated difference: ${diff.kind} at ${diff.route}${diff.path ? ` (${diff.path}${diff.line ? ` line ${diff.line}` : ""})` : ""}: ${diff.detail}`);
+    }
+  }
+  if (result.errors?.length) {
+    lines.push("Errors:");
+    for (const issue of result.errors) lines.push(`- ${formatIssueSummary(issue)}`);
+  }
+  if (result.warnings?.length) {
+    lines.push("Warnings:");
+    for (const issue of result.warnings) lines.push(`- ${formatIssueSummary(issue)}`);
+  }
+  if (result.next) lines.push(`Next: ${result.next}`);
+  return lines;
+}
+
 export function pageKitSyncTextLines(result) {
   const lines = [`Status: ${result.status === "dry_run" ? "DRY RUN" : String(result.status || "unknown").toUpperCase()}`];
   if (result.campaigns_path) lines.push(`Target: ${singleLineField(result.campaigns_path)}[${result.public_route_slug || "<public-route-slug>"}]`);
@@ -4689,6 +4868,44 @@ export function pageKitSyncTextLines(result) {
   }
   if (result.next) lines.push(`Next: ${result.next}`);
   return lines;
+}
+
+// Local proof mode rows (deploy.target local-serve). Once the build stage is
+// terminal, the served _site/ must be the DEVELOPMENT render — a production
+// build's protocol-relative vendor loaders fail over a plain-HTTP local serve
+// and void polish capture — and the production render must have been proven
+// to differ from it only in environment-gated output (`page-kit parity`).
+// Both facts are read from the assembly stage's free-form evidence.
+function validateLocalProof(packet, report, errors, warnings, ready) {
+  if (!stageIsTerminal(report?.stages?.assembly?.status)) {
+    ready.push(`Local proof mode: the build stage renders the development environment (${LOCAL_PROOF_BUILD_COMMAND}) and records ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD}; polish capture and QA run against that served output, and ${asInvocation(LOCAL_PROOF_PARITY_COMMAND)} proves the production render before commit.`);
+    return;
+  }
+  const environment = recordedBuildEnvironment(report);
+  if (environment === LOCAL_PROOF_BUILD_ENVIRONMENT) {
+    ready.push(`Local proof mode: the built _site/ is recorded as a ${LOCAL_PROOF_BUILD_ENVIRONMENT} render (${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD}); vendor loaders are environment-gated out, SDK dl_* events still fire.`);
+  } else {
+    addIssue(warnings, LOCAL_PROOF_BUILD_ENVIRONMENT_SCOPE, environment
+      ? `${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} is "${singleLineField(environment)}" under deploy.target local-serve. A production build served over plain HTTP fails polish capture unwaivably on its protocol-relative vendor loaders (//host/...). Rebuild with ${LOCAL_PROOF_BUILD_COMMAND}, record the environment as "${LOCAL_PROOF_BUILD_ENVIRONMENT}", and recapture. ${LOCAL_PROOF_NEVER_EDIT_RULE}`
+      : `${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} is not recorded under deploy.target local-serve. The build stage renders the development environment for local proof (${LOCAL_PROOF_BUILD_COMMAND}) and records it there; without the record doctor cannot tell a development render from a production build that will fail polish capture over plain HTTP. ${LOCAL_PROOF_NEVER_EDIT_RULE}`);
+  }
+  const parity = recordedProductionParity(report);
+  const parityCommand = asInvocation(LOCAL_PROOF_PARITY_COMMAND);
+  if (!parity) {
+    addIssue(warnings, LOCAL_PROOF_PARITY_SCOPE, `Production parity is not recorded (${LOCAL_PROOF_PARITY_FIELD}). After proving the development build, run ${parityCommand} before committing: it renders the current source in development and production into temp dirs and asserts the served _site/ is the current development render and that production differs only in environment-gated output (same pages, route slugs, Campaign Cart pin and next-api-key). The PR preview is the second check, not the first.`);
+    return;
+  }
+  const currentFingerprint = optionalString(report?.stages?.assembly?.build_fingerprint) || null;
+  if (parity.build_fingerprint && currentFingerprint && parity.build_fingerprint !== currentFingerprint) {
+    addIssue(warnings, LOCAL_PROOF_PARITY_SCOPE, `Production parity was recorded for build ${parity.build_fingerprint}, but stages.assembly.build_fingerprint is now ${currentFingerprint}. Re-run ${parityCommand} on the current build.`);
+    return;
+  }
+  if (parity.status === "pass") {
+    ready.push(`Local proof production parity: PASS — ${singleLineField(String(parity.summary || ""))}`);
+    return;
+  }
+  const difference = isObject(parity.first_difference) ? parity.first_difference : null;
+  addIssue(errors, LOCAL_PROOF_PARITY_SCOPE, `Production parity FAILED${difference ? ` — first non-gated difference: ${singleLineField(String(difference.kind))} at ${singleLineField(String(difference.route))}${difference.line ? ` line ${difference.line}` : ""}: ${singleLineField(String(difference.detail || ""))}` : `: ${singleLineField(String(parity.summary || ""))}`}. Rebuild in development, re-prove, and run ${parityCommand} again. ${LOCAL_PROOF_NEVER_EDIT_RULE}`, difference ? { first_difference: difference } : undefined);
 }
 
 function validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildState) {
@@ -8791,6 +9008,10 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     push("setup_skill", "skill", "next-campaigns-os-setup", "Prepare the target page-kit structure and agent context, then record stages.setup in the assembly report.");
   } else if (result.stage === "build") {
     push("build_skill", "skill", "next-campaigns-build", "Assemble the campaign per the build prompt, then record stages.assembly in the assembly report.");
+    if (isLocalServePacket(packet)) {
+      push("build_local_proof", "command", LOCAL_PROOF_BUILD_COMMAND, `Local proof mode (deploy.target is local-serve): build page-kit in the ${LOCAL_PROOF_BUILD_ENVIRONMENT} environment into _site/ and record ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} as "${LOCAL_PROOF_BUILD_ENVIRONMENT}". Vendor loaders are environment-gated out of this render (their protocol-relative //host/... URLs fail over a plain-HTTP local serve); SDK dl_* events still fire. ${LOCAL_PROOF_NEVER_EDIT_RULE}`);
+      push("build_production_parity", "command", `${asInvocation(LOCAL_PROOF_PARITY_COMMAND).replace("--packet <packet>", `--packet ${packetPath}`)}`, "After the development build is proven, assert the production render differs from it only in environment-gated output (same pages, route slugs, Campaign Cart pin and next-api-key) before committing; the PR preview is the second check.");
+    }
     if (themeGate?.status === "blocked") {
       for (const action of themeGate.required_actions) {
         push(`theme_gate.${action.id}`, action.kind, asInvocation(action.command), `${action.description} (Required before polish/deploy/QA.)`);
@@ -8939,7 +9160,16 @@ Rules:
 - For two-step package-selection flows, treat the selector page as the pre-checkout step and pass the selected cart to checkout with forcePackageId; preserve normal tracking params and strip forcePackageId from visible checkout URLs after SDK initialization.
 - After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
 - Run page-kit build and SDK/template lint, then update stages.assembly.status plus stages.assembly.build_fingerprint before polish. If report.design_source_package.material_fingerprint exists, also record the same value on stages.assembly.source_package_material_fingerprint so Polish can prove the build used the current source context. Build must set stages.polish.status to "required" or "pending" with required_by="build" and required_for=["qa"]; Build must not mark stages.polish as completed/completed_with_warnings/skipped. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.
-- Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND). If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.`;
+- Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND). If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.${localProofPromptLines(packet)}`;
+}
+
+// Local proof mode lines for the build prompt: under local-serve the build is
+// the development render, recorded as such, and the production render is
+// proven by parity before commit.
+function localProofPromptLines(packet) {
+  if (!isLocalServePacket(packet)) return "";
+  return `
+- Local proof mode (deploy.target is local-serve): run the page-kit build in the ${LOCAL_PROOF_BUILD_ENVIRONMENT} environment — \`${LOCAL_PROOF_BUILD_COMMAND}\` — so _site/ is the development render, and record ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} as "${LOCAL_PROOF_BUILD_ENVIRONMENT}" on the assembly report. The starter templates gate every vendor loader on the environment and several loaders are protocol-relative (//host/...), which fail over a plain-HTTP local serve; the SDK's dl_* events still fire in development. Polish capture, browser QA and typed-card orders run against this served output. Before committing, run \`${asInvocation(LOCAL_PROOF_PARITY_COMMAND)}\` to prove the production render differs only in environment-gated output and pins the same Campaign Cart version; the PR preview is the second check. ${LOCAL_PROOF_NEVER_EDIT_RULE}`;
 }
 
 function setupPrompt(packetPath, contextPath, reportPath, packet) {
@@ -9991,6 +10221,7 @@ const SAFE_POLISH_CHECKPOINT_ACTIONS = new Map([
   ["polish.hidden_eager_media.waive", "campaigns-os checkpoint waive --packet <packet> --gate polish.hidden_eager_media --reason \"<why>\" --waived-by \"<named human>\" --review-condition \"<trigger>\""],
   ["polish.hidden_eager_media.repair", "Repair the reported media, then recapture."],
   ["polish.hidden_eager_media.repair_authority", "Repair packet/report authority and the mapped route plan, then recapture."],
+  ["polish.hidden_eager_media.local_proof_rebuild", HIDDEN_EAGER_MEDIA_ACTIONS.local_proof_rebuild.description],
 ]);
 
 function safePolishFindingRoute(value) {

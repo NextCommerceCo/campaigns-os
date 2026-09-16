@@ -578,6 +578,26 @@ prefix, so `_site/` needs the same rewrite of root-level page routes onto
 directory serves both. The QA stage is unchanged and runs against the recorded
 URL.
 
+`local-serve` also selects **local proof mode** for the build stage: page-kit
+is built in the development environment (`CPK_ENV=development npx
+campaign-build --json > .campaign-runtime/page-kit-build-summary.json`) into
+`_site/`, and the build records `stages.assembly.evidence.build_environment:
+"development"` on the Assembly Report (a free-form stage field; no schema
+change). The starter templates gate every vendor loader on the environment,
+and a production build's protocol-relative loaders (`//host/...`) fail over a
+plain-HTTP local serve, voiding polish capture unwaivably; the SDK's `dl_*`
+events still fire in development. Before commit, `campaigns-os page-kit parity
+--packet <packet>` renders the current source in both environments to temp
+directories and proves the served output is the current development render
+and that production differs from it only in environment-gated output, with
+the same page set, route slugs, Campaign Cart pin and `next-api-key`; the
+result is recorded on `stages.assembly.evidence.local_proof.production_parity`
+and doctor reports it as `local_proof.production_parity` (with
+`local_proof.build_environment` for the build record). The PR preview is the
+second check. The toolkit never proposes editing a generated include to make a
+local capture pass. Details and the step order:
+[qa-and-test-orders.md](./qa-and-test-orders.md#local-proof-mode-deploytarget-local-serve).
+
 Campaign Build Brief `qa_policy` is deliberately scoped as
 `documented_expectation` metadata. Use it to preserve business QA intent, but
 do not treat it as the enforced gate; doctor/QA enforcement reads the packet

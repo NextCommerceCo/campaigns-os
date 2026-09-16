@@ -22,6 +22,70 @@ cryptographic attestation of the served bytes. See
 [Polish evidence](./polish-evidence.md#durable-page_load-field-map) for the
 generated field map, completeness rules, and attachment race boundary.
 
+## Local proof mode (`deploy.target: local-serve`)
+
+Campaign development proves on localhost first and commits second; the PR
+preview is the second check, not the first. Under `deploy.target: local-serve`
+the toolkit runs that loop in a fixed order:
+
+1. **Build in development.** The build stage runs page-kit in the development
+   environment — `CPK_ENV=development npx campaign-build --json >
+   .campaign-runtime/page-kit-build-summary.json` — into the target's normal
+   `_site/`, and records `stages.assembly.evidence.build_environment:
+   "development"` on the Assembly Report. `next build` names the command as
+   the `build_local_proof` action and in the build prompt; doctor warns
+   (`local_proof.build_environment`) on a completed build that is not recorded
+   as a development render. The starter templates gate every vendor loader on
+   `{% unless environment == "development" %}`, several of those loaders are
+   protocol-relative (`//host/...`), and over a plain-HTTP local serve they
+   resolve to `http://host/...` and fail — which voids polish capture
+   unwaivably. The SDK's `dl_*` events still fire in development, so browser
+   QA and typed-card orders prove the same runtime. The development render
+   goes into `_site/` rather than a sibling directory because polish capture,
+   `qa run`, and every `built_output.*` doctor check root at
+   `_site/<public_route_slug>/`; the production build never needs to coexist
+   with it locally (the parity step renders it to a temp dir, and the deploy
+   host renders it from the committed source).
+2. **Serve and prove.** Serve `_site/` on localhost (the `next deploy` handoff
+   names the directory and any root-route rewrite), record the URL on
+   `deploy.preview_url`, then run `polish capture`, `qa run --browser`, and the
+   typed-card order paths against it.
+3. **Prove the pin on the production output.** Before committing, run
+
+   ```bash
+   npm run campaigns-os -- page-kit parity --packet campaign-runtime.build.json
+   ```
+
+   It renders the current source in development and in production through
+   the target's own page-kit into temp directories (nothing is written under
+   the target except the result on the Assembly Report) and asserts, per page,
+   that the served `_site/` is byte-identical to the current development
+   render, that the page set and route slugs agree across all three, and that
+   the Campaign Cart loader pin and the `next-api-key` meta are the same in
+   the proven output and the production render (and match
+   `_data/campaigns.json[<slug>].sdk_version` when it is readable). What
+   "environment-gated" means is derived from the templates' rendered output —
+   the difference between the development and production renders of the same
+   source — never from a vendor list; the pass summary lists the gated line
+   counts and loader hosts per page. The result lands on
+   `stages.assembly.evidence.local_proof.production_parity`; doctor reports it
+   as `local_proof.production_parity` (ready line on pass; an error naming the
+   first non-gated difference — `sdk_pin_mismatch`, `sdk_pin_drift`,
+   `proven_output_is_production`, `proven_output_stale`, a page-set kind — on
+   fail; a warning while unrecorded or recorded for another build
+   fingerprint). Exit 2 on fail.
+4. **Commit, then open the PR.** The preview deploy is the second check.
+
+The toolkit never proposes editing a generated include (`analytics-head.html`,
+`analytics-body.html`, or any `_includes/` file marked GENERATED) to make a
+local capture pass. A polish capture over plain HTTP whose ledger shows a
+failed cross-origin `http:` dependency is that signature exactly, and the
+checkpoint's first required action becomes
+`polish.hidden_eager_media.local_proof_rebuild`: rebuild in development and
+recapture. A hosted target (`netlify`, `cloudflare-pages`, …) is unaffected:
+its build stage renders production as before and `page-kit parity` refuses the
+packet (`local_proof.parity.not_local_serve`).
+
 ## Resolve
 
 Use resolve before a full run:
@@ -1306,7 +1370,9 @@ for it to be deleted. The remaining `qa policy set` flags are
 
 For QA against a locally served build, set `--deploy-target local-serve` and
 record the served localhost URL as `--preview-url`; see the deploy target
-table in [build-packet.md](./build-packet.md#deploy-target).
+table in [build-packet.md](./build-packet.md#deploy-target) and
+[Local proof mode](#local-proof-mode-deploytarget-local-serve) above for the
+development build, the parity check, and the order they run in.
 
 ## Launch Readiness Note
 
