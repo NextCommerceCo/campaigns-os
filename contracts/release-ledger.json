@@ -3819,6 +3819,33 @@
         }
       ],
       "entry_sha256": "0cdf6b67d885dc7d0cbb3fc53963eec98b277008a307aa4ef2e009b1b4222f53"
+    },
+    {
+      "id": "RL-0103",
+      "sequence": 103,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.10",
+      "changelog_sha256": "d760762ea718c8a0eea452d3ea96f17d5b6bd8671caafc14c1c6e8a7654fccd1",
+      "agent_impact": "stages.assembly.build_fingerprint has a defined algorithm and doctor computes it. Doctor's new built-output check built_output.fingerprint recomputes sha256-manifest/v1 over _site/<public_route_slug>/ (root-relative /-separated paths sorted by code point, one <path>\\n<sha256>\\n pair per file, sha256: over the manifest; nothing excluded by default) on every run and publishes it at derived.build_output_fingerprint { value, file_count, algorithm, root, recorded, status: pass|stale|missing }. Build copies derived.build_output_fingerprint.value onto stages.assembly.build_fingerprint after page-kit build instead of typing a value; the build prompt says so. Doctor output gains: ready line \"Build output fingerprint matches stages.assembly.build_fingerprint (<n> file(s) under _site/<slug>/)\" on pass; warning built_output.fingerprint_missing (detail current, file_count) when nothing is recorded; built_output.fingerprint_stale (detail recorded, current, file_count, assembly_complete) when the output no longer matches the recorded value, an error once stages.assembly.status is completed and a warning before. The polish gate (doctor derived.polish_gate, QA's polish assertion) now compares evidence against the recomputed output value: a drifted output is the new gate code polish.output_drift with current_output_fingerprint set and required_actions [rerun_build, run_polish], even when source_build_fingerprint equals the recorded string (polish.stale stays the code for evidence stamped against an older recorded build). polish capture refuses by name when the built route root is missing, when the output cannot be read (EACCES and the like are caught and named, never thrown raw), or when the output drifted, and its binding carries assembly.output_fingerprint. Symbolic links inside _site/ are skipped, never hashed or followed. A consumer that stamped a placeholder sha256 string onto stages.assembly.build_fingerprint over a real built _site/ now sees built_output.fingerprint_stale; record the doctor-published value. No schema, flag or command change; derived is free-form.",
+      "compatibility": "compatible",
+      "migration": "A report whose stages.assembly.build_fingerprint was not computed from the built output reads as stale once assembly is complete: run campaigns-os doctor --packet <packet> --json and record derived.build_output_fingerprint.value, then re-run polish.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "New built-output check built_output.fingerprint recomputes the output fingerprint, publishes derived.build_output_fingerprint, and reports pass (ready line), built_output.fingerprint_missing (warning) or built_output.fingerprint_stale (error after assembly completes, warning before); the polish gate takes the recomputed value; the build prompt names the field to record."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "One paragraph defines the build fingerprint algorithm (sha256-manifest/v1 over the built output, sorted path+sha256 manifest, no default exclusions), how build records it from doctor --json, and the doctor/polish/QA outcomes."
+        }
+      ],
+      "entry_sha256": "aadf9a5040d4350c9d1625d075b1383a420a5fc8ce82b1a5605d9c32d5ee54aa"
     }
   ]
 }
