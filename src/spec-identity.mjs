@@ -35,12 +35,15 @@ export function specMaterialHash(spec) {
 
 /**
  * Canonical form of a spec hash: trimmed, lower-cased, with one leading
- * `sha256:` removed. Returns null for null/undefined/empty/whitespace-only
+ * `sha256:` removed. Returns null for any non-string, for empty/whitespace-only
  * input and for a bare prefix with nothing after it.
  */
 export function normalizeSpecHash(value) {
-  if (value == null) return null;
-  const text = String(value).trim().toLowerCase().replace(/^sha256:/, "").trim();
+  // Only a string can carry a hash. Numbers, booleans, NaN, objects and
+  // arrays all stringify to something (`"nan"`, `"[object Object]"`) that two
+  // unrelated malformed documents would share, so they never normalise.
+  if (typeof value !== "string") return null;
+  const text = value.trim().toLowerCase().replace(/^sha256:/, "").trim();
   return text || null;
 }
 

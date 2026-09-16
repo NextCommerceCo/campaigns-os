@@ -69,12 +69,16 @@ function valueAt(value, dottedPath) {
   return dottedPath.split(".").reduce((current, key) => current?.[key], value);
 }
 
-// Hash-valued identity fields (spec_hash, spec_material_hash) compare through
-// the shared spec-hash comparator so a `sha256:` prefix, hex case or
-// whitespace difference between producers is not reported as drift. Every
-// other identity field (map_id, slugs, paths) stays an exact compare.
+// The two spec-identity fields compare through the shared spec-hash
+// comparator so a `sha256:` prefix, hex case or whitespace difference between
+// producers is not reported as drift. The set is explicit, not inferred from
+// the field name: a future `*_hash` field with a different prefix convention
+// must opt in here rather than have its prefix silently stripped. Every other
+// identity field (map_id, slugs, paths) stays an exact compare.
+const SPEC_HASH_IDENTITY_FIELDS = new Set(["spec_hash", "spec_material_hash"]);
+
 function identityValuesAgree(identityField, left, right) {
-  if (/_hash$/.test(identityField.name)) return specHashesMatch(left, right);
+  if (SPEC_HASH_IDENTITY_FIELDS.has(identityField.name)) return specHashesMatch(left, right);
   return left === right;
 }
 

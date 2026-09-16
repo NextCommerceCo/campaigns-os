@@ -98,4 +98,7 @@ test("deriveState treats a prefix or case difference in the spec hash as the sam
 
   assert.equal(deriveState(result, meta), PricingState.Exact);
   assert.equal(deriveState({ ...result, spec_hash: `sha256:${"b".repeat(64)}` }, meta), PricingState.Stale);
+  // Two absent hashes carry no identity: the spec-hash axis neither matches
+  // nor marks the result stale, so the state falls through to the time axes.
+  assert.equal(deriveState({ ok: true, calculated_at: calculatedAt }, { calculated_at: calculatedAt }), PricingState.Exact);
 });

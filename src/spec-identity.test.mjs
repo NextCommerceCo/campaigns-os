@@ -50,7 +50,11 @@ test("spec hash normalisation: prefix, case, whitespace and empty forms", () => 
     ["", null],
     ["   ", null],
     ["sha256:", null],
-    [42, "42"],
+    [42, null],
+    [true, null],
+    [Number.NaN, null],
+    [{ spec_hash: "a" }, null],
+    [["a"], null],
   ];
   for (const [input, expected] of table) {
     assert.equal(normalizeSpecHash(input), expected, `normalizeSpecHash(${JSON.stringify(input)})`);
