@@ -291,7 +291,11 @@ one QA writes into — provided the context's `packet_path` names that packet;
 a context naming another packet binds nothing. `theme waive`, `checkpoint
 waive`, `polish capture`,
 `findings harvest`, `run-record` and `run status` act on the default location
-unless `--report` names another.
+unless `--report` names another. `run-record` keys its record on a `run_id`
+resolved as `--run-id`, else the active run session, else the most recent Run
+Record already on disk for this packet's campaign (re-emitted in place), else
+a freshly minted id; `--new-run` mints on request and `--list` prints the ids
+on disk without writing (see docs/workflow-findings-sidecar.md).
 
 The packet's top-level `generated_at` (ISO-8601 UTC, `Z` suffix) is stamped by
 `prepare-build` on every new packet. Downstream freshness — campaigns-agent's

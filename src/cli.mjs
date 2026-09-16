@@ -26,7 +26,7 @@ import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
-import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
+import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
   appendFinding,
   buildFinding,
@@ -440,7 +440,8 @@ Usage:
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
-  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--new-run] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--list] [--json]
+    run_id: --run-id > the active run session > the most recent Run Record for this packet's campaign (re-emitted in place; a remitted one is left as written) > freshly minted. --new-run always mints; --list prints the run ids on disk for this packet (id, created_at, remit state, path) and, like --no-write, writes and sends nothing.
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
@@ -8859,7 +8860,17 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
       const why = runRecordCloseout
         ? ` No usable record was found for this packet (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || ""}`.trimEnd()
         : "";
-      push("run_record_closeout", "command", `${cmd("run-record")} --packet ${shellToken(packetPath)} --json`, `Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.${why}`, { required: true });
+      // With no session, run-record re-emits the newest record for this
+      // campaign in place. When that record is the one just judged stale or
+      // outdated, re-emitting it changes nothing (a remitted record is final),
+      // so the closeout must mint: --new-run. With no matching record at all
+      // the plain command mints on its own.
+      const supersededReason = runRecordCloseout?.reason_code === "stale_predates_evidence" || runRecordCloseout?.reason_code === "outdated_artifacts";
+      const supersedes = supersededReason ? " --new-run" : "";
+      const superseded = supersededReason
+        ? ` The existing record ${runRecordCloseout.record_id || "(unnamed)"} stays as written; --new-run opens a new run id for the current evidence instead of re-emitting it.`
+        : "";
+      push("run_record_closeout", "command", `${cmd("run-record")} --packet ${shellToken(packetPath)}${supersedes} --json`, `Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.${why}${superseded}`, { required: true });
     }
     // `--test-order off` is a diagnostic, not purchase proof. When the report
     // is too old to say either way, say so — an unknown must never turn into a
@@ -10931,8 +10942,92 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   const journal = readJournal(journalPath);
   const agentUsage = parseAgentUsageArgs(args);
 
-  // run_id: explicit flag > active run session > freshly minted.
-  const runId = optionalString(args["run-id"]) || ambient?.session?.run_id || mintRunId();
+  // run_id: explicit flag > --new-run (mint) > active run session > the most
+  // recent Run Record on disk for this packet's campaign > freshly minted.
+  // Once `run end` has cleared the session nothing ambient names the run any
+  // more, and minting here would file a SECOND record for a run that already
+  // has one — every re-run after close (the closeout action `next` prints, a
+  // re-emit after a sidecar fix) forked the run's identity that way. A record
+  // the receiver already holds is final (left as written, below), so
+  // re-resolving to its id is safe; minting is what happens only when no
+  // record for this campaign exists, or when --new-run asks for it. The
+  // source travels on the stdout envelope only: the record's schema is
+  // hashed surface and does not carry it.
+  if (args["new-run"] === true && optionalString(args["run-id"])) {
+    throw new Error("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
+  }
+  const listOnly = args.list === true;
+  // The directory is scanned only when something reads it: --list, or an id
+  // that nothing else names. An explicit --run-id, --new-run or an open
+  // session decides without it, and a target with a long history pays no I/O
+  // for a decision already made.
+  const needsDiskScan = listOnly || (!optionalString(args["run-id"]) && args["new-run"] !== true && !isNonEmptyString(ambient?.session?.run_id));
+  const targetRecords = needsDiskScan ? readRunRecordsForTarget(baseDir) : [];
+  const latestRecordEntry = needsDiskScan ? latestMatchingRunRecord(targetRecords, packet) : null;
+  let runId;
+  let runIdSource;
+  if (optionalString(args["run-id"])) {
+    runId = optionalString(args["run-id"]);
+    // `run end` and the QA auto-end name the session's id explicitly while the
+    // session is still ambient; that is the session's id, not an operator's.
+    runIdSource = runId === ambient?.session?.run_id ? "session" : "explicit";
+  } else if (args["new-run"] === true) {
+    runId = mintRunId();
+    runIdSource = "minted";
+  } else if (isNonEmptyString(ambient?.session?.run_id)) {
+    runId = ambient.session.run_id;
+    runIdSource = "session";
+  } else if (isNonEmptyString(latestRecordEntry?.record?.run_id)) {
+    runId = latestRecordEntry.record.run_id;
+    runIdSource = "latest_record";
+  } else {
+    runId = mintRunId();
+    runIdSource = "minted";
+  }
+  const latestRecordNotice = runIdSource === "latest_record"
+    ? `Run ID ${runId} is the most recent Run Record for this campaign; re-emitting it in place. Pass --new-run to start a new run under a fresh id, or --list to see every record for this packet.`
+    : null;
+
+  // --list is inspection only: the run ids this packet's campaign has on disk,
+  // newest first, with when each was created and where its remit stands. It
+  // is --no-write with the assembly skipped — nothing is read into a record,
+  // nothing is written, nothing is sent. The same identity match as the
+  // resolution above; a matching record without a run_id is listed as
+  // `(unnamed)` so the operator sees why it was not the one re-emitted.
+  if (listOnly) {
+    const records = targetRecords
+      .filter((entry) => isObject(entry?.record) && identityMatches(entry.record, packet))
+      .map((entry) => ({
+        run_id: optionalString(entry.record.run_id),
+        created_at: optionalString(entry.record.created_at),
+        remit_state: optionalString(entry.record.remit_state),
+        remit_result: optionalString(entry.record.remit_result),
+        remit_endpoint: optionalString(entry.record.remit_endpoint),
+        record_path: entry.path,
+      }));
+    const summary = {
+      ok: true,
+      action: "run-record",
+      list: true,
+      written: false,
+      run_id: runId,
+      run_id_source: runIdSource,
+      records,
+      remit: { result: null, http_status: null, base_kind: null, sent: false, preserved: false },
+    };
+    if (silent) return summary;
+    if (args.json) {
+      console.log(JSON.stringify(summary, null, 2));
+      return summary;
+    }
+    console.log(`Run Records for this packet's campaign: ${records.length}`);
+    for (const entry of records) {
+      console.log(`  ${entry.run_id || "(unnamed)"}  created ${entry.created_at || "(unknown)"}  remit ${entry.remit_state || "(absent)"}${entry.remit_result ? ` (${entry.remit_result})` : ""}  ${entry.record_path}`);
+    }
+    console.log(`Next run-record without --run-id would use: ${runId} (${runIdSource}).`);
+    console.log("List only (--list). No record written, no remit.");
+    return summary;
+  }
   const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
 
   // Embed the aggregated command-lifecycle signal for this run from the
@@ -11062,6 +11157,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
       written: false,
       record_path: prior.path,
       record: prior.record,
+      run_id_source: runIdSource,
       remit: { result: REMIT_RESULTS.not_contacted, http_status: null, base_kind: null, sent: false, preserved: true },
     };
     if (silent) return summary;
@@ -11069,8 +11165,9 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
       console.log(JSON.stringify(summary, null, 2));
       return summary;
     }
+    if (latestRecordNotice) console.log(latestRecordNotice);
     console.log(`Run Record already closed and remitted for run ${prior.record.run_id}; left as written.`);
-    console.log(`Run ID: ${prior.record.run_id}`);
+    console.log(`Run ID: ${prior.record.run_id} (${runIdSource})`);
     console.log(`Remit: ok (already stored at the receiver for this run id; not re-sent) -> ${prior.record.remit_endpoint || DEFAULT_RUNS_ENDPOINT}`);
     console.log(`Kept: ${prior.path}`);
     return summary;
@@ -11146,6 +11243,11 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     written: write,
     record_path: recordPath,
     record,
+    // How run_id was chosen: explicit (--run-id), session (the active run
+    // session), latest_record (the newest Run Record on disk for this
+    // campaign, re-emitted in place) or minted (a fresh id: --new-run, or no
+    // record exists yet). Envelope only — never on the record.
+    run_id_source: runIdSource,
     // The send's classification and where it went, which the record's schema
     // does not carry: `result` is one of stored, already_stored,
     // ok_unparsed_ack, refused, transport_error (this run's send),
@@ -11165,8 +11267,9 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     console.log(JSON.stringify(summary, null, 2));
     return summary;
   }
+  if (latestRecordNotice) console.log(latestRecordNotice);
   console.log(`Run Record assembled.`);
-  console.log(`Run ID: ${record.run_id}`);
+  console.log(`Run ID: ${record.run_id} (${runIdSource})`);
   console.log(`Consent: ${record.consent_state} (${record.consent_source})${consent.scope_mismatch ? ` — file consent is scoped to ${consent.consent_scope || "(unscoped)"}, not ${consent.requested_scope}; consent to this endpoint with: ${scopedConsentCommand(consent.requested_scope)}` : ""}${consent.scope_bypassed ? ` — ${TELEMETRY_ENV_VAR} bypasses scope checking for ${consent.scope}` : ""}`);
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
