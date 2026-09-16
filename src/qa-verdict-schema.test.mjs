@@ -99,6 +99,35 @@ test("published schemas expose the v0 identities and the shared \"1.0\" schema_v
   );
 });
 
+test("a test order carrying the receipt data-layer record validates, and an unknown outcome does not", () => {
+  const dataLayer = {
+    layer: "NextDataLayer",
+    event: "dl_purchase",
+    required: true,
+    measured: true,
+    count: 1,
+    expected_order_refs: ["1234", "abc-ref"],
+    observed_transaction_ids: ["1234"],
+    order_ref_match: true,
+    outcome: "pass",
+    ok: true,
+    reason: "one dl_purchase in window.NextDataLayer carrying transaction_id 1234, the placed order",
+  };
+  const verdict = emittedVerdict();
+  verdict.test_orders[0].data_layer = dataLayer;
+  verdict.test_orders[0].evidence.data_layer = { defined: true, is_array: true, length: 3, event_counts: { dl_purchase: 1 }, purchases: [{ index: 2, transaction_id: "1234", value: 19.99, currency: "USD" }] };
+  assert.equal(validateVerdictSchema(verdict), true, schemaErrors(validateVerdictSchema));
+
+  // The unmeasured shape: null counts are the honest reading, not zero.
+  verdict.test_orders[0].data_layer = { ...dataLayer, measured: false, count: null, observed_transaction_ids: null, order_ref_match: null, outcome: "unmeasured", ok: false, reason: "window.NextDataLayer could not be read on the receipt: page closed" };
+  assert.equal(validateVerdictSchema(verdict), true, schemaErrors(validateVerdictSchema));
+
+  verdict.test_orders[0].data_layer = { ...dataLayer, outcome: "maybe" };
+  assert.equal(validateVerdictSchema(verdict), false);
+  verdict.test_orders[0].data_layer = { ...dataLayer, layer: "dataLayer" };
+  assert.equal(validateVerdictSchema(verdict), false, "the record is about the SDK's own array, never the GTM mirror");
+});
+
 test("a verdict assembled by createVerdict validates against the full-verdict schema", () => {
   const verdict = emittedVerdict();
   assert.deepEqual(validateVerdict(verdict), []);

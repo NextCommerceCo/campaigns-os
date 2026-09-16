@@ -40,6 +40,7 @@ import {
   UNDECLARED_ROUTE_ATTRIBUTES,
 } from "./qa-cart-entry.mjs";
 import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump.mjs";
+import { RECEIPT_DATA_LAYER_PROBE_INPUT, assessReceiptDataLayer, receiptDataLayerAssertion, receiptDataLayerProbeScript } from "./qa-receipt-data-layer.mjs";
 import { isBumpRow } from "./commercial-journey.mjs";
 import {
   RESIDUE_PAGE_TYPES,
@@ -359,6 +360,8 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       if (totalParity) assertions.push(totalParity);
       const renderedReceiptAssertion = receiptRenderingAssertion(pageForPlan, identifier, result.order);
       if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
+      const dataLayerAssertion = receiptDataLayerAssertion(pageForPlan, identifier, result.order);
+      if (dataLayerAssertion) assertions.push(dataLayerAssertion);
     }
   } catch (error) {
     // Convert runner-level surprises into a blocker assertion so the run still
@@ -3139,6 +3142,15 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       ladder.fail("receipt_rendered", renderedReceiptAssessment.reason);
       receiptFailures.push(`buyer-visible receipt line items: ${renderedReceiptAssessment.reason}`);
     }
+    // The receipt's own data layer, read once the SDK has had its settle
+    // window to report the order (#325). Recorded on the order, judged by its
+    // own assertion in the runner loop; a failure here is not a checkout
+    // failure and does not move the ladder.
+    const dataLayerProbe = await receiptDataLayerEvidence(page, {
+      settleMs: numberArg(args["analytics-settle"], DEFAULT_SETTLE_TIMEOUT_MS),
+    });
+    order.data_layer = assessReceiptDataLayer(dataLayerProbe.probe, order, { probeError: dataLayerProbe.error });
+    order.evidence.data_layer = dataLayerProbe.probe ?? { error: dataLayerProbe.error };
   } else if (terminalEvidence.kind === "external_handoff") {
     order.terminal = terminalEvidence.terminal;
     ladder.skip("receipt_rendered", "external handoff does not expose an in-funnel receipt page");
@@ -3336,6 +3348,33 @@ function failedTestOrderResult({ path, email, error, events, ladder, page }) {
 // data-next-order-items node can still be hidden by cart-state presentation.
 // Capture rendered truth separately and never include buyer/order copy in the
 // evidence payload.
+// Read window.NextDataLayer off the receipt document. dl_purchase is pushed
+// after the receipt fetches the order, so the first wait is for the event to
+// appear (bounded by the analytics settle window); the short grace after it is
+// what lets a second push — the double-bootstrap defect #302 describes — land
+// before the read, instead of the read racing the duplicate and passing it.
+// Never throws: a read failure is returned as `error` and judged as
+// unmeasured, so instrumentation cannot consume the one canonical order.
+const RECEIPT_DATA_LAYER_DUPLICATE_GRACE_MS = 1000;
+
+async function receiptDataLayerEvidence(page, { settleMs = DEFAULT_SETTLE_TIMEOUT_MS } = {}) {
+  const input = RECEIPT_DATA_LAYER_PROBE_INPUT;
+  const timeout = Math.max(0, Number.isFinite(settleMs) ? settleMs : DEFAULT_SETTLE_TIMEOUT_MS);
+  try {
+    await page.waitForFunction(
+      ({ layer, event }) => Array.isArray(globalThis[layer])
+        && globalThis[layer].some((entry) => entry && typeof entry === "object" && entry.event === event),
+      input,
+      { timeout },
+    ).catch(() => {});
+    await page.waitForTimeout(Math.min(RECEIPT_DATA_LAYER_DUPLICATE_GRACE_MS, timeout)).catch(() => {});
+    const probe = await page.evaluate(receiptDataLayerProbeScript(), input);
+    return { probe, error: null };
+  } catch (error) {
+    return { probe: null, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function receiptRenderingEvidence(page) {
   await page.waitForFunction(() => {
     const containers = Array.from(document.querySelectorAll("[data-next-order-items]"));
@@ -4981,6 +5020,10 @@ async function recoverCreatedOrder({ context, attempt, plan = null, checkoutPage
     await gotoAndSettle(page, receiptUrl, planArgs);
     checks.push({ check: "reload_receipt", ok: true, reason: "receipt reloaded read-only; no control was clicked and nothing was submitted" });
 
+    // `data_layer` rides along from the first attempt and is deliberately not
+    // re-probed here: the SDK remembers reported purchases per browser and
+    // drops dl_purchase on a reload of the same receipt, so a re-read would
+    // report "absent" for an order that reported correctly the first time.
     const recovered = {
       ...order,
       verification: { ...(order.verification || {}) },
@@ -6277,6 +6320,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   collectOrderAnalytics,
   journeyAnalyticsAttempt,
   receiptAnalyticsAttempt,
+  receiptDataLayerEvidence,
   stampTestOrderPlan,
   formatStepEvent,
   hostedRedirectInfo,
