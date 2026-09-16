@@ -40,7 +40,7 @@ Notable supported-surface changes are recorded here.
   `data_layer` object on `testOrder` (additive; `surface_version` 1.29.0 →
   1.30.0). `docs/qa-and-test-orders.md` documents the reading and its six
   outcomes under Test Orders.
-||||||| 3edd8ca
+
 ## [1.29.0+agent.2] - 2026-09-16
 
 ### Changed
