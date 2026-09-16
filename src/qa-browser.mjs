@@ -2041,14 +2041,13 @@ function assetTextCarriesMethod(text, method) {
 // records the sha256 of each chrome asset as shipped (payment_chrome.asset_sha256,
 // hashed from the starter-templates checkout at the catalog pin), so the
 // runner does not need a checkout of the template to compare against — one
-// digest of what the page served is enough. The in-page read returns text,
-// so the digest is over its UTF-8 re-encoding; for the SVGs this covers that
-// is the file's bytes, and a served copy that does not round-trip (a BOM, an
-// invalid sequence) hashes differently, which lands it on the edited path
-// this check already took before hashes existed — never on a pass.
-function assetBytesMatchShipped(text, shipped) {
-  if (typeof text !== "string" || typeof shipped !== "string") return false;
-  return createHash("sha256").update(text, "utf8").digest("hex") === shipped;
+// digest of what the page served is enough. The digest is over the served
+// bytes exactly as fetched (fetchAssetBytes), the same bytes
+// check-template-doctrine hashes off disk, so the two can only disagree when
+// the file really differs.
+function assetBytesMatchShipped(bytes, shipped) {
+  if (!Buffer.isBuffer(bytes) || typeof shipped !== "string") return false;
+  return createHash("sha256").update(bytes).digest("hex") === shipped;
 }
 
 // SVG only, and deliberately. A raster or a font tells us nothing by its bytes,
@@ -2120,21 +2119,21 @@ async function partitionReferencedAssets(browserPage, { html, pageUrl, reference
     // a cache may overlap, and a value cache would let both miss and both fetch.
     let pending = cache instanceof Map ? cache.get(url) : undefined;
     if (pending === undefined) {
-      pending = fetchAssetText(browserPage, url, assetBounds);
+      pending = fetchAssetBytes(browserPage, url, assetBounds);
       if (cache instanceof Map) cache.set(url, pending);
     }
-    const text = await pending;
-    if (text === null) {
+    const bytes = await pending;
+    if (bytes === null) {
       residue.push(basename);
       continue;
     }
     const shipped = shippedHashes instanceof Map ? shippedHashes.get(basename) : undefined;
-    if (shipped && assetBytesMatchShipped(text, shipped)) {
+    if (shipped && assetBytesMatchShipped(bytes, shipped)) {
       residue.push(basename);
       starter.push(basename);
       continue;
     }
-    if (assetTextCarriesMethod(text, method)) residue.push(basename);
+    if (assetTextCarriesMethod(bytes.toString("utf8"), method)) residue.push(basename);
     else edited.push(basename);
   }
   return { residue, edited, starter };
@@ -2161,7 +2160,14 @@ const ASSET_FETCH_MAX_BYTES = 2 * 1024 * 1024;
 // ceiling is enforced on what actually arrives, chunk by chunk — Content-Length
 // is honoured when it already exceeds the cap, but a missing or understated
 // header changes nothing. Reader and timer are released on every exit.
-async function readBoundedAssetText({ target, timeoutMs, maxBytes }) {
+//
+// `raw: true` returns the body's bytes base64-encoded instead of decoded text.
+// evaluate() carries only JSON-serialisable values, so bytes cross as a string;
+// the caller decodes them to a Buffer. The residue check hashes those bytes,
+// and they have to be the served bytes — not a TextDecoder round-trip, which
+// drops a BOM and rewrites invalid sequences — or the digest can never agree
+// with the one the doctrine check takes over the file on disk.
+async function readBoundedAssetText({ target, timeoutMs, maxBytes, raw = false }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const aborted = new Promise((_, reject) => {
@@ -2181,17 +2187,27 @@ async function readBoundedAssetText({ target, timeoutMs, maxBytes }) {
     // checked. Refuse it; unreadable is residue, never a pass.
     if (!response.body || typeof response.body.getReader !== "function") return null;
     reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    const decoder = raw ? null : new TextDecoder();
     let received = 0;
     let text = "";
+    let binary = "";
     for (;;) {
       const { done, value } = await Promise.race([reader.read(), aborted]);
       if (done) break;
       received += value?.byteLength || 0;
       if (received > maxBytes) return null;
-      text += decoder.decode(value, { stream: true });
+      if (raw) {
+        // One code unit per byte; sliced so a large chunk cannot overflow the
+        // argument list of fromCharCode.
+        const bytes = value instanceof Uint8Array ? value : new Uint8Array(value || 0);
+        for (let offset = 0; offset < bytes.length; offset += 8192) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(offset, offset + 8192));
+        }
+      } else {
+        text += decoder.decode(value, { stream: true });
+      }
     }
-    return text + decoder.decode();
+    return raw ? btoa(binary) : text + decoder.decode();
   } catch {
     return null;
   } finally {
@@ -2210,12 +2226,34 @@ async function readBoundedAssetText({ target, timeoutMs, maxBytes }) {
 // navigating can leave evaluate() pending past any in-page timer. So the
 // whole call is raced once more, with a little headroom for the in-page
 // deadline to fire first and report normally.
-async function fetchAssetText(browserPage, url, { timeoutMs = ASSET_FETCH_TIMEOUT_MS, maxBytes = ASSET_FETCH_MAX_BYTES } = {}) {
+//
+// Resolves to the served bytes as a Buffer, or null when unreadable. The
+// in-page read returns them base64-encoded; anything that is not a decodable
+// base64 string is unreadable.
+async function fetchAssetBytes(browserPage, url, { timeoutMs = ASSET_FETCH_TIMEOUT_MS, maxBytes = ASSET_FETCH_MAX_BYTES } = {}) {
   const inPage = Promise.resolve()
-    .then(() => browserPage.evaluate(readBoundedAssetText, { target: url, timeoutMs, maxBytes }))
-    .then((text) => (typeof text === "string" ? text : null))
+    .then(() => browserPage.evaluate(readBoundedAssetText, { target: url, timeoutMs, maxBytes, raw: true }))
+    .then((encoded) => decodeAssetBase64(encoded))
     .catch(() => null);
   return settleDiagnosticWithin(inPage, timeoutMs + 1000, null);
+}
+
+function decodeAssetBase64(encoded) {
+  if (typeof encoded !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 !== 0) return null;
+  return Buffer.from(encoded, "base64");
+}
+
+// The residue row's list: starter assets first, each tagged inline so the
+// reader sees which items are the unmodified starter bytes without matching a
+// trailing clause back to the list; then the other referenced assets, then the
+// visible selectors.
+function residueItems({ visibleMatches, referencedAssets, starterAssets }) {
+  const starter = new Set(starterAssets);
+  return [
+    ...referencedAssets.filter((basename) => starter.has(basename)).map((basename) => `${basename} [starter]`),
+    ...referencedAssets.filter((basename) => !starter.has(basename)),
+    ...visibleMatches.map((match) => match.selector),
+  ];
 }
 
 function paymentChromeResidueAssertion({
@@ -2246,8 +2284,7 @@ function paymentChromeResidueAssertion({
     ...outcome,
     expected: `no ${method} chrome: method is not in CampaignSpec available_payment_methods/available_express_payment_methods`,
     actual: offending
-      ? `residue found: ${[...visibleMatches.map((match) => match.selector), ...referencedAssets].join(", ")}${
-        starterAssets.length ? ` (${starterAssets.join(", ")}: served bytes are the unmodified starter asset)` : ""}`
+      ? `residue found: ${residueItems({ visibleMatches, referencedAssets, starterAssets }).join(", ")}`
       : editedOnly
         ? `edited in place: ${editedAssets.join(", ")} still referenced but no longer carries ${method} chrome — confirm the removal was intended, and remove or rename the asset so QA stops keying on the basename`
         : `no ${method} chrome rendered or referenced`,
@@ -6328,7 +6365,8 @@ export const __qaBrowserTestHooks = Object.freeze({
   assetTextCarriesMethod,
   assetBytesMatchShipped,
   partitionReferencedAssets,
-  fetchAssetText,
+  fetchAssetBytes,
+  decodeAssetBase64,
   readBoundedAssetText,
   ASSET_FETCH_TIMEOUT_MS,
   ASSET_FETCH_MAX_BYTES,

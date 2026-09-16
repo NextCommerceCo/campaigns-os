@@ -127,12 +127,20 @@ if (doctrine.size === 0) {
 //    layout/landing-section files costs a few extra string ops but never produces
 //    false positives. Earlier glob-based scoping missed _layouts/ at depth 3 — a
 //    coverage gap better solved by widening than by maintaining brittle globs.
+// One filter for every directory scan of the templates tree: the partials walk
+// and the family listing below must skip the same entries, or a stray
+// node_modules/ or build output under src/ becomes a "family" that ships no
+// assets and the hash check verifies nothing for it.
+function isScannedDir(entry) {
+  return entry !== "node_modules" && entry !== "_site" && !entry.startsWith(".");
+}
+
 function walk(dir, acc = []) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     const stat = statSync(full);
     if (stat.isDirectory()) {
-      if (entry === "node_modules" || entry === "_site" || entry.startsWith(".")) continue;
+      if (!isScannedDir(entry)) continue;
       walk(full, acc);
     } else if (entry.endsWith(".html")) {
       acc.push(full);
@@ -204,6 +212,7 @@ for (const path of partials) {
 //    under test is not at the pin, since a drifted sibling proves nothing.
 const hashViolations = [];
 let hashedAssets = 0;
+const hashedFamilies = new Set();
 {
   const contract = existsSync(sharedContractPath) ? JSON.parse(readFileSync(sharedContractPath, "utf8")) : null;
   const chrome = contract?.default_residue?.payment_chrome;
@@ -220,12 +229,15 @@ let hashedAssets = 0;
     if (!atPin) {
       console.warn(`  note: payment_chrome.asset_sha256 not verified (templates tree is not at the catalog pin).`);
     } else {
-      const families = readdirSync(join(templatesRoot, "src")).filter((entry) => statSync(join(templatesRoot, "src", entry)).isDirectory());
+      const families = readdirSync(join(templatesRoot, "src")).filter(
+        (entry) => isScannedDir(entry) && statSync(join(templatesRoot, "src", entry)).isDirectory(),
+      );
       for (const [asset, expected] of Object.entries(hashes)) {
         for (const family of families) {
           const file = join(templatesRoot, "src", family, "assets", asset);
           if (!existsSync(file)) continue;
           hashedAssets += 1;
+          hashedFamilies.add(family);
           const actual = createHash("sha256").update(readFileSync(file)).digest("hex");
           if (actual !== String(expected).toLowerCase()) {
             hashViolations.push(`src/${family}/assets/${asset}: sha256 ${actual} at the pin; contract records ${expected}.`);
@@ -273,7 +285,7 @@ const doctrinePairs = [...doctrine.entries()]
   .join(", ");
 console.log(
   `Template doctrine check passed (${doctrine.size} doctrine pair(s): ${doctrinePairs}; ` +
-    `${partials.length} partials scanned; ${hashedAssets} payment-chrome asset hash(es) verified).`,
+    `${partials.length} partials scanned; ${hashedAssets} payment-chrome asset hash(es) verified across ${hashedFamilies.size} famil${hashedFamilies.size === 1 ? "y" : "ies"}).`,
 );
 if (templatesSource.kind !== "sibling_unpinned") {
   console.log(`  ${templatesSourceLine(templatesSource)}`);

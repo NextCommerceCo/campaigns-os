@@ -11,26 +11,33 @@ Notable supported-surface changes are recorded here.
   markup names the method. The shared-commerce brand contract now records the
   sha256 of each `default_residue.payment_chrome.assets[]` file as the
   starter ships it (`payment_chrome.asset_sha256`, pinned to a
-  starter-templates commit in `asset_pin.sha`); the runner hashes what the
-  page serves and, when it matches, reports residue with the reason
-  (`residue found: upsell-payment-logos.svg (upsell-payment-logos.svg: served
-  bytes are the unmodified starter asset)`, evidence `starter_assets`).
+  starter-templates commit in `asset_pin.sha`); the runner hashes the raw
+  bytes the page serves and, when they match, reports residue with the
+  starter assets listed first and tagged inline
+  (`residue found: upsell-payment-logos.svg [starter], .payment-method__icon--paypal-logo`,
+  evidence `starter_assets`).
   Before, the shipped `upsell-payment-logos.svg` — whose PayPal wordmark is
   bare path data with no text, title, label or id naming the method — read as
   `edited in place ... no longer carries paypal chrome` and landed on
   `manual_review` on a page that had never been polished, and an actually
   edited strip was indistinguishable from it. Different bytes that no longer
   name the method are still `manual_review`; different bytes that still name
-  it, and any asset that cannot be read, are still residue. An asset the
-  contract lists without a hash falls back to the markup test.
+  it, and any asset that cannot be read, are still residue.
+- Loading a brand contract fails (`payment_chrome_hash_missing` /
+  `payment_chrome_hash_invalid`, naming the asset) when
+  `payment_chrome.assets[]` lists an asset with no `asset_sha256` entry or the
+  entry is not a 64-char hex digest, so a typo cannot quietly send that asset
+  back to the markup test. A contract with no `asset_sha256` map at all still
+  loads and uses the markup test for every asset.
 - `check-template-doctrine` verifies `payment_chrome.asset_sha256` against the
   pinned starter-templates checkout and requires `asset_pin.sha` to be the
   catalog's `_synced_from_sha`, so the recorded hashes cannot drift from the
-  bytes the starters ship. The pass line counts the hashes verified.
-- The residue unit tests run against the starter's own
-  `upsell-payment-logos.svg` (committed under `contracts/fixtures/template-residue/`)
-  instead of a synthetic strip that carried an `id="paypal-logo"` the real
-  file does not.
+  bytes the starters ship. The family listing skips the same directories the
+  partials walk does (`node_modules`, `_site`, hidden), and the pass line
+  counts the hashes and families verified.
+- The residue unit tests run against the starter's own chrome assets
+  (committed under `contracts/fixtures/template-residue/`) instead of a
+  synthetic strip that carried an `id="paypal-logo"` the real file does not.
 
 ## [1.29.0+agent.1] - 2026-09-16
 

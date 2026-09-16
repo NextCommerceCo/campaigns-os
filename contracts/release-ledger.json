@@ -3548,8 +3548,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.29.0+agent.10",
-      "changelog_sha256": "5f6ed53cd8db686fd83527c0f6f9ba4287ecc3ba95d4b30dca5b9aec9c0ccc43",
-      "agent_impact": "Browser QA's template-residue:<page>:payment-chrome:<method> assertion now decides untouched-vs-edited for a referenced .svg by hashing the served bytes against the shipped starter hash the shared-commerce brand contract records (default_residue.payment_chrome.asset_sha256, pinned by asset_pin.sha), not by whether the SVG markup names the method. An unmodified starter asset (the shipped upsell-payment-logos.svg names no method in its markup) is residue: status fail at the residue severity, actual \"residue found: <basename> (<basename>: served bytes are the unmodified starter asset)\", and a new evidence.starter_assets[] listing the hash-matched basenames beside referenced_assets[] and edited_assets[]. Before, that asset produced status manual_review with actual \"edited in place: ... no longer carries <method> chrome\" on a page that had never been polished. Different bytes that no longer name the method are still manual_review with the unchanged edited-in-place line; different bytes that still name the method, and any asset that cannot be read (raster, 404, timed-out or oversized read), are still residue. A contract asset with no hash falls back to the markup test. An agent that read manual_review on this assertion as \"the operator already removed the marks\" must now expect fail on an untouched starter strip and dispatch the removal; evidence.starter_assets says which basenames were byte-identical to the starter. No command, flag or schema change; the brand contract gains two optional fields (asset_sha256, asset_pin) that nothing on the supported surface names.",
+      "changelog_sha256": "2b1f092c1191136f4221a8a3477dd4b16d14ace9752bfcfa2caa1c5348de71ce",
+      "agent_impact": "Browser QA's template-residue:<page>:payment-chrome:<method> assertion now decides untouched-vs-edited for a referenced .svg by hashing the served bytes against the shipped starter hash the shared-commerce brand contract records (default_residue.payment_chrome.asset_sha256, pinned by asset_pin.sha), not by whether the SVG markup names the method. An unmodified starter asset (the shipped upsell-payment-logos.svg names no method in its markup) is residue: status fail at the residue severity, actual \"residue found: <basename> [starter], <other assets>, <visible selectors>\" (starter assets first, tagged inline), and a new evidence.starter_assets[] listing the hash-matched basenames beside referenced_assets[] and edited_assets[]. The digest is over the raw served bytes. Before, that asset produced status manual_review with actual \"edited in place: ... no longer carries <method> chrome\" on a page that had never been polished. Different bytes that no longer name the method are still manual_review with the unchanged edited-in-place line; different bytes that still name the method, and any asset that cannot be read (raster, 404, timed-out or oversized read), are still residue. Loading a brand contract whose payment_chrome.assets[] lists an asset with no asset_sha256 entry, or a malformed one, now throws (code payment_chrome_hash_missing / payment_chrome_hash_invalid, naming the asset); a contract with no asset_sha256 map at all still loads and uses the markup test. An agent that read manual_review on this assertion as \"the operator already removed the marks\" must now expect fail on an untouched starter strip and dispatch the removal; evidence.starter_assets says which basenames were byte-identical to the starter. No command, flag or schema change; the brand contract gains two optional fields (asset_sha256, asset_pin) that nothing on the supported surface names.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -3557,10 +3557,16 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "The browser-pass section documents payment-chrome residue: selector visibility, served-bytes hash against the contract's shipped starter hash (untouched = residue with the reason in the row), edited bytes = manual_review, unreadable = residue, no-hash fallback to the markup test."
+          "summary": "The browser-pass section documents payment-chrome residue: selector visibility, raw served-bytes hash against the contract's shipped starter hash (untouched = residue, listed first and tagged [starter] in the row), edited bytes = manual_review, unreadable = residue, every listed asset must carry a hash or the contract fails to load."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "check:tests runs the new scripts/check-template-doctrine.test.mjs (payment-chrome hash verification and the family-directory filter of check-template-doctrine)."
         }
       ],
-      "entry_sha256": "635f56e481456682b94d16845a88e517c835b1e29585bd2db755183efec1bfbe"
+      "entry_sha256": "0fba0f8acde1abca056c921dd85aec118d04f5aad346027e04c70b5b07e7073f"
     }
   ]
 }
