@@ -11,6 +11,7 @@
 // polish-node imports and so could not import from. A leaf: shell-token only.
 
 import { shellToken } from "./shell-token.mjs";
+import { localProofRebuildText } from "./local-proof.mjs";
 import { invocationPrefixFor } from "./install-mode.mjs";
 import { dirname as installModeDirname, resolve as installModeResolve } from "node:path";
 import { fileURLToPath as installModeFileUrl } from "node:url";
@@ -49,6 +50,17 @@ export const HIDDEN_EAGER_MEDIA_ACTIONS = Object.freeze({
     kind: "manual",
     command: null,
     description: "Repair the packet or Assembly Report campaign identity, build fingerprint, and mapped route plan before capture.",
+  }),
+  // A capture over plain HTTP whose ledger shows a failed cross-origin http:
+  // dependency is a production build served locally: its protocol-relative
+  // vendor loaders resolved to http:// and failed. The action is to rebuild in
+  // the development environment (local proof mode), never to edit the
+  // generated include that emits the loader.
+  local_proof_rebuild: Object.freeze({
+    id: "polish.hidden_eager_media.local_proof_rebuild",
+    kind: "manual",
+    command: null,
+    description: localProofRebuildText(),
   }),
 });
 

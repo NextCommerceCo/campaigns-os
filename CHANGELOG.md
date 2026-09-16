@@ -41,6 +41,88 @@ Notable supported-surface changes are recorded here.
   1.30.0). `docs/qa-and-test-orders.md` documents the reading and its six
   outcomes under Test Orders.
 
+## [1.29.0+agent.13] - 2026-09-16
+
+### Added
+
+- Local proof mode for `deploy.target: local-serve` (#326): the build stage
+  now renders page-kit in the development environment. `next build` emits a
+  `build_local_proof` action carrying the exact command
+  (`CPK_ENV=development npx campaign-build --json >
+  .campaign-runtime/page-kit-build-summary.json`) and the build prompt says
+  to record `stages.assembly.evidence.build_environment: "development"` on
+  the Assembly Report (a free-form stage field; no schema change). The render
+  goes into `_site/` — where polish capture, `qa run` and every
+  `built_output.*` doctor check already look — so the served development
+  build is what is proven. Starter templates gate every vendor loader on the
+  environment; a production build's protocol-relative loaders (`//host/...`)
+  fail over a plain-HTTP local serve and void polish capture, while the SDK's
+  `dl_*` events still fire in development. Hosted targets build production
+  exactly as before.
+- `campaigns-os page-kit parity --packet <packet> [--report <json>] [--json]`
+  proves the pin on the production output before commit. It renders the
+  current source in development and production through the target's own
+  page-kit into temp directories (nothing under the target is written except
+  the result) and asserts, per page, that the served `_site/` is byte-
+  identical to the current development render, that the page set and route
+  slugs agree, and that the Campaign Cart loader pin and `next-api-key` meta
+  are the same in the proven output and the production render (and match
+  `_data/campaigns.json[<slug>].sdk_version` when readable). "Environment-
+  gated" is derived from the rendered output — the diff between the two
+  renders of one source — not from a vendor list; the pass line reads
+  `Parity: <n> page(s) identical to the current development render;
+  production differs only in environment-gated output (<lines> line(s);
+  loaders: <hosts>); Campaign Cart pin <version>.` with one row per page. A
+  failure names the first non-gated difference by kind
+  (`sdk_pin_mismatch`, `sdk_pin_drift`, `sdk_loader_missing`,
+  `proven_output_is_production`, `proven_output_stale`, `page_not_in_source`,
+  `page_not_proven`, `page_only_in_production`,
+  `page_missing_in_production`), route, path and line, exits 2, and is
+  recorded on `stages.assembly.evidence.local_proof.production_parity` all
+  the same. Every page must agree on the Campaign Cart pin, a missing loader
+  included; CRLF renders compare and number like LF ones. A pass that could
+  not be recorded on the report reports `status: record_failed` with
+  `local_proof.parity.report_not_written` and exits 2, so the command and
+  doctor never disagree. A packet whose target is not `local-serve` is refused
+  (`local_proof.parity.not_local_serve`); a target without
+  `next-campaign-page-kit` installed reports `local_proof.parity.unavailable`.
+- Doctor rows under `local-serve` once assembly is terminal:
+  `local_proof.build_environment` warns when the completed build is not
+  recorded as a development render (naming the rebuild command), and
+  `local_proof.production_parity` is a ready line on a recorded pass
+  (`Local proof production parity: PASS — …`), an error naming the first
+  non-gated difference on a recorded fail, and a warning while unrecorded or
+  recorded for a different `stages.assembly.build_fingerprint`. `next build`
+  under `local-serve` also emits a `build_production_parity` action with the
+  parity command.
+
+### Changed
+
+- A polish capture over plain HTTP whose resource ledger shows a failed
+  cross-origin `http:` dependency — the signature of a protocol-relative
+  vendor loader from a production build served locally — now names the
+  repair. The recorded `polish.hidden_eager_media` checkpoint's first
+  required action becomes `polish.hidden_eager_media.local_proof_rebuild`
+  (`The served build is a production build over plain HTTP: … Rebuild in
+  local proof mode — `CPK_ENV=development npx campaign-build --json > …`
+  — … serve the development output, and recapture.`), ahead of the recapture
+  action; `polish capture`'s text output prints it as a `Required action:`
+  line. The same failure off an `https:` origin, a same-origin `http:`
+  failure, or a failed `https:` dependency keeps the plain recapture action.
+- Hard rule, stated in every surface that could suggest otherwise (the
+  rebuild action, the build prompt and action, the doctor rows, `--help`,
+  and the docs): the toolkit never proposes editing a generated include
+  (`analytics-head.html`, `analytics-body.html`, or any `_includes/` file
+  marked GENERATED) to make a local capture pass. A test scans every
+  source module for text that pairs an edit verb with a generated include
+  outside that rule.
+- `--help` documents `page-kit parity` and a `Local proof mode:` note;
+  `docs/qa-and-test-orders.md` gains a "Local proof mode" section (build in
+  development → serve → prove → production parity → commit → PR preview as
+  the second check), `docs/build-packet.md`'s deploy-target section and
+  `docs/polish-evidence.md`'s `capture_incomplete` row describe the same
+  path.
+
 ## [1.29.0+agent.12] - 2026-09-16
 
 ### Fixed

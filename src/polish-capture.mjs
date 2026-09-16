@@ -93,6 +93,29 @@ export function failedRequestProblemCode({ crossOrigin, resourceType }) {
     : "dependency_request_failed";
 }
 
+// The signature of a production build served over plain HTTP: the document
+// came from an http: origin and a dependency-class request to a DIFFERENT
+// http: origin failed. A protocol-relative vendor loader (`//host/...`, which
+// the starter templates emit outside the development environment) resolves to
+// http://host/... off an http://localhost document and fails there, voiding
+// the capture. Read off the finished ledger, so the recorded checkpoint can
+// name the right action (rebuild in local proof mode) without re-reading the
+// browser. Returns the failing ledger entries, empty when the signature is
+// absent — including for an https: capture, where a failed http: dependency
+// is a page defect rather than an environment mismatch.
+export function plainHttpDependencyFailures(capture) {
+  const captureOrigin = capture?.document_response?.capture_origin;
+  if (typeof captureOrigin !== "string" || !captureOrigin.startsWith("http://")) return [];
+  const entries = Array.isArray(capture?.resource_ledger?.entries) ? capture.resource_ledger.entries : [];
+  return entries.filter((resource) => (
+    (resource?.failed_request_count || 0) > 0
+    && (resource?.cross_origin_request_count || 0) > 0
+    && typeof resource?.url === "string"
+    && resource.url.startsWith("http://")
+    && failedRequestProblemCode({ crossOrigin: true, resourceType: resource.resource_type }) === "dependency_request_failed"
+  ));
+}
+
 function resolvedCaptureUrl(value, { baseUrl } = {}) {
   if (value === "[url-too-long]" || baseUrl === "[url-too-long]") {
     return { status: "too_long", canonical: null, projected: "[url-too-long]", origin: null };

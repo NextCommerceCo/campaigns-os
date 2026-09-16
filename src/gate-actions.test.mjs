@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 
 import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
 
-test("the hidden eager-media action table is frozen and carries the five recorded actions", () => {
-  assert.deepEqual(Object.keys(HIDDEN_EAGER_MEDIA_ACTIONS), ["capture", "install_browser", "waive", "repair", "repair_authority"]);
+test("the hidden eager-media action table is frozen and carries the six recorded actions", () => {
+  assert.deepEqual(Object.keys(HIDDEN_EAGER_MEDIA_ACTIONS), ["capture", "install_browser", "waive", "repair", "repair_authority", "local_proof_rebuild"]);
   for (const [key, action] of Object.entries(HIDDEN_EAGER_MEDIA_ACTIONS)) {
     assert.equal(action.id, `polish.hidden_eager_media.${key}`);
     assert.ok(Object.isFrozen(action), key);
