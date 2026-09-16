@@ -41,6 +41,29 @@ Notable supported-surface changes are recorded here.
   1.30.0). `docs/qa-and-test-orders.md` documents the reading and its six
   outcomes under Test Orders.
 
+## [1.29.0+agent.11] - 2026-09-16
+
+### Changed
+
+- The typed-card runner loads the checkout once per order path, not twice.
+  The `entered_via_landing` selector probe's load is the checkout's only load
+  on a path: when the probe finds a selection surface, `opened_checkout` now
+  records `already on checkout from the selector probe; not re-opened` instead
+  of loading the same URL again; on a landing-entry family the probe load is
+  followed by the landing page and the SDK's own navigation, nothing else.
+  Every load boots the SDK and fires its page-view events into the capture the
+  analytics-correctness leg and the receipt capture read, so the second load
+  was counted as the campaign's own traffic.
+- A multi-path plan (`tiers:*`, several coupons) probes each checkout URL once
+  per run and reuses the answer on the later paths. The step evidence carries
+  `selection_surface_probe: loaded` on the path that ran the probe and
+  `reused` on the rest; a reused answer on a selector family opens the
+  checkout once in `opened_checkout`, and on a landing-entry family goes
+  straight to the landing page. A probe whose page-side read failed is tagged
+  `selection_surface_probe: failed` with `selection_surface_probe_error`, is
+  never read as an empty checkout, and is not remembered.
+- `docs/qa-and-test-orders.md` names the selector probe and its single load.
+
 ## [1.29.0+agent.10] - 2026-09-16
 
 ### Added

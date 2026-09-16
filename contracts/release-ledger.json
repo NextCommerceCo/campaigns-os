@@ -3852,6 +3852,27 @@
       "sequence": 104,
       "date": "2026-09-16",
       "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.11",
+      "changelog_sha256": "c25cc30f4ca63a5616b9bc1ae86d97b643c3f3e138e9b8d8b5b00c0a88e014fa",
+      "agent_impact": "The typed-card runner (qa run --test-order) loads the checkout once per order path instead of twice. The entered_via_landing step's selector probe is the checkout's only load on a path: when the probe finds a selection surface, opened_checkout records detail \"already on checkout from the selector probe; not re-opened\" (previously no detail) rather than loading the same URL again; on a landing-entry family the probe load is followed only by the landing page and the SDK's own navigation. A multi-path plan (tiers:*, several coupons) probes each checkout URL once per run and reuses the answer on later paths; entered_via_landing evidence gains selection_surface_probe: \"loaded\" on the path that ran the probe and \"reused\" on the rest (\"failed\" plus selection_surface_probe_error when the page-side read broke; that path proceeds to the entry page as before and the failure is never reused), and a reused skip detail ends with \"(probe answer reused from an earlier path of this run)\". A reused answer on a selector family opens the checkout once in opened_checkout (detail null, as before); on a landing-entry family the path goes straight to the landing page. A consumer counting SDK page-view events in the analytics-correctness or receipt capture will see one checkout view per path where it saw two; one matching opened_checkout.detail === null on selector families must accept the new detail string. Step names, statuses, order and failure codes are unchanged. No schema, flag or command change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The entered_via_landing section names the selector probe, states that its load is the checkout's only load before the entry page and that opened_checkout reuses it on selector families, documents the per-run reuse across paths of a multi-path plan, and lists the selection_surface_probe evidence value (loaded, reused, or failed with selection_surface_probe_error)."
+        }
+      ],
+      "entry_sha256": "d29bcb03e0822a25018397618251321d55f6c9c73e54231bd94767aacff853c6"
+    },
+    {
+      "id": "RL-0105",
+      "sequence": 105,
+      "date": "2026-09-16",
+      "kind": "release",
       "surface_version": "1.30.0",
       "changelog_section": "1.30.0",
       "changelog_sha256": "ea4b17f9e33ab112ec7f80d594a9afd008527550fcc548b9209132bd48f48b23",
@@ -3896,7 +3917,7 @@
           "summary": "Regenerated: supported surface at generation time 1.30.0."
         }
       ],
-      "entry_sha256": "1ac2e6c091bab4c4c1c3eb042c139af8d2a720e94a9ac48abf0f715d105aa3eb"
+      "entry_sha256": "2e1c93fb57ac9647ce947193963def42eb0ea141553ac8b53198d59da7e6ad97"
     }
   ]
 }
