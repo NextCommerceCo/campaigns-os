@@ -885,9 +885,22 @@ has no `purchase_proof`, and an unknown must never retroactively un-finish a
 campaign that was already complete. Unknown is advisory; only an explicit zero
 holds the pipeline at `qa`.
 
-If a no-order run is what you intend, declare it: set
-`qa.proof_policy.order_path_depth` to `off` on the packet. That is a deliberate,
-inspectable statement rather than a silent gap.
+If a no-order run is what you intend, declare it:
+`qa policy set --packet <packet> --order-path-depth off` (or
+`prepare-build`/`start ... --order-path-depth off` when the packet is first
+written). The setter accepts `off`, `common` or `full`, writes
+`qa.proof_policy.order_path_depth`, and — when the target already carries an
+assembly report — refreshes the report's `proof_policy` mirror in the same run.
+That is a deliberate, inspectable statement rather than a silent gap, and with
+`off` on both sides a `qa run --test-order off` pass reaches `next: done`.
+
+Do not hand-edit the packet's depth: the assembly report mirrors
+`qa.proof_policy` from prepare-build, and when the two disagree `next` reads
+the depth as unknown and cannot reach `done`. Doctor warns
+(`qa.proof_policy.order_path_depth_drift`, advisory, never a blocker) and the
+`next` `purchase_proof_unknown` action becomes a runnable command, both naming
+the same fix: `qa policy set --packet <packet> --order-path-depth <packet
+value>`, which re-states the packet's value into the mirror.
 
 ### Purchase data layer (`dl_purchase`)
 

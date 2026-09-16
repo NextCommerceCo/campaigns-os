@@ -3624,6 +3624,57 @@
       "sequence": 98,
       "date": "2026-09-16",
       "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.5",
+      "changelog_sha256": "026307a39d1976e8c1df5b41bb170a99ded6a6f515e513d4d2cef809bba4dba7",
+      "agent_impact": "qa.proof_policy.order_path_depth gains a setter. prepare-build, start and build accept --order-path-depth <off|common|full> and seed the packet with it (default unchanged: common); qa policy set accepts the same flag, writes the packet field, and when the target carries an assembly report refreshes report.proof_policy.order_path_depth in the same run (the doctor sidecar is stamped stale; changed[] lists report.proof_policy.order_path_depth beside order_path_depth and the JSON result carries report_mirror { report_path, written, order_path_depth }; the policy snapshot gains qa.order_path_depth). A bare flag or any value outside off/common/full is refused before anything is written, with the accepted list in the error. Doctor emits a new advisory warning qa.proof_policy.order_path_depth_drift (never an error) when the packet's declared depth and the report mirror disagree; its message, the assessPurchaseProofCoverage reason and the next purchase_proof_unknown action carry one text naming the reconciling command qa policy set --packet <packet> --order-path-depth <packet value>. That next action changes from kind manual with command null to kind command with the runnable command, and its description no longer reads 'Reconcile the packet and the report before treating either depth as proved.' A consumer matching that sentence must match the command instead. With off on both sides a qa run --test-order off pass reaches next: done. No schema change: the field was already a free string.",
+      "compatibility": "compatible",
+      "migration": "none. A target whose packet was hand-edited to a different depth than its report mirror now draws the drift warning; run the command it names once to reconcile.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "prepare-build, start and build accept --order-path-depth <off|common|full> and seed qa.proof_policy.order_path_depth (and the report mirror) with it; an invalid value is refused with the other argv checks before any build state is written."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa policy set --order-path-depth <off|common|full> writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror; changed[] gains report.proof_policy.order_path_depth, the result gains report_mirror, and the policy snapshot gains qa.order_path_depth."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "New advisory warning qa.proof_policy.order_path_depth_drift when the packet's declared order-path depth and the report's mirror disagree; the message names the qa policy set --order-path-depth command that reconciles them."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "The purchase_proof_unknown action for a packet/report depth disagreement is now kind command carrying the runnable qa policy set --order-path-depth command, with the same text as doctor's warning, instead of a manual step reading 'Reconcile the packet and the report'."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Purchase-proof coverage documents the --order-path-depth setter, the report-mirror refresh, and the drift warning with its reconciling command."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The qa.proof_policy section names how order_path_depth is seeded and set, and the drift warning."
+        }
+      ],
+      "entry_sha256": "0df4bcfca327d1f054f4f1c2d70cd61fbc2f8718085cc4c205bcf0f727e7a681"
+    },
+    {
+      "id": "RL-0099",
+      "sequence": 99,
+      "date": "2026-09-16",
+      "kind": "release",
       "surface_version": "1.30.0",
       "changelog_section": "1.30.0",
       "changelog_sha256": "ea4b17f9e33ab112ec7f80d594a9afd008527550fcc548b9209132bd48f48b23",
@@ -3668,7 +3719,7 @@
           "summary": "Regenerated: supported surface at generation time 1.30.0."
         }
       ],
-      "entry_sha256": "2a5b9d924f7cced09433af00ccd1f85f5a442cb64fad59a4419f5171188f8933"
+      "entry_sha256": "ce457d9a6c153b9b699bfdbb17251a32fe395d180aea32025ff7c65e98d07951"
     }
   ]
 }

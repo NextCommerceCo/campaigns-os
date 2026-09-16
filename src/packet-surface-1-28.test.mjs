@@ -110,7 +110,8 @@ test("qa policy set refuses the removed flags by name instead of ignoring them",
   assert.equal(updated.campaign.allowed_domains_confirmed, true);
   assert.equal(updated.deploy.target, "local-serve");
   assert.equal("test_orders_allowed" in updated.qa, false);
-  assert.equal("qa" in JSON.parse(kept.stdout).policy, false);
+  // The snapshot's qa block carries the proof depth and neither removed boolean.
+  assert.deepEqual(JSON.parse(kept.stdout).policy.qa, { order_path_depth: "common" });
 });
 
 test("local-serve is a known deploy target and reads a localhost deploy URL as the intended QA state", (t) => {
