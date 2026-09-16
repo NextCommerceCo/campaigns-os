@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PricingState, normalizeJourney, planScenarios } from "./commercial-journey.mjs";
+import { PricingState, deriveState, normalizeJourney, planScenarios } from "./commercial-journey.mjs";
 
 function calculateEnvelope(descriptor) {
   const lines = descriptor.body.lines.map((line) => ({
@@ -88,4 +88,17 @@ test("an invalid recurrence never leaks a numeric recurring annotation", () => {
 test("supported self-referencing commercial journey export resolves", async () => {
   const exported = await import("@nextcommerce/campaigns-os/commercial-journey");
   assert.equal(exported.planScenarios, planScenarios);
+});
+
+test("deriveState treats a prefix or case difference in the spec hash as the same spec", () => {
+  const hex = "a".repeat(64);
+  const calculatedAt = "2026-08-24T00:00:00.000Z";
+  const result = { ok: true, spec_hash: `sha256:${hex.toUpperCase()}`, calculated_at: calculatedAt };
+  const meta = { spec_hash: hex, calculated_at: calculatedAt };
+
+  assert.equal(deriveState(result, meta), PricingState.Exact);
+  assert.equal(deriveState({ ...result, spec_hash: `sha256:${"b".repeat(64)}` }, meta), PricingState.Stale);
+  // Two absent hashes carry no identity: the spec-hash axis neither matches
+  // nor marks the result stale, so the state falls through to the time axes.
+  assert.equal(deriveState({ ok: true, calculated_at: calculatedAt }, { calculated_at: calculatedAt }), PricingState.Exact);
 });

@@ -3540,45 +3540,6 @@
         }
       ],
       "entry_sha256": "610cfb6dc40b6e02eb027f8e3bc3c4a2a67563bc4f2a1ef1c8689206ac29727a"
-    },
-    {
-      "id": "RL-0096",
-      "sequence": 96,
-      "date": "2026-09-16",
-      "kind": "release",
-      "surface_version": null,
-      "changelog_section": "1.29.0+agent.3",
-      "changelog_sha256": "2888da443aeafa1da6064c2e7adc8b5f06b1186fdb402ba1ec6852e7bd9ec182",
-      "agent_impact": "prepare-build now writes assembly.commerce_catalog.path: null when the catalog is the toolkit's default contracts/commerce-surface-catalog.json (#324); previously it wrote a packet-relative path into the checkout that ran the command, which was dead on any other machine or with the toolkit installed as a package. An agent reading the packet must treat null as \"the running toolkit's catalog\"; a string path is still an operator --commerce-catalog relative to the packet. doctor and qa run resolve null to the running toolkit's catalog, and also resolve a recorded path that does not exist but is named commerce-surface-catalog.json (a packet prepared before this change) to the same file: doctor no longer emits the blocker [assembly.commerce_catalog.path] Commerce catalog is required but not found. for that state and instead adds a ready line starting \"Commerce catalog resolved to the running toolkit's copy; the packet's recorded path <path> does not exist here\" ending \"Re-run prepare-build to clear the machine-local path.\" A dead path with any other file name still blocks with the same message as before. No warning, flag, exit code or schema change (the schema already allowed null).",
-      "compatibility": "compatible",
-      "migration": "Existing packets keep working: a machine-local catalog path resolves to the running toolkit's catalog with a ready line. Re-run prepare-build to record null. Consumers that parsed assembly.commerce_catalog.path as a non-empty string must accept null.",
-      "changes": [
-        {
-          "class": "cli_surface",
-          "path": "src/cli.mjs",
-          "surface_entry": "prepare-build",
-          "summary": "assembly.commerce_catalog.path is null when the catalog is the toolkit's default; an explicit --commerce-catalog is still recorded packet-relative."
-        },
-        {
-          "class": "cli_surface",
-          "path": null,
-          "surface_entry": "doctor",
-          "summary": "A null catalog path, or a dead path named commerce-surface-catalog.json, resolves to the running toolkit's catalog; the dead-path case adds a ready line naming the stale path and the prepare-build repair instead of the assembly.commerce_catalog.path blocker."
-        },
-        {
-          "class": "cli_surface",
-          "path": null,
-          "surface_entry": "qa",
-          "summary": "qa run loads the commerce structure contract through the same resolver, so a null or stale catalog path no longer yields missing_catalog_path / missing_catalog."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/build-packet.md",
-          "surface_entry": "docs/build-packet.md",
-          "summary": "New Commerce Catalog section: null path = toolkit default, string path = operator catalog relative to the packet, stale machine-local path = resolved with a ready line and cleared by re-running prepare-build."
-        }
-      ],
-      "entry_sha256": "679dcd1ec8ec2939e16f1acd6afe71a8e6ab06acbc20ffdd0bff35ca137baebe"
     }
   ]
 }
