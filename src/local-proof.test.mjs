@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -265,6 +265,96 @@ test("production parity fails on a pin that moved after the proof, on a producti
   assert.equal(copy.first_difference.kind, "proven_output_stale");
   assert.equal(copy.first_difference.route, "/demo/checkout/");
   assert.equal(copy.first_difference.line, 8);
+});
+
+test("CRLF renders compare like LF ones: byte-identical CRLF pages pass with zero gated lines, and line numbers count CRLF lines", (t) => {
+  const crlf = (html) => html.replace(/\n/g, "\r\n");
+  const dev = { "": crlf(page()), checkout: crlf(page()) };
+  const identical = rendered(t, { proven: dev, development: dev, production: dev });
+  const same = compareRenderedOutputs({ provenRoot: identical.proven, developmentRoot: identical.development, productionRoot: identical.production, slug: "demo" });
+  assert.equal(same.status, "pass", JSON.stringify(same));
+  assert.deepEqual(same.pages.map((entry) => [entry.gated_inserted_lines, entry.gated_removed_lines, entry.gated_hosts]), [[0, 0, []], [0, 0, []]]);
+  assert.match(same.summary, /\(0 line\(s\)\); Campaign Cart pin 0\.4\.18\.$/);
+
+  const gated = rendered(t, { proven: dev, development: dev, production: { "": crlf(page({ gated: true })), checkout: crlf(page({ gated: true })) } });
+  const withGate = compareRenderedOutputs({ provenRoot: gated.proven, developmentRoot: gated.development, productionRoot: gated.production, slug: "demo" });
+  assert.equal(withGate.status, "pass");
+  assert.deepEqual(withGate.pages.map((entry) => entry.gated_inserted_lines), [4, 4]);
+  assert.deepEqual(withGate.pages[0].gated_hosts, ["//j.northbeam.io", "https://www.googletagmanager.com"]);
+
+  const stale = rendered(t, { proven: dev, development: { "": crlf(page()), checkout: crlf(page({ extra: "<p>new copy</p>" })) }, production: { "": crlf(page({ gated: true })), checkout: crlf(page({ gated: true, extra: "<p>new copy</p>" })) } });
+  const edited = compareRenderedOutputs({ provenRoot: stale.proven, developmentRoot: stale.development, productionRoot: stale.production, slug: "demo" });
+  assert.equal(edited.first_difference.kind, "proven_output_stale");
+  assert.equal(edited.first_difference.line, 8);
+});
+
+test("a page that renders no Campaign Cart loader fails parity on its own code, whichever page comes first", (t) => {
+  const noLoader = page().replace(LOADER("0.4.18"), "<!-- loader removed -->");
+  const lost = rendered(t, { proven: { "": page(), checkout: noLoader }, development: { "": page(), checkout: noLoader }, production: { "": page({ gated: true }), checkout: noLoader } });
+  const missing = compareRenderedOutputs({ provenRoot: lost.proven, developmentRoot: lost.development, productionRoot: lost.production, slug: "demo" });
+  // Pages compare in sorted path order: checkout/index.html (no loader) is
+  // read first, so the root page is the one that disagrees with it.
+  assert.equal(missing.status, "fail");
+  assert.equal(missing.first_difference.kind, "sdk_loader_missing");
+  assert.equal(missing.first_difference.route, "/demo/");
+  assert.match(missing.first_difference.detail, /^this page pins Campaign Cart 0\.4\.18 while \/demo\/checkout\/ renders no loader\.$/);
+
+  const later = rendered(t, { proven: { "": noLoader, checkout: page() }, development: { "": noLoader, checkout: page() }, production: { "": noLoader, checkout: page() } });
+  const lostLater = compareRenderedOutputs({ provenRoot: later.proven, developmentRoot: later.development, productionRoot: later.production, slug: "demo" });
+  assert.equal(lostLater.first_difference.kind, "sdk_loader_missing");
+  assert.equal(lostLater.first_difference.route, "/demo/");
+  assert.match(lostLater.first_difference.detail, /^this page renders no Campaign Cart loader while \/demo\/checkout\/ pins 0\.4\.18\.$/);
+
+  const none = rendered(t, { proven: { "": noLoader }, development: { "": noLoader }, production: { "": noLoader } });
+  const allMissing = compareRenderedOutputs({ provenRoot: none.proven, developmentRoot: none.development, productionRoot: none.production, slug: "demo" });
+  assert.equal(allMissing.status, "pass");
+  assert.equal(allMissing.sdk_version, null);
+  assert.match(allMissing.summary, /Campaign Cart pin not rendered\.$/);
+});
+
+test("the parity next action shell-quotes the packet path", () => {
+  const base = { themeGate: null, polishGate: null, ambient: null, result: { stage: "build" }, packet: { deploy: { target: "local-serve" } } };
+  const spaced = buildNextActions({ ...base, packetPath: "/campaigns/my demo/campaign-runtime.build.json" });
+  assert.match(spaced.find((action) => action.id === "build_production_parity").command, /page-kit parity --packet '\/campaigns\/my demo\/campaign-runtime\.build\.json'$/);
+});
+
+test("page-kit parity records a pass on the report, and a pass it could not record is not a pass", (t) => {
+  const { packetPath, targetRepo } = packetFixture(t);
+  const reportPath = writeReport(targetRepo, (report) => {
+    report.stages.assembly.evidence.build_environment = "development";
+  });
+  const passing = () => ({ status: "pass", campaign_slug: "runtime-packet-demo", page_count: 1, sdk_version: "0.4.18", pages: [], first_difference: null, summary: "1 page(s) identical …", checked_at: "2026-09-16T00:00:00.000Z", environment: { proven: "development", compared: "production" } });
+  const recorded = pageKitParityCommand({ _: ["page-kit", "parity"], packet: packetPath }, { runProductionParityCheck: passing });
+  assert.equal(recorded.ok, true);
+  assert.equal(recorded.status, "pass");
+  assert.equal(recorded.written, true);
+  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  assert.equal(report.stages.assembly.evidence.local_proof.production_parity.status, "pass");
+  assert.equal(report.stages.assembly.evidence.local_proof.production_parity.build_fingerprint, BUILD_FINGERPRINT);
+  assert.equal(report.stages.assembly.evidence.build_environment, "development", "the rest of the evidence object is kept");
+
+  const failing = () => ({ ...passing(), status: "fail", first_difference: { kind: "sdk_pin_mismatch", route: "/runtime-packet-demo/", path: "index.html", line: null, detail: "x" }, summary: "sdk_pin_mismatch at /runtime-packet-demo/: x" });
+  const failed = pageKitParityCommand({ _: ["page-kit", "parity"], packet: packetPath }, { runProductionParityCheck: failing });
+  assert.equal(failed.ok, false);
+  assert.deepEqual(codes(failed.errors), ["local_proof.production_parity"]);
+  assert.equal(JSON.parse(readFileSync(reportPath, "utf8")).stages.assembly.evidence.local_proof.production_parity.status, "fail", "a fail is recorded too");
+
+  // An unwritable sidecar directory: the atomic write's temp file cannot be created.
+  if (process.getuid?.() === 0) return;
+  chmodSync(join(targetRepo, ".campaign-runtime"), 0o500);
+  let unrecorded;
+  try {
+    unrecorded = pageKitParityCommand({ _: ["page-kit", "parity"], packet: packetPath }, { runProductionParityCheck: passing });
+  } finally {
+    chmodSync(join(targetRepo, ".campaign-runtime"), 0o700);
+  }
+  assert.equal(unrecorded.ok, false);
+  assert.equal(unrecorded.status, "record_failed");
+  assert.equal(unrecorded.written, false);
+  assert.equal(unrecorded.parity.status, "pass", "the comparison is still reported");
+  assert.deepEqual(codes(unrecorded.errors), ["local_proof.parity.report_not_written"]);
+  assert.match(unrecorded.errors[0].message, /^Parity was checked \(pass\) but could not be recorded on /);
+  assert.deepEqual(codes(unrecorded.warnings), []);
 });
 
 test("the rendered pin reader finds the Campaign Cart loader and the next-api-key meta and ignores other loaders", () => {

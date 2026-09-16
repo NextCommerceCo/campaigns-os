@@ -4688,7 +4688,7 @@ const PAGE_KIT_PARITY_FLAGS = Object.freeze(["packet", "json", "report"]);
 // pin is the same in both. Both renders go to temp directories through the
 // target's own page-kit; nothing under the target is written except the
 // result on the Assembly Report.
-export function pageKitParityCommand(args) {
+export function pageKitParityCommand(args, options = {}) {
   const unknown = Object.keys(args).filter((key) => key !== "_" && !PAGE_KIT_PARITY_FLAGS.includes(key));
   if (unknown.length) {
     throw new Error(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit parity: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${PAGE_KIT_PARITY_FLAGS.map((key) => `--${key}`).join(", ")}.`);
@@ -4763,7 +4763,10 @@ export function pageKitParityCommand(args) {
   if (!expectedSdkVersion) {
     addIssue(result.warnings, "local_proof.parity.sdk_version_unread", `${PAGE_KIT_CAMPAIGNS_REL_PATH}[${publicRouteSlug}].sdk_version could not be read (${load.status}); the rendered pin is checked for consistency across environments but not against the data file.`);
   }
-  const parity = runProductionParityCheck({
+  // Tests inject the render+compare step: the hermetic fixture has no
+  // page-kit installed, and the recording path must still be exercised.
+  const runCheck = typeof options.runProductionParityCheck === "function" ? options.runProductionParityCheck : runProductionParityCheck;
+  const parity = runCheck({
     targetRepo,
     slug: publicRouteSlug,
     provenRoot: join(targetRepo, "_site"),
@@ -4798,10 +4801,17 @@ export function pageKitParityCommand(args) {
     });
     result.written = true;
   } catch (error) {
-    addIssue(result.warnings, "local_proof.parity.report_not_written", `Parity was checked but could not be recorded on ${workspace.reportPath}: ${singleLineDetail(error.message)}. Doctor will keep reporting ${LOCAL_PROOF_PARITY_SCOPE} as unrecorded.`);
+    // A pass that did not land on the report is not a pass the pipeline can
+    // read: doctor would still say unrecorded, so the command must not say
+    // otherwise. Exit 2 either way; the comparison itself is still reported.
+    addIssue(result.errors, "local_proof.parity.report_not_written", `Parity was checked (${parity.status}) but could not be recorded on ${workspace.reportPath}: ${singleLineDetail(error.message)}. Doctor keeps reporting ${LOCAL_PROOF_PARITY_SCOPE} as unrecorded until a run records it.`);
   }
   if (parity.status === "fail") {
     addIssue(result.errors, LOCAL_PROOF_PARITY_SCOPE, `Production parity FAILED: ${parity.summary} ${LOCAL_PROOF_NEVER_EDIT_RULE}`);
+    return result;
+  }
+  if (!result.written) {
+    result.status = "record_failed";
     return result;
   }
   result.status = "pass";
@@ -9010,7 +9020,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     push("build_skill", "skill", "next-campaigns-build", "Assemble the campaign per the build prompt, then record stages.assembly in the assembly report.");
     if (isLocalServePacket(packet)) {
       push("build_local_proof", "command", LOCAL_PROOF_BUILD_COMMAND, `Local proof mode (deploy.target is local-serve): build page-kit in the ${LOCAL_PROOF_BUILD_ENVIRONMENT} environment into _site/ and record ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} as "${LOCAL_PROOF_BUILD_ENVIRONMENT}". Vendor loaders are environment-gated out of this render (their protocol-relative //host/... URLs fail over a plain-HTTP local serve); SDK dl_* events still fire. ${LOCAL_PROOF_NEVER_EDIT_RULE}`);
-      push("build_production_parity", "command", `${asInvocation(LOCAL_PROOF_PARITY_COMMAND).replace("--packet <packet>", `--packet ${packetPath}`)}`, "After the development build is proven, assert the production render differs from it only in environment-gated output (same pages, route slugs, Campaign Cart pin and next-api-key) before committing; the PR preview is the second check.");
+      push("build_production_parity", "command", asInvocation(substitutePacket(LOCAL_PROOF_PARITY_COMMAND, packetPath)), "After the development build is proven, assert the production render differs from it only in environment-gated output (same pages, route slugs, Campaign Cart pin and next-api-key) before committing; the PR preview is the second check.");
     }
     if (themeGate?.status === "blocked") {
       for (const action of themeGate.required_actions) {

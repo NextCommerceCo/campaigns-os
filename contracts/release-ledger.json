@@ -3548,7 +3548,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.29.0+agent.8",
-      "changelog_sha256": "8e8f5fd69361ac8bb0ca6a97a038f851ceaf63622915a2a81b86bab37d0b7ede",
+      "changelog_sha256": "a68a7a1c8cb9e1577579a041382fdade21036cd24100d5e243f671d71cf49f3c",
       "agent_impact": "Local proof mode for deploy.target local-serve (#326). Build stage: next build now emits a build_local_proof command action (CPK_ENV=development npx campaign-build --json > .campaign-runtime/page-kit-build-summary.json) and a build_production_parity command action, and its prompt says to record stages.assembly.evidence.build_environment: \"development\" on the Assembly Report; hosted targets are unchanged. New command: page-kit parity --packet <packet> [--report <json>] [--json] renders the current source in development and production through the target's page-kit into temp dirs and asserts the served _site/ is the current development render and that production differs only in environment-gated output with the same page set, route slugs, Campaign Cart pin and next-api-key; the result object { status pass|fail|unavailable, checked_at, build_fingerprint, campaign_slug, page_count, sdk_version, pages[] { route, path, sdk_version, gated_inserted_lines, gated_removed_lines, gated_hosts[] }, first_difference { kind, route, path, line, detail } | null, summary } is recorded on stages.assembly.evidence.local_proof.production_parity; exit 2 on fail, on a non-local-serve packet (local_proof.parity.not_local_serve) or when page-kit is not installed (local_proof.parity.unavailable). Doctor: under local-serve with a terminal assembly stage, warnings[] gains local_proof.build_environment when the build is not recorded as development, and local_proof.production_parity is a ready line on a recorded pass, an errors[] entry (with detail.first_difference) on a recorded fail, or a warning while unrecorded or recorded for another build fingerprint. Polish: a recorded hidden_eager_media checkpoint blocked on a capture whose document origin is http: and whose ledger has a failed cross-origin http: dependency now lists required_actions [local_proof_rebuild (manual), capture] instead of [capture]; the polish capture text prints it as a Required action line. No schema change: both records live in the assembly stage's free-form evidence object.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3590,7 +3590,7 @@
           "summary": "The local-serve deploy target documents local proof mode: the development build, the build_environment record, the parity command and the doctor rows."
         }
       ],
-      "entry_sha256": "4d4f652da71509e26c07919c39da520561e308633235bf1cf905b9976bdcb773"
+      "entry_sha256": "91f91577b4856995ef9dfc32e9dbb5d8903a3242419b7d2d7175618842f01571"
     }
   ]
 }

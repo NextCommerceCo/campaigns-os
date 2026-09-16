@@ -167,9 +167,15 @@ function lineDiff(aLines, bLines) {
   return { removed, inserted };
 }
 
+// Rendered lines, with either line ending: a CRLF render must diff and number
+// exactly like an LF one, so the terminator is never part of the compared text.
+function renderedLines(text) {
+  return text.split(/\r?\n/);
+}
+
 function firstDifferingLine(aText, bText) {
-  const a = aText.split("\n");
-  const b = bText.split("\n");
+  const a = renderedLines(aText);
+  const b = renderedLines(bText);
   const limit = Math.min(a.length, b.length);
   for (let index = 0; index < limit; index += 1) {
     if (a[index] !== b[index]) return index + 1;
@@ -252,7 +258,7 @@ export function compareRenderedOutputs({ provenRoot, developmentRoot, production
     }
   }
 
-  let sdkVersion = null;
+  let sdkVersion;
   for (const pagePath of proven) {
     const route = renderedPageRoute(slug, pagePath);
     const provenHtml = readPage(provenRoot, slug, pagePath);
@@ -282,11 +288,23 @@ export function compareRenderedOutputs({ provenRoot, developmentRoot, production
     if (expectedSdkVersion && provenPin.sdk_version && provenPin.sdk_version !== expectedSdkVersion) {
       return fail({ kind: "sdk_version_mismatch", route, path: pagePath, line: null, detail: `the rendered Campaign Cart loader pins ${provenPin.sdk_version} but _data/campaigns.json[${slug}].sdk_version is ${expectedSdkVersion}.` });
     }
-    if (sdkVersion === null) sdkVersion = provenPin.sdk_version;
-    else if (provenPin.sdk_version && provenPin.sdk_version !== sdkVersion) {
-      return fail({ kind: "sdk_version_mismatch", route, path: pagePath, line: null, detail: `pages pin different Campaign Cart versions (${sdkVersion} and ${provenPin.sdk_version}).` });
+    // A missing loader is a value like any other: every page must agree with
+    // the first page, and a page that lost its loader fails on its own code.
+    if (sdkVersion === undefined) sdkVersion = provenPin.sdk_version;
+    else if (provenPin.sdk_version !== sdkVersion) {
+      return fail({
+        kind: provenPin.sdk_version === null || sdkVersion === null ? "sdk_loader_missing" : "sdk_version_mismatch",
+        route,
+        path: pagePath,
+        line: null,
+        detail: provenPin.sdk_version === null
+          ? `this page renders no Campaign Cart loader while ${pages[0]?.route ?? "the first page"} pins ${sdkVersion}.`
+          : sdkVersion === null
+            ? `this page pins Campaign Cart ${provenPin.sdk_version} while ${pages[0]?.route ?? "the first page"} renders no loader.`
+            : `pages pin different Campaign Cart versions (${sdkVersion} and ${provenPin.sdk_version}).`,
+      });
     }
-    const diff = lineDiff(developmentHtml.split("\n"), productionHtml.split("\n"));
+    const diff = lineDiff(renderedLines(developmentHtml), renderedLines(productionHtml));
     pages.push({
       route,
       path: pagePath,
@@ -302,7 +320,7 @@ export function compareRenderedOutputs({ provenRoot, developmentRoot, production
     status: "pass",
     campaign_slug: slug,
     page_count: pages.length,
-    sdk_version: sdkVersion,
+    sdk_version: sdkVersion ?? null,
     pages,
     first_difference: null,
     summary: `${pages.length} page(s) identical to the current development render; production differs only in environment-gated output (${gatedTotal} line(s)${hosts.length ? `; loaders: ${hosts.join(", ")}` : ""}); Campaign Cart pin ${sdkVersion ?? "not rendered"}.`,

@@ -71,9 +71,11 @@ the toolkit runs that loop in a fixed order:
    `stages.assembly.evidence.local_proof.production_parity`; doctor reports it
    as `local_proof.production_parity` (ready line on pass; an error naming the
    first non-gated difference — `sdk_pin_mismatch`, `sdk_pin_drift`,
-   `proven_output_is_production`, `proven_output_stale`, a page-set kind — on
-   fail; a warning while unrecorded or recorded for another build
-   fingerprint). Exit 2 on fail.
+   `sdk_loader_missing`, `proven_output_is_production`,
+   `proven_output_stale`, a page-set kind — on fail; a warning while
+   unrecorded or recorded for another build fingerprint). Exit 2 on fail, and
+   on a pass that could not be recorded (`status: record_failed`), so the
+   command never claims what doctor cannot read.
 4. **Commit, then open the PR.** The preview deploy is the second check.
 
 The toolkit never proposes editing a generated include (`analytics-head.html`,

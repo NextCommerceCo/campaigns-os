@@ -35,12 +35,16 @@ Notable supported-surface changes are recorded here.
   production differs only in environment-gated output (<lines> line(s);
   loaders: <hosts>); Campaign Cart pin <version>.` with one row per page. A
   failure names the first non-gated difference by kind
-  (`sdk_pin_mismatch`, `sdk_pin_drift`, `proven_output_is_production`,
-  `proven_output_stale`, `page_not_in_source`, `page_not_proven`,
-  `page_only_in_production`, `page_missing_in_production`), route, path and
-  line, exits 2, and is recorded on
-  `stages.assembly.evidence.local_proof.production_parity` all the same. A
-  packet whose target is not `local-serve` is refused
+  (`sdk_pin_mismatch`, `sdk_pin_drift`, `sdk_loader_missing`,
+  `proven_output_is_production`, `proven_output_stale`, `page_not_in_source`,
+  `page_not_proven`, `page_only_in_production`,
+  `page_missing_in_production`), route, path and line, exits 2, and is
+  recorded on `stages.assembly.evidence.local_proof.production_parity` all
+  the same. Every page must agree on the Campaign Cart pin, a missing loader
+  included; CRLF renders compare and number like LF ones. A pass that could
+  not be recorded on the report reports `status: record_failed` with
+  `local_proof.parity.report_not_written` and exits 2, so the command and
+  doctor never disagree. A packet whose target is not `local-serve` is refused
   (`local_proof.parity.not_local_serve`); a target without
   `next-campaign-page-kit` installed reports `local_proof.parity.unavailable`.
 - Doctor rows under `local-serve` once assembly is terminal:
