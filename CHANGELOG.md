@@ -2,6 +2,35 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.29.0+agent.9] - 2026-09-16
+
+### Changed
+
+- `bundle check` now reads the doctor sidecar's own verdict. A
+  `.campaign-runtime/doctor-output.json` recording a blocked run (`status:
+  blocked` or `ok: false`) emits `bundle.doctor_output.blocked` — a warning by
+  default, because the sidecars still agree with each other and the contract,
+  and an error under `--require-qa`, because a QA-complete handoff cannot ride
+  a doctor that refused the build (the command then exits 2). Before, the only
+  doctor condition checked was `stale: true`, so a bundle whose doctor said the
+  campaign cannot proceed returned `ok: true, errors: []` even with
+  `--require-qa`. The remedy names `campaigns-os doctor --packet
+  campaign-runtime.build.json --strip-paths`.
+- `bundle.qa_verdict.blocked` is now emitted whenever the QA verdict on disk
+  has `disposition: blocked`: a warning by default, an error under
+  `--require-qa` (before, it appeared only under `--require-qa`). `stage_blocked`
+  keeps its published meaning (a required QA verdict is blocked) and is not
+  widened for the doctor case; the JSON shape is unchanged and a ready doctor
+  with a ready verdict produces byte-identical output.
+- The text report prints a `Readiness:` line directly under `Status:` —
+  `Readiness: BLOCKED (doctor run is blocked)`, `Readiness: BLOCKED (QA verdict
+  is blocked)`, or `Readiness: no doctor or QA block recorded by the sidecars
+  present` — so `Status: CONFORMANT` is never read as readiness. The line is
+  text-only; `--json` carries the same answer in the two blocked findings.
+- README and `docs/migration-sidecar-bundle.md` now say plainly that
+  `conformant` means the sidecars agree with each other and the contract and
+  says nothing about whether doctor or QA passed; read the warnings for that.
+
 ## [1.29.0+agent.8] - 2026-09-16
 
 ### Changed

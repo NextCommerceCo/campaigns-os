@@ -996,12 +996,15 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   if (command === "bundle") {
     const subcommand = args._[1] || "check";
     if (subcommand !== "check") throw new Error('Unknown bundle subcommand. Use: campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json].');
-    const { inspectSidecarBundle } = await import("./sidecar-bundle.mjs");
+    const { inspectSidecarBundle, sidecarBundleReadinessLine } = await import("./sidecar-bundle.mjs");
     const result = inspectSidecarBundle({
       packetPath: requireArg(args, "packet"),
       requireQa: args["require-qa"] === true,
     });
-    writeResult(result, args, result.ok ? 0 : 2);
+    // The text report gets a readiness line under Status; the JSON shape is
+    // the published conformance schema, where stage_blocked carries the same
+    // answer.
+    writeResult(result, args, result.ok ? 0 : 2, { headerLines: [sidecarBundleReadinessLine(result)] });
     return;
   }
 
@@ -10063,11 +10066,11 @@ function addIssue(collection, code, message, detail = null) {
   collection.push(detail ? { code, message, detail } : { code, message });
 }
 
-function writeResult(result, args, failureCode) {
+function writeResult(result, args, failureCode, { headerLines = [] } = {}) {
   if (args.json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    printResult(result);
+    printResult(result, { headerLines });
   }
   if (failureCode) process.exitCode = failureCode;
 }
@@ -12039,8 +12042,10 @@ function printPrepareResult(result, args) {
 // reads is assertable without a subprocess; printResult prints the join.
 const WAIVE_ACTIONS = new Set(["theme-waive", "checkpoint-waive"]);
 
-export function resultTextLines(result) {
-  const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`];
+// headerLines: caller-supplied lines printed directly under Status (a bundle
+// check's readiness line); they are text-only and never enter the JSON result.
+export function resultTextLines(result, { headerLines = [] } = {}) {
+  const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`, ...headerLines];
   // A waive command's second line names what it recorded; the third is the
   // stage doctor now picks for the report the waiver was written to.
   if (WAIVE_ACTIONS.has(result.action) && result.gate) {
@@ -12089,8 +12094,8 @@ export function resultTextLines(result) {
   return lines;
 }
 
-function printResult(result) {
-  for (const line of resultTextLines(result)) console.log(line);
+function printResult(result, { headerLines = [] } = {}) {
+  for (const line of resultTextLines(result, { headerLines })) console.log(line);
 }
 
 function formatIssueSummary(issue) {
