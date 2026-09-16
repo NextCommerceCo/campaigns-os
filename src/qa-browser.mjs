@@ -4,7 +4,7 @@ import { dirname as installModeDirname, resolve as installModeResolve } from "no
 import { fileURLToPath as installModeFileUrl } from "node:url";
 const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(import.meta.url)), "..");
 import { runWithDeadline } from "./deadline.mjs";
-import { SEVERITY, STATUS } from "./qa-verdict.mjs";
+import { PLACEHOLDER_TEXT_ASSERTION_SUFFIX, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import {
   analyticsCaptureError,
   projectAnalyticsCaptureError,
@@ -1788,7 +1788,7 @@ function placeholderTextResidueAssertion({ page, terms, matches, severity }) {
   const found = summarizePlaceholderTerms(matches);
   const status = found.length ? STATUS.FAIL : STATUS.PASS;
   return assertion({
-    id: `template-residue:${page.page_id}:placeholder-text`,
+    id: `template-residue:${page.page_id}${PLACEHOLDER_TEXT_ASSERTION_SUFFIX}`,
     family: "template_residue",
     page,
     status,

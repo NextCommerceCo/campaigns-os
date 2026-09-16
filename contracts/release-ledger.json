@@ -3675,6 +3675,45 @@
       "sequence": 99,
       "date": "2026-09-16",
       "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.6",
+      "changelog_sha256": "b1128e8422c03bf344e1d99ca0ad9317b7a9e9bdf114c5a218e2804f4cd39de5",
+      "agent_impact": "Doctor's template_contract.placeholder_text_residue check now scans the visible text of each built page (tags, attribute values, script/style bodies and comments stripped, alt text kept) instead of raw HTML, so a page whose only placeholder-term occurrence is an <input placeholder=\"...\"> hint, a data-* attribute, a comment or a script string yields the ready line \"Built target output has no literal template placeholder text\" instead of the warning; rendered placeholder copy still warns with the same code and message, and the file:line in the message now points at the rendered text. qa run additionally writes stages.qa.evidence = { source_build_fingerprint, gates: { placeholder_text_residue: { status: pass|fail, pages_checked, pages_failed } } } onto the Assembly Report (absent when the gate did not run on that verdict). Doctor reads it back: while stages.assembly.build_fingerprint equals the recorded source_build_fingerprint and status is pass, any remaining static hit is reported as a ready line ending \"but the browser residue gate passed on this build; QA's rendered-text verdict stands\" and no template_contract.placeholder_text_residue warning is emitted, so next no longer prints the \"Replace literal template placeholder text ...\" action. A rebuild (fingerprint change), a failed gate, or a QA record without the evidence restores the warning and the action. An agent parsing doctor output should treat the absence of the warning after a QA pass as expected, not as a scan that did not run. No schema, flag or command change; stages.qa.evidence was already an additional-properties object on the report stage definition.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "template_contract.placeholder_text_residue scans visible page text (attribute values, script/style bodies and comments excluded; alt text kept) rather than raw HTML, and is demoted to a ready line while the Assembly Report records the browser placeholder-text gate as passed on the current build fingerprint."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa run records stages.qa.evidence.source_build_fingerprint and stages.qa.evidence.gates.placeholder_text_residue (status, pages_checked, pages_failed) on the Assembly Report; absent when the gate did not run."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "The \"Replace literal template placeholder text ...\" action is no longer printed once the browser placeholder-text gate has passed on the current build."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents the stages.qa.evidence gate record beside purchase_proof and how doctor reads it back."
+        }
+      ],
+      "entry_sha256": "5d25de45c6a1bebbbb99eaaaabd23fe8947d274fbb33a4e8d60ceae9ef04a720"
+    },
+    {
+      "id": "RL-0100",
+      "sequence": 100,
+      "date": "2026-09-16",
+      "kind": "release",
       "surface_version": "1.30.0",
       "changelog_section": "1.30.0",
       "changelog_sha256": "ea4b17f9e33ab112ec7f80d594a9afd008527550fcc548b9209132bd48f48b23",
@@ -3719,7 +3758,7 @@
           "summary": "Regenerated: supported surface at generation time 1.30.0."
         }
       ],
-      "entry_sha256": "ce457d9a6c153b9b699bfdbb17251a32fe395d180aea32025ff7c65e98d07951"
+      "entry_sha256": "7a2ddecb54ed039124b9f4a77f0225c1ce71ddb7bd86967481c0876900e5d7dc"
     }
   ]
 }

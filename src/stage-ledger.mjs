@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
+import { STATUS as QA_STATUS } from "./qa-verdict.mjs";
 import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
@@ -202,6 +203,34 @@ export function recordProducerStageOutcome(report, {
   stages[stage] = next;
   updated.stages = stages;
   return updated;
+}
+
+// QA-owned gate evidence on the qa stage. The QA producer records, beside
+// its verdict identity, the build it ran against and the outcome of gates a
+// static doctor scan can only approximate (`gates.placeholder_text_residue`,
+// from summarizePlaceholderTextGate). Doctor reads it back through
+// qaGatePassedForCurrentBuild: a pass counts only while
+// stages.assembly.build_fingerprint still equals the fingerprint QA saw, so a
+// rebuild silently revokes it. Evidence is a QA-owned field, so the next QA
+// record replaces it wholesale — a stale pass cannot outlive the run that
+// recorded it.
+export const QA_GATE_PLACEHOLDER_TEXT_RESIDUE = "placeholder_text_residue";
+
+export function qaGateEvidence(report, gate) {
+  const evidence = report?.stages?.qa?.evidence;
+  if (!isPlainObject(evidence) || !isPlainObject(evidence.gates)) return null;
+  const outcome = evidence.gates[gate];
+  if (!isPlainObject(outcome)) return null;
+  return {
+    status: optionalString(outcome.status),
+    source_build_fingerprint: optionalString(evidence.source_build_fingerprint),
+  };
+}
+
+export function qaGatePassedForCurrentBuild(report, gate, { buildFingerprint }) {
+  const outcome = qaGateEvidence(report, gate);
+  const current = optionalString(buildFingerprint);
+  return Boolean(outcome && outcome.status === QA_STATUS.PASS && current && outcome.source_build_fingerprint === current);
 }
 
 /**
