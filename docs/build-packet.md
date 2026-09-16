@@ -291,7 +291,11 @@ one QA writes into — provided the context's `packet_path` names that packet;
 a context naming another packet binds nothing. `theme waive`, `checkpoint
 waive`, `polish capture`,
 `findings harvest`, `run-record` and `run status` act on the default location
-unless `--report` names another.
+unless `--report` names another. `run-record` keys its record on a `run_id`
+resolved as `--run-id`, else the active run session, else the most recent Run
+Record already on disk for this packet's campaign (re-emitted in place), else
+a freshly minted id; `--new-run` mints on request and `--list` prints the ids
+on disk without writing (see docs/workflow-findings-sidecar.md).
 
 The packet's top-level `generated_at` (ISO-8601 UTC, `Z` suffix) is stamped by
 `prepare-build` on every new packet. Downstream freshness — campaigns-agent's
@@ -547,7 +551,12 @@ localhost Development-domain behavior, non-localhost SDK allowlist requirement,
 order path depth, and operator approval state. Test cards still need no
 permission gate; the explicit field prevents agents from re-litigating proof
 depth in chat. Doctor checks the full field set in both packet and report
-artifacts when present. The `qa` block carries no permission booleans:
+artifacts when present. `order_path_depth` is seeded `common` and set with
+`--order-path-depth <off|common|full>` on `prepare-build`/`start` or later
+with `qa policy set --order-path-depth <depth>`, which also refreshes the
+report mirror; a packet whose depth disagrees with its report mirror draws the
+advisory `qa.proof_policy.order_path_depth_drift` warning naming that command
+(see `docs/qa-and-test-orders.md`, "Purchase-proof coverage"). The `qa` block carries no permission booleans:
 `qa.test_orders_allowed` and `qa.sandbox_test_card_confirmed`, which no command
 read, were removed in supported surface 1.28.0, and doctor warns
 (`qa.removed_policy_fields`) on a packet that still carries either.
@@ -764,6 +773,30 @@ The field is per-page; only upsell pages should carry it. Upstream
 spec validation warns when it's set on non-upsell pages, but the
 consumer surfaces it verbatim and lets the build stage decide what
 to do with it.
+
+## Commerce Catalog (`assembly.commerce_catalog`)
+
+`assembly.commerce_catalog` names the commerce-surface catalog the build and
+doctor read for the locked template family (`required`, `family`, `version`,
+`path`).
+
+- `path: null` means the toolkit's own catalog
+  (`contracts/commerce-surface-catalog.json` of the `campaigns-os` that is
+  running). This is what `prepare-build` records by default. The catalog
+  travels with the toolkit, not with the campaign, so the packet does not
+  record where one machine's checkout or package install kept it, and the
+  same packet resolves on any machine and under `npx campaigns-os`.
+- A string `path` is an operator-supplied `--commerce-catalog <path>`,
+  recorded relative to the packet (keep it inside the campaign repo). Doctor
+  resolves it against the packet's directory and blocks on
+  `assembly.commerce_catalog.path` when it does not exist.
+- Packets prepared before `null` was recorded carry the toolkit catalog as a
+  packet-relative path that climbs into the checkout that ran `prepare-build`
+  (`../../../campaigns-os/contracts/commerce-surface-catalog.json`). When such a
+  path does not exist but its file name is `commerce-surface-catalog.json`,
+  doctor and QA resolve it to the running toolkit's catalog and doctor prints
+  a `ready` line saying the packet still carries a machine-local path. That
+  is never a blocker; re-running `prepare-build` records `null`.
 
 ## Orchestration Loop (`campaigns-os next`)
 

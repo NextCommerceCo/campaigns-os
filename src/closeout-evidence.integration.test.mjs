@@ -324,6 +324,74 @@ test("a satisfied record in one target never satisfies another", () => {
   assert.deepEqual(readdirSync(join(a.dir, ".campaign-runtime/run-records")), ["run_synth_targeta01.json"]);
 });
 
+// The packet's declared order-path depth and the report's mirror of it. A
+// packet edited by hand after prepare-build leaves the mirror behind; the
+// coverage assessment then reads the depth as unknown, and until now nothing
+// named the command that puts the two back together.
+test("a hand-edited packet depth is named by doctor and next with the one command that reconciles it", () => {
+  const fixture = target({ prefix: "closeout-evidence-drift-" });
+  const packet = JSON.parse(readFileSync(fixture.packetPath, "utf8"));
+  packet.qa.proof_policy.order_path_depth = "off";
+  writeFileSync(fixture.packetPath, JSON.stringify(packet, null, 2));
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 0 });
+
+  const doctor = JSON.parse(execFileSync("node", [CLI, "doctor", "--packet", fixture.packetPath, "--json"], { encoding: "utf8" }));
+  const warning = (doctor.warnings || []).find((issue) => issue.code === "qa.proof_policy.order_path_depth_drift");
+  assert.ok(warning, `doctor must warn about the drift: ${JSON.stringify(doctor.warnings)}`);
+  assert.equal((doctor.errors || []).some((issue) => issue.code.startsWith("qa.proof_policy")), false, "drift is advisory, never a blocker");
+  const command = `qa policy set --packet ${fixture.packetPath} --order-path-depth off`;
+  assert.ok(warning.message.includes(command), `the warning names the reconciling command: ${warning.message}`);
+  assert.doesNotMatch(warning.message, /Reconcile the packet and the report before/);
+
+  const result = runNext(fixture.packetPath);
+  const advisory = action(result, "purchase_proof_unknown");
+  assert.ok(advisory, "next still surfaces the unknown coverage");
+  assert.equal(advisory.kind, "command");
+  assert.ok(advisory.command.endsWith(command), advisory.command);
+  assert.equal(advisory.required, undefined, "the action stays advisory");
+  // One action, one text: next's description carries doctor's warning verbatim.
+  assert.ok(advisory.description.includes(warning.message), `${advisory.description}\n---\n${warning.message}`);
+});
+
+test("qa policy set --order-path-depth off writes the packet field and the report mirror, and a no-order run then reaches done", () => {
+  const fixture = target({ prefix: "closeout-evidence-set-depth-" });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 0 });
+  assert.equal(runNext(fixture.packetPath).stage, "qa", "a declared common depth with zero order paths holds at qa");
+
+  const set = JSON.parse(execFileSync("node", [CLI, "qa", "policy", "set", "--packet", fixture.packetPath, "--order-path-depth", "off", "--json"], { encoding: "utf8" }));
+  assert.deepEqual(set.changed, ["order_path_depth", "report.proof_policy.order_path_depth"]);
+  assert.equal(set.policy.qa.order_path_depth, "off");
+  assert.equal(set.report_mirror.written, true);
+  assert.equal(JSON.parse(readFileSync(fixture.packetPath, "utf8")).qa.proof_policy.order_path_depth, "off");
+  const report = readReport(fixture.reportPath);
+  assert.equal(report.proof_policy.order_path_depth, "off", "the report mirror follows the packet");
+  assert.equal(report.proof_policy.typed_card_depth, "common", "the rest of the mirror is untouched");
+
+  const doctor = JSON.parse(execFileSync("node", [CLI, "doctor", "--packet", fixture.packetPath, "--json"], { encoding: "utf8" }));
+  assert.equal((doctor.warnings || []).some((issue) => issue.code === "qa.proof_policy.order_path_depth_drift"), false);
+  const result = runNext(fixture.packetPath);
+  assert.equal(result.stage, "done", result.picked_reason);
+  assert.equal(action(result, "purchase_proof_unknown"), null);
+
+  // Re-stating the same depth is a no-op on both artifacts.
+  const again = JSON.parse(execFileSync("node", [CLI, "qa", "policy", "set", "--packet", fixture.packetPath, "--order-path-depth", "off", "--json"], { encoding: "utf8" }));
+  assert.deepEqual(again.changed, []);
+  assert.equal(again.report_mirror.written, false);
+});
+
+test("qa policy set --order-path-depth re-states the packet's value into a lagging report mirror", () => {
+  const fixture = target({ prefix: "closeout-evidence-restate-" });
+  const packet = JSON.parse(readFileSync(fixture.packetPath, "utf8"));
+  packet.qa.proof_policy.order_path_depth = "off";
+  writeFileSync(fixture.packetPath, JSON.stringify(packet, null, 2));
+  assert.equal(readReport(fixture.reportPath).proof_policy.order_path_depth, "common");
+
+  const set = JSON.parse(execFileSync("node", [CLI, "qa", "policy", "set", "--packet", fixture.packetPath, "--order-path-depth", "off", "--json"], { encoding: "utf8" }));
+  assert.deepEqual(set.changed, ["report.proof_policy.order_path_depth"], "the packet already held off; only the mirror moved");
+  assert.equal(readReport(fixture.reportPath).proof_policy.order_path_depth, "off");
+});
+
+
 // The browser placeholder-text gate, as qa-browser emits it, for one page.
 function placeholderTextAssertion(pageId, status) {
   return {

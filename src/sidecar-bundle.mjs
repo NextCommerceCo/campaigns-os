@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { validateVerdict } from "./qa-verdict.mjs";
+import { specHashesMatch } from "./spec-identity.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CONTRACT_PATH = join(ROOT, "contracts/migration-sidecar-bundle.v0.json");
@@ -68,6 +69,19 @@ function valueAt(value, dottedPath) {
   return dottedPath.split(".").reduce((current, key) => current?.[key], value);
 }
 
+// The two spec-identity fields compare through the shared spec-hash
+// comparator so a `sha256:` prefix, hex case or whitespace difference between
+// producers is not reported as drift. The set is explicit, not inferred from
+// the field name: a future `*_hash` field with a different prefix convention
+// must opt in here rather than have its prefix silently stripped. Every other
+// identity field (map_id, slugs, paths) stays an exact compare.
+const SPEC_HASH_IDENTITY_FIELDS = new Set(["spec_hash", "spec_material_hash"]);
+
+function identityValuesAgree(identityField, left, right) {
+  if (SPEC_HASH_IDENTITY_FIELDS.has(identityField.name)) return specHashesMatch(left, right);
+  return left === right;
+}
+
 function compareIdentity(errors, records, identityField) {
   const label = identityField.name;
   const present = [];
@@ -87,7 +101,7 @@ function compareIdentity(errors, records, identityField) {
   }
   if (present.length < 2) return;
   const expected = present[0].value;
-  const mismatch = present.find((entry) => entry.value !== expected);
+  const mismatch = present.find((entry) => !identityValuesAgree(identityField, entry.value, expected));
   if (!mismatch) return;
   errors.push(artifactFinding(
     `bundle.identity.${label}_mismatch`,
@@ -128,7 +142,7 @@ function compareSpecMaterialIdentity(errors, records, identityField) {
   }
 
   const expected = present[0]?.value;
-  const mismatch = present.find((entry) => entry.value !== expected);
+  const mismatch = present.find((entry) => !identityValuesAgree(identityField, entry.value, expected));
   if (mismatch) {
     errors.push(artifactFinding(
       "bundle.identity.spec_material_hash_mismatch",

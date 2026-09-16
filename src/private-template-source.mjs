@@ -12,7 +12,7 @@
 // that's an intentional v1 boundary, not an oversight; see the transfer
 // packet this module implements.
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadTemplateBrandContract, resolveContractExtendsChain } from "./template-brand-contract.mjs";
 
@@ -41,6 +41,39 @@ function readJsonFile(path, what) {
 
 export function defaultCommerceCatalogPath() {
   return join(ROOT, "contracts", "commerce-surface-catalog.json");
+}
+
+export const COMMERCE_CATALOG_FILE_NAME = "commerce-surface-catalog.json";
+
+// The commerce catalog a packet reads. `assembly.commerce_catalog.path` is
+// null when the packet was prepared against the toolkit's own catalog: that
+// file ships with every install of the toolkit, so the packet does not record
+// where one particular checkout kept it. A recorded path is an operator's
+// explicit --commerce-catalog, resolved against the packet. A recorded path
+// that no longer exists but names the catalog file is the pre-null shape:
+// packets prepared before the catalog stopped being recorded wrote the
+// toolkit's own file relative to the packet (a chain of ../ into the checkout
+// that ran prepare-build), which is dead on any other machine or with the
+// toolkit installed as a package. Readers resolve that to the running
+// toolkit's catalog, and `source` says which of the four cases applied
+// (toolkit_default, packet, stale_packet_path, missing_packet_path) so doctor
+// can tell the operator without blocking.
+export function resolvePacketCommerceCatalogPath(packetPath, catalogInfo = {}) {
+  const recorded = typeof catalogInfo?.path === "string" && catalogInfo.path.length > 0 ? catalogInfo.path : null;
+  if (!recorded) {
+    return { path: defaultCommerceCatalogPath(), source: "toolkit_default", recorded: null };
+  }
+  const resolved = resolve(dirname(resolve(packetPath)), recorded);
+  if (existsSync(resolved)) {
+    return { path: resolved, source: "packet", recorded };
+  }
+  if (basename(recorded) === COMMERCE_CATALOG_FILE_NAME) {
+    return { path: defaultCommerceCatalogPath(), source: "stale_packet_path", recorded };
+  }
+  // The operator named a file that is not there and is not the toolkit
+  // catalog: keep the resolved path so the caller's missing-file check names
+  // it, and say plainly that nothing resolved.
+  return { path: resolved, source: "missing_packet_path", recorded };
 }
 
 // Overridable so tests can sandbox the allowlist against a fixture private
