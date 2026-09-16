@@ -6,6 +6,7 @@ import {
   buildPageLoadCapture,
   MAX_POLISH_CAPTURE_URL_LENGTH,
   normalizePageLoadRoute,
+  plainHttpDependencyFailures,
 } from "./polish-capture.mjs";
 import {
   buildPolishPageLoadEvidence,
@@ -147,17 +148,26 @@ export function planPolishCapture({ packet, baseUrl } = {}) {
 
 // The recorded actions live in gate-actions.mjs so polish-gate, which this
 // module imports, can publish the same capture action without a copy.
-function recordedCheckpointActions(gate, { authorityMalformed = false, browserUnavailable = false } = {}) {
-  const { capture, install_browser, waive, repair, repair_authority } = HIDDEN_EAGER_MEDIA_ACTIONS;
+function recordedCheckpointActions(gate, { authorityMalformed = false, browserUnavailable = false, plainHttpProductionBuild = false } = {}) {
+  const { capture, install_browser, waive, repair, repair_authority, local_proof_rebuild } = HIDDEN_EAGER_MEDIA_ACTIONS;
   if (gate?.status !== "blocked") return [];
   if (authorityMalformed) return [repair_authority, capture];
   if (browserUnavailable) return [install_browser, capture];
+  // A production build captured over plain HTTP fails on its protocol-relative
+  // vendor loaders; the repair is the environment, never the include, so the
+  // rebuild action is named ahead of the recapture.
+  if (plainHttpProductionBuild) return [local_proof_rebuild, capture];
   return gate.waivable ? [repair, capture, waive] : [capture];
 }
 
 function recordedCaptureHasProblem(pageLoad, code) {
   return Array.isArray(pageLoad?.captures) && pageLoad.captures.some((capture) => Array.isArray(capture?.problems)
     && capture.problems.some((problem) => problem?.code === code));
+}
+
+function recordedCaptureIsPlainHttpProductionBuild(pageLoad) {
+  return Array.isArray(pageLoad?.captures)
+    && pageLoad.captures.some((capture) => plainHttpDependencyFailures(capture).length > 0);
 }
 
 function recordedAuthorityBlock({ packet, report, plan = null, now } = {}) {
@@ -228,13 +238,12 @@ export function evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report, now
     waivers: Array.isArray(report?.waivers) ? report.waivers : [],
     ...(now === undefined ? {} : { now }),
   });
+  const pageLoad = report?.stages?.polish?.evidence?.visual_review?.page_load;
   return {
     ...gate,
     required_actions: recordedCheckpointActions(gate, {
-      browserUnavailable: recordedCaptureHasProblem(
-        report?.stages?.polish?.evidence?.visual_review?.page_load,
-        "browser_unavailable",
-      ),
+      browserUnavailable: recordedCaptureHasProblem(pageLoad, "browser_unavailable"),
+      plainHttpProductionBuild: recordedCaptureIsPlainHttpProductionBuild(pageLoad),
     }),
   };
 }

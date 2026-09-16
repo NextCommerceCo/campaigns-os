@@ -3894,6 +3894,57 @@
         }
       ],
       "entry_sha256": "799734085201c512c318237f715055f1431c26caaab5fc152ad54fe600a7782e"
+    },
+    {
+      "id": "RL-0106",
+      "sequence": 106,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.13",
+      "changelog_sha256": "b1878087accd8c67fdae33ad2e99fe66ad80bf85abd1bcd551cde404251378f0",
+      "agent_impact": "Local proof mode for deploy.target local-serve (#326). Build stage: next build now emits a build_local_proof command action (CPK_ENV=development npx campaign-build --json > .campaign-runtime/page-kit-build-summary.json) and a build_production_parity command action, and its prompt says to record stages.assembly.evidence.build_environment: \"development\" on the Assembly Report; hosted targets are unchanged. New command: page-kit parity --packet <packet> [--report <json>] [--json] renders the current source in development and production through the target's page-kit into temp dirs and asserts the served _site/ is the current development render and that production differs only in environment-gated output with the same page set, route slugs, Campaign Cart pin and next-api-key; the result object { status pass|fail|unavailable, checked_at, build_fingerprint, campaign_slug, page_count, sdk_version, pages[] { route, path, sdk_version, gated_inserted_lines, gated_removed_lines, gated_hosts[] }, first_difference { kind, route, path, line, detail } | null, summary } is recorded on stages.assembly.evidence.local_proof.production_parity; exit 2 on fail, on a non-local-serve packet (local_proof.parity.not_local_serve) or when page-kit is not installed (local_proof.parity.unavailable). Doctor: under local-serve with a terminal assembly stage, warnings[] gains local_proof.build_environment when the build is not recorded as development, and local_proof.production_parity is a ready line on a recorded pass, an errors[] entry (with detail.first_difference) on a recorded fail, or a warning while unrecorded or recorded for another build fingerprint. Polish: a recorded hidden_eager_media checkpoint blocked on a capture whose document origin is http: and whose ledger has a failed cross-origin http: dependency now lists required_actions [local_proof_rebuild (manual), capture] instead of [capture]; the polish capture text prints it as a Required action line. No schema change: both records live in the assembly stage's free-form evidence object.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "page-kit",
+          "summary": "New subcommand page-kit parity --packet <packet> [--report <json>] [--json]: proves the production render of a local-serve campaign differs from the proven development output only in environment-gated output, with the same pages, route slugs, Campaign Cart pin and next-api-key; records stages.assembly.evidence.local_proof.production_parity; exit 2 on a non-gated difference."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "next build under deploy.target local-serve emits build_local_proof (the development build command) and build_production_parity actions, and the build prompt says to record stages.assembly.evidence.build_environment as development and never to edit a generated include."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "Under local-serve after a terminal build: local_proof.build_environment warning when the build is not recorded as a development render; local_proof.production_parity ready line, error naming the first non-gated difference, or warning while unrecorded or stale."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "polish",
+          "summary": "A capture over plain HTTP that failed on a cross-origin http: dependency names polish.hidden_eager_media.local_proof_rebuild (rebuild in development, never edit the generated include) ahead of the recapture action."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "New Local proof mode section: build in development, serve, prove, page-kit parity, commit, PR preview as the second check; the never-edit-a-generated-include rule."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The local-serve deploy target documents local proof mode: the development build, the build_environment record, the parity command and the doctor rows."
+        }
+      ],
+      "entry_sha256": "0fbab633c8082813e5f259d1f9e913078cea249429b1f54e8820c3de51ee3179"
     }
   ]
 }
