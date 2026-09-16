@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import {
   buildPageLoadCapture,
   MAX_POLISH_CAPTURE_URL_LENGTH,
@@ -325,6 +326,17 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
   }
   const buildFingerprint = currentBuildFingerprint(report);
   if (!buildFingerprint) throw new Error("polish capture requires a strict current Assembly Report build fingerprint.");
+  // Bind to the output on disk, not only to the recorded string: a capture of
+  // an output that has drifted from what build recorded would be evidence
+  // about a build that no longer exists, and an output that changes during the
+  // browser pass fails the unchanged-binding assertion after it.
+  const outputFingerprint = computeBuildFingerprint(join(resolve(targetRepo), "_site", slug));
+  if (outputFingerprint.ok && outputFingerprint.fingerprint !== buildFingerprint) {
+    throw new Error(
+      `polish capture refuses: built output under _site/${slug}/ no longer matches stages.assembly.build_fingerprint `
+      + `(recorded ${buildFingerprint}, current ${outputFingerprint.fingerprint}). Re-run build and record the current fingerprint first.`,
+    );
+  }
   const runId = nonemptyString(report.run_id);
   const reportPacketPath = nonemptyString(report?.inputs?.packet_path);
   if (!runId || !reportPacketPath) {
@@ -360,6 +372,7 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
       assembly: {
         status: nonemptyString(assembly.status),
         build_fingerprint: buildFingerprint,
+        output_fingerprint: outputFingerprint.ok ? outputFingerprint.fingerprint : null,
         source_package_material_fingerprint: assemblySourcePackageMaterialFingerprint(report),
       },
       current_source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report),

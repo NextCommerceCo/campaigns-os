@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 
 import {
   assertPolishCaptureBindingUnchanged,
@@ -405,6 +410,45 @@ test("producer-to-gate source history retains a hidden at-load transfer after dy
   const initiallyVisible = await captureFor(false);
   assert.equal(initiallyVisible.page_load.measurement.status, "complete");
   assert.equal(recordedCheckpoint(packet, initiallyVisible).status, "pass");
+});
+
+test("capture binding refuses a built output that drifted from the recorded fingerprint and pins the output during the browser pass", () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const report = completedReport();
+  const plan = planPolishCapture({ packet, baseUrl: "http://127.0.0.1:4173" });
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-polish-binding-"));
+  try {
+    const outputRoot = join(dir, "_site", "merchant", "landing");
+    mkdirSync(outputRoot, { recursive: true });
+    writeFileSync(join(outputRoot, "index.html"), "<html><body>Landing</body></html>");
+    const paths = { packetPath: join(dir, "campaign-runtime.build.json"), targetRepo: dir };
+
+    // Recorded string differs from the output on disk: refused by name.
+    assert.throws(
+      () => createPolishCaptureBinding({ packet, report, plan, ...paths }),
+      /built output under _site\/merchant\/ no longer matches stages\.assembly\.build_fingerprint/,
+    );
+
+    // Recorded the way build records it: bound, and the binding carries the
+    // output value so a rebuild mid-capture fails the unchanged assertion.
+    const current = computeBuildFingerprint(join(dir, "_site", "merchant")).fingerprint;
+    const bound = structuredClone(report);
+    bound.stages.assembly.build_fingerprint = current;
+    const initial = createPolishCaptureBinding({ packet, report: bound, plan, ...paths });
+    assert.equal(initial.report.assembly.output_fingerprint, current);
+
+    writeFileSync(join(outputRoot, "index.html"), "<html><body>Landing v2</body></html>");
+    assert.throws(
+      () => createPolishCaptureBinding({ packet, report: bound, plan, ...paths }),
+      /no longer matches/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("capture binding permits unrelated report updates and page-load merge preserves the latest report", () => {

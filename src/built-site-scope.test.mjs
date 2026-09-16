@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  BUILD_FINGERPRINT_ALGORITHM,
+  computeBuildFingerprint,
   inferPageType,
   resolveBuiltSiteScope,
   synthesizeMinimalBuildPacket,
@@ -182,5 +185,87 @@ test("synthesizeMinimalBuildPacket marks itself synthetic and points at the buil
     assert.equal(packet.deploy.preview_url, "http://localhost:8080/");
     assert.deepEqual(packet.qa, {});
     assert.equal(packet.pages.length, 2);
+  });
+});
+
+// --- Build output fingerprint ---
+// The value every later stage binds to; it must change exactly when the built
+// output changes and never with the machine, the path, or the write order.
+
+const FINGERPRINT_TREE = {
+  "index.html": "<html><body>Landing</body></html>",
+  "checkout/index.html": "<html><body>Checkout</body></html>",
+  "assets/app.css": "body{margin:0}",
+  "products/hero.png": "not-really-a-png",
+};
+
+function writeTree(root, files, order = Object.keys(files)) {
+  for (const path of order) {
+    mkdirSync(join(root, ...path.split("/").slice(0, -1)), { recursive: true });
+    writeFileSync(join(root, ...path.split("/")), files[path]);
+  }
+}
+
+test("computeBuildFingerprint: byte-identical trees at different absolute paths share one value", () => {
+  withTempDir((a) => withTempDir((b) => {
+    writeTree(join(a, "_site", "one"), FINGERPRINT_TREE);
+    writeTree(join(b, "nested", "elsewhere", "_site", "two"), FINGERPRINT_TREE);
+    const left = computeBuildFingerprint(join(a, "_site", "one"));
+    const right = computeBuildFingerprint(join(b, "nested", "elsewhere", "_site", "two"));
+    assert.equal(left.ok, true);
+    assert.equal(left.algorithm, BUILD_FINGERPRINT_ALGORITHM);
+    assert.match(left.fingerprint, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(left.fingerprint, right.fingerprint);
+    assert.equal(left.file_count, 4);
+    assert.deepEqual(left.excluded, []);
+  }));
+});
+
+test("computeBuildFingerprint: one changed byte changes the value; an added file changes it too", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "_site", "c");
+    writeTree(root, FINGERPRINT_TREE);
+    const before = computeBuildFingerprint(root).fingerprint;
+    writeTree(root, { "assets/app.css": "body{margin:1}" });
+    const changed = computeBuildFingerprint(root).fingerprint;
+    assert.notEqual(changed, before);
+    writeTree(root, { "assets/app.css": FINGERPRINT_TREE["assets/app.css"] });
+    assert.equal(computeBuildFingerprint(root).fingerprint, before);
+    writeTree(root, { "extra.txt": "" });
+    assert.notEqual(computeBuildFingerprint(root).fingerprint, before);
+  });
+});
+
+test("computeBuildFingerprint: write order does not matter and the manifest is the documented canonical form", () => {
+  withTempDir((a) => withTempDir((b) => {
+    writeTree(join(a, "_site", "s"), FINGERPRINT_TREE, Object.keys(FINGERPRINT_TREE));
+    writeTree(join(b, "_site", "s"), FINGERPRINT_TREE, Object.keys(FINGERPRINT_TREE).reverse());
+    const left = computeBuildFingerprint(join(a, "_site", "s"));
+    const right = computeBuildFingerprint(join(b, "_site", "s"));
+    assert.equal(left.fingerprint, right.fingerprint);
+    // Recompute by hand from the documented algorithm: sorted root-relative
+    // paths, each followed by the file's sha256, one `<path>\n<sha256>\n` pair
+    // per file, sha256 over the whole manifest.
+    const manifest = Object.keys(FINGERPRINT_TREE).sort()
+      .map((path) => `${path}\n${createHash("sha256").update(FINGERPRINT_TREE[path]).digest("hex")}\n`)
+      .join("");
+    assert.equal(left.manifest, manifest);
+    assert.equal(left.fingerprint, `sha256:${createHash("sha256").update(manifest).digest("hex")}`);
+  }));
+});
+
+test("computeBuildFingerprint: exclusions are root-relative and reported; a missing root is not a fingerprint", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "_site", "x");
+    writeTree(root, FINGERPRINT_TREE);
+    const full = computeBuildFingerprint(root);
+    const partial = computeBuildFingerprint(root, { exclude: ["products/hero.png", "not/there.txt"] });
+    assert.notEqual(partial.fingerprint, full.fingerprint);
+    assert.equal(partial.file_count, 3);
+    assert.deepEqual(partial.excluded, ["products/hero.png"]);
+    const missing = computeBuildFingerprint(join(dir, "_site", "nope"));
+    assert.equal(missing.ok, false);
+    assert.equal(missing.fingerprint, null);
+    assert.match(missing.error, /does not exist/);
   });
 });

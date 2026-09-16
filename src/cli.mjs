@@ -175,6 +175,7 @@ import {
 } from "./template-freshness.mjs";
 import { isUnresolvedTemplateFamily, resolveTemplateFamilyDesignSource, resolveTemplateFamilySelection } from "./template-reference.mjs";
 import {
+  computeBuildFingerprint,
   resolveBuiltSiteScope,
   synthesizeMinimalBuildPacket,
 } from "./built-site-scope.mjs";
@@ -213,6 +214,7 @@ import {
 import {
   assemblySourcePackageFingerprintMissing,
   assessAssemblySourcePackageFreshnessWaivers,
+  currentBuildFingerprint,
   evaluatePolishGate,
 } from "./polish-gate.mjs";
 import {
@@ -3512,7 +3514,11 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
 
   const polishCheckpointGate = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report });
   derived.polish_checkpoint_gate = polishCheckpointGate;
-  const polishGate = evaluatePolishGate({ report, hiddenEagerMediaGate: polishCheckpointGate });
+  const polishGate = evaluatePolishGate({
+    report,
+    hiddenEagerMediaGate: polishCheckpointGate,
+    currentOutputFingerprint: derived.build_output_fingerprint?.value || null,
+  });
   derived.polish_gate = polishGate;
   if (polishGate.status === "blocked" && !polishGate.owned_checkpoint_only) {
     pushGateIssue({ errors, warnings }, gateIssue("polish_gate", polishGate));
@@ -3759,6 +3765,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "built_output.target_root",
     phase: "built-output",
     run: ({ packet, errors, warnings, ready, derived, buildState }) => validateBuiltOutputTargetRoot(packet, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: "built_output.fingerprint",
+    phase: "built-output",
+    run: ({ packet, errors, warnings, ready, derived, buildState }) => validateBuildOutputFingerprint(packet, errors, warnings, ready, derived, buildState),
   },
   {
     id: "built_output.pages",
@@ -5139,6 +5150,59 @@ export function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, 
   if (skippedOutOfScope.length > 0) {
     ready.push(`Built SDK meta verification skipped for ${skippedOutOfScope.length} declared out-of-scope page(s): ${skippedOutOfScope.join(", ")}`);
   }
+}
+
+// Build output fingerprint. Every stage after build binds its evidence to
+// stages.assembly.build_fingerprint by string equality, so the value has to
+// be one anyone can recompute from the output that is actually on disk.
+// Doctor recomputes it from _site/<slug>/ on every run and publishes the
+// current value at derived.build_output_fingerprint (the value build records,
+// and the value an operator checks by hand), then compares it with what the
+// report recorded: equal = pass, different = the output changed since build
+// recorded it (a rebuild, a toolkit upgrade, a hand edit), absent = build has
+// not recorded it yet. Stale is blocking once assembly is complete because
+// every polish/QA artifact bound to the old value is then evidence about a
+// build that no longer exists.
+export function validateBuildOutputFingerprint(packet, errors, warnings, ready, derived = {}, buildState = {}) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  if (!targetRepo || !publicRouteSlug) return;
+  const siteRoot = join(targetRepo, "_site", publicRouteSlug);
+  if (!existsSync(siteRoot) || !statSync(siteRoot).isDirectory()) return;
+
+  const current = computeBuildFingerprint(siteRoot);
+  const recorded = currentBuildFingerprint(buildState.report);
+  const assemblyComplete = isStageComplete(buildState.report, "assembly");
+  const status = !recorded ? "missing" : recorded === current.fingerprint ? "pass" : "stale";
+  derived.build_output_fingerprint = {
+    root: `_site/${publicRouteSlug}/`,
+    algorithm: current.algorithm,
+    value: current.fingerprint,
+    file_count: current.file_count,
+    excluded: current.excluded,
+    recorded: recorded || null,
+    status,
+  };
+  if (status === "pass") {
+    ready.push(`Build output fingerprint matches stages.assembly.build_fingerprint (${current.file_count} file(s) under _site/${publicRouteSlug}/)`);
+    return;
+  }
+  if (status === "missing") {
+    addIssue(
+      warnings,
+      "built_output.fingerprint_missing",
+      `Build has not recorded stages.assembly.build_fingerprint. The current output fingerprint of _site/${publicRouteSlug}/ is ${current.fingerprint} (${current.file_count} file(s); doctor --json derived.build_output_fingerprint.value); record it on stages.assembly.build_fingerprint after page-kit build.`,
+      { root: `_site/${publicRouteSlug}/`, current: current.fingerprint, file_count: current.file_count, assembly_complete: assemblyComplete }
+    );
+    return;
+  }
+  addIssue(
+    assemblyComplete ? errors : warnings,
+    "built_output.fingerprint_stale",
+    `Built output under _site/${publicRouteSlug}/ no longer matches stages.assembly.build_fingerprint (recorded ${recorded}, current ${current.fingerprint}, ${current.file_count} file(s)). `
+      + "The output changed after build recorded it; re-run build (page-kit build, then record the current fingerprint) before polish or QA evidence can bind to it.",
+    { root: `_site/${publicRouteSlug}/`, recorded, current: current.fingerprint, file_count: current.file_count, assembly_complete: assemblyComplete }
+  );
 }
 
 function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState = {}) {
@@ -8938,7 +9002,7 @@ Rules:
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
 - For two-step package-selection flows, treat the selector page as the pre-checkout step and pass the selected cart to checkout with forcePackageId; preserve normal tracking params and strip forcePackageId from visible checkout URLs after SDK initialization.
 - After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
-- Run page-kit build and SDK/template lint, then update stages.assembly.status plus stages.assembly.build_fingerprint before polish. If report.design_source_package.material_fingerprint exists, also record the same value on stages.assembly.source_package_material_fingerprint so Polish can prove the build used the current source context. Build must set stages.polish.status to "required" or "pending" with required_by="build" and required_for=["qa"]; Build must not mark stages.polish as completed/completed_with_warnings/skipped. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.
+- Run page-kit build and SDK/template lint, then update stages.assembly.status plus stages.assembly.build_fingerprint before polish. The fingerprint is computed from the built output, never typed: after page-kit build, run doctor --json and copy derived.build_output_fingerprint.value (sha256 over the sorted path+sha256 manifest of _site/<slug>/; doctor reports built_output.fingerprint_stale whenever the output on disk stops matching the recorded value). If report.design_source_package.material_fingerprint exists, also record the same value on stages.assembly.source_package_material_fingerprint so Polish can prove the build used the current source context. Build must set stages.polish.status to "required" or "pending" with required_by="build" and required_for=["qa"]; Build must not mark stages.polish as completed/completed_with_warnings/skipped. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.
 - Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND). If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.`;
 }
 

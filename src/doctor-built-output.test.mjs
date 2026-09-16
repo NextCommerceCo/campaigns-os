@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import {
   collectPageKitAssetPathViolations,
+  validateBuildOutputFingerprint,
   validateBuiltDemoAssetFidelity,
   validateBuiltPageKitAssetPaths,
   validateBuiltBumpPricing,
@@ -709,5 +711,75 @@ test("target root: a stray regular file at _site/<slug> is not a found root", ()
     validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
     assert.deepEqual(codes(errors), ["built_output.target_root"]);
     assert.equal(ready.some((note) => note.includes("Built output root found")), false);
+  });
+});
+
+// --- Build output fingerprint (built_output.fingerprint) ---
+// stages.assembly.build_fingerprint is only worth binding evidence to when
+// doctor recomputes it from the output on disk. Before this check, a made-up
+// sha256-shaped string over any output passed every freshness comparison.
+
+test("built_output.fingerprint: pass, missing, and stale after the output changes", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "_site", SLUG);
+    mkdirSync(join(root, "checkout"), { recursive: true });
+    writeFileSync(join(root, "index.html"), "<html><body>Landing</body></html>");
+    writeFileSync(join(root, "checkout", "index.html"), "<html><body>Checkout</body></html>");
+    const run = (report) => {
+      const errors = [];
+      const warnings = [];
+      const ready = [];
+      const derived = { target_repo: dir };
+      validateBuildOutputFingerprint(PACKET, errors, warnings, ready, derived, { report });
+      return { errors, warnings, ready, derived };
+    };
+
+    // Missing: build has not recorded it; doctor publishes the value to record.
+    const missing = run({ stages: { assembly: { status: "pending" } } });
+    assert.deepEqual(codes(missing.warnings), ["built_output.fingerprint_missing"]);
+    assert.deepEqual(missing.errors, []);
+    assert.equal(missing.derived.build_output_fingerprint.status, "missing");
+    assert.equal(missing.derived.build_output_fingerprint.value, computeBuildFingerprint(root).fingerprint);
+    assert.equal(missing.derived.build_output_fingerprint.file_count, 2);
+    assert.match(missing.warnings[0].message, /derived\.build_output_fingerprint\.value/);
+
+    // Pass: the recorded value is the output's value.
+    const recorded = missing.derived.build_output_fingerprint.value;
+    const pass = run({ stages: { assembly: { status: "completed", build_fingerprint: recorded } } });
+    assert.deepEqual(pass.errors, []);
+    assert.deepEqual(pass.warnings, []);
+    assert.equal(pass.derived.build_output_fingerprint.status, "pass");
+    assert.ok(pass.ready.some((line) => /Build output fingerprint matches/.test(line)), JSON.stringify(pass.ready));
+
+    // Stale: the output changed after build recorded it. Blocking once
+    // assembly is complete, advisory while the build is still in progress.
+    writeFileSync(join(root, "checkout", "index.html"), "<html><body>Checkout v2</body></html>");
+    const stale = run({ stages: { assembly: { status: "completed", build_fingerprint: recorded } } });
+    assert.deepEqual(codes(stale.errors), ["built_output.fingerprint_stale"]);
+    assert.equal(stale.derived.build_output_fingerprint.status, "stale");
+    assert.equal(stale.derived.build_output_fingerprint.recorded, recorded);
+    assert.notEqual(stale.derived.build_output_fingerprint.value, recorded);
+    assert.match(stale.errors[0].message, /recorded sha256:[a-f0-9]{64}, current sha256:[a-f0-9]{64}/);
+
+    const inProgress = run({ stages: { assembly: { status: "pending", build_fingerprint: recorded } } });
+    assert.deepEqual(inProgress.errors, []);
+    assert.deepEqual(codes(inProgress.warnings), ["built_output.fingerprint_stale"]);
+
+    // A sha256-shaped string that was never computed from the output is stale
+    // too: the value that passed at string equality is exactly the defect.
+    const typed = run({ stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}` } } });
+    assert.deepEqual(codes(typed.errors), ["built_output.fingerprint_stale"]);
+  });
+});
+
+test("built_output.fingerprint: skips without a built route root and never guesses", () => {
+  withTempDir((dir) => {
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    const derived = { target_repo: dir };
+    validateBuildOutputFingerprint(PACKET, errors, warnings, ready, derived, { report: { stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}` } } } });
+    assert.deepEqual([errors, warnings, ready], [[], [], []]);
+    assert.equal(derived.build_output_fingerprint, undefined);
   });
 });
