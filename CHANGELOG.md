@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.29.0+agent.12] - 2026-09-16
+## [1.29.0+agent.8] - 2026-09-16
 
 ### Changed
 
@@ -28,6 +28,7 @@ Notable supported-surface changes are recorded here.
   (`{ tag: { expected, actual, note } }`), `sdkIgnoredMetaTag(name)` and
   `describeSdkIgnoredMetaTags(names)`; doctor and QA both import it, so the
   two surfaces read one list. Implementation, not supported surface.
+
 ## [1.29.0+agent.7] - 2026-09-16
 
 ### Fixed
