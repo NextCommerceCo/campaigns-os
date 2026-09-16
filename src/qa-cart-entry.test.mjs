@@ -479,3 +479,116 @@ test("a guard refusal consumes no reservation and keeps the bounded re-run", asy
   assert.equal(assertion.evidence.order_creation.action, "rerun");
   assert.match(assertion.actual, /cart_empty_before_submit/);
 });
+
+// ---------------------------------------------------------------------------
+// Checkout loads per path. The selector probe is the checkout's first load;
+// nothing else on the path may load the same URL again, because every load
+// fires the SDK's page-view events into the capture the analytics leg reads.
+// A fake page counts `goto` calls per URL and moves its `url()` the way a real
+// page would; the SDK hand-off from the entry page is simulated by the click.
+
+const { enterCartViaLanding, openCheckoutForPath, createSelectorProbeCache } = __qaBrowserTestHooks;
+const landing = { page_id: "landing", page_type: "landing", order: 1, url: `${BASE}/`, expected_next_url: checkout.url, resolution: "routes_into_checkout" };
+const LOAD_ARGS = Object.freeze({ "browser-timeout": 1000 });
+
+function fakePage({ surface, controls = [] }) {
+  const loads = [];
+  let current = "about:blank";
+  const noop = async () => {};
+  const locator = () => ({
+    nth: () => ({
+      scrollIntoViewIfNeeded: noop,
+      click: async () => { current = checkout.url; },
+    }),
+  });
+  return {
+    loads,
+    loadsOf: (url) => loads.filter((entry) => entry === url).length,
+    url: () => current,
+    goto: async (url) => { loads.push(url); current = url; },
+    waitForLoadState: noop,
+    waitForTimeout: noop,
+    waitForFunction: async () => true,
+    waitForURL: async (predicate) => { if (!predicate(current)) throw new Error("not at checkout"); },
+    locator,
+    evaluate: async (script, params) => (params?.selector ? controls : surface),
+  };
+}
+
+const budget = () => 5000;
+const SELECTOR_SURFACE = { count: 1, kinds: { bundle_selector: 1 }, excluded: 0 };
+const NO_SURFACE = { count: 0, kinds: {}, excluded: 0 };
+const ADD_TO_CART = [{ kind: "add_to_cart", index: 0, text: "Claim", package_id: "1", visible: true, quantity: null }];
+
+async function runEntryAndOpen(page, { entryPage = landing, selectorProbeCache = null } = {}) {
+  const entry = await enterCartViaLanding({ page, checkoutPage: checkout, entryPage, selectedPackages: [], args: LOAD_ARGS, budget, selectorProbeCache });
+  const opened = await openCheckoutForPath({ page, checkoutPage: checkout, entry, args: LOAD_ARGS });
+  return { entry, opened };
+}
+
+test("a checkout that selects for itself is loaded exactly once per path: the probe's load is the one the ladder keeps", async () => {
+  const page = fakePage({ surface: SELECTOR_SURFACE });
+  const { entry, opened } = await runEntryAndOpen(page);
+  assert.equal(typeof entry.skip, "string");
+  assert.equal(entry.evidence.selection_surface_probe, "loaded");
+  assert.equal(opened, "already on checkout from the selector probe; not re-opened");
+  assert.equal(page.loadsOf(checkout.url), 1, "one checkout load for the whole path");
+  assert.equal(page.url(), checkout.url);
+});
+
+test("a checkout without a selection surface is loaded once by the probe, then the path goes landing -> SDK arrival with no further checkout load", async () => {
+  const page = fakePage({ surface: NO_SURFACE, controls: ADD_TO_CART });
+  const { entry, opened } = await runEntryAndOpen(page);
+  assert.equal(entry.entered, true);
+  assert.equal(entry.evidence.selection_surface_probe, "loaded");
+  assert.equal(opened, "arrived from the entry page via SDK navigation; not re-opened");
+  assert.deepEqual(page.loads, [checkout.url, landing.url], "probe load, landing load, and the SDK's navigation is not a goto");
+  assert.equal(page.url(), checkout.url);
+});
+
+test("a multi-path plan probes the checkout once per run: later paths reuse the answer and load the checkout only when they open it", async () => {
+  const selectorProbeCache = createSelectorProbeCache();
+  const first = fakePage({ surface: SELECTOR_SURFACE });
+  const second = fakePage({ surface: { count: 99, kinds: { stale: 99 }, excluded: 0 } });
+  const firstRun = await runEntryAndOpen(first, { selectorProbeCache });
+  const secondRun = await runEntryAndOpen(second, { selectorProbeCache });
+  assert.equal(firstRun.entry.evidence.selection_surface_probe, "loaded");
+  assert.equal(secondRun.entry.evidence.selection_surface_probe, "reused");
+  assert.deepEqual(secondRun.entry.evidence.checkout_selection_surface, SELECTOR_SURFACE, "the second path did not re-evaluate the page");
+  assert.match(secondRun.entry.skip, /probe answer reused from an earlier path of this run/);
+  assert.equal(secondRun.opened, null, "the second path opened the checkout itself, once");
+  assert.equal(first.loadsOf(checkout.url), 1);
+  assert.equal(second.loadsOf(checkout.url), 1);
+});
+
+test("a multi-path plan on a landing-entry family probes once; later paths go straight to the landing page", async () => {
+  const selectorProbeCache = createSelectorProbeCache();
+  const first = fakePage({ surface: NO_SURFACE, controls: ADD_TO_CART });
+  const second = fakePage({ surface: NO_SURFACE, controls: ADD_TO_CART });
+  await runEntryAndOpen(first, { selectorProbeCache });
+  const secondRun = await runEntryAndOpen(second, { selectorProbeCache });
+  assert.equal(secondRun.entry.entered, true);
+  assert.equal(secondRun.entry.evidence.selection_surface_probe, "reused");
+  assert.deepEqual(first.loads, [checkout.url, landing.url]);
+  assert.deepEqual(second.loads, [landing.url], "no checkout load at all on the second path");
+});
+
+test("a probe whose page-side read failed is not remembered: the next path probes again", async () => {
+  const selectorProbeCache = createSelectorProbeCache();
+  const broken = fakePage({ surface: NO_SURFACE, controls: ADD_TO_CART });
+  broken.evaluate = async (script, params) => { if (params?.selector) return ADD_TO_CART; throw new Error("context destroyed"); };
+  await runEntryAndOpen(broken, { selectorProbeCache });
+  assert.equal(selectorProbeCache.get(checkout.url), null);
+  const next = fakePage({ surface: SELECTOR_SURFACE });
+  const nextRun = await runEntryAndOpen(next, { selectorProbeCache });
+  assert.equal(nextRun.entry.evidence.selection_surface_probe, "loaded");
+  assert.equal(next.loadsOf(checkout.url), 1);
+});
+
+test("the probe cache keys on the canonical checkout URL, so a trailing-slash or query spelling is the same checkout", async () => {
+  const selectorProbeCache = createSelectorProbeCache();
+  selectorProbeCache.set(`${BASE}/checkout`, SELECTOR_SURFACE);
+  assert.deepEqual(selectorProbeCache.get(`${BASE}/checkout/`), SELECTOR_SURFACE);
+  assert.deepEqual(selectorProbeCache.get(`${BASE}/checkout/?utm=x`), SELECTOR_SURFACE);
+  assert.equal(selectorProbeCache.get(`${BASE}/other/`), null);
+});

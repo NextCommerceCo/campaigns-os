@@ -906,14 +906,26 @@ off. Opening the checkout URL directly on the second shape used to run every
 fill step green and then sit in `order_submitted` for the full step budget,
 because the SDK never posts an order for an empty cart.
 
-The step opens the checkout and probes it for a main-cart selection surface:
+The step runs the **selector probe**: it loads the checkout once and reads it
+for a main-cart selection surface —
 `[data-next-bundle-selector]`, `[data-next-cart-selector]`, or a
 `[data-next-package-id]` card, **not** counting anything inside the rendered
 `[data-next-cart-summary]`, order-bump toggles, upsell-context selectors, or
-unrendered `<template>` content. When a surface is present the step is
-`skipped` with that reason, `opened_checkout` opens the checkout as before, and
+unrendered `<template>` content. That load is the checkout's only load before
+the entry page, and the run remembers the answer per checkout URL: a
+`tiers:*` plan that drives the same checkout once per tier probes it on the
+first path only, and every later path reads the stored answer
+(`selection_surface_probe: reused` in the step evidence, `loaded` on the path
+that ran the probe). When a surface is present the step is `skipped` with that
+reason and `opened_checkout` keeps the page the probe left on the checkout
+(`already on checkout from the selector probe; not re-opened`), opening the
+checkout itself only when the path reused a stored answer and never loaded it;
 the rest of the ladder is unchanged — existing families run exactly as they
-did. When none is present the runner resolves the funnel's entry page from the
+did, with the checkout loaded once per path rather than twice. That matters
+because every checkout load boots the SDK and fires its page-view events into
+the same capture the analytics legs and the receipt capture read, so a second
+load of the same URL was counted as the campaign's own traffic. When no
+surface is present the runner resolves the funnel's entry page from the
 same topology the rest of the ladder uses (the page whose `expected_next_url`
 is the checkout, preferring a `select`/`landing`/`product` page and then the
 lowest `order`; failing that, the topology's first entry-like page before the
@@ -940,8 +952,9 @@ cart away. `opened_checkout` then records the arrival instead of re-opening.
 Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
 `landing_resolution` (`routes_into_checkout`, `entry_page_fallback`,
 `first_page_fallback`), `control_text`, `control_kind` (`add_to_cart` or
-`checkout_link`), `package_id`, `sdk_ready`, `arrived_url`, and the
-`checkout_selection_surface` probe result. The failure codes are
+`checkout_link`), `package_id`, `sdk_ready`, `arrived_url`, the
+`checkout_selection_surface` probe result, and `selection_surface_probe`
+(`loaded` or `reused`). The failure codes are
 `cart_entry_unresolved` (no selection surface on checkout and no entry page
 resolves from the topology), `cart_entry_control_missing` (the entry page
 renders no control, or none carrying the requested ref), and
