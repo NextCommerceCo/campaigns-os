@@ -163,7 +163,10 @@ Validate the standardized CI/readback set with:
 npm run campaigns-os -- bundle check --packet <page-kit-repo>/campaign-runtime.build.json --json
 ```
 
-Use `--require-qa` when the campaign claims QA is complete. See
+Use `--require-qa` when the campaign claims QA is complete. `status: conformant`
+means the sidecars agree with each other and the contract; it says nothing about
+whether doctor or QA passed. Read `stage_blocked` and the warnings for that (a
+blocked doctor run emits `bundle.doctor_output.blocked`). See
 [Migration sidecar bundle v0](docs/migration-sidecar-bundle.md).
 
 Then ask your AI tool to continue from the emitted handoff. Fresh target repos usually start with `next-campaigns-os-setup`; existing campaign directories can move directly to `next-campaigns-build`.

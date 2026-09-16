@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import Ajv2020 from "ajv/dist/2020.js";
 
+import { doctorSidecarBlocked } from "./doctor-sidecar.mjs";
 import { validateVerdict } from "./qa-verdict.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -289,6 +290,20 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       "Re-run campaigns-os doctor --packet campaign-runtime.build.json --strip-paths.",
     ));
   }
+  // A blocked doctor run is still a conformant artifact — the sidecars agree
+  // with each other and the contract — but its content says the campaign
+  // cannot proceed. Conformance is not readiness: surface the block as a
+  // warning by default and, under --require-qa, as an error, because a
+  // QA-complete handoff cannot ride a doctor that refused the build.
+  const doctorBlocked = doctorSidecarBlocked(doctor);
+  if (doctorBlocked) {
+    (requireQa ? errors : warnings).push(artifactFinding(
+      "bundle.doctor_output.blocked",
+      "doctor_output",
+      `Doctor output records a blocked run (status ${doctor.status ?? "missing"}, ok ${doctor.ok ?? "missing"}); the campaign cannot proceed${requireQa ? ", so it cannot satisfy QA-complete handoff" : " even though the sidecars agree with each other"}.`,
+      "Resolve the doctor errors, then re-run campaigns-os doctor --packet campaign-runtime.build.json --strip-paths so the retained sidecar records a ready run.",
+    ));
+  }
   if (qaVerdict) {
     const qaErrors = validateVerdict(qaVerdict);
     if (qaErrors.length) {
@@ -336,7 +351,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
     bundle_id: SIDECAR_BUNDLE_CONTRACT.bundle_id,
     ok: errors.length === 0,
     status: errors.length === 0 ? "conformant" : "nonconformant",
-    stage_blocked: requireQa && qaVerdict?.disposition === "blocked",
+    stage_blocked: doctorBlocked || (requireQa && qaVerdict?.disposition === "blocked"),
     root,
     packet_generated_at: packet?.generated_at ?? null,
     material_digest: materialDigest,
@@ -344,4 +359,18 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
     errors,
     warnings,
   };
+}
+
+// One line, distinct from `status`, for the operator reading text output:
+// "conformant" only says the sidecars agree with each other and the contract.
+// Whether doctor or QA passed is carried by stage_blocked and the findings, and
+// this line reads those so nobody has to infer readiness from "ok: true".
+export function sidecarBundleReadinessLine(result) {
+  const blockers = [...(result.errors || []), ...(result.warnings || [])]
+    .filter((finding) => finding.code === "bundle.doctor_output.blocked" || finding.code === "bundle.qa_verdict.blocked")
+    .map((finding) => (finding.artifact === "doctor_output" ? "doctor run is blocked" : "QA verdict is blocked"));
+  if (result.stage_blocked || blockers.length) {
+    return `Readiness: BLOCKED (${blockers.join("; ") || "stage_blocked"}); conformant only means the sidecars agree with each other and the contract.`;
+  }
+  return "Readiness: no doctor or QA block recorded by the sidecars present (a missing sidecar is listed under Warnings); conformant only means the sidecars agree with each other and the contract.";
 }

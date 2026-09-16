@@ -3540,6 +3540,39 @@
         }
       ],
       "entry_sha256": "610cfb6dc40b6e02eb027f8e3bc3c4a2a67563bc4f2a1ef1c8689206ac29727a"
+    },
+    {
+      "id": "RL-0096",
+      "sequence": 96,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.11",
+      "changelog_sha256": "003d6fc79abc04610d59026124a8fc2bb9b64300bad5fdf231e2e5b3e462b792",
+      "agent_impact": "bundle check now reads the doctor sidecar's verdict. A .campaign-runtime/doctor-output.json with status blocked or ok false yields the finding bundle.doctor_output.blocked (artifact doctor_output, remedy naming campaigns-os doctor --packet campaign-runtime.build.json --strip-paths): in warnings[] by default, so ok stays true and status conformant, and in errors[] under --require-qa, so ok is false, status nonconformant and the exit code is 2. stage_blocked is true whenever the doctor sidecar records a blocked run, in addition to the existing required-QA disposition blocked case. Before, only stale: true was read from the doctor sidecar and a blocked doctor passed --require-qa with ok true, errors []. An agent that read ok: true or status: conformant as readiness must read stage_blocked and the findings instead: conformant means the sidecars agree with each other and the contract, nothing more. The --json shape is unchanged (no new key; the published conformance schema still validates every result) and a ready doctor produces the same output as before. The text report gains one line under Status:, Readiness: BLOCKED (doctor run is blocked) or Readiness: no doctor or QA block recorded by the sidecars present ...; scripts that parse the text report by line position after Status: must allow for it. No flag, command or schema change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "bundle",
+          "summary": "bundle check emits bundle.doctor_output.blocked for a doctor sidecar recording a blocked run (warning by default, error and exit 2 under --require-qa), sets stage_blocked for it, and prints a Readiness: line under Status: in the text report; --json shape unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "New section 'Conformance is not readiness' states that conformant means the sidecars agree with each other and the contract, and that readiness is read from stage_blocked and the bundle.doctor_output.blocked / bundle.qa_verdict.blocked findings."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The migration sidecar bundle row records that a blocked doctor sidecar sets stage_blocked and emits bundle.doctor_output.blocked, and that status conformant never asserts doctor or QA passed."
+        }
+      ],
+      "entry_sha256": "be52c1e1570e7bab4671563dd2e063773fbc76ab0177246df318d020db5eb1e8"
     }
   ]
 }

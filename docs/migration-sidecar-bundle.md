@@ -13,6 +13,31 @@ campaigns-os bundle check --packet campaign-runtime.build.json --json
 
 Add `--require-qa` when the migration or campaign claims QA is complete.
 
+## Conformance is not readiness
+
+`status: conformant` (and `ok: true`) means the sidecars agree with each other
+and with the contract: every required artifact is present, valid JSON, on its
+declared schema version, freshly timestamped, and carrying the same campaign
+identity. It says nothing about whether doctor or QA passed. A doctor sidecar
+that records a blocked run is a well-formed artifact whose content says the
+campaign cannot proceed, and a blocked QA verdict is schema-valid.
+
+Read readiness from two places instead:
+
+- `stage_blocked` is `true` when the doctor sidecar records a blocked run
+  (`status: blocked` or `ok: false`), or, under `--require-qa`, when the QA
+  verdict's `disposition` is `blocked`.
+- The findings. A blocked doctor emits `bundle.doctor_output.blocked` as a
+  warning by default (the bundle is still conformant) and as an error under
+  `--require-qa` (a QA-complete handoff cannot ride a blocked doctor, so the
+  bundle is nonconformant and the command exits 2). A blocked QA verdict emits
+  `bundle.qa_verdict.blocked` as an error under `--require-qa`.
+
+The text report prints a `Readiness:` line directly under `Status:` that reads
+those fields for you. The remedy for a blocked doctor is to resolve its errors
+and re-run `campaigns-os doctor --packet campaign-runtime.build.json
+--strip-paths` so the retained sidecar records a ready run.
+
 ## Canonical bundle
 
 | Kind | Canonical path | Requirement | Schema/version | Freshness |

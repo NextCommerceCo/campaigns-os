@@ -11,6 +11,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import {
   inspectSidecarBundle,
   SIDECAR_BUNDLE_CONTRACT,
+  sidecarBundleReadinessLine,
 } from "./sidecar-bundle.mjs";
 import { writeQaSidecar } from "./qa-sidecar.mjs";
 
@@ -321,6 +322,80 @@ test("a stale doctor snapshot is never a conformant readback artifact", () => wi
   assert.ok(result.errors.some((finding) => finding.code === "bundle.doctor_output.stale"));
 }));
 
+function blockDoctorSidecar(root) {
+  const path = join(root, ".campaign-runtime/doctor-output.json");
+  const doctor = readJson(path);
+  doctor.ok = false;
+  doctor.status = "blocked";
+  doctor.errors = [{ code: "page_kit.store_profile", message: "Store Profile fields still carry the scaffold demo value." }];
+  writeJson(path, doctor);
+}
+
+test("a blocked doctor run is conformant but never ready: warning by default, stage_blocked true", () => withFixture((root) => {
+  blockDoctorSidecar(root);
+  const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json") });
+  assert.equal(result.ok, true, JSON.stringify(result.errors, null, 2));
+  assert.equal(result.status, "conformant");
+  assert.equal(result.stage_blocked, true);
+  const finding = result.warnings.find((entry) => entry.code === "bundle.doctor_output.blocked");
+  assert.ok(finding, JSON.stringify(result.warnings, null, 2));
+  assert.equal(finding.artifact, "doctor_output");
+  assert.match(finding.remedy, /campaigns-os doctor --packet campaign-runtime\.build\.json --strip-paths/);
+  assert.equal(result.errors.some((entry) => entry.code === "bundle.doctor_output.blocked"), false);
+  assert.match(sidecarBundleReadinessLine(result), /^Readiness: BLOCKED \(doctor run is blocked\)/);
+}));
+
+test("a blocked doctor run cannot satisfy QA-complete handoff under --require-qa", () => withFixture((root) => {
+  blockDoctorSidecar(root);
+  const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "nonconformant");
+  assert.equal(result.stage_blocked, true);
+  assert.ok(result.errors.some((entry) => entry.code === "bundle.doctor_output.blocked"), JSON.stringify(result.errors, null, 2));
+  assert.equal(result.warnings.some((entry) => entry.code === "bundle.doctor_output.blocked"), false);
+}));
+
+test("a doctor sidecar whose ok is false blocks even when status is not spelled blocked", () => withFixture((root) => {
+  const path = join(root, ".campaign-runtime/doctor-output.json");
+  const doctor = readJson(path);
+  doctor.ok = false;
+  writeJson(path, doctor);
+  const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json") });
+  assert.equal(result.stage_blocked, true);
+  assert.ok(result.warnings.some((entry) => entry.code === "bundle.doctor_output.blocked"));
+}));
+
+test("a ready doctor run leaves the conformance result unchanged and readiness unblocked", () => {
+  const result = inspectSidecarBundle({ packetPath: join(FIXTURE, "campaign-runtime.build.json"), requireQa: true });
+  assert.equal(result.stage_blocked, false);
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.errors, []);
+  assert.equal(Object.hasOwn(result, "readiness"), false);
+  assert.match(sidecarBundleReadinessLine(result), /^Readiness: no doctor or QA block recorded/);
+});
+
+test("the CLI text report prints a readiness line under Status and keeps it out of --json", () => withFixture((root) => {
+  blockDoctorSidecar(root);
+  const packetPath = join(root, "campaign-runtime.build.json");
+  const text = execFileSync("node", [CLI, "bundle", "check", "--packet", packetPath], { encoding: "utf8" });
+  const lines = text.trimEnd().split("\n");
+  assert.equal(lines[0], "Status: CONFORMANT");
+  assert.match(lines[1], /^Readiness: BLOCKED \(doctor run is blocked\)/);
+  assert.ok(lines.some((line) => line.startsWith("- [bundle.doctor_output.blocked]")), text);
+
+  const json = JSON.parse(execFileSync("node", [CLI, "bundle", "check", "--packet", packetPath, "--json"], { encoding: "utf8" }));
+  assert.equal(json.stage_blocked, true);
+  assert.equal(Object.hasOwn(json, "readiness"), false);
+
+  let status = 0;
+  try {
+    execFileSync("node", [CLI, "bundle", "check", "--packet", packetPath, "--require-qa", "--json"], { encoding: "utf8", stdio: "pipe" });
+  } catch (error) {
+    status = error.status;
+  }
+  assert.equal(status, 2);
+}));
+
 test("allowed volatile timestamps and run ids do not change the material digest", () => withFixture((root) => {
   const packetPath = join(root, "campaign-runtime.build.json");
   const first = inspectSidecarBundle({ packetPath, requireQa: true });
@@ -367,7 +442,7 @@ test("the CLI exposes bundle check as JSON and honors --require-qa", () => {
   assert.equal(result.bundle_id, SIDECAR_BUNDLE_CONTRACT.bundle_id);
 });
 
-test("fresh prepare-build, doctor, and QA projection form a conformant bundle", () => {
+test("fresh prepare-build, doctor, and QA projection form a conformant bundle whose blocked doctor still gates handoff", () => {
   const root = join(tmpdir(), `campaigns-os-sidecar-integration-${process.pid}-${Math.random().toString(16).slice(2)}`);
   const target = join(root, "target");
   try {
@@ -420,8 +495,19 @@ test("fresh prepare-build, doctor, and QA projection form a conformant bundle", 
       },
     });
 
-    const result = inspectSidecarBundle({ packetPath, requireQa: true });
-    assert.equal(result.ok, true, JSON.stringify(result.errors, null, 2));
+    // The example target's doctor run is blocked (its design source package
+    // is not ready), so the fresh producers agree with each other and the
+    // contract, but a QA projection written beside that doctor cannot make
+    // the bundle a QA-complete handoff.
+    const doctor = readJson(join(target, ".campaign-runtime/doctor-output.json"));
+    assert.equal(doctor.status, "blocked");
+    const structural = inspectSidecarBundle({ packetPath });
+    assert.equal(structural.ok, true, JSON.stringify(structural.errors, null, 2));
+    assert.equal(structural.stage_blocked, true);
+    assert.deepEqual(structural.warnings.map((finding) => finding.code), ["bundle.doctor_output.blocked"]);
+    const handoff = inspectSidecarBundle({ packetPath, requireQa: true });
+    assert.equal(handoff.ok, false);
+    assert.deepEqual(handoff.errors.map((finding) => finding.code), ["bundle.doctor_output.blocked"]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
