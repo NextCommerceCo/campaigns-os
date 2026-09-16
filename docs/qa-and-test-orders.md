@@ -866,6 +866,24 @@ happened has to be numbers, not the orders themselves. `all_orders_test_mode` is
 `null`, not `false`, when nothing ran: "no order left test mode" and "no order
 ran" are different facts.
 
+Beside it, `stages.qa.evidence` carries the build the verdict judged and the
+outcome of the gates doctor's static scan can only approximate:
+
+```json
+"evidence": {
+  "source_build_fingerprint": "sha256:…",
+  "gates": { "placeholder_text_residue": { "status": "pass", "pages_checked": 2, "pages_failed": 0 } }
+}
+```
+
+A gate that did not run on that verdict is absent, never `pass`. Doctor reads
+`gates.placeholder_text_residue` back while `stages.assembly.build_fingerprint`
+still matches `source_build_fingerprint`: a recorded pass demotes the
+`template_contract.placeholder_text_residue` warning to a ready line and drops
+the matching `next` action; a rebuild or a failed gate brings the warning back
+(see `docs/template-family-contracts.md`). `evidence` is a QA-owned field, so
+the next QA record replaces it wholesale.
+
 `next` compares the declared depth against what was exercised:
 
 | Declared `order_path_depth` | `order_paths_executed` | `next` |

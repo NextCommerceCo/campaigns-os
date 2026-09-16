@@ -257,3 +257,31 @@ export function summarizePurchaseProof({ verdict = null, proofPolicy = null } = 
     all_orders_test_mode: orders.length ? orders.every((order) => order.is_test === true) : null,
   };
 }
+
+// The browser placeholder-text residue gate (H3.1) emits one assertion per
+// page as `template-residue:<page_id>:placeholder-text`. Both the emitter
+// (qa-browser.mjs) and the stage-ledger summary below build the id from this
+// suffix so the two cannot drift.
+export const PLACEHOLDER_TEXT_ASSERTION_SUFFIX = ":placeholder-text";
+
+export function isPlaceholderTextAssertion(assertion) {
+  const id = optionalString(assertion?.id);
+  return Boolean(id && id.startsWith("template-residue:") && id.endsWith(PLACEHOLDER_TEXT_ASSERTION_SUFFIX));
+}
+
+// What the verdict says about the placeholder-text gate, in a shape the
+// Assembly Report's qa stage can carry: `pass` only when the gate ran on at
+// least one page and no page failed; `fail` when any page failed; null when
+// the gate never ran (gate-skipped verdict, a non-browser run, an older
+// toolkit), so a doctor reading the report cannot mistake silence for a pass.
+export function summarizePlaceholderTextGate(verdict) {
+  const assertions = (Array.isArray(verdict?.assertions) ? verdict.assertions : []).filter(isPlaceholderTextAssertion);
+  const evaluated = assertions.filter((assertion) => assertion.status === STATUS.PASS || assertion.status === STATUS.FAIL);
+  if (!evaluated.length) return null;
+  const failed = evaluated.filter((assertion) => assertion.status === STATUS.FAIL);
+  return {
+    status: failed.length ? STATUS.FAIL : STATUS.PASS,
+    pages_checked: evaluated.length,
+    pages_failed: failed.length,
+  };
+}

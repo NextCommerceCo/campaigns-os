@@ -18,7 +18,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { nextStage, recordQaStageOutcome } from "./cli.mjs";
+import { doctorPacket, nextStage, recordQaStageOutcome } from "./cli.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 
@@ -119,7 +119,7 @@ function target({ prefix = "closeout-evidence-", orderPathDepth = "common", muta
 
 // A synthesized verdict. Not copied from any run: no merchant, campaign, order
 // or customer value appears anywhere in this repository.
-function verdict({ runId, completedAt, orders = 1 }) {
+function verdict({ runId, completedAt, orders = 1, assertions = [] }) {
   return {
     schema_version: "1.0",
     run_id: runId,
@@ -128,7 +128,7 @@ function verdict({ runId, completedAt, orders = 1 }) {
     started_at: completedAt,
     completed_at: completedAt,
     disposition: "ready",
-    assertions: [],
+    assertions,
     exceptions: [],
     test_orders: Array.from({ length: orders }, (unused, index) => ({
       path: "accept",
@@ -144,8 +144,8 @@ function verdict({ runId, completedAt, orders = 1 }) {
 }
 
 // The producer, writing real files exactly as `qa run` does.
-function runProducer({ dir, packetPath }, { runId, completedAt, orders = 1 }) {
-  const built = verdict({ runId, completedAt, orders });
+function runProducer({ dir, packetPath }, { runId, completedAt, orders = 1, assertions = [] }) {
+  const built = verdict({ runId, completedAt, orders, assertions });
   const localDir = join(dir, "qa-output", MAP_ID);
   mkdirSync(localDir, { recursive: true });
   const localPath = join(localDir, `${runId}.json`);
@@ -322,4 +322,81 @@ test("a satisfied record in one target never satisfies another", () => {
   // Neither run may reach into the other's records directory.
   assert.equal(existsSync(join(b.dir, ".campaign-runtime/run-records")), false);
   assert.deepEqual(readdirSync(join(a.dir, ".campaign-runtime/run-records")), ["run_synth_targeta01.json"]);
+});
+
+// The browser placeholder-text gate, as qa-browser emits it, for one page.
+function placeholderTextAssertion(pageId, status) {
+  return {
+    id: `template-residue:${pageId}:placeholder-text`,
+    family: "template_residue",
+    page_id: pageId,
+    status,
+    expected: "no literal template placeholder text in rendered output",
+    actual: status === "pass" ? "no placeholder text rendered" : "placeholder text rendered: Lorem",
+  };
+}
+
+function residueWarning(result) {
+  return (result.warnings || []).find((issue) => issue.code === "template_contract.placeholder_text_residue") || null;
+}
+
+function residueAction(doctor) {
+  return (doctor.next?.actions || []).find((line) => /placeholder text/.test(line)) || null;
+}
+
+test("a recorded browser residue pass on the current build retires the doctor's static placeholder warning until a rebuild", () => {
+  const fixture = target();
+  // Rendered copy the static scan flags; the browser gate is the authority on
+  // whether it is actually visible.
+  const pageDir = join(fixture.dir, "target-page-kit", "src", SLUG);
+  mkdirSync(pageDir, { recursive: true });
+  writeFileSync(join(pageDir, "checkout.html"), "<html><body><p>Lorem ipsum dolor.</p></body></html>\n");
+
+  const before = doctorPacket(fixture.packetPath);
+  assert.ok(residueWarning(before), "before QA, the static scan warns");
+  assert.ok(residueAction(before), "and next.actions asks for the replacement");
+
+  runProducer(fixture, {
+    runId: "SYNTHRUN000000000000000001",
+    completedAt: "2026-09-11T02:00:00.000Z",
+    assertions: [placeholderTextAssertion("checkout", "pass"), placeholderTextAssertion("landing", "pass")],
+  });
+  const qa = readReport(fixture.reportPath).stages.qa;
+  assert.deepEqual(qa.evidence, {
+    source_build_fingerprint: BUILD_FINGERPRINT,
+    gates: { placeholder_text_residue: { status: "pass", pages_checked: 2, pages_failed: 0 } },
+  });
+
+  const after = doctorPacket(fixture.packetPath);
+  assert.equal(residueWarning(after), null, "the browser verdict outranks the static scan on the build it judged");
+  assert.equal(residueAction(after), null, "next.actions stops asking for a fix QA cleared");
+  assert.ok(after.ready.some((note) => note.includes("browser residue gate passed on this build")), JSON.stringify(after.ready));
+  assert.equal(residueWarning(runNext(fixture.packetPath)), null, "next carries the same doctor read");
+
+  // A rebuild moves the fingerprint: the recorded pass no longer covers it.
+  const report = readReport(fixture.reportPath);
+  report.stages.assembly.build_fingerprint = `sha256:${"c".repeat(64)}`;
+  writeFileSync(fixture.reportPath, JSON.stringify(report, null, 2));
+  const rebuilt = doctorPacket(fixture.packetPath);
+  assert.ok(residueWarning(rebuilt), "a new build has no browser verdict yet");
+  assert.ok(residueAction(rebuilt));
+});
+
+test("a browser residue failure, or a run that never reached the gate, leaves the static warning in place", () => {
+  const fixture = target();
+  const pageDir = join(fixture.dir, "target-page-kit", "src", SLUG);
+  mkdirSync(pageDir, { recursive: true });
+  writeFileSync(join(pageDir, "checkout.html"), "<html><body><p>Lorem ipsum dolor.</p></body></html>\n");
+
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z" });
+  assert.equal(readReport(fixture.reportPath).stages.qa.evidence, undefined, "no gate ran, so nothing is recorded as passed");
+  assert.ok(residueWarning(doctorPacket(fixture.packetPath)));
+
+  runProducer(fixture, {
+    runId: "SYNTHRUN000000000000000002",
+    completedAt: "2026-09-11T03:00:00.000Z",
+    assertions: [placeholderTextAssertion("checkout", "fail"), placeholderTextAssertion("landing", "pass")],
+  });
+  assert.equal(readReport(fixture.reportPath).stages.qa.evidence.gates.placeholder_text_residue.status, "fail");
+  assert.ok(residueWarning(doctorPacket(fixture.packetPath)));
 });
