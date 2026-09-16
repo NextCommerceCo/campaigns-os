@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.29.0+agent.13] - 2026-09-16
+## [1.29.0+agent.11] - 2026-09-16
 
 ### Changed
 
@@ -24,6 +24,7 @@ Notable supported-surface changes are recorded here.
   `selection_surface_probe: failed` with `selection_surface_probe_error`, is
   never read as an empty checkout, and is not remembered.
 - `docs/qa-and-test-orders.md` names the selector probe and its single load.
+
 ## [1.29.0+agent.9] - 2026-09-16
 
 ### Changed
