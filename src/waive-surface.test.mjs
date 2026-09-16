@@ -164,7 +164,7 @@ test("an expired theme waiver no longer waives the gate", () => {
 });
 
 test("checkpoint waive prints a real status line and names what it waived", () => {
-  const { dir, packetPath } = fixture({ specVersion: "0.4.36", targetVersion: "0.4.37" });
+  const { dir, packetPath } = fixture({ specVersion: "0.4.37", targetVersion: "0.4.36" });
   try {
     const result = checkpointWaive({
       _: ["checkpoint", "waive"],
@@ -241,7 +241,7 @@ test("an unknown checkpoint gate is refused with the registered gate list", () =
 });
 
 test("--json refusals of both waive commands return an envelope on stdout with exit 1", () => {
-  const { dir, packetPath } = fixture({ specVersion: "0.4.36", targetVersion: "0.4.37" });
+  const { dir, packetPath } = fixture({ specVersion: "0.4.37", targetVersion: "0.4.36" });
   try {
     const unknown = runCli(["checkpoint", "waive", "--packet", packetPath, "--gate", "polish.evidence_missing", "--reason", "x", "--waived-by", "Jordan Lee", "--review-condition", "never", "--json"], dir);
     assert.equal(unknown.status, 1);
@@ -340,7 +340,7 @@ test("next files each blocked gate's actions under its own heading and prints th
 });
 
 test("next --json substitutes the packet into the gate objects it copies from doctor", () => {
-  const { dir, packetPath } = fixture({ specVersion: "0.4.36", targetVersion: "0.4.37", entry: { store_url: "https://wrong-merchant.test/" } });
+  const { dir, packetPath } = fixture({ specVersion: "0.4.37", targetVersion: "0.4.36", entry: { store_url: "https://wrong-merchant.test/" } });
   try {
     const next = nextStage(null, { _: ["next"], packet: packetPath, "no-write": true });
     assert.equal(next.stage, "doctor-blocked");

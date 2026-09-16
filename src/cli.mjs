@@ -4731,6 +4731,13 @@ function validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildS
     ready.push("SDK-pin checkpoint not applicable before Page Kit scaffold; it becomes mandatory once the target entry exists or setup completes.");
     return;
   }
+  if (gate.code === "page_kit.sdk_version.repo_newer") {
+    // The repo pin is the authority (#413): a completed bump the Map has not
+    // been re-saved for is advisory, and the ready line names what ships.
+    addIssue(warnings, gate.code, gate.reason, { checkpoint_gate: gate });
+    ready.push(`Target campaigns.json SDK version ${gate.observed_sdk_version} is what ships; the CampaignSpec pin ${gate.expected_sdk_version} is a stale build hint.`);
+    return;
+  }
   ready.push(`Target campaigns.json SDK version matches CampaignSpec (${gate.expected_sdk_version}).`);
 }
 

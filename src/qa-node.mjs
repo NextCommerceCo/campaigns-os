@@ -1349,6 +1349,18 @@ function sdkVersionGateAssertion(gate) {
       evidence,
     });
   }
+  if (gate.code === "page_kit.sdk_version.repo_newer") {
+    return assertion({
+      id: PAGE_KIT_SDK_VERSION_SCOPE,
+      family: "api-metadata",
+      page,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: `Target ${PAGE_KIT_CAMPAIGNS_REL_PATH} declares the released SDK version that ships; a CampaignSpec pin behind it is a stale build hint`,
+      actual: gate.reason,
+      evidence,
+    });
+  }
   return assertion({
     id: PAGE_KIT_SDK_VERSION_SCOPE,
     family: "api-metadata",

@@ -78,9 +78,9 @@ writes the pin while the entry is still in scaffold state (the starter demo
 store profile is still in it) or when the target pin is older than the
 spec's, and refuses to move a configured campaign's pin backwards
 (`not_synced`, reason `target_newer`, naming both versions and pointing at
-re-saving the Map or the `page_kit.sdk_version` waiver). Whether the durable
-direction for the pin is repo → Map is an open decision this command does not
-pre-empt. Both go into `_data/campaigns.json[public_route_slug]`,
+re-saving the Map). The repo pin is the authority for what ships and the Map
+field is a build hint, so that state is a doctor warning, not a blocker (see
+the SDK version checkpoint below). Both go into `_data/campaigns.json[public_route_slug]`,
 prints a field-by-field before/after diff, and touches nothing else: a
 governed field the spec does not carry is left as it is (doctor's
 `target_only` warning still applies), non-governed keys keep their values and
@@ -158,15 +158,35 @@ waiver history is not evaluated or surfaced as an inert warning.
 ### Page Kit SDK version checkpoint
 
 The second registered checkpoint requires a canonical released semantic version
-in CampaignSpec and an exact target pin in
+in CampaignSpec and a released target pin in
 `_data/campaigns.json[public_route_slug].sdk_version`. CampaignSpec's
 `global_config.sdk_version` is canonical, with `runtime.sdk_version` as an
 accepted alias; declaring both is valid only when their released
 versions are equal. Missing, malformed, present-but-empty, non-string,
 prerelease, non-canonical, or conflicting dual declarations are non-waivable.
-Missing or invalid target evidence is also non-waivable. Only a mismatch between
-two valid released versions has a waiver lane, and the decision fingerprints
-that exact expected/observed pair:
+Missing or invalid target evidence is also non-waivable.
+
+The two pins have a direction of authority. The repo pin is the version the
+funnel serves, so it is the only value a bump can be proven against; the spec
+field is a build hint whose job is to seed a fresh scaffold. The gate compares
+them accordingly:
+
+- **Equal** — pass.
+- **Target newer than the spec, both released, entry configured** (the
+  starter demo store profile is gone) — a completed bump the Map has not been
+  re-saved for. Doctor passes the gate with the `page_kit.sdk_version.repo_newer`
+  warning and a ready line naming what ships; QA projects it as a `warn`
+  assertion; `next` does not stop. The gate's `advisory_actions` carry one
+  `refresh_spec` edit: re-save the Map's Build hints field (Campaign Cart SDK
+  version) to the repo pin so the exported spec stops reading stale. Nothing
+  in the repo needs to change, and there is nothing to waive.
+- **Target behind the spec, or still the scaffold's seeded pin beside the demo
+  store profile** — blocked, repaired by `page-kit sync` (below) or waived.
+- **Target pin not a released version** — blocked, non-waivable, whatever the
+  spec says.
+
+Only the blocked mismatch between two valid released versions has a waiver
+lane, and the decision fingerprints that exact expected/observed pair:
 
 ```bash
 campaigns-os checkpoint waive \
@@ -183,9 +203,9 @@ apply. A target pin that is missing, malformed, or behind a valid spec pin
 (or still the scaffold's seeded pin beside the demo store profile) is repaired
 by the same `campaigns-os page-kit sync --packet <campaign-runtime.build.json>`
 described above, which doctor and `next` print as the gate's `repair_target`
-action. A configured campaign whose pin is newer than the spec's gets an edit
-action instead: re-save the Map (or edit the spec) to the repo pin, or record
-the waiver; sync never moves that pin backwards.
+action. A configured campaign whose pin is newer than the spec's is the
+advisory case above: no required action, and sync never moves that pin
+backwards.
 
 ### Polish hidden eager-media checkpoint
 

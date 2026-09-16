@@ -48,6 +48,8 @@ const CAUSE_CLASS_LABELS = Object.freeze({
 const UPSTREAM_DRIFT_DOCTOR_CODES = Object.freeze([
   // observed target SDK version != the CampaignSpec pin (the blocking form)
   "page_kit.sdk_version",
+  // the repo pin moved ahead of the spec's build hint (the advisory form, #413)
+  "page_kit.sdk_version.repo_newer",
   // the same disagreement, accepted under a named-human waiver
   "page_kit.sdk_version.waived",
   // two spec-side declarations of the pin disagree with each other

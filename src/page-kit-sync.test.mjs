@@ -1077,9 +1077,11 @@ test("doctor and next spell the page-kit sync repair with the consumer install's
 test("page-kit sync leaves a field alone while a named-human waiver covers its gate, and says who waived it", () => {
   const { dir, packetPath, campaignsPath, slug, targetRepo } = fixture();
   try {
-    // Only the pin differs, so the sdk gate is a waivable exact mismatch.
+    // Only the pin differs, and the target is BEHIND the spec, so the sdk
+    // gate is a waivable exact mismatch (a target ahead of the spec is
+    // advisory since #413 and has nothing to waive).
     const campaigns = readJson(campaignsPath);
-    campaigns[slug] = { ...campaigns[slug], ...Object.fromEntries(Object.entries(SPEC_TARGET_MATCH)) };
+    campaigns[slug] = { ...campaigns[slug], ...Object.fromEntries(Object.entries(SPEC_TARGET_MATCH)), sdk_version: "0.4.30" };
     writeJson(campaignsPath, campaigns);
     mkdirSync(join(targetRepo, ".campaign-runtime"), { recursive: true });
     const recorded = checkpointWaive({
@@ -1097,7 +1099,7 @@ test("page-kit sync leaves a field alone while a named-human waiver covers its g
     assert.equal(result.written, false, "nothing else needed writing");
     assert.deepEqual(result.not_synced.map((row) => [row.field, row.reason]), [["sdk_version", "waived"]]);
     assert.match(result.not_synced[0].detail, /Jordan Lee/);
-    assert.equal(readJson(campaignsPath)[slug].sdk_version, "0.4.38", "the waived pin is exactly as the human accepted it");
+    assert.equal(readJson(campaignsPath)[slug].sdk_version, "0.4.30", "the waived pin is exactly as the human accepted it");
     assert.ok(result.report_path.endsWith("assembly-report.json"));
 
     // Doctor still reads the waiver as active: sync did not disturb it.
@@ -1184,7 +1186,7 @@ test("page-kit sync seeds the pin after a scaffold but never moves a configured 
   assert.equal(bumped.changes.some((row) => row.field === "sdk_version"), false);
   assert.deepEqual(bumped.not_synced.map((row) => [row.field, row.reason]), [["sdk_version", "target_newer"]]);
   assert.match(bumped.not_synced[0].detail, /0\.4\.38 is newer than the CampaignSpec pin 0\.4\.36/);
-  assert.match(bumped.not_synced[0].detail, /page_kit\.sdk_version waiver/);
+  assert.match(bumped.not_synced[0].detail, /warning, not a blocker/);
 
   // Configured campaign behind the spec: the spec's newer pin is written.
   const behind = planPageKitSync({ spec: SPEC, entry: { ...NON_DEMO_ENTRY, sdk_version: "0.4.30" } });
@@ -1198,12 +1200,13 @@ test("page-kit sync seeds the pin after a scaffold but never moves a configured 
   const gateScaffold = evaluatePageKitSdkVersion({ spec: SPEC, targetLoad: targetLoad(SCAFFOLD_ENTRY) });
   assert.equal(gateScaffold.required_actions.find((action) => action.id === "repair_target").command, PAGE_KIT_SYNC_COMMAND);
   const gateBumped = evaluatePageKitSdkVersion({ spec: SPEC, targetLoad: targetLoad({ ...NON_DEMO_ENTRY, sdk_version: "0.4.38" }) });
-  assert.equal(gateBumped.status, "blocked");
-  const repair = gateBumped.required_actions.find((action) => action.id === "repair_target");
-  assert.equal(repair.kind, "edit");
-  assert.equal(repair.command, null);
-  assert.match(repair.description, /newer than the CampaignSpec pin/);
-  assert.ok(gateBumped.required_actions.some((action) => action.id === "waive_checkpoint"), "the waiver lane is still offered");
+  assert.equal(gateBumped.status, "pass", "a configured campaign ahead of the spec is advisory (#413)");
+  assert.equal(gateBumped.code, "page_kit.sdk_version.repo_newer");
+  assert.deepEqual(gateBumped.required_actions, []);
+  const refresh = gateBumped.advisory_actions.find((action) => action.id === "refresh_spec");
+  assert.equal(refresh.kind, "edit");
+  assert.equal(refresh.command, null);
+  assert.match(refresh.description, /Re-save the Map/);
 
   // End to end on the fixture: a configured, bumped campaign keeps its pin
   // and the run is partial.

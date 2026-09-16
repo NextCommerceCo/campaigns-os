@@ -229,12 +229,12 @@ test("packet QA rejects an alternate --spec before reading artifacts or starting
   const sentinel = armFetchSentinel();
   const { dir, packetPath, specPath } = fixture(sentinel.baseUrl, {
     specVersion: "0.4.18",
-    targetVersion: "0.4.19",
+    targetVersion: "0.4.17",
     storeMismatch: false,
   });
   const alternateSpecPath = join(dir, "alternate-matching-target-spec.json");
   const alternateSpec = readJson(specPath);
-  alternateSpec.runtime.sdk_version = "0.4.19";
+  alternateSpec.runtime.sdk_version = "0.4.17";
   writeJson(alternateSpecPath, alternateSpec);
   const expected = "Packet QA does not accept --spec; it always uses packet.spec.local_path.";
   try {
@@ -268,7 +268,7 @@ test("packet QA rejects an alternate --spec before reading artifacts or starting
 
 test("qa resolve reports both blocked checkpoints and repair paths without suggesting runtime proof", async () => {
   const sentinel = armFetchSentinel();
-  const { dir, packetPath } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });
+  const { dir, packetPath } = fixture(sentinel.baseUrl, { targetVersion: "0.4.17" });
   const originalLog = console.log;
   const lines = [];
   const priorExitCode = process.exitCode;
@@ -284,7 +284,7 @@ test("qa resolve reports both blocked checkpoints and repair paths without sugge
     assert.equal(resolved.status, "blocked");
     assert.equal(process.exitCode, priorExitCode, "qa resolve remains diagnostic and must not change exit semantics");
     assert.match(readback, /Checkpoint page_kit\.store_profile: blocked .*Target Store Profile differs/);
-    assert.match(readback, /Checkpoint page_kit\.sdk_version: blocked .*Target SDK version 0\.4\.19 does not match/);
+    assert.match(readback, /Checkpoint page_kit\.sdk_version: blocked .*Target SDK version 0\.4\.17 does not match/);
     assert.match(readback, /--gate page_kit\.store_profile/);
     assert.match(readback, /--gate page_kit\.sdk_version/);
     assert.doesNotMatch(readback, /Next expected proof: campaigns-os qa run/);
@@ -301,7 +301,7 @@ test("qa resolve reports both blocked checkpoints and repair paths without sugge
 test("qa resolve reports an exact SDK waiver with attribution, bounds, and inert counts", async () => {
   const sentinel = armFetchSentinel();
   const { dir, packetPath, reportPath } = fixture(sentinel.baseUrl, {
-    targetVersion: "0.4.19",
+    targetVersion: "0.4.17",
     storeMismatch: false,
   });
   checkpointWaive({
@@ -441,7 +441,7 @@ test("qa resolve and run agree that target-only Store Profile values are ready w
 
 test("the local verdict defaults to the packet's target repo, not the caller's cwd", async () => {
   const sentinel = armFetchSentinel();
-  const { dir, packetPath, targetRepo } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });
+  const { dir, packetPath, targetRepo } = fixture(sentinel.baseUrl, { targetVersion: "0.4.17" });
   const foreignCwd = mkdtempSync(join(tmpdir(), "qa-foreign-cwd-"));
   const priorCwd = process.cwd();
   const priorExitCode = process.exitCode;
@@ -469,7 +469,7 @@ test("the local verdict defaults to the packet's target repo, not the caller's c
 
 test("packet checkpoint blockers coexist and finalize a verdict before HTTP, browser, analytics, or typed orders", async () => {
   const sentinel = armFetchSentinel();
-  const { dir, packetPath, targetRepo } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });
+  const { dir, packetPath, targetRepo } = fixture(sentinel.baseUrl, { targetVersion: "0.4.17" });
   const priorExitCode = process.exitCode;
   try {
     const blocked = await runQaCli({
@@ -492,7 +492,7 @@ test("packet checkpoint blockers coexist and finalize a verdict before HTTP, bro
       assert.equal(checkpoint.status, "fail");
       assert.equal(checkpoint.severity, "blocker");
     }
-    assert.deepEqual(sdkCheckpoint.evidence.state, { expected: "0.4.18", observed: "0.4.19" });
+    assert.deepEqual(sdkCheckpoint.evidence.state, { expected: "0.4.18", observed: "0.4.17" });
     assert.equal(process.exitCode, 4);
     assert.deepEqual(blocked.verdict.test_orders, []);
     assert.deepEqual(blocked.verdict.tested_urls, []);
@@ -640,7 +640,7 @@ test("an exact hidden eager-media waiver becomes one warning and allows QA runti
 
 test("an exact SDK-pin waiver warns and runs only after every other checkpoint clears", async () => {
   const sentinel = armFetchSentinel();
-  const { dir, packetPath, campaignsPath, reportPath } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });
+  const { dir, packetPath, campaignsPath, reportPath } = fixture(sentinel.baseUrl, { targetVersion: "0.4.17" });
   const priorExitCode = process.exitCode;
   try {
     checkpointWaive({
@@ -709,7 +709,7 @@ test("an exact SDK-pin waiver warns and runs only after every other checkpoint c
 
 test("an exact checkpoint waiver remains visible in QA and proceeds as ready_with_exceptions", async () => {
   const sentinel = armFetchSentinel();
-  const { dir, packetPath, targetRepo, campaignsPath } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });
+  const { dir, packetPath, targetRepo, campaignsPath } = fixture(sentinel.baseUrl, { targetVersion: "0.4.17" });
   const priorExitCode = process.exitCode;
   try {
     checkpointWaive({
@@ -984,7 +984,7 @@ test("invalid SDK declarations and target values stay non-waivable and private",
 
 test("stale, foreign, malformed, and expired SDK decisions stay blocked and count-only in QA", async () => {
   const sentinel = armFetchSentinel();
-  const { dir, packetPath, reportPath } = fixture(sentinel.baseUrl, { storeMismatch: false, targetVersion: "0.4.19" });
+  const { dir, packetPath, reportPath } = fixture(sentinel.baseUrl, { storeMismatch: false, targetVersion: "0.4.17" });
   const priorExitCode = process.exitCode;
   try {
     checkpointWaive({
@@ -1046,7 +1046,7 @@ test("packet QA consumes packet, spec, campaign entry, and Assembly Report once 
     campaignsPath,
     reportPath,
     packetAdjacentReportPath,
-  } = fixture(sentinel.baseUrl, { storeMismatch: false, targetVersion: "0.4.19" });
+  } = fixture(sentinel.baseUrl, { storeMismatch: false, targetVersion: "0.4.17" });
   try {
     checkpointWaive({
       _: ["checkpoint", "waive"],

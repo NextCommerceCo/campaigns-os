@@ -3495,6 +3495,51 @@
         }
       ],
       "entry_sha256": "68794a83b659b4c80686ba02a79609a301383f04de9536c975d097b5e7057857"
+    },
+    {
+      "id": "RL-0095",
+      "sequence": 95,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.1",
+      "changelog_sha256": "9649f47babc78a1ad5ef1b1be54d15691ea32cf4cf05cd13af5c62954c4059c3",
+      "agent_impact": "The page_kit.sdk_version checkpoint no longer blocks a configured campaign whose repo pin is newer than the CampaignSpec pin (#413): the repo pin is the authority for what ships, the spec field is a build hint. For that state doctor returns the gate with status pass, code page_kit.sdk_version.repo_newer, the fingerprinted expected/observed state, required_actions [] and a new advisory_actions [{ id: refresh_spec, kind: edit, command: null }] naming the Map re-save; the same code appears in doctor warnings[] and the ready line reads \"Target campaigns.json SDK version <repo> is what ships; the CampaignSpec pin <spec> is a stale build hint.\" next no longer reaches doctor-blocked on it and emits no checkpoint.page_kit.sdk_version.* actions; qa projects the page_kit.sdk_version assertion as warn (severity warn) rather than a blocker fail, so QA proceeds to runtime work. A consumer that treated any expected != observed as blocked must read status and code: blocked is now only target behind the spec or the scaffold-seeded pin beside the demo store profile (waivable, repaired by page-kit sync) and the unchanged non-waivable spec-side and non-released-target cases. finding-cause classifies page_kit.sdk_version.repo_newer as upstream_drift. page-kit sync behaviour is unchanged (it still never moves a configured pin backwards); only its target_newer detail text changed to say doctor warns. No schema, flag or command change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "A configured campaign whose target sdk_version is newer than the CampaignSpec pin passes the page_kit.sdk_version gate with a page_kit.sdk_version.repo_newer warning, an advisory_actions refresh_spec edit and a ready line naming the repo pin as what ships, instead of blocking with an edit action and a waiver lane."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "The repo-newer SDK pin state no longer yields doctor-blocked or checkpoint.page_kit.sdk_version.* next_actions."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "The page_kit.sdk_version assertion projects the repo-newer state as warn (severity warn) rather than a blocker fail; QA proceeds."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The SDK version checkpoint documents the direction of authority (repo pin ships, spec field is a build hint) and the four outcomes: equal, target newer (advisory), target behind or scaffold-seeded (blocked, sync repairs), target not released (blocked, non-waivable)."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "upstream_drift lists page_kit.sdk_version.repo_newer beside the blocking form."
+        }
+      ],
+      "entry_sha256": "610cfb6dc40b6e02eb027f8e3bc3c4a2a67563bc4f2a1ef1c8689206ac29727a"
     }
   ]
 }
