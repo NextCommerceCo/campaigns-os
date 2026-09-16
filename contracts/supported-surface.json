@@ -75,7 +75,7 @@
       "sha256": "1bc53b9a75a6c19c89aee6e9664574980b09d2e13eb8826b157f5ab6ba82d0b0"
     },
     "schemas/campaigns-os-qa-verdict.v0.schema.json": {
-      "sha256": "9e7d1191b651d940af15c4d20a6007e0cb1d1126847266a81c32219dc03d71ea"
+      "sha256": "f7ce00e4f814d0ab7659b11fb2a14d3e4fafbf7c8e353449f25d7e87e1627acc"
     },
     "schemas/campaigns-os-doctor-output.v0.schema.json": {
       "sha256": "0b39390dd9e51c473d04b8d7eb010da1e050e9a0f645ace0e2f891a8bc1b0a42"

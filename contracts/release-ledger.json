@@ -3548,8 +3548,8 @@
       "kind": "release",
       "surface_version": "1.30.0",
       "changelog_section": "1.30.0",
-      "changelog_sha256": "a0cfa8d03f660ae82f93ad4856f240109ab8f9921547a5997557a65597c51741",
-      "agent_impact": "Full QA verdicts from typed-card runs that reach a recognized receipt now carry an optional test_orders[].data_layer object (layer NextDataLayer, event dl_purchase, measured, count, expected_order_refs, observed_transaction_ids, order_ref_match, outcome pass | absent | duplicate | mismatch | order_ref_unknown | unmeasured, ok, reason) and one new assertion per such path, analytics-correctness:data-layer-purchase:<path> (family analytics-correctness, already in the vocabulary; blocker on absent, duplicate, mismatch and unmeasured; manual_review on order_ref_unknown). A verdict for a receipt whose SDK data layer carries no dl_purchase, more than one, or one naming another order is now blocked where it was not before. Consumers reading the full verdict may read the record; the committed sidecar strips it with the rest of the order fields. No CLI flag, exit code or command changed; --analytics-settle bounds the wait for the event. surface_version 1.29.0 -> 1.30.0 (additive schema change).",
+      "changelog_sha256": "ea4b17f9e33ab112ec7f80d594a9afd008527550fcc548b9209132bd48f48b23",
+      "agent_impact": "Full QA verdicts from typed-card runs that placed an order now carry an optional test_orders[].data_layer object (layer NextDataLayer, event dl_purchase, measured, count, expected_order_refs, observed_transaction_ids, order_ref_match, outcome pass | absent | duplicate | mismatch | order_ref_unknown | unmeasured, ok, reason) read across every page the path visited after checkout, and one new assertion per such path, analytics-correctness:data-layer-purchase:<path> (family analytics-correctness, already in the vocabulary; blocker on absent, duplicate, mismatch and unmeasured; manual_review on order_ref_unknown). A verdict for an order whose SDK data layer carries no dl_purchase, more than one, or one naming another order is now blocked where it was not before. The runner's data-layer hook is attached for every typed-card order, not only when the analytics leg runs. Consumers reading the full verdict may read the record; the committed sidecar strips it with the rest of the order fields. No CLI flag, exit code or command changed; --analytics-settle bounds the wait for the event. surface_version 1.29.0 -> 1.30.0 (additive schema change).",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -3557,7 +3557,7 @@
           "class": "schema",
           "path": "schemas/campaigns-os-qa-verdict.v0.schema.json",
           "surface_entry": "schemas/campaigns-os-qa-verdict.v0.schema.json",
-          "summary": "testOrder gains the optional data_layer object: the receipt's dl_purchase reading with its enumerated outcome; additive, additionalProperties unchanged."
+          "summary": "testOrder gains the optional data_layer object: the order's dl_purchase reading across the post-checkout journey, with its enumerated outcome; additive, additionalProperties unchanged."
         },
         {
           "class": "compatibility_policy",
@@ -3575,7 +3575,7 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "New Receipt data layer (dl_purchase) section under Test Orders: what is read, when, the six outcomes and their assertion status, what the count deliberately excludes; the analytics-correctness section points at it."
+          "summary": "New Purchase data layer (dl_purchase) section under Test Orders: where the SDK fires the event, why the reading is the whole post-checkout journey, the six outcomes and their assertion status, what the count deliberately excludes; the analytics-correctness section points at it."
         },
         {
           "class": "documentation",
@@ -3590,7 +3590,7 @@
           "summary": "Regenerated: supported surface at generation time 1.30.0."
         }
       ],
-      "entry_sha256": "822da97b83b11eae20db411d2e33d79670e1df85a1d73716d9144c79c8b8ecfa"
+      "entry_sha256": "87eb39afee8ca5c5c36ac2bc5011f83446275882942235d6518fa1aa41d3c8ab"
     }
   ]
 }

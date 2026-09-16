@@ -291,6 +291,22 @@ export async function attachAnalyticsCapture(page, options = {}) {
   return {
     tagFires,
     collectScopes: readScopes,
+    // The raw push log, one entry per push per hooked layer, in arrival order,
+    // each attributed to the document that pushed it. Binding events only: the
+    // in-page store is a per-document backfill that would double-count a push
+    // the binding already delivered, and a reader of this log is counting.
+    // `complete` is false when the page could not expose the binding, in which
+    // case the log is empty and must be reported as unmeasured, not as zero.
+    rawEvents() {
+      return {
+        complete: bindingAttached,
+        events: accumulatedEvents.map((entry) => ({
+          layer: entry.layer,
+          data: entry.data,
+          document: publicDocument(entry.document),
+        })),
+      };
+    },
     async collect({ strict = false, scope = "journey" } = {}) {
       const captures = await readScopes({ strict });
       return scope === "current-document" ? captures.currentDocument : captures.journey;

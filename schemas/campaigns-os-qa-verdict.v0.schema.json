@@ -354,18 +354,18 @@
         "data_layer": {
           "type": "object",
           "additionalProperties": true,
-          "description": "The receipt's SDK data layer, read once on the recognized receipt of this order (campaigns-os#325): exactly one dl_purchase in window.NextDataLayer whose transaction_id is this order's number or ref id. Present only when the path reached a recognized in-funnel receipt; the analytics-correctness:data-layer-purchase:<path> assertion is its judgment. Counts are per the SDK's own array, never the mirrored window.dataLayer, so a GTM adapter re-push is not a duplicate; dl_upsell_purchase is a different event and is never counted. An unreadable layer is recorded as measured: false with null counts, not as a zero reading.",
+          "description": "The order's SDK data layer across every page the path visited after checkout (campaigns-os#325): exactly one dl_purchase in window.NextDataLayer whose transaction_id is this order's number or ref id. The SDK raises dl_purchase on the first ref_id page that fetches the order back (the upsell page on a funnel with one, the receipt otherwise) and dedupes it on every later page, so the reading is the whole post-checkout journey, never a snapshot of the terminal document. Present only when the path placed an order; the analytics-correctness:data-layer-purchase:<path> assertion is its judgment. Counts are per the SDK's own array, never the mirrored window.dataLayer, so a GTM adapter re-push is not a duplicate; dl_upsell_purchase is a different event and is never counted. An unhooked or unreadable layer is recorded as measured: false with null counts, not as a zero reading.",
           "required": ["layer", "event", "measured", "outcome", "ok", "reason"],
           "properties": {
             "layer": { "const": "NextDataLayer" },
             "event": { "const": "dl_purchase" },
             "required": { "type": "boolean" },
             "measured": { "type": "boolean", "description": "false when the array could not be read; every count below is then null." },
-            "count": { "type": ["integer", "null"], "minimum": 0, "description": "dl_purchase entries in the layer on the receipt document." },
+            "count": { "type": ["integer", "null"], "minimum": 0, "description": "dl_purchase pushes to the layer across every page after the order." },
             "expected_order_refs": { "type": "array", "items": { "type": "string" }, "description": "The placed order's number and ref id, either of which the SDK may report as transaction_id." },
             "observed_transaction_ids": { "type": ["array", "null"], "items": { "type": ["string", "null"] }, "description": "transaction_id of each dl_purchase, in push order." },
             "order_ref_match": { "type": ["boolean", "null"], "description": "Whether a dl_purchase named the placed order; null when nothing could be matched." },
-            "outcome": { "type": "string", "enum": ["pass", "absent", "duplicate", "mismatch", "order_ref_unknown", "unmeasured"], "description": "pass = one event naming the order; absent = none; duplicate = more than one (the #302 fail); mismatch = one event naming another order or none; order_ref_unknown = one event but the run recorded no order reference (manual review); unmeasured = the layer could not be read (blocker)." },
+            "outcome": { "type": "string", "enum": ["pass", "absent", "duplicate", "mismatch", "order_ref_unknown", "unmeasured"], "description": "pass = one event naming the order; absent = none; duplicate = more than one (the #302 fail); mismatch = one event naming another order or none; order_ref_unknown = one event but the run recorded no order reference (manual review); unmeasured = the layer could not be hooked or read (blocker)." },
             "ok": { "type": ["boolean", "null"] },
             "reason": { "type": "string" }
           }
