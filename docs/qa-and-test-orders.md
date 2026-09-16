@@ -378,6 +378,25 @@ silently skipping starter-palette and pricing checks.
 It is owned by this package through the `playwright` dependency; QA must not
 rely on external browser skills or local agent tooling.
 
+Payment-chrome residue (`template-residue:<page>:payment-chrome:<method>`) is
+keyed on the contract's `default_residue.payment_chrome` selectors and asset
+basenames for every method the CampaignSpec does not list. A visible selector is
+residue. A referenced `.svg` asset is fetched as the page serves it and its bytes
+are hashed against the shipped starter hash the shared-commerce contract records
+(`payment_chrome.asset_sha256`, taken from the starter-templates commit in
+`asset_pin.sha`): the shipped bytes are the untouched starter strip and count as
+residue, and the row says so
+(`residue found: upsell-payment-logos.svg (upsell-payment-logos.svg: served bytes
+are the unmodified starter asset)`). Different bytes that no longer name the
+method are an asset edited in place, reported as `manual_review`
+(`edited in place: ... confirm the removal was intended, and remove or rename the
+asset`) so no repair deletes an asset already dealt with. An asset that cannot
+be read (a raster, a 404, a timed-out or oversized read) stays residue. An asset
+the contract lists without a hash is judged by whether its markup still names
+the method; that is a fallback, not the rule, since the shipped
+`upsell-payment-logos.svg` draws its marks as bare path data and names no method
+in its markup.
+
 Fresh Build Packets record the proof contract in `qa.proof_policy`, and
 Assembly Reports mirror it at `report.proof_policy`. The important fields are
 `browser_qa_required`, `typed_card_depth`, `order_path_depth`,

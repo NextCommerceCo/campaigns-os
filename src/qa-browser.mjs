@@ -3,6 +3,7 @@ import { invocationPrefixFor } from "./install-mode.mjs";
 import { dirname as installModeDirname, resolve as installModeResolve } from "node:path";
 import { fileURLToPath as installModeFileUrl } from "node:url";
 const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(import.meta.url)), "..");
+import { createHash } from "node:crypto";
 import { runWithDeadline } from "./deadline.mjs";
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import {
@@ -48,6 +49,7 @@ import {
   normalizeCssColor,
   paletteResidueStyleChecks,
   paymentChromeArtifacts,
+  paymentChromeAssetHashes,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
@@ -1730,17 +1732,19 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
       // Shared across every method on this page: the same strip is commonly
       // attributed to all of them.
       const assetTextCache = new Map();
+      const shippedHashes = paymentChromeAssetHashes(chrome);
       const allSelectors = [...new Set([...artifactsByMethod.values()].flatMap((artifacts) => artifacts.selectors))];
       const allVisibleMatches = await collectVisibleSelectorMatches(browserPage, allSelectors);
       for (const method of unsupported) {
         const artifacts = artifactsByMethod.get(method);
         const visibleMatches = allVisibleMatches.filter((match) => artifacts.selectors.includes(match.selector));
-        const { residue, edited } = await partitionReferencedAssets(browserPage, {
+        const { residue, edited, starter } = await partitionReferencedAssets(browserPage, {
           html,
           pageUrl: page.url,
           referencedAssets: referencedAssetBasenames(html, artifacts.assets),
           method,
           cache: assetTextCache,
+          shippedHashes,
         });
         assertions.push(paymentChromeResidueAssertion({
           page,
@@ -1749,6 +1753,7 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
           visibleMatches,
           referencedAssets: residue,
           editedAssets: edited,
+          starterAssets: starter,
           severity,
         }));
       }
@@ -2020,13 +2025,30 @@ function referencedAssetBasenames(html, assets) {
 // longer carried any chrome, and the repair loop's remedy then deleted a
 // cards-only trust strip that was fine.
 //
-// Token match, not byte comparison against the template's shipped asset: this
-// runner reads a deployed page and has no checkout of the template to compare
-// against. What it can ask is whether the bytes actually served still mention
-// the method — which is the question the assertion is really asking.
+// This token match is the FALLBACK, for a contract entry that carries no
+// shipped hash. It cannot be the primary test: the shipped
+// upsell-payment-logos.svg draws its PayPal wordmark as bare path data with no
+// <text>, <title>, aria-label or id naming the method, so on its own this
+// reads the untouched starter strip as "edited" and the residue it exists to
+// catch as manual review. The byte hash (assetBytesMatchShipped) settles
+// untouched-vs-edited; this only speaks when no hash is on record.
 function assetTextCarriesMethod(text, method) {
   const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
   return compact(text).includes(compact(method));
+}
+
+// The primary test: are the served bytes the starter's own? The contract
+// records the sha256 of each chrome asset as shipped (payment_chrome.asset_sha256,
+// hashed from the starter-templates checkout at the catalog pin), so the
+// runner does not need a checkout of the template to compare against — one
+// digest of what the page served is enough. The in-page read returns text,
+// so the digest is over its UTF-8 re-encoding; for the SVGs this covers that
+// is the file's bytes, and a served copy that does not round-trip (a BOM, an
+// invalid sequence) hashes differently, which lands it on the edited path
+// this check already took before hashes existed — never on a pass.
+function assetBytesMatchShipped(text, shipped) {
+  if (typeof text !== "string" || typeof shipped !== "string") return false;
+  return createHash("sha256").update(text, "utf8").digest("hex") === shipped;
 }
 
 // SVG only, and deliberately. A raster or a font tells us nothing by its bytes,
@@ -2071,9 +2093,16 @@ function referencedAssetUrl(html, basename, pageUrl) {
 // the ones that no longer do. Anything we could not read — not textual, no
 // resolvable URL, a failed or non-OK fetch — stays residue: an asset we cannot
 // see into must never be cleared by our inability to see into it.
-async function partitionReferencedAssets(browserPage, { html, pageUrl, referencedAssets, method, cache, assetBounds }) {
+//
+// With a shipped hash on record (shippedHashes, basename -> sha256), the served
+// bytes decide: equal is the untouched starter asset, residue, also listed under
+// `starter` so the verdict can say why; different is edited in place, unless the
+// edited bytes still name the method, which is residue still. Without a hash the
+// token match alone decides, as before.
+async function partitionReferencedAssets(browserPage, { html, pageUrl, referencedAssets, method, cache, assetBounds, shippedHashes }) {
   const residue = [];
   const edited = [];
+  const starter = [];
   for (const basename of referencedAssets) {
     if (!isTextualAsset(basename)) {
       residue.push(basename);
@@ -2099,10 +2128,16 @@ async function partitionReferencedAssets(browserPage, { html, pageUrl, reference
       residue.push(basename);
       continue;
     }
+    const shipped = shippedHashes instanceof Map ? shippedHashes.get(basename) : undefined;
+    if (shipped && assetBytesMatchShipped(text, shipped)) {
+      residue.push(basename);
+      starter.push(basename);
+      continue;
+    }
     if (assetTextCarriesMethod(text, method)) residue.push(basename);
     else edited.push(basename);
   }
-  return { residue, edited };
+  return { residue, edited, starter };
 }
 
 // Bounds on one referenced-asset read. The assets this reads are payment-logo
@@ -2191,6 +2226,7 @@ function paymentChromeResidueAssertion({
   referencedAssets,
   severity,
   editedAssets = [],
+  starterAssets = [],
 }) {
   const offending = visibleMatches.length > 0 || referencedAssets.length > 0;
   // No residue, but an asset the contract names is still referenced and no
@@ -2210,7 +2246,8 @@ function paymentChromeResidueAssertion({
     ...outcome,
     expected: `no ${method} chrome: method is not in CampaignSpec available_payment_methods/available_express_payment_methods`,
     actual: offending
-      ? `residue found: ${[...visibleMatches.map((match) => match.selector), ...referencedAssets].join(", ")}`
+      ? `residue found: ${[...visibleMatches.map((match) => match.selector), ...referencedAssets].join(", ")}${
+        starterAssets.length ? ` (${starterAssets.join(", ")}: served bytes are the unmodified starter asset)` : ""}`
       : editedOnly
         ? `edited in place: ${editedAssets.join(", ")} still referenced but no longer carries ${method} chrome — confirm the removal was intended, and remove or rename the asset so QA stops keying on the basename`
         : `no ${method} chrome rendered or referenced`,
@@ -2221,6 +2258,7 @@ function paymentChromeResidueAssertion({
       visible_matches: visibleMatches,
       referenced_assets: referencedAssets,
       edited_assets: editedAssets,
+      starter_assets: starterAssets,
       page_url: page.url,
     },
   });
@@ -6288,6 +6326,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   referencedAssetBasenames,
   referencedAssetUrl,
   assetTextCarriesMethod,
+  assetBytesMatchShipped,
   partitionReferencedAssets,
   fetchAssetText,
   readBoundedAssetText,

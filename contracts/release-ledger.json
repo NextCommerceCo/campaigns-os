@@ -3540,6 +3540,27 @@
         }
       ],
       "entry_sha256": "610cfb6dc40b6e02eb027f8e3bc3c4a2a67563bc4f2a1ef1c8689206ac29727a"
+    },
+    {
+      "id": "RL-0096",
+      "sequence": 96,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.10",
+      "changelog_sha256": "5f6ed53cd8db686fd83527c0f6f9ba4287ecc3ba95d4b30dca5b9aec9c0ccc43",
+      "agent_impact": "Browser QA's template-residue:<page>:payment-chrome:<method> assertion now decides untouched-vs-edited for a referenced .svg by hashing the served bytes against the shipped starter hash the shared-commerce brand contract records (default_residue.payment_chrome.asset_sha256, pinned by asset_pin.sha), not by whether the SVG markup names the method. An unmodified starter asset (the shipped upsell-payment-logos.svg names no method in its markup) is residue: status fail at the residue severity, actual \"residue found: <basename> (<basename>: served bytes are the unmodified starter asset)\", and a new evidence.starter_assets[] listing the hash-matched basenames beside referenced_assets[] and edited_assets[]. Before, that asset produced status manual_review with actual \"edited in place: ... no longer carries <method> chrome\" on a page that had never been polished. Different bytes that no longer name the method are still manual_review with the unchanged edited-in-place line; different bytes that still name the method, and any asset that cannot be read (raster, 404, timed-out or oversized read), are still residue. A contract asset with no hash falls back to the markup test. An agent that read manual_review on this assertion as \"the operator already removed the marks\" must now expect fail on an untouched starter strip and dispatch the removal; evidence.starter_assets says which basenames were byte-identical to the starter. No command, flag or schema change; the brand contract gains two optional fields (asset_sha256, asset_pin) that nothing on the supported surface names.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The browser-pass section documents payment-chrome residue: selector visibility, served-bytes hash against the contract's shipped starter hash (untouched = residue with the reason in the row), edited bytes = manual_review, unreadable = residue, no-hash fallback to the markup test."
+        }
+      ],
+      "entry_sha256": "635f56e481456682b94d16845a88e517c835b1e29585bd2db755183efec1bfbe"
     }
   ]
 }

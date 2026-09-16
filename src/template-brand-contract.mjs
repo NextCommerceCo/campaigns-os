@@ -278,6 +278,25 @@ export function paymentChromeArtifacts(chrome, method) {
   return { selectors, assets };
 }
 
+// The shipped bytes of each chrome asset, by basename: `payment_chrome.asset_sha256`
+// keyed by the same path `assets[]` lists, lower-cased hex. Browser QA hashes the
+// bytes a page actually serves against this map, which is what tells an untouched
+// starter strip (residue, whatever its markup says) from one edited in place
+// (manual review). An asset with no entry falls back to the token match in
+// qa-browser. Malformed values are dropped rather than compared: a hash that can
+// never match would read every served copy as edited.
+export function paymentChromeAssetHashes(chrome) {
+  const byBasename = new Map();
+  const entries = isPlainObject(chrome?.asset_sha256) ? Object.entries(chrome.asset_sha256) : [];
+  for (const [asset, digest] of entries) {
+    const basename = String(asset || "").split("/").pop();
+    const hex = String(digest || "").trim().toLowerCase();
+    if (!basename || !/^[0-9a-f]{64}$/.test(hex)) continue;
+    byBasename.set(basename, hex);
+  }
+  return byBasename;
+}
+
 // Pure, static: the markers in rendered checkout HTML that say a payment method
 // shipped. Three sources, in order of authority: the SDK-owned
 // data-next-payment-method attribute every starter-template payment-methods

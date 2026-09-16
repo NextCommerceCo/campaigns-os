@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
-import { forbiddenComputedColors, loadTemplateBrandContract, placeholderTextResidueMatches } from "./template-brand-contract.mjs";
+import {
+  forbiddenComputedColors,
+  loadTemplateBrandContract,
+  paymentChromeAssetHashes,
+  placeholderTextResidueMatches,
+} from "./template-brand-contract.mjs";
 
 const {
   computedStyleResidueAssertions,
@@ -10,6 +17,7 @@ const {
   referencedAssetBasenames,
   referencedAssetUrl,
   assetTextCarriesMethod,
+  assetBytesMatchShipped,
   partitionReferencedAssets,
   fetchAssetText,
   readBoundedAssetText,
@@ -339,9 +347,21 @@ test("demo-asset residue passes when no demo assets survive", () => {
 // upsell-payment-logos.svg and credit-card-flags.svg in place. The basenames
 // stayed referenced, four blockers fired against assets carrying no chrome, and
 // the repair loop deleted a cards-only trust strip that was fine.
+//
+// UNTOUCHED_STRIP is the starter's own upsell-payment-logos.svg, byte for byte
+// (contracts/fixtures/template-residue/, hashed into the shared-commerce
+// contract's payment_chrome.asset_sha256). An earlier fixture carried
+// id="paypal-logo", which the shipped file does not: its PayPal wordmark is bare
+// path data, so a token match reads the untouched starter strip as edited. The
+// hash is what tells them apart, and the tests below have to run against the
+// real bytes or they prove nothing about that.
+// EDITED_STRIP is the same file with one path removed — the smallest edit in
+// place a polish pass can make.
 
-const UNTOUCHED_STRIP = '<svg><g id="paypal-logo"><path d="M0 0"/></g><g id="visa"><path d="M1 1"/></g></svg>';
-const EDITED_STRIP = '<svg><g id="visa"><path d="M1 1"/></g><g id="mastercard"><path d="M2 2"/></g></svg>';
+const UNTOUCHED_STRIP = readFileSync(new URL("../contracts/fixtures/template-residue/upsell-payment-logos.svg", import.meta.url), "utf8");
+const EDITED_STRIP = UNTOUCHED_STRIP.replace(/<path\b[^>]*\/>\s*/, "");
+const sha256 = (text) => createHash("sha256").update(text, "utf8").digest("hex");
+const shippedHashes = paymentChromeAssetHashes(demeter.default_residue.payment_chrome);
 
 // evaluate() receives the bounded-read argument object; the URL is its target.
 function fakePage(bodyByUrl) {
@@ -355,11 +375,40 @@ function fakePage(bodyByUrl) {
   };
 }
 
-test("asset text carries the method only when the mark is still in the bytes", () => {
-  assert.equal(assetTextCarriesMethod(UNTOUCHED_STRIP, "paypal"), true);
+test("the fixture is the shipped starter strip, and the contract hashes every chrome asset", () => {
+  assert.equal(UNTOUCHED_STRIP.length, 16157);
+  assert.equal(sha256(UNTOUCHED_STRIP), "54a8f046ae047a79d1318a98ac808cc61f15ca31cd1a232f7b5577405caa4936");
+  assert.equal(shippedHashes.get("upsell-payment-logos.svg"), sha256(UNTOUCHED_STRIP));
+  assert.notEqual(EDITED_STRIP, UNTOUCHED_STRIP);
+  // Every asset the contract names has a shipped hash, keyed by basename.
+  const chrome = demeter.default_residue.payment_chrome;
+  for (const asset of chrome.assets) assert.match(shippedHashes.get(asset.split("/").pop()) || "", /^[0-9a-f]{64}$/);
+  assert.match(chrome.asset_pin?.sha || "", /^[0-9a-f]{40}$/);
+  // Malformed or missing digests are dropped, never compared.
+  const parsed = paymentChromeAssetHashes({ asset_sha256: { "images/a.svg": "ABC", "images/b.svg": " " + "f".repeat(64) + " ", "c.svg": 12 } });
+  assert.deepEqual([...parsed], [["b.svg", "f".repeat(64)]]);
+  assert.deepEqual([...paymentChromeAssetHashes({})], []);
+  assert.deepEqual([...paymentChromeAssetHashes(null)], []);
+});
+
+test("the shipped strip names no method in its markup, so the token match alone reads it as edited", () => {
+  // This is the defect the hash closes: the wordmark is path data, not text.
+  assert.equal(assetTextCarriesMethod(UNTOUCHED_STRIP, "paypal"), false);
+  assert.equal(assetTextCarriesMethod(UNTOUCHED_STRIP, "klarna"), false);
   assert.equal(assetTextCarriesMethod(EDITED_STRIP, "paypal"), false);
-  // Token compaction matches the contract's own: separators do not hide a mark.
+  // The token match still speaks for an asset that does name the method, and
+  // compaction matches the contract's own: separators do not hide a mark.
+  assert.equal(assetTextCarriesMethod('<svg><g id="paypal-logo"/></svg>', "paypal"), true);
   assert.equal(assetTextCarriesMethod('<svg id="pay_pal-mark"/>', "paypal"), true);
+});
+
+test("served bytes match the shipped hash only when they are the starter's own", () => {
+  const shipped = shippedHashes.get("upsell-payment-logos.svg");
+  assert.equal(assetBytesMatchShipped(UNTOUCHED_STRIP, shipped), true);
+  assert.equal(assetBytesMatchShipped(EDITED_STRIP, shipped), false);
+  assert.equal(assetBytesMatchShipped(`${UNTOUCHED_STRIP}\n`, shipped), false);
+  assert.equal(assetBytesMatchShipped(null, shipped), false);
+  assert.equal(assetBytesMatchShipped(UNTOUCHED_STRIP, undefined), false);
 });
 
 test("referenced asset URL resolves against the page, or is null when absent", () => {
@@ -419,20 +468,56 @@ test("one fetch per URL per page, not one per method", () => {
   });
 });
 
-test("an edited strip is partitioned as edited; an untouched one stays residue", async () => {
+test("the untouched starter strip is residue by its bytes; one path removed is edited; a missing asset is residue", async () => {
   const html = '<img src="images/upsell-payment-logos.svg">';
   const pageUrl = "https://example.test/c/upsell/";
   const assetUrl = "https://example.test/c/upsell/images/upsell-payment-logos.svg";
+  const referencedAssets = ["upsell-payment-logos.svg"];
+
+  // The shipped bytes, served as deployed: residue, and named as the starter
+  // asset so the verdict can say the strip was never touched. Before the hash
+  // this was "edited" — the wordmark is path data, and nothing in the markup
+  // says paypal — and the blocker it exists to raise became manual review.
+  const untouched = await partitionReferencedAssets(fakePage({ [assetUrl]: UNTOUCHED_STRIP }), {
+    html, pageUrl, referencedAssets, method: "paypal", shippedHashes,
+  });
+  assert.deepEqual(untouched, { residue: ["upsell-payment-logos.svg"], edited: [], starter: ["upsell-payment-logos.svg"] });
+
+  // One path removed: not the shipped bytes, and the markup names no method.
+  const edited = await partitionReferencedAssets(fakePage({ [assetUrl]: EDITED_STRIP }), {
+    html, pageUrl, referencedAssets, method: "paypal", shippedHashes,
+  });
+  assert.deepEqual(edited, { residue: [], edited: ["upsell-payment-logos.svg"], starter: [] });
+
+  // Referenced but gone (404 / network): the existing fail-safe path, residue.
+  const missing = await partitionReferencedAssets(fakePage({}), {
+    html, pageUrl, referencedAssets, method: "paypal", shippedHashes,
+  });
+  assert.deepEqual(missing, { residue: ["upsell-payment-logos.svg"], edited: [], starter: [] });
+
+  // Edited bytes that still name the method are residue, not an edit: the
+  // hash only clears an asset the token match would also clear.
+  const stillNamed = await partitionReferencedAssets(fakePage({ [assetUrl]: EDITED_STRIP.replace("<svg", '<svg id="paypal"') }), {
+    html, pageUrl, referencedAssets, method: "paypal", shippedHashes,
+  });
+  assert.deepEqual(stillNamed, { residue: ["upsell-payment-logos.svg"], edited: [], starter: [] });
+});
+
+test("without a shipped hash on record the token match alone decides", async () => {
+  const html = '<img src="images/upsell-payment-logos.svg">';
+  const pageUrl = "https://example.test/c/upsell/";
+  const assetUrl = "https://example.test/c/upsell/images/upsell-payment-logos.svg";
+  const named = '<svg><g id="paypal-logo"><path d="M0 0"/></g></svg>';
+
+  const residue = await partitionReferencedAssets(fakePage({ [assetUrl]: named }), {
+    html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method: "paypal",
+  });
+  assert.deepEqual(residue, { residue: ["upsell-payment-logos.svg"], edited: [], starter: [] });
 
   const edited = await partitionReferencedAssets(fakePage({ [assetUrl]: EDITED_STRIP }), {
-    html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method: "paypal",
+    html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method: "paypal", shippedHashes: new Map(),
   });
-  assert.deepEqual(edited, { residue: [], edited: ["upsell-payment-logos.svg"] });
-
-  const untouched = await partitionReferencedAssets(fakePage({ [assetUrl]: UNTOUCHED_STRIP }), {
-    html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method: "paypal",
-  });
-  assert.deepEqual(untouched, { residue: ["upsell-payment-logos.svg"], edited: [] });
+  assert.deepEqual(edited, { residue: [], edited: ["upsell-payment-logos.svg"], starter: [] });
 });
 
 test("anything we cannot read into stays residue", async () => {
@@ -503,10 +588,18 @@ test("an unedited template strip still blocks, and visible chrome outranks an ed
     visibleMatches: [],
     referencedAssets: ["upsell-payment-logos.svg"],
     editedAssets: [],
+    starterAssets: ["upsell-payment-logos.svg"],
     severity: "blocker",
   });
   assert.equal(stillResidue.status, "fail");
   assert.equal(stillResidue.severity, "blocker");
+  // The operator reading the line learns the strip was never touched, not
+  // merely that its basename is referenced.
+  assert.equal(
+    stillResidue.actual,
+    "residue found: upsell-payment-logos.svg (upsell-payment-logos.svg: served bytes are the unmodified starter asset)"
+  );
+  assert.deepEqual(stillResidue.evidence.starter_assets, ["upsell-payment-logos.svg"]);
 
   // One asset edited, another still carrying the mark: the blocker wins. The
   // downgrade is for a page with nothing left to remove, not a partial cleanup.
@@ -571,11 +664,13 @@ function responseWith(body, { ok = true, contentLength } = {}) {
 const bounded = (overrides = {}) => readBoundedAssetText({ target: "https://example.test/a.svg", timeoutMs: 50, maxBytes: 64, ...overrides });
 
 test("bounded read: a normal small asset comes back whole, edited or unedited", async () => {
+  // The real strip is ~16 KiB; the cap here is generous for it and still far
+  // under the production ceiling, so a whole read is what is being asserted.
   await withFetch(async () => responseWith(streamOf([EDITED_STRIP.slice(0, 20), EDITED_STRIP.slice(20)])), async () => {
-    assert.equal(await bounded({ maxBytes: 1024 }), EDITED_STRIP);
+    assert.equal(await bounded({ maxBytes: 64 * 1024 }), EDITED_STRIP);
   });
   await withFetch(async () => responseWith(streamOf([UNTOUCHED_STRIP])), async () => {
-    assert.equal(await bounded({ maxBytes: 1024 }), UNTOUCHED_STRIP);
+    assert.equal(await bounded({ maxBytes: 64 * 1024 }), UNTOUCHED_STRIP);
   });
 });
 
@@ -687,6 +782,6 @@ test("a timed-out asset stays residue, and the cache still dedupes the URL acros
     partitionReferencedAssets(hung, { html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method, cache, assetBounds: { timeoutMs: 20 } })
   ));
   // The hung page is cut by the outer race, and the cut read is residue, not a pass.
-  for (const result of results) assert.deepEqual(result, { residue: ["upsell-payment-logos.svg"], edited: [] });
+  for (const result of results) assert.deepEqual(result, { residue: ["upsell-payment-logos.svg"], edited: [], starter: [] });
   assert.equal(calls, 1);
 });
