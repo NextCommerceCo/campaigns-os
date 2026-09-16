@@ -2826,6 +2826,22 @@ async function waitForPurchaseDataLayer({
   return purchaseDataLayerProbe(read());
 }
 
+// The two halves of "was an order placed" for the data-layer reading, kept
+// pure so the reachability of every outcome is testable without a browser.
+// A reading is taken when the order carries a reference or the submit click
+// happened; it is recorded when the order is referenced, when a purchase was
+// seen (the order_ref_unknown case), or when the hook itself failed.
+function purchaseDataLayerApplies(order, submitted) {
+  return expectedOrderReferences(order).length > 0 || submitted === true;
+}
+
+function purchaseDataLayerRecord(order, { probe = null, probeError = null } = {}) {
+  const referenced = expectedOrderReferences(order).length > 0;
+  const purchaseSeen = (probe?.purchases?.length ?? 0) > 0;
+  if (!referenced && !purchaseSeen && !probeError) return null;
+  return assessPurchaseDataLayer(probe, order, { probeError });
+}
+
 async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runId, options = {}) {
   const normalizedPlan = normalizeTestOrderPlan(plan, args);
   const planArgs = argsForPlan(args, normalizedPlan);
@@ -2867,10 +2883,20 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
       if (receiptRecognized) result.receipt_analytics_capture_error = analyticsAttachError;
     }
     // The order's dl_purchase across every page after checkout (#325),
-    // recorded whenever the path actually placed an order and judged by its
-    // own assertion in the runner loop. Not a checkout failure and never moves
+    // recorded whenever the path placed an order and judged by its own
+    // assertion in the runner loop. Not a checkout failure and never moves
     // the ladder. A hook that could not attach is recorded as unmeasured.
-    if (result?.order && expectedOrderReferences(result.order).length) {
+    //
+    // "Placed" is read two ways, because the platform's answer can be
+    // missing: an order reference (number or ref id) proves it, and so does
+    // a submit that reached the click. A path that never submitted has no
+    // order to report on. When it submitted but no reference came back, the
+    // reading is still taken — a dl_purchase there is the order_ref_unknown
+    // case, an order the funnel reported that the run cannot name — but a
+    // silent data layer beside a reference-less order is not recorded: it
+    // would stack an `absent` blocker on a checkout failure the
+    // browser-test-order assertion already reports.
+    if (result?.order && purchaseDataLayerApplies(result.order, submitState.reserved)) {
       let probe = null;
       let probeError = analyticsAttachError ? "the data-layer hook could not attach to the page" : null;
       if (analyticsCapture && !probeError) {
@@ -2886,9 +2912,12 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
       } else if (!probeError) {
         probeError = "no data-layer hook was attached";
       }
-      result.order.data_layer = assessPurchaseDataLayer(probe, result.order, { probeError });
-      result.order.evidence = result.order.evidence || {};
-      result.order.evidence.data_layer = probe ?? { error: probeError };
+      const record = purchaseDataLayerRecord(result.order, { probe, probeError });
+      if (record) {
+        result.order.data_layer = record;
+        result.order.evidence = result.order.evidence || {};
+        result.order.evidence.data_layer = probe ?? { error: probeError };
+      }
     }
     // Whether this attempt reached the submit click, recorded on every result
     // shape the runner can return. The classifier trusts this over the ladder.
@@ -6348,6 +6377,8 @@ export const __qaBrowserTestHooks = Object.freeze({
   journeyAnalyticsAttempt,
   receiptAnalyticsAttempt,
   waitForPurchaseDataLayer,
+  purchaseDataLayerApplies,
+  purchaseDataLayerRecord,
   stampTestOrderPlan,
   formatStepEvent,
   hostedRedirectInfo,

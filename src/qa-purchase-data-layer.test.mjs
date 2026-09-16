@@ -252,3 +252,28 @@ test("waitForPurchaseDataLayer gives up at the settle window or the deadline, wh
   assert.equal(probe.purchases.length, 0);
   assert.equal(probe.measured, true);
 });
+
+// --- the runner's gate ------------------------------------------------------
+
+test("the reading is taken for a referenced order or a clicked submit, never for a path that did not submit", () => {
+  const { purchaseDataLayerApplies } = __qaBrowserTestHooks;
+  assert.equal(purchaseDataLayerApplies(ORDER, false), true);
+  assert.equal(purchaseDataLayerApplies({ next_order_id: null, ref_id: null }, true), true);
+  assert.equal(purchaseDataLayerApplies({ next_order_id: null, ref_id: null }, false), false);
+});
+
+test("a submitted order with no reference is recorded only when a purchase was seen or the hook failed", () => {
+  const { purchaseDataLayerRecord } = __qaBrowserTestHooks;
+  const unreferenced = { next_order_id: null, ref_id: null };
+  // order_ref_unknown is reachable from the runner: the funnel reported an
+  // order the run cannot name.
+  const seen = purchaseDataLayerRecord(unreferenced, { probe: purchaseDataLayerProbe(raw([push(UPSELL, purchase("100234"))])) });
+  assert.equal(seen.outcome, "order_ref_unknown");
+  // A silent data layer beside a reference-less order is not a second blocker
+  // on top of the checkout failure browser-test-order already reports.
+  assert.equal(purchaseDataLayerRecord(unreferenced, { probe: purchaseDataLayerProbe(raw([push(CHECKOUT, { event: "dl_user_data" })])) }), null);
+  // Unless the instrument itself failed, which is always reported.
+  assert.equal(purchaseDataLayerRecord(unreferenced, { probe: null, probeError: "the data-layer hook could not attach to the page" }).outcome, "unmeasured");
+  // A referenced order is always recorded, silent or not.
+  assert.equal(purchaseDataLayerRecord(ORDER, { probe: purchaseDataLayerProbe(raw([])) }).outcome, "absent");
+});
