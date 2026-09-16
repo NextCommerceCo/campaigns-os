@@ -36,6 +36,87 @@ Notable supported-surface changes are recorded here.
   "Reconcile the packet and the report before treating either depth as
   proved." `docs/qa-and-test-orders.md` and `docs/build-packet.md` describe
   the setter and the drift warning.
+## [1.29.0+agent.4] - 2026-09-16
+
+### Changed
+
+- `run-record` with no `--run-id` and no active run session re-emits the most
+  recent Run Record for this packet's campaign under that record's `run_id`
+  instead of minting a new one (#328). `run end` clears the session, so every
+  run-record after close minted — the closeout action `next` prints at stage
+  `done`, the command a session-ending `qa run` prints, and any re-emit after
+  fixing a sidecar each filed a second Run Record for a run that already had
+  one. Resolution is now `--run-id` > the active session > the newest record
+  on disk whose `identity.map_id` and `identity.campaign_slug` match the packet
+  (the same match closeout recognition uses) > a fresh id; a record whose remit
+  landed stays final and is left as written, exactly as an explicit `--run-id`
+  over it already did. The `--json` summary carries `run_id_source`
+  (`explicit` | `session` | `latest_record` | `minted`) and the text output
+  prints `Run ID: <id> (<source>)`; a `latest_record` run first prints `Run ID
+  <id> is the most recent Run Record for this campaign; re-emitting it in
+  place. Pass --new-run to start a new run under a fresh id, or --list to see
+  every record for this packet.` The source rides the command's envelope only;
+  the Run Record schema is unchanged.
+- New `run-record --new-run` mints a fresh `run_id` regardless of what is on
+  disk (refused beside `--run-id`: `--new-run and --run-id are exclusive`).
+  `next` puts it on the required `run_record_closeout` command when the record
+  it judged `stale_predates_evidence` or `outdated_artifacts` is the newest
+  one for the campaign, since the plain command would now re-emit that record
+  in place; the description names the superseded id. With no matching record
+  (`no_record`, `foreign_campaign`) the plain command is printed and mints on
+  its own.
+- New `run-record --list` prints, newest first, every Run Record on disk for
+  this packet's campaign — `run_id`, `created_at`, `remit_state`,
+  `remit_result`, `remit_endpoint`, `record_path` — then the id a plain run
+  would use and its source, and assembles, writes and sends nothing, like
+  `--no-write` (`list: true`, `written: false`, `remit.sent: false` in
+  `--json`; the text output ends `List only (--list). No record written, no
+  remit.`).
+
+## [1.29.0+agent.3] - 2026-09-16
+
+### Changed
+
+- `prepare-build` records `assembly.commerce_catalog.path: null` when the
+  catalog in use is the toolkit's own `contracts/commerce-surface-catalog.json`
+  (the default), instead of a packet-relative path that climbs into whichever
+  checkout ran the command (`../../../campaigns-os/contracts/…`). The catalog
+  ships with the toolkit, so a null path resolves to the running toolkit's
+  copy on every machine and under `npx campaigns-os` (#324). An explicit
+  `--commerce-catalog <path>` is still recorded relative to the packet.
+- Doctor and `qa run` read a null `assembly.commerce_catalog.path` as the
+  running toolkit's catalog. A recorded path that does not exist but whose
+  file name is `commerce-surface-catalog.json` (a packet prepared before this
+  change, moved to another machine) also resolves to the running toolkit's
+  catalog: doctor no longer blocks with
+  `[assembly.commerce_catalog.path] Commerce catalog is required but not found.`
+  and instead prints the ready line `Commerce catalog resolved to the running
+  toolkit's copy; the packet's recorded path <path> does not exist here (it
+  names the checkout that ran prepare-build). Re-run prepare-build to clear
+  the machine-local path.` A dead path with any other file name still blocks.
+- `docs/build-packet.md` gains a Commerce Catalog section describing the three
+  path states (null, operator path, stale machine-local path) and
+  `examples/build-packet.basic.json` carries `path: null`.
+
+## [1.29.0+agent.2] - 2026-09-16
+
+### Changed
+
+- Spec-hash identity is compared one way everywhere (#328): `src/spec-identity.mjs`
+  now owns `normalizeSpecHash` (trim, lower-case, strip one leading `sha256:`,
+  empty to `null`), `specHashesMatch` (both sides present and equal after
+  normalisation; two missing hashes never match) and `specHashOf` (the
+  `spec_hash` / `spec_identity.spec_hash` lookup). The Commercial Journey
+  `deriveState` freshness check, the sidecar-bundle `spec_hash` and
+  `spec_material_hash` identity checks, and the Commercial Journey and QA
+  parity report `spec_hash` fields all go through it. A calculation whose
+  `spec_hash` differs from the Map's only by prefix, hex case or surrounding
+  whitespace is now `Exact` instead of `Stale`, and a sidecar bundle whose
+  producers spell the same hash differently no longer reports
+  `bundle.identity.spec_hash_mismatch` / `spec_material_hash_mismatch`. Other
+  identity fields (`map_id`, slugs, paths) keep their exact compare. The
+  module stays internal this release; a package export lands with the next
+  supported-surface bump.
 
 ## [1.29.0+agent.1] - 2026-09-16
 

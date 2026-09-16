@@ -44,7 +44,7 @@ import {
 } from "../campaign-spec/dist/index.js";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { probeRouteUrls, ROUTE_PROBE_DEFAULT_TIMEOUT_MS } from "./qa-route-probe.mjs";
-import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
+import { resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
@@ -693,9 +693,12 @@ export function resolveQaInputsFromSite(args) {
 
 function loadCommerceStructureContract({ packet, packetPath, templateFamily }) {
   if (!packet || !packetPath || !templateFamily) return null;
-  const catalogPathValue = packet.assembly?.commerce_catalog?.path;
-  if (!catalogPathValue) return { family: templateFamily, status: "missing_catalog_path", pages: {} };
-  const catalogPath = resolveFromFile(packetPath, catalogPathValue);
+  // A null path is the toolkit's own catalog; a recorded path that is dead
+  // here but names the catalog file also falls back to it (see
+  // resolvePacketCommerceCatalogPath).
+  const catalogResolution = resolvePacketCommerceCatalogPath(packetPath, packet.assembly?.commerce_catalog);
+  const catalogPathValue = catalogResolution.recorded;
+  const catalogPath = catalogResolution.path;
   if (!catalogPath || !existsSync(catalogPath)) return { family: templateFamily, status: "missing_catalog", pages: {} };
   try {
     const catalog = resolveCommerceCatalog(catalogPath);
