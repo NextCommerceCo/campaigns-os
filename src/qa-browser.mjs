@@ -195,7 +195,11 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
   const creationBudget = options.creationBudget || createOrderCreationBudget({ plans, args });
   const runSingle = options.runSingleTestOrder || runSingleBrowserTestOrder;
   const recover = options.recoverCreatedOrder || recoverCreatedOrder;
-  const attemptOptions = { ...options, creationBudget };
+  // One selector-probe cache per run, created here and nowhere else: the
+  // checkout is probed for a selection surface once per checkout URL, and
+  // every later path reads the answer.
+  const selectorProbeCache = createSelectorProbeCache();
+  const attemptOptions = { ...options, creationBudget, selectorProbeCache };
   const receiptAnalytics = {
     plannedPlanIds: plans.map((plan) => planId(plan)),
     attempts: [],
@@ -2870,6 +2874,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
         args: planArgs,
         deadline: orderDeadline,
         reserveOrderCreation,
+        selectorProbeCache: options.selectorProbeCache,
       }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
       `order-path:${planId(normalizedPlan)}`,
@@ -2928,7 +2933,7 @@ function stablePrivateCaptureError(value) {
   return projectAnalyticsCaptureError(value, { fallbackKind: "unreadable" });
 }
 
-async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null }) {
+async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null, selectorProbeCache = null }) {
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
@@ -2942,9 +2947,13 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   // carries none was filled upstream: the runner enters through the funnel's
   // landing page, clicks the SDK add-to-cart control, and lets the SDK land on
   // checkout. `opened_checkout` then confirms the arrival instead of
-  // re-navigating, which is what would throw the cart away.
+  // re-navigating, which is what would throw the cart away. The selector
+  // probe is the checkout's first load for the run, and the only one on this
+  // path when the checkout selects for itself: `opened_checkout` reuses the
+  // page the probe left there rather than loading the same URL a second time,
+  // which would fire the SDK's page-view events twice into the same capture.
   const entry = await ladder.run(CART_ENTRY_STEP, () => enterCartViaLanding({
-    page, checkoutPage, entryPage, selectedPackages, args, budget,
+    page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache,
   }), { timeoutMs: budget() });
   const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
   // Responses captured from here on belong to the checkout the ladder drives.
@@ -2952,13 +2961,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   // made before the hand-off.
   const checkoutResponseOffset = events.responses.length;
 
-  await ladder.run("opened_checkout", async () => {
-    if (enteredViaLanding) {
-      await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
-      return "arrived from the entry page via SDK navigation; not re-opened";
-    }
-    await gotoAndSettle(page, checkoutPage.url, args);
-  }, { timeoutMs: budget() });
+  await ladder.run("opened_checkout", () => openCheckoutForPath({ page, checkoutPage, entry, args }), { timeoutMs: budget() });
   await ladder.run("selected_bundle", async () => {
     // The requested package was selected on the entry page, where the cards
     // live; checkout renders none, so re-running strict selection here would
@@ -3183,19 +3186,81 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   };
 }
 
+// Whether a page URL is the checkout the path drives; query order and
+// trailing slashes do not make it a different page.
+function checkoutUrlPredicate(checkoutUrl) {
+  const canonical = canonicalHttpUrl(String(checkoutUrl));
+  return (value) => canonicalHttpUrl(String(value)) === canonical;
+}
+
+// The per-run memory of what the selector probe found on each checkout URL.
+// A `tiers:*` plan drives the same checkout once per tier; the probe answers
+// the same question every time, so it is asked once and the answer is reused.
+// Only a probe whose page-side evaluation resolved is remembered: a read that
+// failed says nothing about the page and must not decide the later paths.
+function createSelectorProbeCache() {
+  const surfaces = new Map();
+  return {
+    get: (checkoutUrl) => surfaces.get(canonicalHttpUrl(String(checkoutUrl))) || null,
+    set: (checkoutUrl, surface) => { surfaces.set(canonicalHttpUrl(String(checkoutUrl)), surface); },
+  };
+}
+
+// The `opened_checkout` step body. The page is already on the checkout when
+// the SDK navigated it there from the entry page, or when the selector probe
+// loaded it and found a selection surface; either way a second load of the
+// same URL is what is avoided. Anywhere else (a cached probe answer skipped the
+// load; a fresh page) the checkout is opened here, once.
+async function openCheckoutForPath({ page, checkoutPage, entry, args }) {
+  const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
+  if (enteredViaLanding) {
+    await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+    return "arrived from the entry page via SDK navigation; not re-opened";
+  }
+  if (checkoutUrlPredicate(checkoutPage.url)(safePageUrl(page))) {
+    return "already on checkout from the selector probe; not re-opened";
+  }
+  await gotoAndSettle(page, checkoutPage.url, args);
+  return null;
+}
+
 // The entry step body. Resolves to `{ skip }` when the checkout selects for
 // itself, to `{ entered: true, ... }` when the runner came in through the entry
 // page, and throws a coded error (never a bare timeout) when it cannot.
-async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget }) {
+async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache = null }) {
   // Probe the checkout first: whether it carries a selection surface is a fact
   // about the rendered page, not about the spec (the spec cannot say it yet —
-  // that is the design half of #206).
-  await gotoAndSettle(page, checkoutPage.url, args);
-  const surface = await page.evaluate(checkoutSelectionSurfaceScript()).catch(() => ({ count: 0, kinds: {}, excluded: 0 }));
+  // that is the design half of #206). The probe's load is the checkout's only
+  // load before the entry page, and the run remembers the answer per checkout
+  // URL so later paths of the same plan do not load the checkout to ask again.
+  //
+  // The probe's outcome is tagged, never collapsed: a page-side read that
+  // failed (context destroyed, navigation in flight) is `failed` with the
+  // error, not the same empty shape a real read of a selector-less checkout
+  // returns. The path still proceeds to the entry page, as it did before, but
+  // the evidence says the read broke, and the failure is never cached.
+  const cached = selectorProbeCache?.get(checkoutPage.url) || null;
+  let surface = cached;
+  let probe = cached ? "reused" : "loaded";
+  let probeError = null;
+  if (!surface) {
+    await gotoAndSettle(page, checkoutPage.url, args);
+    const probed = await page.evaluate(checkoutSelectionSurfaceScript())
+      .then((value) => ({ value }), (error) => ({ value: null, error: error?.message || String(error) }));
+    if (probed.value) {
+      surface = probed.value;
+      selectorProbeCache?.set(checkoutPage.url, probed.value);
+    } else {
+      surface = { count: 0, kinds: {}, excluded: 0 };
+      probe = "failed";
+      probeError = probed.error || "unknown error";
+    }
+  }
+  const probeEvidence = { selection_surface_probe: probe, ...(probeError ? { selection_surface_probe_error: probeError } : {}) };
   if (surface.count > 0) {
     return {
-      skip: `checkout carries its own package selection surface (${summarizeSelectionSurface(surface)}); cart is entered on checkout`,
-      evidence: { checkout_selection_surface: surface },
+      skip: `checkout carries its own package selection surface (${summarizeSelectionSurface(surface)}); cart is entered on checkout${cached ? " (probe answer reused from an earlier path of this run)" : ""}`,
+      evidence: { checkout_selection_surface: surface, ...probeEvidence },
     };
   }
   if (!entryPage?.url) {
@@ -3224,7 +3289,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   // The SDK owns the navigation (data-next-url, or the link the SDK reads
   // forcePackageId from on arrival). Waiting for the URL is what proves the
   // hand-off happened; a goto here would be the runner faking it.
-  const atCheckout = (value) => canonicalHttpUrl(String(value)) === canonicalHttpUrl(checkoutPage.url);
+  const atCheckout = checkoutUrlPredicate(checkoutPage.url);
   const navigationTimeout = Math.max(1000, Math.min(budget(), numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS)));
   await page.waitForURL((url) => atCheckout(url.toString()), { timeout: navigationTimeout }).catch(() => {
     throw codedError(
@@ -3250,6 +3315,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
       sdk_ready: sdkReady,
       arrived_url: redactUrlQuery(safePageUrl(page)),
       checkout_selection_surface: surface,
+      ...probeEvidence,
     },
   };
 }
@@ -6281,6 +6347,9 @@ export const __qaBrowserTestHooks = Object.freeze({
   formatStepEvent,
   hostedRedirectInfo,
   redactUrlQuery,
+  enterCartViaLanding,
+  openCheckoutForPath,
+  createSelectorProbeCache,
   RESIDUE_PAGE_TYPES,
   computedStyleResidueAssertions,
   logoResidueAssertion,
