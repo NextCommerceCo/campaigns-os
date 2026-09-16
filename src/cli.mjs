@@ -23,7 +23,7 @@ import { basename, delimiter, dirname, extname, isAbsolute, join, relative, reso
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
-import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, parseOrderPathDepthFlag } from "./proof-policy.mjs";
+import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
@@ -4155,15 +4155,12 @@ function validateProofPolicy(packet, warnings, ready, { report = null, packetPat
 }
 
 // The packet's declared order-path depth beside the report's mirror when the
-// two disagree (case-insensitively), else null. One comparison for doctor,
-// the coverage assessment and `next`.
+// two disagree, else null. The comparison itself is the leaf's
+// orderPathDepthsDisagree, which `next` also asks of a coverage result.
 function orderPathDepthDrift(packet, report) {
   const packetDepth = optionalString(packet?.qa?.proof_policy?.order_path_depth);
   const reportDepth = optionalString(report?.proof_policy?.order_path_depth);
-  if (packetDepth && reportDepth && packetDepth.toLowerCase() !== reportDepth.toLowerCase()) {
-    return { packet: packetDepth, report: reportDepth };
-  }
-  return null;
+  return orderPathDepthsDisagree(packetDepth, reportDepth) ? { packet: packetDepth, report: reportDepth } : null;
 }
 
 function validateBuildBrief(packet, packetPath, spec, context, errors, warnings, ready) {
@@ -8879,18 +8876,20 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     // new block on a campaign that was already finished.
     if (purchaseProof?.state === "unknown") {
       const depths = purchaseProof.declared_depths;
-      const drift = depths?.packet && depths?.report && depths.packet.toLowerCase() !== depths.report.toLowerCase()
+      const drift = orderPathDepthsDisagree(depths?.packet, depths?.report)
         ? { packetDepth: depths.packet, reportDepth: depths.report }
         : null;
       if (drift) {
         // The packet and its report mirror disagree: the action IS the
         // reconciling command (doctor's warning names the same one), not a
-        // manual step that leaves the operator to find it.
+        // manual step that leaves the operator to find it. Rendered once and
+        // handed to both the action and its prose.
+        const command = requiredActionText(orderPathDepthReconcileAction(drift), { packetPath });
         push(
           "purchase_proof_unknown",
           "command",
-          requiredActionText(orderPathDepthReconcileAction(drift), { packetPath }),
-          `Purchase-proof coverage is unknown for this run: ${orderPathDepthDriftText({ ...drift, packetPath })} ${describeDeclaredDepth(purchaseProof)}; once they agree, re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
+          command,
+          `Purchase-proof coverage is unknown for this run: ${orderPathDepthDriftText({ ...drift, command })} ${describeDeclaredDepth(purchaseProof)}; once they agree, re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
         );
       } else {
         push(

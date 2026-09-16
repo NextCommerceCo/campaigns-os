@@ -15,6 +15,7 @@ import {
   ORDER_PATH_DEPTH_DRIFT_CODE,
   orderPathDepthDriftText,
   orderPathDepthReconcileAction,
+  orderPathDepthsDisagree,
   parseOrderPathDepthFlag,
 } from "./proof-policy.mjs";
 import { assessPurchaseProofCoverage } from "./cli.mjs";
@@ -53,8 +54,26 @@ test("the setter accepts exactly off, common and full", () => {
     assert.equal(parseOrderPathDepthFlag({ "order-path-depth": depth }), depth);
   }
   assert.equal(parseOrderPathDepthFlag({}), null, "an absent flag is not a value");
+  // Case is ignored on input and the canonical lower-case form is stored,
+  // matching the case-insensitive drift comparison.
+  assert.equal(parseOrderPathDepthFlag({ "order-path-depth": "Off" }), "off");
+  assert.equal(parseOrderPathDepthFlag({ "order-path-depth": " FULL " }), "full");
+  assert.throws(() => parseOrderPathDepthFlag({ "order-path-depth": "Tiers" }), /unsupported --order-path-depth "Tiers"\. Accepted values: off, common, full\./);
   assert.throws(() => parseOrderPathDepthFlag({ "order-path-depth": true }, { command: "prepare-build" }), /prepare-build: --order-path-depth needs a value\. Accepted values: off, common, full\./);
   assert.throws(() => parseOrderPathDepthFlag({ "order-path-depth": "tiers" }), /qa policy set: unsupported --order-path-depth "tiers"\. Accepted values: off, common, full\./);
+});
+
+test("one predicate says whether the packet and the report disagree", () => {
+  assert.equal(orderPathDepthsDisagree("off", "common"), true);
+  assert.equal(orderPathDepthsDisagree("common", "COMMON"), false, "case is ignored");
+  assert.equal(orderPathDepthsDisagree("common", null), false, "an absent side is not a disagreement");
+  assert.equal(orderPathDepthsDisagree("", "common"), false);
+  assert.equal(orderPathDepthsDisagree(undefined, undefined), false);
+});
+
+test("the drift text carries a pre-rendered command verbatim when one is handed in", () => {
+  const text = orderPathDepthDriftText({ packetDepth: "off", reportDepth: "common", command: "npx campaigns-os qa policy set --packet p.json --order-path-depth off" });
+  assert.match(text, /`npx campaigns-os qa policy set --packet p\.json --order-path-depth off`/);
 });
 
 test("the drift text names the reconciling command once, for doctor, next and the coverage reason alike", () => {

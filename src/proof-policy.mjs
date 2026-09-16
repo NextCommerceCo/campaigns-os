@@ -22,10 +22,21 @@ export function isOrderPathDepth(value) {
   return typeof value === "string" && ORDER_PATH_DEPTHS.includes(value);
 }
 
+// The one spelling of "the packet and the report disagree": both present and
+// different once case is ignored. `orderPathDepthDrift` (doctor and the
+// coverage assessment) and the `next` action branch both ask this.
+export function orderPathDepthsDisagree(packetDepth, reportDepth) {
+  return typeof packetDepth === "string" && typeof reportDepth === "string"
+    && packetDepth.trim() !== "" && reportDepth.trim() !== ""
+    && packetDepth.toLowerCase() !== reportDepth.toLowerCase();
+}
+
 // `--order-path-depth <off|common|full>`, validated with the other argv checks
 // of whichever command carries it (`command` names it in the error). A bare
 // flag parses as `true`; that is an operator's explicit intent with no value,
-// so it is refused rather than silently defaulted. Returns null when the flag
+// so it is refused rather than silently defaulted. Case is ignored on input
+// and the lower-case canonical form is what gets stored (`Off` writes `off`),
+// matching the case-insensitive drift comparison. Returns null when the flag
 // is absent.
 export function parseOrderPathDepthFlag(args, { command = "qa policy set" } = {}) {
   const raw = args?.[ORDER_PATH_DEPTH_FLAG];
@@ -34,9 +45,10 @@ export function parseOrderPathDepthFlag(args, { command = "qa policy set" } = {}
   if (raw === true || raw === null || String(raw).trim() === "") {
     throw new Error(`${command}: --${ORDER_PATH_DEPTH_FLAG} needs a value. ${accepted}`);
   }
-  const value = String(raw).trim();
+  const typed = String(raw).trim();
+  const value = typed.toLowerCase();
   if (!isOrderPathDepth(value)) {
-    throw new Error(`${command}: unsupported --${ORDER_PATH_DEPTH_FLAG} ${JSON.stringify(value)}. ${accepted}`);
+    throw new Error(`${command}: unsupported --${ORDER_PATH_DEPTH_FLAG} ${JSON.stringify(typed)}. ${accepted}`);
   }
   return value;
 }
@@ -60,8 +72,11 @@ export function orderPathDepthReconcileAction({ packetDepth = null, reportDepth 
 
 // The text doctor's warning, the coverage reason and the `next` action all
 // carry for that state: the description, then the runnable command with the
-// packet substituted (or the bare template when no packet path is known).
-export function orderPathDepthDriftText({ packetDepth = null, reportDepth = null, packetPath = null } = {}) {
+// packet substituted (or the bare template when no packet path is known). A
+// caller that already rendered the command (to publish it as the action's
+// `command`) passes it in, so the prose and the action carry one string.
+export function orderPathDepthDriftText({ packetDepth = null, reportDepth = null, packetPath = null, command = null } = {}) {
   const action = orderPathDepthReconcileAction({ packetDepth, reportDepth });
-  return `${action.description} Reconcile them with \`${requiredActionText(action, { packetPath })}\`, which writes the packet field and refreshes the report mirror together.`;
+  const rendered = typeof command === "string" && command ? command : requiredActionText(action, { packetPath });
+  return `${action.description} Reconcile them with \`${rendered}\`, which writes the packet field and refreshes the report mirror together.`;
 }

@@ -3548,7 +3548,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.29.0+agent.5",
-      "changelog_sha256": "57bc0c0d15398e0622ea4795a9cd7e98fa2030493a79e40259454e03d369adac",
+      "changelog_sha256": "026307a39d1976e8c1df5b41bb170a99ded6a6f515e513d4d2cef809bba4dba7",
       "agent_impact": "qa.proof_policy.order_path_depth gains a setter. prepare-build, start and build accept --order-path-depth <off|common|full> and seed the packet with it (default unchanged: common); qa policy set accepts the same flag, writes the packet field, and when the target carries an assembly report refreshes report.proof_policy.order_path_depth in the same run (the doctor sidecar is stamped stale; changed[] lists report.proof_policy.order_path_depth beside order_path_depth and the JSON result carries report_mirror { report_path, written, order_path_depth }; the policy snapshot gains qa.order_path_depth). A bare flag or any value outside off/common/full is refused before anything is written, with the accepted list in the error. Doctor emits a new advisory warning qa.proof_policy.order_path_depth_drift (never an error) when the packet's declared depth and the report mirror disagree; its message, the assessPurchaseProofCoverage reason and the next purchase_proof_unknown action carry one text naming the reconciling command qa policy set --packet <packet> --order-path-depth <packet value>. That next action changes from kind manual with command null to kind command with the runnable command, and its description no longer reads 'Reconcile the packet and the report before treating either depth as proved.' A consumer matching that sentence must match the command instead. With off on both sides a qa run --test-order off pass reaches next: done. No schema change: the field was already a free string.",
       "compatibility": "compatible",
       "migration": "none. A target whose packet was hand-edited to a different depth than its report mirror now draws the drift warning; run the command it names once to reconcile.",
@@ -3590,7 +3590,7 @@
           "summary": "The qa.proof_policy section names how order_path_depth is seeded and set, and the drift warning."
         }
       ],
-      "entry_sha256": "59f6353fc4d66c169757976ae0486da8b3e1c6e8eed0f4ac8b71acc22d3eec0c"
+      "entry_sha256": "590db1636dd755e35d55e6be23b0265c1d26dd097b79d176feb65bf239ce48f4"
     }
   ]
 }

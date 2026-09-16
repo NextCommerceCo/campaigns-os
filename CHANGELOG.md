@@ -9,7 +9,8 @@ Notable supported-surface changes are recorded here.
 - `--order-path-depth <off|common|full>` sets `qa.proof_policy.order_path_depth`,
   which until now had no setter: `prepare-build`/`start`/`build` seed the
   packet with it (default still `common`), and `qa policy set
-  --order-path-depth <depth>` changes it later. One accepted-values set; a
+  --order-path-depth <depth>` changes it later. One accepted-values set,
+  matched case-insensitively and stored lower-case (`Off` writes `off`); a
   bare flag or any other value is refused before anything is written
   (`qa policy set: unsupported --order-path-depth "tiers". Accepted values:
   off, common, full.`). `qa policy set` also refreshes the assembly report's
