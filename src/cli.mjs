@@ -25,8 +25,8 @@ import { shellToken } from "./shell-token.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
-import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
-import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
+import { commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, qaGatePassedForCurrentBuild, recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { SESSION_ENDING_DISPOSITIONS, summarizePlaceholderTextGate, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
   appendFinding,
@@ -166,6 +166,7 @@ import {
   collectRenderedHtmlFiles,
   evaluateProofAssets,
   attestationBlockers,
+  visibleText,
   BRIEF_PAYLOAD_REL_PATH,
 } from "./content-residue.mjs";
 import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
@@ -214,6 +215,7 @@ import {
 import {
   assemblySourcePackageFingerprintMissing,
   assessAssemblySourcePackageFreshnessWaivers,
+  currentBuildFingerprint,
   evaluatePolishGate,
 } from "./polish-gate.mjs";
 import {
@@ -799,6 +801,10 @@ export function recordQaStageOutcome(args, result) {
       // The producer knows its own run id and must restate it, or the stage
       // keeps a previous run's identity beside this run's status and outputs.
       identity: { verdict_run_id: optionalString(verdict.run_id) },
+      // Which build this verdict judged, and the gates whose browser outcome
+      // the doctor's static scan defers to (qaGatePassedForCurrentBuild). A
+      // gate that never ran is left out, so silence never reads as a pass.
+      evidence: qaStageGateEvidence(verdict, report),
       // Counts-only: never order ids, refs, emails or URLs (see
       // summarizePurchaseProof). This is what lets `next` tell a real purchase
       // path from a `--test-order off` diagnostic.
@@ -827,6 +833,14 @@ export function recordQaStageOutcome(args, result) {
     process.stderr.write(`[campaigns-os] QA stage ledger update skipped: ${error.message}\n`);
     return false;
   }
+}
+
+function qaStageGateEvidence(verdict, report) {
+  const gates = {};
+  const placeholderText = summarizePlaceholderTextGate(verdict);
+  if (placeholderText) gates[QA_GATE_PLACEHOLDER_TEXT_RESIDUE] = placeholderText;
+  if (!Object.keys(gates).length) return null;
+  return { source_build_fingerprint: currentBuildFingerprint(report), gates };
 }
 
 // What the auto-end says when the attempt does NOT end the session. Every
@@ -6766,7 +6780,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     // H3.1/H3.2: pre-QA warnings off the family brand contract. Doctor warns
     // (the fix happens during build/polish); browser QA enforces the same
     // placeholder-text terms as a blocker in the verdict.
-    validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived);
+    validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived, { report: buildState.report });
     validateBuiltDemoAssetFidelity(brandContract, warnings, ready, derived);
   } else {
     for (const value of contract.frontmatter?.demoOnlyValues || []) {
@@ -7031,31 +7045,43 @@ function validateBuiltContractResidue(contract, warnings, ready, derived, spec =
 // H3.1 (doctor surface): literal placeholder TEXT in built HTML. Word-boundary
 // matched off the family brand contract's placeholder_text_residue.terms, so
 // the doctor warning and the browser QA blocker key off one declared term set.
-// Scans rendered HTML (not the includes/layouts the family ships) — broad net
-// pre-QA; the browser gate narrows to visible text and blocks.
-export function validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived) {
+// Scans the VISIBLE text of each page (not the includes/layouts the family
+// ships), the same surface the browser gate reads: an `<input
+// placeholder="Placeholder">` hint, a data-* hook, a comment or a script
+// string is not rendered copy and must not warn where QA would pass.
+//
+// `report`: once QA has recorded this gate as passed on the current build
+// (qaGatePassedForCurrentBuild), the browser's verdict outranks this static
+// approximation — any remaining static hit demotes to a ready line instead of
+// a warning, so `next` stops asking for a fix QA already cleared. A rebuild
+// changes the fingerprint and the warning returns until QA runs again.
+export function validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived, { report = null } = {}) {
   const config = placeholderTextResidueConfig(brandContract);
   if (!config) return;
   const targetOutputDir = derived.target_output_dir;
   if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return;
   const hits = collectPlaceholderTextResidueMatches(targetOutputDir, config.terms);
-  if (hits.length) {
-    const terms = [...new Set(hits.map((hit) => hit.label))].join(", ");
-    addIssue(
-      warnings,
-      "template_contract.placeholder_text_residue",
-      `Assembly is recorded complete, but built output still contains literal template placeholder text (${terms}): ${summarizeCopyMatches(hits)}. Replace with CampaignSpec/design copy; browser QA blocks on these terms.`,
-    );
-  } else {
+  if (!hits.length) {
     ready.push("Built target output has no literal template placeholder text");
+    return;
   }
+  const terms = [...new Set(hits.map((hit) => hit.label))].join(", ");
+  if (report && qaGatePassedForCurrentBuild(report, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: currentBuildFingerprint(report) })) {
+    ready.push(`Static scan still sees placeholder-term text (${terms}: ${summarizeCopyMatches(hits)}), but the browser residue gate passed on this build; QA's rendered-text verdict stands.`);
+    return;
+  }
+  addIssue(
+    warnings,
+    "template_contract.placeholder_text_residue",
+    `Assembly is recorded complete, but built output still contains literal template placeholder text (${terms}): ${summarizeCopyMatches(hits)}. Replace with CampaignSpec/design copy; browser QA blocks on these terms.`,
+  );
 }
 
 function collectPlaceholderTextResidueMatches(root, terms) {
   const matches = [];
   for (const file of collectHtmlFiles(root)) {
     if (file.path.includes("_includes/") || file.path.includes("_layouts/")) continue;
-    const content = readHtmlScanText(join(root, file.path));
+    const content = visibleText(readHtmlScanText(join(root, file.path)), { keepLines: true });
     for (const match of placeholderTextResidueMatches(content, terms)) {
       matches.push({
         surface: "target",

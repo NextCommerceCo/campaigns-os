@@ -2,6 +2,33 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.29.0+agent.6] - 2026-09-16
+
+### Fixed
+
+- Doctor's `template_contract.placeholder_text_residue` check scans the
+  visible text of each built page (tags, attribute values, `<script>` and
+  `<style>` bodies and comments stripped; `alt` text kept), the same surface
+  the browser residue gate reads. A checkout page whose only "Placeholder" is
+  an `<input placeholder="…">` hint no longer warns `built output still
+  contains literal template placeholder text (Placeholder)` while QA's gate
+  passes the same page; rendered "Lorem ipsum" still warns, and the
+  `file:line` in the warning now points at the rendered text.
+
+### Changed
+
+- `qa run` records the placeholder-text gate outcome on the Assembly Report's
+  `stages.qa.evidence` (`gates.placeholder_text_residue` with
+  `status`/`pages_checked`/`pages_failed`, beside the
+  `source_build_fingerprint` the verdict judged). A gate that did not run is
+  absent, never `pass`.
+- While `stages.assembly.build_fingerprint` still equals that recorded
+  fingerprint and the gate passed, doctor reports any remaining static hit as
+  the ready line `… but the browser residue gate passed on this build; QA's
+  rendered-text verdict stands` instead of the warning, and `next` no longer
+  prints the `Replace literal template placeholder text …` action. A rebuild
+  or a failed gate brings the warning and the action back.
+
 ## [1.29.0+agent.5] - 2026-09-16
 
 ### Added
