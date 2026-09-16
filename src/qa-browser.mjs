@@ -2815,6 +2815,11 @@ async function waitForPurchaseDataLayer({
     await wait(Math.min(PURCHASE_DATA_LAYER_POLL_MS, Math.max(0, until - now())));
   }
   if (seen()) {
+    // The settle window bounds how long to wait for the FIRST sighting; the
+    // grace is a separate, fixed pause after it, bounded only by the order
+    // deadline. Tying it to the settle window would let `--analytics-settle
+    // 500` shrink the grace to nothing when the event lands late, which is
+    // precisely when a duplicate is still in flight.
     const grace = Math.min(PURCHASE_DATA_LAYER_DUPLICATE_GRACE_MS, Math.max(0, deadline - now()));
     if (grace > 0) await wait(grace);
   }
@@ -2899,10 +2904,11 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
 
   try {
     page = await context.newPage();
-    // Attached for every typed-card order, not only when the analytics leg
-    // runs: the same hook is what records the order's dl_purchase (#325). The
-    // receipt Purchase proof stays gated on the analytics leg in qa-node.
-    if (options.captureAnalytics || options.captureDataLayer !== false) {
+    // Attached for every typed-card order, unconditionally: the same hook is
+    // what records the order's dl_purchase (#325), and an order with no
+    // reading is an unmeasured blocker, not a quieter verdict. The receipt
+    // Purchase proof stays gated on the analytics leg in qa-node.
+    {
       try {
         analyticsCapture = await attachAnalyticsCapture(page, { extraHosts: analyticsExtraHosts(planArgs) });
       } catch {
