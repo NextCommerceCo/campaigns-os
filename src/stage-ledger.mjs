@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
+import { STATUS as QA_STATUS } from "./qa-verdict.mjs";
 import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
@@ -229,7 +230,7 @@ export function qaGateEvidence(report, gate) {
 export function qaGatePassedForCurrentBuild(report, gate, { buildFingerprint }) {
   const outcome = qaGateEvidence(report, gate);
   const current = optionalString(buildFingerprint);
-  return Boolean(outcome && outcome.status === "pass" && current && outcome.source_build_fingerprint === current);
+  return Boolean(outcome && outcome.status === QA_STATUS.PASS && current && outcome.source_build_fingerprint === current);
 }
 
 /**
