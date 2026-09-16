@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.29.0+agent.10] - 2026-09-16
+## [1.29.0+agent.12] - 2026-09-16
 
 ### Fixed
 
@@ -38,6 +38,7 @@ Notable supported-surface changes are recorded here.
 - The residue unit tests run against the starter's own chrome assets
   (committed under `contracts/fixtures/template-residue/`) instead of a
   synthetic strip that carried an `id="paypal-logo"` the real file does not.
+
 ## [1.29.0+agent.11] - 2026-09-16
 
 ### Changed
