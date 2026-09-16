@@ -24,6 +24,56 @@ Notable supported-surface changes are recorded here.
   `selection_surface_probe: failed` with `selection_surface_probe_error`, is
   never read as an empty checkout, and is not remembered.
 - `docs/qa-and-test-orders.md` names the selector probe and its single load.
+## [1.29.0+agent.10] - 2026-09-16
+
+### Added
+
+- `stages.assembly.build_fingerprint` now has an algorithm, and a command
+  computes it. `computeBuildFingerprint(outputDir)` (`src/built-site-scope.mjs`,
+  `sha256-manifest/v1`) hashes the built OUTPUT: every file under
+  `_site/<public_route_slug>/`, root-relative `/`-separated paths sorted by
+  code point, one `<path>\n<sha256>\n` pair per file, `sha256:` over that
+  manifest. Identical output at any path on any machine yields one value; one
+  changed byte, an added or removed file, or a toolkit/template upgrade that
+  renders different bytes from identical source yields another. Nothing is
+  excluded by default (Page Kit writes only rendered HTML and copied assets
+  into `_site/`; its timestamped build summary lives outside the root).
+  Until now the value was an opaque sha256-shaped string the operator typed,
+  and every freshness comparison between build, polish and QA reduced to
+  string equality on it. Algorithm paragraph: `docs/build-packet.md`.
+- Doctor check `built_output.fingerprint` (built-output phase) recomputes the
+  value on every run and publishes it at `derived.build_output_fingerprint`
+  (`value`, `file_count`, `algorithm`, `root`, `recorded`, `status`
+  pass/stale/missing) — the field build copies onto
+  `stages.assembly.build_fingerprint` after page-kit build and the value an
+  operator checks by hand. Pass prints the ready line `Build output
+  fingerprint matches stages.assembly.build_fingerprint (<n> file(s) under
+  _site/<slug>/)`; no recorded value is the warning
+  `built_output.fingerprint_missing` carrying the value to record; a recorded
+  value the output no longer matches is `built_output.fingerprint_stale`
+  (`recorded <sha>, current <sha>`), an error once assembly is complete and a
+  warning while the build is still in progress. The build prompt names the
+  field instead of leaving the value to the agent.
+
+### Changed
+
+- The polish gate, QA and `polish capture` compare against the recomputed
+  output fingerprint, not the recorded string. `evaluatePolishGate` takes
+  `currentOutputFingerprint`; doctor and QA supply it from `_site/<slug>/`, and
+  when the output has drifted from `stages.assembly.build_fingerprint` the
+  gate is the new code `polish.output_drift` with `current_output_fingerprint`
+  and a `rerun_build` action ahead of `run_polish`, even when
+  `source_build_fingerprint` still equals the recorded value (`polish.stale`
+  stays the code for evidence stamped against an older recorded build).
+  `polish capture` refuses by name in three cases — no built route root
+  (`built output root _site/<slug>/ is missing under the target repo`), an
+  output the walk cannot read (`could not be read to fingerprint it (<code>:
+  …)`), and drift (`built output under _site/<slug>/ no longer matches
+  stages.assembly.build_fingerprint (recorded …, current …)`) — never an
+  uncaught filesystem error and never a null binding; its capture binding
+  carries `assembly.output_fingerprint`, so an output that changes during the
+  browser pass fails the unchanged-binding check after it. Symbolic links
+  inside the output are never build output: the walk skips them.
 
 ## [1.29.0+agent.9] - 2026-09-16
 
