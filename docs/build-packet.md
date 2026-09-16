@@ -551,7 +551,12 @@ localhost Development-domain behavior, non-localhost SDK allowlist requirement,
 order path depth, and operator approval state. Test cards still need no
 permission gate; the explicit field prevents agents from re-litigating proof
 depth in chat. Doctor checks the full field set in both packet and report
-artifacts when present. The `qa` block carries no permission booleans:
+artifacts when present. `order_path_depth` is seeded `common` and set with
+`--order-path-depth <off|common|full>` on `prepare-build`/`start` or later
+with `qa policy set --order-path-depth <depth>`, which also refreshes the
+report mirror; a packet whose depth disagrees with its report mirror draws the
+advisory `qa.proof_policy.order_path_depth_drift` warning naming that command
+(see `docs/qa-and-test-orders.md`, "Purchase-proof coverage"). The `qa` block carries no permission booleans:
 `qa.test_orders_allowed` and `qa.sandbox_test_card_confirmed`, which no command
 read, were removed in supported surface 1.28.0, and doctor warns
 (`qa.removed_policy_fields`) on a packet that still carries either.
