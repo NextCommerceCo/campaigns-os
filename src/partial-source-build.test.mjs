@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import { validateSourceHtmlManifest } from "./source-html-manifest.mjs";
 
 // The partial-source build contract (#238): a campaign where some active
@@ -145,7 +146,9 @@ function completeAssemblyWithInScopeBuild(fixture) {
   const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
   const report = readJson(reportPath);
   report.stages.assembly.status = "completed";
-  report.stages.assembly.build_fingerprint = `sha256:${"a".repeat(64)}`;
+  // Recorded the way build records it: from the built output, so doctor's
+  // recomputation over _site/<slug>/ agrees with the report.
+  report.stages.assembly.build_fingerprint = computeBuildFingerprint(join(fixture.target, "_site", slug)).fingerprint;
   if (report.design_source_package?.material_fingerprint) {
     report.stages.assembly.source_package_material_fingerprint = report.design_source_package.material_fingerprint;
   }
@@ -365,6 +368,8 @@ test("post-assembly doctor does not error on declared out-of-scope pages; the la
   for (const issue of doctor.json.errors) {
     assert.match(issue.code, /^polish\./, JSON.stringify(issue, null, 2));
   }
+  // The recorded fingerprint is the output's fingerprint, and doctor says so.
+  assert.equal(doctor.json.derived.build_output_fingerprint.status, "pass", JSON.stringify(doctor.json.derived.build_output_fingerprint));
   assert.ok(doctor.json.ready.some((line) => /declared out-of-scope page/.test(line)), JSON.stringify(doctor.json.ready, null, 2));
   // The route summary counts against the in-scope denominator, so declared
   // pages never read as attempted-but-unverified.

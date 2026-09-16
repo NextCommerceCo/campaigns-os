@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  markupView,
+  visibleText,
   scanRenderedHtml,
   scanBuiltOutputContentResidue,
   evaluateProofAssets,
@@ -132,4 +134,31 @@ test("briefUrgencyVerified reads offer.urgency.verified", () => {
   assert.equal(briefUrgencyVerified({ offer: { urgency: { verified: true } } }), true);
   assert.equal(briefUrgencyVerified({ offer: { urgency: { verified: false } } }), false);
   assert.equal(briefUrgencyVerified(null), false);
+});
+
+test("visibleText drops attribute values, script/style bodies and comments; keepLines maps indexes to source lines", () => {
+  const html = [
+    "<html><head><style>/* TODO */</style>",
+    '<script>var s = "Lorem";</script></head>',
+    "<body><!-- Placeholder -->",
+    '<input placeholder="Placeholder" data-hint="Product Name">',
+    '<p>Real &amp; <img alt="Hero shot"> copy</p>',
+    "<p>Lorem ipsum</p>",
+    "</body></html>",
+  ].join("\n");
+  const flat = visibleText(html);
+  assert.equal(flat.includes("Placeholder"), false);
+  assert.equal(flat.includes("Product Name"), false);
+  assert.equal(flat.includes("TODO"), false);
+  assert.match(flat, /Real & copy/);
+  assert.match(flat, /Lorem ipsum/);
+  assert.match(flat, /Hero shot/);
+
+  const lined = visibleText(html, { keepLines: true });
+  assert.equal(lined.split("\n").length, html.split("\n").length, "every source newline survives");
+  const index = lined.indexOf("Lorem ipsum");
+  assert.equal(lined.slice(0, index).split("\n").length, 6, "the match index resolves to its source line");
+  assert.equal(lined.split("\n")[4].trim(), "Real & Hero shot copy", "alt text is inlined where its tag stood");
+  assert.equal(markupView(html, { keepLines: true }).split("\n").length, html.split("\n").length);
+  assert.equal(markupView(html, { keepLines: true }).includes("var s"), false);
 });

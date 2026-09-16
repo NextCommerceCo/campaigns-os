@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import {
   collectPageKitAssetPathViolations,
+  validateBuildOutputFingerprint,
   validateBuiltDemoAssetFidelity,
   validateBuiltPageKitAssetPaths,
   validateBuiltBumpPricing,
@@ -212,6 +214,79 @@ test("root-served: built meta expectation composes against '/' (no phantom /<slu
   });
 });
 
+// A CampaignSpec key the Campaign Cart SDK does not read (next-currency,
+// next-predictive-address; the list in sdk-meta-tags.mjs) is a stale Map page
+// hint. Doctor must not require it from the build: no `missing` error when the
+// page renders without it, one advisory naming the key and the reason instead.
+test("built meta: an SDK-ignored spec tag is advisory, never missing", () => {
+  withTempDir((dir) => {
+    const builtPath = join(dir, "_site", SLUG, "checkout", "index.html");
+    mkdirSync(dirname(builtPath), { recursive: true });
+    writeFileSync(builtPath, `<html><head><meta name="next-page-type" content="checkout"></head><body data-next-checkout>x</body></html>`);
+    const spec = {
+      funnel_pages: [
+        {
+          id: "checkout",
+          type: "checkout",
+          page_url: "checkout/",
+          enabled: true,
+          sdk_hints: { meta_tags: { "next-page-type": "checkout", "next-currency": "USD", "next-predictive-address": "true" } },
+        },
+      ],
+    };
+    const buildState = { report: { stages: { assembly: { status: "completed" } } } };
+    const errors = [], warnings = [], ready = [];
+    validateBuiltSdkMetaTags(spec, PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+
+    assert.deepEqual(errors, [], "an ignored tag is never a missing error");
+    assert.equal(codes(warnings).includes("sdk_hints.meta_tags.missing"), false);
+    const advisories = warnings.filter((issue) => issue.code === "sdk_hints.meta_tags.ignored_by_sdk");
+    assert.equal(advisories.length, 1);
+    assert.deepEqual(advisories[0].detail, { page_id: "checkout", tags: ["next-currency", "next-predictive-address"] });
+    assert.match(advisories[0].message, /remove from the Map's page hints/);
+    assert.match(advisories[0].message, /"next-currency" \(Campaign Cart does not read a next-currency meta tag; remove it from the Map's page hints\./);
+    assert.match(advisories[0].message, /"next-predictive-address" \(Campaign Cart does not read a next-predictive-address meta tag/);
+    assert.ok(ready.some((note) => note.includes("Built SDK meta tags checked")));
+  });
+});
+
+test("built meta: a rendered SDK-ignored tag still gets the advisory, and a tag the SDK reads is still required", () => {
+  withTempDir((dir) => {
+    const builtPath = join(dir, "_site", SLUG, "checkout", "index.html");
+    mkdirSync(dirname(builtPath), { recursive: true });
+    writeFileSync(builtPath, `<html><head><meta name="next-currency" content="USD"></head><body data-next-checkout>x</body></html>`);
+    const spec = {
+      funnel_pages: [
+        { id: "checkout", type: "checkout", page_url: "checkout/", enabled: true, sdk_hints: { meta_tags: { "next-page-type": "checkout", "next-currency": "USD" } } },
+      ],
+    };
+    const buildState = { report: { stages: { assembly: { status: "completed" } } } };
+    const errors = [], warnings = [], ready = [];
+    validateBuiltSdkMetaTags(spec, PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+
+    assert.deepEqual(codes(errors), ["sdk_hints.meta_tags.missing"]);
+    assert.match(errors[0].message, /"next-page-type"/);
+    assert.equal(warnings.filter((issue) => issue.code === "sdk_hints.meta_tags.ignored_by_sdk").length, 1);
+  });
+});
+
+test("built meta: before _site exists the pre-build warning lists only tags the SDK reads", () => {
+  withTempDir((dir) => {
+    const spec = {
+      funnel_pages: [
+        { id: "checkout", type: "checkout", page_url: "checkout/", enabled: true, sdk_hints: { meta_tags: { "next-page-type": "checkout", "next-currency": "USD" } } },
+        { id: "upsell", type: "upsell", page_url: "upsell/", enabled: true, sdk_hints: { meta_tags: { "next-predictive-address": "true" } } },
+      ],
+    };
+    const errors = [], warnings = [], ready = [];
+    validateBuiltSdkMetaTags(spec, PACKET, errors, warnings, ready, { target_repo: dir });
+    const pending = warnings.find((issue) => issue.code === "sdk_hints.meta_tags");
+    assert.ok(pending);
+    assert.match(pending.message, /\(next-page-type\)/);
+    assert.equal(warnings.filter((issue) => issue.code === "sdk_hints.meta_tags.ignored_by_sdk").length, 2);
+  });
+});
+
 test("R2-B2 page-kit assets: detects unconverted /assets built references", () => {
   const hits = collectPageKitAssetPathViolations(`
     <script src="/assets/config.js"></script>
@@ -325,6 +400,84 @@ test("H3.1 doctor: clean built output yields a ready line, no warning", () => {
     validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, ready, { target_output_dir: target });
     assert.equal(codes(warnings).includes("template_contract.placeholder_text_residue"), false);
     assert.ok(ready.some((note) => note.includes("no literal template placeholder text")));
+  });
+});
+
+test("H3.1 doctor: a term inside an attribute value, script, style or comment is not rendered text", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "checkout.html"), [
+      "<html><head><style>/* TODO tidy */ .x{}</style>",
+      '<script>var label = "Product Name";</script></head>',
+      "<body><!-- Lorem -->",
+      '<label>Email <input type="email" placeholder="Placeholder"></label>',
+      '<div data-hint="Lorem ipsum">Cold Brew Concentrate</div>',
+      "</body></html>",
+    ].join("\n"));
+    const warnings = [];
+    const ready = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, ready, { target_output_dir: target });
+    assert.equal(codes(warnings).includes("template_contract.placeholder_text_residue"), false, JSON.stringify(warnings));
+    assert.ok(ready.some((note) => note.includes("no literal template placeholder text")));
+  });
+});
+
+test("H3.1 doctor: visible placeholder text still warns, with the source line of the rendered text", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "checkout.html"), [
+      "<html><head><script>",
+      "// several",
+      "// script lines",
+      "</script></head><body>",
+      '<input placeholder="Placeholder">',
+      "<p>Lorem ipsum dolor.</p>",
+      "</body></html>",
+    ].join("\n"));
+    const warnings = [];
+    const ready = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, ready, { target_output_dir: target });
+    const warning = warnings.find((w) => w.code === "template_contract.placeholder_text_residue");
+    assert.ok(warning, "visible Lorem must still warn");
+    assert.match(warning.message, /\(Lorem\)/, "only the rendered term is named, not the attribute value");
+    assert.match(warning.message, /checkout\.html:6 "Lorem"/, "the line points at the rendered text");
+  });
+});
+
+test("H3.1 doctor: a recorded browser gate pass on the current build demotes the warning to a ready line", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "index.html"), "<p>Lorem ipsum dolor.</p>");
+    const fingerprint = `sha256:${"a".repeat(64)}`;
+    const reportFor = (seen) => ({
+      stages: {
+        assembly: { status: "completed", build_fingerprint: fingerprint },
+        qa: { status: "completed", evidence: { source_build_fingerprint: seen, gates: { placeholder_text_residue: { status: "pass", pages_checked: 1, pages_failed: 0 } } } },
+      },
+    });
+
+    const passed = { warnings: [], ready: [] };
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, passed.warnings, passed.ready, { target_output_dir: target }, { report: reportFor(fingerprint) });
+    assert.equal(codes(passed.warnings).includes("template_contract.placeholder_text_residue"), false);
+    assert.ok(passed.ready.some((note) => note.includes("browser residue gate passed on this build")), JSON.stringify(passed.ready));
+
+    // A rebuild changes the fingerprint: the pass no longer covers this build.
+    const rebuilt = { warnings: [], ready: [] };
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, rebuilt.warnings, rebuilt.ready, { target_output_dir: target }, { report: reportFor(`sha256:${"b".repeat(64)}`) });
+    assert.ok(codes(rebuilt.warnings).includes("template_contract.placeholder_text_residue"));
+
+    // A failed gate, or a QA stage that never ran the gate, leaves the warning alone.
+    const failed = { warnings: [], ready: [] };
+    const failedReport = reportFor(fingerprint);
+    failedReport.stages.qa.evidence.gates.placeholder_text_residue.status = "fail";
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, failed.warnings, failed.ready, { target_output_dir: target }, { report: failedReport });
+    assert.ok(codes(failed.warnings).includes("template_contract.placeholder_text_residue"));
+    const silent = { warnings: [], ready: [] };
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, silent.warnings, silent.ready, { target_output_dir: target }, { report: { stages: { assembly: { build_fingerprint: fingerprint }, qa: { status: "completed" } } } });
+    assert.ok(codes(silent.warnings).includes("template_contract.placeholder_text_residue"));
   });
 });
 
@@ -709,5 +862,75 @@ test("target root: a stray regular file at _site/<slug> is not a found root", ()
     validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
     assert.deepEqual(codes(errors), ["built_output.target_root"]);
     assert.equal(ready.some((note) => note.includes("Built output root found")), false);
+  });
+});
+
+// --- Build output fingerprint (built_output.fingerprint) ---
+// stages.assembly.build_fingerprint is only worth binding evidence to when
+// doctor recomputes it from the output on disk. Before this check, a made-up
+// sha256-shaped string over any output passed every freshness comparison.
+
+test("built_output.fingerprint: pass, missing, and stale after the output changes", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "_site", SLUG);
+    mkdirSync(join(root, "checkout"), { recursive: true });
+    writeFileSync(join(root, "index.html"), "<html><body>Landing</body></html>");
+    writeFileSync(join(root, "checkout", "index.html"), "<html><body>Checkout</body></html>");
+    const run = (report) => {
+      const errors = [];
+      const warnings = [];
+      const ready = [];
+      const derived = { target_repo: dir };
+      validateBuildOutputFingerprint(PACKET, errors, warnings, ready, derived, { report });
+      return { errors, warnings, ready, derived };
+    };
+
+    // Missing: build has not recorded it; doctor publishes the value to record.
+    const missing = run({ stages: { assembly: { status: "pending" } } });
+    assert.deepEqual(codes(missing.warnings), ["built_output.fingerprint_missing"]);
+    assert.deepEqual(missing.errors, []);
+    assert.equal(missing.derived.build_output_fingerprint.status, "missing");
+    assert.equal(missing.derived.build_output_fingerprint.value, computeBuildFingerprint(root).fingerprint);
+    assert.equal(missing.derived.build_output_fingerprint.file_count, 2);
+    assert.match(missing.warnings[0].message, /derived\.build_output_fingerprint\.value/);
+
+    // Pass: the recorded value is the output's value.
+    const recorded = missing.derived.build_output_fingerprint.value;
+    const pass = run({ stages: { assembly: { status: "completed", build_fingerprint: recorded } } });
+    assert.deepEqual(pass.errors, []);
+    assert.deepEqual(pass.warnings, []);
+    assert.equal(pass.derived.build_output_fingerprint.status, "pass");
+    assert.ok(pass.ready.some((line) => /Build output fingerprint matches/.test(line)), JSON.stringify(pass.ready));
+
+    // Stale: the output changed after build recorded it. Blocking once
+    // assembly is complete, advisory while the build is still in progress.
+    writeFileSync(join(root, "checkout", "index.html"), "<html><body>Checkout v2</body></html>");
+    const stale = run({ stages: { assembly: { status: "completed", build_fingerprint: recorded } } });
+    assert.deepEqual(codes(stale.errors), ["built_output.fingerprint_stale"]);
+    assert.equal(stale.derived.build_output_fingerprint.status, "stale");
+    assert.equal(stale.derived.build_output_fingerprint.recorded, recorded);
+    assert.notEqual(stale.derived.build_output_fingerprint.value, recorded);
+    assert.match(stale.errors[0].message, /recorded sha256:[a-f0-9]{64}, current sha256:[a-f0-9]{64}/);
+
+    const inProgress = run({ stages: { assembly: { status: "pending", build_fingerprint: recorded } } });
+    assert.deepEqual(inProgress.errors, []);
+    assert.deepEqual(codes(inProgress.warnings), ["built_output.fingerprint_stale"]);
+
+    // A sha256-shaped string that was never computed from the output is stale
+    // too: the value that passed at string equality is exactly the defect.
+    const typed = run({ stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}` } } });
+    assert.deepEqual(codes(typed.errors), ["built_output.fingerprint_stale"]);
+  });
+});
+
+test("built_output.fingerprint: skips without a built route root and never guesses", () => {
+  withTempDir((dir) => {
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    const derived = { target_repo: dir };
+    validateBuildOutputFingerprint(PACKET, errors, warnings, ready, derived, { report: { stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}` } } } });
+    assert.deepEqual([errors, warnings, ready], [[], [], []]);
+    assert.equal(derived.build_output_fingerprint, undefined);
   });
 });

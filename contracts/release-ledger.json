@@ -3547,50 +3547,326 @@
       "date": "2026-09-16",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.29.0+agent.8",
-      "changelog_sha256": "a68a7a1c8cb9e1577579a041382fdade21036cd24100d5e243f671d71cf49f3c",
-      "agent_impact": "Local proof mode for deploy.target local-serve (#326). Build stage: next build now emits a build_local_proof command action (CPK_ENV=development npx campaign-build --json > .campaign-runtime/page-kit-build-summary.json) and a build_production_parity command action, and its prompt says to record stages.assembly.evidence.build_environment: \"development\" on the Assembly Report; hosted targets are unchanged. New command: page-kit parity --packet <packet> [--report <json>] [--json] renders the current source in development and production through the target's page-kit into temp dirs and asserts the served _site/ is the current development render and that production differs only in environment-gated output with the same page set, route slugs, Campaign Cart pin and next-api-key; the result object { status pass|fail|unavailable, checked_at, build_fingerprint, campaign_slug, page_count, sdk_version, pages[] { route, path, sdk_version, gated_inserted_lines, gated_removed_lines, gated_hosts[] }, first_difference { kind, route, path, line, detail } | null, summary } is recorded on stages.assembly.evidence.local_proof.production_parity; exit 2 on fail, on a non-local-serve packet (local_proof.parity.not_local_serve) or when page-kit is not installed (local_proof.parity.unavailable). Doctor: under local-serve with a terminal assembly stage, warnings[] gains local_proof.build_environment when the build is not recorded as development, and local_proof.production_parity is a ready line on a recorded pass, an errors[] entry (with detail.first_difference) on a recorded fail, or a warning while unrecorded or recorded for another build fingerprint. Polish: a recorded hidden_eager_media checkpoint blocked on a capture whose document origin is http: and whose ledger has a failed cross-origin http: dependency now lists required_actions [local_proof_rebuild (manual), capture] instead of [capture]; the polish capture text prints it as a Required action line. No schema change: both records live in the assembly stage's free-form evidence object.",
+      "changelog_section": "1.29.0+agent.3",
+      "changelog_sha256": "2888da443aeafa1da6064c2e7adc8b5f06b1186fdb402ba1ec6852e7bd9ec182",
+      "agent_impact": "prepare-build now writes assembly.commerce_catalog.path: null when the catalog is the toolkit's default contracts/commerce-surface-catalog.json (#324); previously it wrote a packet-relative path into the checkout that ran the command, which was dead on any other machine or with the toolkit installed as a package. An agent reading the packet must treat null as \"the running toolkit's catalog\"; a string path is still an operator --commerce-catalog relative to the packet. doctor and qa run resolve null to the running toolkit's catalog, and also resolve a recorded path that does not exist but is named commerce-surface-catalog.json (a packet prepared before this change) to the same file: doctor no longer emits the blocker [assembly.commerce_catalog.path] Commerce catalog is required but not found. for that state and instead adds a ready line starting \"Commerce catalog resolved to the running toolkit's copy; the packet's recorded path <path> does not exist here\" ending \"Re-run prepare-build to clear the machine-local path.\" A dead path with any other file name still blocks with the same message as before. No warning, flag, exit code or schema change (the schema already allowed null).",
+      "compatibility": "compatible",
+      "migration": "Existing packets keep working: a machine-local catalog path resolves to the running toolkit's catalog with a ready line. Re-run prepare-build to record null. Consumers that parsed assembly.commerce_catalog.path as a non-empty string must accept null.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "assembly.commerce_catalog.path is null when the catalog is the toolkit's default; an explicit --commerce-catalog is still recorded packet-relative."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "A null catalog path, or a dead path named commerce-surface-catalog.json, resolves to the running toolkit's catalog; the dead-path case adds a ready line naming the stale path and the prepare-build repair instead of the assembly.commerce_catalog.path blocker."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa run loads the commerce structure contract through the same resolver, so a null or stale catalog path no longer yields missing_catalog_path / missing_catalog."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "New Commerce Catalog section: null path = toolkit default, string path = operator catalog relative to the packet, stale machine-local path = resolved with a ready line and cleared by re-running prepare-build."
+        }
+      ],
+      "entry_sha256": "679dcd1ec8ec2939e16f1acd6afe71a8e6ab06acbc20ffdd0bff35ca137baebe"
+    },
+    {
+      "id": "RL-0097",
+      "sequence": 97,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.4",
+      "changelog_sha256": "783354b6526720d1be396edc1d37e0df823c309a9ca7c550229220f0a272194d",
+      "agent_impact": "run-record with no --run-id and no active run session now re-emits the most recent Run Record on disk for the packet's campaign under that record's run_id instead of minting a fresh id (#328); resolution is --run-id > active session > newest record whose identity.map_id and identity.campaign_slug match the packet > minted. An agent that ran the closeout action next prints, or re-ran run-record after run end, therefore no longer forks a second record: a record whose remit landed is left as written (written: false, remit.result not_contacted, as an explicit --run-id over it already behaved) and an unremitted one is reassembled under the same id. The --json summary carries a new envelope field run_id_source (explicit | session | latest_record | minted) and the text output prints \"Run ID: <id> (<source>)\", preceded on a latest_record run by a one-line notice naming the id, --new-run and --list; the Run Record schema is unchanged and never carries the source. New flags: --new-run mints regardless of disk state (refused beside --run-id, exit non-zero, stderr \"--new-run and --run-id are exclusive\"); --list prints every record for the campaign newest first (run_id, created_at, remit_state, remit_result, remit_endpoint, record_path) plus the id a plain run would use and its source, and assembles, writes and sends nothing (list: true, written: false, remit.sent: false). next's required run_record_closeout command carries --new-run when the record it judged stale_predates_evidence or outdated_artifacts is the campaign's newest record, and its description names the superseded id; for no_record and foreign_campaign the plain command is unchanged. An agent that expected a sessionless run-record to always produce a new run_id must pass --new-run.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
         {
           "class": "cli_surface",
           "path": "src/cli.mjs",
-          "surface_entry": "page-kit",
-          "summary": "New subcommand page-kit parity --packet <packet> [--report <json>] [--json]: proves the production render of a local-serve campaign differs from the proven development output only in environment-gated output, with the same pages, route slugs, Campaign Cart pin and next-api-key; records stages.assembly.evidence.local_proof.production_parity; exit 2 on a non-gated difference."
+          "surface_entry": "run-record",
+          "summary": "With no --run-id and no active session, run-record re-emits the newest matching Run Record under its run_id rather than minting; the summary gains run_id_source and a latest_record notice; new --new-run mints on request and --list inspects the ids on disk without writing or sending."
         },
         {
           "class": "cli_surface",
           "path": null,
           "surface_entry": "next",
-          "summary": "next build under deploy.target local-serve emits build_local_proof (the development build command) and build_production_parity actions, and the build prompt says to record stages.assembly.evidence.build_environment as development and never to edit a generated include."
-        },
-        {
-          "class": "cli_surface",
-          "path": null,
-          "surface_entry": "doctor",
-          "summary": "Under local-serve after a terminal build: local_proof.build_environment warning when the build is not recorded as a development render; local_proof.production_parity ready line, error naming the first non-gated difference, or warning while unrecorded or stale."
-        },
-        {
-          "class": "cli_surface",
-          "path": null,
-          "surface_entry": "polish",
-          "summary": "A capture over plain HTTP that failed on a cross-origin http: dependency names polish.hidden_eager_media.local_proof_rebuild (rebuild in development, never edit the generated include) ahead of the recapture action."
+          "summary": "The required run_record_closeout command carries --new-run, and its description names the superseded record, when the newest record for the campaign was judged stale_predates_evidence or outdated_artifacts."
         },
         {
           "class": "named_surface",
-          "path": "docs/qa-and-test-orders.md",
-          "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "New Local proof mode section: build in development, serve, prove, page-kit parity, commit, PR preview as the second check; the never-edit-a-generated-include rule."
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Documents run_id resolution (explicit, session, latest_record, minted), run_id_source on the envelope, --new-run, --list, the sessionless behaviour after a QA auto-end, and the closeout reason codes that print --new-run."
         },
         {
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "The local-serve deploy target documents local proof mode: the development build, the build_environment record, the parity command and the doctor rows."
+          "summary": "The run-record mention names the run_id resolution order and the --new-run and --list flags."
         }
       ],
-      "entry_sha256": "91f91577b4856995ef9dfc32e9dbb5d8903a3242419b7d2d7175618842f01571"
+      "entry_sha256": "cca07c2448e4cda192e77e9e7cadc730a84fc5107403a9943cb885163bbf13af"
+    },
+    {
+      "id": "RL-0098",
+      "sequence": 98,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.5",
+      "changelog_sha256": "026307a39d1976e8c1df5b41bb170a99ded6a6f515e513d4d2cef809bba4dba7",
+      "agent_impact": "qa.proof_policy.order_path_depth gains a setter. prepare-build, start and build accept --order-path-depth <off|common|full> and seed the packet with it (default unchanged: common); qa policy set accepts the same flag, writes the packet field, and when the target carries an assembly report refreshes report.proof_policy.order_path_depth in the same run (the doctor sidecar is stamped stale; changed[] lists report.proof_policy.order_path_depth beside order_path_depth and the JSON result carries report_mirror { report_path, written, order_path_depth }; the policy snapshot gains qa.order_path_depth). A bare flag or any value outside off/common/full is refused before anything is written, with the accepted list in the error. Doctor emits a new advisory warning qa.proof_policy.order_path_depth_drift (never an error) when the packet's declared depth and the report mirror disagree; its message, the assessPurchaseProofCoverage reason and the next purchase_proof_unknown action carry one text naming the reconciling command qa policy set --packet <packet> --order-path-depth <packet value>. That next action changes from kind manual with command null to kind command with the runnable command, and its description no longer reads 'Reconcile the packet and the report before treating either depth as proved.' A consumer matching that sentence must match the command instead. With off on both sides a qa run --test-order off pass reaches next: done. No schema change: the field was already a free string.",
+      "compatibility": "compatible",
+      "migration": "none. A target whose packet was hand-edited to a different depth than its report mirror now draws the drift warning; run the command it names once to reconcile.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "prepare-build, start and build accept --order-path-depth <off|common|full> and seed qa.proof_policy.order_path_depth (and the report mirror) with it; an invalid value is refused with the other argv checks before any build state is written."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa policy set --order-path-depth <off|common|full> writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror; changed[] gains report.proof_policy.order_path_depth, the result gains report_mirror, and the policy snapshot gains qa.order_path_depth."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "New advisory warning qa.proof_policy.order_path_depth_drift when the packet's declared order-path depth and the report's mirror disagree; the message names the qa policy set --order-path-depth command that reconciles them."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "The purchase_proof_unknown action for a packet/report depth disagreement is now kind command carrying the runnable qa policy set --order-path-depth command, with the same text as doctor's warning, instead of a manual step reading 'Reconcile the packet and the report'."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Purchase-proof coverage documents the --order-path-depth setter, the report-mirror refresh, and the drift warning with its reconciling command."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The qa.proof_policy section names how order_path_depth is seeded and set, and the drift warning."
+        }
+      ],
+      "entry_sha256": "0df4bcfca327d1f054f4f1c2d70cd61fbc2f8718085cc4c205bcf0f727e7a681"
+    },
+    {
+      "id": "RL-0099",
+      "sequence": 99,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.6",
+      "changelog_sha256": "b1128e8422c03bf344e1d99ca0ad9317b7a9e9bdf114c5a218e2804f4cd39de5",
+      "agent_impact": "Doctor's template_contract.placeholder_text_residue check now scans the visible text of each built page (tags, attribute values, script/style bodies and comments stripped, alt text kept) instead of raw HTML, so a page whose only placeholder-term occurrence is an <input placeholder=\"...\"> hint, a data-* attribute, a comment or a script string yields the ready line \"Built target output has no literal template placeholder text\" instead of the warning; rendered placeholder copy still warns with the same code and message, and the file:line in the message now points at the rendered text. qa run additionally writes stages.qa.evidence = { source_build_fingerprint, gates: { placeholder_text_residue: { status: pass|fail, pages_checked, pages_failed } } } onto the Assembly Report (absent when the gate did not run on that verdict). Doctor reads it back: while stages.assembly.build_fingerprint equals the recorded source_build_fingerprint and status is pass, any remaining static hit is reported as a ready line ending \"but the browser residue gate passed on this build; QA's rendered-text verdict stands\" and no template_contract.placeholder_text_residue warning is emitted, so next no longer prints the \"Replace literal template placeholder text ...\" action. A rebuild (fingerprint change), a failed gate, or a QA record without the evidence restores the warning and the action. An agent parsing doctor output should treat the absence of the warning after a QA pass as expected, not as a scan that did not run. No schema, flag or command change; stages.qa.evidence was already an additional-properties object on the report stage definition.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "template_contract.placeholder_text_residue scans visible page text (attribute values, script/style bodies and comments excluded; alt text kept) rather than raw HTML, and is demoted to a ready line while the Assembly Report records the browser placeholder-text gate as passed on the current build fingerprint."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa run records stages.qa.evidence.source_build_fingerprint and stages.qa.evidence.gates.placeholder_text_residue (status, pages_checked, pages_failed) on the Assembly Report; absent when the gate did not run."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "The \"Replace literal template placeholder text ...\" action is no longer printed once the browser placeholder-text gate has passed on the current build."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents the stages.qa.evidence gate record beside purchase_proof and how doctor reads it back."
+        }
+      ],
+      "entry_sha256": "5d25de45c6a1bebbbb99eaaaabd23fe8947d274fbb33a4e8d60ceae9ef04a720"
+    },
+    {
+      "id": "RL-0100",
+      "sequence": 100,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.7",
+      "changelog_sha256": "acb0038338c476b0719cbaf8f50b547439c2ef07b8e96c6f869ab9528c5d7b8f",
+      "agent_impact": "The Assembly Report's top-level status, next and blockers are now derived from stages on every write (prepare-build's first write and every stage record or operator edit after it) instead of written once by prepare-build. status reads blocked while any recorded stage is blocked, completed only once every recorded stage (prepare_build and doctor included, not just the ladder) is terminal, and prepared otherwise, so a prepare-build --no-doctor report never reads completed; before this a finished ladder still read status prepared, next.stage setup and blockers [] beside a stages.qa of completed_with_warnings or blocked. blockers is the union of the blockers[] of the stages currently blocked. next uses the next <stage> vocabulary: next.stage is the first non-terminal ladder stage (setup, build, polish, deploy, qa, done) or prepare-build / doctor-blocked when that gate is blocked, or doctor when the ladder is exhausted but doctor never recorded an outcome, next.owner is the owning skill, and next.blocked true marks the stage holding the ladder. A consumer that branched on next.stage === 'assembly' must branch on 'build', on 'collect-inputs' on 'prepare-build', and one that expected status 'prepared' for a finished campaign must accept 'completed'. next and doctor no longer treat a terminal stages.prepare_build beside status blocked as a contradiction when another stage is the one blocked. A report written before this change is rewritten once on its next commit; an unchanged re-record still leaves the file's bytes alone. The report schema is unchanged (status is a free string, next keeps stage/owner/action). commitAssemblyReport (src/stage-ledger.mjs, internal) throws a TypeError when a mutator returns a non-object other than null/undefined.",
+      "compatibility": "compatible",
+      "migration": "Readers of the Assembly Report's next.stage: rename assembly -> build and collect-inputs -> prepare-build. Readers of report.status: a campaign whose every recorded stage (doctor included) is terminal now reads completed, not prepared; a report with a pending doctor stays prepared and names next.stage doctor; blocked can come from any stage, so read stages.<key>.status for which one. Nothing to do for consumers that read stages directly.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "The initial Assembly Report's status, next and blockers come from the same derivation every later commit runs; next names prepare-build (owner next-campaigns-os) when the prepare_build stage is blocked, otherwise setup or build."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "A terminal stages.prepare_build beside report.status blocked is a contradiction only when no recorded stage is blocked; a blocked QA or doctor stage no longer trips the prepare-build gate."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "Same prepare-build gate narrowing as next; the doctor and qa stage records now restate the report's top-level status, next and blockers on every write."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The orchestration loop section documents the derived top-level status, next and blockers of the Assembly Report and the next vocabulary they use."
+        }
+      ],
+      "entry_sha256": "f9d3bb90c21a7117f5a067dcbb40f13be9a46855d121f557597bd4e7edda5a18"
+    },
+    {
+      "id": "RL-0101",
+      "sequence": 101,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.8",
+      "changelog_sha256": "3caf28c2ad488d6d232ebe1f3c5e9ebdc6f52f233927ff21ce5a64431d961163",
+      "agent_impact": "Doctor no longer requires the two CampaignSpec sdk_hints.meta_tags keys the Campaign Cart SDK does not read, next-currency and next-predictive-address, from the built page. A spec that lists one (older Map exports do) now yields one advisory warning per page, code sdk_hints.meta_tags.ignored_by_sdk, message `CampaignSpec page \"<id>\" lists SDK meta tag(s) the Campaign Cart SDK does not read; remove from the Map's page hints: \"<tag>\" (<note>); ...`, detail { page_id, tags: [...] }, emitted whether or not the tag rendered and before _site/ exists; those keys never produce sdk_hints.meta_tags.missing (previously an error once assembly was complete) and are dropped from the pre-build `CampaignSpec expects SDK meta tags (...)` list. qa's meta:<page>:<tag> assertion for the same keys is now status warn, severity warn, instead of manual_review; its actual (`<value> (present but ignored by Campaign Cart)` or the shared placeholder) and evidence.note keep their shape, and the note text now reads `Campaign Cart does not read a <tag> meta tag; remove it from the Map's page hints. ...`. A consumer that counted manual_review rows as human work has two fewer per page. The remedy for both is an edit to the Map's page hints, not to the build. No schema, flag or command change; src/sdk-meta-tags.mjs is implementation.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "validateBuiltSdkMetaTags emits one sdk_hints.meta_tags.ignored_by_sdk warning per page listing next-currency or next-predictive-address, never a sdk_hints.meta_tags.missing error for them, and omits them from the pre-build expected-tags list."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "The meta:<page>:<tag> assertion for an SDK-ignored key is warn (severity warn) with the shared note, never manual_review."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents sdk_hints.meta_tags.ignored_by_sdk and that the two SDK-ignored keys are never required or missing."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The sdk_hints.meta_tags check names the two SDK-ignored keys as warn rows carrying the shared note, never manual_review."
+        }
+      ],
+      "entry_sha256": "d9653acb46915869996997745b32ce6141c7a02b4f6ab9a71a1f709192c50a32"
+    },
+    {
+      "id": "RL-0102",
+      "sequence": 102,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.9",
+      "changelog_sha256": "79c2c67926d4100906914d5eaf98f2ffc775a9804269eb6574cb1ec9b7ca94d2",
+      "agent_impact": "bundle check now reads the doctor sidecar's verdict and always reports a blocked QA verdict. A .campaign-runtime/doctor-output.json with status blocked or ok false yields the finding bundle.doctor_output.blocked (artifact doctor_output, remedy naming campaigns-os doctor --packet campaign-runtime.build.json --strip-paths); a qa-verdict.json with disposition blocked yields bundle.qa_verdict.blocked (previously emitted only under --require-qa). Both land in warnings[] by default, so ok stays true and status conformant, and in errors[] under --require-qa, so ok is false, status nonconformant and the exit code is 2. Before, only stale: true was read from the doctor sidecar and a blocked doctor passed --require-qa with ok true, errors []. stage_blocked is unchanged: true only when a required QA verdict is blocked; it is NOT set for a blocked doctor (widening it, or adding a doctor_blocked key, is a conformance-schema bump left for a later release). An agent that read ok: true or status: conformant as readiness must read the two blocked findings instead: conformant means the sidecars agree with each other and the contract, nothing more. The --json shape is unchanged (no new key; the published conformance schema still validates every result) and a ready doctor with a ready verdict produces the same output as before. The text report gains one line under Status:, Readiness: BLOCKED (doctor run is blocked; QA verdict is blocked) or Readiness: no doctor or QA block recorded by the sidecars present ...; scripts that parse the text report by line position after Status: must allow for it. No flag, command or schema change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "bundle",
+          "summary": "bundle check emits bundle.doctor_output.blocked for a doctor sidecar recording a blocked run and bundle.qa_verdict.blocked for a blocked verdict on disk (warnings by default, errors and exit 2 under --require-qa), and prints a Readiness: line under Status: in the text report; --json shape and stage_blocked unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "New section 'Conformance is not readiness' states that conformant means the sidecars agree with each other and the contract, that readiness is read from the bundle.doctor_output.blocked / bundle.qa_verdict.blocked findings, and that stage_blocked keeps its required-QA meaning."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The migration sidecar bundle row records that a blocked doctor sidecar emits bundle.doctor_output.blocked and a blocked QA verdict bundle.qa_verdict.blocked (warnings by default, errors under --require-qa), stage_blocked unchanged, and that status conformant never asserts doctor or QA passed."
+        }
+      ],
+      "entry_sha256": "0cdf6b67d885dc7d0cbb3fc53963eec98b277008a307aa4ef2e009b1b4222f53"
+    },
+    {
+      "id": "RL-0103",
+      "sequence": 103,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.10",
+      "changelog_sha256": "d760762ea718c8a0eea452d3ea96f17d5b6bd8671caafc14c1c6e8a7654fccd1",
+      "agent_impact": "stages.assembly.build_fingerprint has a defined algorithm and doctor computes it. Doctor's new built-output check built_output.fingerprint recomputes sha256-manifest/v1 over _site/<public_route_slug>/ (root-relative /-separated paths sorted by code point, one <path>\\n<sha256>\\n pair per file, sha256: over the manifest; nothing excluded by default) on every run and publishes it at derived.build_output_fingerprint { value, file_count, algorithm, root, recorded, status: pass|stale|missing }. Build copies derived.build_output_fingerprint.value onto stages.assembly.build_fingerprint after page-kit build instead of typing a value; the build prompt says so. Doctor output gains: ready line \"Build output fingerprint matches stages.assembly.build_fingerprint (<n> file(s) under _site/<slug>/)\" on pass; warning built_output.fingerprint_missing (detail current, file_count) when nothing is recorded; built_output.fingerprint_stale (detail recorded, current, file_count, assembly_complete) when the output no longer matches the recorded value, an error once stages.assembly.status is completed and a warning before. The polish gate (doctor derived.polish_gate, QA's polish assertion) now compares evidence against the recomputed output value: a drifted output is the new gate code polish.output_drift with current_output_fingerprint set and required_actions [rerun_build, run_polish], even when source_build_fingerprint equals the recorded string (polish.stale stays the code for evidence stamped against an older recorded build). polish capture refuses by name when the built route root is missing, when the output cannot be read (EACCES and the like are caught and named, never thrown raw), or when the output drifted, and its binding carries assembly.output_fingerprint. Symbolic links inside _site/ are skipped, never hashed or followed. A consumer that stamped a placeholder sha256 string onto stages.assembly.build_fingerprint over a real built _site/ now sees built_output.fingerprint_stale; record the doctor-published value. No schema, flag or command change; derived is free-form.",
+      "compatibility": "compatible",
+      "migration": "A report whose stages.assembly.build_fingerprint was not computed from the built output reads as stale once assembly is complete: run campaigns-os doctor --packet <packet> --json and record derived.build_output_fingerprint.value, then re-run polish.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "New built-output check built_output.fingerprint recomputes the output fingerprint, publishes derived.build_output_fingerprint, and reports pass (ready line), built_output.fingerprint_missing (warning) or built_output.fingerprint_stale (error after assembly completes, warning before); the polish gate takes the recomputed value; the build prompt names the field to record."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "One paragraph defines the build fingerprint algorithm (sha256-manifest/v1 over the built output, sorted path+sha256 manifest, no default exclusions), how build records it from doctor --json, and the doctor/polish/QA outcomes."
+        }
+      ],
+      "entry_sha256": "aadf9a5040d4350c9d1625d075b1383a420a5fc8ce82b1a5605d9c32d5ee54aa"
+    },
+    {
+      "id": "RL-0104",
+      "sequence": 104,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.29.0+agent.11",
+      "changelog_sha256": "c25cc30f4ca63a5616b9bc1ae86d97b643c3f3e138e9b8d8b5b00c0a88e014fa",
+      "agent_impact": "The typed-card runner (qa run --test-order) loads the checkout once per order path instead of twice. The entered_via_landing step's selector probe is the checkout's only load on a path: when the probe finds a selection surface, opened_checkout records detail \"already on checkout from the selector probe; not re-opened\" (previously no detail) rather than loading the same URL again; on a landing-entry family the probe load is followed only by the landing page and the SDK's own navigation. A multi-path plan (tiers:*, several coupons) probes each checkout URL once per run and reuses the answer on later paths; entered_via_landing evidence gains selection_surface_probe: \"loaded\" on the path that ran the probe and \"reused\" on the rest (\"failed\" plus selection_surface_probe_error when the page-side read broke; that path proceeds to the entry page as before and the failure is never reused), and a reused skip detail ends with \"(probe answer reused from an earlier path of this run)\". A reused answer on a selector family opens the checkout once in opened_checkout (detail null, as before); on a landing-entry family the path goes straight to the landing page. A consumer counting SDK page-view events in the analytics-correctness or receipt capture will see one checkout view per path where it saw two; one matching opened_checkout.detail === null on selector families must accept the new detail string. Step names, statuses, order and failure codes are unchanged. No schema, flag or command change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The entered_via_landing section names the selector probe, states that its load is the checkout's only load before the entry page and that opened_checkout reuses it on selector families, documents the per-run reuse across paths of a multi-path plan, and lists the selection_surface_probe evidence value (loaded, reused, or failed with selection_surface_probe_error)."
+        }
+      ],
+      "entry_sha256": "d29bcb03e0822a25018397618251321d55f6c9c73e54231bd94767aacff853c6"
     }
   ]
 }

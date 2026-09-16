@@ -128,16 +128,35 @@ function decodeEntities(value) {
 // kept. The scan surface for hard checks — a `<!-- NEEDS MERCHANT INPUT -->`
 // note or a `querySelector('[data-countdown-hrs]')` reference must not block,
 // but a marker in an alt attribute is shipped content and must.
-export function markupView(html) {
+//
+// `keepLines`: every removed span leaves its newlines behind, so a match index
+// in the view still maps to the source line number (the doctor reports
+// file:line). The default view collapses whitespace and is index-free.
+export function markupView(html, { keepLines = false } = {}) {
+  const newlines = (span) => span.replace(/[^\n]/g, "");
   return String(html)
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "<script></script>")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "<style></style>");
+    .replace(/<!--[\s\S]*?-->/g, keepLines ? (m) => ` ${newlines(m)} ` : " ")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, keepLines ? (m) => `<script>${newlines(m)}</script>` : "<script></script>")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, keepLines ? (m) => `<style>${newlines(m)}</style>` : "<style></style>");
 }
 
 // Visible-text view: markup view with tags stripped and entities decoded —
 // what a shopper (or screen reader, via appended alt text) actually reads.
-export function visibleText(html) {
+// Attribute values (a `placeholder="…"` input hint, a data-* hook) are not
+// visible text and never reach this view, which is what lets a static scan
+// agree with a browser's body.innerText.
+//
+// `keepLines` keeps source newlines (see markupView) and inlines each alt text
+// where its tag stood instead of appending it, so every index maps to a line.
+export function visibleText(html, { keepLines = false } = {}) {
+  if (keepLines) {
+    const text = markupView(html, { keepLines: true }).replace(/<[^>]*>/g, (tag) => {
+      const alt = /\balt="([^"]*)"/i.exec(tag);
+      const newlines = tag.replace(/[^\n]/g, "");
+      return alt ? ` ${alt[1].replace(/\n/g, " ")} ${newlines}` : ` ${newlines}`;
+    });
+    return decodeEntities(text).replace(/[^\S\n]+/g, " ");
+  }
   const markup = markupView(html);
   const altText = [...markup.matchAll(/\balt="([^"]*)"/gi)].map((m) => m[1]).join(" ");
   return decodeEntities(`${markup.replace(/<[^>]*>/g, " ")} ${altText}`).replace(/\s+/g, " ");

@@ -12,7 +12,8 @@
 // returns plain data. Callers turn that data into doctor issues / QA
 // topologies / a packet.
 
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 
 const HTML_EXT = ".html";
@@ -232,5 +233,80 @@ export function synthesizeMinimalBuildPacket({
     },
     qa: {},
     pages: (scope?.pages || []).map((page) => ({ page_id: page.page_id, type: page.page_type, route: page.route })),
+  };
+}
+
+// Build output fingerprint. `stages.assembly.build_fingerprint` is the value
+// every later stage (polish capture, the polish gate, QA) binds its evidence
+// to, so it must change exactly when the built output changes — and only
+// then. It therefore hashes the OUTPUT, never the inputs: a toolkit or
+// template upgrade that renders different bytes from identical source is a
+// different build, and a rebuild from identical source on another machine is
+// the same build. The manifest is `<path>\n<sha256>\n` per file, paths
+// relative to the output root with `/` separators and sorted by code point,
+// so directory walk order and the absolute location never leak into the
+// value. Page Kit (0.2.0) writes only rendered HTML and copied assets into
+// _site/, nothing it timestamps, so nothing is excluded by default; `exclude`
+// takes root-relative paths for a consumer whose build does stamp a file.
+// Symbolic links are never build output and are skipped, not followed.
+export const BUILD_FINGERPRINT_ALGORITHM = "sha256-manifest/v1";
+
+function listFilesRelative(root) {
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      // Symlinks are not build output: page-kit writes files and copies
+      // assets, never links. A link is skipped rather than followed, so a
+      // link into the source tree (or a loop) can neither leak input bytes
+      // into the value nor hang the walk.
+      if (entry.isSymbolicLink()) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) files.push(relative(root, full).split(sep).join("/"));
+    }
+  };
+  walk(root);
+  return files.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+function sha256Hex(buffer) {
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+/**
+ * Fingerprint a built output tree. Returns
+ *   { ok, algorithm, root, fingerprint, file_count, excluded, manifest, error }
+ * where `fingerprint` is `sha256:<hex>` over the canonical manifest and
+ * `manifest` is that manifest text, so an operator can recompute the value by
+ * hand (`sha256sum` over each file, sort by path, hash the lines). `ok: false`
+ * with `error` when the root is not a directory; an empty tree still hashes
+ * (the empty manifest) so a wiped _site/ reads as a changed build, not a
+ * missing one.
+ */
+export function computeBuildFingerprint(outputDir, { exclude = [] } = {}) {
+  const root = String(outputDir || "");
+  const base = { ok: false, algorithm: BUILD_FINGERPRINT_ALGORITHM, root, fingerprint: null, file_count: 0, excluded: [], manifest: null };
+  if (!root || !existsSync(root) || !statSync(root).isDirectory()) {
+    return { ...base, error: `Build output directory does not exist: ${root || "(empty)"}` };
+  }
+  const excludeSet = new Set((Array.isArray(exclude) ? exclude : []).map((path) => String(path).split(sep).join("/")));
+  const excluded = [];
+  const lines = [];
+  for (const path of listFilesRelative(root)) {
+    if (excludeSet.has(path)) {
+      excluded.push(path);
+      continue;
+    }
+    lines.push(`${path}\n${sha256Hex(readFileSync(join(root, path)))}\n`);
+  }
+  const manifest = lines.join("");
+  return {
+    ...base,
+    ok: true,
+    fingerprint: `sha256:${sha256Hex(Buffer.from(manifest, "utf8"))}`,
+    file_count: lines.length,
+    excluded,
+    manifest,
+    error: null,
   };
 }

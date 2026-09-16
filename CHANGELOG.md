@@ -83,6 +83,330 @@ Notable supported-surface changes are recorded here.
   the second check), `docs/build-packet.md`'s deploy-target section and
   `docs/polish-evidence.md`'s `capture_incomplete` row describe the same
   path.
+## [1.29.0+agent.11] - 2026-09-16
+
+### Changed
+
+- The typed-card runner loads the checkout once per order path, not twice.
+  The `entered_via_landing` selector probe's load is the checkout's only load
+  on a path: when the probe finds a selection surface, `opened_checkout` now
+  records `already on checkout from the selector probe; not re-opened` instead
+  of loading the same URL again; on a landing-entry family the probe load is
+  followed by the landing page and the SDK's own navigation, nothing else.
+  Every load boots the SDK and fires its page-view events into the capture the
+  analytics-correctness leg and the receipt capture read, so the second load
+  was counted as the campaign's own traffic.
+- A multi-path plan (`tiers:*`, several coupons) probes each checkout URL once
+  per run and reuses the answer on the later paths. The step evidence carries
+  `selection_surface_probe: loaded` on the path that ran the probe and
+  `reused` on the rest; a reused answer on a selector family opens the
+  checkout once in `opened_checkout`, and on a landing-entry family goes
+  straight to the landing page. A probe whose page-side read failed is tagged
+  `selection_surface_probe: failed` with `selection_surface_probe_error`, is
+  never read as an empty checkout, and is not remembered.
+- `docs/qa-and-test-orders.md` names the selector probe and its single load.
+
+## [1.29.0+agent.10] - 2026-09-16
+
+### Added
+
+- `stages.assembly.build_fingerprint` now has an algorithm, and a command
+  computes it. `computeBuildFingerprint(outputDir)` (`src/built-site-scope.mjs`,
+  `sha256-manifest/v1`) hashes the built OUTPUT: every file under
+  `_site/<public_route_slug>/`, root-relative `/`-separated paths sorted by
+  code point, one `<path>\n<sha256>\n` pair per file, `sha256:` over that
+  manifest. Identical output at any path on any machine yields one value; one
+  changed byte, an added or removed file, or a toolkit/template upgrade that
+  renders different bytes from identical source yields another. Nothing is
+  excluded by default (Page Kit writes only rendered HTML and copied assets
+  into `_site/`; its timestamped build summary lives outside the root).
+  Until now the value was an opaque sha256-shaped string the operator typed,
+  and every freshness comparison between build, polish and QA reduced to
+  string equality on it. Algorithm paragraph: `docs/build-packet.md`.
+- Doctor check `built_output.fingerprint` (built-output phase) recomputes the
+  value on every run and publishes it at `derived.build_output_fingerprint`
+  (`value`, `file_count`, `algorithm`, `root`, `recorded`, `status`
+  pass/stale/missing) — the field build copies onto
+  `stages.assembly.build_fingerprint` after page-kit build and the value an
+  operator checks by hand. Pass prints the ready line `Build output
+  fingerprint matches stages.assembly.build_fingerprint (<n> file(s) under
+  _site/<slug>/)`; no recorded value is the warning
+  `built_output.fingerprint_missing` carrying the value to record; a recorded
+  value the output no longer matches is `built_output.fingerprint_stale`
+  (`recorded <sha>, current <sha>`), an error once assembly is complete and a
+  warning while the build is still in progress. The build prompt names the
+  field instead of leaving the value to the agent.
+
+### Changed
+
+- The polish gate, QA and `polish capture` compare against the recomputed
+  output fingerprint, not the recorded string. `evaluatePolishGate` takes
+  `currentOutputFingerprint`; doctor and QA supply it from `_site/<slug>/`, and
+  when the output has drifted from `stages.assembly.build_fingerprint` the
+  gate is the new code `polish.output_drift` with `current_output_fingerprint`
+  and a `rerun_build` action ahead of `run_polish`, even when
+  `source_build_fingerprint` still equals the recorded value (`polish.stale`
+  stays the code for evidence stamped against an older recorded build).
+  `polish capture` refuses by name in three cases — no built route root
+  (`built output root _site/<slug>/ is missing under the target repo`), an
+  output the walk cannot read (`could not be read to fingerprint it (<code>:
+  …)`), and drift (`built output under _site/<slug>/ no longer matches
+  stages.assembly.build_fingerprint (recorded …, current …)`) — never an
+  uncaught filesystem error and never a null binding; its capture binding
+  carries `assembly.output_fingerprint`, so an output that changes during the
+  browser pass fails the unchanged-binding check after it. Symbolic links
+  inside the output are never build output: the walk skips them.
+
+## [1.29.0+agent.9] - 2026-09-16
+
+### Changed
+
+- `bundle check` now reads the doctor sidecar's own verdict. A
+  `.campaign-runtime/doctor-output.json` recording a blocked run (`status:
+  blocked` or `ok: false`) emits `bundle.doctor_output.blocked` — a warning by
+  default, because the sidecars still agree with each other and the contract,
+  and an error under `--require-qa`, because a QA-complete handoff cannot ride
+  a doctor that refused the build (the command then exits 2). Before, the only
+  doctor condition checked was `stale: true`, so a bundle whose doctor said the
+  campaign cannot proceed returned `ok: true, errors: []` even with
+  `--require-qa`. The remedy names `campaigns-os doctor --packet
+  campaign-runtime.build.json --strip-paths`.
+- `bundle.qa_verdict.blocked` is now emitted whenever the QA verdict on disk
+  has `disposition: blocked`: a warning by default, an error under
+  `--require-qa` (before, it appeared only under `--require-qa`). `stage_blocked`
+  keeps its published meaning (a required QA verdict is blocked) and is not
+  widened for the doctor case; the JSON shape is unchanged and a ready doctor
+  with a ready verdict produces byte-identical output.
+- The text report prints a `Readiness:` line directly under `Status:` —
+  `Readiness: BLOCKED (doctor run is blocked)`, `Readiness: BLOCKED (QA verdict
+  is blocked)`, or `Readiness: no doctor or QA block recorded by the sidecars
+  present` — so `Status: CONFORMANT` is never read as readiness. The line is
+  text-only; `--json` carries the same answer in the two blocked findings.
+- README and `docs/migration-sidecar-bundle.md` now say plainly that
+  `conformant` means the sidecars agree with each other and the contract and
+  says nothing about whether doctor or QA passed; read the warnings for that.
+
+## [1.29.0+agent.8] - 2026-09-16
+
+### Changed
+
+- Doctor no longer requires the two CampaignSpec `sdk_hints.meta_tags` keys
+  the Campaign Cart SDK does not read, `next-currency` and
+  `next-predictive-address`, from the built page. Until now a spec that still
+  carried them (older Map exports do; the Map Builder stopped emitting both)
+  failed `validateBuiltSdkMetaTags` with `sdk_hints.meta_tags.missing` on every
+  page, while QA marked the same tags `present but ignored by Campaign Cart`,
+  so the spec, doctor and QA disagreed about the same two keys on every such
+  campaign. Doctor now emits one advisory warning per page,
+  `sdk_hints.meta_tags.ignored_by_sdk`, naming the key(s) and the reason
+  (`Campaign Cart does not read a next-currency meta tag; remove it from the
+  Map's page hints. ...`), whether or not the tag rendered and before `_site/`
+  exists; the keys never appear in the pre-build `CampaignSpec expects SDK
+  meta tags (...)` list. Detail carries `{ page_id, tags }`. The fix is an
+  edit to the Map's page hints, not to the build.
+- QA's `meta:<page>:<tag>` row for those two keys is now `status: warn`
+  (severity `warn`) instead of `manual_review`: there is nothing for a human
+  to review. Its `actual` and `evidence.note` are unchanged in shape and the
+  note text now comes from the one shared list.
+- New leaf module `src/sdk-meta-tags.mjs` exports `SDK_IGNORED_META_TAGS`
+  (`{ tag: { expected, actual, note } }`), `sdkIgnoredMetaTag(name)` and
+  `describeSdkIgnoredMetaTags(names)`; doctor and QA both import it, so the
+  two surfaces read one list. Implementation, not supported surface.
+
+## [1.29.0+agent.7] - 2026-09-16
+
+### Fixed
+
+- The Assembly Report's top-level `status`, `next` and `blockers` are derived
+  from its `stages` on every write of the report instead of being written once
+  by prepare-build and carried forward. Until now a campaign that had run the
+  whole ladder still read `status: "prepared"`, `next.stage: "setup"` and
+  `blockers: []` beside a `stages.qa` recorded `completed_with_warnings` or
+  `blocked`, so a reader of the top level saw a campaign that had not started.
+  `status` is now `blocked` while any recorded stage is blocked, `completed`
+  only once every recorded stage — `prepare_build` and `doctor` included, not
+  just the ladder — is terminal, and `prepared` otherwise, so a report whose
+  doctor never recorded an outcome (`prepare-build --no-doctor`) reads
+  `prepared` with `next.stage: "doctor"` even after the whole ladder has run;
+  `blockers` is the union of the `blockers[]` of the stages currently blocked,
+  so a blocker cleared by a re-run leaves the top level with its stage; a
+  doctor recorded blocked and later passed reads `prepared` again.
+
+### Changed
+
+- The report's `next` block uses the `next <stage>` vocabulary the doctor
+  sidecar and `campaigns-os next` already use: `next.stage` is the first
+  non-terminal stage in ladder order (`setup`, `build`, `polish`, `deploy`,
+  `qa`, then `done`), `prepare-build` / `doctor-blocked` when that gate is
+  blocked, `doctor` when the ladder is exhausted but doctor never recorded an
+  outcome (a pending doctor does not hold the ladder mid-run, exactly as the
+  picker does not walk it, but it does hold `done`), `next.owner` is the
+  owning skill (`next-campaigns-os-setup`,
+  `next-campaigns-build`, `next-campaigns-polish`, `next-campaigns-qa`,
+  `next-campaigns-os`), and `next.blocked: true` is present when the named
+  stage is the one holding the ladder. A reader that branched on
+  `next.stage === "assembly"` reads `"build"`, and on `"collect-inputs"`
+  reads `"prepare-build"`. The report's `next` is the ledger's own position;
+  `campaigns-os next` still folds in live gates (doctor findings,
+  purchase-proof coverage, the polish gate) and stays the authority for what
+  runs next.
+- `next` and doctor no longer call a terminal `stages.prepare_build` beside
+  `status: "blocked"` a contradiction when another stage (QA, doctor) is the
+  one blocked; the `report.status=blocked` contradiction now fires only when
+  no recorded stage is blocked, which after this change can only be a report
+  written before the summary was derived or hand-edited since.
+- `commitAssemblyReport` refuses with a `TypeError` a mutator that returns
+  anything other than a report object, `null` or `undefined`, instead of
+  writing whatever came back.
+- A report written before this change heals on its next commit (the first
+  stage record or operator edit rewrites the summary once); after that an
+  unchanged re-record still leaves the file's bytes alone.
+- `docs/build-packet.md` documents the derived summary under the
+  orchestration loop.
+
+## [1.29.0+agent.6] - 2026-09-16
+
+### Fixed
+
+- Doctor's `template_contract.placeholder_text_residue` check scans the
+  visible text of each built page (tags, attribute values, `<script>` and
+  `<style>` bodies and comments stripped; `alt` text kept), the same surface
+  the browser residue gate reads. A checkout page whose only "Placeholder" is
+  an `<input placeholder="…">` hint no longer warns `built output still
+  contains literal template placeholder text (Placeholder)` while QA's gate
+  passes the same page; rendered "Lorem ipsum" still warns, and the
+  `file:line` in the warning now points at the rendered text.
+
+### Changed
+
+- `qa run` records the placeholder-text gate outcome on the Assembly Report's
+  `stages.qa.evidence` (`gates.placeholder_text_residue` with
+  `status`/`pages_checked`/`pages_failed`, beside the
+  `source_build_fingerprint` the verdict judged). A gate that did not run is
+  absent, never `pass`.
+- While `stages.assembly.build_fingerprint` still equals that recorded
+  fingerprint and the gate passed, doctor reports any remaining static hit as
+  the ready line `… but the browser residue gate passed on this build; QA's
+  rendered-text verdict stands` instead of the warning, and `next` no longer
+  prints the `Replace literal template placeholder text …` action. A rebuild
+  or a failed gate brings the warning and the action back.
+
+## [1.29.0+agent.5] - 2026-09-16
+
+### Added
+
+- `--order-path-depth <off|common|full>` sets `qa.proof_policy.order_path_depth`,
+  which until now had no setter: `prepare-build`/`start`/`build` seed the
+  packet with it (default still `common`), and `qa policy set
+  --order-path-depth <depth>` changes it later. One accepted-values set,
+  matched case-insensitively and stored lower-case (`Off` writes `off`); a
+  bare flag or any other value is refused before anything is written
+  (`qa policy set: unsupported --order-path-depth "tiers". Accepted values:
+  off, common, full.`). `qa policy set` also refreshes the assembly report's
+  `proof_policy.order_path_depth` mirror through the same ledger write every
+  other report edit uses (the doctor sidecar is stamped stale), reports it in
+  `changed[]` as `report.proof_policy.order_path_depth` and in a new
+  `report_mirror` object, and re-states the packet's value into a lagging
+  mirror even when the packet already holds it. The `policy` snapshot gains
+  `qa.order_path_depth`. With `off` on both sides a `qa run --test-order off`
+  pass reaches `next: done`.
+
+### Changed
+
+- Doctor warns `qa.proof_policy.order_path_depth_drift` (advisory, never a
+  blocker) when the packet's declared depth and the report's mirror disagree —
+  the state a hand-edited packet leaves behind, which `next` reads as unknown
+  coverage and could not clear. The warning, the coverage `reason` and the
+  `next` `purchase_proof_unknown` action carry one text naming the one
+  command that reconciles them (`qa policy set --packet <packet>
+  --order-path-depth <packet value>`; the placeholder `<off|common|full>` when
+  the packet holds a value the setter refuses), and that `next` action is now
+  `kind: command` with the runnable command instead of a manual step reading
+  "Reconcile the packet and the report before treating either depth as
+  proved." `docs/qa-and-test-orders.md` and `docs/build-packet.md` describe
+  the setter and the drift warning.
+
+## [1.29.0+agent.4] - 2026-09-16
+
+### Changed
+
+- `run-record` with no `--run-id` and no active run session re-emits the most
+  recent Run Record for this packet's campaign under that record's `run_id`
+  instead of minting a new one (#328). `run end` clears the session, so every
+  run-record after close minted — the closeout action `next` prints at stage
+  `done`, the command a session-ending `qa run` prints, and any re-emit after
+  fixing a sidecar each filed a second Run Record for a run that already had
+  one. Resolution is now `--run-id` > the active session > the newest record
+  on disk whose `identity.map_id` and `identity.campaign_slug` match the packet
+  (the same match closeout recognition uses) > a fresh id; a record whose remit
+  landed stays final and is left as written, exactly as an explicit `--run-id`
+  over it already did. The `--json` summary carries `run_id_source`
+  (`explicit` | `session` | `latest_record` | `minted`) and the text output
+  prints `Run ID: <id> (<source>)`; a `latest_record` run first prints `Run ID
+  <id> is the most recent Run Record for this campaign; re-emitting it in
+  place. Pass --new-run to start a new run under a fresh id, or --list to see
+  every record for this packet.` The source rides the command's envelope only;
+  the Run Record schema is unchanged.
+- New `run-record --new-run` mints a fresh `run_id` regardless of what is on
+  disk (refused beside `--run-id`: `--new-run and --run-id are exclusive`).
+  `next` puts it on the required `run_record_closeout` command when the record
+  it judged `stale_predates_evidence` or `outdated_artifacts` is the newest
+  one for the campaign, since the plain command would now re-emit that record
+  in place; the description names the superseded id. With no matching record
+  (`no_record`, `foreign_campaign`) the plain command is printed and mints on
+  its own.
+- New `run-record --list` prints, newest first, every Run Record on disk for
+  this packet's campaign — `run_id`, `created_at`, `remit_state`,
+  `remit_result`, `remit_endpoint`, `record_path` — then the id a plain run
+  would use and its source, and assembles, writes and sends nothing, like
+  `--no-write` (`list: true`, `written: false`, `remit.sent: false` in
+  `--json`; the text output ends `List only (--list). No record written, no
+  remit.`).
+
+## [1.29.0+agent.3] - 2026-09-16
+
+### Changed
+
+- `prepare-build` records `assembly.commerce_catalog.path: null` when the
+  catalog in use is the toolkit's own `contracts/commerce-surface-catalog.json`
+  (the default), instead of a packet-relative path that climbs into whichever
+  checkout ran the command (`../../../campaigns-os/contracts/…`). The catalog
+  ships with the toolkit, so a null path resolves to the running toolkit's
+  copy on every machine and under `npx campaigns-os` (#324). An explicit
+  `--commerce-catalog <path>` is still recorded relative to the packet.
+- Doctor and `qa run` read a null `assembly.commerce_catalog.path` as the
+  running toolkit's catalog. A recorded path that does not exist but whose
+  file name is `commerce-surface-catalog.json` (a packet prepared before this
+  change, moved to another machine) also resolves to the running toolkit's
+  catalog: doctor no longer blocks with
+  `[assembly.commerce_catalog.path] Commerce catalog is required but not found.`
+  and instead prints the ready line `Commerce catalog resolved to the running
+  toolkit's copy; the packet's recorded path <path> does not exist here (it
+  names the checkout that ran prepare-build). Re-run prepare-build to clear
+  the machine-local path.` A dead path with any other file name still blocks.
+- `docs/build-packet.md` gains a Commerce Catalog section describing the three
+  path states (null, operator path, stale machine-local path) and
+  `examples/build-packet.basic.json` carries `path: null`.
+
+## [1.29.0+agent.2] - 2026-09-16
+
+### Changed
+
+- Spec-hash identity is compared one way everywhere (#328): `src/spec-identity.mjs`
+  now owns `normalizeSpecHash` (trim, lower-case, strip one leading `sha256:`,
+  empty to `null`), `specHashesMatch` (both sides present and equal after
+  normalisation; two missing hashes never match) and `specHashOf` (the
+  `spec_hash` / `spec_identity.spec_hash` lookup). The Commercial Journey
+  `deriveState` freshness check, the sidecar-bundle `spec_hash` and
+  `spec_material_hash` identity checks, and the Commercial Journey and QA
+  parity report `spec_hash` fields all go through it. A calculation whose
+  `spec_hash` differs from the Map's only by prefix, hex case or surrounding
+  whitespace is now `Exact` instead of `Stale`, and a sidecar bundle whose
+  producers spell the same hash differently no longer reports
+  `bundle.identity.spec_hash_mismatch` / `spec_material_hash_mismatch`. Other
+  identity fields (`map_id`, slugs, paths) keep their exact compare. The
+  module stays internal this release; a package export lands with the next
+  supported-surface bump.
 
 ## [1.29.0+agent.1] - 2026-09-16
 
