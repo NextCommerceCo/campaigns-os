@@ -118,10 +118,23 @@ Two residue surfaces keep a build from silently shipping template placeholders:
 - **`qa_inspection.placeholder_text_residue`** (declared in
   `shared-commerce`, inherited by every family): literal placeholder copy —
   `Lorem`, `lorem ipsum`, `Placeholder`, `TODO`, `Product Name` — matched on
-  word boundaries, case-insensitive. Doctor warns on built HTML; browser QA
-  **fails (blocker)** on any match in visible page text, and this blocker is
+  word boundaries, case-insensitive. Doctor warns on the **visible text** of
+  built HTML (tags, attribute values, `<script>`/`<style>` bodies and comments
+  stripped, `alt` text kept), the same surface the browser gate reads — so an
+  `<input placeholder="…">` hint or a `data-*` hook never trips it. Browser QA
+  **fails (blocker)** on any match in rendered page text, and this blocker is
   fixed — a theme-gate waiver that softens color residue does **not** excuse
   placeholder text. A family may override the term set.
+
+  The browser verdict outranks the static scan on the build it judged. `qa
+  run` records the gate outcome on the Assembly Report's `stages.qa.evidence`
+  (`gates.placeholder_text_residue` beside `source_build_fingerprint`); while
+  `stages.assembly.build_fingerprint` still equals that fingerprint, doctor
+  reports any remaining static hit as a ready line ("browser residue gate
+  passed on this build") instead of a warning, and `next` drops the
+  replace-placeholder-text action. A rebuild moves the fingerprint and the
+  warning returns until QA runs again; a failed or never-run gate never
+  demotes anything.
 - **`demo_assets`** (declared per family; arrays replace on `extends`): the
   template's own demo placeholder assets. `assets` lists demo-asset paths (e.g.
   `images/1x1_1.svg`); a real asset reference to one of them surfaces as a

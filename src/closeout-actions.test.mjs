@@ -203,6 +203,26 @@ for (const reason of ["no_record", "foreign_campaign", "stale_predates_evidence"
   });
 }
 
+// With no session, run-record re-emits the newest record for the campaign in
+// place — and a remitted record is final. So when the record judged stale or
+// outdated IS that newest record, the plain command would change nothing; the
+// closeout has to mint under a new id. Without a matching record on disk the
+// plain command mints on its own and needs no flag.
+for (const reason of ["stale_predates_evidence", "outdated_artifacts"]) {
+  test(`closeout for ${reason} opens a new run id rather than re-emitting the superseded record`, () => {
+    const actions = doneActions({ satisfied: false, reason_code: reason, record_id: "run_1_abcd", record_path: "/t/run_1_abcd.json", detail: `detail for ${reason}` });
+    const closeout = actions.find((action) => action.id === "run_record_closeout");
+    assert.ok(closeout);
+    assert.match(closeout.command, /run-record --packet \/campaigns\/demo\/campaign-runtime\.build\.json --new-run --json/);
+    assert.match(closeout.description, /run_1_abcd stays as written; --new-run/);
+  });
+}
+
+test("closeout with no matching record on disk prints the plain command, which mints on its own", () => {
+  const closeout = doneActions({ satisfied: false, reason_code: "no_record", record_id: null, record_path: null, detail: "none" }).find((action) => action.id === "run_record_closeout");
+  assert.equal(closeout.command, "campaigns-os run-record --packet /campaigns/demo/campaign-runtime.build.json --json");
+});
+
 test("an unassessed closeout keeps the unconditional required demand", () => {
   const closeout = doneActions(null).find((action) => action.id === "run_record_closeout");
   assert.ok(closeout);

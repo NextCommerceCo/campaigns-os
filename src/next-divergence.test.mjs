@@ -269,7 +269,10 @@ test("clean repo keeps the divergence shape while surfacing missing-spec checkpo
   // divergence vocabulary specifically, not the bare word.)
   assert.doesNotMatch(JSON.stringify(result), /"divergences"|divergence_inspect|divergence\./, "clean repo output must not mention divergences anywhere");
 
-  // Pre-change shape captured at main@002fdfe for this fixture.
+  // Pre-change shape captured at main@002fdfe for this fixture. The example
+  // packet's `../contracts/commerce-surface-catalog.json` is dead in this
+  // unstaged copy; doctor resolves that to the running toolkit's catalog, so
+  // assembly.commerce_catalog.path no longer appears among the blockers.
   assert.deepEqual(Object.keys(result), ["ok", "status", "stage", "reason", "errors", "warnings", "ready", "prompt", "gates", "next_actions"]);
   assert.equal(result.ok, false);
   assert.equal(result.status, "blocked");
@@ -279,7 +282,6 @@ test("clean repo keeps the divergence shape while surfacing missing-spec checkpo
     "spec.local_path",
     "page_kit.sdk_version.spec_unavailable",
     "page_kit.store_profile.spec_unavailable",
-    "assembly.commerce_catalog.path",
     "identity.map_id",
     "identity.public_route_slug",
     "inputs.packet_path",
