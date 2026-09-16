@@ -46,6 +46,19 @@
         "images/klarna-logo.svg",
         "images/upsell-payment-logos.svg"
       ],
+      "asset_sha256": {
+        "images/paypal.svg": "7c84e9a91a694ca48ad6899325862bb509ba927281198d4c9d1c5da31de6054a",
+        "images/paypal-logo.svg": "adf9b3c556710fac2e0f2ecf748a1f82afd023d7957336ef228db33f1deb83d3",
+        "images/paypal-txt.svg": "65b5b5ac3704273a1a888af98295d7ef805682c6c3c24554349eb10ef7f6f2ef",
+        "images/klarna-logo.svg": "e0229bc62001597c3c2428e64c1032a53963f082b90560f8fad21c3c34a8bec6",
+        "images/upsell-payment-logos.svg": "54a8f046ae047a79d1318a98ac808cc61f15ca31cd1a232f7b5577405caa4936"
+      },
+      "asset_pin": {
+        "repo": "NextCommerceCo/campaign-cart-starter-templates",
+        "sha": "a7cc8beaf9d332c5d8e501d36fb9d4d7e3667468",
+        "path": "src/<family>/assets/<asset>",
+        "note": "asset_sha256 is the sha256 of each shipped starter asset at this commit (the commerce-surface-catalog _synced_from_sha pin; the bytes are identical across every family). A served asset whose bytes hash to the shipped value is the untouched starter asset and counts as residue even though its markup names no method; different bytes mean it was edited in place. check-template-doctrine verifies these hashes against the pinned checkout."
+      },
       "rule": "Remove unless the method is listed in CampaignSpec available_payment_methods / available_express_payment_methods. Template chrome outside the SDK payment-method include counts as implied payment-method residue.",
       "note": "paypal intentionally has two selectors. QA fails if any selector for an unsupported method remains visible."
     }

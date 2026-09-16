@@ -358,12 +358,18 @@ reads as carrying chrome it no longer has.
 Delete the asset, or author a replacement under a new name and repoint the
 reference. Recording the edit in polish evidence does not change how QA keys it.
 
-QA fetches a referenced `.svg` and, when the served bytes no longer mention the
-method, downgrades that assertion from a blocker to `manual_review` — the
-verdict lands on `ready_with_exceptions` and no autonomous repair is dispatched.
-That is a safety net for a mistake already made, not a supported workflow: the
-downgrade only applies to assets it can fetch and read, so a raster, an
-unreachable URL, or a mark carried as bare path data still blocks.
+QA fetches a referenced `.svg` and hashes the served bytes against the shipped
+starter hash recorded in the shared-commerce contract
+(`payment_chrome.asset_sha256`, pinned to a starter-templates commit by
+`asset_pin.sha`). The shipped bytes are the untouched starter strip and block
+as residue, whatever the markup says — the starter's `upsell-payment-logos.svg`
+draws its PayPal wordmark as path data and names no method. Bytes that differ
+and no longer mention the method are an edit in place, and that assertion is
+downgraded from a blocker to `manual_review` — the verdict lands on
+`ready_with_exceptions` and no autonomous repair is dispatched. That is a
+safety net for a mistake already made, not a supported workflow: the
+downgrade only applies to assets QA can fetch and read, so a raster, an
+unreachable URL, or an edited file that still names the method still blocks.
 
 ### 3.3 `template_residue_review.starter_favicon`
 
