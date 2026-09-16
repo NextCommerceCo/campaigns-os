@@ -2,6 +2,45 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.30.0] - 2026-09-16
+
+### Added
+
+- The QA verdict records the order's data layer (#325). Every typed-card
+  path that places an order now records what `window.NextDataLayer` said
+  about that order across every page the path visited after checkout, on the
+  order as `test_orders[].data_layer`, judged by one assertion per path,
+  `analytics-correctness:data-layer-purchase:<path>`: exactly one
+  `dl_purchase`, whose `ecommerce.transaction_id` is the placed order's number
+  or ref id. One matching event passes; none is a blocker (`absent`); more
+  than one is a blocker (`duplicate` — the #302 rule: a funnel that reports
+  the purchase twice double-counts revenue and fails the same as one with
+  none, whether both pushes are on one page or the dedupe failed across
+  pages); one event naming another order, or none, is a blocker
+  (`mismatch`); one event with no recorded order reference to match is
+  `manual_review` (`order_ref_unknown`); a layer that could not be hooked or
+  read is a blocker recorded as `measured: false` with null counts
+  (`unmeasured`), never a zero reading. The reading is the whole
+  post-checkout journey, not a snapshot of the terminal document, because the
+  SDK raises `dl_purchase` on the first `?ref_id=` page that fetches the
+  order back (the upsell page on a funnel with one) and dedupes it on every
+  later page including the receipt — the first end-to-end run of a
+  receipt-only reading came back `absent` on a correctly reporting funnel.
+  The runner's data-layer hook (the one the analytics leg already uses) is
+  now attached for every typed-card order; the runner waits for the event
+  within `--analytics-settle` and the order deadline, then one second of
+  grace so a second push can land before the count, and records a
+  per-document breakdown in evidence. It counts the SDK's own array only (a
+  GTM adapter's re-push to `window.dataLayer` is not a duplicate), never
+  counts `dl_upsell_purchase`, needs no CampaignSpec analytics block, and is
+  not re-taken on a recovery pass. This is the current-SDK bump lane's
+  acceptance signal, which until now lived only in a separate read-only
+  browser probe and a hand-authored evidence file outside the harness's own
+  record. `schemas/campaigns-os-qa-verdict.v0.schema.json` gains the optional
+  `data_layer` object on `testOrder` (additive; `surface_version` 1.29.0 →
+  1.30.0). `docs/qa-and-test-orders.md` documents the reading and its six
+  outcomes under Test Orders.
+
 ## [1.29.0+agent.15] - 2026-09-16
 
 ### Fixed

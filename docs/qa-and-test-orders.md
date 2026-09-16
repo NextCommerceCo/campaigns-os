@@ -738,6 +738,11 @@ emit an effective Purchase for a pass.
   paths, and capture/settle errors.
 - Analytics-off and legacy API-only order paths emit no receipt Purchase proof.
 
+`purchase-fires` answers "did a Purchase reach a provider" and needs a declared
+analytics block to gate. The SDK's own data layer is a separate, always-on
+reading taken on the same order — see [Purchase data layer](#purchase-data-layer-dl_purchase)
+under Test Orders.
+
 ## Analytics parity (dataLayer / GTM)
 
 The analytics-parity leg proves the live **dataLayer event stream + GTM/pixel
@@ -1000,6 +1005,58 @@ the depth as unknown and cannot reach `done`. Doctor warns
 `next` `purchase_proof_unknown` action becomes a runnable command, both naming
 the same fix: `qa policy set --packet <packet> --order-path-depth <packet
 value>`, which re-states the packet's value into the mirror.
+
+### Purchase data layer (`dl_purchase`)
+
+Every typed-card path that places an order also records what the SDK's own
+data layer said about that order, on the order as `test_orders[].data_layer`,
+judged by one assertion per path,
+`analytics-correctness:data-layer-purchase:<path>`. The question is the one the
+current-SDK bump lane exists to prove and that used to live only in
+hand-authored evidence files (#325): **exactly one `dl_purchase` in
+`window.NextDataLayer` after the order, and it names the order the run just
+placed.**
+
+Where the event fires matters. The SDK raises `dl_purchase` from
+`order:completed`, on the **first page opened with `?ref_id=`** that fetches the
+order back — the upsell page on a funnel that has one, the receipt only when
+nothing sits between checkout and receipt — and then remembers the transaction
+id per browser and drops the event on every later page of the same order (a
+reload, a new tab, the receipt after an upsell). So the reading is the whole
+post-checkout journey: the runner's data-layer hook (the same one the analytics
+leg uses) records every push on every document the path visits, and the count
+is taken across all of them, with a per-document breakdown in evidence. The
+runner waits for the event to arrive (bounded by `--analytics-settle`, default
+`5000` ms, and the order deadline), then a one-second grace so a second push has
+time to land before the count is taken. It needs no CampaignSpec analytics
+block: the SDK writes this array whether or not any provider is declared.
+
+| `outcome` | What was read | Assertion |
+|---|---|---|
+| `pass` | one `dl_purchase`; its `ecommerce.transaction_id` is the placed order's number or ref id | `pass` |
+| `absent` | no `dl_purchase` on any page after the order | `fail` / blocker |
+| `duplicate` | more than one `dl_purchase` — on one page (double bootstrap) or across pages (the dedupe failed); a funnel that reports the purchase twice double-counts revenue, and is a FAIL the same as one with none (#302) | `fail` / blocker |
+| `mismatch` | one `dl_purchase`, but it names a different order, or none | `fail` / blocker |
+| `order_ref_unknown` | one `dl_purchase`, but the run recorded no order number or ref id to match it against | `manual_review` / warn |
+| `unmeasured` | the hook could not attach or mirror pushes out of the page — recorded with `measured: false` and null counts, never as a zero reading | `fail` / blocker |
+
+The record carries `count`, `expected_order_refs`, `observed_transaction_ids`
+(in push order), `order_ref_match`, `outcome`, `ok` and `reason`; the raw probe
+(`event_counts` per event name, `documents` with each page's event and purchase
+counts, and each `dl_purchase`'s page, `transaction_id`, `value`, `currency`)
+sits under `evidence.data_layer` on the order and on the assertion. Like every
+order field it stays in the full verdict and is stripped from the committed
+sidecar.
+
+Three things the count deliberately does not do. It reads
+`window.NextDataLayer` only — a GTM adapter legitimately re-pushes the same
+event to `window.dataLayer`, and that mirror is not a duplicate. It never counts
+`dl_upsell_purchase`, a different event that an accepted upsell legitimately
+adds. And it is not re-taken on a recovery pass: a fresh reading of a receipt
+the SDK has already reported would say `absent` for an order that reported
+correctly the first time. A failure here is its own blocker, not a
+`browser-test-order` failure: the order was created; what is wrong is what the
+funnel told analytics about it.
 
 ### Step-ladder evidence
 

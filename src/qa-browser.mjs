@@ -41,6 +41,7 @@ import {
   UNDECLARED_ROUTE_ATTRIBUTES,
 } from "./qa-cart-entry.mjs";
 import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump.mjs";
+import { assessPurchaseDataLayer, expectedOrderReferences, purchaseDataLayerAssertion, purchaseDataLayerProbe } from "./qa-purchase-data-layer.mjs";
 import { isBumpRow } from "./commercial-journey.mjs";
 import {
   RESIDUE_PAGE_TYPES,
@@ -365,6 +366,8 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       if (totalParity) assertions.push(totalParity);
       const renderedReceiptAssertion = receiptRenderingAssertion(pageForPlan, identifier, result.order);
       if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
+      const dataLayerAssertion = purchaseDataLayerAssertion(pageForPlan, identifier, result.order);
+      if (dataLayerAssertion) assertions.push(dataLayerAssertion);
     }
   } catch (error) {
     // Convert runner-level surprises into a blocker assertion so the run still
@@ -2867,6 +2870,57 @@ function skipRemainingSteps(ladder, stepNames, reason) {
   }
 }
 
+// Wait, Node-side, for the order's dl_purchase to reach the data-layer hook.
+// The SDK pushes it on the first ref_id page once the order is fetched back,
+// so on a `checkout`-mode path that stops right after the redirect the push
+// can still be in flight when the path ends. Bounded by the analytics settle
+// window and the order deadline; the grace after the first sighting is what
+// lets a second push — the double count #302 describes — land before the
+// count is taken, instead of the read racing the duplicate and passing it.
+const PURCHASE_DATA_LAYER_DUPLICATE_GRACE_MS = 1000;
+const PURCHASE_DATA_LAYER_POLL_MS = 100;
+
+async function waitForPurchaseDataLayer({
+  read,
+  settleMs = DEFAULT_SETTLE_TIMEOUT_MS,
+  deadline = Date.now() + DEFAULT_SETTLE_TIMEOUT_MS,
+  now = () => Date.now(),
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+}) {
+  const settle = Math.max(0, Number.isFinite(settleMs) ? settleMs : DEFAULT_SETTLE_TIMEOUT_MS);
+  const until = Math.min(now() + settle, deadline);
+  const seen = () => purchaseDataLayerProbe(read()).purchases.length > 0;
+  while (!seen() && now() < until) {
+    await wait(Math.min(PURCHASE_DATA_LAYER_POLL_MS, Math.max(0, until - now())));
+  }
+  if (seen()) {
+    // The settle window bounds how long to wait for the FIRST sighting; the
+    // grace is a separate, fixed pause after it, bounded only by the order
+    // deadline. Tying it to the settle window would let `--analytics-settle
+    // 500` shrink the grace to nothing when the event lands late, which is
+    // precisely when a duplicate is still in flight.
+    const grace = Math.min(PURCHASE_DATA_LAYER_DUPLICATE_GRACE_MS, Math.max(0, deadline - now()));
+    if (grace > 0) await wait(grace);
+  }
+  return purchaseDataLayerProbe(read());
+}
+
+// The two halves of "was an order placed" for the data-layer reading, kept
+// pure so the reachability of every outcome is testable without a browser.
+// A reading is taken when the order carries a reference or the submit click
+// happened; it is recorded when the order is referenced, when a purchase was
+// seen (the order_ref_unknown case), or when the hook itself failed.
+function purchaseDataLayerApplies(order, submitted) {
+  return expectedOrderReferences(order).length > 0 || submitted === true;
+}
+
+function purchaseDataLayerRecord(order, { probe = null, probeError = null } = {}) {
+  const referenced = expectedOrderReferences(order).length > 0;
+  const purchaseSeen = (probe?.purchases?.length ?? 0) > 0;
+  if (!referenced && !purchaseSeen && !probeError) return null;
+  return assessPurchaseDataLayer(probe, order, { probeError });
+}
+
 async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runId, options = {}) {
   const normalizedPlan = normalizeTestOrderPlan(plan, args);
   const planArgs = argsForPlan(args, normalizedPlan);
@@ -2907,6 +2961,43 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
       result.analytics_journey_capture_error = analyticsAttachError;
       if (receiptRecognized) result.receipt_analytics_capture_error = analyticsAttachError;
     }
+    // The order's dl_purchase across every page after checkout (#325),
+    // recorded whenever the path placed an order and judged by its own
+    // assertion in the runner loop. Not a checkout failure and never moves
+    // the ladder. A hook that could not attach is recorded as unmeasured.
+    //
+    // "Placed" is read two ways, because the platform's answer can be
+    // missing: an order reference (number or ref id) proves it, and so does
+    // a submit that reached the click. A path that never submitted has no
+    // order to report on. When it submitted but no reference came back, the
+    // reading is still taken — a dl_purchase there is the order_ref_unknown
+    // case, an order the funnel reported that the run cannot name — but a
+    // silent data layer beside a reference-less order is not recorded: it
+    // would stack an `absent` blocker on a checkout failure the
+    // browser-test-order assertion already reports.
+    if (result?.order && purchaseDataLayerApplies(result.order, submitState.reserved)) {
+      let probe = null;
+      let probeError = analyticsAttachError ? "the data-layer hook could not attach to the page" : null;
+      if (analyticsCapture && !probeError) {
+        try {
+          probe = await waitForPurchaseDataLayer({
+            read: () => analyticsCapture.rawEvents(),
+            settleMs: numberArg(planArgs["analytics-settle"], DEFAULT_SETTLE_TIMEOUT_MS),
+            deadline: (orderDeadline ?? Date.now()) + ORDER_TIMEOUT_GRACE_MS,
+          });
+        } catch (error) {
+          probeError = error instanceof Error ? error.message : String(error);
+        }
+      } else if (!probeError) {
+        probeError = "no data-layer hook was attached";
+      }
+      const record = purchaseDataLayerRecord(result.order, { probe, probeError });
+      if (record) {
+        result.order.data_layer = record;
+        result.order.evidence = result.order.evidence || {};
+        result.order.evidence.data_layer = probe ?? { error: probeError };
+      }
+    }
     // Whether this attempt reached the submit click, recorded on every result
     // shape the runner can return. The classifier trusts this over the ladder.
     if (result && typeof result === "object") {
@@ -2921,7 +3012,11 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
 
   try {
     page = await context.newPage();
-    if (options.captureAnalytics) {
+    // Attached for every typed-card order, unconditionally: the same hook is
+    // what records the order's dl_purchase (#325), and an order with no
+    // reading is an unmeasured blocker, not a quieter verdict. The receipt
+    // Purchase proof stays gated on the analytics leg in qa-node.
+    {
       try {
         analyticsCapture = await attachAnalyticsCapture(page, { extraHosts: analyticsExtraHosts(planArgs) });
       } catch {
@@ -5122,6 +5217,10 @@ async function recoverCreatedOrder({ context, attempt, plan = null, checkoutPage
     await gotoAndSettle(page, receiptUrl, planArgs);
     checks.push({ check: "reload_receipt", ok: true, reason: "receipt reloaded read-only; no control was clicked and nothing was submitted" });
 
+    // `data_layer` rides along from the first attempt and is deliberately not
+    // re-taken here: the SDK remembers reported purchases per browser and
+    // drops dl_purchase on a reload of the same receipt, so a fresh reading
+    // would say "absent" for an order that reported correctly the first time.
     const recovered = {
       ...order,
       verification: { ...(order.verification || {}) },
@@ -6418,6 +6517,9 @@ export const __qaBrowserTestHooks = Object.freeze({
   collectOrderAnalytics,
   journeyAnalyticsAttempt,
   receiptAnalyticsAttempt,
+  waitForPurchaseDataLayer,
+  purchaseDataLayerApplies,
+  purchaseDataLayerRecord,
   stampTestOrderPlan,
   formatStepEvent,
   hostedRedirectInfo,

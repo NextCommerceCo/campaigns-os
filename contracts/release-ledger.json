@@ -3945,6 +3945,57 @@
         }
       ],
       "entry_sha256": "0fbab633c8082813e5f259d1f9e913078cea249429b1f54e8820c3de51ee3179"
+    },
+    {
+      "id": "RL-0107",
+      "sequence": 107,
+      "date": "2026-09-16",
+      "kind": "release",
+      "surface_version": "1.30.0",
+      "changelog_section": "1.30.0",
+      "changelog_sha256": "ea4b17f9e33ab112ec7f80d594a9afd008527550fcc548b9209132bd48f48b23",
+      "agent_impact": "Full QA verdicts from typed-card runs that placed an order now carry an optional test_orders[].data_layer object (layer NextDataLayer, event dl_purchase, measured, count, expected_order_refs, observed_transaction_ids, order_ref_match, outcome pass | absent | duplicate | mismatch | order_ref_unknown | unmeasured, ok, reason) read across every page the path visited after checkout, and one new assertion per such path, analytics-correctness:data-layer-purchase:<path> (family analytics-correctness, already in the vocabulary; blocker on absent, duplicate, mismatch and unmeasured; manual_review on order_ref_unknown). A verdict for an order whose SDK data layer carries no dl_purchase, more than one, or one naming another order is now blocked where it was not before. The runner's data-layer hook is attached for every typed-card order, not only when the analytics leg runs. Consumers reading the full verdict may read the record; the committed sidecar strips it with the rest of the order fields. No CLI flag, exit code or command changed; --analytics-settle bounds the wait for the event. surface_version 1.29.0 -> 1.30.0 (additive schema change).",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "summary": "testOrder gains the optional data_layer object: the order's dl_purchase reading across the post-checkout journey, with its enumerated outcome; additive, additionalProperties unchanged."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.29.0 -> 1.30.0; the QA verdict schema hash is re-pinned."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The schema row notes the 1.30.0 additive data_layer record on QA Verdict test_orders[]."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "New Purchase data layer (dl_purchase) section under Test Orders: where the SDK fires the event, why the reading is the whole post-checkout journey, the six outcomes and their assertion status, what the count deliberately excludes; the analytics-correctness section points at it."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: supported surface at generation time 1.30.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: supported surface at generation time 1.30.0."
+        }
+      ],
+      "entry_sha256": "f0e8db2b5f3d171ecf925bc032584003543e697f89078422d61b964d7df954a7"
     }
   ]
 }
