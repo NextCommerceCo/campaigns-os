@@ -36,6 +36,7 @@ Notable supported-surface changes are recorded here.
   "Reconcile the packet and the report before treating either depth as
   proved." `docs/qa-and-test-orders.md` and `docs/build-packet.md` describe
   the setter and the drift warning.
+
 ## [1.29.0+agent.4] - 2026-09-16
 
 ### Changed
