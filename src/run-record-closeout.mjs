@@ -192,11 +192,18 @@ export function assessRunRecordCloseout({
 
 /**
  * The newest Run Record among `records` that belongs to `packet`'s campaign
- * (identityMatches), or null when none does. Newest matching record wins. A
- * record with an unparseable created_at sorts last: it cannot prove it is
- * current, so it is never preferred over one that can. The assessor then
- * judges only this entry — so an older good record cannot mask a newer broken
- * one — and `run-record` re-emits under its id when no session names one.
+ * (identityMatches) and names a `run_id`, or null when none does. Newest
+ * matching record wins. A record with an unparseable created_at sorts last:
+ * it cannot prove it is current, so it is never preferred over one that can.
+ * Equal or unparseable timestamps break the tie on the file path, descending,
+ * the way orderRunRecordFileNames orders the directory, so the pick is
+ * deterministic and never left to the sort's handling of a 0 comparison. The
+ * assessor then judges only this entry — so an older good record cannot mask
+ * a newer broken one — and `run-record` re-emits under its id when no session
+ * names one. A record without a `run_id` is not a candidate for either: it
+ * could not have been written by writeRunRecord, and letting it win would
+ * hand run-record nothing to re-emit under, silently minting a second record
+ * for a campaign that has one.
  *
  * @param {Array}  records  `{ path, record }` entries; non-object records are
  *                          ignored.
@@ -204,9 +211,15 @@ export function assessRunRecordCloseout({
  */
 export function latestMatchingRunRecord(records, packet) {
   const matching = (Array.isArray(records) ? records : [])
-    .filter((entry) => isObject(entry?.record) && identityMatches(entry.record, packet));
+    .filter((entry) => isObject(entry?.record) && identityMatches(entry.record, packet) && text(entry.record.run_id) !== null);
   if (!matching.length) return null;
-  const sorted = [...matching].sort((a, b) => (parseTime(b.record.created_at) ?? -1) - (parseTime(a.record.created_at) ?? -1));
+  const sorted = [...matching].sort((a, b) => {
+    const byTime = (parseTime(b.record.created_at) ?? -1) - (parseTime(a.record.created_at) ?? -1);
+    if (byTime !== 0) return byTime;
+    const left = text(a.path) || "";
+    const right = text(b.path) || "";
+    return left < right ? 1 : left > right ? -1 : 0;
+  });
   return sorted[0];
 }
 

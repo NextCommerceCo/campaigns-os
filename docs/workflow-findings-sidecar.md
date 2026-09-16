@@ -408,7 +408,8 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   in the same process, before the printed command can run, so there the command
   finds no session and resolves the `run_id` the way any sessionless run does
   (below): to the record the auto-end just wrote, which it re-emits in place —
-  and leaves as written when its remit landed. One exported set decides which dispositions end a session, read by both
+  and leaves as written when its remit landed. One exported set decides which
+  dispositions end a session, read by both
   the auto-end and the closeout, so the two cannot disagree about who owns the
   `run_id`. When
   an auto-end's own remit does not close, the auto-end says so and names the

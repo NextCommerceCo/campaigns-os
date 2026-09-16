@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { assessRunRecordCloseout, latestProducerTimestamp, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
+import { assessRunRecordCloseout, latestMatchingRunRecord, latestProducerTimestamp, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 
 const PACKET = {
   spec: { map_id: "demo-map-01" },
@@ -149,6 +149,26 @@ test("the newest matching record decides, and an older good one cannot mask it",
   const result = assess([older, newer]);
   assert.equal(result.reason_code, "remit_failed");
   assert.equal(result.record_id, "run_new");
+});
+
+test("a newer matching record without a run_id is not a candidate and cannot hide the older one", () => {
+  const older = { path: "/t/run_1_old.json", record: record({ run_id: "run_1_old", created_at: "2026-03-02T01:00:00.000Z" }) };
+  const idless = { path: "/t/run_2_idless.json", record: record({ run_id: "", created_at: "2026-03-02T05:00:00.000Z" }) };
+  const latest = latestMatchingRunRecord([older, idless], PACKET);
+  assert.equal(latest?.record.run_id, "run_1_old", "run-record must have an id to re-emit under, never a fresh mint beside an existing run");
+  assert.equal(latestMatchingRunRecord([idless], PACKET), null);
+  assert.equal(assess([older, idless]).record_id, "run_1_old");
+});
+
+test("equal or unparseable created_at breaks the tie on the file path, deterministically", () => {
+  const a = { path: "/t/run_1_aaaa.json", record: record({ run_id: "run_1_aaaa", created_at: "2026-03-02T01:00:00.000Z" }) };
+  const b = { path: "/t/run_1_bbbb.json", record: record({ run_id: "run_1_bbbb", created_at: "2026-03-02T01:00:00.000Z" }) };
+  assert.equal(latestMatchingRunRecord([a, b], PACKET).record.run_id, "run_1_bbbb");
+  assert.equal(latestMatchingRunRecord([b, a], PACKET).record.run_id, "run_1_bbbb");
+  const x = { path: "/t/run_x.json", record: record({ run_id: "run_x", created_at: "not a date" }) };
+  const y = { path: "/t/run_y.json", record: record({ run_id: "run_y", created_at: null }) };
+  assert.equal(latestMatchingRunRecord([x, y], PACKET).record.run_id, "run_y");
+  assert.equal(latestMatchingRunRecord([y, x], PACKET).record.run_id, "run_y");
 });
 
 test("a malformed record file is ignored, not fatal", () => {

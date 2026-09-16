@@ -26,7 +26,7 @@ import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
-import { assessRunRecordCloseout, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
+import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
   appendFinding,
   buildFinding,
@@ -8849,11 +8849,10 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
       // outdated, re-emitting it changes nothing (a remitted record is final),
       // so the closeout must mint: --new-run. With no matching record at all
       // the plain command mints on its own.
-      const supersedes = runRecordCloseout?.record_id
-        ? " --new-run"
-        : "";
-      const superseded = runRecordCloseout?.record_id
-        ? ` The existing record ${runRecordCloseout.record_id} stays as written; --new-run opens a new run id for the current evidence instead of re-emitting it.`
+      const supersededReason = runRecordCloseout?.reason_code === "stale_predates_evidence" || runRecordCloseout?.reason_code === "outdated_artifacts";
+      const supersedes = supersededReason ? " --new-run" : "";
+      const superseded = supersededReason
+        ? ` The existing record ${runRecordCloseout.record_id || "(unnamed)"} stays as written; --new-run opens a new run id for the current evidence instead of re-emitting it.`
         : "";
       push("run_record_closeout", "command", `${cmd("run-record")} --packet ${shellToken(packetPath)}${supersedes} --json`, `Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.${why}${superseded}`, { required: true });
     }
@@ -10941,9 +10940,14 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (args["new-run"] === true && optionalString(args["run-id"])) {
     throw new Error("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
   }
-  const targetRecords = readRunRecordsForTarget(baseDir);
-  const latestRecordEntry = latestMatchingRunRecord(targetRecords, packet);
   const listOnly = args.list === true;
+  // The directory is scanned only when something reads it: --list, or an id
+  // that nothing else names. An explicit --run-id, --new-run or an open
+  // session decides without it, and a target with a long history pays no I/O
+  // for a decision already made.
+  const needsDiskScan = listOnly || (!optionalString(args["run-id"]) && args["new-run"] !== true && !isNonEmptyString(ambient?.session?.run_id));
+  const targetRecords = needsDiskScan ? readRunRecordsForTarget(baseDir) : [];
+  const latestRecordEntry = needsDiskScan ? latestMatchingRunRecord(targetRecords, packet) : null;
   let runId;
   let runIdSource;
   if (optionalString(args["run-id"])) {
@@ -10971,10 +10975,12 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // --list is inspection only: the run ids this packet's campaign has on disk,
   // newest first, with when each was created and where its remit stands. It
   // is --no-write with the assembly skipped — nothing is read into a record,
-  // nothing is written, nothing is sent.
+  // nothing is written, nothing is sent. The same identity match as the
+  // resolution above; a matching record without a run_id is listed as
+  // `(unnamed)` so the operator sees why it was not the one re-emitted.
   if (listOnly) {
     const records = targetRecords
-      .filter((entry) => isObject(entry?.record) && latestMatchingRunRecord([entry], packet))
+      .filter((entry) => isObject(entry?.record) && identityMatches(entry.record, packet))
       .map((entry) => ({
         run_id: optionalString(entry.record.run_id),
         created_at: optionalString(entry.record.created_at),

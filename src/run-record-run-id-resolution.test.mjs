@@ -10,14 +10,14 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { RUN_RECORDS_DIR_REL_PATH } from "./run-record.mjs";
+import { RUN_RECORDS_DIR_REL_PATH, resolveRunRecordPath } from "./run-record.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -135,4 +135,23 @@ test("--list prints the run ids on disk for this packet and writes nothing", asy
   assert.match(text.stdout, /Run Records for this packet's campaign: 1/);
   assert.match(text.stdout, new RegExp(`${seeded.record.run_id}  created .*  remit skipped`));
   assert.match(text.stdout, /List only \(--list\)\. No record written, no remit\./);
+});
+
+test("a matching record that lost its run_id is listed as unnamed and never turns the re-emit into a mint", async (t) => {
+  const { dir, packetPath } = seedTarget(t);
+  const seeded = JSON.parse((await runCli(["run-record", "--packet", packetPath, "--no-remit", "--json"], dir)).stdout);
+  const damaged = JSON.parse(readFileSync(resolveRunRecordPath(seeded.record.run_id, dir), "utf8"));
+  delete damaged.run_id;
+  damaged.created_at = "2099-01-01T00:00:00.000Z";
+  writeFileSync(resolveRunRecordPath("run_9999999999999_damaged", dir), `${JSON.stringify(damaged, null, 2)}\n`);
+
+  const listed = JSON.parse((await runCli(["run-record", "--packet", packetPath, "--list", "--json"], dir)).stdout);
+  assert.deepEqual(listed.records.map((entry) => entry.run_id), [null, seeded.record.run_id], "the damaged file is listed, unnamed, newest first");
+  assert.equal(listed.run_id, seeded.record.run_id);
+  assert.equal(listed.run_id_source, "latest_record");
+
+  const reemit = JSON.parse((await runCli(["run-record", "--packet", packetPath, "--no-remit", "--json"], dir)).stdout);
+  assert.equal(reemit.run_id_source, "latest_record");
+  assert.equal(reemit.record.run_id, seeded.record.run_id, "the id-bearing record is re-emitted; nothing is minted");
+  assert.equal(recordFiles(dir).length, 2);
 });
