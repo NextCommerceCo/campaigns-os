@@ -4041,6 +4041,99 @@
         }
       ],
       "entry_sha256": "e4fca0c5196fa8992e4610f09d28b5efed4ab1a59de1f6bd9ff58a641feeb570"
+    },
+    {
+      "id": "RL-0109",
+      "sequence": 109,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": "1.31.0",
+      "changelog_section": "1.31.0",
+      "changelog_sha256": "135bb5f4f8d3d32944f59012fb123f4e4c2be06e0ab879ede6e3f8a1efbd8ac2",
+      "agent_impact": "New supported CLI command spec with one subcommand: campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] writes the repo-derived CampaignSpec fields (#432 field classes: authored | mirrored | derived) into the packet’s local spec (spec.local_path) from the target repo alone, no network: global_config.sdk_version (and the runtime.sdk_version alias when declared) from _data/campaigns.json[public_route_slug].sdk_version; each active page’s page_url from the page tree under assembly.output_dir (default src/<slug>/; filename-derived route, frontmatter permalink overrides; mirrored into funnel_pages[].page_url when present), bound by the packet’s source_html.pages[].page_kit.target_path first, else by route, terminal segment or filename; analytics.providers.gtm.containerId from gtm_id and analytics.providers.facebook.pixelId from fb_pixel_id (provider blocks created as { enabled: true, … } when absent). Prints a field-by-field before -> after diff with each value’s repo source; overwrites an authored-looking value in a derived field (the diff shows it); writes nothing else (store profile is slice 2). Status derived | dry_run | unchanged | partial (exit 0), partial when a field lands in not_derived[] with reason scaffold_seed (entry still carries the starter demo store profile; page-kit sync seeds the pin the other way), target_missing, target_invalid, waived (active page_kit.sdk_version waiver, spec left as accepted), page_tree_missing, page_file_not_found, page_file_ambiguous, or target_empty (an empty repo id never deletes a spec id); not_in_target[] lists derived fields the entry does not carry. Warnings: spec.derive.sdk_version_downgraded (spec pin ahead of the repo pin is still written), spec.derive.routing_hint_stale (an sdk_hints.meta_tags routing hint on another page names a page whose route moved; hints are not rewritten), spec.derive.file_reformatted, spec.derive.build_stale, spec.derive.report_unreadable, spec.derive.doctor_sidecar_not_marked. Write discipline as page-kit sync: one read, in-place edit keeping indent/EOL/trailing newline, temp+rename keeping mode bits, written only where the spec resolves inside its own directory or the target repo (spec.derive.spec_escapes_boundary), doctor sidecar marked stale after a write; --dry-run writes nothing; unknown flags and a valued --dry-run are rejected. Exit 2 with status blocked, a spec.derive.* error (packet_invalid, route_slug_missing, spec_missing, spec_invalid, spec_identity_mismatch, entry_missing with detail.target_status) and nothing written. --json emits { ok, action: \"spec derive\", status, packet_path, public_route_slug, target_repo, campaigns_path, page_tree, spec_path, report_path, dry_run, written, changes[] { field, path, before, after, source, page_id?, downgrade? }, unchanged[], not_derived[] { field, reason, detail, page_id? }, not_in_target[], stale_hints[], errors[], warnings[], next }. Not pipeline-advancing, never records a deviation. Doctor: the page_kit.sdk_version gate’s repo_newer advisory_actions[0] (refresh_spec) is now kind command with command \"campaigns-os spec derive --packet <packet>\" (was kind edit, command null) and the gate reason names spec derive beside re-saving the Map; gate statuses and codes are unchanged. contracts/supported-surface.json cli_commands gains spec and surface_version moves 1.30.0 -> 1.31.0; package.json and compatibility.json versions follow; docs/supported-surface.md, docs/build-packet.md (new section under the SDK version checkpoint), README and docs/quickstart.md, and the regenerated orientation reference and runtime-readiness guide name the command. Skill next-campaigns-os 1.0.11 -> 1.0.12: step 5 names spec derive for a configured campaign whose repo pin moved first, never a hand edit of a derived spec field.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "spec",
+          "summary": "New command spec derive --packet <packet> [--dry-run] [--json] [--report <json>]: writes the repo-derived fields (SDK pin, page routes, analytics ids) into the packet-local CampaignSpec from the target repo with a field-by-field diff, an in-place atomic write inside the spec’s own directory or the target repo, a spec/packet identity check, and status derived | dry_run | unchanged | partial; exit 0 on success / 2 when the packet, entry or spec is missing or the spec names another campaign."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "The page_kit.sdk_version gate’s repo_newer advisory action refresh_spec is a command action naming spec derive (kind command, packet placeholder), and the gate reason names spec derive beside re-saving the Map; statuses and codes unchanged."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.30.0 -> 1.31.0; cli_commands gains spec."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "CLI commands row lists spec and describes spec derive as the reverse write for the repo-derived field class."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "version 1.30.0 -> 1.31.0 to match package.json and surface_version."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "Package version line reads 1.31.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "version 1.30.0 -> 1.31.0 (equals surface_version); no export changed."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lockfile version field follows package.json 1.31.0; no resolved dependency changed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "New section \"Deriving the spec from the repo (spec derive)\" under the SDK version checkpoint: field classes, the derived fields and their repo authority, page binding, not_derived reasons, write discipline and exit codes; the repo_newer advisory paragraph names the command."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: supported surface at generation time 1.31.0; the argv surface list gains campaigns-os spec."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: supported surface at generation time 1.31.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Step 5 names spec derive (routes and analytics ids included) or a Map re-save for a configured campaign whose repo pin moved first, never a hand edit of a derived spec field; version 1.0.11 -> 1.0.12."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os version 1.0.11 -> 1.0.12."
+        }
+      ],
+      "entry_sha256": "28c9b4d48358b8345dfca3830fbf7be4702b6e399029b3865c02732f479d496c"
     }
   ]
 }
