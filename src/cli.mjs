@@ -278,7 +278,7 @@ import {
   applySpecDerive,
   formatDeriveValue,
   isPageTreeIgnoredDir,
-  normalizePermalinkValue,
+  frontmatterPermalink,
   pageRouteForFile,
   permalinkRoute,
   planSpecDerive,
@@ -4795,13 +4795,16 @@ function listPageKitPageFiles(outputDir, publicRouteSlug) {
       }
       if (!stats.isFile() || extname(entry.name).toLowerCase() !== ".html") continue;
       const path = relative(outputDir, fullPath).split(sep).join("/");
-      const filenameRoute = pageRouteForFile(path);
-      if (filenameRoute === null) continue;
-      // Frontmatter is read the way page-kit reads it: a BOM dropped, CRLF
-      // normalized, and YAML's no-permalink idioms (false, null, ~) honoured.
-      const text = readFileSync(fullPath, "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
-      const permalink = normalizePermalinkValue(extractFrontmatterValue(text, "permalink"));
+      const segments = path.split("/");
+      if (segments.slice(0, -1).some(isPageTreeIgnoredDir)) continue;
+      // page-kit honours a permalink before its filename rule, so the
+      // frontmatter is read first (quoting, comments, BOM and CRLF as
+      // page-kit's reader takes them); only a file with no usable permalink
+      // falls back to the filename route.
+      const permalink = frontmatterPermalink(readFileSync(fullPath, "utf8"));
       if (permalink === null) {
+        const filenameRoute = pageRouteForFile(path);
+        if (filenameRoute === null) continue;
         files.push({ path, basename: basename(entry.name, ".html"), route: filenameRoute, permalink: null, problem: null });
         continue;
       }
@@ -5093,6 +5096,18 @@ export function specDeriveCommand(args) {
     const afterRawHash = createHash("sha256").update(serialized).digest("hex");
     const afterMaterialHash = specMaterialHash(spec);
     const boundToOld = (raw, material) => raw === beforeRawHash || material === beforeMaterialHash;
+    // A sidecar is re-bound only when it names the spec being written: two
+    // packets sharing a target repo can carry byte-identical spec exports,
+    // and a matching hash alone would let one packet's derive re-bind the
+    // other's sidecar to a spec it never used.
+    const namesThisSpec = (recorded) => {
+      if (!isNonEmptyString(recorded)) return false;
+      try {
+        return realpathSync(resolve(targetRepo, recorded)) === realSpecPath;
+      } catch {
+        return false;
+      }
+    };
     const contextPath = workspace?.contextPath || null;
     let context = null;
     try {
@@ -5102,7 +5117,10 @@ export function specDeriveCommand(args) {
       addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context could not be read (${singleLineDetail(error.message)}); its spec identity was not updated. Re-run prepare-build before QA so the bundle correlates.`);
     }
     if (isObject(context?.spec)) {
-      if (boundToOld(context.spec.hash, context.spec.material_hash)) {
+      if (!namesThisSpec(context.spec.path)) {
+        result.rebound.build_context = false;
+        addIssue(result.warnings, "spec.derive.identity_not_rebound", "The Build Context names a different spec file than the one derive wrote (another packet's, or a moved export); it was left as it is. Re-run prepare-build before QA so the bundle correlates.");
+      } else if (boundToOld(context.spec.hash, context.spec.material_hash)) {
         try {
           writeJsonAtomic(contextPath, { ...context, spec: { ...context.spec, hash: afterRawHash, material_hash: afterMaterialHash } });
           result.rebound.build_context = true;
@@ -5116,7 +5134,10 @@ export function specDeriveCommand(args) {
       }
     }
     if (report && isObject(report.identity) && workspace) {
-      if (boundToOld(report.identity.spec_hash, report.identity.spec_material_hash)) {
+      if (!namesThisSpec(report.inputs?.spec_path)) {
+        result.rebound.assembly_report = false;
+        addIssue(result.warnings, "spec.derive.identity_not_rebound", "The Assembly Report names a different spec file than the one derive wrote (another packet's, or a moved export); it was left as it is. Re-run prepare-build before QA so the bundle correlates.");
+      } else if (boundToOld(report.identity.spec_hash, report.identity.spec_material_hash)) {
         try {
           // The identity is re-checked on the report as it is re-read for
           // the commit, so a prepare-build that re-bound it in the meantime

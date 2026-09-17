@@ -254,6 +254,8 @@ test("pageRouteForFile follows page-kit's basename rule, permalinkRoute accepts 
   assert.equal(normalizePermalinkValue("/acme/x/ # moved"), "/acme/x/");
   assert.equal(normalizePermalinkValue("\"/acme/x/\""), "/acme/x/");
   assert.equal(normalizePermalinkValue("\"false\""), "false");
+  assert.equal(normalizePermalinkValue("\"/acme/checkout/\" # checkout route"), "/acme/checkout/");
+  assert.equal(normalizePermalinkValue("'/acme/x/'"), "/acme/x/");
   assert.equal(normalizePermalinkValue(""), null);
 });
 
@@ -313,6 +315,7 @@ function fixture({ entry = CONFIGURED_ENTRY, spec: specPatch = null, tree = ["la
   // Bound to the spec as written, the way prepare-build binds it.
   report.identity.spec_hash = createHash("sha256").update(readFileSync(specPath)).digest("hex");
   report.identity.spec_material_hash = specMaterialHash(spec);
+  report.inputs = { ...(report.inputs || {}), spec_path: "../campaignspec.v42.basic.json" };
   report.stages.setup.status = "skipped";
   report.stages.deploy.status = "skipped";
   report.evidence = [];
@@ -1005,6 +1008,19 @@ test("spec derive re-binds the sidecars' spec identity after a write, and leaves
     assert.deepEqual(drifted.rebound, { build_context: true, assembly_report: false });
     assert.ok(drifted.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound" && /Assembly Report/.test(issue.message)));
     assert.equal(readJson(reportPath).identity.spec_hash, "0".repeat(64));
+
+    // A sidecar that names another packet's spec is never re-bound, even
+    // when its hashes happen to match (byte-identical exports).
+    const other = readJson(contextPath);
+    other.spec = { ...other.spec, path: "../other-campaign.spec.json" };
+    writeJson(contextPath, other);
+    campaigns["runtime-packet-demo"].fb_pixel_id = "987654321098";
+    writeJson(join(targetRepo, "_data/campaigns.json"), campaigns);
+    const foreign = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.equal(foreign.written, true);
+    assert.equal(foreign.rebound.build_context, false);
+    assert.ok(foreign.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound" && /names a different spec file/.test(issue.message)));
+    assert.equal(readJson(contextPath).spec.hash, other.spec.hash, "the other packet's context keeps its own identity");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1100,6 +1116,14 @@ test("the page-tree walker follows symlinked pages inside the repo, drops a BOM,
     const result = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
     assert.deepEqual(result.not_derived, []);
     assert.ok(result.unchanged.some((row) => row.page_id === "upsell" && row.source === "upsell.html"));
+    // A nested index.html WITH a permalink is a page page-kit serves there.
+    mkdirSync(join(pageTree, "offers"));
+    writeFileSync(join(pageTree, "offers", "index.html"), "---\npage_type: product\npermalink: \"/runtime-packet-demo/offers/\" # the offers hub\n---\n");
+    const packet = readJson(packetPath);
+    packet.source_html.pages.find((page) => page.page_id === "receipt").page_kit.target_path = "offers/index.html";
+    writeJson(packetPath, packet);
+    const nested = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.deepEqual(nested.changes.filter((row) => row.page_id === "receipt").map((row) => [row.after, row.source]), [["offers/", "offers/index.html (permalink)"]]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

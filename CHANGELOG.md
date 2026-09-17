@@ -80,10 +80,11 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   is not rewritten and a value nested differently from the tree is. After a write, the Build Context's `spec.hash` /
   `spec.material_hash` and the Assembly Report's `identity.spec_hash` /
   `identity.spec_material_hash` are re-bound to the new spec when they were
-  bound to the one replaced (`rebound` on the result; QA's verdict and the
-  bundle check correlate against the material hash), and a sidecar already
-  carrying another identity is left alone with a
-  `spec.derive.identity_not_rebound` warning naming prepare-build; a derived
+  bound to the one replaced and name that spec file (`rebound` on the result;
+  QA's verdict and the bundle check correlate against the material hash),
+  and a sidecar already carrying another identity, or naming another
+  packet's spec, is left alone with a `spec.derive.identity_not_rebound`
+  warning naming prepare-build; a derived
   route change also warns `spec.derive.projection_stale`, because the
   packet's page-kit projection and the Build Context page map were prepared
   from the old routes and prepare-build regenerates them; a provider block

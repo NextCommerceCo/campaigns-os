@@ -166,12 +166,29 @@ export function derivedRouteProblem(route) {
 // it; surrounding quotes are dropped.
 export function normalizePermalinkValue(value) {
   if (typeof value !== "string") return null;
-  let text = value.trim();
-  const quoted = /^(["']).*\1$/.test(text);
-  if (quoted) text = text.slice(1, -1);
-  else text = text.replace(/\s+#.*$/, "").trim();
-  if (!text || (!quoted && ["false", "null", "~"].includes(text))) return null;
-  return text;
+  const text = value.trim();
+  // A quoted scalar ends at its closing quote; whatever follows (a comment)
+  // is not part of it. An unquoted scalar ends at ` #`.
+  const quoted = text.match(/^(["'])(.*?)\1(?:\s+#.*)?$/);
+  if (quoted) return quoted[2] || null;
+  const bare = text.replace(/\s+#.*$/, "").trim();
+  if (!bare || ["false", "null", "~"].includes(bare)) return null;
+  return bare;
+}
+
+// The raw `permalink:` scalar of a page file's frontmatter (the first line
+// of the block that declares it), quoting and comment intact, or null when
+// the block or the key is absent. A BOM and CRLF are read as page-kit's
+// frontmatter reader reads them.
+export function frontmatterPermalink(text) {
+  const normalized = String(text ?? "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  const block = normalized.match(/^---\n([\s\S]*?)\n---/);
+  if (!block) return null;
+  for (const line of block[1].split("\n")) {
+    const match = line.match(/^permalink:\s*(.*?)\s*$/);
+    if (match) return normalizePermalinkValue(match[1]);
+  }
+  return null;
 }
 
 function terminalSegment(route) {

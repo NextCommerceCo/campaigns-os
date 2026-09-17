@@ -289,7 +289,9 @@ left as it is.
 After a write, the sidecars that carry the spec's identity are re-bound. The
 Build Context's `spec.hash` / `spec.material_hash` and the Assembly Report's
 `identity.spec_hash` / `identity.spec_material_hash` move to the new spec
-when they were bound to the one derive replaced (`rebound` on the result);
+when they were bound to the one derive replaced and name that spec file
+(`rebound` on the result; two packets sharing a target repo never re-bind
+each other's sidecars);
 QA's verdict and `bundle check` correlate against the material hash, so this
 is what keeps a derive-then-QA run conformant. A sidecar already carrying
 another identity is left alone with a `spec.derive.identity_not_rebound`
