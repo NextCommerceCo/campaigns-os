@@ -1392,3 +1392,85 @@ test("spec derive --write-map end to end: the CLI PUTs the pin to a loopback pro
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The record step after a Map write answers three ways when the Assembly
+// Report commit throws. The mock proxy's PUT handler runs between the local
+// derive and that commit, so it is where the report is perturbed.
+test("spec derive --write-map reports the record as unknown when the Assembly Report cannot be read back after a failed commit, without claiming the line is absent", async () => {
+  const { dir, packetPath, reportPath } = fixture();
+  try {
+    const proxy = mapProxyMock();
+    const torn = { calls: [], fetchImpl: async (url, init = {}) => {
+      if ((init.method || "GET") === "PUT") writeFileSync(reportPath, "{torn");
+      return proxy.fetchImpl(url, init);
+    } };
+    const result = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: torn.fetchImpl });
+    assert.equal(result.ok, true);
+    assert.equal(result.map.status, "written", "the Map write itself succeeded");
+    assert.equal(result.map.recorded, "unknown");
+    const warning = result.warnings.find((issue) => issue.code === "spec.derive.map_recorded_status_unknown");
+    assert.ok(warning, JSON.stringify(result.warnings));
+    assert.match(warning.message, /could not be read back .* whether the line landed is unknown/);
+    assert.match(warning.message, /Map write-back: global_config\.sdk_version 0\.4\.18 -> 0\.4\.38/);
+    assert.equal(result.warnings.some((issue) => issue.code === "spec.derive.map_not_recorded"), false, "unknown is never flattened into absent");
+    assert.ok(specDeriveWriteMapTextLines(result).some((line) => line.startsWith("Map runtime-packet-demo-k9x2 written:") && line.includes("Assembly Report record unverified")));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive --write-map tells a line that landed (doctor stamp failed) from one that did not (report unwritable)", { skip: process.getuid?.() === 0 ? "permission tests need a non-root user" : false }, async () => {
+  const landed = fixture();
+  const absent = fixture();
+  try {
+    // Landed: the report lives outside the runtime directory (--report), the
+    // doctor sidecar inside it; the directory turns read-only after the Map
+    // write, so the evidence line is written and only the stale stamp fails.
+    const elsewhere = join(landed.dir, "elsewhere", "assembly-report.json");
+    mkdirSync(dirname(elsewhere), { recursive: true });
+    writeFileSync(elsewhere, readFileSync(landed.reportPath));
+    const runtimeDir = join(landed.targetRepo, ".campaign-runtime");
+    writeJson(join(landed.targetRepo, DOCTOR_SIDECAR_REL_PATH), { schema_version: "campaigns-os-doctor-output/v1", ok: true, status: "ready" });
+    const proxyA = mapProxyMock();
+    const lockAfterPut = { fetchImpl: async (url, init = {}) => {
+      if ((init.method || "GET") === "PUT") chmodSync(runtimeDir, 0o555);
+      return proxyA.fetchImpl(url, init);
+    } };
+    let first;
+    try {
+      first = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: landed.packetPath, report: elsewhere, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: lockAfterPut.fetchImpl });
+    } finally {
+      chmodSync(runtimeDir, 0o755);
+    }
+    assert.equal(first.map.status, "written");
+    assert.equal(first.map.recorded, "assembly_report");
+    assert.ok(readJson(elsewhere).evidence.some((line) => line.startsWith("Map write-back: global_config.sdk_version 0.4.18 -> 0.4.38")), "the line is on disk");
+    assert.ok(first.warnings.some((issue) => issue.code === "spec.derive.map_doctor_sidecar_not_marked"), JSON.stringify(first.warnings));
+    assert.equal(first.warnings.some((issue) => issue.code === "spec.derive.map_not_recorded" || issue.code === "spec.derive.map_recorded_status_unknown"), false);
+
+    // Absent: the report itself sits in the directory that turns read-only,
+    // so the commit fails before writing; the read-back finds no line.
+    const absentDir = join(absent.targetRepo, ".campaign-runtime");
+    const proxyB = mapProxyMock();
+    const lockReport = { fetchImpl: async (url, init = {}) => {
+      if ((init.method || "GET") === "PUT") chmodSync(absentDir, 0o555);
+      return proxyB.fetchImpl(url, init);
+    } };
+    let second;
+    try {
+      second = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: absent.packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: lockReport.fetchImpl });
+    } finally {
+      chmodSync(absentDir, 0o755);
+    }
+    assert.equal(second.map.status, "written");
+    assert.equal(second.map.recorded, null);
+    assert.deepEqual(readJson(absent.reportPath).evidence, [], "nothing landed");
+    const warning = second.warnings.find((issue) => issue.code === "spec.derive.map_not_recorded");
+    assert.ok(warning, JSON.stringify(second.warnings));
+    assert.match(warning.message, /Keep this result: Map write-back/);
+    assert.ok(specDeriveWriteMapTextLines(second).some((line) => line.includes("not recorded on the Assembly Report")));
+  } finally {
+    rmSync(landed.dir, { recursive: true, force: true });
+    rmSync(absent.dir, { recursive: true, force: true });
+  }
+});
