@@ -2,6 +2,59 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.31.0+agent.1] - 2026-09-17
+
+### Added
+
+- `campaigns-os spec derive --from-store <subdomain> [--store-token-source
+  env:<VAR>]` derives the nine `campaign.store_*` Store Profile fields from
+  the store itself (#432 slice 2), the store → spec half of a direction
+  `page-kit sync` completes spec → repo. It is opt-in: the default `spec
+  derive` run is unchanged and still touches no network. `<subdomain>` is the
+  store's `<store>.29next.store` subdomain; the Admin API read token comes
+  from the environment only, `<SUBDOMAIN>_ADMIN_TOKEN` by default (dashes as
+  underscores) or the variable `--store-token-source env:<VAR>` names, is
+  sent as a bearer (scopes `store:read` and `content:read`), and never
+  appears in the output (the result names the variable; a value that is not
+  one line of printable ASCII is refused unsent, and a transport error that
+  quotes a header is redacted). `GET /store/` (API version `2024-04-01`)
+  gives `store_name` (`name`), `store_url` (`https://<primary_domain>`),
+  `store_phone` (`contact_address.phone_number`, verbatim) and
+  `store_phone_tel` (the same phone as a `tel:` URI, only for one plain
+  number: an extension or vanity word leaves it not derived); `GET /pages/`
+  (API version `unstable`, cursors followed under the store's own pages
+  endpoint only, at most ten requests, one shared 45 s budget) gives
+  `store_terms`, `store_privacy`, `store_contact`, `store_returns` and
+  `store_shipping` as `https://<primary_domain>/<slug>/` from the one
+  storefront page that carries the policy: a conventional slug
+  (`privacy-policy`, `shipping-returns`, …) binds first, else the wider
+  match by slug or title words (a page may carry two policies). Rows join the same `before -> after` diff with their
+  store source, in the Store Profile's field order; values are compared
+  NFC-normalized and trimmed as `page-kit sync` compares them, plus derive's
+  own leniency that URL fields compare without a trailing slash; every
+  value passes the Store Profile shape rule first (the demo store's URL or
+  phone, a non-http(s) URL, a malformed `tel:` or a control character is
+  `target_invalid`). A field the store cannot state is reported and the
+  spec's value is left as it is, never emptied: `store_field_missing`,
+  `store_domain_missing`, `store_page_not_found`, `store_page_ambiguous`,
+  `store_pages_unavailable`, `store_pages_truncated`. A primary domain that
+  is not the host the spec's `store_url` named warns
+  `spec.derive.store_domain_changed` (a stale spec, or the wrong store). The
+  result gains a `store` block and the text output a `Store:` line; after a
+  store field is written, `next` is `page-kit sync` then doctor. A store that
+  cannot be read is a refusal with nothing written, exit 2:
+  `spec.derive.store_credential_missing`, `store_credential_invalid`,
+  `store_unauthorized` (401/403), `store_not_found` (404),
+  `store_unreachable`, `store_response_invalid`; local preconditions are
+  checked before the store is contacted, a packet swapped for another
+  campaign's during the read is refused (`packet_changed_underneath`), and
+  malformed store flags (`--store-token-source` without `--from-store`, a
+  subdomain that is a URL, a token on the command line) are rejected before
+  anything is read. `SPEC_DERIVE_FIELDS` in `src/spec-derive.mjs` now
+  admits `campaign.store_*`; `src/spec-derive-store.mjs` is new. Skill
+  `next-campaigns-os` 1.0.13 names the flag. No command, exit code or
+  existing flag changed.
+
 ## [1.31.0] - 2026-09-17
 
 Additive: one new CLI command, `spec`, joins the supported argv surface.
