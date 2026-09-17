@@ -435,10 +435,10 @@ test("commitAssemblyReport refreshes the doctor sidecar wholesale, atomically, c
   const { dir, workspace } = workspaceFixture({ sidecar: { ok: true, status: "ancient", stale: true } });
   const before = statSync(workspace.doctorOutPath).ino;
   const outcome = commitAssemblyReport(workspace, (report) => ({ ...report, note: "edited" }), {
-    refreshDoctor: ({ written }) => ({ ok: true, status: written ? "fresh" : "unexpected" }),
+    command: "unit-test", refreshDoctor: ({ written }) => ({ ok: true, status: written ? "fresh" : "unexpected" }),
   });
   assert.equal(outcome.written, true);
-  assert.deepEqual(readJson(workspace.doctorOutPath), { ok: true, status: "fresh" });
+  assert.deepEqual(readJson(workspace.doctorOutPath), { generated_by: "unit-test", ok: true, status: "fresh" }, "rewritten wholesale and stamped with its producer");
   assert.notEqual(statSync(workspace.doctorOutPath).ino, before, "the sidecar is replaced, never rewritten in place");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -446,8 +446,8 @@ test("commitAssemblyReport refreshes the doctor sidecar wholesale, atomically, c
 test("commitAssemblyReport creates the sidecar directory a refresh needs", () => {
   const { dir, workspace } = workspaceFixture();
   const doctorOutPath = join(dir, "elsewhere/nested/doctor-output.json");
-  commitAssemblyReport({ ...workspace, doctorOutPath }, (report) => report, { refreshDoctor: () => ({ ok: true }) });
-  assert.deepEqual(readJson(doctorOutPath), { ok: true });
+  commitAssemblyReport({ ...workspace, doctorOutPath }, (report) => report, { command: "unit-test", refreshDoctor: () => ({ ok: true }) });
+  assert.deepEqual(readJson(doctorOutPath), { generated_by: "unit-test", ok: true });
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -459,17 +459,17 @@ test("a null mutation leaves the report's bytes alone: no stale stamp, but a ref
   assert.equal(readFileSync(workspace.reportPath, "utf8"), bytes);
   assert.notEqual(readJson(workspace.doctorOutPath).stale, true, "nothing changed, so nothing went stale");
   let seen = null;
-  const refreshed = commitAssemblyReport(workspace, () => null, { refreshDoctor: (outcome) => { seen = outcome; return { ok: false, status: "current" }; } });
+  const refreshed = commitAssemblyReport(workspace, () => null, { command: "unit-test", refreshDoctor: (outcome) => { seen = outcome; return { ok: false, status: "current" }; } });
   assert.deepEqual([refreshed.written, refreshed.skipped], [false, "unchanged"]);
   assert.equal(seen.written, false);
-  assert.deepEqual(readJson(workspace.doctorOutPath), { ok: false, status: "current" });
+  assert.deepEqual(readJson(workspace.doctorOutPath), { generated_by: "unit-test", ok: false, status: "current" });
   assert.equal(readFileSync(workspace.reportPath, "utf8"), bytes);
   rmSync(dir, { recursive: true, force: true });
 });
 
 test("a refresh returning null leaves the sidecar as it is", () => {
   const { dir, workspace } = workspaceFixture({ sidecar: { ok: true, status: "kept" } });
-  commitAssemblyReport(workspace, (report) => ({ ...report, note: "edited" }), { refreshDoctor: () => null });
+  commitAssemblyReport(workspace, (report) => ({ ...report, note: "edited" }), { command: "unit-test", refreshDoctor: () => null });
   assert.deepEqual(readJson(workspace.doctorOutPath), { ok: true, status: "kept" });
   rmSync(dir, { recursive: true, force: true });
 });
@@ -483,13 +483,13 @@ test("a producer stage write is skipped when only its timestamps would move, and
     command: "campaigns-os doctor",
     outputs: [workspace.doctorOutPath],
   });
-  const first = commitAssemblyReport(workspace, restate("2026-09-14T00:00:00.000Z"), { stage: "doctor", refreshDoctor: () => ({ ok: true, run: 1 }) });
+  const first = commitAssemblyReport(workspace, restate("2026-09-14T00:00:00.000Z"), { stage: "doctor", command: "unit-test", refreshDoctor: () => ({ ok: true, run: 1 }) });
   assert.equal(first.written, true);
   const bytes = readFileSync(workspace.reportPath, "utf8");
-  const rerun = commitAssemblyReport(workspace, restate("2026-09-14T00:05:00.000Z"), { stage: "doctor", refreshDoctor: () => ({ ok: true, run: 2 }) });
+  const rerun = commitAssemblyReport(workspace, restate("2026-09-14T00:05:00.000Z"), { stage: "doctor", command: "unit-test", refreshDoctor: () => ({ ok: true, run: 2 }) });
   assert.deepEqual([rerun.written, rerun.skipped], [false, "unchanged"]);
   assert.equal(readFileSync(workspace.reportPath, "utf8"), bytes, "a re-record does not move the report's digest");
-  assert.deepEqual(readJson(workspace.doctorOutPath), { ok: true, run: 2 }, "the sidecar is this run's");
+  assert.deepEqual(readJson(workspace.doctorOutPath), { generated_by: "unit-test", ok: true, run: 2 }, "the sidecar is this run's");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -497,16 +497,16 @@ test("a producer never restates its outcome into another campaign's report, or i
   const { dir, workspace } = workspaceFixture({ report: { identity: { map_id: "map_other", public_route_slug: "demo" }, stages: {} } });
   const bytes = readFileSync(workspace.reportPath, "utf8");
   let called = false;
-  const foreign = commitAssemblyReport(workspace, () => { called = true; return {}; }, { stage: "qa", refreshDoctor: ({ written }) => (written ? { ok: true } : null) });
+  const foreign = commitAssemblyReport(workspace, () => { called = true; return {}; }, { stage: "qa", command: "unit-test", refreshDoctor: ({ written }) => (written ? { ok: true } : null) });
   assert.deepEqual([foreign.written, foreign.skipped, called], [false, "identity", false]);
   assert.equal(readFileSync(workspace.reportPath, "utf8"), bytes);
   assert.deepEqual(foreign.report, JSON.parse(bytes), "the report read is reported back");
 
   rmSync(workspace.reportPath);
-  const absent = commitAssemblyReport(workspace, () => { called = true; return {}; }, { stage: "doctor", refreshDoctor: () => ({ ok: true, status: "written-anyway" }) });
+  const absent = commitAssemblyReport(workspace, () => { called = true; return {}; }, { stage: "doctor", command: "unit-test", refreshDoctor: () => ({ ok: true, status: "written-anyway" }) });
   assert.deepEqual([absent.written, absent.skipped, absent.report, called], [false, "absent", null, false]);
   assert.equal(existsSync(workspace.reportPath), false);
-  assert.deepEqual(readJson(workspace.doctorOutPath), { ok: true, status: "written-anyway" }, "a producer without a ledger still keeps the sidecar current");
+  assert.deepEqual(readJson(workspace.doctorOutPath), { generated_by: "unit-test", ok: true, status: "written-anyway" }, "a producer without a ledger still keeps the sidecar current");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -531,7 +531,7 @@ test("a malformed report fails by name and path, and stamps nothing", () => {
   let called = false;
   for (const options of [
     { command: "unit", staleReason: "unit" },
-    { stage: "doctor", refreshDoctor: () => ({ ok: true, status: "written-anyway" }) },
+    { stage: "doctor", command: "unit-test", refreshDoctor: () => ({ ok: true, status: "written-anyway" }) },
   ]) {
     assert.throws(
       () => commitAssemblyReport(workspace, () => { called = true; return {}; }, options),
@@ -552,7 +552,7 @@ test("a mutation that throws writes nothing and stamps nothing", () => {
   assert.throws(() => commitAssemblyReport(workspace, () => { throw new Error("gate is not blocked"); }, { command: "unit", staleReason: "unit" }), /gate is not blocked/);
   assert.equal(readFileSync(workspace.reportPath, "utf8"), bytes);
   assert.notEqual(readJson(workspace.doctorOutPath).stale, true);
-  assert.throws(() => commitAssemblyReport(workspace, () => { throw new Error("bad timestamp"); }, { stage: "qa", refreshDoctor: () => ({ ok: true }) }), /bad timestamp/);
+  assert.throws(() => commitAssemblyReport(workspace, () => { throw new Error("bad timestamp"); }, { stage: "qa", command: "unit-test", refreshDoctor: () => ({ ok: true }) }), /bad timestamp/);
   assert.deepEqual(readJson(workspace.doctorOutPath), { ok: true, status: "ready" }, "no refresh after a failed mutation");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -562,11 +562,12 @@ test("commitAssemblyReport names exactly one doctor-freshness strategy and a com
   const edit = (report) => report;
   assert.throws(() => commitAssemblyReport(workspace, edit, {}), /exactly one of refreshDoctor .* or staleReason/);
   assert.throws(() => commitAssemblyReport(workspace, edit, { refreshDoctor: () => null, staleReason: "both", command: "unit" }), /exactly one of/);
-  assert.throws(() => commitAssemblyReport(workspace, edit, { staleReason: "no command" }), /requires command with staleReason/);
-  assert.throws(() => commitAssemblyReport(workspace, edit, { stage: "polish", refreshDoctor: () => null }), /Producer stage must be doctor or qa/);
-  assert.throws(() => commitAssemblyReport(workspace, "not a function", { refreshDoctor: () => null }), /mutate\(report\) function/);
-  assert.throws(() => commitAssemblyReport({ ...workspace, reportPath: "" }, edit, { refreshDoctor: () => null }), /workspace with reportPath/);
-  assert.throws(() => commitAssemblyReport({ ...workspace, doctorOutPath: null }, edit, { refreshDoctor: () => null }), /workspace with doctorOutPath/);
+  assert.throws(() => commitAssemblyReport(workspace, edit, { staleReason: "no command" }), /requires command: the doctor sidecar names the command/);
+  assert.throws(() => commitAssemblyReport(workspace, edit, { refreshDoctor: () => ({ ok: true }) }), /requires command: the doctor sidecar names the command/, "a refresh without a producer name is refused, not written anonymously (#312)");
+  assert.throws(() => commitAssemblyReport(workspace, edit, { stage: "polish", command: "unit-test", refreshDoctor: () => null }), /Producer stage must be doctor or qa/);
+  assert.throws(() => commitAssemblyReport(workspace, "not a function", { command: "unit-test", refreshDoctor: () => null }), /mutate\(report\) function/);
+  assert.throws(() => commitAssemblyReport({ ...workspace, reportPath: "" }, edit, { command: "unit-test", refreshDoctor: () => null }), /workspace with reportPath/);
+  assert.throws(() => commitAssemblyReport({ ...workspace, doctorOutPath: null }, edit, { command: "unit-test", refreshDoctor: () => null }), /workspace with doctorOutPath/);
   assert.throws(() => commitAssemblyReport({ ...workspace, targetRepo: null }, edit, { command: "unit", staleReason: "unit" }), /workspace with targetRepo/);
   assert.equal(readFileSync(workspace.reportPath, "utf8"), JSON.stringify({ identity: { map_id: "map_1", public_route_slug: "demo" }, stages: {} }));
   rmSync(dir, { recursive: true, force: true });
@@ -641,7 +642,7 @@ test("a finished ladder no longer reads prepared/setup: status, next and blocker
     disposition: "ready_with_warnings",
     timestamp: "2026-09-16T00:00:00.000Z",
     command: "campaigns-os qa run",
-  }), { stage: "qa", refreshDoctor: () => null });
+  }), { stage: "qa", command: "unit-test", refreshDoctor: () => null });
   assert.equal(outcome.written, true);
   const written = readJson(workspace.reportPath);
   assert.equal(written.stages.qa.status, "completed_with_warnings");
@@ -660,7 +661,7 @@ test("a blocked qa stage reads blocked at the top level and names qa next, carry
     timestamp: "2026-09-16T00:00:00.000Z",
     command: "campaigns-os qa run",
     blockers: ["checkout assertion failed"],
-  }), { stage: "qa", refreshDoctor: () => null });
+  }), { stage: "qa", command: "unit-test", refreshDoctor: () => null });
   const written = readJson(workspace.reportPath);
   assert.equal(written.status, "blocked");
   assert.equal(written.next.stage, "qa");
@@ -678,13 +679,13 @@ test("the summary follows the latest outcome: a doctor recorded blocked and late
     command: "campaigns-os doctor",
     blockers,
   });
-  commitAssemblyReport(workspace, doctor("blocked", ["store profile missing"], "2026-09-16T00:00:00.000Z"), { stage: "doctor", refreshDoctor: () => null });
+  commitAssemblyReport(workspace, doctor("blocked", ["store profile missing"], "2026-09-16T00:00:00.000Z"), { stage: "doctor", command: "unit-test", refreshDoctor: () => null });
   const blocked = readJson(workspace.reportPath);
   assert.equal(blocked.status, "blocked");
   assert.equal(blocked.next.stage, "doctor-blocked");
   assert.deepEqual(blocked.blockers, ["store profile missing"]);
 
-  commitAssemblyReport(workspace, doctor("ready", [], "2026-09-16T00:10:00.000Z"), { stage: "doctor", refreshDoctor: () => null });
+  commitAssemblyReport(workspace, doctor("ready", [], "2026-09-16T00:10:00.000Z"), { stage: "doctor", command: "unit-test", refreshDoctor: () => null });
   const passed = readJson(workspace.reportPath);
   assert.equal(passed.status, "prepared");
   assert.equal(passed.next.stage, "setup", "the first non-terminal ladder stage, in the order next walks");
@@ -705,7 +706,7 @@ test("an operator edit restates the summary too, and a summary that is already c
   assert.equal(first.written, true);
   assert.equal(readJson(workspace.reportPath).status, "completed");
   const bytes = readFileSync(workspace.reportPath, "utf8");
-  const rerun = commitAssemblyReport(workspace, restate("2026-09-16T01:00:00.000Z"), { stage: "qa", refreshDoctor: () => null });
+  const rerun = commitAssemblyReport(workspace, restate("2026-09-16T01:00:00.000Z"), { stage: "qa", command: "unit-test", refreshDoctor: () => null });
   assert.deepEqual([rerun.written, rerun.skipped], [false, "unchanged"]);
   assert.equal(readFileSync(workspace.reportPath, "utf8"), bytes);
   rmSync(dir, { recursive: true, force: true });
@@ -760,7 +761,7 @@ test("a pending doctor never lets the report read completed: the ladder can fini
     disposition: "ready",
     timestamp: "2026-09-16T02:00:00.000Z",
     command: "campaigns-os doctor",
-  }), { stage: "doctor", refreshDoctor: () => null });
+  }), { stage: "doctor", command: "unit-test", refreshDoctor: () => null });
   const written = readJson(workspace.reportPath);
   assert.deepEqual([written.status, written.next.stage], ["completed", "done"]);
   rmSync(dir, { recursive: true, force: true });
