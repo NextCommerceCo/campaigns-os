@@ -245,8 +245,11 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
     // page-kit sync as the repair (#413: a bump the repo never received, or
     // a lost one); the repo moves forward, the spec is not moved back. Only
     // one command may own that state, so derive reports it and writes nothing.
-    if (specPin.status === "ok" && compareReleasedSdkVersions(specPin.value, observed) > 0) {
-      notDerived.push({ field: "global_config.sdk_version", reason: "spec_ahead", detail: `the spec pin ${specPin.value} is ahead of the target pin ${observed}; doctor blocks on that state and page-kit sync is its repair (it moves the repo forward, and never moves a configured campaign's pin backwards). Run page-kit sync, or lower the spec pin by hand if ${observed} is what should ship, then derive again.` });
+    // Every released pin the spec declares is checked, so a conflicting pair
+    // (canonical ahead, alias behind) cannot slip a lowering past the rule.
+    const declaredAhead = sdkTargets.map((row) => row.before).filter((value) => isReleasedSdkVersion(value) && compareReleasedSdkVersions(value, observed) > 0);
+    if (declaredAhead.length) {
+      notDerived.push({ field: "global_config.sdk_version", reason: "spec_ahead", detail: `the spec pin ${declaredAhead[0]} is ahead of the target pin ${observed}; doctor blocks on that state and page-kit sync is its repair (it moves the repo forward, and never moves a configured campaign's pin backwards). Run page-kit sync, or lower the spec pin by hand if ${observed} is what should ship, then derive again.` });
     } else {
       for (const row of sdkTargets) {
         const change = { field: row.field, path: row.path, before: row.before, after: observed, source: sdkSource };
@@ -317,15 +320,18 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
         && stripPublicRoutePrefix(normalizePageKitRoute(before), publicRouteSlug) === after
         && (before.trim() !== "" || page.is_entry === true);
       if (sameRoute) unchanged.push(row);
-      else {
-        changes.push(row);
-        const mirrorAt = mirrorIndex.get(page.id);
-        if (mirrorAt !== undefined) {
-          const mirror = spec.funnel_pages[mirrorAt];
-          const mirrorBefore = Object.hasOwn(mirror, "page_url") ? mirror.page_url : undefined;
-          if (!(typeof mirrorBefore === "string" && normalizePageKitRoute(mirrorBefore) === after)) {
-            changes.push({ field: `funnel_pages[${mirrorAt}].page_url`, page_id: page.id, path: ["funnel_pages", mirrorAt, "page_url"], before: mirrorBefore, after, source: `mirror of ${field}` });
-          }
+      else changes.push(row);
+      // The legacy mirror is reconciled for every derived page, changed or
+      // not: a mirror left stale by an earlier edit would otherwise stay so.
+      const mirrorAt = mirrorIndex.get(page.id);
+      if (mirrorAt !== undefined) {
+        const mirror = spec.funnel_pages[mirrorAt];
+        const mirrorBefore = Object.hasOwn(mirror, "page_url") ? mirror.page_url : undefined;
+        const mirrorSame = typeof mirrorBefore === "string"
+          && stripPublicRoutePrefix(normalizePageKitRoute(mirrorBefore), publicRouteSlug) === after
+          && (mirrorBefore.trim() !== "" || page.is_entry === true);
+        if (!mirrorSame) {
+          changes.push({ field: `funnel_pages[${mirrorAt}].page_url`, page_id: page.id, path: ["funnel_pages", mirrorAt, "page_url"], before: mirrorBefore, after, source: `mirror of ${field}` });
         }
       }
     }

@@ -1006,3 +1006,37 @@ test("spec derive survives a malformed Build Context after the write and still s
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("planSpecDerive refuses a conflicting pair with any declaration ahead of the repo, and reconciles a stale mirror behind an unchanged page", () => {
+  const conflict = specFixture((draft) => { draft.global_config.sdk_version = "0.4.40"; draft.runtime = { sdk_version: "0.4.20" }; });
+  const plan = planSpecDerive({ spec: conflict, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
+  assert.deepEqual(plan.not_derived.map((row) => [row.field, row.reason]), [["global_config.sdk_version", "spec_ahead"]]);
+  assert.equal(plan.changes.some((row) => row.field.endsWith("sdk_version")), false);
+  const staleMirror = specFixture((draft) => {
+    draft.funnel_pages = draft.funnels[0].pages.map((page) => ({ ...page, page_url: page.id === "checkout" ? "old-checkout/" : page.page_url }));
+  });
+  const mirrored = planSpecDerive({ spec: staleMirror, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
+  assert.ok(mirrored.unchanged.some((row) => row.page_id === "checkout" && row.field.startsWith("funnels")));
+  assert.deepEqual(mirrored.changes.filter((row) => row.page_id).map((row) => [row.field, row.before, row.after]), [["funnel_pages[1].page_url", "old-checkout/", "checkout/"]]);
+});
+
+test("spec derive reads a CRLF permalink and reports an unreadable spec as a structured error", { skip: process.getuid?.() === 0 ? "permission tests need a non-root user" : false }, () => {
+  const { dir, packetPath, specPath, pageTree } = fixture();
+  try {
+    writeFileSync(join(pageTree, "upsell.html"), "---\r\npage_type: upsell\r\npermalink: \"/runtime-packet-demo/offer/\"\r\n---\r\n<h1>upsell</h1>\r\n");
+    const dry = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.deepEqual(dry.changes.filter((row) => row.page_id).map((row) => [row.page_id, row.after, row.source]), [["upsell", "offer/", "upsell.html (permalink)"]]);
+
+    chmodSync(specPath, 0o000);
+    try {
+      const unreadable = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+      assert.equal(unreadable.ok, false);
+      assert.deepEqual(unreadable.errors.map((issue) => issue.code), ["spec.derive.spec_missing"]);
+      assert.match(unreadable.errors[0].message, /could not be read/);
+    } finally {
+      chmodSync(specPath, 0o644);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -55,9 +55,10 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   spec's `global_config`, `runtime`, `analytics`, `analytics.providers` or
   `analytics.providers.<p>` is not an object, reported by the plan so a dry
   run and a real run agree),
-  `spec_ahead` (the spec pin is ahead of the repo pin: that is the state
-  doctor blocks on with `page-kit sync` as its repair, per #413, and only one
-  command may own it, so derive never moves a spec pin backwards), and
+  `spec_ahead` (any released pin the spec declares, canonical or alias, is
+  ahead of the repo pin: that is the state doctor blocks on with `page-kit
+  sync` as its repair, per #413, and only one command may own it, so derive
+  never moves a spec pin backwards), and
   `target_empty` (the entry's id is empty while the spec declares one; an
   empty repo value never deletes a spec id). A placeholder id
   (`GTM-XXXXXXX`, a run of one digit) is `target_invalid`: writing it would
@@ -84,10 +85,13 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   the file is edited in place and re-serialized with its own top-level
   indentation, line ending and trailing newline (`spec.derive.file_reformatted`
   when the round trip would not reproduce the file byte for byte); staged
-  through a temp file and rename keeping the mode bits; written only at the
-  path the spec resolves to, which must lie inside the spec's own directory
-  or the target repo (`spec.derive.spec_escapes_boundary` otherwise, so a
-  symlinked `spec.local_path` cannot redirect the write); the retained doctor
+  through a temp file created with the spec's own mode bits and renamed over
+  it, after re-reading the spec and refusing (`spec.derive.spec_changed_underneath`,
+  exit 2, nothing written) when it changed since the single read; written
+  only at the path the spec resolves to, which must lie inside the spec's
+  own directory or the target repo (`spec.derive.spec_escapes_boundary`
+  otherwise, so a symlinked `spec.local_path` cannot redirect the write); a
+  page file's frontmatter is read with CRLF normalized; the retained doctor
   sidecar is marked stale after a write (`spec.derive.doctor_sidecar_not_marked`
   if that fails) and a terminal build gets a `spec.derive.build_stale`
   warning with the rebuild in `next`. `--dry-run` prints the same diff and
@@ -97,7 +101,7 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   Exit 0 with status `derived` | `dry_run` | `unchanged` | `partial`; exit 2
   with status `blocked`, a `spec.derive.*` error and nothing written when the
   packet cannot be read or is not an object (`packet_invalid`), the route slug
-  is absent (`route_slug_missing`), `spec.local_path` is absent or not a file
+  is absent (`route_slug_missing`), `spec.local_path` is absent, not a file or unreadable
   (`spec_missing`), the spec is not valid JSON or not an object
   (`spec_invalid`), the spec identifies another campaign by
   `spec_identity.public_route_slug` (else `campaign.slug`/`id`) or

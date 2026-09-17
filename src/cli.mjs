@@ -4788,7 +4788,9 @@ function listPageKitPageFiles(outputDir, publicRouteSlug) {
       }
       if (!entry.isFile() || extname(entry.name).toLowerCase() !== ".html") continue;
       const path = relative(outputDir, fullPath).split(sep).join("/");
-      const permalink = extractFrontmatterValue(readFileSync(fullPath, "utf8"), "permalink");
+      // Frontmatter is read with line endings normalized: a CRLF page file
+      // declares its permalink as plainly as an LF one.
+      const permalink = extractFrontmatterValue(readFileSync(fullPath, "utf8").replace(/\r\n/g, "\n"), "permalink");
       const route = pageRouteForFile(path, { permalink, publicRouteSlug });
       if (route === null) continue;
       files.push({ path, basename: basename(entry.name, ".html"), route, permalink: isNonEmptyString(permalink) ? permalink : null });
@@ -4873,10 +4875,14 @@ export function specDeriveCommand(args) {
   } else {
     // One read serves the plan and the write, so the diff printed is the diff
     // applied even if the file changes underneath a slow operator.
-    text = readFileSync(specPath, "utf8");
+    try {
+      text = readFileSync(specPath, "utf8");
+    } catch (error) {
+      addIssue(result.errors, "spec.derive.spec_missing", `CampaignSpec local_path could not be read: ${specPath} (${singleLineDetail(error.message)}). Restore it, then derive again.`);
+    }
     let parsed;
     try {
-      parsed = JSON.parse(text);
+      if (text !== null) parsed = JSON.parse(text);
     } catch (error) {
       addIssue(result.errors, "spec.derive.spec_invalid", `CampaignSpec at ${specPath} is not valid JSON (${singleLineDetail(error.message)}). Repair the spec, then derive again.`);
     }
@@ -5020,12 +5026,21 @@ export function specDeriveCommand(args) {
       return result;
     }
     const serialized = serialize(spec);
-    // Staged through a temp file and rename, keeping the original's mode
-    // bits, so an interrupted write can never leave the spec half-written.
+    // Staged through a temp file created with the original's mode bits and
+    // renamed over the spec, so an interrupted write can never leave it
+    // half-written and a private spec is never staged world-readable. The
+    // spec is re-read just before the rename: an edit made underneath this
+    // run (an authored change in another tool) is refused rather than
+    // overwritten with a document derived from the earlier read.
+    const specMode = statSync(result.spec_path).mode & 0o7777;
     const tmpPath = join(dirname(result.spec_path), `.${basename(result.spec_path)}.${randomUUID()}.tmp`);
     try {
-      writeFileSync(tmpPath, serialized, { flag: "wx" });
-      chmodSync(tmpPath, statSync(result.spec_path).mode & 0o7777);
+      writeFileSync(tmpPath, serialized, { flag: "wx", mode: specMode });
+      chmodSync(tmpPath, specMode);
+      if (readFileSync(result.spec_path, "utf8") !== text) {
+        addIssue(result.errors, "spec.derive.spec_changed_underneath", `${result.spec_path} changed while spec derive was running; nothing was written. Derive again to plan against the current file.`);
+        return result;
+      }
       renameSync(tmpPath, result.spec_path);
     } finally {
       rmSync(tmpPath, { force: true });
@@ -5064,11 +5079,19 @@ export function specDeriveCommand(args) {
     if (report && isObject(report.identity) && workspace) {
       if (boundToOld(report.identity.spec_hash, report.identity.spec_material_hash)) {
         try {
-          commitAssemblyReport(workspace, (current) => ({ ...current, identity: { ...current.identity, spec_hash: afterRawHash, spec_material_hash: afterMaterialHash } }), {
+          // The identity is re-checked on the report as it is re-read for
+          // the commit, so a prepare-build that re-bound it in the meantime
+          // is left alone.
+          const committed = commitAssemblyReport(workspace, (current) => (
+            isObject(current.identity) && boundToOld(current.identity.spec_hash, current.identity.spec_material_hash)
+              ? { ...current, identity: { ...current.identity, spec_hash: afterRawHash, spec_material_hash: afterMaterialHash } }
+              : null
+          ), {
             command: "spec derive",
             staleReason: `spec derive rewrote the CampaignSpec after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
           });
-          result.rebound.assembly_report = true;
+          result.rebound.assembly_report = committed.written;
+          if (!committed.written) addIssue(result.warnings, "spec.derive.identity_not_rebound", "The Assembly Report's spec identity moved while spec derive was running; it was left as it is. Re-run prepare-build before QA so the bundle correlates.");
         } catch (error) {
           result.rebound.assembly_report = false;
           addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Assembly Report's spec identity could not be updated (${singleLineDetail(error.message)}); re-run prepare-build before QA so the bundle correlates.`);
