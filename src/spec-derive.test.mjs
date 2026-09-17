@@ -19,7 +19,9 @@ import {
   derivedRouteProblem,
   formatDeriveValue,
   isPageTreeIgnoredDir,
+  normalizePermalinkValue,
   pageRouteForFile,
+  permalinkRoute,
   planSpecDerive,
   SPEC_DERIVE_FIELDS,
 } from "./spec-derive.mjs";
@@ -228,18 +230,31 @@ test("applySpecDerive edits only the named paths, creates missing containers, an
   assert.equal(formatDeriveValue(""), "\"\"");
 });
 
-test("pageRouteForFile follows page-kit's filename rule, honours a permalink, and skips what page-kit does not render", () => {
+test("pageRouteForFile follows page-kit's basename rule, permalinkRoute accepts only the /<slug>/<route>/ form, and YAML idioms read as page-kit reads them", () => {
   assert.equal(pageRouteForFile("checkout.html"), "checkout/");
   assert.equal(pageRouteForFile("index.html"), "");
-  assert.equal(pageRouteForFile("offers/index.html"), "offers/");
-  assert.equal(pageRouteForFile("offers/upsell.html"), "offers/upsell/");
-  assert.equal(pageRouteForFile("upsell.html", { permalink: "/acme/upsell-1/", publicRouteSlug: "acme" }), "upsell-1/");
-  assert.equal(pageRouteForFile("upsell.html", { permalink: "upsell-1/index.html" }), "upsell-1/");
+  assert.equal(pageRouteForFile("offers/upsell.html"), "upsell/", "page-kit routes by filename and ignores the directory");
+  assert.equal(pageRouteForFile("offers/index.html"), null, "a nested index.html collides with the campaign root");
   assert.equal(pageRouteForFile("_includes/header.html"), null);
   assert.equal(pageRouteForFile("_layouts/base.html"), null);
-  assert.equal(pageRouteForFile("assets/x.html"), null);
-  assert.equal(pageRouteForFile("_draft.html"), null);
+  assert.equal(pageRouteForFile("assets/x.html"), "x/", "page-kit renders .html under assets/ too");
+  assert.equal(pageRouteForFile("_draft.html"), "_draft/");
   assert.equal(pageRouteForFile("notes.md"), null);
+  assert.deepEqual(permalinkRoute("/acme/upsell-1/", "acme"), { route: "upsell-1/" });
+  assert.deepEqual(permalinkRoute("acme/", "acme"), { route: "" });
+  assert.deepEqual(permalinkRoute("/acme/offers/upsell/", "acme"), { route: "offers/upsell/" });
+  assert.match(permalinkRoute("upsell-1/", "acme").problem, /served at \/upsell-1\/, outside the campaign root \/acme\//);
+  assert.match(permalinkRoute("/other/checkout/", "acme").problem, /outside the campaign root/);
+  assert.match(permalinkRoute("/acme/upsell-1/index.html", "acme").problem, /not a page-kit route/);
+  assert.match(permalinkRoute("/acme/../x/", "acme").problem, /not a page-kit route/);
+  assert.match(permalinkRoute("/acme/a\u001b/", "acme").problem, /control characters/);
+  assert.equal(normalizePermalinkValue("false"), null);
+  assert.equal(normalizePermalinkValue("~"), null);
+  assert.equal(normalizePermalinkValue("null"), null);
+  assert.equal(normalizePermalinkValue("/acme/x/ # moved"), "/acme/x/");
+  assert.equal(normalizePermalinkValue("\"/acme/x/\""), "/acme/x/");
+  assert.equal(normalizePermalinkValue("\"false\""), "false");
+  assert.equal(normalizePermalinkValue(""), null);
 });
 
 // A campaign folder with a target page-kit repo whose page tree carries the
@@ -446,7 +461,7 @@ test("spec derive is partial, not blocked, when a page cannot be bound, and stil
     assert.equal(result.status, "partial");
     assert.equal(result.written, true);
     assert.deepEqual(result.not_derived.map((row) => [row.page_id, row.reason]), [["upsell", "page_file_not_found"]]);
-    assert.deepEqual(result.warnings.map((issue) => issue.code), ["spec.derive.page_file_not_found"]);
+    assert.equal(result.warnings[0].code, "spec.derive.page_file_not_found");
     assert.equal(result.warnings[0].detail.page_id, "upsell");
     assert.equal(readJson(specPath).global_config.sdk_version, "0.4.38");
     assert.equal(readJson(specPath).funnels[0].pages[2].page_url, "upsell/", "the unbound page keeps its route");
@@ -464,6 +479,7 @@ test("spec derive is partial, not blocked, when a page cannot be bound, and stil
     assert.deepEqual(bound.warnings.map((issue) => issue.code), ["spec.derive.routing_hint_stale", "spec.derive.projection_stale"]);
     assert.match(bound.warnings[0].message, /page "checkout" carries sdk_hints\.meta_tags\.next-success-url "upsell\/"/);
     assert.match(bound.warnings[1].message, /campaigns-os prepare-build/);
+    assert.deepEqual(result.warnings.map((issue) => issue.code), ["spec.derive.page_file_not_found", "spec.derive.analytics_block_created", "spec.derive.analytics_block_created"], "the first run created both provider blocks and said so");
     assert.equal(readJson(specPath).funnels[0].pages[2].page_url, "upsell-1/");
     // The hint stays reported on every later run until the Map is re-saved.
     const later = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
@@ -912,15 +928,18 @@ test("a permalink the tree states must be a relative page-kit route before it be
   assert.match(derivedRouteProblem("/rooted/"), /not a relative/);
   assert.match(derivedRouteProblem("bad\u001b/"), /control characters/);
   assert.match(derivedRouteProblem(42), /not a string/);
-  // Through the plan: a hostile permalink lands in not_derived, never in changes.
-  const tree = PAGE_FILES.map((file) => (file.path === "upsell.html" ? { ...file, route: pageRouteForFile("upsell.html", { permalink: "https://attacker.example/" }), permalink: "https://attacker.example/" } : file));
-  const plan = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree });
+  // Through the plan: a permalink derive cannot read as a campaign route
+  // lands in not_derived, never in changes, and the file still binds by id.
+  const resolved = permalinkRoute("https://attacker.example/", "runtime-packet-demo");
+  const tree = PAGE_FILES.map((file) => (file.path === "upsell.html" ? { ...file, route: resolved.route ?? null, permalink: "https://attacker.example/", problem: resolved.problem } : file));
+  const plan = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree, publicRouteSlug: "runtime-packet-demo" });
   assert.deepEqual(plan.not_derived.map((row) => [row.page_id, row.reason]), [["upsell", "target_invalid"]]);
-  assert.match(plan.not_derived[0].detail, /upsell\.html \(permalink\).*absolute URL/);
+  assert.match(plan.not_derived[0].detail, /upsell\.html \(permalink\).*outside the campaign root/);
   assert.equal(plan.changes.some((row) => row.page_id === "upsell"), false);
   assert.equal(readJson(new URL("campaignspec.v42.basic.json", EXAMPLES)).funnels[0].pages[2].page_url, "upsell/");
-  // The walker and the file rule share one ignore list.
-  assert.ok(isPageTreeIgnoredDir("_includes") && isPageTreeIgnoredDir("assets") && isPageTreeIgnoredDir("node_modules") && isPageTreeIgnoredDir(".git"));
+  // The walker and the file rule share page-kit's own ignore list.
+  assert.ok(isPageTreeIgnoredDir("_includes") && isPageTreeIgnoredDir("_layouts") && isPageTreeIgnoredDir("node_modules") && isPageTreeIgnoredDir(".git"));
+  assert.equal(isPageTreeIgnoredDir("assets"), false);
   assert.equal(isPageTreeIgnoredDir("offers"), false);
   assert.equal(pageRouteForFile("node_modules/x.html"), null);
   assert.equal(pageRouteForFile(".git/x.html"), null);
@@ -1036,6 +1055,51 @@ test("spec derive reads a CRLF permalink and reports an unreadable spec as a str
     } finally {
       chmodSync(specPath, 0o644);
     }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive treats an unreadable report as unknown waivers, rejects a bare --report, warns in dry-run as it would on a write, and refuses duplicate page ids", () => {
+  const { dir, packetPath, reportPath, specPath } = fixture();
+  try {
+    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, report: true }), /Missing value for --report/);
+    // Dry run carries the write's warnings, phrased conditionally.
+    writeFileSync(specPath, readFileSync(specPath, "utf8").replace(/\[\n\s+"card"\n\s+\]/, "[\"card\"]"));
+    const report = readJson(reportPath);
+    report.stages.assembly.status = "completed";
+    writeJson(reportPath, report);
+    const dry = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.deepEqual(dry.warnings.map((issue) => issue.code).sort(), ["spec.derive.analytics_block_created", "spec.derive.analytics_block_created", "spec.derive.build_stale", "spec.derive.file_reformatted"]);
+    assert.match(dry.warnings.find((issue) => issue.code === "spec.derive.file_reformatted").message, /would be re-serialized/);
+    assert.match(dry.warnings.find((issue) => issue.code === "spec.derive.build_stale").message, /this would rewrite/);
+    assert.match(dry.next, /then rebuild/);
+    // A torn report: waivers unknown, the pin waits, the ids still derive.
+    writeFileSync(reportPath, "{torn");
+    const torn = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.ok(torn.warnings.some((issue) => issue.code === "spec.derive.report_unreadable"));
+    assert.deepEqual(torn.not_derived.map((row) => [row.field, row.reason]), [["global_config.sdk_version", "waivers_unknown"]]);
+    assert.ok(torn.changes.some((row) => row.field.startsWith("analytics")));
+    writeJson(reportPath, report);
+    const explicit = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, report: join(dir, "missing-report.json"), "dry-run": true });
+    assert.deepEqual(explicit.not_derived.map((row) => row.reason), ["waivers_unknown"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const dup = specFixture((draft) => { draft.funnels[0].pages.push({ ...draft.funnels[0].pages[2] }); });
+  const plan = planSpecDerive({ spec: dup, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
+  assert.deepEqual(plan.not_derived.map((row) => [row.field, row.reason]), [["funnels[0].pages[2].page_url", "page_id_duplicate"], ["funnels[0].pages[4].page_url", "page_id_duplicate"]]);
+});
+
+test("the page-tree walker follows symlinked pages inside the repo, drops a BOM, and honours permalink: false", () => {
+  const { dir, packetPath, pageTree } = fixture({ tree: ["landing", "checkout", "receipt"] });
+  try {
+    const real = join(dir, "target-page-kit", "shared-upsell.html");
+    writeFileSync(real, "\uFEFF---\npage_type: upsell\npermalink: false\n---\n<h1>upsell</h1>\n");
+    symlinkSync(real, join(pageTree, "upsell.html"));
+    const result = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.deepEqual(result.not_derived, []);
+    assert.ok(result.unchanged.some((row) => row.page_id === "upsell" && row.source === "upsell.html"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

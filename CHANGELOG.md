@@ -20,18 +20,22 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   `runtime.sdk_version` alias when the spec declares it, so the two never
   conflict) from `_data/campaigns.json[public_route_slug].sdk_version`; each
   active page's `page_url` from the page tree under `assembly.output_dir`
-  (default `src/<public_route_slug>/`) — page-kit routes by filename,
-  `checkout.html` → `checkout/`, `index.html` → the entry route, a frontmatter
-  `permalink` overrides — mirrored into `funnel_pages[].page_url` when that
+  (default `src/<public_route_slug>/`) — page-kit's own rule: by the
+  file's basename alone, `checkout.html` → `checkout/` wherever it sits,
+  `index.html` → the entry route (a nested `index.html` collides with the
+  root and is not read), and a frontmatter `permalink`, which page-kit
+  serves verbatim, is accepted only in the `/<slug>/<route>/` form
+  prepare-build writes (`permalink: false`/`null`/`~`, a trailing comment
+  and a BOM read as page-kit's frontmatter reader reads them) — mirrored into `funnel_pages[].page_url` when that
   legacy block exists; `analytics.providers.gtm.containerId` from `gtm_id`
   and `analytics.providers.facebook.pixelId` from `fb_pixel_id`. A page is
   bound to one file by the packet's own projection first
   (`source_html.pages[].page_kit.target_path`), else by a file whose route,
   terminal segment or filename matches the page; routes are compared in
   normalized page-kit form so a spelling difference is not a change, and a
-  permalink that is not a relative page-kit route (an absolute URL, a `..`
-  or empty segment, a control character) is refused as `target_invalid`
-  rather than written. It
+  permalink in any other spelling (no slug prefix, another prefix, `.html`,
+  `..`, a control character) is refused as `target_invalid` naming the URL
+  page-kit would serve, rather than written. It
   prints a field-by-field `before -> after` diff with each value's repo
   source and writes nothing else: not the store profile (store-derived, the
   second slice), no authored or mirrored field, not the packet, not the repo.
@@ -58,7 +62,9 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   `spec_ahead` (any released pin the spec declares, canonical or alias, is
   ahead of the repo pin: that is the state doctor blocks on with `page-kit
   sync` as its repair, per #413, and only one command may own it, so derive
-  never moves a spec pin backwards), and
+  never moves a spec pin backwards), `waivers_unknown` (the Assembly Report
+  could not be read, so a named-human pin waiver cannot be ruled out; the
+  pin waits, routes and ids still derive), `page_id_duplicate`, and
   `target_empty` (the entry's id is empty while the spec declares one; an
   empty repo value never deletes a spec id). A placeholder id
   (`GTM-XXXXXXX`, a run of one digit) is `target_invalid`: writing it would
@@ -80,7 +86,11 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   `spec.derive.identity_not_rebound` warning naming prepare-build; a derived
   route change also warns `spec.derive.projection_stale`, because the
   packet's page-kit projection and the Build Context page map were prepared
-  from the old routes and prepare-build regenerates them. Write
+  from the old routes and prepare-build regenerates them; a provider block
+  derive creates warns `spec.derive.analytics_block_created`, since the spec
+  then declares a contract QA gates on. `--dry-run` carries the same
+  `file_reformatted`, `projection_stale` and `build_stale` warnings, phrased
+  as what a write would do. Write
   discipline is `page-kit sync`'s: one read serves the plan and the write;
   the file is edited in place and re-serialized with its own top-level
   indentation, line ending and trailing newline (`spec.derive.file_reformatted`
@@ -106,7 +116,9 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   (`spec_invalid`), the spec identifies another campaign by
   `spec_identity.public_route_slug` (else `campaign.slug`/`id`) or
   `spec_identity.map_id` (`spec_identity_mismatch`), or the target entry is
-  unavailable (`entry_missing` with `detail.target_status`; scaffold first).
+  unavailable (`entry_missing` with `detail.target_status`; scaffold first),
+  the page tree cannot be read (`page_tree_unreadable`), or the write itself
+  fails (`write_failed`). A bare `--report` is rejected.
   `--json` emits `{ ok, action: "spec derive", status, packet_path,
   public_route_slug, target_repo, campaigns_path, page_tree, spec_path,
   report_path, dry_run, written, changes[] { field, path, before, after,

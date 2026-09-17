@@ -278,7 +278,9 @@ import {
   applySpecDerive,
   formatDeriveValue,
   isPageTreeIgnoredDir,
+  normalizePermalinkValue,
   pageRouteForFile,
+  permalinkRoute,
   planSpecDerive,
 } from "./spec-derive.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
@@ -4773,27 +4775,38 @@ export function pageKitSyncCommand(args) {
 const SPEC_DERIVE_FLAGS = Object.freeze(["packet", "dry-run", "json", "report"]);
 
 // The page files page-kit renders under the campaign's source directory, with
-// the route each one builds to (filename-derived, or the file's permalink).
-// Returns null when the directory does not exist, so the plan can say "no
-// page tree" rather than "no pages".
+// the route each one builds to (filename-derived, or the file's permalink;
+// a permalink derive cannot read as a campaign route carries `problem` and a
+// null route). Discovery follows page-kit's own: every .html outside
+// `_layouts/` and `_includes/`, symlinked entries included. Returns null when
+// the directory does not exist, so the plan can say "no page tree" rather
+// than "no pages".
 function listPageKitPageFiles(outputDir, publicRouteSlug) {
   if (!outputDir || !existsSync(outputDir) || !statSync(outputDir).isDirectory()) return null;
   const files = [];
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) {
+      const stats = entry.isSymbolicLink() ? statSync(fullPath, { throwIfNoEntry: false }) : entry;
+      if (!stats) continue;
+      if (stats.isDirectory()) {
         if (!isPageTreeIgnoredDir(entry.name)) walk(fullPath);
         continue;
       }
-      if (!entry.isFile() || extname(entry.name).toLowerCase() !== ".html") continue;
+      if (!stats.isFile() || extname(entry.name).toLowerCase() !== ".html") continue;
       const path = relative(outputDir, fullPath).split(sep).join("/");
-      // Frontmatter is read with line endings normalized: a CRLF page file
-      // declares its permalink as plainly as an LF one.
-      const permalink = extractFrontmatterValue(readFileSync(fullPath, "utf8").replace(/\r\n/g, "\n"), "permalink");
-      const route = pageRouteForFile(path, { permalink, publicRouteSlug });
-      if (route === null) continue;
-      files.push({ path, basename: basename(entry.name, ".html"), route, permalink: isNonEmptyString(permalink) ? permalink : null });
+      const filenameRoute = pageRouteForFile(path);
+      if (filenameRoute === null) continue;
+      // Frontmatter is read the way page-kit reads it: a BOM dropped, CRLF
+      // normalized, and YAML's no-permalink idioms (false, null, ~) honoured.
+      const text = readFileSync(fullPath, "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+      const permalink = normalizePermalinkValue(extractFrontmatterValue(text, "permalink"));
+      if (permalink === null) {
+        files.push({ path, basename: basename(entry.name, ".html"), route: filenameRoute, permalink: null, problem: null });
+        continue;
+      }
+      const resolved = permalinkRoute(permalink, publicRouteSlug);
+      files.push({ path, basename: basename(entry.name, ".html"), route: resolved.route ?? null, permalink, problem: resolved.problem ?? null });
     }
   };
   walk(outputDir);
@@ -4815,6 +4828,7 @@ export function specDeriveCommand(args) {
   if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
     throw new Error(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
   }
+  if (args.report === true) throw new Error("Missing value for --report");
   const dryRun = args["dry-run"] === true;
   const result = {
     ok: false,
@@ -4946,6 +4960,7 @@ export function specDeriveCommand(args) {
   // stage ledger whether a terminal build now predates the spec.
   let report = null;
   let workspace = null;
+  let waiversUnknown = false;
   try {
     const explicitReport = isNonEmptyString(args.report) ? resolve(args.report) : null;
     if (explicitReport && !(existsSync(explicitReport) && statSync(explicitReport).isFile())) {
@@ -4959,8 +4974,10 @@ export function specDeriveCommand(args) {
     report = readJsonIfExists(workspace.reportPath);
     result.report_path = workspace.reportPath;
   } catch (error) {
-    addIssue(result.warnings, "spec.derive.report_unreadable", `The Assembly Report could not be read (${singleLineDetail(error.message)}); waivers recorded there were not consulted.`);
+    waiversUnknown = true;
+    addIssue(result.warnings, "spec.derive.report_unreadable", `The Assembly Report could not be read (${singleLineDetail(error.message)}); waivers recorded there were not consulted, so the SDK pin is not derived this run.`);
   }
+  if (isNonEmptyString(args.report) && !(existsSync(resolve(args.report)) && statSync(resolve(args.report)).isFile())) waiversUnknown = true;
   const entry = load.entry;
   const targetLoad = { status: "ok", public_route_slug: publicRouteSlug, target_path: PAGE_KIT_CAMPAIGNS_REL_PATH, entry };
   const waivers = Array.isArray(report?.waivers) ? report.waivers : [];
@@ -4975,10 +4992,15 @@ export function specDeriveCommand(args) {
   const outputDir = declaredOutputDir ? resolve(targetRepo, declaredOutputDir) : join(targetRepo, "src", publicRouteSlug);
   result.page_tree = relative(targetRepo, outputDir).split(sep).join("/") || ".";
   let pageFiles = null;
-  if (existsSync(outputDir)) {
-    const realOutputDir = realpathSync(outputDir);
-    if (realOutputDir === realTargetRepo || realOutputDir.startsWith(`${realTargetRepo}${sep}`)) pageFiles = listPageKitPageFiles(realOutputDir, publicRouteSlug);
-    else addIssue(result.warnings, "spec.derive.page_tree_escapes_repo", `${outputDir} resolves to ${realOutputDir}, outside the target repo; routes were not read from it.`);
+  try {
+    if (existsSync(outputDir)) {
+      const realOutputDir = realpathSync(outputDir);
+      if (realOutputDir === realTargetRepo || realOutputDir.startsWith(`${realTargetRepo}${sep}`)) pageFiles = listPageKitPageFiles(realOutputDir, publicRouteSlug);
+      else addIssue(result.warnings, "spec.derive.page_tree_escapes_repo", `${outputDir} resolves to ${realOutputDir}, outside the target repo; routes were not read from it.`);
+    }
+  } catch (error) {
+    addIssue(result.errors, "spec.derive.page_tree_unreadable", `The page tree under ${result.page_tree}/ could not be read (${singleLineDetail(error.message)}); nothing was written.`);
+    return result;
   }
   const packetBindings = new Map();
   for (const page of Array.isArray(packet.source_html?.pages) ? packet.source_html.pages : []) {
@@ -4987,7 +5009,7 @@ export function specDeriveCommand(args) {
     if (pageId && targetPath && !packetBindings.has(pageId)) packetBindings.set(pageId, targetPath);
   }
 
-  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, publicRouteSlug });
+  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug });
   result.changes = plan.changes;
   result.unchanged = plan.unchanged;
   result.not_derived = plan.not_derived;
@@ -4999,18 +5021,32 @@ export function specDeriveCommand(args) {
   for (const hint of plan.stale_hints) {
     addIssue(result.warnings, "spec.derive.routing_hint_stale", `page "${hint.page_id}" carries sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)}, but page "${hint.target_page_id}" now derives to ${JSON.stringify(hint.derived_route)}. Routing hints are a Map projection derive does not rewrite; re-save the Map (or edit the hint) so the built meta tag and doctor's expectation agree.`, hint);
   }
+  for (const block of plan.created_blocks || []) {
+    addIssue(result.warnings, "spec.derive.analytics_block_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: the spec ${dryRun ? "would then declare" : "now declares"} an analytics contract, so QA expects that tag to fire instead of treating analytics as advisory.`);
+  }
+
+  // What a write entails is said in both modes, so a dry run previews the
+  // warnings a real run would carry: a lossy round trip, a build now stale,
+  // a projection now stale.
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const indent = text.match(/^\s*\{\r?\n([ \t]+)"/)?.[1] ?? "  ";
+  const trailing = /\r?\n$/.test(text) ? eol : "";
+  const serialize = (document) => `${JSON.stringify(document, null, indent).replace(/\n/g, eol)}${trailing}`;
+  const would = dryRun ? "would be" : "was";
+  if (plan.changes.length) {
+    if (serialize(spec) !== text) {
+      addIssue(result.warnings, "spec.derive.file_reformatted", `${result.spec_path} ${would} re-serialized with ${indent === "\t" ? "tab" : `${indent.length}-space`} indentation; formatting outside the derived fields (key order, whitespace, number spelling) may differ from the original. Review the file diff before committing.`);
+    }
+    if (plan.changes.some((row) => row.page_id)) {
+      addIssue(result.warnings, "spec.derive.projection_stale", `A page route ${dryRun ? "would move" : "moved"}, and the packet's page-kit projection (source_html.pages[].page_kit) and the Build Context were prepared from the old routes. Re-run ${cmd("prepare-build")} (or start) before the next build so they describe the routes the spec carries.`);
+    }
+    if (stageIsTerminal(report?.stages?.assembly?.status)) {
+      addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec ${dryRun ? "this would rewrite" : "just rewritten"}. Re-run the build stage before polish, deploy or QA if a route or the pin moved; QA correlates its verdict against the spec identity the sidecars carry.`);
+      result.next = `${cmd("doctor")} --packet ${shellToken(packetPath)}, then rebuild: set stages.assembly.status back to "pending" on the Assembly Report and run ${cmd("next")} --packet ${shellToken(packetPath)}`;
+    }
+  }
 
   if (plan.changes.length && !dryRun) {
-    // Edited in place and re-serialized with the file's own top-level
-    // indentation, line ending and trailing newline; a lossy round trip is
-    // reported because the printed diff covers only the derived fields.
-    const eol = text.includes("\r\n") ? "\r\n" : "\n";
-    const indent = text.match(/^\s*\{\r?\n([ \t]+)"/)?.[1] ?? "  ";
-    const trailing = /\r?\n$/.test(text) ? eol : "";
-    const serialize = (document) => `${JSON.stringify(document, null, indent).replace(/\n/g, eol)}${trailing}`;
-    if (serialize(spec) !== text) {
-      addIssue(result.warnings, "spec.derive.file_reformatted", `${result.spec_path} was re-serialized with ${indent === "\t" ? "tab" : `${indent.length}-space`} indentation; formatting outside the derived fields (key order, whitespace, number spelling) may differ from the original. Review the file diff before committing.`);
-    }
     // The identity the sidecars bound to the spec BEFORE this write, so the
     // re-bind below can tell "bound to the spec being replaced" from "already
     // drifted" and only ever moves the former.
@@ -5032,9 +5068,9 @@ export function specDeriveCommand(args) {
     // spec is re-read just before the rename: an edit made underneath this
     // run (an authored change in another tool) is refused rather than
     // overwritten with a document derived from the earlier read.
-    const specMode = statSync(result.spec_path).mode & 0o7777;
     const tmpPath = join(dirname(result.spec_path), `.${basename(result.spec_path)}.${randomUUID()}.tmp`);
     try {
+      const specMode = statSync(result.spec_path).mode & 0o7777;
       writeFileSync(tmpPath, serialized, { flag: "wx", mode: specMode });
       chmodSync(tmpPath, specMode);
       if (readFileSync(result.spec_path, "utf8") !== text) {
@@ -5042,6 +5078,9 @@ export function specDeriveCommand(args) {
         return result;
       }
       renameSync(tmpPath, result.spec_path);
+    } catch (error) {
+      addIssue(result.errors, "spec.derive.write_failed", `${result.spec_path} could not be written (${singleLineDetail(error.message)}); nothing was written.`);
+      return result;
     } finally {
       rmSync(tmpPath, { force: true });
     }
@@ -5100,17 +5139,6 @@ export function specDeriveCommand(args) {
         result.rebound.assembly_report = false;
         addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Assembly Report's spec identity was already bound to a different spec than the one derive replaced; it was left as it is. Re-run prepare-build before QA so the bundle correlates.`);
       }
-    }
-    // The packet's own page-kit projection (source_html.pages[].page_kit)
-    // and the Build Context's page map were prepared from the routes the
-    // spec carried; a derived route change leaves them describing the old
-    // ones until prepare-build runs again.
-    if (plan.changes.some((row) => row.page_id)) {
-      addIssue(result.warnings, "spec.derive.projection_stale", `A page route moved, and the packet's page-kit projection (source_html.pages[].page_kit) and the Build Context were prepared from the old routes. Re-run ${cmd("prepare-build")} (or start) before the next build so they describe the routes the spec now carries.`);
-    }
-    if (stageIsTerminal(report?.stages?.assembly?.status)) {
-      addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec just rewritten. Re-run the build stage before polish, deploy or QA if a route or the pin moved; QA correlates its verdict against the spec identity the sidecars now carry.`);
-      result.next = `${cmd("doctor")} --packet ${shellToken(packetPath)}, then rebuild: set stages.assembly.status back to "pending" on the Assembly Report and run ${cmd("next")} --packet ${shellToken(packetPath)}`;
     }
     // The retained doctor snapshot (if any) now predates the spec it judged.
     // commitAssemblyReport stamps it when the report was re-bound; every

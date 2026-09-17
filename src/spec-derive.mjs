@@ -52,12 +52,14 @@ const ROUTING_HINT_FIELDS = Object.freeze({
   "next-upsell-decline-url": "on_decline",
 });
 
-// Directories page-kit does not render pages from, and the one rule for a
-// file it skips: the CLI walker prunes with the first, pageRouteForFile
-// filters with both, so a new non-page directory is added in one place.
-export const PAGE_TREE_IGNORED_DIRS = Object.freeze(["assets", "node_modules", ".git"]);
+// The directories page-kit's own discovery ignores (`_layouts`, `_includes`;
+// everything else under the campaign root, `assets/` and `_data/` included,
+// is rendered when it is .html), plus the two no build reads. The CLI walker
+// prunes with this and pageRouteForFile filters with it, so the list lives
+// in one place.
+export const PAGE_TREE_IGNORED_DIRS = Object.freeze(["_layouts", "_includes", "node_modules", ".git"]);
 export function isPageTreeIgnoredDir(name) {
-  return name.startsWith("_") || PAGE_TREE_IGNORED_DIRS.includes(name);
+  return PAGE_TREE_IGNORED_DIRS.includes(name);
 }
 
 function isPlainObject(value) {
@@ -103,22 +105,43 @@ function containerProblem(spec, path) {
   return null;
 }
 
-// The public route a page-kit source file builds to, relative to the campaign
-// root: page-kit routes by filename (`checkout.html` -> `checkout/`,
-// `a/b.html` -> `a/b/`, `index.html` -> the directory's route, so the top-level
-// `index.html` is the entry route ""), and a `permalink` in the file's
-// frontmatter overrides that. Files page-kit does not render as pages
-// (`_includes/`, `_layouts/`, `_data/`, `assets/`, underscore-prefixed files)
-// return null.
-export function pageRouteForFile(relativePath, { permalink = null, publicRouteSlug = "" } = {}) {
+// The public route a page-kit source file builds to without a permalink,
+// relative to the campaign root. page-kit's resolveOutput routes by the
+// FILENAME alone (`checkout.html` -> `checkout/`, `offers/upsell.html` ->
+// `upsell/`, intermediate directories ignored with its NESTED_NO_PERMALINK
+// warning), and `index.html` is the entry route "". A nested `index.html`
+// would collide with the campaign root (page-kit's DUPLICATE_OUTPUT), so it
+// is not a page this reads. Files under `_layouts/` or `_includes/` return
+// null, as page-kit never renders them.
+export function pageRouteForFile(relativePath) {
   const path = String(relativePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
   if (!path || !/\.html$/i.test(path)) return null;
   const segments = path.split("/");
-  if (segments.slice(0, -1).some(isPageTreeIgnoredDir) || segments[segments.length - 1].startsWith("_")) return null;
-  if (isNonEmptyString(permalink)) return stripPublicRoutePrefix(normalizePageKitRoute(permalink), publicRouteSlug);
-  const routeSegments = path.replace(/\.html$/i, "").split("/").filter(Boolean);
-  if (routeSegments[routeSegments.length - 1] === "index") routeSegments.pop();
-  return routeSegments.length ? `${routeSegments.join("/")}/` : "";
+  if (segments.slice(0, -1).some(isPageTreeIgnoredDir)) return null;
+  const basename = segments[segments.length - 1].replace(/\.html$/i, "");
+  if (basename === "index") return segments.length === 1 ? "" : null;
+  return `${basename}/`;
+}
+
+// The campaign-relative route a frontmatter permalink states. page-kit serves
+// a permalink verbatim at `/<permalink>/`, and prepare-build only ever writes
+// the `/<slug>/<route>/` form, so that is the only form derive accepts: any
+// other spelling (no slug prefix, another prefix, `.html`, `..`, a control
+// character) is a repo defect reported with the URL page-kit would serve.
+// Returns `{ route }` or `{ problem, served }`.
+export function permalinkRoute(permalink, publicRouteSlug = "") {
+  const raw = String(permalink ?? "").trim();
+  if (hasControlCharacters(raw)) return { problem: "contains control characters", served: null };
+  const stripped = raw.replace(/^\/+|\/+$/g, "");
+  const served = `/${stripped}/`;
+  const segments = stripped.split("/");
+  const slug = String(publicRouteSlug || "").trim();
+  if (!stripped || segments[0] !== slug) return { problem: `is served at ${served}, outside the campaign root /${slug || "<slug>"}/`, served };
+  const rest = segments.slice(1);
+  if (rest.some((segment) => segment === "" || segment === "." || segment === ".." || /\.html$/i.test(segment) || /[?#]/.test(segment))) {
+    return { problem: `is served at ${served}, which is not a page-kit route under /${slug}/ (each segment a plain name, no .html, no query)`, served };
+  }
+  return { route: rest.length ? `${rest.join("/")}/` : "" };
 }
 
 // A route the page tree states must be a relative page-kit route before it
@@ -135,6 +158,20 @@ export function derivedRouteProblem(route) {
   const segments = route.slice(0, -1).split("/");
   if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) return "contains an empty, `.` or `..` segment";
   return null;
+}
+
+// The read side of the walker's permalink: YAML idioms page-kit's own
+// frontmatter reader (gray-matter) understands. `false`, `null` and `~` mean
+// no permalink; a trailing `# comment` on an unquoted value is not part of
+// it; surrounding quotes are dropped.
+export function normalizePermalinkValue(value) {
+  if (typeof value !== "string") return null;
+  let text = value.trim();
+  const quoted = /^(["']).*\1$/.test(text);
+  if (quoted) text = text.slice(1, -1);
+  else text = text.replace(/\s+#.*$/, "").trim();
+  if (!text || (!quoted && ["false", "null", "~"].includes(text))) return null;
+  return text;
 }
 
 function terminalSegment(route) {
@@ -158,8 +195,8 @@ function bindPageFile(page, pageFiles, packetBindings) {
   const currentTerminal = terminalSegment(currentRoute);
   const candidates = new Set();
   for (const file of pageFiles) {
-    if (file.route === currentRoute) candidates.add(file);
-    else if (currentTerminal && terminalSegment(file.route) === currentTerminal) candidates.add(file);
+    if (file.route !== null && file.route === currentRoute) candidates.add(file);
+    else if (currentTerminal && file.route !== null && terminalSegment(file.route) === currentTerminal) candidates.add(file);
     else if (file.basename === page.id) candidates.add(file);
   }
   if (candidates.size === 1) return { file: [...candidates][0], via: "page_tree" };
@@ -202,7 +239,7 @@ function pathLabel(path) {
 // does not exist); `packetBindings` as a Map of page id -> target file path
 // from the packet's page-kit projection; `waivedGates` as the checkpoint
 // gates an active named-human waiver currently covers.
-export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings = new Map(), waivedGates = [], publicRouteSlug = "" } = {}) {
+export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings = new Map(), waivedGates = [], waiversUnknown = false, publicRouteSlug = "" } = {}) {
   const target = isPlainObject(entry) ? entry : {};
   const changes = [];
   const unchanged = [];
@@ -240,6 +277,10 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
     notDerived.push({ field: "global_config.sdk_version", reason: "scaffold_seed", detail: `the target entry still carries the starter demo store profile, so its pin ${observed} is the starter's seed, not a version anyone chose; the spec seeds the pin in that state (page-kit sync). Sync the scaffold from the spec first, then derive.` });
   } else if (sdkWaiver) {
     notDerived.push({ field: "global_config.sdk_version", reason: "waived", detail: `the SDK pin is covered by an active page_kit.sdk_version waiver recorded by ${sdkWaiver}; spec derive leaves the spec as the waiver accepted it. Withdraw the waiver on the Assembly Report (waivers[]) to let derive write the repo pin.` });
+  } else if (waiversUnknown) {
+    // An unreadable Assembly Report means a named-human waiver on the pin
+    // may exist unseen; "unknown" is not "none", so the pin waits.
+    notDerived.push({ field: "global_config.sdk_version", reason: "waivers_unknown", detail: "the Assembly Report could not be read, so an active page_kit.sdk_version waiver cannot be ruled out; spec derive leaves the pin alone rather than reverse a decision it cannot see. Repair or restore the report, then derive again." });
   } else {
     // A spec pin ahead of the repo pin is the state doctor blocks on with
     // page-kit sync as the repair (#413: a bump the repo never received, or
@@ -264,6 +305,11 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
   // Page routes: page-kit routes by source filename (or permalink), so the
   // tree is the authority for `page_url`.
   const activePages = activePagesWithPaths(spec);
+  // A page id that appears twice cannot bind one route: doctor's
+  // PageIdUniqueness rule blocks the spec, and derive names it too rather
+  // than let the last binding win.
+  const idCounts = new Map();
+  for (const { page } of activePages) idCounts.set(page.id, (idCounts.get(page.id) || 0) + 1);
   // The route every bound page derives to, changed or not: the standing
   // check on routing hints reads it, so a hint left stale by an earlier run
   // keeps surfacing until the Map is re-saved.
@@ -281,6 +327,10 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
     }
     for (const { page, path } of activePages) {
       const field = `${pathLabel(path)}.page_url`;
+      if (idCounts.get(page.id) > 1) {
+        notDerived.push({ field, page_id: page.id, reason: "page_id_duplicate", detail: `page id "${page.id}" appears more than once in the spec, so no single route can be derived for it; make page ids unique, then derive again.` });
+        continue;
+      }
       const binding = bindPageFile(page, pageFiles, packetBindings);
       if (!binding.file) {
         notDerived.push(binding.via === "ambiguous"
@@ -291,9 +341,9 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       const after = binding.file.route;
       const before = Object.hasOwn(page, "page_url") ? page.page_url : undefined;
       const source = `${binding.file.path}${binding.file.permalink ? " (permalink)" : ""}`;
-      const problem = derivedRouteProblem(after);
+      const problem = binding.file.problem || derivedRouteProblem(after);
       if (problem) {
-        notDerived.push({ field, page_id: page.id, reason: "target_invalid", detail: `the route ${source} states for page "${page.id}" (${JSON.stringify(after)}) ${problem}; fix the file's permalink, then derive again.` });
+        notDerived.push({ field, page_id: page.id, reason: "target_invalid", detail: `the permalink ${source} states for page "${page.id}" (${quoteValue(binding.file.permalink ?? after)}) ${problem}; fix the file's permalink, then derive again.` });
         continue;
       }
       const row = { field, page_id: page.id, path: [...path, "page_url"], before, after, source };
@@ -384,7 +434,13 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
     else changes.push(row);
   }
 
-  return { changes, unchanged, not_derived: notDerived, not_in_target: notInTarget, stale_hints: staleHints };
+  // A provider block derive will create is a new analytics contract: QA
+  // stops treating analytics as advisory and expects that tag to fire.
+  const createdBlocks = changes
+    .filter((row) => row.field.startsWith("analytics.providers.") && !isPlainObject(spec?.analytics?.providers?.[row.path[2]]))
+    .map((row) => `analytics.providers.${row.path[2]}`);
+
+  return { changes, unchanged, not_derived: notDerived, not_in_target: notInTarget, stale_hints: staleHints, created_blocks: [...new Set(createdBlocks)] };
 }
 
 function pathMatchesPattern(path, pattern) {

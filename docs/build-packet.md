@@ -239,7 +239,7 @@ spec (`spec.local_path`):
 | Spec field | Repo authority |
 |---|---|
 | `global_config.sdk_version`, and `runtime.sdk_version` when the spec declares the alias (so the two never conflict) | `_data/campaigns.json[public_route_slug].sdk_version` |
-| `funnels[].pages[].page_url` (the legacy `funnel_pages[].page_url` mirror, when present, is reconciled to the same route on every run) | the page tree under `assembly.output_dir` (default `src/<public_route_slug>/`): page-kit routes by filename, `checkout.html` → `checkout/`, `index.html` → the entry route, and a `permalink` in the file's frontmatter overrides that |
+| `funnels[].pages[].page_url` (the legacy `funnel_pages[].page_url` mirror, when present, is reconciled to the same route on every run) | the page tree under `assembly.output_dir` (default `src/<public_route_slug>/`), read by page-kit's own rule: the file's basename alone (`checkout.html` → `checkout/` wherever it sits; `index.html` → the entry route; a nested `index.html` collides with the root and is not read), or a frontmatter `permalink` in the `/<slug>/<route>/` form prepare-build writes (page-kit serves a permalink verbatim, so any other spelling is a repo defect, refused) |
 | `analytics.providers.gtm.containerId` | `_data/campaigns.json[public_route_slug].gtm_id` |
 | `analytics.providers.facebook.pixelId` | `_data/campaigns.json[public_route_slug].fb_pixel_id` |
 
@@ -271,11 +271,13 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | Reason | Meaning |
 |---|---|
 | `scaffold_seed` | the entry still carries the starter demo store profile, so its pin is the starter's seed, not a version anyone chose; `page-kit sync` seeds the pin from the spec in that state |
-| `target_missing`, `target_invalid` | the entry has no `sdk_version`, or it is not a released `MAJOR.MINOR.PATCH`; for an analytics id, the value is not a GTM container id / a digits-only pixel id; for a route, the file's permalink is not a relative page-kit route (an absolute URL, a `..` or empty segment, a control character) |
+| `target_missing`, `target_invalid` | the entry has no `sdk_version`, or it is not a released `MAJOR.MINOR.PATCH`; for an analytics id, the value is not a GTM container id / a digits-only pixel id; for a route, the file's permalink is not in the `/<slug>/<route>/` form (no slug prefix, another prefix, `.html`, `..`, a control character), reported with the URL page-kit would serve |
 | `waived` | an active named-human `page_kit.sdk_version` waiver covers the exact pair; derive leaves the spec as the waiver accepted it |
 | `spec_ahead` | a released pin the spec declares (canonical or alias) is ahead of the repo pin: the state doctor blocks on with `page-kit sync` as its repair (#413); one command owns it, so derive never moves a spec pin backwards |
 | `page_tree_missing`, `page_file_not_found`, `page_file_ambiguous` | no page tree, no file binds to the page, or more than one does |
 | `entry_route_undeclared` | the page binds to the top-level `index.html` (the entry route, `""`) but is not flagged `is_entry`; doctor honours an empty `page_url` only on the entry page, so the flag is asked for in the Map rather than the route written |
+| `waivers_unknown` | the Assembly Report could not be read, so a named-human `page_kit.sdk_version` waiver cannot be ruled out; the pin waits, routes and ids still derive |
+| `page_id_duplicate` | the page id appears more than once; no single route can be derived for it |
 | `spec_container_invalid` | `global_config`, `runtime`, `analytics`, `analytics.providers` or `analytics.providers.<provider>` exists in the spec but is not an object; reported by the plan so `--dry-run` and the write agree |
 | `target_empty` | the entry's `gtm_id` / `fb_pixel_id` is empty while the spec declares an id; an empty repo value never deletes a spec id |
 
@@ -294,7 +296,11 @@ another identity is left alone with a `spec.derive.identity_not_rebound`
 warning naming `prepare-build`. A derived route change also warns
 `spec.derive.projection_stale`: the packet's page-kit projection
 (`source_html.pages[].page_kit`) and the Build Context page map were prepared
-from the old routes, and `prepare-build` (or `start`) regenerates them.
+from the old routes, and `prepare-build` (or `start`) regenerates them. A
+provider block derive creates warns `spec.derive.analytics_block_created`:
+the spec then declares an analytics contract QA gates on. `--dry-run` carries
+the same `file_reformatted`, `projection_stale` and `build_stale` warnings,
+phrased as what a write would do.
 
 Write discipline is `page-kit sync`'s: one read serves the plan and the
 write; the file is edited in place and re-serialized with its own top-level
