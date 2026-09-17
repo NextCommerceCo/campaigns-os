@@ -633,3 +633,226 @@ test("the sdk gate's repo_newer advisory names spec derive as a command, and QA 
   assert.match(gate.advisory_actions[0].description, /0\.4\.38/);
   assert.doesNotMatch(gate.reason, /campaigns-os /, "the printed reason carries no bare command; the action does");
 });
+
+// Second pass from the ship coverage audit: the branches the first suite left
+// to inference.
+
+test("planSpecDerive binds by terminal segment, falls through a packet binding that names no file, and skips disabled or id-less pages", () => {
+  const nested = specFixture((draft) => { draft.funnels[0].pages[2].page_url = "offers/upsell/"; });
+  const byTerminal = planSpecDerive({ spec: nested, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
+  assert.deepEqual(byTerminal.changes.filter((row) => row.page_id).map((row) => [row.page_id, row.before, row.after, row.source]), [["upsell", "offers/upsell/", "upsell/", "upsell.html"]]);
+  const gone = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES, packetBindings: new Map([["upsell", "gone.html"]]) });
+  assert.equal(gone.unchanged.find((row) => row.page_id === "upsell").source, "upsell.html", "an absent projection target falls through to the tree");
+  const skipped = specFixture((draft) => {
+    draft.funnels[0].pages[2].enabled = false;
+    draft.funnels[0].pages.push({ type: "landing", page_url: "nameless/" });
+  });
+  const plan = planSpecDerive({ spec: skipped, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES.filter((file) => file.path !== "upsell.html") });
+  assert.deepEqual(plan.not_derived, [], "a disabled page and a page without an id are not active pages");
+  assert.deepEqual([...plan.changes, ...plan.unchanged].filter((row) => row.page_id).map((row) => row.page_id), ["landing", "checkout", "receipt"]);
+});
+
+test("planSpecDerive reads funnel_pages[] as the source only when funnels[] is absent, and skips a mirror that already matches", () => {
+  const legacy = specFixture((draft) => {
+    draft.funnel_pages = draft.funnels[0].pages.map((page) => ({ ...page, page_url: page.id === "upsell" ? "upsell/" : page.page_url }));
+    delete draft.funnels;
+  });
+  const tree = PAGE_FILES.map((file) => (file.path === "upsell.html" ? { ...file, route: "upsell-1/", permalink: "upsell-1/" } : file));
+  const plan = planSpecDerive({ spec: legacy, entry: CONFIGURED_ENTRY, pageFiles: tree });
+  assert.deepEqual(plan.changes.filter((row) => row.page_id).map((row) => [row.field, row.after]), [["funnel_pages[2].page_url", "upsell-1/"]]);
+  assert.ok(plan.unchanged.every((row) => !row.field.startsWith("funnels")));
+  // With both blocks, a mirror already at the derived route gets no row.
+  const both = specFixture((draft) => {
+    draft.funnel_pages = draft.funnels[0].pages.map((page) => ({ ...page, page_url: page.id === "upsell" ? "upsell-1/" : page.page_url }));
+  });
+  const one = planSpecDerive({ spec: both, entry: CONFIGURED_ENTRY, pageFiles: tree });
+  assert.deepEqual(one.changes.filter((row) => row.page_id).map((row) => row.field), ["funnels[0].pages[2].page_url"]);
+  // A page with no page_url at all prints an (absent) before.
+  const absent = specFixture((draft) => { delete draft.funnels[0].pages[1].page_url; });
+  const row = planSpecDerive({ spec: absent, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES }).unchanged.find((entry) => entry.page_id === "checkout");
+  assert.equal(row, undefined);
+  const written = planSpecDerive({ spec: absent, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES }).changes.find((entry) => entry.page_id === "checkout");
+  assert.equal(written.before, undefined);
+  assert.equal(formatDeriveValue(written.before), "(absent)");
+});
+
+test("planSpecDerive flags accept/decline hints, skips a hint that already names the derived route, and trims or refuses analytics ids", () => {
+  const spec = specFixture((draft) => {
+    draft.funnels[0].pages[1].sdk_hints.meta_tags["next-success-url"] = "upsell-1/";
+    draft.funnels[0].pages[2].sdk_hints.meta_tags["next-upsell-accept-url"] = "receipt/";
+  });
+  const tree = PAGE_FILES.map((file) => {
+    if (file.path === "upsell.html") return { ...file, route: "upsell-1/", permalink: "upsell-1/" };
+    if (file.path === "receipt.html") return { ...file, route: "thanks/", permalink: "thanks/" };
+    return file;
+  });
+  const plan = planSpecDerive({ spec, entry: CONFIGURED_ENTRY, pageFiles: tree, publicRouteSlug: "runtime-packet-demo" });
+  assert.deepEqual(plan.stale_hints.map((hint) => [hint.page_id, hint.tag, hint.derived_route]), [
+    ["upsell", "next-upsell-accept-url", "thanks/"],
+    ["upsell", "next-upsell-decline-url", "thanks/"],
+  ], "the checkout hint already names upsell-1/ and is not stale");
+  const trimmed = planSpecDerive({ spec: specFixture(), entry: { ...CONFIGURED_ENTRY, gtm_id: " GTM-ABC1234 ", fb_pixel_id: "1234567\n" }, pageFiles: PAGE_FILES });
+  assert.equal(trimmed.changes.find((row) => row.field.endsWith("containerId")).after, "GTM-ABC1234");
+  assert.deepEqual(trimmed.not_derived.map((row) => [row.field, row.reason]), [["analytics.providers.facebook.pixelId", "target_invalid"]]);
+  assert.throws(() => applySpecDerive([], { changes: [] }), /must be a JSON object/);
+  assert.throws(() => applySpecDerive({}, { changes: [{ field: "funnels[0].pages[0].page_url", path: ["funnels", 0, "pages", 0, "page_url"], after: "x/" }] }), /funnels is not an array/);
+});
+
+test("spec derive reads the page tree from assembly.output_dir, refuses a tree linked outside the repo, and reads a permalink from real frontmatter", () => {
+  const { dir, packetPath, targetRepo, pageTree, slug } = fixture();
+  try {
+    const packet = readJson(packetPath);
+    packet.assembly.output_dir = "pages/demo";
+    writeJson(packetPath, packet);
+    const moved = join(targetRepo, "pages", "demo");
+    mkdirSync(dirname(moved), { recursive: true });
+    cpSync(pageTree, moved, { recursive: true });
+    mkdirSync(join(moved, "offers"));
+    writeFileSync(join(moved, "offers", "index.html"), "---\npage_type: product\n---\n");
+    writeFileSync(join(moved, "notes.md"), "not a page\n");
+    mkdirSync(join(moved, "assets"));
+    writeFileSync(join(moved, "assets", "x.html"), "<p/>\n");
+    writeFileSync(join(moved, "upsell.html"), "---\npage_type: upsell\npermalink: \"/runtime-packet-demo/upsell-1/\"\n---\n<h1>upsell</h1>\n");
+    const result = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.equal(result.page_tree, "pages/demo");
+    assert.deepEqual(result.changes.filter((row) => row.page_id).map((row) => [row.page_id, row.after, row.source]), [["upsell", "upsell-1/", "upsell.html (permalink)"]]);
+    assert.deepEqual(result.not_derived, [], "offers/index.html, assets/ and notes.md bind to nothing and break nothing");
+
+    // The declared tree resolving outside the repo reads as no tree at all.
+    rmSync(moved, { recursive: true, force: true });
+    const outside = mkdtempSync(join(tmpdir(), "spec-derive-tree-"));
+    cpSync(pageTree, outside, { recursive: true });
+    symlinkSync(outside, moved);
+    const escaped = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.ok(escaped.warnings.some((issue) => issue.code === "spec.derive.page_tree_escapes_repo"));
+    assert.deepEqual(escaped.not_derived.map((row) => row.reason), ["page_tree_missing", "page_tree_missing", "page_tree_missing", "page_tree_missing"]);
+    assert.equal(escaped.status, "partial");
+    assert.equal(escaped.public_route_slug, slug);
+    rmSync(outside, { recursive: true, force: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive names every malformed target state, a map_id mismatch, a missing route slug and a non-object packet", () => {
+  const { dir, packetPath, campaignsPath, specPath, slug } = fixture();
+  try {
+    const before = readFileSync(specPath, "utf8");
+    const original = readFileSync(campaignsPath, "utf8");
+    const cases = [
+      ["file_missing", () => rmSync(campaignsPath), /Scaffold the campaign first/],
+      ["invalid_json", () => writeFileSync(campaignsPath, "{bad"), /not valid JSON/],
+      ["root_not_object", () => writeFileSync(campaignsPath, "[]\n"), /root must be an object/],
+      ["entry_not_object", () => writeJson(campaignsPath, { [slug]: "x" }), /must be an object/],
+    ];
+    for (const [status, mutate, pattern] of cases) {
+      writeFileSync(campaignsPath, original);
+      mutate();
+      const result = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+      assert.deepEqual(result.errors.map((issue) => [issue.code, issue.detail.target_status]), [["spec.derive.entry_missing", status]]);
+      assert.match(result.errors[0].message, pattern);
+    }
+    writeFileSync(campaignsPath, original);
+    const packet = readJson(packetPath);
+    packet.assembly.target_repo = "nowhere";
+    writeJson(packetPath, packet);
+    const noRepo = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.equal(noRepo.errors[0].detail.target_status, "target_repo_missing");
+    assert.match(noRepo.errors[0].message, /Target repo does not exist: nowhere/);
+
+    packet.assembly.target_repo = "target-page-kit";
+    packet.spec.map_id = "another-map";
+    writeJson(packetPath, packet);
+    const mapId = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.deepEqual(mapId.errors.map((issue) => issue.code), ["spec.derive.spec_identity_mismatch"]);
+    assert.match(mapId.errors[0].message, /spec_identity\.map_id/);
+
+    delete packet.spec.map_id;
+    delete packet.campaign.public_route_slug;
+    writeJson(packetPath, packet);
+    const noSlug = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.equal(noSlug.public_route_slug, null);
+    assert.ok(noSlug.errors.some((issue) => issue.code === "spec.derive.route_slug_missing"));
+
+    writeFileSync(packetPath, "[]\n");
+    const array = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.deepEqual(array.errors.map((issue) => issue.code), ["spec.derive.packet_invalid"]);
+    assert.match(array.errors[0].message, /must be a JSON object/);
+    assert.equal(readFileSync(specPath, "utf8"), before, "no precondition failure touched the spec");
+    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run=true": true }), /A flag takes its value as the next argument/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive reports a lossy round trip, keeps dry-run partial and a no-change dry run unchanged, and prints every text line", () => {
+  const { dir, packetPath, specPath } = fixture({ tree: ["landing", "checkout", "upsell-1", "receipt"] });
+  try {
+    // Inline arrays do not survive JSON.stringify: the write lands and says so.
+    writeFileSync(specPath, readFileSync(specPath, "utf8").replace(/\[\n\s+"card"\n\s+\]/, "[\"card\"]"));
+    const partialDry = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.equal(partialDry.status, "partial");
+    assert.equal(partialDry.written, false);
+    const beforeWrite = readFileSync(specPath, "utf8");
+    const written = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.ok(written.warnings.some((issue) => issue.code === "spec.derive.file_reformatted"));
+    assert.notEqual(readFileSync(specPath, "utf8"), beforeWrite);
+    const lines = specDeriveTextLines(written);
+    assert.ok(lines.includes("Changes written: 3"));
+    assert.ok(lines.some((line) => line === "Warnings:"));
+    assert.ok(lines.some((line) => line.startsWith("- [spec.derive.page_file_not_found]")));
+
+    const again = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.equal(again.status, "partial", "the unbound page keeps the run partial");
+    const packet = readJson(packetPath);
+    packet.source_html.pages.find((page) => page.page_id === "upsell").page_kit.target_path = "upsell-1.html";
+    writeJson(packetPath, packet);
+    specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    const settled = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.equal(settled.status, "unchanged", "a dry run with nothing to write is unchanged, not dry_run");
+    assert.equal(settled.dry_run, true);
+    const settledLines = specDeriveTextLines(settled);
+    assert.ok(settledLines.includes("Changes: none (every derived field the repo states already matches)"));
+    assert.ok(settledLines.some((line) => line.startsWith("Unchanged: global_config.sdk_version")));
+
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive prints the not-in-target line and survives an unreadable report or an unwritable doctor sidecar", { skip: process.getuid?.() === 0 ? "permission tests need a non-root user" : false }, () => {
+  const unwritable = fixture({ entry: { ...CONFIGURED_ENTRY, gtm_id: "", fb_pixel_id: "" } });
+  const unreadable = fixture();
+  try {
+    const first = specDeriveCommand({ _: ["spec", "derive"], packet: unwritable.packetPath, "dry-run": true });
+    assert.ok(specDeriveTextLines(first).includes("Not in target (left as they are): analytics.providers.gtm.containerId, analytics.providers.facebook.pixelId"));
+
+    // A sidecar that exists in a directory nobody may write to: the spec is
+    // still written, and the failed stale stamp is a warning, not a crash.
+    const sidecarPath = join(unwritable.targetRepo, DOCTOR_SIDECAR_REL_PATH);
+    writeJson(sidecarPath, { schema_version: "campaigns-os-doctor-output/v1", ok: true, status: "ready" });
+    chmodSync(dirname(sidecarPath), 0o555);
+    try {
+      const result = specDeriveCommand({ _: ["spec", "derive"], packet: unwritable.packetPath });
+      assert.equal(result.written, true);
+      assert.ok(result.warnings.some((issue) => issue.code === "spec.derive.doctor_sidecar_not_marked"), JSON.stringify(result.warnings));
+    } finally {
+      chmodSync(dirname(sidecarPath), 0o755);
+    }
+
+    // A runtime directory nobody may read: the Assembly Report (and its
+    // waivers) cannot be consulted, and derive says so and proceeds.
+    const runtimeDir = join(unreadable.targetRepo, ".campaign-runtime");
+    chmodSync(runtimeDir, 0o000);
+    try {
+      const result = specDeriveCommand({ _: ["spec", "derive"], packet: unreadable.packetPath });
+      assert.equal(result.written, true);
+      assert.ok(result.warnings.some((issue) => issue.code === "spec.derive.report_unreadable"), JSON.stringify(result.warnings));
+    } finally {
+      chmodSync(runtimeDir, 0o755);
+    }
+  } finally {
+    rmSync(unwritable.dir, { recursive: true, force: true });
+    rmSync(unreadable.dir, { recursive: true, force: true });
+  }
+});
