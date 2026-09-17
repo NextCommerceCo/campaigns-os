@@ -188,10 +188,11 @@ them accordingly:
   warning and a ready line naming what ships; QA projects it as a `warn`
   assertion; `next` does not stop. The gate's `advisory_actions` carry one
   `refresh_spec` command, `campaigns-os spec derive --packet <packet>`
-  (below), which writes the repo pin into the spec; re-saving the Map's Build
-  hints field (Campaign Cart SDK version) to the repo pin is the other way to
-  make the exported spec stop reading stale. Nothing in the repo needs to
-  change, and there is nothing to waive.
+  (below), which writes the repo pin into the spec; with `--write-map` it
+  also records the pin in the Map's Build hints field (Campaign Cart SDK
+  version), which is otherwise re-saved by hand to make the exported spec
+  stop reading stale. Nothing in the repo needs to change, and there is
+  nothing to waive.
 - **Target behind the spec, or still the scaffold's seeded pin beside the demo
   store profile** — blocked, repaired by `page-kit sync` (below) or waived.
 - **Target pin not a released version** — blocked, non-waivable, whatever the
@@ -230,11 +231,11 @@ this command generates the repo-derived ones so doctor compares generated
 against generated instead of refereeing a hand-typed value against the repo:
 
 ```bash
-campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>]
+campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>] [--write-map] [--proxy-base <url>]
 ```
 
-It reads the target repo only (no network) and writes into the packet's local
-spec (`spec.local_path`):
+It reads the target repo only (no network unless `--write-map`, below) and
+writes into the packet's local spec (`spec.local_path`):
 
 | Spec field | Repo authority |
 |---|---|
@@ -323,6 +324,58 @@ packet cannot be read, `spec.local_path` is absent or not a file, the spec is
 not a JSON object, the spec identifies another campaign
 (`spec.derive.spec_identity_mismatch`), or the target entry is missing
 (`spec.derive.entry_missing`; scaffold first).
+
+#### Recording the pin in the Map (`--write-map`)
+
+The local derive fixes the exported spec; the Map itself still shows the old
+pin until someone re-saves Build hints, so anyone opening the Map or a fresh
+export reads stale. `--write-map` closes that half (#415): after the local
+write, the pin the plan derived is recorded into the saved Map's Build hints
+field (Campaign Cart SDK version) through the proxy Worker, with the same
+direction of authority as everything else on this gate: the write goes
+forward or not at all.
+
+```bash
+campaigns-os spec derive --packet campaign-runtime.build.json --write-map [--dry-run] [--proxy-base <url>]
+```
+
+The Map named by the packet's `spec.map_id` is read back (`GET
+/api/spec/<map-id>`) and re-stated with exactly the pin fields moved
+(`global_config.sdk_version`, and `runtime.sdk_version` only when the Map
+already declares the alias): every other field is the Map's own read-back,
+never the local spec, so an authored field is not rewritten from a local copy
+and the routes or analytics ids derive wrote locally do not travel. The `PUT
+/api/maps/<map-id>` carries the packet's Campaigns API key as
+`X-Campaign-Key` (the receiver refuses a key that is not the Map's; the key
+is the public-by-design one the packet, its local spec or the declared env
+source already holds) and the Map's `spec_hash` as `X-Spec-Hash`, so a save
+that landed in between is a conflict, not an overwrite. The proxy base is the
+canonical `https://campaign-map.nextcommerce.com` unless `--proxy-base` names
+another; it must be https, or a loopback host over http (allowed for a local
+receiver, with a stderr warning that the key travels in clear).
+
+The decision, reported on the result's `map` object and as one text line:
+
+| `map.status` | Meaning |
+|---|---|
+| `written` | the Map declared no pin, or one behind the repo pin; it now records the repo pin (`map.spec_identity.before` / `.after` carry the Map's `spec_hash` and `saved_at` either side) |
+| `unchanged` | the Map already records the repo pin; nothing sent |
+| `would_write` | `--dry-run`: the Map was read and the write previewed; nothing sent |
+| `refused` | a warning, exit 0, the local derive stands: `map_ahead` (the Map pin is newer than the repo pin — a bump the repo never received, doctor's blocked state and `page-kit sync`'s repair; the Map is never moved backwards) or `map_pin_unreadable` (the Map's pin is not a released version, or two declarations disagree; a value the rule cannot order is not overwritten silently) |
+| `skipped` | the pin was not derived (`pin_<reason>`, the `not_derived` reason: a scaffold's seed, a waiver, `spec_ahead`, …) or the local derive was blocked; nothing was read or sent |
+| `failed` | an error, exit 2, the local derive stands: `key_missing` (no Campaigns API key anywhere), `key_mismatch` (403), `map_not_found` (404), `map_changed_underneath` (409: derive again against the current save), `map_rejected` (the proxy's spec validation refused the re-stated Map: re-save it in the builder first), `proxy_base_insecure`, `network_error`, `http_error`, `response_invalid` (an answer that says neither yes nor no: read the Map back before deriving again) |
+
+A write is traceable from the campaign's own record: one line is appended to
+the Assembly Report's `evidence[]` (`Map write-back: global_config.sdk_version
+<before> -> <after> on Map <id> at <time> via spec derive --write-map (Map
+spec_hash <before> -> <after>)`), the retained doctor sidecar is marked stale
+by `spec derive --write-map`, and the run's lifecycle journal carries the
+command with its argv shape, so the Run Record (which references the report by
+hash) shows both that the write ran and what it changed. A report that does
+not exist yet (a derive before `prepare-build`) leaves a
+`spec.derive.map_not_recorded` warning carrying the same line. Without
+`--write-map` nothing is read from or sent to the Map; `--proxy-base` is
+refused on its own.
 
 ### Polish hidden eager-media checkpoint
 

@@ -269,7 +269,8 @@ the authority for the SDK pin, the page routes and the analytics ids, and
 those into the local CampaignSpec with a field-by-field diff (`--dry-run`
 first). After a bump in `_data/campaigns.json`, that is the one command that
 brings the spec back in line; doctor's `page_kit.sdk_version.repo_newer`
-warning names it.
+warning names it. Add `--write-map` and the pin is also recorded in the saved
+Map's Build hints field, so the Map and its next export stop reading stale.
 
 It also runs brand-theme discovery in inspect-only mode. When source tokens are
 available, the build context records `context.theme` and the target repo gets

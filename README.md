@@ -117,7 +117,8 @@ sync --packet campaign-runtime.build.json`, and after it both page-kit gates
 pass. The reverse write exists for a configured campaign: `npx campaigns-os
 spec derive --packet campaign-runtime.build.json` copies what the repo already
 states (the SDK pin, page routes, analytics ids) into the local CampaignSpec,
-so a bump in the repo is one edit followed by a derive rather than a hand edit
+and with `--write-map` records the pin in the saved Map's Build hints too, so
+a bump in the repo is one edit followed by a derive rather than a hand edit
 in two tools. Everything after `start` is agent-driven: after `start`
 and after every stage, run `next` and do what it prints — it names the skill
 and the exact commands for the next stage, already spelled `npx campaigns-os
