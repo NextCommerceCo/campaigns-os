@@ -156,7 +156,7 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   configured campaign whose repo pin moved first is brought back in line by
   `campaigns-os spec derive --packet <p>` (routes and analytics ids included),
   or by re-saving the Map, and never by a hand edit of a derived spec field.
-||||||| 189c127
+
 ## [1.30.0+agent.2] - 2026-09-17
 
 ### Changed
