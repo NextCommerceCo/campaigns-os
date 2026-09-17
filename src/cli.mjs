@@ -53,6 +53,7 @@ import {
   validateRunRecord,
   validateRunRecordLifecycle,
   writeRunRecord,
+  validateQaVerdictPublish,
 } from "./run-record.mjs";
 import { annotateDoctorIssueCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import {
@@ -86,7 +87,7 @@ import {
   SOURCE_PREP_FRONTMATTER_RESIDUE,
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "./source-prep.mjs";
-import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
+import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, stampDoctorProducer, writeDoctorSidecar, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
@@ -471,6 +472,7 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
+  campaigns-os qa publish --packet <json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json]   # post an already-stored verdict (the sidecar's run, or --verdict) to the QA portal without a re-run or an order; refuses a stale spec_hash or an already-published verdict
   campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]   # --order-path-depth writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
@@ -828,7 +830,7 @@ export function recordQaStageOutcome(args, result) {
       stage: "qa",
       disposition: verdict.disposition,
       timestamp: verdict.completed_at,
-      command: "campaigns-os qa run",
+      command: `campaigns-os ${QA_RUN_PRODUCER}`,
       outputs: [result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString),
       blockers: verdict.disposition === "blocked" ? failed : [],
       warnings: verdict.disposition === "ready_with_exceptions"
@@ -847,6 +849,10 @@ export function recordQaStageOutcome(args, result) {
       proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
     }), {
       stage: "qa",
+      // The sidecar names this refresh as its producer (generated_by, #312).
+      // This function is the `qa run` stage record, whichever token dispatch
+      // matched to reach it.
+      command: QA_RUN_PRODUCER,
       // Updating the QA stage changes the report after the preflight doctor
       // snapshot. Refresh the doctor artifact from the updated ledger in the
       // same producer transaction so closeout never leaves a known-stale green
@@ -934,6 +940,10 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
     disposition: optionalString(result.verdict.disposition) || optionalString(result.status),
     run_id: optionalString(result.verdict.run_id) || optionalString(result.run_id),
     completed_at: optionalString(result.verdict.completed_at),
+    // What the QA portal answered for this attempt's verdict, in the Run
+    // Record's block shape, so the record this session closes under says
+    // whether the verdict is published and `qa publish` can refuse a repeat.
+    publish: isObject(result.qa_verdict_publish) ? result.qa_verdict_publish : null,
   };
   const updatedFound = {
     ...found,
@@ -1010,7 +1020,9 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // fetched from a given store).
     const specInput = { flag: optionalString(args.spec) || null, ...resolved };
     args.spec = resolved.specPath;
-    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, specInput }));
+    // `command` rides along for the doctor sidecar's generated_by stamp when
+    // the mode runs doctor (#312): threaded from here, not re-read from argv.
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, command, specInput }));
     result.spec_source = resolved;
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
@@ -2596,8 +2608,11 @@ function prepareBuild(args, options = {}) {
   if (options.installContext) installAgentContext(targetRepo, false);
   if (options.runDoctor) {
     doctor = doctorPacket(packetPath, { contextPath, reportPath, outputBaseDir: targetRepo });
+    // Through the intake's own collision-checked writer, so the sidecar is
+    // stamped with the intake command that ran doctor (`start` or `build`,
+    // #312) without a second write path for it.
     publishPrepareBuildJsonOutputs([
-      { label: "Doctor Output", path: doctorOutPath, value: doctor },
+      { label: "Doctor Output", path: doctorOutPath, value: stampDoctorProducer(doctor, options.command) },
     ], prepareBuildCollisionPaths);
   }
 
@@ -2841,6 +2856,13 @@ function toConstantCase(value) {
   return normalized || "WARNING";
 }
 
+// The producer names the four sidecar writers stamp (#312). A producer
+// function that is one command states its own; the intake body, which
+// serves three, receives the dispatched command (`start` | `build`).
+const DOCTOR_PRODUCER = "doctor";
+const NEXT_PRODUCER = "next";
+const QA_RUN_PRODUCER = "qa run";
+
 export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
   // Non-packet mode (learnings L7): doctor a `campaign-build`'d page-kit
   // campaign that has only a built _site/ and no full Build Packet. Resolves
@@ -2887,10 +2909,13 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     // disk leaves the report's bytes, and every digest of them, alone). A
     // report this inspection did not read is not opened at all: its state,
     // malformed included, is not this run's concern.
+    // This function is the `doctor` command; it states its own name for the
+    // stage record and the sidecar's generated_by rather than re-reading
+    // argv, which a programmatic caller may not have shifted (#312).
     commitAssemblyReport(workspace, (report) => recordDoctorStageOutcome(report, result, {
-      command: `campaigns-os ${args._?.[0] || "doctor"}`,
+      command: `campaigns-os ${DOCTOR_PRODUCER}`,
       doctorOutPath: workspace.doctorOutPath,
-    }), { stage: "doctor", refreshDoctor: () => result });
+    }), { stage: "doctor", command: DOCTOR_PRODUCER, refreshDoctor: () => result });
   }
   return result;
 }
@@ -3510,11 +3535,15 @@ export function doctorPacket(packetPath, options = {}) {
   const result = withHtmlScanSnapshot(() => inspectDoctorPacket(packetPath, options));
   // Per-finding cause classification lives HERE, at the single production
   // boundary, and not in the doctor command. Four producers persist
-  // .campaign-runtime/doctor-output.json from a doctorPacket result — `doctor`,
-  // `next`, prepare-build/start, and the QA stage refresh — and annotating only
-  // one of them means running QA after doctor silently strips the labels back
-  // out of the retained artifact. Every consumer of a doctor result gets the
-  // same shape, whether or not it writes one.
+  // .campaign-runtime/doctor-output.json from a doctorPacket result — `doctor
+  // --write`, `next`, `start`/`build` (prepare-build runs no doctor), and the
+  // QA stage refresh — and annotating only one of them means running QA after
+  // doctor silently strips the labels back out of the retained artifact. Every
+  // consumer of a doctor result gets the same shape, whether or not it writes
+  // one. Each producer stamps the artifact with its own name on the way out
+  // (`generated_by`, #312; writeDoctorSidecar / stampDoctorProducer), so a
+  // retained sidecar always says which of the four wrote it. `standardize` is
+  // not one of them: it reads the target and writes nothing.
   //
   // The comparison set is the previous Run Record's own doctor observations
   // (error_codes / warning_codes), which every Run Record ever written already
@@ -9290,8 +9319,8 @@ export function nextStage(stage, args, ambient = null) {
     try {
       // Atomic like the assembly report: a torn sidecar would be a corrupted
       // freshness artifact — the exact green-lie shape this refresh exists to
-      // prevent (Kilo review, PR #176).
-      writeJsonAtomic(doctorOutPath, doctor);
+      // prevent (Kilo review, PR #176). Stamped generated_by: "next" (#312).
+      writeDoctorSidecar(doctorOutPath, doctor, { command: NEXT_PRODUCER });
     } catch {
       // sidecar refresh is best-effort; orchestration must not fail on it
     }
@@ -12144,6 +12173,12 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
   const write = args["no-write"] !== true;
+  // The verdict publish outcome this record carries: the session's attempt
+  // for the verdict being recorded (the auto-end and `run end` both close
+  // through here with the session still ambient), else the newest attempt
+  // that has one. Resolved before the prior record is read so an ok already
+  // on disk can win below.
+  const sessionPublish = qaVerdictPublishFromSession(ambient?.session, qaVerdictPath);
   // The record already on disk under this run_id, when a writing run would
   // replace it. run-record is keyed on run_id, and a re-run — an explicit
   // --run-id, a `run end` on a session re-opened under an id that already
@@ -12174,10 +12209,19 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     announceDefaultOnTelemetry(consent.scope || proxyBase);
   }
 
+  // A publish the record already says landed is never downgraded by a
+  // reassembly: the prior ok block wins over a session attempt that did not
+  // land, mirroring the remit carry-forward below.
+  const priorPublish = isObject(prior?.record?.qa_verdict_publish) ? prior.record.qa_verdict_publish : null;
+  const qaVerdictPublish = priorPublish?.state === "ok" && sessionPublish?.state !== "ok"
+    ? priorPublish
+    : (sessionPublish || priorPublish);
+
   const record = assembleRunRecord({
     runId,
     packageVersion: packageVersion(),
     ...toolkitProvenance({ silent }),
+    qaVerdictPublish,
     command: "run-record",
     argvShape: argvShape(args),
     consent: { state: consent.state, source: consent.source },
@@ -12367,6 +12411,22 @@ function readPriorRunRecord(runId, baseDir) {
   } catch {
     return null;
   }
+}
+
+// The publish block the session's QA attempts carry for the verdict this
+// record names (canonical path match), else the newest attempt carrying one.
+// Only a block that validates is returned: the session file is internal and
+// a malformed block must not make the Run Record unwritable.
+function qaVerdictPublishFromSession(session, qaVerdictPath = null) {
+  const attempts = Array.isArray(session?.qa_attempts) ? session.qa_attempts : [];
+  const target = isNonEmptyString(qaVerdictPath) ? canonicalPath(resolve(qaVerdictPath)) : null;
+  const candidates = attempts.filter((attempt) => isObject(attempt?.publish));
+  const matching = target
+    ? candidates.find((attempt) => isNonEmptyString(attempt.path) && canonicalPath(resolve(attempt.path)) === target)
+    : null;
+  const chosen = matching || candidates[candidates.length - 1] || null;
+  if (!chosen) return null;
+  return validateQaVerdictPublish(chosen.publish).length === 0 ? chosen.publish : null;
 }
 
 // The remit outcome a prior record carries, in the shape the stamping code

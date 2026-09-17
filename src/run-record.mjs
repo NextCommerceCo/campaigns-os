@@ -53,6 +53,12 @@ export const RUN_RECORD_REMIT_STATES = ["skipped", "pending", "ok", "failed"];
 // resolves the second.
 export const RUN_RECORD_REMIT_RESULTS = ["stored", "already_stored", "ok_unparsed_ack", "refused", "transport_error"];
 export const RUN_RECORD_REMIT_BASE_KINDS = ["canonical", "loopback", "proxy"];
+// The QA verdict publish outcome a record may carry beside its remit: which
+// verdict went out, who sent it, and what the QA portal answered, classified
+// into the same result vocabulary as the remit. `qa publish` reads the block
+// to refuse re-posting a verdict the portal already holds.
+export const RUN_RECORD_QA_VERDICT_PUBLISH_STATES = ["skipped", "ok", "failed"];
+export const RUN_RECORD_QA_VERDICT_PUBLISHERS = ["qa run", "qa publish"];
 
 // Required core. Strict here; permissive about optional sub-structures (the
 // validator checks shapes, not nested artifact bodies — those are referenced
@@ -140,6 +146,10 @@ export function validateRunRecord(record) {
   }
   if (record.remit_base_kind != null && !RUN_RECORD_REMIT_BASE_KINDS.includes(record.remit_base_kind)) {
     add("record.remit_base_kind", `remit_base_kind must be one of: ${RUN_RECORD_REMIT_BASE_KINDS.join(", ")} (or null).`);
+  }
+
+  if (record.qa_verdict_publish != null) {
+    for (const error of validateQaVerdictPublish(record.qa_verdict_publish)) errors.push(error);
   }
 
   if (record.identity != null) {
@@ -247,6 +257,54 @@ export function validateRunRecord(record) {
 // JSON schema enforces (types + stages[].name + numeric duration_ms). Exported
 // so the CLI can drop a corrupt/foreign lifecycle journal entry BEFORE assembly
 // rather than fail the whole Run Record at write time. Returns an error array.
+/**
+ * The `qa_verdict_publish` block: the same shape discipline as the remit
+ * fields, scoped to one verdict. Returns `{ code, message }` errors.
+ */
+export function validateQaVerdictPublish(block) {
+  const errors = [];
+  const add = (code, message) => errors.push({ code, message });
+  if (!block || typeof block !== "object" || Array.isArray(block)) {
+    add("record.qa_verdict_publish", "qa_verdict_publish must be an object or null.");
+    return errors;
+  }
+  if (!isNonEmptyString(block.verdict_run_id)) {
+    add("record.qa_verdict_publish.verdict_run_id", "verdict_run_id is required and must be a non-empty string.");
+  }
+  if (!RUN_RECORD_QA_VERDICT_PUBLISHERS.includes(block.publisher)) {
+    add("record.qa_verdict_publish.publisher", `publisher must be one of: ${RUN_RECORD_QA_VERDICT_PUBLISHERS.join(", ")}.`);
+  }
+  if (typeof block.attempted !== "boolean") {
+    add("record.qa_verdict_publish.attempted", "attempted is required and must be a boolean.");
+  }
+  if (block.ok != null && typeof block.ok !== "boolean") {
+    add("record.qa_verdict_publish.ok", "ok must be a boolean or null.");
+  }
+  if (block.error != null && typeof block.error !== "string") {
+    add("record.qa_verdict_publish.error", "error must be a string or null.");
+  }
+  if (block.endpoint != null && (!isNonEmptyString(block.endpoint) || !block.endpoint.startsWith("/"))) {
+    add("record.qa_verdict_publish.endpoint", "endpoint must be a path beginning with / or null.");
+  }
+  if (!RUN_RECORD_QA_VERDICT_PUBLISH_STATES.includes(block.state)) {
+    add("record.qa_verdict_publish.state", `state must be one of: ${RUN_RECORD_QA_VERDICT_PUBLISH_STATES.join(", ")}.`);
+  }
+  if (block.result != null && !RUN_RECORD_REMIT_RESULTS.includes(block.result)) {
+    add("record.qa_verdict_publish.result", `result must be one of: ${RUN_RECORD_REMIT_RESULTS.join(", ")} (or null).`);
+  }
+  if (block.base_kind != null && !RUN_RECORD_REMIT_BASE_KINDS.includes(block.base_kind)) {
+    add("record.qa_verdict_publish.base_kind", `base_kind must be one of: ${RUN_RECORD_REMIT_BASE_KINDS.join(", ")} (or null).`);
+  }
+  if (block.published_at != null && !isNonEmptyString(block.published_at)) {
+    add("record.qa_verdict_publish.published_at", "published_at must be a non-empty string or null.");
+  }
+  const allowed = new Set(["verdict_run_id", "publisher", "attempted", "ok", "error", "endpoint", "state", "result", "base_kind", "published_at"]);
+  for (const key of Object.keys(block)) {
+    if (!allowed.has(key)) add(`record.qa_verdict_publish.${key}`, `unknown qa_verdict_publish field "${key}".`);
+  }
+  return errors;
+}
+
 export function validateRunRecordLifecycle(lc) {
   const errors = [];
   const add = (code, message) => errors.push({ code, message });
@@ -606,6 +664,7 @@ export function assembleRunRecord({
   surfaceConfidence = null,
   lifecycle = null,
   agentUsage = null,
+  qaVerdictPublish = null,
   now = new Date(),
 } = {}) {
   const observations = {};
@@ -671,6 +730,9 @@ export function assembleRunRecord({
   if (lifecycle && typeof lifecycle === "object" && !Array.isArray(lifecycle)) record.lifecycle = lifecycle;
   const normalizedUsage = normalizeAgentUsage(agentUsage);
   if (normalizedUsage) record.agent_usage = normalizedUsage;
+  // Present only when a publish outcome is known: an absent block reads as
+  // "nothing recorded", which is what every record before this field says.
+  if (qaVerdictPublish && typeof qaVerdictPublish === "object" && !Array.isArray(qaVerdictPublish)) record.qa_verdict_publish = qaVerdictPublish;
 
   return record;
 }

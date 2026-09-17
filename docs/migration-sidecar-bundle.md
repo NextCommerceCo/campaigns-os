@@ -46,7 +46,7 @@ and re-run `campaigns-os doctor --packet campaign-runtime.build.json
 | Build Packet | `campaign-runtime.build.json` | Required | `campaign-runtime-build-packet/v0` | Its `generated_at` is the bundle-selection authority. Never select a packet by mtime. |
 | Build Context | `.campaign-runtime/build-context.json` | Required | `campaign-runtime-build-context/v0` | Producer-stamped `generated_at`; `packet_path` must point to the root packet. |
 | Assembly Report | `.campaign-runtime/assembly-report.json` | Required | `campaign-runtime-assembly-report/v0` | Producer-stamped `generated_at`; authored stage evidence is preserved. |
-| Doctor Output | `.campaign-runtime/doctor-output.json` | Required | `campaigns-os-doctor-output/v0` | Refresh after any doctor-input change; an explicit `stale: true` fails conformance. |
+| Doctor Output | `.campaign-runtime/doctor-output.json` | Required | `campaigns-os-doctor-output/v0` | Refresh after any doctor-input change; an explicit `stale: true` fails conformance. `generated_by` names the command that persisted it (`doctor`, `next`, `start`, `build`, `qa run`); a sidecar without it predates the stamp. |
 | QA Verdict projection | `.campaign-runtime/qa-verdict.json` | Required after QA | QA schema `1.0`, constrained by the sidecar projection schema | `generated_at` is the projection/promotion instant. |
 
 The packet stays at repository root because that is the default discovery

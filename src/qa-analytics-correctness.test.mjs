@@ -22,7 +22,7 @@ function fullCapture() {
   });
 }
 
-function receiptAssessment(capture, options = {}) {
+function receiptAssessment(capture, options = {}, extra = {}) {
   return assessReceiptPurchase({
     plannedPlanIds: ["accept-decline"],
     attempts: [{
@@ -30,8 +30,22 @@ function receiptAssessment(capture, options = {}) {
       receiptRecognized: true,
       receiptUrl: "https://shop.example/receipt/?ref_id=redacted",
       capture,
+      ...extra,
     }],
   }, options);
+}
+
+// The receipt document of a funnel with an offer between checkout and
+// receipt: the SDK already reported dl_purchase on the upsell page and dedupes
+// it here, so only the upsell's own event and a cart update remain.
+function silentReceiptCapture() {
+  return normalizeCapture({
+    events: [
+      { layer: "dataLayer", data: { event: "dl_upsell_purchase", ecommerce: { value: 19.99, currency: "USD", transaction_id: "1043" } } },
+      { layer: "dataLayer", data: { event: "dl_cart_updated" } },
+    ],
+    tagFires: [{ kind: "gtm", id: "GTM-ABC123", host: "googletagmanager.com", params: {} }],
+  });
 }
 
 test("no declared contract → non-gating manual_review only (nothing blocks)", () => {
@@ -112,6 +126,92 @@ test("no purchase fire from any source → blocker fail", () => {
   const purchase = receiptAssessment(capture);
   assert.equal(purchase.status, STATUS.FAIL);
   assert.equal(purchase.severity, SEVERITY.BLOCKER);
+});
+
+// #392: dl_purchase (and the outbound Purchase it drives) fires on the first
+// `?ref_id=` page that fetched the order — the upsell page — and the receipt
+// stays silent by SDK design. purchase-fires judges the journey reading.
+test("#392: Purchase fired on the upsell page, receipt document silent → passes on the journey, receipt kept as diagnostic", () => {
+  const purchase = receiptAssessment(silentReceiptCapture(), {}, { journeyCapture: fullCapture() });
+  assert.equal(purchase.status, STATUS.PASS);
+  const receipt = purchase.evidence.receipts[0];
+  assert.equal(receipt.scope, "journey");
+  assert.equal(receipt.purchase_fired, true);
+  assert.equal(receipt.via, "datalayer");
+  assert.deepEqual(receipt.signals, { dataLayer: true, meta: true, ga4: false });
+  assert.deepEqual(receipt.receipt_signals, { dataLayer: false, meta: false, ga4: false });
+  assert.equal(receipt.fired_on, "earlier-page");
+  assert.equal(purchase.actual, "1 of 1 receipt-qualified order(s) emitted Purchase");
+});
+
+test("#392: journey silent end to end → absent stays a blocker, waivable", () => {
+  const silentJourney = normalizeCapture({
+    events: [{ layer: "dataLayer", data: { event: "dl_add_to_cart" } }, { layer: "dataLayer", data: { event: "dl_cart_updated" } }],
+    tagFires: [{ kind: "gtm", id: "GTM-ABC123", host: "googletagmanager.com", params: {} }],
+  });
+  const purchase = receiptAssessment(silentReceiptCapture(), {}, { journeyCapture: silentJourney });
+  assert.equal(purchase.status, STATUS.FAIL);
+  assert.equal(purchase.severity, SEVERITY.BLOCKER);
+  const receipt = purchase.evidence.receipts[0];
+  assert.equal(receipt.measured, true);
+  assert.equal(receipt.scope, "journey");
+  assert.equal(receipt.purchase_fired, false);
+  assert.equal(receipt.fired_on, null);
+  assert.deepEqual(receipt.signals, { dataLayer: false, meta: false, ga4: false });
+  assert.match(purchase.actual, /emitted no Purchase via dataLayer, Meta, or GA4 on any page of the journey/);
+
+  const waived = receiptAssessment(silentReceiptCapture(), {
+    waivers: { "analytics-correctness:purchase-fires": { reason: "provider fires server-side", waived_by: "qa" } },
+  }, { journeyCapture: silentJourney });
+  assert.equal(waived.status, STATUS.FAIL);
+  assert.equal(waived.severity, SEVERITY.WARN, "the waiver lane is unchanged");
+});
+
+test("#392: Purchase on the receipt document itself → fired_on names the receipt", () => {
+  const purchase = receiptAssessment(fullCapture(), {}, { journeyCapture: fullCapture() });
+  assert.equal(purchase.status, STATUS.PASS);
+  assert.equal(purchase.evidence.receipts[0].scope, "journey");
+  assert.equal(purchase.evidence.receipts[0].fired_on, "receipt");
+  assert.deepEqual(purchase.evidence.receipts[0].receipt_signals, { dataLayer: true, meta: true, ga4: false });
+});
+
+test("#392: an envelope with only a receipt capture is judged on the receipt, as before", () => {
+  const purchase = receiptAssessment(fullCapture());
+  assert.equal(purchase.status, STATUS.PASS);
+  assert.equal(purchase.evidence.receipts[0].scope, "receipt");
+  assert.equal(purchase.evidence.receipts[0].fired_on, "receipt");
+  assert.equal(purchase.evidence.receipts[0].receipt_signals, null, "no second reading to keep on a receipt-scoped judgement");
+  const silent = receiptAssessment(silentReceiptCapture());
+  assert.equal(silent.status, STATUS.FAIL, "without a journey reading a silent receipt is still a silent order");
+  assert.equal(silent.evidence.receipts[0].scope, "receipt");
+});
+
+test("#392: a journey reading that failed to collect is a capture error, never replaced by the receipt document", () => {
+  const purchase = receiptAssessment(silentReceiptCapture(), {}, { journeyCaptureError: { kind: "unreadable" } });
+  assert.equal(purchase.status, STATUS.FAIL);
+  assert.equal(purchase.severity, SEVERITY.BLOCKER);
+  assert.deepEqual(purchase.evidence.capture_error_plan_ids, ["accept-decline"]);
+  const receipt = purchase.evidence.receipts[0];
+  assert.equal(receipt.measured, false);
+  assert.equal(receipt.scope, null);
+  assert.equal(receipt.signals, null);
+  assert.equal(receipt.fired_on, null);
+  assert.match(purchase.actual, /capture\(s\) failed/);
+});
+
+test("#392: a receipt capture/settle error stays a blocker even when the journey reading fired", () => {
+  const purchase = receiptAssessment(undefined, {}, { journeyCapture: fullCapture(), captureError: { kind: "settleDeadline" } });
+  assert.equal(purchase.status, STATUS.FAIL);
+  assert.equal(purchase.severity, SEVERITY.BLOCKER);
+  assert.deepEqual(purchase.evidence.capture_error_plan_ids, ["accept-decline"]);
+  const receipt = purchase.evidence.receipts[0];
+  assert.equal(receipt.measured, false);
+  assert.equal(receipt.scope, null);
+  assert.equal(receipt.purchase_fired, false, "a journey reading taken beside an unsettled receipt is not a settled one");
+  assert.equal(receipt.signals, null);
+  assert.equal(receipt.receipt_signals, null);
+  assert.equal(receipt.fired_on, null);
+  assert.ok(!purchase.waiver, "capture errors are never waivable");
 });
 
 test("unknown out-of-band vendor → manual review, not a false fail", () => {

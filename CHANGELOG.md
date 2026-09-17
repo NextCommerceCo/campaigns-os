@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.31.0+agent.2] - 2026-09-17
+## [1.33.0+agent.2] - 2026-09-17
 
 Same-surface: six static SDK markup checks join the built-output doctor
 family beside `built_output.upsell_selector_scope`.
@@ -44,7 +44,7 @@ family beside `built_output.upsell_selector_scope`.
   `docs/campaigns-os-build-flow.md` adds the SDK-markup assembly rule; skill
   `next-campaigns-os` 1.0.13 -> 1.0.14 extends step 6.
 
-## [1.31.0+agent.1] - 2026-09-17
+## [1.33.0+agent.1] - 2026-09-17
 
 Same-surface: a new built-output doctor gate, plus the reachability fixture
 tree every static built-output gate now has to pass on.
@@ -100,6 +100,137 @@ tree every static built-output gate now has to pass on.
   `docs/campaigns-os-build-flow.md` adds the every-page-names-the-same-campaign
   assembly rule beside the pre-checkout bootstrap rule; skill
   `next-campaigns-os` 1.0.12 -> 1.0.13 extends step 6 with the identity gate.
+## [1.33.0] - 2026-09-17
+
+Additive: the Run Record schema gains an optional `qa_verdict_publish` block,
+and `qa` gains a `publish` subcommand that posts an already-stored verdict.
+
+### Added
+
+- `campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict
+  <full-verdict.json>] [--republish] [--proxy-base <url>] [--json]` posts an
+  already-stored QA verdict to the QA portal through the rail `qa run` uses,
+  without re-running QA and therefore without placing an order (#328: "local
+  first, publish when clean" was a full rerun that placed the whole typed-card
+  order set a second time). Without `--verdict`, the committed
+  `.campaign-runtime/qa-verdict.json` names the run and that run's full
+  verdict under `<target-repo>/qa-output/<map-id>/<run-id>.json` is preferred;
+  when only the projection is on disk it is what goes out and the result says
+  so (`source_kind: sidecar_projection`). Before anything is sent the command
+  refuses, exit `2`, with a named `refusal.code`: `spec_hash_mismatch` (the
+  verdict's `spec_hash` is not the packet's current spec — one comparator, the
+  normalising one from #416, so a `sha256:` prefix or case difference is not a
+  mismatch; the result carries both hashes and the remedy is `qa run`),
+  `spec_hash_absent`, `already_published` (the run's Run Record records this
+  verdict's `run_id` as published; `--republish` overrides), `verdict_untrusted`
+  (`trusted: false`, the `qa promote` chokepoint), `campaign_mismatch`,
+  `verdict_missing` / `verdict_unreadable` / `verdict_invalid`, and
+  `order_flags_refused` (`--test-order`, `--browser`, `--max-order-creations`,
+  `--max-test-orders`, `--legacy-api-test-order`, `--select-package`,
+  `--apply-coupon` have no meaning here and are refused by name rather than
+  ignored). The post is classified by HTTP status the way a remit is (#397):
+  `stored`, `already_stored` (409, an ok), `ok_unparsed_ack`, `refused`,
+  `transport_error`; the last two exit `1` with the local verdict untouched;
+  `0` prints the portal link. The result carries `orders_placed: 0` by
+  construction. The outcome is stamped on the Run Record whose `qa_verdict`
+  artifact references the verdict under the packet's campaign (by digest, by
+  the `<run-id>.json` name, or by an existing block for the run id); a stored
+  `ok` is never downgraded by a failed `--republish`; with no such record the
+  publish still happens and the output says the outcome is unrecorded.
+- Run Record (`campaigns-os-run-record/v0`): optional `qa_verdict_publish`
+  block — `verdict_run_id` (the verdict's own run id, the publish idempotency
+  key), `publisher` (`qa run` | `qa publish`), `attempted`, `ok`, `error`,
+  `endpoint`, `state` (`skipped` | `ok` | `failed`), `result` (the
+  `remit_result` vocabulary), `base_kind` (`canonical` | `loopback` |
+  `proxy`), `published_at`. Additive; `additionalProperties` unchanged.
+  `qa run` now builds the block from its own publish (or its
+  `--no-post-verdict` skip) and hands it to the run session through the QA
+  attempt, so `run end` and the QA auto-end write it on the record; a
+  `run-record` re-emit carries a prior `ok` forward over a later attempt that
+  did not land. Records written before this field carry no block.
+
+### Changed
+
+- `qa run` publishes through the same classified rail: its `--json` result
+  gains `publish` (`attempted`, `ok`, `error`, `endpoint`, `result`,
+  `http_status`, `base_kind`) and `qa_verdict_publish` (the record block);
+  `posted`, `post_error`, `publish_skipped`, `publish_decision` and
+  `dashboard_url` are unchanged. A 409 from the portal, previously a
+  `post_error`, is now an ok publish (`already_stored`) with the portal link.
+- `qa --help` lists `qa publish`, `--verdict` for both `promote` and
+  `publish`, and `--republish`; the `--no-post-verdict` line points at
+  `qa publish`. The top-level usage lists the command.
+
+### Docs
+
+- `docs/qa-and-test-orders.md`: new "Publish a stored verdict (`qa publish`)"
+  section under Run — the two-command local-then-publish flow, verdict source
+  resolution, the refusal table, outcome classification and exit codes, and
+  the Run Record block.
+- `docs/workflow-findings-sidecar.md`: Remit Channel names the
+  `qa_verdict_publish` block, who writes it, and the never-downgrade rule.
+- `docs/supported-surface.md`: the schema row records the 1.33.0 additive Run
+  Record block; the CLI row names `qa publish`.
+## [1.32.0+agent.1] - 2026-09-17
+
+### Fixed
+
+- `analytics-correctness:purchase-fires` judges the outbound Purchase against
+  the whole post-checkout journey of the typed-card order, not the receipt
+  document alone (#392). The SDK raises `dl_purchase`, and the Meta/GA4
+  Purchase it drives, on the first page opened with `?ref_id=` that fetches
+  the order — the upsell page on a funnel that has one — and then remembers
+  the transaction id so the receipt does not report it again, so the
+  receipt-only reading was a structural false negative (`absent`) on every
+  funnel with an offer between checkout and receipt, and the only way through
+  was the waiver lane #198 was written to avoid. The receipt stays the
+  qualification point: a plan still needs a topology-recognized receipt, the
+  same settle window, and the same capture-error and waiver semantics; only
+  the capture the Purchase is read from widened. Each `evidence.receipts[]`
+  entry now also carries `scope` (`journey`; `receipt` for an envelope that
+  holds only the receipt document, which is judged exactly as before; `null`
+  on an unmeasured entry), the receipt document's own `receipt_signals`
+  (journey scope only, `null` otherwise), and `fired_on` (`receipt` or
+  `earlier-page`, `null` when nothing fired), so a reader can tell which
+  document fired. The assertion
+  id, and so `qa waive --assertion analytics-correctness:purchase-fires`, is
+  unchanged. `docs/qa-and-test-orders.md` and the `next-campaigns-qa` skill
+  (1.3.0 → 1.3.1) no longer describe the receipt-only rule.
+
+## [1.32.0] - 2026-09-17
+
+Additive: the retained doctor sidecar names the command that wrote it.
+
+### Added
+
+- `.campaign-runtime/doctor-output.json` carries `generated_by`, the
+  campaigns-os command that persisted it, beside `generated_at` (#312).
+  Every producer stamps its own name: `doctor` (from `doctor --write`),
+  `next`, `start`, `build`, and `qa run` (the QA stage refresh). The stamp
+  is threaded from the command that knows its name, never inferred from
+  argv at the write, and a producer that gives no name is refused rather
+  than written anonymously — the same discipline `stale_marked_by` already
+  applies to a stale stamp. `schemas/campaigns-os-doctor-output.v0.schema.json`
+  gains the optional `generated_by` string (schema id unchanged; a sidecar
+  written before this release carries no producer and still validates), and
+  the production-shaped fixture bundle carries it. A consumer that reads the
+  sidecar can now attribute it before deciding whether it is stale, current,
+  or someone else's.
+
+### Changed
+
+- `standardize` is documented as what it has always been: read-only. #312
+  reported it writing `doctor-output.json`; the repro copied an example
+  target with `cp -R`, which copies gitignored files, and that checkout's
+  example carried a sidecar from an earlier `doctor` run. The read-only
+  proof in `docs/campaign-standardization-report.md` now covers that shape
+  (a target already holding a sidecar, with and without a built `_site`,
+  with and without `--no-doctor`) and says what `--no-doctor` actually
+  skips: the built-output doctor pass inside the report, not a write, since
+  there is none. `docs/qa-and-test-orders.md` and
+  `docs/migration-sidecar-bundle.md` name the four producers by the names
+  they stamp; the intake producer is `start`/`build` (`prepare-build` runs
+  no doctor).
 
 ## [1.31.0] - 2026-09-17
 
