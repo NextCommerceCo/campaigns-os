@@ -13,13 +13,15 @@
 // The repo is the authority for exactly those fields. A spec value that looks
 // authored but sits in a derived field is overwritten, with the before -> after
 // line showing it; nothing outside the derived fields is written, ever.
-// Store-derived fields (the Store Profile over the Admin API) are the second
-// slice and need a credential path; they are not touched here.
+// The store-derived fields (the nine campaign.store_* Store Profile fields,
+// authority: the store's Admin API) are planned by spec-derive-store.mjs
+// behind --from-store; their rows are applied here under the same guard.
 //
 // This module is pure: the CLI reads the packet, the spec, the entry and the
 // page tree, and does the writing and the printing.
 import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
 import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
+import { PAGE_KIT_STORE_PROFILE_FIELDS } from "./page-kit-store-profile.mjs";
 import { compareReleasedSdkVersions, entryInScaffoldState, resolveSpecSdkPin } from "./page-kit-sdk-version.mjs";
 import { isAbsoluteHttpUrl, normalizePageKitRoute, runtimeRelativeRouteForSpecValue, stripPublicRoutePrefix } from "./route-identity.mjs";
 import { publicRouteForPage } from "./source-html-intake.mjs";
@@ -34,6 +36,7 @@ export const SPEC_DERIVE_FIELDS = Object.freeze([
   "funnel_pages[].page_url",
   "analytics.providers.gtm.containerId",
   "analytics.providers.facebook.pixelId",
+  ...PAGE_KIT_STORE_PROFILE_FIELDS.map((field) => `campaign.${field}`),
 ]);
 
 // campaigns.json analytics keys and the spec provider field each one derives.
@@ -70,14 +73,14 @@ function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function hasControlCharacters(value) {
+export function hasControlCharacters(value) {
   // eslint-disable-next-line no-control-regex
   return /[\u0000-\u001f\u007f]/.test(value);
 }
 
 // A repo value echoed in a reason is quoted short: a value mis-pasted into
 // the wrong key (a token, a URL) must not travel whole into warnings.
-function quoteValue(value) {
+export function quoteValue(value) {
   const text = JSON.stringify(value);
   return text.length > 44 ? `${text.slice(0, 40)}…"` : text;
 }

@@ -283,6 +283,14 @@ import {
   permalinkRoute,
   planSpecDerive,
 } from "./spec-derive.mjs";
+import {
+  adminApiBaseForStore,
+  defaultStoreTokenEnvVar,
+  normalizeStoreSubdomain,
+  parseStoreTokenSource,
+  planStoreProfileDerive,
+  readStoreProfile,
+} from "./spec-derive-store.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
 // spec check is authored once and reaches internal teams and agencies alike.
@@ -453,7 +461,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
-  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only, no network; a field the repo cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, or the spec identifies another campaign.
+  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads the store's Admin API with the token in env:<SUBDOMAIN>_ADMIN_TOKEN (or --store-token-source env:<VAR>; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable).
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -1109,7 +1117,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // Inequality on purpose: knownCommands() harvests top-level command
     // literals by an equality pattern a subcommand equality would also match.
     if (subcommand !== "derive") throw new Error("Unknown spec subcommand. Use: campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json].");
-    const result = specDeriveCommand(args);
+    const result = Object.hasOwn(args, "from-store") ? await specDeriveFromStoreCommand(args) : specDeriveCommand(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else for (const line of specDeriveTextLines(result)) console.log(line);
     if (!result.ok) process.exitCode = 2;
@@ -4770,10 +4778,59 @@ export function pageKitSyncCommand(args) {
 // route and the analytics ids are classed derived — the repo is their
 // authority — so they are generated here instead of typed into the Map and
 // refereed by doctor. Exactly the derived fields are written; the rest of the
-// spec, every other file, and anything store-derived (slice 2) are untouched.
-// --dry-run prints the same diff and writes nothing. Exit 2 when the packet,
-// the spec or the target entry is missing.
-const SPEC_DERIVE_FLAGS = Object.freeze(["packet", "dry-run", "json", "report"]);
+// spec and every other file are untouched. The store-derived fields (the nine
+// campaign.store_* Store Profile fields, slice 2) join the write only behind
+// --from-store <subdomain>, which reads the store's Admin API with the token
+// named by --store-token-source env:<VAR> (default env:<SUBDOMAIN>_ADMIN_TOKEN);
+// the default run stays offline. --dry-run prints the same diff and writes
+// nothing. Exit 2 when the packet, the spec or the target entry is missing,
+// or the store cannot be read.
+const SPEC_DERIVE_FLAGS = Object.freeze(["packet", "dry-run", "json", "report", "from-store", "store-token-source"]);
+
+// The store flags, parsed once for both the async reader and the sync
+// command: `{ subdomain, token_env }` when --from-store is given, null when
+// it is not, and a thrown Error for a malformed flag (the same class of
+// mistake as an unknown flag: refused before anything is read).
+function parseSpecDeriveStoreFlags(args) {
+  if (!Object.hasOwn(args, "from-store")) {
+    if (Object.hasOwn(args, "store-token-source")) throw new Error("--store-token-source only applies with --from-store <subdomain>.");
+    return null;
+  }
+  const subdomain = normalizeStoreSubdomain(args["from-store"] === true ? "" : String(args["from-store"] ?? ""));
+  if (!subdomain) {
+    throw new Error(`--from-store takes the store's subdomain (the <store> of <store>.29next.store), got ${JSON.stringify(args["from-store"] === true ? "" : args["from-store"])}.`);
+  }
+  let tokenEnv = defaultStoreTokenEnvVar(subdomain);
+  if (Object.hasOwn(args, "store-token-source")) {
+    const parsed = parseStoreTokenSource(args["store-token-source"] === true ? "" : String(args["store-token-source"] ?? ""));
+    if (parsed.problem) throw new Error(`--store-token-source ${parsed.problem}`);
+    tokenEnv = parsed.env;
+  }
+  return { subdomain, token_env: tokenEnv };
+}
+
+// `spec derive --from-store`: resolve the credential, read the store, then
+// run the same command with the store read in hand. The only network the
+// command ever does happens here, and the token never leaves this function:
+// the result names the env var, not its value.
+export async function specDeriveFromStoreCommand(args, { fetchImpl = globalThis.fetch, env = process.env } = {}) {
+  const store = parseSpecDeriveStoreFlags(args);
+  if (!store) return specDeriveCommand(args);
+  const token = typeof env[store.token_env] === "string" ? env[store.token_env].trim() : "";
+  if (!token) {
+    return specDeriveCommand(args, { store: { ...store, status: "credential_missing", detail: `${store.token_env} is not set (or empty) in the environment; export the store's Admin API access token there (Settings > API Access, scopes store:read and content:read), or name another variable with --store-token-source env:<VAR>.` } });
+  }
+  // Local preconditions first: a packet, spec or entry the command would
+  // refuse is refused before the token is sent anywhere. The preflight run
+  // stops at the store gate and writes nothing.
+  const preflight = specDeriveCommand(args, { store: { ...store, status: "preflight" } });
+  if (preflight.errors.length) return preflight;
+  const read = await readStoreProfile({ subdomain: store.subdomain, token, fetchImpl });
+  // The real run re-reads the packet; it must still be the campaign the
+  // preflight checked, or the store's profile lands in another campaign's
+  // spec.
+  return specDeriveCommand(args, { store: { ...store, ...read, expected: { spec_path: preflight.spec_path, public_route_slug: preflight.public_route_slug } } });
+}
 
 // The page files page-kit renders under the campaign's source directory, with
 // the route each one builds to (filename-derived, or the file's permalink;
@@ -4817,7 +4874,7 @@ function listPageKitPageFiles(outputDir, publicRouteSlug) {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function specDeriveCommand(args) {
+export function specDeriveCommand(args, { store: storeRead = null } = {}) {
   // A command that rewrites the spec rejects flags it does not know: a
   // mistyped --dryrun must not fall through to a real write. --report names
   // the Assembly Report whose waivers are honoured below.
@@ -4826,6 +4883,11 @@ export function specDeriveCommand(args) {
     const valueHint = unknown.some((key) => key.includes("=")) ? " A flag takes its value as the next argument (--flag value), not --flag=value." : "";
     throw new Error(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec derive: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${SPEC_DERIVE_FLAGS.map((key) => `--${key}`).join(", ")}.`);
   }
+  // The store read is supplied by specDeriveFromStoreCommand; this function
+  // never touches the network itself, so a --from-store call that reaches it
+  // without a read is a defect in this toolkit, not a silent offline run.
+  const storeFlags = parseSpecDeriveStoreFlags(args);
+  if (storeFlags && !storeRead) throw new Error("spec derive --from-store must be dispatched through specDeriveFromStoreCommand (no store read was supplied).");
   const packetPath = resolve(requireArg(args, "packet"));
   // `--dry-run` is a bare flag; `--dry-run true` must fail rather than
   // quietly become a real write.
@@ -4852,6 +4914,9 @@ export function specDeriveCommand(args) {
     not_derived: [],
     not_in_target: [],
     stale_hints: [],
+    store: storeFlags
+      ? { subdomain: storeFlags.subdomain, admin_api: adminApiBaseForStore(storeFlags.subdomain), token_source: `env:${storeFlags.token_env}`, store_read: null, pages_read: null, primary_domain: null }
+      : null,
     rebound: { build_context: null, assembly_report: null },
     errors: [],
     warnings: [],
@@ -5015,7 +5080,40 @@ export function specDeriveCommand(args) {
     if (pageId && targetPath && !packetBindings.has(pageId)) packetBindings.set(pageId, targetPath);
   }
 
+  // Every local refusal above (packet, spec, entry, boundary, page tree)
+  // precedes the store read: the preflight run stops here, before the token
+  // is sent anywhere. And the read, when asked for, must have succeeded
+  // before anything is written: a run that wrote the repo half and quietly
+  // skipped the store half would read as "derived" to an operator who asked
+  // for both.
+  if (storeRead?.status === "preflight") {
+    result.status = "preflight";
+    return result;
+  }
+  if (storeRead?.expected && (storeRead.expected.spec_path !== result.spec_path || storeRead.expected.public_route_slug !== result.public_route_slug)) {
+    addIssue(result.errors, "spec.derive.packet_changed_underneath", `The packet changed while the store was being read (it now names ${result.spec_path} for route "${result.public_route_slug}", not the spec and route checked before the read); nothing was written. Derive again.`);
+    return result;
+  }
+  if (storeRead && storeRead.status !== "ok") {
+    const codes = { credential_missing: "store_credential_missing", credential_invalid: "store_credential_invalid", unauthorized: "store_unauthorized", not_found: "store_not_found", unreachable: "store_unreachable", invalid: "store_response_invalid" };
+    addIssue(result.errors, `spec.derive.${codes[storeRead.status] || "store_unreachable"}`, `${storeRead.detail} Nothing was written.`, { subdomain: storeRead.subdomain, token_source: `env:${storeRead.token_env}` });
+    return result;
+  }
   const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug });
+  let storeChanged = false;
+  if (storeRead) {
+    const storePlan = planStoreProfileDerive({ spec, store: storeRead.store, pages: storeRead.pages, pagesStatus: storeRead.pages_status, pagesDetail: storeRead.pages_detail, subdomain: storeRead.subdomain });
+    plan.changes.push(...storePlan.changes);
+    plan.unchanged.push(...storePlan.unchanged);
+    plan.not_derived.push(...storePlan.not_derived);
+    storeChanged = storePlan.changes.length > 0;
+    result.store.store_read = "ok";
+    result.store.pages_read = storeRead.pages_status;
+    result.store.primary_domain = typeof storeRead.store?.primary_domain === "string" && storeRead.store.primary_domain.trim() ? storeRead.store.primary_domain.trim() : null;
+    if (storePlan.domain_changed) {
+      addIssue(result.warnings, "spec.derive.store_domain_changed", `The store at ${result.store.admin_api} has primary domain ${storePlan.domain_changed.after}, but the spec's campaign.store_url named ${storePlan.domain_changed.before}. If --from-store ${storeRead.subdomain} is this campaign's store, the spec was stale and the diff above is the correction; if it is not, the diff is another merchant's profile: restore the spec and derive again with the right subdomain.`, storePlan.domain_changed);
+    }
+  }
   result.changes = plan.changes;
   result.unchanged = plan.unchanged;
   result.not_derived = plan.not_derived;
@@ -5180,6 +5278,12 @@ export function specDeriveCommand(args) {
       addIssue(result.warnings, "spec.derive.doctor_sidecar_not_marked", `The CampaignSpec was written, but the retained doctor snapshot could not be marked stale (${singleLineDetail(error.message)}); re-run doctor before trusting it.`);
     }
   }
+  // A store-derived value now sits in the spec and not yet in the repo:
+  // doctor's page_kit.store_profile gate names page-kit sync as the repair,
+  // so the next step says it first.
+  if (storeChanged && !dryRun) {
+    result.next = `${cmd("page-kit")} sync --packet ${shellToken(packetPath)}, then ${result.next}`;
+  }
   // `partial`: what the repo states was written (or would be), but a derived
   // field the repo cannot state remains. Exit stays 0 — the write itself
   // succeeded — and the warnings say what to repair.
@@ -5194,13 +5298,16 @@ export function specDeriveTextLines(result) {
   const lines = [`Status: ${result.status === "dry_run" ? "DRY RUN" : String(result.status || "unknown").toUpperCase()}`];
   if (result.spec_path) lines.push(`Spec: ${singleLineField(result.spec_path)}`);
   if (result.campaigns_path) lines.push(`Target: ${singleLineField(result.campaigns_path)}[${result.public_route_slug || "<public-route-slug>"}]${result.page_tree ? `, page tree ${singleLineField(result.page_tree)}/` : ""}`);
+  if (result.store) {
+    lines.push(`Store: ${singleLineField(result.store.admin_api)} (token ${singleLineField(result.store.token_source)}${result.store.primary_domain ? `, primary domain ${singleLineField(result.store.primary_domain)}` : ""}${result.store.pages_read && result.store.pages_read !== "ok" ? `, pages ${result.store.pages_read}` : ""})`);
+  }
   if (result.errors?.length) {
     lines.push("Errors:");
     for (const issue of result.errors) lines.push(`- ${formatIssueSummary(issue)}`);
     return lines;
   }
   if (result.status === "partial") {
-    lines.push(`Partial: ${result.not_derived.map((row) => row.field).join(", ")} could not be derived from the repo (see Warnings).`);
+    lines.push(`Partial: ${result.not_derived.map((row) => row.field).join(", ")} could not be derived from the ${result.store ? "repo or the store" : "repo"} (see Warnings).`);
   }
   if (result.changes?.length) {
     lines.push(result.dry_run
@@ -5210,7 +5317,7 @@ export function specDeriveTextLines(result) {
       lines.push(`- ${row.field}: ${formatDeriveValue(row.before)} -> ${formatDeriveValue(row.after)}  (from ${singleLineField(row.source)})`);
     }
   } else {
-    lines.push("Changes: none (every derived field the repo states already matches)");
+    lines.push(`Changes: none (every derived field the repo${result.store ? " and the store" : ""} states already matches)`);
   }
   if (result.unchanged?.length) lines.push(`Unchanged: ${result.unchanged.map((row) => row.field).join(", ")}`);
   if (result.not_in_target?.length) lines.push(`Not in target (left as they are): ${result.not_in_target.join(", ")}`);

@@ -222,10 +222,19 @@ test("applySpecDerive edits only the named paths, creates missing containers, an
   applySpecDerive(renamed, { changes: [{ field: "funnels[0].pages[2].page_url", path: ["funnels", 0, "pages", 2, "page_url"], after: "upsell-1/" }] });
   assert.equal(renamed.funnels[0].pages[2].page_url, "upsell-1/");
   assert.deepEqual(Object.keys(renamed.funnels[0].pages[2]), keys);
-  assert.throws(() => applySpecDerive(specFixture(), { changes: [{ field: "campaign.store_url", path: ["campaign", "store_url"], after: "https://x.example" }] }), /Refusing to write "campaign.store_url"/);
+  // The store-derived fields are inside the boundary (slice 2); a mirrored or
+  // authored field beside them is not.
+  const storeWrite = specFixture();
+  applySpecDerive(storeWrite, { changes: [{ field: "campaign.store_url", path: ["campaign", "store_url"], after: "https://x.example/" }] });
+  assert.equal(storeWrite.campaign.store_url, "https://x.example/");
+  assert.throws(() => applySpecDerive(specFixture(), { changes: [{ field: "campaign.name", path: ["campaign", "name"], after: "Renamed" }] }), /Refusing to write "campaign.name"/);
+  assert.throws(() => applySpecDerive(specFixture(), { changes: [{ field: "campaign.campaigns_api_key", path: ["campaign", "campaigns_api_key"], after: "k" }] }), /Refusing to write "campaign.campaigns_api_key"/);
   assert.throws(() => applySpecDerive(specFixture(), { changes: [{ field: "funnels[0].pages[9].page_url", path: ["funnels", 0, "pages", 9, "page_url"], after: "x/" }] }), /is not an object/);
   assert.throws(() => applySpecDerive(specFixture((draft) => { draft.analytics = "off"; }), { changes: [{ field: "analytics.providers.gtm.containerId", path: ["analytics", "providers", "gtm", "containerId"], after: "GTM-ABC1234" }] }), /analytics is not an object/);
-  assert.deepEqual(SPEC_DERIVE_FIELDS, ["global_config.sdk_version", "runtime.sdk_version", "funnels[].pages[].page_url", "funnel_pages[].page_url", "analytics.providers.gtm.containerId", "analytics.providers.facebook.pixelId"]);
+  assert.deepEqual(SPEC_DERIVE_FIELDS, [
+    "global_config.sdk_version", "runtime.sdk_version", "funnels[].pages[].page_url", "funnel_pages[].page_url", "analytics.providers.gtm.containerId", "analytics.providers.facebook.pixelId",
+    "campaign.store_name", "campaign.store_url", "campaign.store_terms", "campaign.store_privacy", "campaign.store_contact", "campaign.store_returns", "campaign.store_shipping", "campaign.store_phone", "campaign.store_phone_tel",
+  ]);
   assert.equal(formatDeriveValue(undefined), "(absent)");
   assert.equal(formatDeriveValue(""), "\"\"");
 });
