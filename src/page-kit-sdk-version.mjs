@@ -74,12 +74,15 @@ export function entryInScaffoldState(entry) {
 export function sdkPinWriteDecision({ expected, observed, entry }) {
   if (entryInScaffoldState(entry)) return "write";
   if (!isReleasedSdkVersion(observed) || !isReleasedSdkVersion(expected)) return "write";
-  const compare = (a, b) => {
-    const [am, an, ap] = a.split(".").map(Number);
-    const [bm, bn, bp] = b.split(".").map(Number);
-    return am - bm || an - bn || ap - bp;
-  };
-  return compare(observed, expected) > 0 ? "target_newer" : "write";
+  return compareReleasedSdkVersions(observed, expected) > 0 ? "target_newer" : "write";
+}
+
+// Orders two canonical MAJOR.MINOR.PATCH versions (negative, zero, positive);
+// both sides must already have passed isReleasedSdkVersion.
+export function compareReleasedSdkVersions(a, b) {
+  const [am, an, ap] = a.split(".").map(Number);
+  const [bm, bn, bp] = b.split(".").map(Number);
+  return am - bm || an - bn || ap - bp;
 }
 
 export function evaluatePageKitSdkVersion({

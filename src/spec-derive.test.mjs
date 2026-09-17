@@ -13,7 +13,9 @@ import { stageRealPackageInstall } from "./package-install-fixture.mjs";
 import {
   ANALYTICS_ID_FIELDS,
   applySpecDerive,
+  derivedRouteProblem,
   formatDeriveValue,
+  isPageTreeIgnoredDir,
   pageRouteForFile,
   planSpecDerive,
   SPEC_DERIVE_FIELDS,
@@ -855,4 +857,49 @@ test("spec derive prints the not-in-target line and survives an unreadable repor
     rmSync(unwritable.dir, { recursive: true, force: true });
     rmSync(unreadable.dir, { recursive: true, force: true });
   }
+});
+
+test("planSpecDerive refuses a numeric analytics id instead of coercing it", () => {
+  const plan = planSpecDerive({ spec: specFixture(), entry: { ...CONFIGURED_ENTRY, fb_pixel_id: 123456789012345 }, pageFiles: PAGE_FILES });
+  const row = plan.not_derived.find((entry) => entry.field === "analytics.providers.facebook.pixelId");
+  assert.equal(row.reason, "target_invalid");
+  assert.match(row.detail, /is a number/);
+  assert.equal(plan.changes.some((entry) => entry.field.endsWith("pixelId")), false);
+});
+
+test("planSpecDerive binds the entry page to the top-level index.html and writes the empty route idempotently", () => {
+  const spec = specFixture((draft) => { const page = draft.funnels[0].pages[0]; delete page.page_url; page.is_entry = true; });
+  const tree = [{ path: "index.html", basename: "index", route: "", permalink: null }, ...PAGE_FILES.filter((file) => file.path !== "landing.html")];
+  const plan = planSpecDerive({ spec, entry: CONFIGURED_ENTRY, pageFiles: tree });
+  const row = plan.changes.find((entry) => entry.page_id === "landing");
+  assert.deepEqual([row.before, row.after, row.source], [undefined, "", "index.html"]);
+  applySpecDerive(spec, plan);
+  assert.equal(spec.funnels[0].pages[0].page_url, "");
+  const again = planSpecDerive({ spec, entry: CONFIGURED_ENTRY, pageFiles: tree });
+  assert.equal(again.changes.some((entry) => entry.page_id === "landing"), false);
+  assert.ok(again.unchanged.some((entry) => entry.page_id === "landing"));
+});
+
+test("a permalink the tree states must be a relative page-kit route before it becomes the spec's", () => {
+  assert.equal(derivedRouteProblem(""), null);
+  assert.equal(derivedRouteProblem("checkout/"), null);
+  assert.equal(derivedRouteProblem("offers/upsell/"), null);
+  assert.match(derivedRouteProblem("https://attacker.example/"), /absolute URL/);
+  assert.match(derivedRouteProblem("../../x/"), /`\.\.` segment/);
+  assert.match(derivedRouteProblem("a//b/"), /empty/);
+  assert.match(derivedRouteProblem("/rooted/"), /not a relative/);
+  assert.match(derivedRouteProblem("bad\u001b/"), /control characters/);
+  assert.match(derivedRouteProblem(42), /not a string/);
+  // Through the plan: a hostile permalink lands in not_derived, never in changes.
+  const tree = PAGE_FILES.map((file) => (file.path === "upsell.html" ? { ...file, route: pageRouteForFile("upsell.html", { permalink: "https://attacker.example/" }), permalink: "https://attacker.example/" } : file));
+  const plan = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree });
+  assert.deepEqual(plan.not_derived.map((row) => [row.page_id, row.reason]), [["upsell", "target_invalid"]]);
+  assert.match(plan.not_derived[0].detail, /upsell\.html \(permalink\).*absolute URL/);
+  assert.equal(plan.changes.some((row) => row.page_id === "upsell"), false);
+  assert.equal(readJson(new URL("campaignspec.v42.basic.json", EXAMPLES)).funnels[0].pages[2].page_url, "upsell/");
+  // The walker and the file rule share one ignore list.
+  assert.ok(isPageTreeIgnoredDir("_includes") && isPageTreeIgnoredDir("assets") && isPageTreeIgnoredDir("node_modules") && isPageTreeIgnoredDir(".git"));
+  assert.equal(isPageTreeIgnoredDir("offers"), false);
+  assert.equal(pageRouteForFile("node_modules/x.html"), null);
+  assert.equal(pageRouteForFile(".git/x.html"), null);
 });

@@ -19,11 +19,10 @@
 // This module is pure: the CLI reads the packet, the spec, the entry and the
 // page tree, and does the writing and the printing.
 import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
-import { entryInScaffoldState, resolveSpecSdkPin, SPEC_DERIVE_COMMAND } from "./page-kit-sdk-version.mjs";
-import { normalizePageKitRoute, runtimeRelativeRouteForSpecValue, stripPublicRoutePrefix } from "./route-identity.mjs";
+import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
+import { compareReleasedSdkVersions, entryInScaffoldState, resolveSpecSdkPin } from "./page-kit-sdk-version.mjs";
+import { isAbsoluteHttpUrl, normalizePageKitRoute, runtimeRelativeRouteForSpecValue, stripPublicRoutePrefix } from "./route-identity.mjs";
 import { publicRouteForPage } from "./source-html-intake.mjs";
-
-export { SPEC_DERIVE_COMMAND };
 
 // The spec fields this command may write, as path patterns. `applySpecDerive`
 // refuses any change whose path matches none of them, so a plan row can never
@@ -53,7 +52,13 @@ const ROUTING_HINT_FIELDS = Object.freeze({
   "next-upsell-decline-url": "on_decline",
 });
 
-const PAGE_TREE_IGNORED = /^(?:_includes|_layouts|_data|assets|node_modules)(?:\/|$)|(?:^|\/)_[^/]*$/;
+// Directories page-kit does not render pages from, and the one rule for a
+// file it skips: the CLI walker prunes with the first, pageRouteForFile
+// filters with both, so a new non-page directory is added in one place.
+export const PAGE_TREE_IGNORED_DIRS = Object.freeze(["assets", "node_modules", ".git"]);
+export function isPageTreeIgnoredDir(name) {
+  return name.startsWith("_") || PAGE_TREE_IGNORED_DIRS.includes(name);
+}
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -68,12 +73,6 @@ function hasControlCharacters(value) {
   return /[\u0000-\u001f\u007f]/.test(value);
 }
 
-function compareReleased(a, b) {
-  const [am, an, ap] = a.split(".").map(Number);
-  const [bm, bn, bp] = b.split(".").map(Number);
-  return am - bm || an - bn || ap - bp;
-}
-
 // The public route a page-kit source file builds to, relative to the campaign
 // root: page-kit routes by filename (`checkout.html` -> `checkout/`,
 // `a/b.html` -> `a/b/`, `index.html` -> the directory's route, so the top-level
@@ -83,12 +82,29 @@ function compareReleased(a, b) {
 // return null.
 export function pageRouteForFile(relativePath, { permalink = null, publicRouteSlug = "" } = {}) {
   const path = String(relativePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
-  if (!path || !/\.html$/i.test(path) || PAGE_TREE_IGNORED.test(path)) return null;
+  if (!path || !/\.html$/i.test(path)) return null;
+  const segments = path.split("/");
+  if (segments.slice(0, -1).some(isPageTreeIgnoredDir) || segments[segments.length - 1].startsWith("_")) return null;
   if (isNonEmptyString(permalink)) return stripPublicRoutePrefix(normalizePageKitRoute(permalink), publicRouteSlug);
-  const withoutExtension = path.replace(/\.html$/i, "");
-  const segments = withoutExtension.split("/").filter(Boolean);
-  if (segments[segments.length - 1] === "index") segments.pop();
-  return segments.length ? `${segments.join("/")}/` : "";
+  const routeSegments = path.replace(/\.html$/i, "").split("/").filter(Boolean);
+  if (routeSegments[routeSegments.length - 1] === "index") routeSegments.pop();
+  return routeSegments.length ? `${routeSegments.join("/")}/` : "";
+}
+
+// A route the page tree states must be a relative page-kit route before it
+// becomes an authoritative spec value: a permalink that is an absolute URL,
+// climbs with `..`, carries an empty segment or a control character is a
+// repo defect, reported rather than written. Returns null when the route is
+// usable, else the reason.
+export function derivedRouteProblem(route) {
+  if (typeof route !== "string") return "not a string";
+  if (route === "") return null;
+  if (hasControlCharacters(route)) return "contains control characters";
+  if (isAbsoluteHttpUrl(route)) return "is an absolute URL, not a page-kit route";
+  if (!/\/$/.test(route) || route.startsWith("/")) return "is not a relative page-kit route";
+  const segments = route.slice(0, -1).split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) return "contains an empty, `.` or `..` segment";
+  return null;
 }
 
 function terminalSegment(route) {
@@ -151,7 +167,7 @@ function pathLabel(path) {
 // leaves pointing at the old route.
 //
 // Inputs, all read by the CLI: the parsed spec; the campaigns.json `entry`
-// for the route; `pageFiles` as `{ path, basename, route }` rows for every
+// for the route; `pageFiles` as `{ path, basename, route, permalink }` rows for every
 // page file under the campaign's source directory (null when the directory
 // does not exist); `packetBindings` as a Map of page id -> target file path
 // from the packet's page-kit projection; `waivedGates` as the checkpoint
@@ -183,7 +199,8 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       ? [{ field: "runtime.sdk_version", path: ["runtime", "sdk_version"], before: spec.runtime.sdk_version }]
       : []),
   ];
-  const sdkSource = "_data/campaigns.json[<route>].sdk_version".replace("<route>", publicRouteSlug || "<route>");
+  const entrySource = (key) => `${PAGE_KIT_CAMPAIGNS_REL_PATH}[${publicRouteSlug || "<route>"}].${key}`;
+  const sdkSource = entrySource("sdk_version");
   const sdkWaiver = waivedBy.get("page_kit.sdk_version") || null;
   if (observed === undefined) {
     notDerived.push({ field: "global_config.sdk_version", reason: "target_missing", detail: `the target entry has no sdk_version; add the Campaign Cart pin the funnel serves to ${sdkSource}, then derive again.` });
@@ -200,7 +217,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       else {
         // A spec pin ahead of the repo is a bump the repo never received (or
         // a lost one). The repo still wins, but the downgrade is flagged.
-        if (specPin.status === "ok" && compareReleased(specPin.value, observed) > 0) change.downgrade = { from: specPin.value };
+        if (specPin.status === "ok" && compareReleasedSdkVersions(specPin.value, observed) > 0) change.downgrade = { from: specPin.value };
         changes.push(change);
       }
     }
@@ -233,6 +250,11 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       const after = binding.file.route;
       const before = Object.hasOwn(page, "page_url") ? page.page_url : undefined;
       const source = `${binding.file.path}${binding.file.permalink ? " (permalink)" : ""}`;
+      const problem = derivedRouteProblem(after);
+      if (problem) {
+        notDerived.push({ field, page_id: page.id, reason: "target_invalid", detail: `the route ${source} states for page "${page.id}" (${JSON.stringify(after)}) ${problem}; fix the file's permalink, then derive again.` });
+        continue;
+      }
       const row = { field, page_id: page.id, path: [...path, "page_url"], before, after, source };
       // The route is compared in its normalized page-kit form: a value that
       // differs only in spelling ("checkout" vs "checkout/") is the same route
@@ -276,7 +298,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
     const field = `analytics.providers.${provider}.${property}`;
     const raw = Object.hasOwn(target, key) ? target[key] : undefined;
     const current = spec?.analytics?.providers?.[provider]?.[property];
-    const source = `_data/campaigns.json[${publicRouteSlug || "<route>"}].${key}`;
+    const source = entrySource(key);
     if (raw === undefined || raw === null || (typeof raw === "string" && !raw.trim())) {
       if (isNonEmptyString(current)) {
         notDerived.push({ field, reason: "target_empty", detail: `the target entry's ${key} is empty but the spec declares ${field} ${JSON.stringify(current)}; add the id to ${source} if the funnel should carry it, or remove it from the spec. Nothing was written.` });

@@ -28,7 +28,10 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   bound to one file by the packet's own projection first
   (`source_html.pages[].page_kit.target_path`), else by a file whose route,
   terminal segment or filename matches the page; routes are compared in
-  normalized page-kit form so a spelling difference is not a change. It
+  normalized page-kit form so a spelling difference is not a change, and a
+  permalink that is not a relative page-kit route (an absolute URL, a `..`
+  or empty segment, a control character) is refused as `target_invalid`
+  rather than written. It
   prints a field-by-field `before -> after` diff with each value's repo
   source and writes nothing else: not the store profile (store-derived, the
   second slice), no authored or mirrored field, not the packet, not the repo.

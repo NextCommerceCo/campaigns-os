@@ -277,6 +277,7 @@ import {
 import {
   applySpecDerive,
   formatDeriveValue,
+  isPageTreeIgnoredDir,
   pageRouteForFile,
   planSpecDerive,
 } from "./spec-derive.mjs";
@@ -4780,11 +4781,9 @@ function listPageKitPageFiles(outputDir, publicRouteSlug) {
   const files = [];
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === "node_modules" || entry.name === ".git") continue;
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name.startsWith("_") || entry.name === "assets") continue;
-        walk(fullPath);
+        if (!isPageTreeIgnoredDir(entry.name)) walk(fullPath);
         continue;
       }
       if (!entry.isFile() || extname(entry.name).toLowerCase() !== ".html") continue;
@@ -5060,7 +5059,7 @@ export function specDeriveTextLines(result) {
       ? `Changes (dry run, nothing written): ${result.changes.length}`
       : `Changes written: ${result.changes.length}`);
     for (const row of result.changes) {
-      lines.push(`- ${row.field}: ${formatDeriveValue(row.before)} -> ${formatDeriveValue(row.after)}  (from ${row.source})`);
+      lines.push(`- ${row.field}: ${formatDeriveValue(row.before)} -> ${formatDeriveValue(row.after)}  (from ${singleLineField(row.source)})`);
     }
   } else {
     lines.push("Changes: none (every derived field the repo states already matches)");

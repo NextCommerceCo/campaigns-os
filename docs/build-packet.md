@@ -268,7 +268,7 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | Reason | Meaning |
 |---|---|
 | `scaffold_seed` | the entry still carries the starter demo store profile, so its pin is the starter's seed, not a version anyone chose; `page-kit sync` seeds the pin from the spec in that state |
-| `target_missing`, `target_invalid` | the entry has no `sdk_version`, or it is not a released `MAJOR.MINOR.PATCH`; for an analytics id, the value is not a GTM container id / a digits-only pixel id |
+| `target_missing`, `target_invalid` | the entry has no `sdk_version`, or it is not a released `MAJOR.MINOR.PATCH`; for an analytics id, the value is not a GTM container id / a digits-only pixel id; for a route, the file's permalink is not a relative page-kit route (an absolute URL, a `..` or empty segment, a control character) |
 | `waived` | an active named-human `page_kit.sdk_version` waiver covers the exact pair; derive leaves the spec as the waiver accepted it |
 | `page_tree_missing`, `page_file_not_found`, `page_file_ambiguous` | no page tree, no file binds to the page, or more than one does |
 | `target_empty` | the entry's `gtm_id` / `fb_pixel_id` is empty while the spec declares an id; an empty repo value never deletes a spec id |
