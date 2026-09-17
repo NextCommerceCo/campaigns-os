@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Olympus MV Single — Variant Picker (reference)</title>
+    
+    <meta property="og:type" content="website">
+<meta property="og:title" content="Olympus MV Single — Variant Picker (reference)">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Olympus MV Single — Variant Picker (reference)">
+
+
+<meta property="og:description" content="Olympus multi-variant single-step checkout">
+<meta name="twitter:description" content="Olympus multi-variant single-step checkout">
+
+
+
+
+<meta property="og:site_name" content="Next Commerce">
+
+
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="//cdn-countries.muddy-wind-c7ca.workers.dev">
+    
+    
+
+    
+    <script src="/olympus-mv-single-step/config.js"></script>
+
+    
+    
+    <meta name="next-funnel" content="Olympus MV Single Step">
+    
+    
+    
+    <meta name="next-page-type" content="checkout">
+    
+    
+
+    
+    <script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.38/dist/loader.js" type="module"></script>
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <link href="/olympus-mv-single-step/css/next-core.css" rel="stylesheet" type="text/css">
+    
+    <link href="/olympus-mv-single-step/css/variant-picker.css" rel="stylesheet" type="text/css">
+    
+
+    <link href="/olympus-mv-single-step/images/favicon.png" rel="shortcut icon" type="image/x-icon">
+    <link href="/olympus-mv-single-step/images/webclip.png" rel="apple-touch-icon">
+  </head>
+  <body>
+    
+
+
+
+
+    
+<script>window.NEXT_VP_FIXTURE = true;</script>
+<div class="page-wrapper">
+  <div class="main-wrapper">
+    <section class="checkout-header">
+  <div class="container">
+    <div class="checkout-header__inner">
+      <div class="checkout-header__brand"><img src="/olympus-mv-single-step/images/next-dark.svg" loading="eager" alt="Next Commerce" class="brand-logo"></div>
+      <div class="checkout-header__extras">
+        <div class="mg-section tablet-spacer"><img loading="lazy" src="/olympus-mv-single-step/images/90d.webp" alt="" class="mg-image">
+          <div class="mg-text hide-tablet">90 - Day 100%<br>Money Back Guarantee</div>
+          <div class="questions-text">Questions?<br>Call: <a href="tel:+18888316810" class="link-tel">1 (888) 831-6810</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+    <section class="section-checkout cc-gray">
+      <div class="container cc-medium">
+        <div class="vp-reference-note text-sm" style="margin:1rem 0;padding:0.75rem 1rem;border:1px dashed #c9c9c9;border-radius:6px;background:#fafafa;">
+          <strong>Reference component.</strong> Quantity tier cards + per-unit variant dropdowns.
+          Swatches and the JS image map are driven from one declared <code>variants</code> source
+          (no placeholders); slots render offline via the fixture. See
+          <code>_includes/variant-picker.html</code>.
+        </div>
+        <div class="checkout-form-wrapper">
+          
+<div data-next-catalog-component="variant-picker" data-vp-selector="vp-main">
+
+  
+  <script type="application/json" id="vp-config">
+  {
+    "selectorId": "vp-main",
+    "defaultVariant": "black",
+    "packages": { "black": 1, "white": 2 },
+    "images": { "black": "/olympus-mv-single-step/images/1x1_1.svg", "white": "/olympus-mv-single-step/images/1x1_2.svg" }
+  }
+  </script>
+
+  
+  
+  <span class="vp-price-ref" data-vp-price-for="black"
+        data-next-display="package.1.price" data-next-package-id="1" hidden></span>
+  
+  <span class="vp-price-ref" data-vp-price-for="white"
+        data-next-display="package.2.price" data-next-package-id="2" hidden></span>
+  
+
+  
+  <div class="form-section form-section--first">
+    <h2 class="form-section__title">Select Bundle Discount</h2>
+    <div data-next-bundle-selector data-next-selector-id="vp-main" data-next-selection-mode="swap" class="os-option">
+      <div class="os-cards__grid os--three">
+        
+          <div data-next-bundle-card data-next-bundle-id="buy1"
+               data-next-bundle-items='[{"packageId":1,"quantity":1}]' data-next-selected="true" role="button" class="os-card vp-tier-card" data-next-shipping-id="2">
+            
+            <div class="os-card__header-slot"></div>
+            <div class="os-card__wrapper cc-sm">
+              <div class="os-card__content os-wrap vp-tier-card__row">
+                <div class="os-card__radio"><div data-selected="true" class="radio-style-1"><div class="radio-inner"></div></div></div>
+                <div class="os-card__main-slot">
+                  <div class="os-card__title-section">
+                    <div class="os-card__title-wrapper"><div class="os-card__title-2 os-bold">1x Unit</div></div>
+                  </div>
+                </div>
+              </div>
+              <div os-slot="bottom" class="os-card__bottom-slot cc-gap vp-tier-card__bottom">
+                <div class="card-sup">Next Commerce Shirts</div>
+                <div class="card-sup vp-tier-card__shipping">+ $4.95 shipping</div>
+                <div class="os-card__subtitle-text-2">Save <span data-next-bundle-display="discountPercentage" data-next-format="percentage">—</span> OFF</div>
+              </div>
+            </div>
+            <div os-slot="footer" class="os-card__footer-slot"></div>
+            
+          </div>
+        
+          <div data-next-bundle-card data-next-bundle-id="buy2"
+               data-next-bundle-items='[{"packageId":1,"quantity":2}]' role="button" class="os-card vp-tier-card" data-next-shipping-id="2">
+            
+            <div os-slot="header" class="os-card__header-slot"></div>
+            <div class="os-card__wrapper cc-sm">
+              <div class="os-card__content os-wrap vp-tier-card__row">
+                <div class="os-card__radio"><div class="radio-style-1"><div class="radio-inner"></div></div></div>
+                <div class="os-card__main-slot">
+                  <div class="os-card__title-section">
+                    <div class="os-card__title-wrapper"><div class="os-card__title-2 os-bold">2x Units</div></div>
+                  </div>
+                </div>
+              </div>
+              <div os-slot="bottom" class="os-card__bottom-slot cc-gap vp-tier-card__bottom">
+                <div class="card-sup">Next Commerce Shirts</div>
+                <div class="card-sup vp-tier-card__shipping">+ $4.95 shipping</div>
+                <div class="os-card__subtitle-text-2">Save <span data-next-bundle-display="discountPercentage" data-next-format="percentage">—</span> OFF</div>
+              </div>
+            </div>
+            <div os-slot="footer" class="os-card__footer-slot"></div>
+            
+              <div class="os-card__label-slot">
+                <div os-label-position="top-right" class="os-card__label-2 os-card__label--middle-center os-card__label--pill-primary">
+                  <div class="os-card__label-text-2">Most Popular</div>
+                </div>
+              </div>
+            
+          </div>
+        
+          <div data-next-bundle-card data-next-bundle-id="buy3"
+               data-next-bundle-items='[{"packageId":1,"quantity":3}]' role="button" class="os-card vp-tier-card" data-next-shipping-id="1">
+            
+            <div os-slot="header" class="os-card__header-slot"></div>
+            <div class="os-card__wrapper cc-sm">
+              <div class="os-card__content os-wrap vp-tier-card__row">
+                <div class="os-card__radio"><div class="radio-style-1"><div class="radio-inner"></div></div></div>
+                <div class="os-card__main-slot">
+                  <div class="os-card__title-section">
+                    <div class="os-card__title-wrapper"><div class="os-card__title-2 os-bold">3x Units</div></div>
+                  </div>
+                </div>
+              </div>
+              <div os-slot="bottom" class="os-card__bottom-slot cc-gap vp-tier-card__bottom">
+                <div class="card-sup">Next Commerce Shirts</div>
+                <div class="card-sup vp-tier-card__shipping">Free Shipping</div>
+                <div class="os-card__subtitle-text-2">Save <span data-next-bundle-display="discountPercentage" data-next-format="percentage">—</span> OFF</div>
+              </div>
+            </div>
+            <div os-slot="footer" class="os-card__footer-slot"></div>
+            
+              <div class="os-card__label-slot">
+                <div os-label-position="top-right" class="os-card__label-2 os-card__label--middle-center os-card__label--pill-secondary">
+                  <div class="os-card__label-text-2">Best Deal</div>
+                </div>
+              </div>
+            
+          </div>
+        
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="form-section form-section--first">
+    <h2 class="form-section__title" id="vp-slot-heading">Select your color</h2>
+    <div data-next-bundle-slots-for="vp-main" class="os-slots" id="vp-slot-stage"></div>
+  </div>
+
+  
+  <template id="vp-slot-tpl">
+    <div class="next-slot vp-slot">
+      <div class="next-slot__step"><div># {UNIT}</div></div>
+      <div class="slot__right">
+        <div class="step__wrap">
+          <div class="next-slot__image">
+            <img loading="lazy" alt="" src="/olympus-mv-single-step/images/1x1_1.svg" class="vp-slot__img">
+          </div>
+          <div class="os-card__pricing">
+            <div class="os-card__price-container os--stacked">
+              <div class="os-card__price os--compare diagonal-strike"><span class="vp-slot__price-original">—</span>/ea</div>
+              <div class="os-card__price os--current"><span class="vp-slot__price-discount">—</span>/ea</div>
+              <div class="os-card__subtitle-text-2">
+                Save <span data-next-display="bundle.vp-main.discountPercentage">–</span> OFF
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="os-slot__selection cc-big">
+          <div class="os-card__variant-options">
+            <div class="os-card__variant-grid cc-horiz">
+
+              
+              <div class="next-slot-variant-field os-card__variant-group cc-full cc-row">
+                <div class="os-card__variant-label">Color:</div>
+                <os-dropdown class="os-variant-dropdown" data-vp-dropdown="cs" value="black">
+                  <button type="button" class="os-card__variant-dropdown-toggle" aria-expanded="false" aria-haspopup="listbox">
+                    <div class="os-card__toggle-option">
+                      <img class="vp-color-swatch" src="/olympus-mv-single-step/images/1x1_1.svg" alt="">
+                      <div class="os-card__variant-toggle-info">
+                        <div class="os-card__variant-toggle-name">Black</div>
+                      </div>
+                    </div>
+                    <div class="os-card__variant-dropdown-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M11.9999 13.1714L16.9497 8.22168L18.3639 9.63589L11.9999 15.9999L5.63599 9.63589L7.0502 8.22168L11.9999 13.1714Z"></path>
+                      </svg>
+                    </div>
+                  </button>
+                  <os-dropdown-menu os-element="dropdown-menu" class="os-card__variant-dropdown-menu-v2">
+                    
+                    <os-dropdown-item value="black" class="os-card__variant-dropdown-item selected">
+                      <div class="os-card__toggle-option"><img class="vp-color-swatch" src="/olympus-mv-single-step/images/1x1_1.svg" alt=""><div class="os-card__variant-toggle-info"><div class="os-card__variant-toggle-name">Black</div></div></div>
+                    </os-dropdown-item>
+                    
+                    <os-dropdown-item value="white" class="os-card__variant-dropdown-item">
+                      <div class="os-card__toggle-option"><img class="vp-color-swatch" src="/olympus-mv-single-step/images/1x1_2.svg" alt=""><div class="os-card__variant-toggle-info"><div class="os-card__variant-toggle-name">White</div></div></div>
+                    </os-dropdown-item>
+                    
+                  </os-dropdown-menu>
+                </os-dropdown>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+</div>
+
+        </div>
+      </div>
+    </section>
+    <footer class="footer_section">
+  <div class="container">
+    <div class="footer_layout">
+      <div class="footer_copy-info">
+        <div class="footer_link-wrapper">
+          <a href="https://demo.29next.com/shipping/" target="_blank" class="footer_legal-link">Shipping Policy</a>
+          <a href="https://demo.29next.com/returns/" target="_blank" class="footer_legal-link">Refund Policy</a>
+          <a href="https://demo.29next.com/privacy-policy/" target="_blank" class="footer_legal-link">Privacy Policy</a>
+          <a href="https://demo.29next.com/terms-conditions/" target="_blank" class="footer_legal-link">Terms of Service</a>
+        </div>
+        <div class="text-xs">Copyright © <span class="copyright-year"></span> Next Commerce</div>
+<script>(function(){ var y = new Date().getFullYear(); document.querySelectorAll(".copyright-year").forEach(function(el){ el.textContent = y; }); })();</script>
+      </div>
+    </div>
+  </div>
+</footer>
+
+  </div>
+</div>
+
+    
+    <script defer src="/olympus-mv-single-step/js/variant-picker-fixture.js"></script>
+    
+    <script defer src="/olympus-mv-single-step/js/variant-picker.js"></script>
+    
+  </body>
+</html>
