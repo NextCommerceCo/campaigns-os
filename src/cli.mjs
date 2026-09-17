@@ -5090,7 +5090,10 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     result.status = "preflight";
     return result;
   }
-  if (storeRead?.expected && (storeRead.expected.spec_path !== result.spec_path || storeRead.expected.public_route_slug !== result.public_route_slug)) {
+  // Every local precondition has returned by here, so a spec that vanished
+  // during the read reports as spec_missing above, never as this; the guard
+  // on errors keeps that true if a check ever moves below this line.
+  if (storeRead?.expected && !result.errors.length && (storeRead.expected.spec_path !== result.spec_path || storeRead.expected.public_route_slug !== result.public_route_slug)) {
     addIssue(result.errors, "spec.derive.packet_changed_underneath", `The packet changed while the store was being read (it now names ${result.spec_path} for route "${result.public_route_slug}", not the spec and route checked before the read); nothing was written. Derive again.`);
     return result;
   }

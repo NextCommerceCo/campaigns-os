@@ -765,6 +765,15 @@ test("adversarial guards: a malformed token is never sent or echoed, phone exten
     assert.equal(result.written, false);
     assert.equal(readJson(otherPath).campaign.store_name, "Example Store");
     assert.equal(readJson(specPath).campaign.store_name, "Example Store");
+    // A spec that vanishes during the read reports its own local error, not
+    // a packet change.
+    writeJson(packetPath, packet);
+    const vanish = async (url, init) => {
+      rmSync(specPath, { force: true });
+      return fakeAdminApi().fetchImpl(url, init);
+    };
+    const gone = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: vanish, env: { ACME_ADMIN_TOKEN: "t" } });
+    assert.deepEqual(gone.errors.map((issue) => issue.code), ["spec.derive.spec_missing"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
