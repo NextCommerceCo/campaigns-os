@@ -230,6 +230,17 @@ npm run campaigns-os -- findings harvest --packet <packet.json>
 npm run campaigns-os -- findings export --summary
 ```
 
+Doctor inspects without changing the retained Assembly Report or doctor sidecar.
+A stale local `_site` still fails the current inspection; it does not rewrite
+the proof of an earlier delivered build. Use `doctor --packet <packet> --write`
+only when deliberately recording a new doctor stage. `--no-write` overrides
+`--write`. A custom `--doctor-out <path>` also requires `--write`; naming an
+output path alone does not create or refresh the file. Build/QA producer
+commands continue to record their own stages.
+Do not use `prepare-build --force` merely to refresh a catalog path: doctor
+already resolves the running toolkit's catalog, and force clears stage evidence.
+
+
 `qa run` automatically checks contract-governed authored price, recurring
 cadence, and voucher claims against fresh `/api/price-preview` results for
 commercial pages. It needs no private repo import or extra catalog flag; proven

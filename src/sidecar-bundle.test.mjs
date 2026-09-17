@@ -363,7 +363,7 @@ test("a blocked doctor run is conformant but never ready: warning by default, st
   const finding = result.warnings.find((entry) => entry.code === "bundle.doctor_output.blocked");
   assert.ok(finding, JSON.stringify(result.warnings, null, 2));
   assert.equal(finding.artifact, "doctor_output");
-  assert.match(finding.remedy, /campaigns-os doctor --packet campaign-runtime\.build\.json --strip-paths/);
+  assert.match(finding.remedy, /campaigns-os doctor --packet campaign-runtime\.build\.json --write --strip-paths/);
   assert.equal(result.errors.some((entry) => entry.code === "bundle.doctor_output.blocked"), false);
   assert.match(sidecarBundleReadinessLine(result), /^Readiness: BLOCKED \(doctor run is blocked\)/);
 }));
@@ -502,7 +502,7 @@ test("fresh prepare-build, doctor, and QA projection form a conformant bundle wh
 
     const packetPath = join(target, "campaign-runtime.build.json");
     try {
-      execFileSync("node", [CLI, "doctor", "--packet", packetPath, "--strip-paths", "--json"], {
+      execFileSync("node", [CLI, "doctor", "--write", "--packet", packetPath, "--strip-paths", "--json"], {
         encoding: "utf8",
         cwd: root,
         stdio: "pipe",

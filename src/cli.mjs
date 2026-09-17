@@ -435,7 +435,7 @@ Usage:
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
-  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
+  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
@@ -735,6 +735,8 @@ function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = 
 // command and is not worth recording.
 function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder) {
   if (command === "help") return;
+  // An inspection must not append to a delivered campaign's active run either.
+  if (command === "doctor" && args.packet && (args.write !== true || args["no-write"] === true)) return;
   const ambient = sessionHolder?.current || null;
   // A session auto-started DURING this command (start/prepare-build) is
   // published into sessionHolder by autoStartRunSession; this command's own
@@ -2832,12 +2834,11 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   };
   const result = runDoctor(packetPath, doctorOptions);
-  // Refresh the retained sidecar so it never silently stays an earlier stage's
-  // snapshot: before this, only prepare-build/start wrote doctor-output.json,
-  // and every later standalone doctor run reported fresh state on stdout while
-  // the artifact on disk stayed frozen at intake (NEXT-114 dogfood finding
-  // wf_1785566917680). Opt out with --no-write.
-  if (args["no-write"] !== true) {
+  // Inspection and recording are separate operations. A laptop's untracked
+  // built output can be stale while the delivered build's evidence is valid.
+  // Only an explicit producer action may replace the retained proof artifacts;
+  // --no-write wins if both flags are supplied.
+  if (args.write === true && args["no-write"] !== true) {
     // The stage write-back restates the outcome into the report the
     // inspection read: the one --report named, else the one the Build Context
     // binds (`derived.assembly_report_path`, a `prepare-build --report-out`
@@ -8716,7 +8717,7 @@ export function nextStage(stage, args, ambient = null) {
         errors,
         warnings,
         ready,
-        prompt: `Resolve the doctor errors above before continuing. Re-run \`${cmd("doctor")} --packet <path>\` to confirm, then \`${cmd("next")} --packet <path>\` to advance.`,
+        prompt: `Resolve the doctor errors above before continuing. Re-run \`${cmd("doctor")} --packet <path> --write\` to record the recovery, then \`${cmd("next")} --packet <path>\` to advance.`,
       });
     }
     if (picked.stage === "prepare-build") {
@@ -9094,7 +9095,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
         );
       }
     }
-    push("doctor_recheck", "command", `${cmd("doctor")} --packet ${packetPath} --json`, "Re-run the doctor after resolving the listed errors.");
+    push("doctor_recheck", "command", `${cmd("doctor")} --packet ${packetPath} --write --json`, "Record a fresh doctor result after resolving the listed errors.");
     return actions;
   }
   if (result.stage === "prepare-build") {
