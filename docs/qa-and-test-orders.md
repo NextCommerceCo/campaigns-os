@@ -589,9 +589,13 @@ meaningful.
 - Every doctor result — `cause` / `cause_reason` on every error and warning and
   a `cause_summary` on the output, applied where the doctor result is produced
   rather than in one command. Four producers persist
-  `.campaign-runtime/doctor-output.json` (`doctor`, `next`, `prepare-build` /
-  `start`, and the QA stage refresh), so the retained artifact keeps its labels
+  `.campaign-runtime/doctor-output.json` (`doctor --write`, `next`, `start` /
+  `build`, and the QA stage refresh), so the retained artifact keeps its labels
   whichever one wrote it last: running QA after doctor no longer strips them.
+  Each of them stamps the sidecar `generated_by` with its own name (`doctor`,
+  `next`, `start`, `build`, `qa run`), beside `generated_at`, so a retained
+  sidecar always says which command wrote it — the way a stale stamp already
+  names its command in `stale_marked_by`.
   The `doctor` human report adds the summary line and a cause tag after each
   issue line; the existing `[code] message` shape is unchanged.
   Non-packet doctor (`--built` / `--site`) has no Run Record home and is not

@@ -4173,9 +4173,102 @@
       "sequence": 111,
       "date": "2026-09-17",
       "kind": "release",
+      "surface_version": "1.32.0",
+      "changelog_section": "1.32.0",
+      "changelog_sha256": "86c60cd3c6202607472305bb8c02216df255c9ccbc6a89caa4ac6c31e65867d9",
+      "agent_impact": "The retained doctor sidecar .campaign-runtime/doctor-output.json now carries generated_by, the campaigns-os command that persisted it (doctor, next, start, build, qa run), beside generated_at; schemas/campaigns-os-doctor-output.v0.schema.json gains it as an optional string (schema id unchanged), so a sidecar written before 1.32.0 still validates and simply carries no producer. A consumer attributing a sidecar reads generated_by before deciding what wrote it; a consumer that validated the schema by hash re-pins at 1.32.0. standardize remains read-only (it never wrote the sidecar; #312's repro copied a gitignored one along with the example target) and the docs now say what --no-doctor skips. surface_version 1.31.0 -> 1.32.0; package.json and compatibility.json follow.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-doctor-output.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-doctor-output.v0.schema.json",
+          "summary": "Optional generated_by (non-empty string): the campaigns-os command that persisted the sidecar. Schema id campaigns-os-doctor-output/v0 unchanged; additive."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor --write, next, start, build and the QA stage refresh (qa run) stamp the doctor sidecar generated_by with their own command name through one seam (writeDoctorSidecar / stampDoctorProducer); a producer without a name is refused, never written anonymously. No flag, exit code or stdout shape changed."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.31.0 -> 1.32.0; sha256 of schemas/campaigns-os-doctor-output.v0.schema.json re-pinned."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/doctor-output.json",
+          "surface_entry": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/doctor-output.json",
+          "summary": "The production-shaped doctor sidecar carries generated_by: \"doctor\"."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "Doctor Output row: generated_by names the producing command; a sidecar without it predates the stamp."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The four sidecar producers are named by the names they stamp (doctor, next, start/build, qa run); the intake producer is start/build, not prepare-build."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "standardize stays read-only: the proof now covers a target that already carries a doctor sidecar, with and without --no-doctor; --no-doctor skips the built-output doctor pass inside the report, not a write; the #312 repro was a gitignored sidecar copied with the example target."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "version 1.31.0 -> 1.32.0 to match package.json and surface_version."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "Package version line reads 1.32.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "version 1.31.0 -> 1.32.0 (equals surface_version); no export changed."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lockfile version field follows package.json 1.32.0; no resolved dependency changed."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: supported surface at generation time 1.32.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: supported surface at generation time 1.32.0."
+        }
+      ],
+      "entry_sha256": "d62e1d56b5d007704527d65d5bc797c10f426384697e1a42f3542bfe70e5a5eb"
+    },
+    {
+      "id": "RL-0112",
+      "sequence": 112,
+      "date": "2026-09-17",
+      "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.31.0+agent.1",
-      "changelog_sha256": "c2216e2a8485b5c9d7a3938a1f9b81694f450863cb167f8d7afbd3b49f2934ee",
+      "changelog_section": "1.32.0+agent.1",
+      "changelog_sha256": "56f6d9524920eb56bf24ab6fba4cd2490265634bd5dc7de7d14847e2b0d6a0d0",
       "agent_impact": "analytics-correctness:purchase-fires now reads the outbound Purchase across the whole post-checkout journey of the typed-card order instead of the receipt document alone, so a funnel with an offer between checkout and receipt no longer reads absent when the SDK reported dl_purchase on the upsell page (#392). Verdicts on such funnels change from a false blocker (or a waiver) to a pass; the assertion id and the waiver lane are unchanged. evidence.receipts[] entries gain scope, receipt_signals and fired_on.",
       "compatibility": "compatible",
       "migration": "None. A recorded purchase-fires waiver on a funnel with an offer page can be retired once the run passes without it.",
@@ -4199,7 +4292,7 @@
           "summary": "next-campaigns-qa version 1.3.0 -> 1.3.1."
         }
       ],
-      "entry_sha256": "b06724a577d15d7633ca2f27ec683302d4e4dfc1abdc47368d279eb3b25e8b42"
+      "entry_sha256": "bbd59833a042ca39be0af23007df1649b82506c62069edd27f06a0467726922f"
     }
   ]
 }
