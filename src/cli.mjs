@@ -4968,7 +4968,9 @@ export function specDeriveCommand(args) {
   try {
     const explicitReport = isNonEmptyString(args.report) ? resolve(args.report) : null;
     if (explicitReport && !(existsSync(explicitReport) && statSync(explicitReport).isFile())) {
-      addIssue(result.warnings, "spec.derive.report_unreadable", `--report ${singleLineField(explicitReport)} is not a file; waivers recorded on the Assembly Report were not consulted.`);
+      // The cause; the consequence (the pin waits, reason waivers_unknown)
+      // is reported by the plan against the field it affects.
+      addIssue(result.warnings, "spec.derive.report_unreadable", `--report ${singleLineField(explicitReport)} is not a file; waivers recorded on the Assembly Report were not consulted, so the SDK pin is not derived this run.`);
     }
     workspace = resolveCampaignWorkspace(packetPath, {
       packet,
@@ -5075,6 +5077,10 @@ export function specDeriveCommand(args) {
     const tmpPath = join(dirname(result.spec_path), `.${basename(result.spec_path)}.${randomUUID()}.tmp`);
     try {
       const specMode = statSync(result.spec_path).mode & 0o7777;
+      // `mode` on create is masked by the umask (a 0664 spec would be
+      // staged 0644); the chmod makes the bits exact. The spec is re-read
+      // AFTER the temp file is staged so the window between the check and
+      // the rename is the smallest this process can make it without a lock.
       writeFileSync(tmpPath, serialized, { flag: "wx", mode: specMode });
       chmodSync(tmpPath, specMode);
       if (readFileSync(result.spec_path, "utf8") !== text) {

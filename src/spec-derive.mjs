@@ -128,18 +128,19 @@ export function pageRouteForFile(relativePath) {
 // the `/<slug>/<route>/` form, so that is the only form derive accepts: any
 // other spelling (no slug prefix, another prefix, `.html`, `..`, a control
 // character) is a repo defect reported with the URL page-kit would serve.
-// Returns `{ route }` or `{ problem, served }`.
+// Returns `{ route }` or `{ problem }`; the problem text carries the served
+// URL where one can be named.
 export function permalinkRoute(permalink, publicRouteSlug = "") {
   const raw = String(permalink ?? "").trim();
-  if (hasControlCharacters(raw)) return { problem: "contains control characters", served: null };
+  if (hasControlCharacters(raw)) return { problem: "contains control characters" };
   const stripped = raw.replace(/^\/+|\/+$/g, "");
   const served = `/${stripped}/`;
   const segments = stripped.split("/");
   const slug = String(publicRouteSlug || "").trim();
-  if (!stripped || segments[0] !== slug) return { problem: `is served at ${served}, outside the campaign root /${slug || "<slug>"}/`, served };
+  if (!stripped || segments[0] !== slug) return { problem: `is served at ${served}, outside the campaign root /${slug || "<slug>"}/` };
   const rest = segments.slice(1);
   if (rest.some((segment) => segment === "" || segment === "." || segment === ".." || /\.html$/i.test(segment) || /[?#]/.test(segment))) {
-    return { problem: `is served at ${served}, which is not a page-kit route under /${slug}/ (each segment a plain name, no .html, no query)`, served };
+    return { problem: `is served at ${served}, which is not a page-kit route under /${slug}/ (each segment a plain name, no .html, no query)` };
   }
   return { route: rest.length ? `${rest.join("/")}/` : "" };
 }
@@ -453,9 +454,9 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
 
   // A provider block derive will create is a new analytics contract: QA
   // stops treating analytics as advisory and expects that tag to fire.
-  const createdBlocks = changes
-    .filter((row) => row.field.startsWith("analytics.providers.") && !isPlainObject(spec?.analytics?.providers?.[row.path[2]]))
-    .map((row) => `analytics.providers.${row.path[2]}`);
+  const createdBlocks = ANALYTICS_ID_FIELDS
+    .filter(({ provider, property }) => changes.some((row) => row.field === `analytics.providers.${provider}.${property}`) && !isPlainObject(spec?.analytics?.providers?.[provider]))
+    .map(({ provider }) => `analytics.providers.${provider}`);
 
   return { changes, unchanged, not_derived: notDerived, not_in_target: notInTarget, stale_hints: staleHints, created_blocks: [...new Set(createdBlocks)] };
 }
