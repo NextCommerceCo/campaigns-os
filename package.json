@@ -2,7 +2,7 @@
   "name": "@nextcommerce/campaigns-os",
   "version": "1.33.0",
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/NextCommerceCo/campaigns-os.git"
@@ -124,6 +124,8 @@
     "skills",
     "skills.json",
     "src",
+    "LICENSE",
+    "NOTICE",
     "README.md",
     "CONTEXT.md",
     "compatibility.json",

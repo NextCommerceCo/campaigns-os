@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.33.0+agent.5] - 2026-09-17
+
+### Changed
+
+- The package is licensed under Apache-2.0. `package.json` `license` moves
+  from `UNLICENSED` to `Apache-2.0`, and `LICENSE` (the Apache License 2.0
+  text) and `NOTICE` (copyright Next Commerce Pte. Ltd.) are added and ship
+  in the tarball, so the public npm release carries a usage grant, a patent
+  grant and the trademark carve-out. `contracts/agent-relevant-change-policy
+  .v1.json` classifies both files as repository metadata with no agent
+  impact. Nothing else changed.
+
 ## [1.33.0+agent.4] - 2026-09-17
 
 Same-surface: six static SDK markup checks join the built-output doctor

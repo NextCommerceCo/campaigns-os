@@ -98,6 +98,8 @@
     { "match": { "kind": "prefix", "value": "contracts/" }, "reason": "Internal build/QA contract data. Supported contract files are classified by explicit rules or the derived pass first." },
     { "match": { "kind": "prefix", "value": ".github/" }, "reason": "Repository metadata other than workflows, which an explicit rule classifies first." },
     { "match": { "kind": "exact", "value": ".gitignore" }, "reason": "Repository metadata." },
+    { "match": { "kind": "exact", "value": "LICENSE" }, "reason": "Licence text (Apache-2.0); governs use, not agent behaviour." },
+    { "match": { "kind": "exact", "value": "NOTICE" }, "reason": "Apache-2.0 attribution notice; governs use, not agent behaviour." },
     { "match": { "kind": "prefix", "value": "." }, "reason": "Dotfile repository metadata." }
   ],
   "derived_from_supported_surface": {
