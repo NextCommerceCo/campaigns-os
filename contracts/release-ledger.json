@@ -4431,6 +4431,57 @@
         }
       ],
       "entry_sha256": "19c8ba412af1b98331c1a3ed91a10d74633b6bb0fe978a6470cd0c192e19539e"
+    },
+    {
+      "id": "RL-0115",
+      "sequence": 115,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.33.0+agent.2",
+      "changelog_sha256": "998f69600eab97a97e36e1466301588734aca739bdbdbfbb1e80425aa3f59b66",
+      "agent_impact": "spec derive gains --write-map [--proxy-base <url>] (#415, the repo -> Map write-back #413 named as the end state): after the local derive, the derived SDK pin is recorded in the saved Map's Build hints field (Campaign Cart SDK version) through the proxy Worker. The Map named by the packet's spec.map_id is read back (GET /api/spec/<map-id>) and re-stated with exactly the pin fields moved (global_config.sdk_version, and runtime.sdk_version only when the Map already declares the alias); every other field is the Map's own read-back, never the local spec, so routes or analytics ids derive wrote locally do not travel. PUT /api/maps/<map-id> carries the packet's Campaigns API key (packet, local spec or declared env source) as X-Campaign-Key and the Map's spec_hash as X-Spec-Hash (a save in between is a 409, not an overwrite); the proxy base is the canonical https://campaign-map.nextcommerce.com unless --proxy-base names another (https, or a loopback host over http with the clear-text warning). Direction of authority as the gate's: the write goes forward or not at all. Result gains write_map and map (null without the flag): map.status written (Map pin absent or behind; map.spec_identity.before/.after carry the Map's spec_hash and saved_at) | unchanged | would_write (--dry-run reads, sends nothing) | refused (warning, exit 0, local derive stands: ahead — a Map pin newer than the repo pin is never moved backwards; pin_unreadable) | skipped (pin not derived: pin_<not_derived reason>; or local derive blocked; nothing read or sent) | failed (error, exit 2, local derive stands: key_missing, key_mismatch, not_found, changed_underneath, rejected, proxy_base_insecure, network_error, http_error, response_invalid), reported as spec.derive.map_<reason> warnings/errors (spec.derive.map_ahead, spec.derive.map_key_mismatch, …) and one text line. A write is recorded on the Assembly Report evidence[] (Map write-back: global_config.sdk_version <before> -> <after> on Map <id> at <time> via spec derive --write-map (Map spec_hash <before> -> <after>); map.recorded \"assembly_report\"), the doctor sidecar is marked stale by spec derive --write-map, and the lifecycle journal the Run Record embeds carries the command; a missing report leaves spec.derive.map_not_recorded with the same line, and a report that took the line while the doctor stamp failed leaves spec.derive.map_doctor_sidecar_not_marked, and one that could not be read back leaves spec.derive.map_recorded_status_unknown (map.recorded \"unknown\"). A 403 on the Map read is key_mismatch, as on the write. src/spec-fetch.mjs errors carry kind and status as fields (no caller parses the message). --write-map is a bare flag (valued is rejected); --proxy-base needs a URL and is refused without --write-map; without the flag nothing is read from or sent to the Map. Doctor: the page_kit.sdk_version.repo_newer gate reason and the refresh_spec action description name --write-map; the action's command, statuses and codes are unchanged. Surface version unchanged (a flag beneath a listed command).",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "spec",
+          "summary": "spec derive --write-map [--proxy-base <url>]: after the local derive, records the derived SDK pin in the saved Map's Build hints field through the proxy Worker (read back, re-state with only the pin moved, PUT under X-Campaign-Key and X-Spec-Hash), never moving a Map pin backwards; result gains write_map and map { status written | unchanged | would_write | refused | skipped | failed, reason, before, after, spec_identity, recorded }; a refusal is a warning (exit 0), a write that could not happen is an error (exit 2); a write is recorded on the Assembly Report evidence[]."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "The page_kit.sdk_version.repo_newer gate reason and the refresh_spec advisory description name spec derive --write-map as the way to record the pin in the Map; command, statuses and codes unchanged."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "CLI commands row notes spec derive's --write-map flag (1.33.0+agent.2) and that it never moves a Map pin backwards; the command list is unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "New subsection \"Recording the pin in the Map (--write-map)\" under spec derive: transport, credential and precondition, the map.status table, traceability on the Assembly Report; the repo_newer bullet and the derive usage line name the flag."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Step 5 names --write-map beside the local derive and the hand re-save of the Map; version 1.0.13 -> 1.0.14."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os version 1.0.13 -> 1.0.14."
+        }
+      ],
+      "entry_sha256": "57ddb9eb74cafaf237afbfaddacd09dcb7cb311cb9c2b6a61281e1478ad9161f"
     }
   ]
 }

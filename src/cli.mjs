@@ -91,6 +91,7 @@ import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, stampDoctorProducer, wri
 import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
+import { writeMapSdkPin } from "./map-pin-writeback.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
 import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, describeRemitBaseKind, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
@@ -455,7 +456,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
-  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only, no network; a field the repo cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, or the spec identifies another campaign.
+  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only, no network unless --write-map; a field the repo cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, or the spec identifies another campaign. --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -1122,9 +1123,9 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // Inequality on purpose: knownCommands() harvests top-level command
     // literals by an equality pattern a subcommand equality would also match.
     if (subcommand !== "derive") throw new Error("Unknown spec subcommand. Use: campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json].");
-    const result = specDeriveCommand(args);
+    const result = await specDeriveWithMapWriteback(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else for (const line of specDeriveTextLines(result)) console.log(line);
+    else for (const line of specDeriveWriteMapTextLines(result)) console.log(line);
     if (!result.ok) process.exitCode = 2;
     return;
   }
@@ -13087,4 +13088,169 @@ function formatSkillInstallSummary(skill) {
   if (skill.action === "retired") return `${prefix}${skill.name}: ${skill.note}`;
   if (skill.action === "occupied_by_other") return `${prefix}${skill.name}: ${skill.note}`;
   return `${prefix}${skill.name}: unchanged (${skill.to.label})`;
+}
+
+// `spec derive --write-map`: the Map half of #415, kept apart from
+// specDeriveCommand on purpose (that function and spec-derive.mjs are the
+// local derive; this is the one call site that reaches the Map). The local
+// derive decides the pin (the repo pin, when the plan says the repo states
+// it); this records the same pin into the saved Map's Build hints field
+// through the proxy Worker so the Map and every export of it stop reading
+// stale. The Map is read back first and re-stated with only the pin moved,
+// under the Map's own spec_hash as a precondition, and the write goes forward
+// or not at all (map-pin-writeback.mjs). A refusal is a warning and exit 0
+// (the local derive stood); a write the operator asked for that could not
+// happen — no key, wrong key, Map gone or saved in between, proxy refused —
+// is an error and exit 2. A write is recorded on the Assembly Report's
+// evidence[] (the Run Record references the report by hash) beside the
+// result's `map`. The two flags are validated and stripped here, so the local
+// command sees exactly the argv it always has.
+const SPEC_DERIVE_MAP_FLAGS = Object.freeze(["write-map", "proxy-base"]);
+const SPEC_DERIVE_MAP_ISSUE_PREFIX = "spec.derive.map_";
+
+export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, env = process.env, warn = undefined } = {}) {
+  // `--write-map` is a bare flag: a network write must never be switched on
+  // by a stray value. `--proxy-base` names a URL or is refused here, before
+  // anything is read, as `telemetry` refuses a bare one.
+  if (Object.hasOwn(args, "write-map") && args["write-map"] !== true) {
+    throw new Error(`--write-map takes no value (got ${JSON.stringify(args["write-map"])}); write \`--write-map\` on its own, after the other flags.`);
+  }
+  if (Object.hasOwn(args, "proxy-base") && !optionalString(args["proxy-base"])) {
+    throw new Error("spec derive: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
+  }
+  if (optionalString(args["proxy-base"]) && args["write-map"] !== true) {
+    throw new Error("spec derive: --proxy-base only applies with --write-map; nothing was written.");
+  }
+  const writeMap = args["write-map"] === true;
+  const localArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !SPEC_DERIVE_MAP_FLAGS.includes(key)));
+  // A copy, so nothing here depends on the local command handing out a
+  // mutable object; the Map outcome is added beside its fields, not into them.
+  const result = { ...specDeriveCommand(localArgs), write_map: writeMap, map: null };
+  if (!writeMap) return result;
+  const skipped = (reason, detail) => {
+    result.map = { status: "skipped", reason, detail, map_id: null, proxy_base: null, field: "global_config.sdk_version", before: null, after: null, spec_identity: { before: null, after: null }, warnings: [], recorded: null };
+    return result;
+  };
+  if (!result.ok) return skipped("derive_blocked", "the local derive was blocked, so no pin was decided; nothing was sent to the Map.");
+  const pinRow = [...result.changes, ...result.unchanged].find((row) => row.field === "global_config.sdk_version");
+  if (!pinRow) {
+    const held = result.not_derived.find((row) => row.field === "global_config.sdk_version");
+    const reason = held ? `pin_${held.reason}` : "pin_not_derived";
+    skipped(reason, held ? `the pin was not derived (${held.reason}), so it was not written to the Map either: ${held.detail}` : "the pin was not derived, so it was not written to the Map either.");
+    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}skipped`, `Map not written: ${result.map.detail}`, { reason });
+    return result;
+  }
+  let packet = null;
+  try {
+    packet = readJson(result.packet_path);
+  } catch {
+    packet = null;
+  }
+  const mapId = optionalString(packet?.spec?.map_id) || null;
+  const keySource = resolveCampaignsApiKeySource(packet, result.packet_path, env);
+  const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
+  const outcome = await writeMapSdkPin({
+    mapId,
+    repoPin: pinRow.after,
+    campaignKey: keySource.key,
+    proxyBase,
+    dryRun: result.dry_run,
+    ...(fetchImpl ? { fetchImpl } : {}),
+    ...(warn ? { warn } : {}),
+  });
+  if (outcome.status === "failed" && outcome.reason === "key_missing" && keySource.rejected) {
+    outcome.detail = `${describeCampaignKeyRejection(keySource.rejected) || outcome.detail} The Map write needs the key as X-Campaign-Key.`;
+  }
+  result.map = outcome;
+  for (const text of outcome.warnings) addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}validation_warning`, `The proxy accepted the Map with a warning: ${singleLineDetail(text)}`);
+  if (outcome.status === "refused") {
+    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}${outcome.reason}`, `Map ${outcome.map_id} not written: ${outcome.detail}`, { reason: outcome.reason, map_pin: outcome.before, repo_pin: outcome.after });
+    return result;
+  }
+  if (outcome.status === "failed") {
+    addIssue(result.errors, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}${outcome.reason}`, `Map ${outcome.map_id || "(no Map ID)"} not written: ${outcome.detail}`, { reason: outcome.reason });
+    result.ok = false;
+    return result;
+  }
+  if (outcome.status !== "written") return result;
+  // The write is traceable from the campaign's own record: an evidence line
+  // on the Assembly Report, which the Run Record references by hash and
+  // doctor re-reads. The report may legitimately not exist yet (a derive
+  // before prepare-build); the result document still carries the write.
+  const at = new Date().toISOString();
+  const identityNote = outcome.spec_identity.after?.spec_hash
+    ? ` (Map spec_hash ${outcome.spec_identity.before?.spec_hash || "none"} -> ${outcome.spec_identity.after.spec_hash})`
+    : "";
+  const line = `Map write-back: global_config.sdk_version ${outcome.before == null ? "(absent)" : outcome.before} -> ${outcome.after} on Map ${outcome.map_id} at ${at} via spec derive --write-map${identityNote}`;
+  try {
+    const workspace = resolveCampaignWorkspace(result.packet_path, {
+      packet,
+      followContextPointer: true,
+      reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined,
+    });
+    if (!existsSync(workspace.reportPath)) throw new Error(`no Assembly Report at ${workspace.reportPath}`);
+    commitAssemblyReport(workspace, (report) => ({
+      ...report,
+      evidence: [...(Array.isArray(report.evidence) ? report.evidence : []), line],
+    }), {
+      command: "spec derive --write-map",
+      staleReason: `spec derive wrote the repo SDK pin to the Map after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+    });
+    result.map.recorded = "assembly_report";
+  } catch (error) {
+    // The report is written before the doctor sidecar is stamped, so a throw
+    // can leave the line on disk. Read back what is there rather than claim
+    // either way: a line that landed is recorded (only the stamp failed); one
+    // that did not is carried on this result.
+    // A read-back that itself fails is a third answer, "unknown", never
+    // folded into "absent": `recorded` is the one signal an out-of-repo
+    // consumer has, and a torn re-read must not report a landed line as lost.
+    const landed = (() => {
+      try {
+        const written = readJsonIfExists(resolveCampaignWorkspace(result.packet_path, { packet, followContextPointer: true, reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined }).reportPath);
+        return Array.isArray(written?.evidence) && written.evidence.includes(line) ? "landed" : "absent";
+      } catch {
+        return "unknown";
+      }
+    })();
+    result.map.recorded = landed === "landed" ? "assembly_report" : landed === "unknown" ? "unknown" : null;
+    if (landed === "landed") addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}doctor_sidecar_not_marked`, `The Map write is recorded on the Assembly Report, but the retained doctor snapshot could not be marked stale (${singleLineDetail(error.message)}); re-run doctor before trusting it.`);
+    else if (landed === "unknown") addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}recorded_status_unknown`, `The Map was written, but the Assembly Report could not be read back after the record attempt failed (${singleLineDetail(error.message)}); whether the line landed is unknown. Check the report's evidence[] for, or add, this line: ${line}`);
+    else addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}not_recorded`, `The Map was written, but the write was not recorded on the Assembly Report (${singleLineDetail(error.message)}). Keep this result: ${line}`);
+  }
+  return result;
+}
+
+// The text form of a derive-with-Map result: the local printer's lines, with
+// the Map line and any Map errors inserted ahead of the warnings. Map errors
+// are lifted out before the local printer runs so a failed Map write after a
+// successful local write still prints the diff the write made; a blocked
+// local derive prints as it always has (the Map was never reached).
+export function specDeriveWriteMapTextLines(result) {
+  const isMapIssue = (issue) => typeof issue?.code === "string" && issue.code.startsWith(SPEC_DERIVE_MAP_ISSUE_PREFIX);
+  const mapErrors = (result.errors || []).filter(isMapIssue);
+  const lines = specDeriveTextLines({ ...result, errors: (result.errors || []).filter((issue) => !isMapIssue(issue)) });
+  if (!result.map || result.status === "blocked") return lines;
+  const insert = [specDeriveMapLine(result.map)];
+  if (mapErrors.length) {
+    insert.push("Errors:");
+    for (const issue of mapErrors) insert.push(`- ${formatIssueSummary(issue)}`);
+  }
+  const at = lines.findIndex((line) => line === "Warnings:" || line.startsWith("Next: "));
+  if (at === -1) lines.push(...insert);
+  else lines.splice(at, 0, ...insert);
+  return lines;
+}
+
+function specDeriveMapLine(map) {
+  const where = map.map_id ? `Map ${singleLineField(map.map_id)}` : "Map";
+  const pin = `${map.field}: ${map.before == null ? "(absent)" : formatDeriveValue(map.before)} -> ${formatDeriveValue(map.after)}`;
+  switch (map.status) {
+    case "written": return `${where} written: ${pin}${map.spec_identity?.after?.saved_at ? ` (saved ${map.spec_identity.after.saved_at})` : ""}${map.recorded === "assembly_report" ? "" : map.recorded === "unknown" ? " — Assembly Report record unverified (see Warnings)" : " — not recorded on the Assembly Report (see Warnings)"}`;
+    case "would_write": return `${where} (dry run, nothing sent): would write ${pin}`;
+    case "unchanged": return `${where} unchanged: already ${formatDeriveValue(map.after)}`;
+    case "refused": return `${where} not written (${map.reason}): see Warnings`;
+    case "skipped": return `${where} not written (${map.reason}): see Warnings`;
+    default: return `${where} not written (${map.reason || "failed"}): see Errors`;
+  }
 }
