@@ -274,6 +274,12 @@ import {
   formatSyncValue,
   planPageKitSync,
 } from "./page-kit-sync.mjs";
+import {
+  applySpecDerive,
+  formatDeriveValue,
+  pageRouteForFile,
+  planSpecDerive,
+} from "./spec-derive.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
 // spec check is authored once and reaches internal teams and agencies alike.
@@ -444,6 +450,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
+  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only, no network; a field the repo cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, or the spec identifies another campaign.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -1088,6 +1095,18 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     const result = parity ? pageKitParityCommand(args) : pageKitSyncCommand(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else for (const line of parity ? pageKitParityTextLines(result) : pageKitSyncTextLines(result)) console.log(line);
+    if (!result.ok) process.exitCode = 2;
+    return;
+  }
+
+  if (command === "spec") {
+    const subcommand = args._[1] || null;
+    // Inequality on purpose: knownCommands() harvests top-level command
+    // literals by an equality pattern a subcommand equality would also match.
+    if (subcommand !== "derive") throw new Error("Unknown spec subcommand. Use: campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json].");
+    const result = specDeriveCommand(args);
+    if (args.json) console.log(JSON.stringify(result, null, 2));
+    else for (const line of specDeriveTextLines(result)) console.log(line);
     if (!result.ok) process.exitCode = 2;
     return;
   }
@@ -4740,6 +4759,320 @@ export function pageKitSyncCommand(args) {
     : plan.changes.length ? (dryRun ? "dry_run" : "synced") : "unchanged";
   result.ok = true;
   return result;
+}
+
+// `spec derive`: write the fields the target repo already states into the
+// packet's local CampaignSpec (#432, slice 1). The SDK pin, each page's public
+// route and the analytics ids are classed derived — the repo is their
+// authority — so they are generated here instead of typed into the Map and
+// refereed by doctor. Exactly the derived fields are written; the rest of the
+// spec, every other file, and anything store-derived (slice 2) are untouched.
+// --dry-run prints the same diff and writes nothing. Exit 2 when the packet,
+// the spec or the target entry is missing.
+const SPEC_DERIVE_FLAGS = Object.freeze(["packet", "dry-run", "json", "report"]);
+
+// The page files page-kit renders under the campaign's source directory, with
+// the route each one builds to (filename-derived, or the file's permalink).
+// Returns null when the directory does not exist, so the plan can say "no
+// page tree" rather than "no pages".
+function listPageKitPageFiles(outputDir, publicRouteSlug) {
+  if (!outputDir || !existsSync(outputDir) || !statSync(outputDir).isDirectory()) return null;
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith("_") || entry.name === "assets") continue;
+        walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || extname(entry.name).toLowerCase() !== ".html") continue;
+      const path = relative(outputDir, fullPath).split(sep).join("/");
+      const permalink = extractFrontmatterValue(readFileSync(fullPath, "utf8"), "permalink");
+      const route = pageRouteForFile(path, { permalink, publicRouteSlug });
+      if (route === null) continue;
+      files.push({ path, basename: basename(entry.name, ".html"), route, permalink: isNonEmptyString(permalink) ? permalink : null });
+    }
+  };
+  walk(outputDir);
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export function specDeriveCommand(args) {
+  // A command that rewrites the spec rejects flags it does not know: a
+  // mistyped --dryrun must not fall through to a real write. --report names
+  // the Assembly Report whose waivers are honoured below.
+  const unknown = Object.keys(args).filter((key) => key !== "_" && !SPEC_DERIVE_FLAGS.includes(key));
+  if (unknown.length) {
+    const valueHint = unknown.some((key) => key.includes("=")) ? " A flag takes its value as the next argument (--flag value), not --flag=value." : "";
+    throw new Error(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec derive: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${SPEC_DERIVE_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+  }
+  const packetPath = resolve(requireArg(args, "packet"));
+  // `--dry-run` is a bare flag; `--dry-run true` must fail rather than
+  // quietly become a real write.
+  if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
+    throw new Error(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
+  }
+  const dryRun = args["dry-run"] === true;
+  const result = {
+    ok: false,
+    action: "spec derive",
+    status: "blocked",
+    packet_path: packetPath,
+    public_route_slug: null,
+    target_repo: null,
+    campaigns_path: null,
+    page_tree: null,
+    spec_path: null,
+    report_path: null,
+    dry_run: dryRun,
+    written: false,
+    changes: [],
+    unchanged: [],
+    not_derived: [],
+    not_in_target: [],
+    stale_hints: [],
+    errors: [],
+    warnings: [],
+    next: `${cmd("doctor")} --packet ${shellToken(packetPath)}`,
+  };
+
+  // Every precondition failure is a structured spec.derive.* error with exit
+  // 2, so a --json consumer always gets the result document.
+  let packet;
+  try {
+    packet = readJson(packetPath);
+  } catch (error) {
+    addIssue(result.errors, "spec.derive.packet_invalid", `Build Packet ${packetPath} could not be read as JSON: ${singleLineDetail(error.message)}`);
+    return result;
+  }
+  if (!isObject(packet)) {
+    addIssue(result.errors, "spec.derive.packet_invalid", `Build Packet ${packetPath} must be a JSON object.`);
+    return result;
+  }
+  const publicRouteSlug = normalizePublicRouteSlug(packet.campaign?.public_route_slug);
+  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
+  const localSpecPath = packet.spec?.local_path;
+  const specPath = isNonEmptyString(localSpecPath) ? resolveFromFile(packetPath, localSpecPath) : null;
+  result.public_route_slug = publicRouteSlug || null;
+  result.target_repo = targetRepo;
+  result.campaigns_path = targetRepo ? join(targetRepo, PAGE_KIT_CAMPAIGNS_REL_PATH) : null;
+  result.spec_path = specPath;
+
+  if (!publicRouteSlug) {
+    addIssue(result.errors, "spec.derive.route_slug_missing", "The packet has no campaign.public_route_slug; the campaigns.json entry and page tree to derive from cannot be named.");
+  }
+
+  let spec = null;
+  let text = null;
+  if (!specPath) {
+    addIssue(result.errors, "spec.derive.spec_missing", "The packet has no local CampaignSpec path (spec.local_path). spec derive writes into that file; rerun start/prepare-build with a local exported CampaignSpec.");
+  } else if (!existsSync(specPath) || !statSync(specPath).isFile()) {
+    addIssue(result.errors, "spec.derive.spec_missing", `CampaignSpec local_path is not a file: ${specPath}. Restore or re-export it there, then derive again.`);
+  } else {
+    // One read serves the plan and the write, so the diff printed is the diff
+    // applied even if the file changes underneath a slow operator.
+    text = readFileSync(specPath, "utf8");
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      addIssue(result.errors, "spec.derive.spec_invalid", `CampaignSpec at ${specPath} is not valid JSON (${singleLineDetail(error.message)}). Repair the spec, then derive again.`);
+    }
+    if (parsed !== undefined) {
+      if (isObject(parsed)) spec = parsed;
+      else addIssue(result.errors, "spec.derive.spec_invalid", `CampaignSpec at ${specPath} must be a JSON object (an exported CampaignSpec), not ${parsed === null ? "null" : Array.isArray(parsed) ? "an array" : `a ${typeof parsed}`}.`);
+    }
+  }
+  // The spec must be THIS campaign's. Doctor cross-checks the same identity
+  // (campaign.route_slug_identity); without it a stale or copy-pasted
+  // spec.local_path would receive another campaign's routes and pin.
+  if (spec && publicRouteSlug) {
+    const specSlug = normalizePublicRouteSlug(
+      optionalString(spec.spec_identity?.public_route_slug)
+      || optionalString(spec.campaign?.slug)
+      || optionalString(spec.campaign?.id),
+    );
+    const specMapId = optionalString(spec.spec_identity?.map_id) || optionalString(spec.map_id);
+    const packetMapId = optionalString(packet.spec?.map_id);
+    if (specSlug && specSlug !== publicRouteSlug) {
+      addIssue(result.errors, "spec.derive.spec_identity_mismatch", `CampaignSpec identifies route "${singleLineField(specSlug)}" but the packet's campaign.public_route_slug is "${publicRouteSlug}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
+    } else if (specMapId && packetMapId && specMapId !== packetMapId) {
+      addIssue(result.errors, "spec.derive.spec_identity_mismatch", `CampaignSpec spec_identity.map_id "${singleLineField(specMapId)}" does not match the packet's spec.map_id "${singleLineField(packetMapId)}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
+    }
+  }
+
+  const load = loadPageKitCampaignEntry({ targetRepo, publicRouteSlug });
+  if (load.status !== "ok") {
+    const where = result.campaigns_path || PAGE_KIT_CAMPAIGNS_REL_PATH;
+    const messages = {
+      target_repo_missing: `Target repo does not exist: ${packet.assembly?.target_repo || "(assembly.target_repo not set)"}.`,
+      file_missing: `${where} does not exist. Scaffold the campaign first (setup: campaign-init writes the file), then derive.`,
+      entry_missing: `${where} has no entry for "${publicRouteSlug || "<public-route-slug>"}". Scaffold the route first (setup: campaign-init registers it), then derive.`,
+      invalid_json: `${where} is not valid JSON; repair the file, then derive.`,
+      root_not_object: `${where} root must be an object keyed by public route slug; repair the file, then derive.`,
+      entry_not_object: `${where}["${publicRouteSlug}"] must be an object; repair the entry, then derive.`,
+    };
+    addIssue(result.errors, "spec.derive.entry_missing", messages[load.status] || `${where} entry is unavailable (${load.status}).`, { target_status: load.status });
+  }
+  if (result.errors.length) return result;
+
+  // The write lands on the file the spec path RESOLVES to, and that file must
+  // live inside the campaign's own boundary: the directory spec.local_path
+  // names (a spec exported beside the campaign folder, as start/prepare-build
+  // record it) or the target repo (the in-repo canonical file #432 proposes).
+  // A symlinked spec.local_path pointing anywhere else would otherwise let a
+  // checked-in link redirect the write into another file while the output
+  // names the legitimate path.
+  const realSpecPath = realpathSync(specPath);
+  const realTargetRepo = realpathSync(targetRepo);
+  const realSpecDir = realpathSync(dirname(specPath));
+  const inside = (root) => realSpecPath === root || realSpecPath.startsWith(`${root}${sep}`);
+  if (!inside(realTargetRepo) && !inside(realSpecDir)) {
+    addIssue(result.errors, "spec.derive.spec_escapes_boundary", `${specPath} resolves to ${realSpecPath}, outside both its own directory ${realSpecDir} and the target repo ${realTargetRepo}. spec derive writes only inside the campaign's own boundary; nothing was written.`);
+    return result;
+  }
+  result.spec_path = realSpecPath;
+
+  // The Assembly Report doctor would read: its waivers[] decide whether the
+  // SDK pin is under a named-human decision derive must not reverse, and its
+  // stage ledger whether a terminal build now predates the spec.
+  let report = null;
+  try {
+    const explicitReport = isNonEmptyString(args.report) ? resolve(args.report) : null;
+    if (explicitReport && !(existsSync(explicitReport) && statSync(explicitReport).isFile())) {
+      addIssue(result.warnings, "spec.derive.report_unreadable", `--report ${singleLineField(explicitReport)} is not a file; waivers recorded on the Assembly Report were not consulted.`);
+    }
+    const workspace = resolveCampaignWorkspace(packetPath, {
+      packet,
+      followContextPointer: true,
+      reportPath: explicitReport ?? undefined,
+    });
+    report = readJsonIfExists(workspace.reportPath);
+    result.report_path = workspace.reportPath;
+  } catch (error) {
+    addIssue(result.warnings, "spec.derive.report_unreadable", `The Assembly Report could not be read (${singleLineDetail(error.message)}); waivers recorded there were not consulted.`);
+  }
+  const entry = load.entry;
+  const targetLoad = { status: "ok", public_route_slug: publicRouteSlug, target_path: PAGE_KIT_CAMPAIGNS_REL_PATH, entry };
+  const waivers = Array.isArray(report?.waivers) ? report.waivers : [];
+  const waivedGates = [evaluatePageKitSdkVersion({ spec, targetLoad, waivers })]
+    .filter((gate) => gate.status === "waived")
+    .map((gate) => ({ scope: gate.scope, waived_by: gate.waiver?.waived_by || null }));
+
+  // The page tree: assembly.output_dir when the packet declares it, else
+  // page-kit's src/<route>/. Its files must also resolve inside the target
+  // repo; a linked-out directory reads as no page tree.
+  const declaredOutputDir = optionalString(packet.assembly?.output_dir);
+  const outputDir = declaredOutputDir ? resolve(targetRepo, declaredOutputDir) : join(targetRepo, "src", publicRouteSlug);
+  result.page_tree = relative(targetRepo, outputDir).split(sep).join("/") || ".";
+  let pageFiles = null;
+  if (existsSync(outputDir)) {
+    const realOutputDir = realpathSync(outputDir);
+    if (realOutputDir === realTargetRepo || realOutputDir.startsWith(`${realTargetRepo}${sep}`)) pageFiles = listPageKitPageFiles(realOutputDir, publicRouteSlug);
+    else addIssue(result.warnings, "spec.derive.page_tree_escapes_repo", `${outputDir} resolves to ${realOutputDir}, outside the target repo; routes were not read from it.`);
+  }
+  const packetBindings = new Map();
+  for (const page of Array.isArray(packet.source_html?.pages) ? packet.source_html.pages : []) {
+    const pageId = optionalString(page?.page_id);
+    const targetPath = optionalString(page?.page_kit?.target_path);
+    if (pageId && targetPath && !packetBindings.has(pageId)) packetBindings.set(pageId, targetPath);
+  }
+
+  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, publicRouteSlug });
+  result.changes = plan.changes;
+  result.unchanged = plan.unchanged;
+  result.not_derived = plan.not_derived;
+  result.not_in_target = plan.not_in_target;
+  result.stale_hints = plan.stale_hints;
+  for (const row of plan.not_derived) {
+    addIssue(result.warnings, `spec.derive.${row.reason}`, `${row.field} was not derived: ${row.detail}`, { field: row.field, reason: row.reason, ...(row.page_id ? { page_id: row.page_id } : {}) });
+  }
+  for (const row of plan.changes) {
+    if (row.downgrade) addIssue(result.warnings, "spec.derive.sdk_version_downgraded", `${row.field} moves from ${row.downgrade.from} down to the repo pin ${row.after}: the repo is what ships, but the spec declared a newer version, so a bump was lost or never applied. If ${row.after} is not what should ship, bump ${PAGE_KIT_CAMPAIGNS_REL_PATH}[${publicRouteSlug}].sdk_version and derive again.`, { from: row.downgrade.from, to: row.after });
+  }
+  for (const hint of plan.stale_hints) {
+    addIssue(result.warnings, "spec.derive.routing_hint_stale", `page "${hint.page_id}" carries sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)}, but page "${hint.target_page_id}" now derives to ${JSON.stringify(hint.derived_route)}. Routing hints are a Map projection derive does not rewrite; re-save the Map (or edit the hint) so the built meta tag and doctor's expectation agree.`, hint);
+  }
+
+  if (plan.changes.length && !dryRun) {
+    // Edited in place and re-serialized with the file's own top-level
+    // indentation, line ending and trailing newline; a lossy round trip is
+    // reported because the printed diff covers only the derived fields.
+    const eol = text.includes("\r\n") ? "\r\n" : "\n";
+    const indent = text.match(/^\s*\{\r?\n([ \t]+)"/)?.[1] ?? "  ";
+    const trailing = /\r?\n$/.test(text) ? eol : "";
+    const serialize = (document) => `${JSON.stringify(document, null, indent).replace(/\n/g, eol)}${trailing}`;
+    if (serialize(spec) !== text) {
+      addIssue(result.warnings, "spec.derive.file_reformatted", `${result.spec_path} was re-serialized with ${indent === "\t" ? "tab" : `${indent.length}-space`} indentation; formatting outside the derived fields (key order, whitespace, number spelling) may differ from the original. Review the file diff before committing.`);
+    }
+    applySpecDerive(spec, plan);
+    // Staged through a temp file and rename, keeping the original's mode
+    // bits, so an interrupted write can never leave the spec half-written.
+    const tmpPath = join(dirname(result.spec_path), `.${basename(result.spec_path)}.${randomUUID()}.tmp`);
+    try {
+      writeFileSync(tmpPath, serialize(spec), { flag: "wx" });
+      chmodSync(tmpPath, statSync(result.spec_path).mode & 0o7777);
+      renameSync(tmpPath, result.spec_path);
+    } finally {
+      rmSync(tmpPath, { force: true });
+    }
+    result.written = true;
+    if (stageIsTerminal(report?.stages?.assembly?.status)) {
+      addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec just rewritten; doctor's spec fingerprint will report the drift. Re-run the build stage before polish, deploy or QA if a route or the pin moved.`);
+      result.next = `${cmd("doctor")} --packet ${shellToken(packetPath)}, then rebuild: set stages.assembly.status back to "pending" on the Assembly Report and run ${cmd("next")} --packet ${shellToken(packetPath)}`;
+    }
+    // The retained doctor snapshot (if any) now predates the spec it judged.
+    try {
+      markDoctorSidecarStale(targetRepo, {
+        command: "spec derive",
+        reason: `spec derive rewrote the CampaignSpec after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+      });
+    } catch (error) {
+      addIssue(result.warnings, "spec.derive.doctor_sidecar_not_marked", `The CampaignSpec was written, but the retained doctor snapshot could not be marked stale (${singleLineDetail(error.message)}); re-run doctor before trusting it.`);
+    }
+  }
+  // `partial`: what the repo states was written (or would be), but a derived
+  // field the repo cannot state remains. Exit stays 0 — the write itself
+  // succeeded — and the warnings say what to repair.
+  result.status = plan.not_derived.length
+    ? "partial"
+    : plan.changes.length ? (dryRun ? "dry_run" : "derived") : "unchanged";
+  result.ok = true;
+  return result;
+}
+
+export function specDeriveTextLines(result) {
+  const lines = [`Status: ${result.status === "dry_run" ? "DRY RUN" : String(result.status || "unknown").toUpperCase()}`];
+  if (result.spec_path) lines.push(`Spec: ${singleLineField(result.spec_path)}`);
+  if (result.campaigns_path) lines.push(`Target: ${singleLineField(result.campaigns_path)}[${result.public_route_slug || "<public-route-slug>"}]${result.page_tree ? `, page tree ${singleLineField(result.page_tree)}/` : ""}`);
+  if (result.errors?.length) {
+    lines.push("Errors:");
+    for (const issue of result.errors) lines.push(`- ${formatIssueSummary(issue)}`);
+    return lines;
+  }
+  if (result.status === "partial") {
+    lines.push(`Partial: ${result.not_derived.map((row) => row.field).join(", ")} could not be derived from the repo (see Warnings).`);
+  }
+  if (result.changes?.length) {
+    lines.push(result.dry_run
+      ? `Changes (dry run, nothing written): ${result.changes.length}`
+      : `Changes written: ${result.changes.length}`);
+    for (const row of result.changes) {
+      lines.push(`- ${row.field}: ${formatDeriveValue(row.before)} -> ${formatDeriveValue(row.after)}  (from ${row.source})`);
+    }
+  } else {
+    lines.push("Changes: none (every derived field the repo states already matches)");
+  }
+  if (result.unchanged?.length) lines.push(`Unchanged: ${result.unchanged.map((row) => row.field).join(", ")}`);
+  if (result.not_in_target?.length) lines.push(`Not in target (left as they are): ${result.not_in_target.join(", ")}`);
+  if (result.warnings?.length) {
+    lines.push("Warnings:");
+    for (const issue of result.warnings) lines.push(`- ${formatIssueSummary(issue)}`);
+  }
+  if (result.next) lines.push(`Next: ${result.next}`);
+  return lines;
 }
 
 const PAGE_KIT_PARITY_FLAGS = Object.freeze(["packet", "json", "report"]);

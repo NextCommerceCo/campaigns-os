@@ -1207,9 +1207,9 @@ test("page-kit sync seeds the pin after a scaffold but never moves a configured 
   assert.equal(gateBumped.code, "page_kit.sdk_version.repo_newer");
   assert.deepEqual(gateBumped.required_actions, []);
   const refresh = gateBumped.advisory_actions.find((action) => action.id === "refresh_spec");
-  assert.equal(refresh.kind, "edit");
-  assert.equal(refresh.command, null);
-  assert.match(refresh.description, /Re-save the Map/);
+  assert.equal(refresh.kind, "command", "the derive step makes the repo pin writable back into the spec (#432)");
+  assert.equal(refresh.command, "campaigns-os spec derive --packet <packet>");
+  assert.match(refresh.description, /re-save the Map/);
 
   // End to end on the fixture: a configured, bumped campaign keeps its pin
   // and the run is partial.

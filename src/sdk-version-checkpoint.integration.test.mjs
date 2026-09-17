@@ -116,7 +116,7 @@ test("doctor and next treat a repo pin ahead of the spec as advisory, and QA pro
     assert.deepEqual(gate.state, { expected: "0.4.37", observed: "0.4.38" });
     const warning = doctor.warnings.find((issue) => issue.code === "page_kit.sdk_version.repo_newer");
     assert.ok(warning, "the advisory is a doctor warning");
-    assert.match(warning.message, /Re-save the Map/);
+    assert.match(warning.message, /Re-derive the spec \(spec derive, the refresh_spec action\) or re-save the Map/);
     assert.ok(doctor.ready.some((line) => /0\.4\.38 is what ships/.test(line)), JSON.stringify(doctor.ready));
 
     const next = nextStage(null, { _: ["next"], packet: packetPath, "no-write": true });
