@@ -73,6 +73,32 @@ and `qa` gains a `publish` subcommand that posts an already-stored verdict.
   `qa_verdict_publish` block, who writes it, and the never-downgrade rule.
 - `docs/supported-surface.md`: the schema row records the 1.33.0 additive Run
   Record block; the CLI row names `qa publish`.
+## [1.32.0+agent.1] - 2026-09-17
+
+### Fixed
+
+- `analytics-correctness:purchase-fires` judges the outbound Purchase against
+  the whole post-checkout journey of the typed-card order, not the receipt
+  document alone (#392). The SDK raises `dl_purchase`, and the Meta/GA4
+  Purchase it drives, on the first page opened with `?ref_id=` that fetches
+  the order — the upsell page on a funnel that has one — and then remembers
+  the transaction id so the receipt does not report it again, so the
+  receipt-only reading was a structural false negative (`absent`) on every
+  funnel with an offer between checkout and receipt, and the only way through
+  was the waiver lane #198 was written to avoid. The receipt stays the
+  qualification point: a plan still needs a topology-recognized receipt, the
+  same settle window, and the same capture-error and waiver semantics; only
+  the capture the Purchase is read from widened. Each `evidence.receipts[]`
+  entry now also carries `scope` (`journey`; `receipt` for an envelope that
+  holds only the receipt document, which is judged exactly as before; `null`
+  on an unmeasured entry), the receipt document's own `receipt_signals`
+  (journey scope only, `null` otherwise), and `fired_on` (`receipt` or
+  `earlier-page`, `null` when nothing fired), so a reader can tell which
+  document fired. The assertion
+  id, and so `qa waive --assertion analytics-correctness:purchase-fires`, is
+  unchanged. `docs/qa-and-test-orders.md` and the `next-campaigns-qa` skill
+  (1.3.0 → 1.3.1) no longer describe the receipt-only rule.
+
 ## [1.32.0] - 2026-09-17
 
 Additive: the retained doctor sidecar names the command that wrote it.
