@@ -78,6 +78,17 @@ function hasSrcAttribute(attrs) {
 }
 
 /**
+ * The `src` of every external `<script>` on a page, in document order, with
+ * HTML comments stripped first so a commented-out loader is not followed.
+ * The caller resolves and reads them (that needs the filesystem) and hands
+ * them back as `page.scripts[]`.
+ */
+export function externalScriptSources(html) {
+  const source = String(html || "").replace(HTML_COMMENT, "");
+  return [...source.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)].map((match) => match[1]);
+}
+
+/**
  * Inline `<script>` bodies of a page, in document order. External scripts are
  * the caller's to resolve (they need the filesystem); they arrive as
  * `page.scripts[]`.
@@ -103,7 +114,14 @@ function depthOneStringValue(js, openIndex, key) {
   let depth = 0;
   let i = openIndex;
   const n = js.length;
-  const keyPattern = new RegExp(`^(?:${key}|["']${key}["'])\\s*:\\s*(["'\`])((?:\\\\.|(?!\\1)[^\\\\])*)\\1`);
+  // Sticky, so a test at position i reads from i without slicing the source.
+  const keyPattern = new RegExp(`(?:${key}|["']${key}["'])\\s*:\\s*(["'\`])((?:\\\\.|(?!\\1)[^\\\\])*)\\1`, "y");
+  const identifier = /[A-Za-z0-9_$]*/y;
+  const tryKey = (at) => {
+    keyPattern.lastIndex = at;
+    const hit = keyPattern.exec(js);
+    return hit ? hit[2] : null;
+  };
   while (i < n) {
     const ch = js[i];
     const next = js[i + 1];
@@ -120,8 +138,8 @@ function depthOneStringValue(js, openIndex, key) {
     if (ch === '"' || ch === "'" || ch === "`") {
       // At depth 1 a string may be the quoted key itself; test before skipping.
       if (depth === 1) {
-        const hit = keyPattern.exec(js.slice(i));
-        if (hit) return hit[2];
+        const value = tryKey(i);
+        if (value != null) return value;
       }
       i += 1;
       while (i < n && js[i] !== ch) {
@@ -142,9 +160,18 @@ function depthOneStringValue(js, openIndex, key) {
       i += 1;
       continue;
     }
-    if (depth === 1 && /[A-Za-z_$]/.test(ch) && (i === 0 || !/[A-Za-z0-9_$.]/.test(js[i - 1]))) {
-      const hit = keyPattern.exec(js.slice(i));
-      if (hit) return hit[2];
+    if (/[A-Za-z_$]/.test(ch)) {
+      // An identifier: test it as the key once (at depth 1, and only when it
+      // starts a word) and then step past the whole identifier in one jump
+      // rather than re-testing at every character inside it.
+      if (depth === 1 && (i === 0 || !/[A-Za-z0-9_$.]/.test(js[i - 1]))) {
+        const value = tryKey(i);
+        if (value != null) return value;
+      }
+      identifier.lastIndex = i;
+      identifier.exec(js);
+      i = Math.max(identifier.lastIndex, i + 1);
+      continue;
     }
     i += 1;
   }
@@ -188,7 +215,8 @@ export function collectSetAttributionFunnels(js) {
 export function collectPageIdentity(page) {
   const html = String(page?.content || "");
   const stripped = html.replace(HTML_COMMENT, "");
-  const apiKeyMeta = metaContent(stripped, "next-api-key");
+  // Normalized once: an empty content="" is "no meta", here and on the record.
+  const apiKeyMeta = metaContent(stripped, "next-api-key") || null;
   const apiKeys = [];
   if (apiKeyMeta) apiKeys.push({ source: 'meta name="next-api-key"', where: page.file || page.page_id, value: apiKeyMeta });
   const attributions = [];
@@ -206,7 +234,7 @@ export function collectPageIdentity(page) {
   return {
     page_id: page.page_id,
     file: page.file || null,
-    api_key_meta: apiKeyMeta || null,
+    api_key_meta: apiKeyMeta,
     api_keys: apiKeys,
     funnel: metaContent(stripped, "next-funnel"),
     page_type: metaContent(stripped, "next-page-type"),
@@ -298,6 +326,8 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
   //    presence assertion this check deliberately does not make. Once ANY
   //    page carries the tag, an SDK-bound page without it attributes its
   //    orders differently from the rest, which is drift.
+  //    One finding, like the other kinds: the repair is the same edit on every
+  //    untagged page, and a run should not be dominated by it repeated N times.
   if (firstFunnel) {
     for (const identity of identities) {
       if (identity.funnel || !identity.page_type) continue;
@@ -308,6 +338,7 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
         b: { page_id: firstFunnel.page_id, file: firstFunnel.file || firstFunnel.page_id, value: firstFunnel.funnel },
         message: `${identity.file || identity.page_id} declares next-page-type=${quote(identity.page_type)} but no <meta name="next-funnel">, while ${firstFunnel.file || firstFunnel.page_id} carries ${quote(firstFunnel.funnel)}. Orders from the untagged page attribute differently from the rest; add the same next-funnel meta.`,
       });
+      break;
     }
   }
 
@@ -354,7 +385,10 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
     ...gateBase(subject),
     status: "blocked",
     code: CAMPAIGN_IDENTITY,
-    reason: `${findings.length} campaign identity drift finding(s) across ${scanned.length} built page(s): ${findings.map((finding) => finding.message).join(" ")}`,
+    // Short on purpose; the per-edit prose is findings[].message, which is
+    // what each doctor error carries. A reason that concatenates them is
+    // truncated by every single-line renderer.
+    reason: `${findings.length} campaign identity drift finding(s) across ${scanned.length} built page(s) (${[...new Set(findings.map((finding) => finding.kind))].join(", ")}); see findings[] for the two files and two values of each.`,
     findings,
     pages_scanned: scanned.length,
     pages_skipped: skipped,

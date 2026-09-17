@@ -201,7 +201,7 @@ import {
   evaluateUpsellSelectorScope,
   isPostPurchasePageType,
 } from "./upsell-selector-scope.mjs";
-import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity } from "./campaign-identity.mjs";
+import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "./campaign-identity.mjs";
 import {
   BUILD_BRIEF_NORMALIZED_REL_PATH,
   BUILD_BRIEF_SCHEMA,
@@ -6202,11 +6202,11 @@ function collectBuiltPageIdentityInputs(scope, targetRepo) {
   return scope.pages.map((page) => {
     const content = readFileSync(page.built_path, "utf8");
     const scripts = [];
-    for (const tag of content.replace(/<!--[\s\S]*?-->/g, "").matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)) {
-      const path = resolveLocalScript(tag[1], page.built_path);
+    for (const src of externalScriptSources(content)) {
+      const path = resolveLocalScript(src, page.built_path);
       const scriptContent = path ? readScript(path) : null;
       if (scriptContent == null) continue;
-      scripts.push({ src: tag[1], file: relFromDir(targetRepo, path), content: scriptContent });
+      scripts.push({ src, file: relFromDir(targetRepo, path), content: scriptContent });
     }
     return {
       page_id: page.page_id,
