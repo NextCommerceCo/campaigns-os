@@ -2,7 +2,7 @@
 
 This repo uses independent compatibility versions:
 
-- package version: `1.31.0` — equals `surface_version` in
+- package version: `1.33.0` — equals `surface_version` in
   `contracts/supported-surface.json` (`check:supported-surface` enforces it)
   and is the version published to the npm registry; `+agent.N` changelog
   sections are same-surface changes and are not published on their own

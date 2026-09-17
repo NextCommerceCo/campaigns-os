@@ -1,6 +1,7 @@
 {
   "schema_version": "campaigns-os-doctor-output/v0",
   "generated_at": "2026-08-24T00:01:00.000Z",
+  "generated_by": "doctor",
   "ok": true,
   "status": "ready_with_warnings",
   "errors": [],
