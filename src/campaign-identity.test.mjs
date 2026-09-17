@@ -12,6 +12,7 @@ import {
   collectScriptApiKeys,
   collectSetAttributionFunnels,
   evaluateCampaignIdentity,
+  externalScriptSources,
   isParkedPage,
 } from "./campaign-identity.mjs";
 
@@ -52,7 +53,7 @@ test("collectSetAttributionFunnels reads every spelling of the call", () => {
 });
 
 test("isParkedPage matches *-backup-* and *-old-* segments and nothing that merely contains the letters", () => {
-  for (const parked of ["checkout-backup-2", "upsell-old", "old-upsell/index.html", "receipt-old-v1.html", "backup/checkout"]) {
+  for (const parked of ["checkout-backup-2", "upsell-old", "old-upsell/index.html", "receipt-old-v1.html", "backup/checkout", "checkout-backup-2/index.htm", "upsell-old.htm", "_site\\example\\checkout-old\\index.html"]) {
     assert.equal(isParkedPage(parked), true, parked);
   }
   for (const live of ["checkout", "bold-claims", "holdout", "goldfish/index.html", "upsell-1/index.html"]) {
@@ -148,6 +149,31 @@ test("funnel drift, a missing funnel under next-page-type, and attribution drift
   assert.deepEqual([byKind.attribution_drift.a.value, byKind.attribution_drift.b.value], ["V2", "V1A"]);
   assert.equal(gate.required_actions.length, 1);
   assert.equal(gate.required_actions[0].kind, "edit");
+});
+
+test("many untagged SDK-bound pages produce one funnel_missing finding, not one per page", () => {
+  const gate = evaluateCampaignIdentity({
+    pages: [
+      { page_id: "checkout", file: "checkout.html", content: html({ funnel: "V2" }) },
+      { page_id: "upsell-1", file: "upsell-1.html", content: html({ funnel: null, pageType: "upsell" }) },
+      { page_id: "upsell-2", file: "upsell-2.html", content: html({ funnel: null, pageType: "upsell" }) },
+      { page_id: "receipt", file: "receipt.html", content: html({ funnel: null, pageType: "receipt" }) },
+    ],
+  });
+  assert.deepEqual(kinds(gate), ["funnel_missing"]);
+  assert.equal(gate.findings[0].a.file, "upsell-1.html");
+  assert.match(gate.reason, /^1 campaign identity drift finding\(s\) across 4 built page\(s\) \(funnel_missing\); see findings\[\]/);
+});
+
+test("an empty next-api-key meta is no meta, on the record and in the comparison", () => {
+  const identity = collectPageIdentity({ page_id: "checkout", content: '<html><head><meta name="next-api-key" content=""></head></html>' });
+  assert.equal(identity.api_key_meta, null);
+  assert.deepEqual(identity.api_keys, []);
+});
+
+test("externalScriptSources lists local and remote srcs in order and ignores commented-out tags", () => {
+  const html = '<script src="/x/config.js"></script><!-- <script src="/x/old.js"></script> --><script>inline</script><script type="module" src="https://cdn.example/loader.js"></script>';
+  assert.deepEqual(externalScriptSources(html), ["/x/config.js", "https://cdn.example/loader.js"]);
 });
 
 test("an untagged page's setAttribution is held to the campaign's funnel, so a borrowed script still fails", () => {
