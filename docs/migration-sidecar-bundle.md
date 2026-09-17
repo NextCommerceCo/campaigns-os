@@ -97,6 +97,7 @@ Refresh generated evidence at that commit:
 ```bash
 campaigns-os doctor \
   --packet campaign-runtime.build.json \
+  --write \
   --strip-paths \
   --json
 
