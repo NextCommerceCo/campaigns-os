@@ -230,11 +230,11 @@ this command generates the repo-derived ones so doctor compares generated
 against generated instead of refereeing a hand-typed value against the repo:
 
 ```bash
-campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>]
+campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]]
 ```
 
-It reads the target repo only (no network) and writes into the packet's local
-spec (`spec.local_path`):
+By default it reads the target repo only (no network) and writes into the
+packet's local spec (`spec.local_path`):
 
 | Spec field | Repo authority |
 |---|---|
@@ -243,8 +243,9 @@ spec (`spec.local_path`):
 | `analytics.providers.gtm.containerId` | `_data/campaigns.json[public_route_slug].gtm_id` |
 | `analytics.providers.facebook.pixelId` | `_data/campaigns.json[public_route_slug].fb_pixel_id` |
 
-Nothing else is written: not the store profile (store-derived, the second
-slice), not any authored or mirrored field, not the packet, not the repo. A
+Nothing else is written: not the store profile (store-derived; see
+`--from-store` below), not any authored or mirrored field, not the packet,
+not the repo. A
 derived field the spec carries with a different, authored-looking value is
 overwritten, and the printed `before -> after` line shows it: that is the
 class doing its job. A block the spec lacks is created (`global_config`,
@@ -323,6 +324,78 @@ packet cannot be read, `spec.local_path` is absent or not a file, the spec is
 not a JSON object, the spec identifies another campaign
 (`spec.derive.spec_identity_mismatch`), or the target entry is missing
 (`spec.derive.entry_missing`; scaffold first).
+
+#### Deriving the store profile from the store (`--from-store`)
+
+The nine `campaign.store_*` Store Profile fields are derived too, and their
+authority is the store: `page-kit sync` writes them spec → repo, and this is
+the generator for the store → spec half. It needs a credential and the
+network, which the default run never touches, so it is opt-in:
+
+```bash
+campaigns-os spec derive --packet campaign-runtime.build.json --from-store <subdomain> [--store-token-source env:<VAR>] [--dry-run] [--json]
+```
+
+`<subdomain>` is the store's `<store>.29next.store` subdomain (the Admin API
+lives at `https://<subdomain>.29next.store/api/admin/`). The read token is
+taken from the environment, never from the command line: from
+`<SUBDOMAIN>_ADMIN_TOKEN` (upper-cased, dashes as underscores) by default,
+or from the variable `--store-token-source env:<VAR>` names. An Admin API
+access token with the `store:read` and `content:read` scopes (Settings >
+API Access) is enough; the token is sent as a bearer and appears nowhere in
+the output, which names the variable instead (a value that is not one line
+of printable ASCII is refused unsent, `spec.derive.store_credential_invalid`,
+and a transport error that quotes a header is redacted). The store is only
+read.
+
+| Spec field | Store authority |
+|---|---|
+| `campaign.store_name` | `GET /store/` `name` (Admin API version `2024-04-01`) |
+| `campaign.store_url` | `GET /store/` `primary_domain`, as `https://<primary_domain>` |
+| `campaign.store_phone` | `GET /store/` `contact_address.phone_number`, verbatim |
+| `campaign.store_phone_tel` | the same phone as a `tel:` URI (digits, a leading `+` kept), only when the display phone is one plain number: an extension, a second number or a vanity word would fold into the digits and dial something else, so those leave the field not derived (`target_invalid`) |
+| `campaign.store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping` | `GET /pages/` (Admin API version `unstable`, followed cursor by cursor under the store's own pages endpoint): the one storefront page that carries the policy, as `https://<primary_domain>/<slug>/`, which is where the storefront serves it. A page whose slug is one of the policy's conventional slugs (`terms`, `terms-of-service`, `privacy-policy`, `contact-us`, `return-policy`, `shipping-policy`, `shipping-returns`, …) binds first; only when no page has a conventional slug does the wider match by slug or title words apply (terms/tos/conditions; privacy; contact; return(s)/refund(s); shipping/delivery), so a "free shipping" promo page never outranks the policy. One page may carry two policies (`shipping-returns`) |
+
+Rows join the same `before -> after` diff in the Store Profile's field
+order, each with its store source, and are compared NFC-normalized and
+trimmed as `page-kit sync` compares them, plus one leniency of derive's own:
+URL fields compare without a trailing slash, so a spec that carries
+`https://x.example/` is left alone when the store says `https://x.example`
+rather than churned (sync then writes the spec's spelling into the repo as
+it is). Every value
+passes the Store Profile shape rule before it is planned: the starter demo
+store's URL or phone, a non-http(s) URL, a malformed `tel:` or a control
+character is `target_invalid`, never written. A field the store cannot state
+is `not_derived[]` and **the spec's value is left as it is** (a store never
+empties a spec field): `store_field_missing` (an empty name, domain or
+phone), `store_domain_missing` (no primary domain, so no page URL can be
+formed), `store_page_not_found`, `store_page_ambiguous` (several pages read
+as the policy; the slugs are named), `store_pages_unavailable` (the pages
+endpoint failed, with the reason: a token without `content:read`, a version
+that does not serve `/pages/`, a body that is not the page list, a cursor
+outside the store's pages endpoint that was not followed) and
+`store_pages_truncated` (more pages than ten requests or two thousand rows
+return). A slug that is not one honest path segment (a separator, `.` or
+`..`, malformed text) is `target_invalid`. When the store's primary domain is not the host the spec's
+`store_url` named, `spec.derive.store_domain_changed` says so: either the
+spec was stale and the diff is the correction, or `--from-store` names
+another merchant's store and the spec should be restored.
+
+The result carries a `store` block (`subdomain`, `admin_api`,
+`token_source`, `store_read`, `pages_read`, `primary_domain`), and the text
+output a `Store:` line. After a write that moved a store field, `next` is
+`page-kit sync` first (doctor's `page_kit.store_profile` gate now sees the
+spec ahead of the repo and names sync as its repair), then doctor. A store
+that cannot be read is a refusal with nothing written, repo fields included,
+exit 2: `spec.derive.store_credential_missing` (the variable is unset or
+empty), `store_unauthorized` (401/403), `store_not_found` (404: no store at
+that subdomain), `store_unreachable` (transport, timeout, 5xx) or
+`store_response_invalid`. Local preconditions (packet, spec, target entry, spec boundary, page tree)
+are checked before the store is contacted, and a packet that names another
+spec or route by the time the read returns is refused
+(`spec.derive.packet_changed_underneath`). `--store-token-source` without
+`--from-store`, a subdomain that is not one (a URL, a path), or a token
+source that is not `env:<VAR>` is rejected before anything is read.
 
 ### Polish hidden eager-media checkpoint
 
