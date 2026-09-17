@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.33.0+agent.2] - 2026-09-17
+## [1.33.0+agent.4] - 2026-09-17
 
 Same-surface: six static SDK markup checks join the built-output doctor
 family beside `built_output.upsell_selector_scope`.
@@ -42,7 +42,123 @@ family beside `built_output.upsell_selector_scope`.
 
 - `docs/build-packet.md` gains a "Built-output SDK markup gate" section;
   `docs/campaigns-os-build-flow.md` adds the SDK-markup assembly rule; skill
-  `next-campaigns-os` 1.0.13 -> 1.0.14 extends step 6.
+  `next-campaigns-os` 1.0.15 -> 1.0.16 extends step 6.
+
+## [1.33.0+agent.3] - 2026-09-17
+
+### Added
+
+- `campaigns-os spec derive --from-store <subdomain> [--store-token-source
+  env:<VAR>]` derives the nine `campaign.store_*` Store Profile fields from
+  the store itself (#432 slice 2), the store → spec half of a direction
+  `page-kit sync` completes spec → repo. It is opt-in: the default `spec
+  derive` run is unchanged and still touches no network. `<subdomain>` is the
+  store's `<store>.29next.store` subdomain; the Admin API read token comes
+  from the environment only, `<SUBDOMAIN>_ADMIN_TOKEN` by default (dashes as
+  underscores) or the variable `--store-token-source env:<VAR>` names, is
+  sent as a bearer (scopes `store:read` and `content:read`), and never
+  appears in the output (the result names the variable; a value that is not
+  one line of printable ASCII is refused unsent, and a transport error that
+  quotes a header is redacted). `GET /store/` (API version `2024-04-01`)
+  gives `store_name` (`name`), `store_url` (`https://<primary_domain>`),
+  `store_phone` (`contact_address.phone_number`, verbatim) and
+  `store_phone_tel` (the same phone as a `tel:` URI, only for one plain
+  number: an extension or vanity word leaves it not derived); `GET /pages/`
+  (API version `unstable`, cursors followed under the store's own pages
+  endpoint only, at most ten requests, one shared 45 s budget) gives
+  `store_terms`, `store_privacy`, `store_contact`, `store_returns` and
+  `store_shipping` as `https://<primary_domain>/<slug>/` from the one
+  storefront page that carries the policy: a conventional slug
+  (`privacy-policy`, `shipping-returns`, …) binds first, else the wider
+  match by slug or title words (a page may carry two policies). Rows join the same `before -> after` diff with their
+  store source, in the Store Profile's field order; values are compared
+  NFC-normalized and trimmed as `page-kit sync` compares them, plus derive's
+  own leniency that URL fields compare without a trailing slash; every
+  value passes the Store Profile shape rule first (the demo store's URL or
+  phone, a non-http(s) URL, a malformed `tel:` or a control character is
+  `target_invalid`). A field the store cannot state is reported and the
+  spec's value is left as it is, never emptied: `store_field_missing`,
+  `store_domain_missing`, `store_page_not_found`, `store_page_ambiguous`,
+  `store_pages_unavailable`, `store_pages_truncated`. A primary domain that
+  is not the host the spec's `store_url` named warns
+  `spec.derive.store_domain_changed` (a stale spec, or the wrong store). The
+  result gains a `store` block and the text output a `Store:` line; after a
+  store field is written, `next` is `page-kit sync` then doctor. A store that
+  cannot be read is a refusal with nothing written, exit 2:
+  `spec.derive.store_credential_missing`, `store_credential_invalid`,
+  `store_unauthorized` (401/403), `store_not_found` (404),
+  `store_unreachable`, `store_response_invalid`; local preconditions are
+  checked before the store is contacted, a packet swapped for another
+  campaign's during the read is refused (`packet_changed_underneath`), and
+  malformed store flags (`--store-token-source` without `--from-store`, a
+  subdomain that is a URL, a token on the command line) are rejected before
+  anything is read. `SPEC_DERIVE_FIELDS` in `src/spec-derive.mjs` now
+  admits `campaign.store_*`; `src/spec-derive-store.mjs` is new. Skill
+  `next-campaigns-os` 1.0.15 names the flag. No command, exit code or
+  existing flag changed.
+
+## [1.33.0+agent.2] - 2026-09-17
+
+### Added
+
+- `campaigns-os spec derive --packet <packet> --write-map [--dry-run]
+  [--proxy-base <url>]` records the derived SDK pin in the saved Map's Build
+  hints field (Campaign Cart SDK version), the repo → Map write-back #413
+  named as the end state and #415 asked for. The local derive already brings
+  the exported spec back in line after a bump; the Map itself stayed at the old
+  pin until someone re-saved Build hints by hand, so every fresh export and
+  everyone opening the Map read stale. After the local write, the Map named by
+  the packet's `spec.map_id` is read back (`GET /api/spec/<map-id>`) and
+  re-stated with exactly the pin fields moved (`global_config.sdk_version`,
+  and `runtime.sdk_version` only when the Map already declares the alias):
+  every other field is the Map's own read-back, never the local spec, so an
+  authored field is not rewritten from a local copy and the routes or
+  analytics ids derive wrote locally do not travel. The `PUT
+  /api/maps/<map-id>` carries the packet's Campaigns API key (packet, local
+  spec or declared env source, the same resolution the remit rail uses) as
+  `X-Campaign-Key` and the Map's `spec_hash` as `X-Spec-Hash`, so a save that
+  landed in between is a 409, not an overwrite. The proxy base is the canonical
+  `https://campaign-map.nextcommerce.com` unless `--proxy-base` names another;
+  it goes through the same TLS gate as every credential-bearing request
+  (https, or a loopback host over http with the clear-text warning). The
+  direction of authority is the gate's: the write goes forward or not at all.
+  The result's new `map` object (and one text line) reports `written` (Map
+  pin absent or behind the repo; `map.spec_identity.before` / `.after` carry
+  the Map's `spec_hash` and `saved_at`), `unchanged` (already the repo pin),
+  `would_write` (`--dry-run` reads the Map and sends nothing), `refused`
+  (warning, exit 0, the local derive stands: `ahead`, a Map pin newer than
+  the repo pin — never moved backwards; `pin_unreadable`, a pin the rule
+  cannot order), `skipped` (the pin was not derived, `pin_<not_derived
+  reason>`, or the local derive was blocked; nothing read or sent) or `failed`
+  (error, exit 2, the local derive stands: `key_missing`, `key_mismatch` 403,
+  `not_found` 404, `changed_underneath` 409, `rejected` 400/422,
+  `proxy_base_insecure`, `network_error`, `http_error`, `response_invalid`),
+  as `spec.derive.map_<reason>` warnings and errors. A write is traceable from
+  the campaign's own record: one line on the Assembly Report's `evidence[]`
+  (`Map write-back: global_config.sdk_version <before> -> <after> on Map <id>
+  at <time> via spec derive --write-map (Map spec_hash <before> -> <after>)`,
+  `map.recorded: "assembly_report"`), the retained doctor sidecar marked stale
+  by `spec derive --write-map`, and the lifecycle journal entry the Run Record
+  embeds; a missing report leaves a `spec.derive.map_not_recorded` warning
+  carrying the same line, and a report that took the line while the doctor
+  stamp failed leaves `spec.derive.map_doctor_sidecar_not_marked` instead,
+  and one that could not be read back after the failure leaves
+  `spec.derive.map_recorded_status_unknown` (`map.recorded: "unknown"`)
+  rather than a claim either way; a 403 on the Map read is `key_mismatch`,
+  as on the write.
+  `--write-map` is a bare flag (a valued one is
+  rejected), `--proxy-base` needs a URL and is refused without `--write-map`,
+  and without the flag nothing is read from or sent to the Map. The result
+  document gains `write_map` and `map` (null without the flag). The
+  `page_kit.sdk_version.repo_newer` gate reason and its `refresh_spec` action
+  description name the flag; the action's command is unchanged.
+  The errors `fetchSpecByMapId` throws (`src/spec-fetch.mjs`) now carry `kind`
+  (`network` | `http` | `invalid_json` | `not_ok`) and `status` as fields, so
+  the write-back routes a 404 on the field rather than on the message.
+  `docs/build-packet.md` gains "Recording the pin in the Map (`--write-map`)";
+  README, `docs/quickstart.md` and `docs/supported-surface.md` name the flag.
+  Skill `next-campaigns-os` 1.0.13 → 1.0.14: step 5 names `--write-map`
+  beside the local derive and the hand re-save.
 
 ## [1.33.0+agent.1] - 2026-09-17
 

@@ -142,7 +142,7 @@ the mapped `exit_intent.offer_ref_id` / `exit_intent.offer_code` or
 
 Campaigns API keys are public, browser-side, domain-allowlisted keys. If your exported CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
 
-The Store Profile is operator-entered campaign metadata, not Campaigns API data. Before the target is scaffolded, `doctor` requires only `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present. Once the target's `campaigns.json` entry exists, `page_kit.store_profile` checks every one of those fields the CampaignSpec provides against the target: a field the spec carries that the target lacks, or carries with a different value, blocks (the spec is the authority; run `npx campaigns-os page-kit sync --packet <campaign-runtime.build.json>` to write the spec's values into the target entry, or fix the spec, then re-run `doctor`), a field present only in the target warns as `target_only` — unless the value is starter demo residue (a placeholder storefront URL or phone number), which blocks as `demo_residue` whatever the spec says — and a field absent from both is clean. So a spec that fills all nine fields makes all nine required after scaffold. A discrepancy the spec cannot yet resolve can be recorded with `campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <ISO timestamp>` instead of the review condition; see [docs/build-packet.md](./build-packet.md), "Page Kit Store Profile checkpoint").
+The Store Profile is campaign metadata entered by the operator or derived from the store with `spec derive --from-store` (see "Create The Packet" below), not Campaigns API data. Before the target is scaffolded, `doctor` requires only `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present. Once the target's `campaigns.json` entry exists, `page_kit.store_profile` checks every one of those fields the CampaignSpec provides against the target: a field the spec carries that the target lacks, or carries with a different value, blocks (the spec is the authority; run `npx campaigns-os page-kit sync --packet <campaign-runtime.build.json>` to write the spec's values into the target entry, or fix the spec, then re-run `doctor`), a field present only in the target warns as `target_only` — unless the value is starter demo residue (a placeholder storefront URL or phone number), which blocks as `demo_residue` whatever the spec says — and a field absent from both is clean. So a spec that fills all nine fields makes all nine required after scaffold. A discrepancy the spec cannot yet resolve can be recorded with `campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <ISO timestamp>` instead of the review condition; see [docs/build-packet.md](./build-packet.md), "Page Kit Store Profile checkpoint").
 
 Packages should identify products or variants, while Offers set the customer's final price. Do not create separate `1x` / `2x` / `3x` packages just to express tier pricing, and do not rely on package Retail Price/Quantity fields unless the campaign explicitly uses that older compatibility setup.
 
@@ -269,7 +269,13 @@ the authority for the SDK pin, the page routes and the analytics ids, and
 those into the local CampaignSpec with a field-by-field diff (`--dry-run`
 first). After a bump in `_data/campaigns.json`, that is the one command that
 brings the spec back in line; doctor's `page_kit.sdk_version.repo_newer`
-warning names it.
+warning names it. Add `--write-map` and the pin is also recorded in the saved
+Map's Build hints field, so the Map and its next export stop reading stale.
+The store profile (`campaign.store_*`) comes from the store
+itself: add `--from-store <subdomain>` with the store's Admin API read token
+in `<SUBDOMAIN>_ADMIN_TOKEN` and the same run writes the store's name,
+primary domain, phone and policy-page URLs into the spec too, for `page-kit
+sync` to carry into the repo.
 
 It also runs brand-theme discovery in inspect-only mode. When source tokens are
 available, the build context records `context.theme` and the target repo gets

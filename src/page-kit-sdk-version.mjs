@@ -312,7 +312,7 @@ export function evaluatePageKitSdkVersion({
         scope: PAGE_KIT_SDK_VERSION_SCOPE,
         status: "pass",
         code: "page_kit.sdk_version.repo_newer",
-        reason: `Target SDK version ${observed_sdk_version} is newer than the CampaignSpec pin ${expected_sdk_version}; the repo pin is what ships, so the build proceeds. Re-derive the spec (spec derive, the refresh_spec action) or re-save the Map's Build hints (Campaign Cart SDK version) to ${observed_sdk_version} so the exported spec stops reading stale.`,
+        reason: `Target SDK version ${observed_sdk_version} is newer than the CampaignSpec pin ${expected_sdk_version}; the repo pin is what ships, so the build proceeds. Re-derive the spec (spec derive, the refresh_spec action; add --write-map to record ${observed_sdk_version} in the Map's Build hints too) or re-save the Map's Build hints (Campaign Cart SDK version) to ${observed_sdk_version} so the exported spec stops reading stale.`,
         waivable: false,
         subject,
         state,
@@ -327,7 +327,7 @@ export function evaluatePageKitSdkVersion({
           id: "refresh_spec",
           kind: "command",
           command: SPEC_DERIVE_COMMAND,
-          description: `Write the repo pin ${observed_sdk_version} into the CampaignSpec's ${expected_source} (spec derive), or re-save the Map's Build hints field (Campaign Cart SDK version) to ${observed_sdk_version} and re-export; nothing in the repo needs to change.`,
+          description: `Write the repo pin ${observed_sdk_version} into the CampaignSpec's ${expected_source} (spec derive; with --write-map it is also recorded in the Map's Build hints field), or re-save the Map's Build hints field (Campaign Cart SDK version) to ${observed_sdk_version} and re-export; nothing in the repo needs to change.`,
         }],
       };
     }

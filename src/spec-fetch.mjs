@@ -37,19 +37,30 @@ export async function fetchSpecByMapId(mapId, opts = {}) {
   try {
     res = await fetchImpl(url, { headers: { Accept: "application/json" } });
   } catch (error) {
-    throw new Error(`Spec fetch network error: ${error.message} (${url})`);
+    throw specFetchError(`Spec fetch network error: ${error.message} (${url})`, { kind: "network" });
   }
   if (!res.ok) {
-    throw new Error(`Spec fetch failed: ${res.status} ${res.statusText} (${url})`);
+    throw specFetchError(`Spec fetch failed: ${res.status} ${res.statusText} (${url})`, { kind: "http", status: res.status });
   }
   let body;
   try {
     body = await res.json();
   } catch (error) {
-    throw new Error(`Spec fetch returned invalid JSON: ${error.message} (${url})`);
+    throw specFetchError(`Spec fetch returned invalid JSON: ${error.message} (${url})`, { kind: "invalid_json", status: res.status });
   }
   if (!body || body.ok === false || body.data == null) {
-    throw new Error(`Spec fetch returned ok=false: ${body?.error || "unknown error"} (${url})`);
+    throw specFetchError(`Spec fetch returned ok=false: ${body?.error || "unknown error"} (${url})`, { kind: "not_ok", status: res.status });
   }
   return body.data;
+}
+
+// Every refusal carries what happened as data beside the prose: `kind`
+// (network | http | invalid_json | not_ok) and, once a response arrived, its
+// HTTP `status`. A caller that must route on a 404 reads the field, never the
+// message.
+function specFetchError(message, { kind, status = null }) {
+  const error = new Error(message);
+  error.kind = kind;
+  error.status = status;
+  return error;
 }

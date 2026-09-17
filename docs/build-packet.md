@@ -50,7 +50,7 @@ declares `campaign.route_root: "/"`. Rules:
   "CampaignSpec expects SDK meta tags (...)" list. The fix is an edit to the
   Map's page hints, not to the build.
 
-Page-kit also needs `campaign.store_url` for `_data/campaigns.json`. Additional Store Profile fields live under `campaign.store_*` as optional storefront/legal metadata because they are operator-entered, not Campaigns API data.
+Page-kit also needs `campaign.store_url` for `_data/campaigns.json`. Additional Store Profile fields live under `campaign.store_*` as optional storefront/legal metadata because they are not Campaigns API data: the operator enters them, or `spec derive --from-store` derives them from the store (see "Deriving the spec from the repo" below).
 
 ### Page Kit Store Profile checkpoint
 
@@ -188,10 +188,11 @@ them accordingly:
   warning and a ready line naming what ships; QA projects it as a `warn`
   assertion; `next` does not stop. The gate's `advisory_actions` carry one
   `refresh_spec` command, `campaigns-os spec derive --packet <packet>`
-  (below), which writes the repo pin into the spec; re-saving the Map's Build
-  hints field (Campaign Cart SDK version) to the repo pin is the other way to
-  make the exported spec stop reading stale. Nothing in the repo needs to
-  change, and there is nothing to waive.
+  (below), which writes the repo pin into the spec; with `--write-map` it
+  also records the pin in the Map's Build hints field (Campaign Cart SDK
+  version), which is otherwise re-saved by hand to make the exported spec
+  stop reading stale. Nothing in the repo needs to change, and there is
+  nothing to waive.
 - **Target behind the spec, or still the scaffold's seeded pin beside the demo
   store profile** — blocked, repaired by `page-kit sync` (below) or waived.
 - **Target pin not a released version** — blocked, non-waivable, whatever the
@@ -230,11 +231,11 @@ this command generates the repo-derived ones so doctor compares generated
 against generated instead of refereeing a hand-typed value against the repo:
 
 ```bash
-campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>]
+campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]
 ```
 
-It reads the target repo only (no network) and writes into the packet's local
-spec (`spec.local_path`):
+By default it reads the target repo only (no network unless `--from-store` or
+`--write-map`, below) and writes into the packet's local spec (`spec.local_path`):
 
 | Spec field | Repo authority |
 |---|---|
@@ -243,8 +244,9 @@ spec (`spec.local_path`):
 | `analytics.providers.gtm.containerId` | `_data/campaigns.json[public_route_slug].gtm_id` |
 | `analytics.providers.facebook.pixelId` | `_data/campaigns.json[public_route_slug].fb_pixel_id` |
 
-Nothing else is written: not the store profile (store-derived, the second
-slice), not any authored or mirrored field, not the packet, not the repo. A
+Nothing else is written: not the store profile (store-derived; see
+`--from-store` below), not any authored or mirrored field, not the packet,
+not the repo. A
 derived field the spec carries with a different, authored-looking value is
 overwritten, and the printed `before -> after` line shows it: that is the
 class doing its job. A block the spec lacks is created (`global_config`,
@@ -323,6 +325,135 @@ packet cannot be read, `spec.local_path` is absent or not a file, the spec is
 not a JSON object, the spec identifies another campaign
 (`spec.derive.spec_identity_mismatch`), or the target entry is missing
 (`spec.derive.entry_missing`; scaffold first).
+
+#### Deriving the store profile from the store (`--from-store`)
+
+The nine `campaign.store_*` Store Profile fields are derived too, and their
+authority is the store: `page-kit sync` writes them spec → repo, and this is
+the generator for the store → spec half. It needs a credential and the
+network, which the default run never touches, so it is opt-in:
+
+```bash
+campaigns-os spec derive --packet campaign-runtime.build.json --from-store <subdomain> [--store-token-source env:<VAR>] [--dry-run] [--json]
+```
+
+`<subdomain>` is the store's `<store>.29next.store` subdomain (the Admin API
+lives at `https://<subdomain>.29next.store/api/admin/`). The read token is
+taken from the environment, never from the command line: from
+`<SUBDOMAIN>_ADMIN_TOKEN` (upper-cased, dashes as underscores) by default,
+or from the variable `--store-token-source env:<VAR>` names. An Admin API
+access token with the `store:read` and `content:read` scopes (Settings >
+API Access) is enough; the token is sent as a bearer and appears nowhere in
+the output, which names the variable instead (a value that is not one line
+of printable ASCII is refused unsent, `spec.derive.store_credential_invalid`,
+and a transport error that quotes a header is redacted). The store is only
+read.
+
+| Spec field | Store authority |
+|---|---|
+| `campaign.store_name` | `GET /store/` `name` (Admin API version `2024-04-01`) |
+| `campaign.store_url` | `GET /store/` `primary_domain`, as `https://<primary_domain>` |
+| `campaign.store_phone` | `GET /store/` `contact_address.phone_number`, verbatim |
+| `campaign.store_phone_tel` | the same phone as a `tel:` URI (digits, a leading `+` kept), only when the display phone is one plain number: an extension, a second number or a vanity word would fold into the digits and dial something else, so those leave the field not derived (`target_invalid`) |
+| `campaign.store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping` | `GET /pages/` (Admin API version `unstable`, followed cursor by cursor under the store's own pages endpoint): the one storefront page that carries the policy, as `https://<primary_domain>/<slug>/`, which is where the storefront serves it. A page whose slug is one of the policy's conventional slugs (`terms`, `terms-of-service`, `privacy-policy`, `contact-us`, `return-policy`, `shipping-policy`, `shipping-returns`, …) binds first; only when no page has a conventional slug does the wider match by slug or title words apply (terms/tos/conditions; privacy; contact; return(s)/refund(s); shipping/delivery), so a "free shipping" promo page never outranks the policy. One page may carry two policies (`shipping-returns`) |
+
+Rows join the same `before -> after` diff in the Store Profile's field
+order, each with its store source, and are compared NFC-normalized and
+trimmed as `page-kit sync` compares them, plus one leniency of derive's own:
+URL fields compare without a trailing slash, so a spec that carries
+`https://x.example/` is left alone when the store says `https://x.example`
+rather than churned (sync then writes the spec's spelling into the repo as
+it is). Every value
+passes the Store Profile shape rule before it is planned: the starter demo
+store's URL or phone, a non-http(s) URL, a malformed `tel:` or a control
+character is `target_invalid`, never written. A field the store cannot state
+is `not_derived[]` and **the spec's value is left as it is** (a store never
+empties a spec field): `store_field_missing` (an empty name, domain or
+phone), `store_domain_missing` (no primary domain, so no page URL can be
+formed), `store_page_not_found`, `store_page_ambiguous` (several pages read
+as the policy; the slugs are named), `store_pages_unavailable` (the pages
+endpoint failed, with the reason: a token without `content:read`, a version
+that does not serve `/pages/`, a body that is not the page list, a cursor
+outside the store's pages endpoint that was not followed) and
+`store_pages_truncated` (more pages than ten requests or two thousand rows
+return). A slug that is not one honest path segment (a separator, `.` or
+`..`, malformed text) is `target_invalid`. When the store's primary domain is not the host the spec's
+`store_url` named, `spec.derive.store_domain_changed` says so: either the
+spec was stale and the diff is the correction, or `--from-store` names
+another merchant's store and the spec should be restored.
+
+The result carries a `store` block (`subdomain`, `admin_api`,
+`token_source`, `store_read`, `pages_read`, `primary_domain`), and the text
+output a `Store:` line. After a write that moved a store field, `next` is
+`page-kit sync` first (doctor's `page_kit.store_profile` gate now sees the
+spec ahead of the repo and names sync as its repair), then doctor. A store
+that cannot be read is a refusal with nothing written, repo fields included,
+exit 2: `spec.derive.store_credential_missing` (the variable is unset or
+empty), `store_unauthorized` (401/403), `store_not_found` (404: no store at
+that subdomain), `store_unreachable` (transport, timeout, 5xx) or
+`store_response_invalid`. Local preconditions (packet, spec, target entry, spec boundary, page tree)
+are checked before the store is contacted, and a packet that names another
+spec or route by the time the read returns is refused
+(`spec.derive.packet_changed_underneath`). `--store-token-source` without
+`--from-store`, a subdomain that is not one (a URL, a path), or a token
+source that is not `env:<VAR>` is rejected before anything is read.
+
+#### Recording the pin in the Map (`--write-map`)
+
+The local derive fixes the exported spec; the Map itself still shows the old
+pin until someone re-saves Build hints, so anyone opening the Map or a fresh
+export reads stale. `--write-map` closes that half (#415): after the local
+write, the pin the plan derived is recorded into the saved Map's Build hints
+field (Campaign Cart SDK version) through the proxy Worker, with the same
+direction of authority as everything else on this gate: the write goes
+forward or not at all.
+
+```bash
+campaigns-os spec derive --packet campaign-runtime.build.json --write-map [--dry-run] [--proxy-base <url>]
+```
+
+The Map named by the packet's `spec.map_id` is read back (`GET
+/api/spec/<map-id>`) and re-stated with exactly the pin fields moved
+(`global_config.sdk_version`, and `runtime.sdk_version` only when the Map
+already declares the alias): every other field is the Map's own read-back,
+never the local spec, so an authored field is not rewritten from a local copy
+and the routes or analytics ids derive wrote locally do not travel. The `PUT
+/api/maps/<map-id>` carries the packet's Campaigns API key as
+`X-Campaign-Key` (the receiver refuses a key that is not the Map's; the key
+is the public-by-design one the packet, its local spec or the declared env
+source already holds) and the Map's `spec_hash` as `X-Spec-Hash`, so a save
+that landed in between is a conflict, not an overwrite. The proxy base is the
+canonical `https://campaign-map.nextcommerce.com` unless `--proxy-base` names
+another; it must be https, or a loopback host over http (allowed for a local
+receiver, with a stderr warning that the key travels in clear).
+
+The decision, reported on the result's `map` object and as one text line:
+
+| `map.status` | Meaning |
+|---|---|
+| `written` | the Map declared no pin, or one behind the repo pin; it now records the repo pin (`map.spec_identity.before` / `.after` carry the Map's `spec_hash` and `saved_at` either side) |
+| `unchanged` | the Map already records the repo pin; nothing sent |
+| `would_write` | `--dry-run`: the Map was read and the write previewed; nothing sent |
+| `refused` | a warning, exit 0, the local derive stands: `ahead` (the Map pin is newer than the repo pin — a bump the repo never received, doctor's blocked state and `page-kit sync`'s repair; the Map is never moved backwards) or `pin_unreadable` (the Map's pin is not a released version, or two declarations disagree; a value the rule cannot order is not overwritten silently) |
+| `skipped` | the pin was not derived (`pin_<reason>`, the `not_derived` reason: a scaffold's seed, a waiver, `spec_ahead`, …) or the local derive was blocked; nothing was read or sent |
+| `failed` | an error, exit 2, the local derive stands: `key_missing` (no Campaigns API key anywhere), `key_mismatch` (403), `not_found` (404), `changed_underneath` (409: derive again against the current save), `rejected` (the proxy's spec validation refused the re-stated Map: re-save it in the builder first), `proxy_base_insecure`, `network_error`, `http_error`, `response_invalid` (an answer that says neither yes nor no: read the Map back before deriving again) |
+
+A write is traceable from the campaign's own record: one line is appended to
+the Assembly Report's `evidence[]` (`Map write-back: global_config.sdk_version
+<before> -> <after> on Map <id> at <time> via spec derive --write-map (Map
+spec_hash <before> -> <after>)`), the retained doctor sidecar is marked stale
+by `spec derive --write-map`, and the run's lifecycle journal carries the
+command with its argv shape, so the Run Record (which references the report by
+hash) shows both that the write ran and what it changed. A report that does
+not exist yet (a derive before `prepare-build`) leaves a
+`spec.derive.map_not_recorded` warning carrying the same line; a report that
+took the line while the doctor stamp failed leaves
+`spec.derive.map_doctor_sidecar_not_marked` instead, and one that could not be
+read back after the failure leaves `spec.derive.map_recorded_status_unknown`
+(`map.recorded: "unknown"`) rather than a claim either way. A 403 on the read
+is `key_mismatch`, as on the write. Without
+`--write-map` nothing is read from or sent to the Map; `--proxy-base` is
+refused on its own.
 
 ### Polish hidden eager-media checkpoint
 

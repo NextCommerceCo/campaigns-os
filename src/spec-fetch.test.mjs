@@ -32,6 +32,12 @@ test("fetchSpecByMapId refuses a missing id, a non-2xx, invalid JSON and an ok:f
   await assert.rejects(fetchSpecByMapId("x", { fetchImpl: async () => ({ ok: true, status: 200, json: async () => { throw new Error("bad"); } }) }), /Spec fetch returned invalid JSON: bad/);
   await assert.rejects(fetchSpecByMapId("x", { fetchImpl: async () => jsonResponse({ ok: false, error: "no such map" }) }), /Spec fetch returned ok=false: no such map/);
   await assert.rejects(fetchSpecByMapId("x", { fetchImpl: async () => jsonResponse({ ok: true }) }), /Spec fetch returned ok=false: unknown error/);
+  // Each refusal carries kind and status as data, so a caller routes on the
+  // field (a 404 is "gone", a socket error is "network") and never on prose.
+  await assert.rejects(fetchSpecByMapId("x", { fetchImpl: async () => { throw new Error("down"); } }), (error) => error.kind === "network" && error.status === null);
+  await assert.rejects(fetchSpecByMapId("x", { fetchImpl: async () => jsonResponse({}, 404) }), (error) => error.kind === "http" && error.status === 404);
+  await assert.rejects(fetchSpecByMapId("x", { fetchImpl: async () => ({ ok: true, status: 200, json: async () => { throw new Error("bad"); } }) }), (error) => error.kind === "invalid_json" && error.status === 200);
+  await assert.rejects(fetchSpecByMapId("x", { fetchImpl: async () => jsonResponse({ ok: false, error: "no such map" }) }), (error) => error.kind === "not_ok" && error.status === 200);
 });
 
 test("packet-less qa --map-id applies the same response rules: an ok:false 200 body is a refusal, not a spec", async () => {
