@@ -239,6 +239,20 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
   the record on disk was already `ok` and the receiver was not asked (below),
   or null when nothing was sent and nothing is known (`--no-remit`, consent
   off).
+- **The QA verdict publish is recorded beside the remit** — since surface
+  1.32.0 a record carries an optional `qa_verdict_publish` block: the
+  verdict's own `run_id` (the publish idempotency key — distinct from the
+  record's), the `publisher` (`qa run` for the run's own post, `qa publish`
+  for a later post of the stored verdict), `attempted` / `ok` / `error` /
+  `endpoint` (`/api/qa/verdicts`), a `state` (`skipped` when the run's
+  publish was off, `ok`, `failed`), the `result` in the same vocabulary as
+  `remit_result`, the `base_kind`, and `published_at`. `qa run` hands the
+  block to the session through its QA attempt, so `run end` and the auto-end
+  stamp it; `qa publish` stamps the record whose `qa_verdict` artifact
+  references the verdict, reads `state: "ok"` as already published, and
+  refuses without `--republish`. A stored `ok` is never downgraded by a later
+  failed send or by a reassembly. Absent on records written before the field
+  existed and on runs that produced no verdict.
 - **Re-runs never downgrade a durable outcome** — `run-record` is keyed on
   `run_id`, and `run end`, the QA auto-end and the recovery action `next`
   prints all go through it. Before writing, it reads the record already under

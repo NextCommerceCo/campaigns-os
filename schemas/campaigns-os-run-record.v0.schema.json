@@ -96,6 +96,60 @@
       "enum": ["canonical", "loopback", "proxy", null],
       "description": "The remit base the send resolved to, as a kind rather than a host: canonical (the default endpoint), loopback (a receiver on localhost), or proxy (any other --proxy-base). null when no attempt was made."
     },
+    "qa_verdict_publish": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "The QA verdict publish outcome recorded for this run (surface 1.32.0): which verdict was posted to the QA portal, by which command, and what the receiver answered, classified into the same vocabulary as remit_result. Absent on records written before the field existed and on runs that produced no verdict. A later `qa publish` of the same verdict reads state ok as already published and refuses without --republish; a stored outcome is never downgraded by a later failed send.",
+      "required": ["verdict_run_id", "publisher", "attempted", "state"],
+      "properties": {
+        "verdict_run_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The QA verdict's own run_id (the verdict file name under qa-output/), which is the publish idempotency key. Distinct from this record's run_id."
+        },
+        "publisher": {
+          "type": "string",
+          "enum": ["qa run", "qa publish"],
+          "description": "The command that made this send: the run that produced the verdict, or a later qa publish of the stored copy."
+        },
+        "attempted": {
+          "type": "boolean",
+          "description": "Whether a publish POST was attempted for this verdict."
+        },
+        "ok": {
+          "type": ["boolean", "null"],
+          "description": "Whether the publish counts as landed (stored, already_stored or ok_unparsed_ack). null when no attempt was made."
+        },
+        "error": {
+          "type": ["string", "null"],
+          "description": "Error message from a failed or anomalous publish. null on a clean success or no attempt."
+        },
+        "endpoint": {
+          "type": ["string", "null"],
+          "pattern": "^/",
+          "description": "Endpoint path the verdict was posted to, e.g. \"/api/qa/verdicts\". null when no attempt was made."
+        },
+        "state": {
+          "type": "string",
+          "enum": ["skipped", "ok", "failed"],
+          "description": "skipped: publish was off for the run (no send). ok: the receiver's answer counts as stored. failed: refused or never answered."
+        },
+        "result": {
+          "type": ["string", "null"],
+          "enum": ["stored", "already_stored", "ok_unparsed_ack", "refused", "transport_error", null],
+          "description": "What the receiver answered, classified as remit_result is. null when no attempt was made."
+        },
+        "base_kind": {
+          "type": ["string", "null"],
+          "enum": ["canonical", "loopback", "proxy", null],
+          "description": "The proxy base the send resolved to, as a kind rather than a host. null when no attempt was made."
+        },
+        "published_at": {
+          "type": ["string", "null"],
+          "description": "ISO 8601 timestamp of the send that landed. null when the publish was skipped or failed."
+        }
+      }
+    },
     "identity": {
       "type": "object",
       "additionalProperties": false,

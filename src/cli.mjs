@@ -53,6 +53,7 @@ import {
   validateRunRecord,
   validateRunRecordLifecycle,
   writeRunRecord,
+  validateQaVerdictPublish,
 } from "./run-record.mjs";
 import { annotateDoctorIssueCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import {
@@ -469,6 +470,7 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
+  campaigns-os qa publish --packet <json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json]   # post an already-stored verdict (the sidecar's run, or --verdict) to the QA portal without a re-run or an order; refuses a stale spec_hash or an already-published verdict
   campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]   # --order-path-depth writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
@@ -932,6 +934,10 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
     disposition: optionalString(result.verdict.disposition) || optionalString(result.status),
     run_id: optionalString(result.verdict.run_id) || optionalString(result.run_id),
     completed_at: optionalString(result.verdict.completed_at),
+    // What the QA portal answered for this attempt's verdict, in the Run
+    // Record's block shape, so the record this session closes under says
+    // whether the verdict is published and `qa publish` can refuse a repeat.
+    publish: isObject(result.qa_verdict_publish) ? result.qa_verdict_publish : null,
   };
   const updatedFound = {
     ...found,
@@ -11951,6 +11957,12 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
   const write = args["no-write"] !== true;
+  // The verdict publish outcome this record carries: the session's attempt
+  // for the verdict being recorded (the auto-end and `run end` both close
+  // through here with the session still ambient), else the newest attempt
+  // that has one. Resolved before the prior record is read so an ok already
+  // on disk can win below.
+  const sessionPublish = qaVerdictPublishFromSession(ambient?.session, qaVerdictPath);
   // The record already on disk under this run_id, when a writing run would
   // replace it. run-record is keyed on run_id, and a re-run — an explicit
   // --run-id, a `run end` on a session re-opened under an id that already
@@ -11981,10 +11993,19 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     announceDefaultOnTelemetry(consent.scope || proxyBase);
   }
 
+  // A publish the record already says landed is never downgraded by a
+  // reassembly: the prior ok block wins over a session attempt that did not
+  // land, mirroring the remit carry-forward below.
+  const priorPublish = isObject(prior?.record?.qa_verdict_publish) ? prior.record.qa_verdict_publish : null;
+  const qaVerdictPublish = priorPublish?.state === "ok" && sessionPublish?.state !== "ok"
+    ? priorPublish
+    : (sessionPublish || priorPublish);
+
   const record = assembleRunRecord({
     runId,
     packageVersion: packageVersion(),
     ...toolkitProvenance({ silent }),
+    qaVerdictPublish,
     command: "run-record",
     argvShape: argvShape(args),
     consent: { state: consent.state, source: consent.source },
@@ -12174,6 +12195,22 @@ function readPriorRunRecord(runId, baseDir) {
   } catch {
     return null;
   }
+}
+
+// The publish block the session's QA attempts carry for the verdict this
+// record names (canonical path match), else the newest attempt carrying one.
+// Only a block that validates is returned: the session file is internal and
+// a malformed block must not make the Run Record unwritable.
+function qaVerdictPublishFromSession(session, qaVerdictPath = null) {
+  const attempts = Array.isArray(session?.qa_attempts) ? session.qa_attempts : [];
+  const target = isNonEmptyString(qaVerdictPath) ? canonicalPath(resolve(qaVerdictPath)) : null;
+  const candidates = attempts.filter((attempt) => isObject(attempt?.publish));
+  const matching = target
+    ? candidates.find((attempt) => isNonEmptyString(attempt.path) && canonicalPath(resolve(attempt.path)) === target)
+    : null;
+  const chosen = matching || candidates[candidates.length - 1] || null;
+  if (!chosen) return null;
+  return validateQaVerdictPublish(chosen.publish).length === 0 ? chosen.publish : null;
 }
 
 // The remit outcome a prior record carries, in the shape the stamping code
