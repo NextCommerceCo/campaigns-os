@@ -50,7 +50,7 @@ declares `campaign.route_root: "/"`. Rules:
   "CampaignSpec expects SDK meta tags (...)" list. The fix is an edit to the
   Map's page hints, not to the build.
 
-Page-kit also needs `campaign.store_url` for `_data/campaigns.json`. Additional Store Profile fields live under `campaign.store_*` as optional storefront/legal metadata because they are operator-entered, not Campaigns API data.
+Page-kit also needs `campaign.store_url` for `_data/campaigns.json`. Additional Store Profile fields live under `campaign.store_*` as optional storefront/legal metadata because they are not Campaigns API data: the operator enters them, or `spec derive --from-store` derives them from the store (see "Deriving the spec from the repo" below).
 
 ### Page Kit Store Profile checkpoint
 
