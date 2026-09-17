@@ -4521,6 +4521,51 @@
         }
       ],
       "entry_sha256": "bf9be7f06ddcf125ed3421de4daa4b8d05bd412214a4000ab15992b7184c61c1"
+    },
+    {
+      "id": "RL-0117",
+      "sequence": 117,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.33.0+agent.4",
+      "changelog_sha256": "d359bc54ac0cdb7045db959e3ea852d44a7d3f162accfdecb263d92187f49f4a",
+      "agent_impact": "Doctor gains the built-output check built_output.sdk_markup (#303), run on every doctor invocation that sees built output from both entry points, beside built_output.upsell_selector_scope and built_output.campaign_identity. Six static checks over built data-next-* markup, each issue coded built_output.sdk_markup.<code> with the message leading with the code: blockers (not waivable) swap_with_add_to_cart (a bundle selector in swap mode — explicit data-next-selection-mode=\"swap\" or the SDK default when absent — with an add-to-cart button linked by data-next-selector-id; data-next-upsell-context selectors exempt), checkout_not_form (data-next-checkout on a non-<form>), wrong_field_name (data-next-checkout-field outside the SDK’s fixed names — email, fname, lname, phone, address1, address2, city, province, postal, country, payment-method, accepts_marketing, cc-number, cc-month, cc-year, exp-month, exp-year, cvv, the legacy card-* spellings, any billing- prefixed name — with the SDK spelling named for firstName/lastName/zip and similar), missing_selector_id_match (an add-to-cart data-next-selector-id no element on the page carries); warnings double_selected (more than one data-next-selected=\"true\" card in one selector) and template_double_brace ({{ inside an SDK-owned <template>: nested under a data-next-*/data-item-* element or referenced by a *-template-id attribute). data-next-* names outside the vendored SDK attribute index are information only: gate.unknown_attributes[] { name, pages[] } plus one advisory ready line naming the index version, never a warning. Field names and the attribute index are vendored from the SDK at tag v0.4.38 in src/sdk-attribute-index.mjs (gate.sdk_attribute_index_version). Markup inside SDK templates is scanned. Evidence: derived.checkpoint_gates[] entry id built_output.sdk_markup with status pass | blocked | not_applicable, code (…pass, …advisories when only warnings, the gate id when blocked), reason, findings[] (blockers) and warned[] (advisories) each { code_name, code, severity, page_id, file, message, detail }, unknown_attributes[], pages_scanned, required_actions[] (one edit action when blocked), waivable: false; the id is appended to derived.doctor_checks. checkpoint waive does not register the gate. docs/build-packet.md gains the gate’s section, docs/campaigns-os-build-flow.md the assembly rule, skill next-campaigns-os 1.0.15 -> 1.0.16 extends step 6. The certified-family reachability test now also asserts this gate passes with no advisory on every certified family’s canonical render.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "New built-output check built_output.sdk_markup on both doctor entry points: four non-waivable blockers (swap_with_add_to_cart, checkout_not_form, wrong_field_name, missing_selector_id_match) and two warnings (double_selected, template_double_brace) as built_output.sdk_markup.<code> issues; unknown data-next-* names as gate information plus one advisory ready line; gate at derived.checkpoint_gates[] and id in derived.doctor_checks."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "New section \"Built-output SDK markup gate (built_output.sdk_markup)\": the six codes, severities, the vendored field-name set and its SDK tag, template ownership, the information-only unknown-attribute list, and the gate’s evidence shape."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Assembly rule \"SDK markup must do what it says\" naming the six codes and built_output.sdk_markup as the doctor enforcement."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Step 6 also resolves built_output.sdk_markup: fix the markup the blocker names, treat the two warnings as advisory, neither waivable; version 1.0.15 -> 1.0.16."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os version 1.0.15 -> 1.0.16."
+        }
+      ],
+      "entry_sha256": "9234c0e96d5a17f714642de092e34566f46d97ad9e59ca69a91914db727a6dbc"
     }
   ]
 }

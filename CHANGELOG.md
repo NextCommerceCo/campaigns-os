@@ -2,6 +2,48 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.33.0+agent.4] - 2026-09-17
+
+Same-surface: six static SDK markup checks join the built-output doctor
+family beside `built_output.upsell_selector_scope`.
+
+### Added
+
+- Doctor check `built_output.sdk_markup` (#303), registered in the
+  built-output check registry and reached from both doctor entry points on
+  every invocation. Six shapes of `data-next-*` markup the Campaign Cart SDK
+  binds without complaint and then silently no-ops or double-writes on; the
+  codes are a partner kit's lint codes so the vocabularies line up, and each
+  issue is `built_output.sdk_markup.<code lower-cased>` with a message that
+  leads with the code. Blockers, not waivable: `SWAP_WITH_ADD_TO_CART` (a
+  bundle selector in swap mode — explicit or the SDK default — with an
+  `add-to-cart` button linked by `data-next-selector-id`; upsell-context
+  selectors exempt), `CHECKOUT_NOT_FORM` (`data-next-checkout` off a
+  `<form>`), `WRONG_FIELD_NAME` (`data-next-checkout-field` outside the SDK's
+  fixed names; the message names the SDK spelling for `firstName`,
+  `lastName`, `zip` and friends), `MISSING_SELECTOR_ID_MATCH` (an
+  `add-to-cart` link to a selector id no element carries). Warnings:
+  `DOUBLE_SELECTED` (two `data-next-selected="true"` cards in one selector),
+  `TEMPLATE_DOUBLE_BRACE` (`{{` inside an SDK-owned `<template>`).
+  Information: `data-next-*` names outside the SDK attribute index are
+  collected on the gate as `unknown_attributes[]` and printed as one advisory
+  ready line, never a warning, because the certified templates carry their
+  own `data-next-*` hooks. Parsed with parse5 (containment is real, not
+  regex-approximated) and SDK template content is scanned. The field-name
+  set and the attribute index are vendored whole from the SDK at a named tag
+  (`src/sdk-attribute-index.mjs`, v0.4.38) rather than restated in prose.
+  Gate evidence at `derived.checkpoint_gates[]` (`findings[]`, `warned[]`,
+  `unknown_attributes[]`, `pages_scanned`, `sdk_attribute_index_version`);
+  id in `derived.doctor_checks`. Fixtures: `fixtures/sdk-markup/<code>/{bad,good}`.
+  Proven to pass with no advisory on every certified family's canonical
+  render (`src/doctor-certified-family-reachability.test.mjs`).
+
+### Changed
+
+- `docs/build-packet.md` gains a "Built-output SDK markup gate" section;
+  `docs/campaigns-os-build-flow.md` adds the SDK-markup assembly rule; skill
+  `next-campaigns-os` 1.0.15 -> 1.0.16 extends step 6.
+
 ## [1.33.0+agent.3] - 2026-09-17
 
 ### Added
