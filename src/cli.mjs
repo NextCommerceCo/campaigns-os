@@ -12943,9 +12943,9 @@ export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, 
   }
   const writeMap = args["write-map"] === true;
   const localArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !SPEC_DERIVE_MAP_FLAGS.includes(key)));
-  const result = specDeriveCommand(localArgs);
-  result.write_map = writeMap;
-  result.map = null;
+  // A copy, so nothing here depends on the local command handing out a
+  // mutable object; the Map outcome is added beside its fields, not into them.
+  const result = { ...specDeriveCommand(localArgs), write_map: writeMap, map: null };
   if (!writeMap) return result;
   const skipped = (reason, detail) => {
     result.map = { status: "skipped", reason, detail, map_id: null, proxy_base: null, field: "global_config.sdk_version", before: null, after: null, spec_identity: { before: null, after: null }, warnings: [], recorded: null };
@@ -13018,8 +13018,21 @@ export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, 
     });
     result.map.recorded = "assembly_report";
   } catch (error) {
-    result.map.recorded = null;
-    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}not_recorded`, `The Map was written, but the write could not be recorded on the Assembly Report (${singleLineDetail(error.message)}). Keep this result: ${line}`);
+    // The report is written before the doctor sidecar is stamped, so a throw
+    // can leave the line on disk. Read back what is there rather than claim
+    // either way: a line that landed is recorded (only the stamp failed); one
+    // that did not is carried on this result.
+    const landed = (() => {
+      try {
+        const written = readJsonIfExists(resolveCampaignWorkspace(result.packet_path, { packet, followContextPointer: true, reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined }).reportPath);
+        return Array.isArray(written?.evidence) && written.evidence.includes(line);
+      } catch {
+        return false;
+      }
+    })();
+    result.map.recorded = landed ? "assembly_report" : null;
+    if (landed) addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}doctor_sidecar_not_marked`, `The Map write is recorded on the Assembly Report, but the retained doctor snapshot could not be marked stale (${singleLineDetail(error.message)}); re-run doctor before trusting it.`);
+    else addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}not_recorded`, `The Map was written, but the write was not recorded on the Assembly Report (${singleLineDetail(error.message)}). Keep this result: ${line}`);
   }
   return result;
 }

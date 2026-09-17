@@ -361,9 +361,9 @@ The decision, reported on the result's `map` object and as one text line:
 | `written` | the Map declared no pin, or one behind the repo pin; it now records the repo pin (`map.spec_identity.before` / `.after` carry the Map's `spec_hash` and `saved_at` either side) |
 | `unchanged` | the Map already records the repo pin; nothing sent |
 | `would_write` | `--dry-run`: the Map was read and the write previewed; nothing sent |
-| `refused` | a warning, exit 0, the local derive stands: `map_ahead` (the Map pin is newer than the repo pin — a bump the repo never received, doctor's blocked state and `page-kit sync`'s repair; the Map is never moved backwards) or `map_pin_unreadable` (the Map's pin is not a released version, or two declarations disagree; a value the rule cannot order is not overwritten silently) |
+| `refused` | a warning, exit 0, the local derive stands: `ahead` (the Map pin is newer than the repo pin — a bump the repo never received, doctor's blocked state and `page-kit sync`'s repair; the Map is never moved backwards) or `pin_unreadable` (the Map's pin is not a released version, or two declarations disagree; a value the rule cannot order is not overwritten silently) |
 | `skipped` | the pin was not derived (`pin_<reason>`, the `not_derived` reason: a scaffold's seed, a waiver, `spec_ahead`, …) or the local derive was blocked; nothing was read or sent |
-| `failed` | an error, exit 2, the local derive stands: `key_missing` (no Campaigns API key anywhere), `key_mismatch` (403), `map_not_found` (404), `map_changed_underneath` (409: derive again against the current save), `map_rejected` (the proxy's spec validation refused the re-stated Map: re-save it in the builder first), `proxy_base_insecure`, `network_error`, `http_error`, `response_invalid` (an answer that says neither yes nor no: read the Map back before deriving again) |
+| `failed` | an error, exit 2, the local derive stands: `key_missing` (no Campaigns API key anywhere), `key_mismatch` (403), `not_found` (404), `changed_underneath` (409: derive again against the current save), `rejected` (the proxy's spec validation refused the re-stated Map: re-save it in the builder first), `proxy_base_insecure`, `network_error`, `http_error`, `response_invalid` (an answer that says neither yes nor no: read the Map back before deriving again) |
 
 A write is traceable from the campaign's own record: one line is appended to
 the Assembly Report's `evidence[]` (`Map write-back: global_config.sdk_version
@@ -373,7 +373,9 @@ by `spec derive --write-map`, and the run's lifecycle journal carries the
 command with its argv shape, so the Run Record (which references the report by
 hash) shows both that the write ran and what it changed. A report that does
 not exist yet (a derive before `prepare-build`) leaves a
-`spec.derive.map_not_recorded` warning carrying the same line. Without
+`spec.derive.map_not_recorded` warning carrying the same line; a report that
+took the line while the doctor stamp failed leaves
+`spec.derive.map_doctor_sidecar_not_marked` instead. Without
 `--write-map` nothing is read from or sent to the Map; `--proxy-base` is
 refused on its own.
 

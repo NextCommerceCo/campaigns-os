@@ -1223,22 +1223,22 @@ test("spec derive --write-map refuses a Map pin ahead of the repo (warning, exit
     assert.equal(result.status, "derived");
     assert.equal(readJson(specPath).global_config.sdk_version, "0.4.38");
     assert.equal(result.map.status, "refused");
-    assert.equal(result.map.reason, "map_ahead");
+    assert.equal(result.map.reason, "ahead");
     assert.equal(result.map.before, "0.4.40");
     assert.deepEqual(proxy.calls.map((call) => call.method), ["GET"]);
-    const warning = result.warnings.find((issue) => issue.code === "spec.derive.map_map_ahead");
+    const warning = result.warnings.find((issue) => issue.code === "spec.derive.map_ahead");
     assert.ok(warning, JSON.stringify(result.warnings));
     assert.match(warning.message, /records 0\.4\.40, ahead of the repo pin 0\.4\.38/);
-    assert.deepEqual(warning.detail, { reason: "map_ahead", map_pin: "0.4.40", repo_pin: "0.4.38" });
+    assert.deepEqual(warning.detail, { reason: "ahead", map_pin: "0.4.40", repo_pin: "0.4.38" });
     assert.equal(readJson(reportPath).evidence.length, 0);
-    assert.ok(specDeriveWriteMapTextLines(result).includes("Map runtime-packet-demo-k9x2 not written (map_ahead): see Warnings"));
+    assert.ok(specDeriveWriteMapTextLines(result).includes("Map runtime-packet-demo-k9x2 not written (ahead): see Warnings"));
 
     // A Map pin the rule cannot order is refused the same way.
     const odd = mapProxyMock({ record: mapRecordFixture((draft) => { draft.global_config.sdk_version = "latest"; }) });
     const held = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: odd.fetchImpl });
     assert.equal(held.ok, true);
-    assert.equal(held.map.reason, "map_pin_unreadable");
-    assert.ok(held.warnings.some((issue) => issue.code === "spec.derive.map_map_pin_unreadable"));
+    assert.equal(held.map.reason, "pin_unreadable");
+    assert.ok(held.warnings.some((issue) => issue.code === "spec.derive.map_pin_unreadable"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1265,7 +1265,7 @@ test("spec derive --write-map is an error (exit 2) when the Map refuses the writ
     const raced = mapProxyMock({ putStatus: 409, putBody: { ok: false, error: "Map changed since you loaded it." } });
     const conflict = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: raced.fetchImpl });
     assert.equal(conflict.ok, false);
-    assert.equal(conflict.map.reason, "map_changed_underneath");
+    assert.equal(conflict.map.reason, "changed_underneath");
 
     // No key anywhere: refused before any request.
     const packet = readJson(packetPath);

@@ -52,18 +52,21 @@ test("mapPinWritebackDecision: a newer repo pin writes, an equal pin is a no-op,
   assert.equal(mapPinWritebackDecision({ repoPin: "0.4.38", mapSpec: {} }).decision, "write");
   assert.equal(mapPinWritebackDecision({ repoPin: "0.4.38", mapSpec: { global_config: { sdk_version: "0.4.38" } } }).decision, "unchanged");
   const ahead = mapPinWritebackDecision({ repoPin: "0.4.38", mapSpec: { global_config: { sdk_version: "0.4.40" } } });
-  assert.equal(ahead.decision, "map_ahead");
+  assert.equal(ahead.decision, "ahead");
   assert.equal(ahead.map_pin, "0.4.40");
   assert.match(ahead.detail, /ahead of the repo pin 0\.4\.38/);
   // Major/minor order, not string order.
   assert.equal(mapPinWritebackDecision({ repoPin: "0.10.0", mapSpec: { global_config: { sdk_version: "0.9.9" } } }).decision, "write");
-  assert.equal(mapPinWritebackDecision({ repoPin: "0.9.9", mapSpec: { global_config: { sdk_version: "0.10.0" } } }).decision, "map_ahead");
+  assert.equal(mapPinWritebackDecision({ repoPin: "0.9.9", mapSpec: { global_config: { sdk_version: "0.10.0" } } }).decision, "ahead");
   // A pin the rule cannot order is never overwritten silently.
   const unreleased = mapPinWritebackDecision({ repoPin: "0.4.38", mapSpec: { global_config: { sdk_version: "latest" } } });
-  assert.equal(unreleased.decision, "map_pin_unreadable");
+  assert.equal(unreleased.decision, "pin_unreadable");
   assert.match(unreleased.detail, /"latest" is not a released/);
+  const both = mapPinWritebackDecision({ repoPin: "0.4.38", mapSpec: { global_config: { sdk_version: "latest" }, runtime: { sdk_version: "next" } } });
+  assert.equal(both.decision, "pin_unreadable");
+  assert.match(both.detail, /global_config\.sdk_version "latest" and runtime\.sdk_version "next" are not a released/);
   const conflict = mapPinWritebackDecision({ repoPin: "0.4.38", mapSpec: { global_config: { sdk_version: "0.4.30" }, runtime: { sdk_version: "0.4.31" } } });
-  assert.equal(conflict.decision, "map_pin_unreadable");
+  assert.equal(conflict.decision, "pin_unreadable");
   assert.match(conflict.detail, /disagree/);
   // The alias alone is a readable pin.
   assert.equal(mapPinWritebackDecision({ repoPin: "0.4.38", mapSpec: { runtime: { sdk_version: "0.4.30" } } }).decision, "write");
@@ -129,14 +132,14 @@ test("writeMapSdkPin --dry-run reads the Map and reports would_write without a P
   const newer = mockProxy({ record: mapRecord((draft) => { draft.global_config.sdk_version = "0.4.40"; }) });
   const refused = await writeMapSdkPin({ mapId: "demo-k9x2", repoPin: "0.4.38", campaignKey: "fixture-campaigns-key", proxyBase: "https://proxy.example", fetchImpl: newer.fetchImpl });
   assert.equal(refused.status, "refused");
-  assert.equal(refused.reason, "map_ahead");
+  assert.equal(refused.reason, "ahead");
   assert.equal(refused.before, "0.4.40");
   assert.deepEqual(newer.calls.map((call) => call.method), ["GET"]);
 
   const unreadable = mockProxy({ record: mapRecord((draft) => { draft.global_config.sdk_version = "latest"; }) });
   const held = await writeMapSdkPin({ mapId: "demo-k9x2", repoPin: "0.4.38", campaignKey: "fixture-campaigns-key", proxyBase: "https://proxy.example", fetchImpl: unreadable.fetchImpl });
   assert.equal(held.status, "refused");
-  assert.equal(held.reason, "map_pin_unreadable");
+  assert.equal(held.reason, "pin_unreadable");
   assert.deepEqual(unreadable.calls.map((call) => call.method), ["GET"]);
 });
 
@@ -144,7 +147,7 @@ test("writeMapSdkPin refuses before any request when the Map ID, the key or a se
   let fetched = 0;
   const fetchImpl = async () => { fetched += 1; return jsonResponse({ ok: true, data: mapRecord() }); };
   const noId = await writeMapSdkPin({ mapId: "  ", repoPin: "0.4.38", campaignKey: "fixture-campaigns-key", fetchImpl });
-  assert.deepEqual([noId.status, noId.reason], ["failed", "map_id_missing"]);
+  assert.deepEqual([noId.status, noId.reason], ["failed", "id_missing"]);
   const noKey = await writeMapSdkPin({ mapId: "demo-k9x2", repoPin: "0.4.38", campaignKey: null, fetchImpl });
   assert.deepEqual([noKey.status, noKey.reason], ["failed", "key_missing"]);
   const clear = await writeMapSdkPin({ mapId: "demo-k9x2", repoPin: "0.4.38", campaignKey: "fixture-campaigns-key", proxyBase: "http://proxy.example", fetchImpl });
@@ -171,17 +174,17 @@ test("writeMapSdkPin names every receiver refusal: 403 key mismatch, 404 gone, 4
   assert.deepEqual([forbidden.status, forbidden.reason], ["failed", "key_mismatch"]);
   assert.match(forbidden.detail, /does not match this map's campaign/);
   const gone = await run({ fetchImpl: mockProxy({ getStatus: 404 }).fetchImpl });
-  assert.deepEqual([gone.status, gone.reason], ["failed", "map_not_found"]);
+  assert.deepEqual([gone.status, gone.reason], ["failed", "not_found"]);
   const goneOnWrite = await run({ fetchImpl: mockProxy({ putStatus: 404 }).fetchImpl });
-  assert.equal(goneOnWrite.reason, "map_not_found");
+  assert.equal(goneOnWrite.reason, "not_found");
   const raced = await run({ fetchImpl: mockProxy({ putStatus: 409, putBody: { ok: false, error: "Map changed since you loaded it." } }).fetchImpl });
-  assert.deepEqual([raced.status, raced.reason], ["failed", "map_changed_underneath"]);
+  assert.deepEqual([raced.status, raced.reason], ["failed", "changed_underneath"]);
   assert.match(raced.detail, /Derive again/);
   const rejected = await run({ fetchImpl: mockProxy({ putStatus: 422, putBody: { ok: false, error: "CampaignSpec failed validation with 2 error-severity violations. Map not saved.", violations: [{ severity: "error" }, { severity: "error" }, { severity: "warning" }] } }).fetchImpl });
-  assert.deepEqual([rejected.status, rejected.reason], ["failed", "map_rejected"]);
+  assert.deepEqual([rejected.status, rejected.reason], ["failed", "rejected"]);
   assert.match(rejected.detail, /2 error-severity violations/);
   const bad = await run({ fetchImpl: mockProxy({ putStatus: 400, putBody: { ok: false, error: "Invalid JSON body." } }).fetchImpl });
-  assert.equal(bad.reason, "map_rejected");
+  assert.equal(bad.reason, "rejected");
   const down = await run({ fetchImpl: mockProxy({ putStatus: 503 }).fetchImpl });
   assert.deepEqual([down.status, down.reason], ["failed", "http_error"]);
   assert.match(down.detail, /503/);
@@ -198,7 +201,7 @@ test("writeMapSdkPin names every receiver refusal: 403 key mismatch, 404 gone, 4
   const readDown = await run({ fetchImpl: async () => { throw new Error("ENOTFOUND"); } });
   assert.deepEqual([readDown.status, readDown.reason], ["failed", "network_error"]);
   const notASpec = await run({ fetchImpl: async () => jsonResponse({ ok: true, data: [1] }) });
-  assert.deepEqual([notASpec.status, notASpec.reason], ["failed", "map_unreadable"]);
+  assert.deepEqual([notASpec.status, notASpec.reason], ["failed", "unreadable"]);
   // Validation warnings the receiver returns with an ok write are surfaced.
   const warned = await run({ fetchImpl: mockProxy({ putBody: { ok: true, spec_identity: { spec_hash: "h2", saved_at: "2026-09-17T09:00:00.000Z" }, warnings: [{ severity: "warning", message: "offer has no image" }, "plain warning"] } }).fetchImpl });
   assert.equal(warned.status, "written");

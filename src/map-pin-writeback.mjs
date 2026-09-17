@@ -33,12 +33,16 @@ export const MAP_PIN_ALIAS_FIELD = "runtime.sdk_version";
 //
 //   write             — the Map declares no pin, or one behind the repo pin
 //   unchanged         — the Map already carries the repo pin
-//   map_ahead         — the Map pin is newer than the repo pin: a bump the
+//   ahead             — the Map pin is newer than the repo pin: a bump the
 //                       repo never received, doctor's blocked state and
 //                       page-kit sync's repair; nothing is written
-//   map_pin_unreadable — the Map declares a pin that is not a released
+//   pin_unreadable    — the Map declares a pin that is not a released
 //                       version, or two declarations that disagree; a value
 //                       this rule cannot order is not overwritten silently
+//
+// Reasons never start with `map_`: the CLI files them under the
+// `spec.derive.map_<reason>` issue codes, where the prefix already says
+// which side refused.
 //
 // `repoPin` must already be a released MAJOR.MINOR.PATCH (the derive plan
 // checked it before it became a derived value); anything else is refused
@@ -52,15 +56,16 @@ export function mapPinWritebackDecision({ repoPin, mapSpec }) {
     return { decision: "write", map_pin: null, detail: "the Map declares no Campaign Cart SDK version; the repo pin is recorded as its Build hint." };
   }
   if (pin.status !== "ok") {
+    const declaredValue = (field) => JSON.stringify(field === MAP_PIN_FIELD ? mapSpec?.global_config?.sdk_version : mapSpec?.runtime?.sdk_version);
     const declared = pin.status === "spec_conflict"
-      ? `${MAP_PIN_FIELD} ${JSON.stringify(mapSpec?.global_config?.sdk_version)} and ${MAP_PIN_ALIAS_FIELD} ${JSON.stringify(mapSpec?.runtime?.sdk_version)} disagree`
-      : `${pin.invalid_declarations.join(" and ")} ${pin.invalid_declarations.map((field) => JSON.stringify(field === MAP_PIN_FIELD ? mapSpec?.global_config?.sdk_version : mapSpec?.runtime?.sdk_version)).join(" / ")} is not a released MAJOR.MINOR.PATCH version`;
-    return { decision: "map_pin_unreadable", map_pin: null, detail: `the Map's pin cannot be ordered against the repo pin (${declared}); re-save the Map's Build hints (Campaign Cart SDK version) by hand to ${repoPin}.` };
+      ? `${MAP_PIN_FIELD} ${declaredValue(MAP_PIN_FIELD)} and ${MAP_PIN_ALIAS_FIELD} ${declaredValue(MAP_PIN_ALIAS_FIELD)} disagree`
+      : `${pin.invalid_declarations.map((field) => `${field} ${declaredValue(field)}`).join(" and ")} ${pin.invalid_declarations.length === 1 ? "is" : "are"} not a released MAJOR.MINOR.PATCH version`;
+    return { decision: "pin_unreadable", map_pin: null, detail: `the Map's pin cannot be ordered against the repo pin (${declared}); re-save the Map's Build hints (Campaign Cart SDK version) by hand to ${repoPin}.` };
   }
   const order = compareReleasedSdkVersions(pin.value, repoPin);
   if (order === 0) return { decision: "unchanged", map_pin: pin.value, detail: `the Map already records ${repoPin}.` };
   if (order > 0) {
-    return { decision: "map_ahead", map_pin: pin.value, detail: `the Map records ${pin.value}, ahead of the repo pin ${repoPin}; the write goes forward or not at all. If ${pin.value} should ship, bump the repo (page-kit sync moves the pin forward from the spec); if ${repoPin} is right, lower the Map's Build hints by hand.` };
+    return { decision: "ahead", map_pin: pin.value, detail: `the Map records ${pin.value}, ahead of the repo pin ${repoPin}; the write goes forward or not at all. If ${pin.value} should ship, bump the repo (page-kit sync moves the pin forward from the spec); if ${repoPin} is right, lower the Map's Build hints by hand.` };
   }
   return { decision: "write", map_pin: pin.value, detail: `the Map records ${pin.value}, behind the repo pin ${repoPin}.` };
 }
@@ -98,11 +103,10 @@ function failure(result, reason, detail) {
  *     spec_identity: { before: {spec_hash, saved_at}, after: {…} | null },
  *     warnings: string[] }
  *
- * `refused` reasons are the decision's (map_ahead, map_pin_unreadable,
- * repo_pin_invalid). `failed` reasons: proxy_base_insecure, map_id_missing,
- * key_missing, map_not_found, map_unreadable, key_mismatch,
- * map_changed_underneath, map_rejected, http_error, network_error,
- * response_invalid.
+ * `refused` reasons are the decision's (ahead, pin_unreadable,
+ * repo_pin_invalid). `failed` reasons: proxy_base_insecure, id_missing,
+ * key_missing, not_found, unreadable, key_mismatch, changed_underneath,
+ * rejected, http_error, network_error, response_invalid.
  */
 export async function writeMapSdkPin({
   mapId,
@@ -127,7 +131,7 @@ export async function writeMapSdkPin({
     warnings: [],
     recorded: null,
   };
-  if (!result.map_id) return failure(result, "map_id_missing", "the packet names no Map ID (spec.map_id), so there is no Map to write the pin to.");
+  if (!result.map_id) return failure(result, "id_missing", "the packet names no Map ID (spec.map_id), so there is no Map to write the pin to.");
   if (typeof campaignKey !== "string" || !campaignKey.trim()) {
     return failure(result, "key_missing", "no Campaigns API key was found in the packet, its local CampaignSpec or the declared env source; the Map write needs it as X-Campaign-Key.");
   }
@@ -144,12 +148,12 @@ export async function writeMapSdkPin({
   try {
     record = await fetchSpecByMapId(result.map_id, { proxyBase: base, fetchImpl });
   } catch (error) {
-    const message = String(error?.message || error);
-    if (/failed: 404\b/.test(message)) return failure(result, "map_not_found", `Map ${result.map_id} was not found on ${base}; nothing was written.`);
-    return failure(result, /network error/.test(message) ? "network_error" : "map_unreadable", `${message}; nothing was written to the Map.`);
+    // Routed on the fields the fetch attaches (kind, status), never its prose.
+    if (error?.status === 404) return failure(result, "not_found", `Map ${result.map_id} was not found on ${base}; nothing was written.`);
+    return failure(result, error?.kind === "network" ? "network_error" : "unreadable", `${String(error?.message || error)}; nothing was written to the Map.`);
   }
   if (!record || typeof record !== "object" || Array.isArray(record)) {
-    return failure(result, "map_unreadable", `Map ${result.map_id} did not read back as a CampaignSpec object; nothing was written.`);
+    return failure(result, "unreadable", `Map ${result.map_id} did not read back as a CampaignSpec object; nothing was written.`);
   }
   result.spec_identity.before = identityOf(record);
   const decision = mapPinWritebackDecision({ repoPin, mapSpec: record });
@@ -186,11 +190,11 @@ export async function writeMapSdkPin({
   }
   const receiverError = typeof payload?.error === "string" ? payload.error : null;
   if (response.status === 403) return failure(result, "key_mismatch", `the Map's stored campaign key does not match the packet's (${receiverError || "403"}); nothing was written. Point the packet at the Map's campaign, or re-save the Map under this key.`);
-  if (response.status === 404) return failure(result, "map_not_found", `Map ${result.map_id} was not found for writing (${receiverError || "404"}); nothing was written.`);
-  if (response.status === 409) return failure(result, "map_changed_underneath", `the Map was saved by someone else between the read and the write (${receiverError || "409"}); nothing was written. Derive again to write against the current save.`);
+  if (response.status === 404) return failure(result, "not_found", `Map ${result.map_id} was not found for writing (${receiverError || "404"}); nothing was written.`);
+  if (response.status === 409) return failure(result, "changed_underneath", `the Map was saved by someone else between the read and the write (${receiverError || "409"}); nothing was written. Derive again to write against the current save.`);
   if (response.status === 400 || response.status === 422) {
     const count = Array.isArray(payload?.violations) ? payload.violations.filter((row) => row?.severity === "error").length : 0;
-    return failure(result, "map_rejected", `the proxy refused the Map as re-stated with the pin (${receiverError || response.status}${count ? `; ${count} error-severity violation${count === 1 ? "" : "s"}` : ""}); nothing was written. The Map needs a re-save in the builder first.`);
+    return failure(result, "rejected", `the proxy refused the Map as re-stated with the pin (${receiverError || response.status}${count ? `; ${count} error-severity violation${count === 1 ? "" : "s"}` : ""}); nothing was written. The Map needs a re-save in the builder first.`);
   }
   if (!response.ok) return failure(result, "http_error", `Map write failed: ${response.status} ${response.statusText || ""}`.trim() + ` (${url}); the Map may be unchanged.`);
   if (!payload || payload.ok === false) return failure(result, "response_invalid", `the proxy answered ${response.status} without an ok body (${receiverError || "unreadable JSON"}); the Map may or may not have been written. Read the Map back before deriving again.`);

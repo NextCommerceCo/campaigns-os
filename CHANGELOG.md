@@ -31,12 +31,12 @@ Notable supported-surface changes are recorded here.
   pin absent or behind the repo; `map.spec_identity.before` / `.after` carry
   the Map's `spec_hash` and `saved_at`), `unchanged` (already the repo pin),
   `would_write` (`--dry-run` reads the Map and sends nothing), `refused`
-  (warning, exit 0, the local derive stands: `map_ahead`, a Map pin newer than
-  the repo pin — never moved backwards; `map_pin_unreadable`, a pin the rule
+  (warning, exit 0, the local derive stands: `ahead`, a Map pin newer than
+  the repo pin — never moved backwards; `pin_unreadable`, a pin the rule
   cannot order), `skipped` (the pin was not derived, `pin_<not_derived
   reason>`, or the local derive was blocked; nothing read or sent) or `failed`
   (error, exit 2, the local derive stands: `key_missing`, `key_mismatch` 403,
-  `map_not_found` 404, `map_changed_underneath` 409, `map_rejected` 400/422,
+  `not_found` 404, `changed_underneath` 409, `rejected` 400/422,
   `proxy_base_insecure`, `network_error`, `http_error`, `response_invalid`),
   as `spec.derive.map_<reason>` warnings and errors. A write is traceable from
   the campaign's own record: one line on the Assembly Report's `evidence[]`
@@ -45,12 +45,17 @@ Notable supported-surface changes are recorded here.
   `map.recorded: "assembly_report"`), the retained doctor sidecar marked stale
   by `spec derive --write-map`, and the lifecycle journal entry the Run Record
   embeds; a missing report leaves a `spec.derive.map_not_recorded` warning
-  carrying the same line. `--write-map` is a bare flag (a valued one is
+  carrying the same line, and a report that took the line while the doctor
+  stamp failed leaves `spec.derive.map_doctor_sidecar_not_marked` instead.
+  `--write-map` is a bare flag (a valued one is
   rejected), `--proxy-base` needs a URL and is refused without `--write-map`,
   and without the flag nothing is read from or sent to the Map. The result
   document gains `write_map` and `map` (null without the flag). The
   `page_kit.sdk_version.repo_newer` gate reason and its `refresh_spec` action
   description name the flag; the action's command is unchanged.
+  The errors `fetchSpecByMapId` throws (`src/spec-fetch.mjs`) now carry `kind`
+  (`network` | `http` | `invalid_json` | `not_ok`) and `status` as fields, so
+  the write-back routes a 404 on the field rather than on the message.
   `docs/build-packet.md` gains "Recording the pin in the Map (`--write-map`)";
   README, `docs/quickstart.md` and `docs/supported-surface.md` name the flag.
   Skill `next-campaigns-os` 1.0.12 → 1.0.13: step 5 names `--write-map`
