@@ -1,6 +1,6 @@
 {
   "name": "@nextcommerce/campaigns-os",
-  "version": "1.32.0",
+  "version": "1.33.0",
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
   "license": "UNLICENSED",
   "repository": {

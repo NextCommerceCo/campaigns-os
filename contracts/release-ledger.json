@@ -4293,6 +4293,99 @@
         }
       ],
       "entry_sha256": "bbd59833a042ca39be0af23007df1649b82506c62069edd27f06a0467726922f"
+    },
+    {
+      "id": "RL-0113",
+      "sequence": 113,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": "1.33.0",
+      "changelog_section": "1.33.0",
+      "changelog_sha256": "67e2329d572bcade3f0df4dcf6fbaf1a1961b585f372d1c2f49ca4a009bff170",
+      "agent_impact": "New qa subcommand: campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json] posts an already-stored QA verdict to the QA portal (POST /api/qa/verdicts, the rail qa run uses) without re-running QA and without placing an order (#328). Without --verdict the committed .campaign-runtime/qa-verdict.json names the run and that run’s full verdict under <target-repo>/qa-output/<map-id>/<run-id>.json is preferred; only the projection on disk is published as source_kind sidecar_projection. Refusals exit 2 with nothing sent and a named refusal.code: spec_hash_mismatch (the verdict’s spec_hash is not the packet’s current spec under the one normalising comparator; both hashes on the result; remedy qa run), spec_hash_absent, already_published (the run’s Run Record records this verdict run_id as published; --republish overrides), verdict_untrusted, campaign_mismatch, verdict_missing / verdict_unreadable / verdict_invalid, order_flags_refused (--test-order, --browser, --max-order-creations, --max-test-orders, --legacy-api-test-order, --select-package, --apply-coupon are refused by name). The post is classified by HTTP status as a remit is: stored, already_stored (409, ok), ok_unparsed_ack are exit 0 with dashboard_url; refused and transport_error exit 1. The result carries orders_placed: 0. Run Record schema (campaigns-os-run-record/v0) gains the optional qa_verdict_publish block (verdict_run_id, publisher qa run | qa publish, attempted, ok, error, endpoint, state skipped | ok | failed, result in the remit_result vocabulary, base_kind, published_at); additive, additionalProperties unchanged, absent on older records. qa run builds the block from its own publish or skip and hands it to the run session, so run end and the QA auto-end stamp it; qa publish stamps the record whose qa_verdict artifact references the verdict; a stored ok is never downgraded. qa run --json gains publish and qa_verdict_publish; a 409 from the portal is now an ok publish rather than a post_error. surface_version 1.32.0 -> 1.33.0; package version 1.33.0.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Adds the optional qa_verdict_publish block (verdict_run_id, publisher, attempted, ok, error, endpoint, state, result, base_kind, published_at); additive, additionalProperties unchanged."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "New subcommand qa publish posts an already-stored verdict to the QA portal without a re-run or an order; refuses a stale spec_hash, an already-published verdict, an untrusted or foreign one, and order-run flags by name; classifies the post by HTTP status; stamps the outcome on the run’s Run Record. qa run --json gains publish and qa_verdict_publish and treats a 409 as an ok publish. Usage and qa --help list the command, --verdict and --republish."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run-record",
+          "summary": "Writes qa_verdict_publish onto the record from the run session’s QA attempt (run end and the QA auto-end), carries a prior ok forward on re-emit, and never downgrades a stored ok."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.32.0 -> 1.33.0; the Run Record schema hash is re-pinned."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The schema row records the 1.33.0 additive qa_verdict_publish block; the CLI row names qa publish."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "version 1.32.0 -> 1.33.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "Package version line reads 1.33.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "version 1.32.0 -> 1.33.0 (equals surface_version); no export, bin, files or dependency change."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lockfile version field follows package.json to 1.33.0; no resolved dependency changed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "New Publish a stored verdict (qa publish) section under Run: the local-then-publish two-command flow, verdict source resolution, the refusal table, outcome classification and exit codes, and the Run Record block."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Remit Channel names the qa_verdict_publish block, who writes it (qa run via the session, qa publish directly) and the never-downgrade rule."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: supported surface at generation time 1.33.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: supported surface at generation time 1.33.0."
+        }
+      ],
+      "entry_sha256": "f19d93074c9a7fd4955fe30c6b5005bcede6be6ee1b7f805ff19758a11e5200e"
     }
   ]
 }
