@@ -18,6 +18,12 @@ import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
 
 export const PAGE_KIT_SDK_VERSION_SCOPE = "page_kit.sdk_version";
 
+// The canonical bare spelling of the command that writes the repo pin back
+// into the CampaignSpec (implemented in spec-derive.mjs, which imports this
+// module and so cannot be imported here). The `repo_newer` advisory names it;
+// printers spell it for the running install.
+export const SPEC_DERIVE_COMMAND = "campaigns-os spec derive --packet <packet>";
+
 // The one rule for reading the CampaignSpec's SDK pin. global_config
 // .sdk_version is the CANONICAL home (33/33 real Map Builder exports declare
 // it there); runtime.sdk_version is an accepted alias seen only in local
@@ -46,6 +52,16 @@ export function resolveSpecSdkPin(spec) {
 }
 const MISSING_TARGET_STATUSES = new Set(["target_repo_missing", "file_missing", "entry_missing"]);
 
+// An entry still carrying the starter family's demo store profile is a fresh
+// scaffold: its pin is the starter's seed, not a version anyone chose. Both
+// directions read this one rule — `page-kit sync` seeds the pin while it
+// holds, `spec derive` refuses to copy the seed into the spec while it holds.
+export function entryInScaffoldState(entry) {
+  return PAGE_KIT_STORE_PROFILE_FIELDS.some((field) => (
+    typeof entry?.[field] === "string" && isDemoResidue(field, normalizeStoreProfileValue(entry[field]))
+  ));
+}
+
 // Whether `page-kit sync` may write the spec's pin over the target's. The
 // spec is the authority for the Store Profile in every case (those values are
 // authored in the Map, never in the repo), but the SDK pin is different: on an
@@ -56,10 +72,7 @@ const MISSING_TARGET_STATUSES = new Set(["target_repo_missing", "file_missing", 
 // older than the spec's, and refuses to move a configured campaign's pin
 // backwards. Both released versions are canonical MAJOR.MINOR.PATCH here.
 export function sdkPinWriteDecision({ expected, observed, entry }) {
-  const scaffoldState = PAGE_KIT_STORE_PROFILE_FIELDS.some((field) => (
-    typeof entry?.[field] === "string" && isDemoResidue(field, normalizeStoreProfileValue(entry[field]))
-  ));
-  if (scaffoldState) return "write";
+  if (entryInScaffoldState(entry)) return "write";
   if (!isReleasedSdkVersion(observed) || !isReleasedSdkVersion(expected)) return "write";
   const compare = (a, b) => {
     const [am, an, ap] = a.split(".").map(Number);
@@ -296,7 +309,7 @@ export function evaluatePageKitSdkVersion({
         scope: PAGE_KIT_SDK_VERSION_SCOPE,
         status: "pass",
         code: "page_kit.sdk_version.repo_newer",
-        reason: `Target SDK version ${observed_sdk_version} is newer than the CampaignSpec pin ${expected_sdk_version}; the repo pin is what ships, so the build proceeds. Re-save the Map's Build hints (Campaign Cart SDK version) to ${observed_sdk_version} so the exported spec stops reading stale.`,
+        reason: `Target SDK version ${observed_sdk_version} is newer than the CampaignSpec pin ${expected_sdk_version}; the repo pin is what ships, so the build proceeds. Re-derive the spec (spec derive, the refresh_spec action) or re-save the Map's Build hints (Campaign Cart SDK version) to ${observed_sdk_version} so the exported spec stops reading stale.`,
         waivable: false,
         subject,
         state,
@@ -309,9 +322,9 @@ export function evaluatePageKitSdkVersion({
         required_actions: [],
         advisory_actions: [{
           id: "refresh_spec",
-          kind: "edit",
-          command: null,
-          description: `Re-save the Map's Build hints field (Campaign Cart SDK version) to ${observed_sdk_version}, or edit ${expected_source} in the spec, and re-export; nothing in the repo needs to change.`,
+          kind: "command",
+          command: SPEC_DERIVE_COMMAND,
+          description: `Write the repo pin ${observed_sdk_version} into the CampaignSpec's ${expected_source} (spec derive), or re-save the Map's Build hints field (Campaign Cart SDK version) to ${observed_sdk_version} and re-export; nothing in the repo needs to change.`,
         }],
       };
     }
