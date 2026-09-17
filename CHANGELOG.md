@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.34.0] - 2026-09-17
+
+### Added
+
+- `campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z>
+  --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>]
+  [--json]` checks Git-tracked campaign HTML and JavaScript before an SDK
+  upgrade. The SDK-owned migration manifest supplies storage keys, verified
+  release boundaries, and public replacements; the scanner carries no second
+  registry. Explicit source scope and exclusions are recorded with file hashes.
+  Inline scripts and local shared scripts are checked, with findings at their
+  original source locations. Known incompatible accesses fail the check;
+  unresolved code, unreadable sources, and unsupported target versions cannot
+  produce a clean result. No merchant source, SDK pin, or lifecycle journal is
+  written. The report identifies manifest bytes and available Git provenance.
+- The new `sdk` CLI command and its reference are supported surface. This is
+  source compatibility evidence only: order, browser, and analytics behavior
+  still need their own proof. Supply the SDK manifest explicitly; the pending
+  SDK contract change does not imply an existing released tag contains it.
+
 ## [1.33.0+agent.5] - 2026-09-17
 
 ### Changed
