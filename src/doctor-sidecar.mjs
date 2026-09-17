@@ -21,6 +21,41 @@ export function writeJsonAtomic(path, value) {
   renameSync(tmp, resolved);
 }
 
+// #312: every retained sidecar names the command that persisted it, the way
+// a stale stamp already names the command that made it (`stale_marked_by`).
+// `generated_at` alone cannot tell a fresh `doctor --write` from a two-day-old
+// gitignored copy carried along by `cp -R` — which is exactly what got a
+// read-only command accused of writing this file. The name is threaded from
+// the producer that knows it (its own argv word), never inferred here, and a
+// producer that forgets to say who it is fails loudly rather than writing an
+// anonymous artifact. Placed beside `generated_at` so the two read together.
+export function stampDoctorProducer(doctor, command) {
+  if (typeof command !== "string" || !command.trim()) {
+    throw new TypeError("stampDoctorProducer requires command: the retained doctor sidecar names the command that produced it (generated_by).");
+  }
+  if (!doctor || typeof doctor !== "object" || Array.isArray(doctor)) {
+    throw new TypeError("stampDoctorProducer requires a doctor result object.");
+  }
+  const { schema_version, generated_at, generated_by: _previous, ...rest } = doctor;
+  return {
+    ...(schema_version !== undefined ? { schema_version } : {}),
+    ...(generated_at !== undefined ? { generated_at } : {}),
+    generated_by: command.trim(),
+    ...rest,
+  };
+}
+
+// The one writer of the retained doctor sidecar: a wholesale, atomic rewrite
+// of a doctorPacket result stamped with its producer. Every producer —
+// `doctor --write`, `next`, `start`/`build`, the QA stage refresh — goes
+// through this (or through `stampDoctorProducer` when its own transactional
+// writer must do the rename), so `generated_by` cannot be skipped by one of
+// them the way #327's cause labels once were.
+export function writeDoctorSidecar(path, doctor, { command } = {}) {
+  writeJsonAtomic(path, stampDoctorProducer(doctor, command));
+  return path;
+}
+
 // #171 v1 freshness contract for the retained doctor sidecar: commands that
 // mutate doctor inputs WITHOUT recomputing doctor state (theme waive/generate,
 // qa policy set) stamp the retained snapshot stale instead of leaving a green

@@ -86,7 +86,7 @@ import {
   SOURCE_PREP_FRONTMATTER_RESIDUE,
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "./source-prep.mjs";
-import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
+import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, stampDoctorProducer, writeDoctorSidecar, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
@@ -845,6 +845,8 @@ export function recordQaStageOutcome(args, result) {
       proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
     }), {
       stage: "qa",
+      // The sidecar names this refresh as its producer (generated_by, #312).
+      command: "qa run",
       // Updating the QA stage changes the report after the preflight doctor
       // snapshot. Refresh the doctor artifact from the updated ledger in the
       // same producer transaction so closeout never leaves a known-stale green
@@ -1008,7 +1010,9 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // fetched from a given store).
     const specInput = { flag: optionalString(args.spec) || null, ...resolved };
     args.spec = resolved.specPath;
-    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, specInput }));
+    // `command` rides along for the doctor sidecar's generated_by stamp when
+    // the mode runs doctor (#312): threaded from here, not re-read from argv.
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, command, specInput }));
     result.spec_source = resolved;
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
@@ -2594,8 +2598,11 @@ function prepareBuild(args, options = {}) {
   if (options.installContext) installAgentContext(targetRepo, false);
   if (options.runDoctor) {
     doctor = doctorPacket(packetPath, { contextPath, reportPath, outputBaseDir: targetRepo });
+    // Through the intake's own collision-checked writer, so the sidecar is
+    // stamped with the intake command that ran doctor (`start` or `build`,
+    // #312) without a second write path for it.
     publishPrepareBuildJsonOutputs([
-      { label: "Doctor Output", path: doctorOutPath, value: doctor },
+      { label: "Doctor Output", path: doctorOutPath, value: stampDoctorProducer(doctor, options.command) },
     ], prepareBuildCollisionPaths);
   }
 
@@ -2885,10 +2892,11 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     // disk leaves the report's bytes, and every digest of them, alone). A
     // report this inspection did not read is not opened at all: its state,
     // malformed included, is not this run's concern.
+    const commandName = optionalString(args._?.[0]) || "doctor";
     commitAssemblyReport(workspace, (report) => recordDoctorStageOutcome(report, result, {
-      command: `campaigns-os ${args._?.[0] || "doctor"}`,
+      command: `campaigns-os ${commandName}`,
       doctorOutPath: workspace.doctorOutPath,
-    }), { stage: "doctor", refreshDoctor: () => result });
+    }), { stage: "doctor", command: commandName, refreshDoctor: () => result });
   }
   return result;
 }
@@ -3478,11 +3486,15 @@ export function doctorPacket(packetPath, options = {}) {
   const result = withHtmlScanSnapshot(() => inspectDoctorPacket(packetPath, options));
   // Per-finding cause classification lives HERE, at the single production
   // boundary, and not in the doctor command. Four producers persist
-  // .campaign-runtime/doctor-output.json from a doctorPacket result — `doctor`,
-  // `next`, prepare-build/start, and the QA stage refresh — and annotating only
-  // one of them means running QA after doctor silently strips the labels back
-  // out of the retained artifact. Every consumer of a doctor result gets the
-  // same shape, whether or not it writes one.
+  // .campaign-runtime/doctor-output.json from a doctorPacket result — `doctor
+  // --write`, `next`, `start`/`build` (prepare-build runs no doctor), and the
+  // QA stage refresh — and annotating only one of them means running QA after
+  // doctor silently strips the labels back out of the retained artifact. Every
+  // consumer of a doctor result gets the same shape, whether or not it writes
+  // one. Each producer stamps the artifact with its own name on the way out
+  // (`generated_by`, #312; writeDoctorSidecar / stampDoctorProducer), so a
+  // retained sidecar always says which of the four wrote it. `standardize` is
+  // not one of them: it reads the target and writes nothing.
   //
   // The comparison set is the previous Run Record's own doctor observations
   // (error_codes / warning_codes), which every Run Record ever written already
@@ -9097,8 +9109,8 @@ export function nextStage(stage, args, ambient = null) {
     try {
       // Atomic like the assembly report: a torn sidecar would be a corrupted
       // freshness artifact — the exact green-lie shape this refresh exists to
-      // prevent (Kilo review, PR #176).
-      writeJsonAtomic(doctorOutPath, doctor);
+      // prevent (Kilo review, PR #176). Stamped generated_by: "next" (#312).
+      writeDoctorSidecar(doctorOutPath, doctor, { command: "next" });
     } catch {
       // sidecar refresh is best-effort; orchestration must not fail on it
     }

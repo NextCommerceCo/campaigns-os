@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
+import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { STATUS as QA_STATUS } from "./qa-verdict.mjs";
 import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
 import {
@@ -399,13 +399,18 @@ export function assemblyReportMatchesPacket(report, packet) {
  *
  * - `refreshDoctor(outcome)`: the caller recomputes doctor state (or already
  *   has it) and the sidecar at `doctorOutPath` is rewritten wholesale from
- *   what it returns, which also clears any stale stamp; return `null` to
- *   leave the sidecar as it is. It runs whether or not the report was
- *   written, because a producer that found nothing new to restate still
- *   holds current doctor state.
- * - `staleReason` (+ `command`): the edit changes what doctor would conclude
- *   without recomputing it, so the retained sidecar under `targetRepo`, if
- *   any, is stamped stale — only when the report was actually written.
+ *   what it returns, stamped `generated_by: command` (#312), which also
+ *   clears any stale stamp; return `null` to leave the sidecar as it is. It
+ *   runs whether or not the report was written, because a producer that
+ *   found nothing new to restate still holds current doctor state.
+ * - `staleReason`: the edit changes what doctor would conclude without
+ *   recomputing it, so the retained sidecar under `targetRepo`, if any, is
+ *   stamped stale (`stale_marked_by: command`) — only when the report was
+ *   actually written.
+ *
+ * `command` is required either way: it is the producer's own name as the
+ * sidecar will carry it (`"doctor"`, `"qa run"`, `"theme generate"`), threaded
+ * from the caller rather than guessed from argv here.
  *
  * `stage`: a producer (`"doctor"` | `"qa"`) restating its outcome. The write
  * is skipped when the mutated report differs from disk only in that stage's
@@ -433,8 +438,8 @@ export function commitAssemblyReport(workspace, mutate, {
   if (hasRefresh === Boolean(hasStale)) {
     throw new TypeError("commitAssemblyReport requires exactly one of refreshDoctor (a function) or staleReason (a string).");
   }
-  if (hasStale && !optionalString(command)) {
-    throw new TypeError("commitAssemblyReport requires command with staleReason: the stale stamp names the command that made it.");
+  if (!optionalString(command)) {
+    throw new TypeError("commitAssemblyReport requires command: the doctor sidecar names the command that produced it (generated_by) or stamped it stale (stale_marked_by).");
   }
   if (stage !== null && !PRODUCER_STAGES.has(stage)) throw new Error("Producer stage must be doctor or qa.");
   if (typeof mutate !== "function") throw new TypeError("commitAssemblyReport requires a mutate(report) function.");
@@ -449,7 +454,7 @@ export function commitAssemblyReport(workspace, mutate, {
   const finish = () => {
     if (hasRefresh) {
       const doctor = refreshDoctor(outcome);
-      if (doctor !== null && doctor !== undefined) writeJsonAtomic(doctorOutPath, doctor);
+      if (doctor !== null && doctor !== undefined) writeDoctorSidecar(doctorOutPath, doctor, { command: command.trim() });
     } else if (outcome.written) {
       markDoctorSidecarStale(targetRepo, { command: command.trim(), reason: staleReason.trim() });
     }
