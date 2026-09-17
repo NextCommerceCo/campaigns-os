@@ -13045,16 +13045,20 @@ export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, 
     // can leave the line on disk. Read back what is there rather than claim
     // either way: a line that landed is recorded (only the stamp failed); one
     // that did not is carried on this result.
+    // A read-back that itself fails is a third answer, "unknown", never
+    // folded into "absent": `recorded` is the one signal an out-of-repo
+    // consumer has, and a torn re-read must not report a landed line as lost.
     const landed = (() => {
       try {
         const written = readJsonIfExists(resolveCampaignWorkspace(result.packet_path, { packet, followContextPointer: true, reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined }).reportPath);
-        return Array.isArray(written?.evidence) && written.evidence.includes(line);
+        return Array.isArray(written?.evidence) && written.evidence.includes(line) ? "landed" : "absent";
       } catch {
-        return false;
+        return "unknown";
       }
     })();
-    result.map.recorded = landed ? "assembly_report" : null;
-    if (landed) addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}doctor_sidecar_not_marked`, `The Map write is recorded on the Assembly Report, but the retained doctor snapshot could not be marked stale (${singleLineDetail(error.message)}); re-run doctor before trusting it.`);
+    result.map.recorded = landed === "landed" ? "assembly_report" : landed === "unknown" ? "unknown" : null;
+    if (landed === "landed") addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}doctor_sidecar_not_marked`, `The Map write is recorded on the Assembly Report, but the retained doctor snapshot could not be marked stale (${singleLineDetail(error.message)}); re-run doctor before trusting it.`);
+    else if (landed === "unknown") addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}recorded_status_unknown`, `The Map was written, but the Assembly Report could not be read back after the record attempt failed (${singleLineDetail(error.message)}); whether the line landed is unknown. Check the report's evidence[] for, or add, this line: ${line}`);
     else addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}not_recorded`, `The Map was written, but the write was not recorded on the Assembly Report (${singleLineDetail(error.message)}). Keep this result: ${line}`);
   }
   return result;
@@ -13085,7 +13089,7 @@ function specDeriveMapLine(map) {
   const where = map.map_id ? `Map ${singleLineField(map.map_id)}` : "Map";
   const pin = `${map.field}: ${map.before == null ? "(absent)" : formatDeriveValue(map.before)} -> ${formatDeriveValue(map.after)}`;
   switch (map.status) {
-    case "written": return `${where} written: ${pin}${map.spec_identity?.after?.saved_at ? ` (saved ${map.spec_identity.after.saved_at})` : ""}${map.recorded ? "" : " — not recorded on the Assembly Report (see Warnings)"}`;
+    case "written": return `${where} written: ${pin}${map.spec_identity?.after?.saved_at ? ` (saved ${map.spec_identity.after.saved_at})` : ""}${map.recorded === "assembly_report" ? "" : map.recorded === "unknown" ? " — Assembly Report record unverified (see Warnings)" : " — not recorded on the Assembly Report (see Warnings)"}`;
     case "would_write": return `${where} (dry run, nothing sent): would write ${pin}`;
     case "unchanged": return `${where} unchanged: already ${formatDeriveValue(map.after)}`;
     case "refused": return `${where} not written (${map.reason}): see Warnings`;

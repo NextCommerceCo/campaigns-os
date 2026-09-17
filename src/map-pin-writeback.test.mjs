@@ -173,6 +173,8 @@ test("writeMapSdkPin names every receiver refusal: 403 key mismatch, 404 gone, 4
   const forbidden = await run({ fetchImpl: mockProxy({ putStatus: 403, putBody: { ok: false, error: "X-Campaign-Key does not match this map's campaign." } }).fetchImpl });
   assert.deepEqual([forbidden.status, forbidden.reason], ["failed", "key_mismatch"]);
   assert.match(forbidden.detail, /does not match this map's campaign/);
+  const forbiddenRead = await run({ fetchImpl: mockProxy({ getStatus: 403 }).fetchImpl });
+  assert.deepEqual([forbiddenRead.status, forbiddenRead.reason], ["failed", "key_mismatch"], "a 403 means the same on the read as on the write");
   const gone = await run({ fetchImpl: mockProxy({ getStatus: 404 }).fetchImpl });
   assert.deepEqual([gone.status, gone.reason], ["failed", "not_found"]);
   const goneOnWrite = await run({ fetchImpl: mockProxy({ putStatus: 404 }).fetchImpl });

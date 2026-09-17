@@ -375,7 +375,10 @@ hash) shows both that the write ran and what it changed. A report that does
 not exist yet (a derive before `prepare-build`) leaves a
 `spec.derive.map_not_recorded` warning carrying the same line; a report that
 took the line while the doctor stamp failed leaves
-`spec.derive.map_doctor_sidecar_not_marked` instead. Without
+`spec.derive.map_doctor_sidecar_not_marked` instead, and one that could not be
+read back after the failure leaves `spec.derive.map_recorded_status_unknown`
+(`map.recorded: "unknown"`) rather than a claim either way. A 403 on the read
+is `key_mismatch`, as on the write. Without
 `--write-map` nothing is read from or sent to the Map; `--proxy-base` is
 refused on its own.
 

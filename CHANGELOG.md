@@ -46,7 +46,11 @@ Notable supported-surface changes are recorded here.
   by `spec derive --write-map`, and the lifecycle journal entry the Run Record
   embeds; a missing report leaves a `spec.derive.map_not_recorded` warning
   carrying the same line, and a report that took the line while the doctor
-  stamp failed leaves `spec.derive.map_doctor_sidecar_not_marked` instead.
+  stamp failed leaves `spec.derive.map_doctor_sidecar_not_marked` instead,
+  and one that could not be read back after the failure leaves
+  `spec.derive.map_recorded_status_unknown` (`map.recorded: "unknown"`)
+  rather than a claim either way; a 403 on the Map read is `key_mismatch`,
+  as on the write.
   `--write-map` is a bare flag (a valued one is
   rejected), `--proxy-base` needs a URL and is refused without `--write-map`,
   and without the flag nothing is read from or sent to the Map. The result

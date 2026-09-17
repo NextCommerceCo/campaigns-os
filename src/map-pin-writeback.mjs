@@ -148,8 +148,11 @@ export async function writeMapSdkPin({
   try {
     record = await fetchSpecByMapId(result.map_id, { proxyBase: base, fetchImpl });
   } catch (error) {
-    // Routed on the fields the fetch attaches (kind, status), never its prose.
+    // Routed on the fields the fetch attaches (kind, status), never its
+    // prose, and a receiver status means the same thing on the read as on
+    // the write below.
     if (error?.status === 404) return failure(result, "not_found", `Map ${result.map_id} was not found on ${base}; nothing was written.`);
+    if (error?.status === 403) return failure(result, "key_mismatch", `the Map's stored campaign key does not match the packet's (${String(error?.message || error)}); nothing was written. Point the packet at the Map's campaign, or re-save the Map under this key.`);
     return failure(result, error?.kind === "network" ? "network_error" : "unreadable", `${String(error?.message || error)}; nothing was written to the Map.`);
   }
   if (!record || typeof record !== "object" || Array.isArray(record)) {
