@@ -35,8 +35,8 @@
 //                              are single-brace and conditions are no-brace;
 //                              a double brace renders literally.
 //
-//   Info (advisory, one note per campaign)
-//   UNKNOWN_ATTRIBUTE          a data-next-* name the pinned SDK's attribute
+//   Info (advisory, one note per campaign, no code)
+//   unknown_attributes[]       a data-next-* name the pinned SDK's attribute
 //                              index does not list. Catches an invented
 //                              attribute (data-next-coupon-input) — and, on the
 //                              certified templates, a handful of the templates'
@@ -67,12 +67,33 @@ export const SDK_MARKUP_CODES = Object.freeze({
   MISSING_SELECTOR_ID_MATCH: { code: `${SDK_MARKUP}.missing_selector_id_match`, severity: "error" },
   DOUBLE_SELECTED: { code: `${SDK_MARKUP}.double_selected`, severity: "warning" },
   TEMPLATE_DOUBLE_BRACE: { code: `${SDK_MARKUP}.template_double_brace`, severity: "warning" },
-  UNKNOWN_ATTRIBUTE: { code: `${SDK_MARKUP}.unknown_attribute`, severity: "info" },
+  // Unknown data-next-* names are not a finding and carry no code: they are
+  // information on the gate (unknown_attributes[]) and one advisory ready line.
 });
 
 // Attributes whose value names a <template> by id. The SDK reads the template
 // they point at, so that template is SDK-owned wherever it sits.
 const TEMPLATE_ID_ATTRIBUTES = /^data-(?:next-)?[a-z0-9-]*template-id$/;
+
+// Containers whose DIRECT <template> child the SDK clones (each does a
+// `:scope > template` lookup at v0.4.38: cart-summary and its
+// data-summary-lines / data-next-discounts sub-containers, bundle-selector
+// and its external bundle-slots element, package-selector, package-toggle).
+// Only the direct child: a vendor template nested deeper inside SDK chrome is
+// never read, so it may use any syntax.
+const TEMPLATE_CONTAINER_ATTRIBUTES = [
+  "data-next-cart-summary",
+  "data-summary-lines",
+  "data-next-discounts",
+  "data-next-bundle-selector",
+  "data-next-bundle-slots",
+  "data-next-bundle-slots-for",
+  "data-next-package-selector",
+  "data-next-package-toggle",
+];
+
+// Elements that ARE a selector an add-to-cart button can link to by id.
+const SELECTOR_ATTRIBUTES = ["data-next-bundle-selector", "data-next-package-selector", "data-next-cart-selector", "data-next-upsell-selector"];
 
 function attrs(node) {
   const map = new Map();
@@ -129,7 +150,7 @@ export function scanPageMarkup({ page_id, file = null, content = "" }) {
 
   const selectors = []; // { entry, id, mode, upsell, selectedCount }
   const addToCartButtons = []; // { entry, selectorId }
-  const selectorIds = new Set(); // every element carrying data-next-selector-id that is not an action
+  const selectorIds = new Set(); // ids of elements that are themselves a selector
   const templates = []; // { entry, sdkOwned }
   const referencedTemplateIds = new Set();
 
@@ -159,7 +180,10 @@ export function scanPageMarkup({ page_id, file = null, content = "" }) {
     const action = (a.get("data-next-action") || "").trim().toLowerCase();
     if (action === "add-to-cart") {
       addToCartButtons.push({ entry, selectorId: (a.get("data-next-selector-id") || "").trim() || null });
-    } else if (a.has("data-next-selector-id") && a.get("data-next-selector-id").trim()) {
+    } else if (SELECTOR_ATTRIBUTES.some((name) => a.has(name)) && (a.get("data-next-selector-id") || "").trim()) {
+      // Only an element that IS a selector satisfies the link. Another element
+      // merely echoing the id (a price display, a quantity control) does not
+      // drive the button, and counting it would hide the missing selector.
       selectorIds.add(a.get("data-next-selector-id").trim());
     }
 
@@ -184,18 +208,25 @@ export function scanPageMarkup({ page_id, file = null, content = "" }) {
     }
 
     if (tag === "template") {
-      templates.push({ entry, sdkOwned: ancestors.some((anc) => [...anc.attrs.keys()].some((name) => name.startsWith("data-next-") || name.startsWith("data-item-"))) });
+      const parent = ancestors[0];
+      templates.push({ entry, sdkOwned: Boolean(parent && TEMPLATE_CONTAINER_ATTRIBUTES.some((name) => parent.attrs.has(name))) });
     }
   });
 
   // SWAP_WITH_ADD_TO_CART and MISSING_SELECTOR_ID_MATCH need the whole page.
+  // One finding per dead id, however many buttons link to it: the root cause
+  // is the selector, not each button.
+  const missingReported = new Set();
   for (const button of addToCartButtons) {
     if (!button.selectorId) continue;
     const linked = selectors.filter((s) => s.id === button.selectorId);
     if (linked.length === 0 && !selectorIds.has(button.selectorId)) {
+      if (missingReported.has(button.selectorId)) continue;
+      missingReported.add(button.selectorId);
+      const count = addToCartButtons.filter((other) => other.selectorId === button.selectorId).length;
       findings.push(finding("MISSING_SELECTOR_ID_MATCH", page_id, where,
-        `data-next-action="add-to-cart" on ${where} is linked to data-next-selector-id="${button.selectorId}" but no selector on the page carries that id. The button waits for a selection that can never arrive and never enables. Give the selector that id, or set data-next-package-id on the button and drop the link.`,
-        { selector_id: button.selectorId }));
+        `${count > 1 ? `${count} add-to-cart buttons` : 'data-next-action="add-to-cart"'} on ${where} ${count > 1 ? "are" : "is"} linked to data-next-selector-id="${button.selectorId}" but no selector on the page carries that id. The button${count > 1 ? "s wait" : " waits"} for a selection that can never arrive and never enable${count > 1 ? "" : "s"}. Give the selector that id, or set data-next-package-id on the button and drop the link.`,
+        { selector_id: button.selectorId, buttons: count }));
       continue;
     }
     for (const selector of linked) {

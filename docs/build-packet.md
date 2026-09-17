@@ -450,16 +450,21 @@ Blockers (not waivable — the markup provably does not do what it says):
   `billing-` prefixed name). The message names the SDK spelling for the usual
   offenders (`firstName` → `fname`, `zip` → `postal`).
 - `MISSING_SELECTOR_ID_MATCH` — an `add-to-cart` button whose
-  `data-next-selector-id` names no selector on the page.
+  `data-next-selector-id` names no selector on the page (an element that is a
+  bundle, package, cart or upsell selector; another element echoing the id
+  does not count). One finding per dead id, however many buttons link to it.
 
 Warnings (advisory):
 
 - `DOUBLE_SELECTED` — more than one `data-next-selected="true"` card inside one
   selector.
-- `TEMPLATE_DOUBLE_BRACE` — `{{` inside an SDK-owned `<template>` (one nested
-  in an element carrying a `data-next-*` / `data-item-*` attribute, or one a
-  `*-template-id` attribute points at). SDK tokens are single-brace; a template
-  nothing in the SDK reads may use any syntax.
+- `TEMPLATE_DOUBLE_BRACE` — `{{` inside an SDK-owned `<template>`: the direct
+  child of a container the SDK clones from (`data-next-cart-summary`,
+  `data-summary-lines`, `data-next-discounts`, `data-next-bundle-selector`,
+  `data-next-bundle-slots`, `data-next-package-selector`,
+  `data-next-package-toggle`), or one a `*-template-id` attribute points at.
+  SDK tokens are single-brace; a template nothing in the SDK reads, including
+  a vendor template nested deeper inside SDK chrome, may use any syntax.
 
 Information: `data-next-*` names the vendored attribute index does not list are
 collected on the gate (`unknown_attributes[]`) and printed as one advisory ready

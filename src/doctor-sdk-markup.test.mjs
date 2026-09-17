@@ -123,16 +123,34 @@ test("TEMPLATE_DOUBLE_BRACE covers a template referenced by a *-template-id attr
   const referenced = evaluateSdkMarkup({ pages: [page('<div data-next-bundle-selector data-next-bundle-slot-template-id="slot"></div><template id="slot"><img alt="{{slot.name}}"></template>')] });
   assert.deepEqual(codeNames(referenced), ["TEMPLATE_DOUBLE_BRACE"]);
   assert.equal(referenced.warned[0].detail.template_id, "slot");
-  const nested = evaluateSdkMarkup({ pages: [page('<div data-next-order-items><template><li>{{ item.title }}</li></template></div>')] });
+  const nested = evaluateSdkMarkup({ pages: [page('<div data-next-cart-summary><template><li>{{ item.title }}</li></template></div>')] });
   assert.deepEqual(codeNames(nested), ["TEMPLATE_DOUBLE_BRACE"]);
   assert.match(nested.warned[0].message, /single-brace \(\{item\.title\}\)/);
   const foreign = evaluateSdkMarkup({ pages: [page('<template id="vendor"><div>{{vendor.token}}</div></template>')] });
   assert.equal(foreign.status, "pass");
 });
 
+test("a vendor template nested inside SDK chrome is not SDK-owned: only a container's direct <template> child is read", () => {
+  const nested = evaluateSdkMarkup({ pages: [page('<div data-next-cart-summary><template><span>{item.name}</span></template><div class="promo"><template id="vendor"><b>{{vendor}}</b></template></div></div>')] });
+  assert.equal(nested.status, "pass");
+  assert.deepEqual(nested.warned, []);
+  const discounts = evaluateSdkMarkup({ pages: [page('<div data-next-cart-summary><div data-next-discounts="offer"><template><span>{{discount.percentage}}</span></template></div></div>')] });
+  assert.deepEqual(codeNames(discounts), ["TEMPLATE_DOUBLE_BRACE"]);
+});
+
+test("MISSING_SELECTOR_ID_MATCH is not satisfied by a non-selector element echoing the id, and reports one finding per dead id", () => {
+  const echoed = evaluateSdkMarkup({ pages: [page('<span data-next-quantity-display data-next-selector-id="main"></span><button data-next-action="add-to-cart" data-next-selector-id="main"></button><button data-next-action="add-to-cart" data-next-selector-id="main"></button>')] });
+  assert.deepEqual(codeNames(echoed), ["MISSING_SELECTOR_ID_MATCH"]);
+  assert.equal(echoed.findings[0].detail.buttons, 2);
+  assert.match(echoed.findings[0].message, /2 add-to-cart buttons/);
+  const real = evaluateSdkMarkup({ pages: [page('<div data-next-package-selector data-next-selector-id="main" data-next-selection-mode="select"></div><button data-next-action="add-to-cart" data-next-selector-id="main"></button>')] });
+  assert.equal(real.status, "pass");
+});
+
 test("markup inside an SDK <template> is scanned, because the SDK clones it into the live DOM", () => {
   const gate = evaluateSdkMarkup({ pages: [page('<div data-next-cart-summary><template><div data-next-checkout><input data-next-checkout-field="zip"></div></template></div>')] });
   assert.deepEqual(codeNames(gate), ["CHECKOUT_NOT_FORM", "WRONG_FIELD_NAME"]);
+  assert.equal(Object.hasOwn(SDK_MARKUP_CODES, "UNKNOWN_ATTRIBUTE"), false, "unknown attributes carry no finding code");
 });
 
 test("unknown data-next-* names are collected per campaign as information, not as a finding", () => {
