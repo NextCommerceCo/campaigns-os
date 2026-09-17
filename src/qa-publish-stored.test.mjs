@@ -320,7 +320,7 @@ test("no stored verdict at all is a refusal that says where one comes from", asy
     const result = await publishStoredVerdict({ packet: fx.packetPath }, fakePost());
     assert.equal(result.refusal.code, QA_PUBLISH_REFUSALS.verdict_missing);
     assert.match(result.refusal.detail, /--no-post-verdict/);
-    assert.equal(publishStoredVerdict !== null, true);
+    assert.match(result.refusal.detail, /--output-dir/);
   } finally {
     fx.cleanup();
   }
@@ -361,6 +361,15 @@ test("resolveStoredVerdictSource prefers the run's full verdict and names the pr
     const full = resolveStoredVerdictSource({ args: {}, packetPath: fx.packetPath, packet });
     assert.equal(full.path, fx.fullPath);
     assert.equal(full.source_kind, "full_verdict");
+    // --output-dir is read the way qa run's writer resolves it.
+    const custom = join(fx.dir, "ci-artifacts");
+    mkdirSync(join(custom, MAP_ID), { recursive: true });
+    writeFileSync(join(custom, MAP_ID, `${RUN_ID}.json`), readFileSync(fx.fullPath));
+    const viaOutputDir = resolveStoredVerdictSource({ args: { "output-dir": custom }, packetPath: fx.packetPath, packet });
+    assert.equal(viaOutputDir.path, join(custom, MAP_ID, `${RUN_ID}.json`));
+    assert.equal(viaOutputDir.source_kind, "full_verdict");
+    const missingOutputDir = resolveStoredVerdictSource({ args: { "output-dir": join(fx.dir, "nowhere") }, packetPath: fx.packetPath, packet });
+    assert.equal(missingOutputDir.source_kind, "sidecar_projection", "a custom --output-dir is not silently swapped for the default");
     rmSync(fx.fullPath);
     const projection = resolveStoredVerdictSource({ args: {}, packetPath: fx.packetPath, packet });
     assert.equal(projection.path, fx.sidecarPath);

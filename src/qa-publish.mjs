@@ -89,8 +89,9 @@ function refusal(code, detail, extra = {}) {
 /**
  * Where the verdict to publish comes from. `--verdict` names a file and is
  * honoured as given. Otherwise the committed sidecar beside the packet names
- * the run, and the full verdict the run wrote under <target repo>/qa-output/
- * <campaign_slug>/<run_id>.json is preferred over the sidecar's projection —
+ * the run, and the full verdict the run wrote under <output-dir>/
+ * <campaign_slug>/<run_id>.json (--output-dir as qa run resolves it, else
+ * <target repo>/qa-output/) is preferred over the sidecar's projection —
  * the projection is what the readback consumes, but the portal wants the
  * evidence the run kept. When only the projection is on disk, it is what
  * gets published, and the result says so (`source_kind`).
@@ -107,7 +108,7 @@ export function resolveStoredVerdictSource({ args, packetPath, packet, readJsonF
     return {
       error: refusal(
         QA_PUBLISH_REFUSALS.verdict_missing,
-        `No stored verdict: ${sidecar} does not exist and --verdict was not given. Run qa run first (with --no-post-verdict to keep it local), or name the full verdict file with --verdict.`,
+        `No stored verdict: ${sidecar} does not exist and --verdict was not given. Run qa run first (with --no-post-verdict to keep it local), or name the full verdict file with --verdict; a run that wrote under --output-dir <dir> is found by passing the same --output-dir here.`,
       ),
     };
   }
@@ -120,7 +121,12 @@ export function resolveStoredVerdictSource({ args, packetPath, packet, readJsonF
   const runId = stringArg(projection?.run_id);
   const slug = stringArg(projection?.campaign_slug);
   if (runId && slug) {
-    const full = join(campaignSidecarPaths(targetRepoFor(packetPath, packet)).qaOutputDir, slug, `${runId}.json`);
+    // The same directory rule as qa run's writer: --output-dir when given,
+    // else qa-output under the packet's target repo.
+    const outputDir = stringArg(args["output-dir"])
+      ? resolve(args["output-dir"])
+      : campaignSidecarPaths(targetRepoFor(packetPath, packet)).qaOutputDir;
+    const full = join(outputDir, slug, `${runId}.json`);
     if (exists(full)) return { path: full, source_kind: "full_verdict", sidecar_path: sidecar };
   }
   return { path: sidecar, source_kind: "sidecar_projection", sidecar_path: sidecar };

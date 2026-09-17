@@ -132,6 +132,7 @@ Options:
   --output-dir <path>             Local verdict directory. Default: qa-output under the packet's
                                   target repo (assembly.target_repo, else the packet's directory);
                                   qa-output under the current directory for packet-less runs.
+                                  qa publish reads the same directory when looking up the sidecar's run.
   --post-verdict                  (default) Publish the verdict to the QA portal at
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
                                   Publishing is automatic; this flag is retained for clarity.
@@ -266,11 +267,7 @@ export async function runQaCli(args, { ambient = null } = {}) {
   }
   if (subcommand === "publish") {
     const result = await publishStoredVerdict(args);
-    if (args.json) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      for (const line of qaPublishTextLines(result, { cmd })) console.log(line);
-    }
+    output(result, args);
     process.exitCode = QA_PUBLISH_EXIT_CODES[result.status] ?? 1;
     return result;
   }
@@ -2972,6 +2969,10 @@ function writeLocalVerdict(verdict, outputDir) {
 function output(value, args) {
   if (args.json) {
     console.log(JSON.stringify(value, null, 2));
+    return;
+  }
+  if (value.action === "qa-publish") {
+    for (const line of qaPublishTextLines(value, { cmd })) console.log(line);
     return;
   }
   if (value.action === "qa-policy-set") {

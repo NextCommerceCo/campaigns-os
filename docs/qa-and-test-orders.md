@@ -664,9 +664,10 @@ Which verdict goes out: `--verdict <path>` names a file and is honoured as
 given. Without it, the committed `.campaign-runtime/qa-verdict.json` names the
 run, and the full verdict that run wrote at
 `<target-repo>/qa-output/<map-id>/<run-id>.json` is preferred (it carries the
-evidence the portal shows); when only the projection is on disk, the
-projection is what is published and the output says so (`source_kind:
-sidecar_projection`).
+evidence the portal shows); a run that wrote under `--output-dir <dir>` is
+found by passing the same `--output-dir` to `qa publish`. When only the
+projection is on disk, the projection is what is published and the output
+says so (`source_kind: sidecar_projection`).
 
 Before anything is sent, the command refuses — exit `2`, nothing posted, no
 order placed — with a named `refusal.code`:
