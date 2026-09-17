@@ -187,9 +187,11 @@ them accordingly:
   re-saved for. Doctor passes the gate with the `page_kit.sdk_version.repo_newer`
   warning and a ready line naming what ships; QA projects it as a `warn`
   assertion; `next` does not stop. The gate's `advisory_actions` carry one
-  `refresh_spec` edit: re-save the Map's Build hints field (Campaign Cart SDK
-  version) to the repo pin so the exported spec stops reading stale. Nothing
-  in the repo needs to change, and there is nothing to waive.
+  `refresh_spec` command, `campaigns-os spec derive --packet <packet>`
+  (below), which writes the repo pin into the spec; re-saving the Map's Build
+  hints field (Campaign Cart SDK version) to the repo pin is the other way to
+  make the exported spec stop reading stale. Nothing in the repo needs to
+  change, and there is nothing to waive.
 - **Target behind the spec, or still the scaffold's seeded pin beside the demo
   store profile** — blocked, repaired by `page-kit sync` (below) or waived.
 - **Target pin not a released version** — blocked, non-waivable, whatever the
@@ -215,7 +217,83 @@ by the same `campaigns-os page-kit sync --packet <campaign-runtime.build.json>`
 described above, which doctor and `next` print as the gate's `repair_target`
 action. A configured campaign whose pin is newer than the spec's is the
 advisory case above: no required action, and sync never moves that pin
-backwards.
+backwards; `spec derive` is the command that closes it from the spec side.
+
+### Deriving the spec from the repo (`spec derive`)
+
+Every CampaignSpec field has a class: **authored** (a human writes it: offers,
+funnel shape, copy intent), **mirrored** (pulled from the Campaigns API or the
+store: packages, prices, shipping) or **derived** (the repo or the store
+already states it: the SDK pin, page routes, the store profile, analytics
+ids). The table is on #432. Derived fields are generated, never typed, and
+this command generates the repo-derived ones so doctor compares generated
+against generated instead of refereeing a hand-typed value against the repo:
+
+```bash
+campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>]
+```
+
+It reads the target repo only (no network) and writes into the packet's local
+spec (`spec.local_path`):
+
+| Spec field | Repo authority |
+|---|---|
+| `global_config.sdk_version`, and `runtime.sdk_version` when the spec declares the alias (so the two never conflict) | `_data/campaigns.json[public_route_slug].sdk_version` |
+| `funnels[].pages[].page_url` (mirrored into `funnel_pages[].page_url` when that legacy block exists) | the page tree under `assembly.output_dir` (default `src/<public_route_slug>/`): page-kit routes by filename, `checkout.html` → `checkout/`, `index.html` → the entry route, and a `permalink` in the file's frontmatter overrides that |
+| `analytics.providers.gtm.containerId` | `_data/campaigns.json[public_route_slug].gtm_id` |
+| `analytics.providers.facebook.pixelId` | `_data/campaigns.json[public_route_slug].fb_pixel_id` |
+
+Nothing else is written: not the store profile (store-derived, the second
+slice), not any authored or mirrored field, not the packet, not the repo. A
+derived field the spec carries with a different, authored-looking value is
+overwritten, and the printed `before -> after` line shows it: that is the
+class doing its job. A block the spec lacks is created (`global_config`,
+`analytics.providers.gtm` as `{ "enabled": true, "containerId": … }`); an
+array element is never invented.
+
+Each page is bound to one file: the packet's own projection first
+(`source_html.pages[].page_kit.target_path`, the file the build stage wrote
+for that page id), else a file whose route equals the page's current route,
+whose terminal segment equals it, or whose filename is the page id. The
+derived route is compared in normalized page-kit form, so a spelling
+difference (`checkout` vs `checkout/`) is not a change. A page another
+page's `sdk_hints.meta_tags` routing hint points at (`next-success-url`,
+`next-upsell-accept-url`, `next-upsell-decline-url`) is reported as a stale
+hint when its route moves (`spec.derive.routing_hint_stale`); hints are a Map
+projection the editor regenerates and are not rewritten.
+
+What the repo cannot state is reported as `not_derived[]` with a reason and
+the status is `partial` (exit 0; the fields it could derive are written):
+
+| Reason | Meaning |
+|---|---|
+| `scaffold_seed` | the entry still carries the starter demo store profile, so its pin is the starter's seed, not a version anyone chose; `page-kit sync` seeds the pin from the spec in that state |
+| `target_missing`, `target_invalid` | the entry has no `sdk_version`, or it is not a released `MAJOR.MINOR.PATCH`; for an analytics id, the value is not a GTM container id / a digits-only pixel id |
+| `waived` | an active named-human `page_kit.sdk_version` waiver covers the exact pair; derive leaves the spec as the waiver accepted it |
+| `page_tree_missing`, `page_file_not_found`, `page_file_ambiguous` | no page tree, no file binds to the page, or more than one does |
+| `target_empty` | the entry's `gtm_id` / `fb_pixel_id` is empty while the spec declares an id; an empty repo value never deletes a spec id |
+
+A derived field the entry does not carry at all is listed under
+`not_in_target[]` and left as it is. A spec pin ahead of the repo pin is still
+written (the repo is what ships) with a `spec.derive.sdk_version_downgraded`
+warning, so a lost bump is visible rather than silently accepted.
+
+Write discipline is `page-kit sync`'s: one read serves the plan and the
+write; the file is edited in place and re-serialized with its own top-level
+indentation, line ending and trailing newline (`spec.derive.file_reformatted`
+when that round trip would not reproduce the file byte for byte); staged
+through a temp file and rename keeping the mode bits; written only at the path
+the spec resolves to, which must lie inside the spec's own directory or the
+target repo (`spec.derive.spec_escapes_boundary` otherwise, so a symlinked
+`spec.local_path` cannot redirect the write); the retained doctor sidecar is
+marked stale after a write, and a terminal build gets a
+`spec.derive.build_stale` warning naming the rebuild. `--dry-run` prints the
+same diff and writes nothing; unknown flags and a valued `--dry-run` are
+rejected. Exit 2 with `spec.derive.*` error codes and nothing written when the
+packet cannot be read, `spec.local_path` is absent or not a file, the spec is
+not a JSON object, the spec identifies another campaign
+(`spec.derive.spec_identity_mismatch`), or the target entry is missing
+(`spec.derive.entry_missing`; scaffold first).
 
 ### Polish hidden eager-media checkpoint
 

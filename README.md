@@ -114,7 +114,11 @@ not a failed install. The demo values are the store profile and SDK pin
 `campaign-init` seeded into `_data/campaigns.json`; doctor prints the one
 command that replaces them from the CampaignSpec, `npx campaigns-os page-kit
 sync --packet campaign-runtime.build.json`, and after it both page-kit gates
-pass. Everything after `start` is agent-driven: after `start`
+pass. The reverse write exists for a configured campaign: `npx campaigns-os
+spec derive --packet campaign-runtime.build.json` copies what the repo already
+states (the SDK pin, page routes, analytics ids) into the local CampaignSpec,
+so a bump in the repo is one edit followed by a derive rather than a hand edit
+in two tools. Everything after `start` is agent-driven: after `start`
 and after every stage, run `next` and do what it prints — it names the skill
 and the exact commands for the next stage, already spelled `npx campaigns-os
 …` for this install, which is why `install-skills` comes first. The browser
