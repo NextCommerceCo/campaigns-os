@@ -222,6 +222,32 @@ test("CLI: run start refuses to clobber an active session unless --force", () =>
   });
 });
 
+test("CLI: built-mode doctor keeps lifecycle capture with and without --write", () => {
+  withTempDir((dir) => {
+    const pageDir = join(dir, "_site", "acme");
+    mkdirSync(pageDir, { recursive: true });
+    writeFileSync(join(pageDir, "index.html"), "<h1>Cold Brew Concentrate</h1>");
+    const journal = join(dir, "doctor-lifecycle.jsonl");
+    for (const flag of ["--built", "--site"]) {
+      for (const extra of [[], ["--write"]]) {
+        const result = JSON.parse(runIn(dir, ["doctor", flag, dir, "--slug", "acme", "--lifecycle-journal", journal, "--json", ...extra]));
+        assert.equal(result.mode, "built_site");
+        assert.equal(result.ok, true);
+      }
+    }
+    const { entries } = readLifecycleJournal(journal);
+    assert.equal(entries.length, 4);
+    assert.ok(entries.every(entry => entry.command === "doctor" && entry.exit_status === 0));
+    assert.equal(entries.filter(entry => entry.argv_shape.includes("--write")).length, 2);
+
+    const emitted = JSON.parse(runIn(dir, ["doctor", "--built", dir, "--slug", "acme", "--emit-packet", "--lifecycle-journal", journal, "--json"]));
+    assert.equal(existsSync(emitted.emitted_packet_path), true);
+    const afterEmit = readLifecycleJournal(journal).entries;
+    assert.equal(afterEmit.length, 5, "packet emission retains its producer lifecycle entry without --write");
+    assert.ok(afterEmit.at(-1).argv_shape.includes("--emit-packet"));
+  });
+});
+
 test("CLI: doctor inspection preserves active session, journal, report and sidecar bytes", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");

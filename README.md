@@ -234,7 +234,9 @@ Doctor inspects without changing the retained Assembly Report or doctor sidecar.
 A stale local `_site` still fails the current inspection; it does not rewrite
 the proof of an earlier delivered build. Use `doctor --packet <packet> --write`
 only when deliberately recording a new doctor stage. `--no-write` overrides
-`--write`. Build/QA producer commands continue to record their own stages.
+`--write`. A custom `--doctor-out <path>` also requires `--write`; naming an
+output path alone does not create or refresh the file. Build/QA producer
+commands continue to record their own stages.
 Do not use `prepare-build --force` merely to refresh a catalog path: doctor
 already resolves the running toolkit's catalog, and force clears stage evidence.
 
