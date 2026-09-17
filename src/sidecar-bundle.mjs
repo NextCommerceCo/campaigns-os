@@ -219,7 +219,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
         artifactContract.kind === "qa_verdict"
           ? "Run QA, or explicitly promote one named full verdict with campaigns-os qa promote; never select a verdict by mtime."
           : artifactContract.kind === "doctor_output"
-            ? "Run campaigns-os doctor --packet campaign-runtime.build.json --strip-paths to refresh it."
+            ? "Run campaigns-os doctor --packet campaign-runtime.build.json --write --strip-paths to refresh it."
             : "Regenerate the bundle with Campaigns OS while preserving authored packet, context, and assembly inputs.",
       );
       (required ? errors : warnings).push(finding);
@@ -301,7 +301,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       "bundle.doctor_output.stale",
       "doctor_output",
       "Doctor output is explicitly marked stale after a later mutation.",
-      "Re-run campaigns-os doctor --packet campaign-runtime.build.json --strip-paths.",
+      "Re-run campaigns-os doctor --packet campaign-runtime.build.json --write --strip-paths.",
     ));
   }
   // A blocked doctor run is still a conformant artifact — the sidecars agree
@@ -314,7 +314,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       "bundle.doctor_output.blocked",
       "doctor_output",
       `Doctor output records a blocked run (status ${doctor.status ?? "missing"}, ok ${doctor.ok ?? "missing"}); the campaign cannot proceed${requireQa ? ", so it cannot satisfy QA-complete handoff" : " even though the sidecars agree with each other"}.`,
-      "Resolve the doctor errors, then re-run campaigns-os doctor --packet campaign-runtime.build.json --strip-paths so the retained sidecar records a ready run.",
+      "Resolve the doctor errors, then re-run campaigns-os doctor --packet campaign-runtime.build.json --write --strip-paths so the retained sidecar records a ready run.",
     ));
   }
   if (qaVerdict) {

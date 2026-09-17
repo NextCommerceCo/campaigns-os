@@ -222,6 +222,27 @@ test("CLI: run start refuses to clobber an active session unless --force", () =>
   });
 });
 
+test("CLI: doctor inspection preserves active session, journal, report and sidecar bytes", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    copyPacket(packetPath);
+    const start = JSON.parse(runIn(dir, ["run", "start", "--packet", packetPath, "--json"]));
+    const runtime = join(dir, ".campaign-runtime");
+    const report = join(runtime, "assembly-report.json");
+    const doctor = join(runtime, "doctor-output.json");
+    writeFileSync(report, JSON.stringify({ stages: { qa: { status: "completed" } } }));
+    writeFileSync(doctor, JSON.stringify({ status: "ready", ok: true }));
+    writeFileSync(start.session.lifecycle_journal, "{\"command\":\"previous-proof\"}\n");
+    const retained = [resolveRunSessionPath(dir), start.session.lifecycle_journal, report, doctor];
+    const before = retained.map(path => readFileSync(path, "utf8"));
+    for (const extra of [[], ["--no-write"], ["--write", "--no-write"], ["--lifecycle-journal", start.session.lifecycle_journal]]) {
+      const result = JSON.parse(runIn(dir, ["doctor", "--packet", packetPath, "--json", ...extra], { allowFail: true }));
+      assert.equal(result.ok, false, "synthetic packet still reports its current blockers");
+      assert.deepEqual(retained.map(path => readFileSync(path, "utf8")), before);
+    }
+  });
+});
+
 test("CLI: with a session active, a command auto-logs with NO per-command flags", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
@@ -229,7 +250,7 @@ test("CLI: with a session active, a command auto-logs with NO per-command flags"
     const start = JSON.parse(runIn(dir, ["run", "start", "--json"]));
 
     // doctor with NO --run-id and NO --lifecycle-journal
-    runIn(dir, ["doctor", "--packet", packetPath], { allowFail: true }); // exit 2 on synthetic packet
+    runIn(dir, ["doctor", "--write", "--packet", packetPath], { allowFail: true }); // exit 2 on synthetic packet
 
     const { entries } = readLifecycleJournal(start.session.lifecycle_journal);
     const doctorEntry = entries.find((e) => e.command === "doctor");
@@ -251,8 +272,8 @@ test("CLI: an absolute packet selects its target session from toolkit and unrela
     copyPacket(packetPath);
     const start = JSON.parse(runIn(target, ["run", "start", "--packet", packetPath, "--json"]));
 
-    runIn(ROOT, ["doctor", "--packet", packetPath], { allowFail: true });
-    runIn(unrelated, ["doctor", "--packet", packetPath], { allowFail: true });
+    runIn(ROOT, ["doctor", "--write", "--packet", packetPath], { allowFail: true });
+    runIn(unrelated, ["doctor", "--write", "--packet", packetPath], { allowFail: true });
     const status = JSON.parse(runIn(unrelated, ["run", "status", "--packet", packetPath, "--json"]));
     assert.equal(status.active, true);
     assert.equal(status.session.run_id, start.session.run_id);
@@ -275,8 +296,8 @@ test("CLI: packet-target sessions stay isolated and a conflicting cwd session is
       return { target, packet, start };
     });
 
-    runIn(ROOT, ["doctor", "--packet", targets[0].packet], { allowFail: true });
-    runIn(ROOT, ["doctor", "--packet", targets[1].packet], { allowFail: true });
+    runIn(ROOT, ["doctor", "--write", "--packet", targets[0].packet], { allowFail: true });
+    runIn(ROOT, ["doctor", "--write", "--packet", targets[1].packet], { allowFail: true });
     for (const current of targets) {
       const doctors = readLifecycleJournal(current.start.session.lifecycle_journal).entries.filter((entry) => entry.command === "doctor");
       assert.equal(doctors.length, 1);
@@ -284,12 +305,12 @@ test("CLI: packet-target sessions stay isolated and a conflicting cwd session is
     }
 
     assert.throws(
-      () => execFileSync("node", [CLI, "doctor", "--packet", targets[1].packet], { encoding: "utf8", cwd: targets[0].target, stdio: "pipe" }),
+      () => execFileSync("node", [CLI, "doctor", "--write", "--packet", targets[1].packet], { encoding: "utf8", cwd: targets[0].target, stdio: "pipe" }),
       /conflicting active run sessions/i,
     );
     clearRunSession(resolveRunSessionPath(targets[1].target));
     assert.throws(
-      () => execFileSync("node", [CLI, "doctor", "--packet", targets[1].packet], { encoding: "utf8", cwd: targets[0].target, stdio: "pipe" }),
+      () => execFileSync("node", [CLI, "doctor", "--write", "--packet", targets[1].packet], { encoding: "utf8", cwd: targets[0].target, stdio: "pipe" }),
       (error) => /cwd selects .* but packet .* has no matching active target session/i.test(String(error.stderr || "")),
     );
   });
@@ -432,7 +453,7 @@ test("CLI: lifecycle argv_shape preserves underscore-prefixed user flags", () =>
     copyPacket(packetPath);
     const start = JSON.parse(runIn(dir, ["run", "start", "--json"]));
 
-    runIn(dir, ["doctor", "--packet", packetPath, "--_custom-audit-flag"], { allowFail: true });
+    runIn(dir, ["doctor", "--write", "--packet", packetPath, "--_custom-audit-flag"], { allowFail: true });
 
     const { entries } = readLifecycleJournal(start.session.lifecycle_journal);
     const doctorEntry = entries.find((entry) => entry.command === "doctor");

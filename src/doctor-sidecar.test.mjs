@@ -9,8 +9,8 @@ import { doctorCommand, doctorPacket, recordQaStageOutcome } from "./cli.mjs";
 // NEXT-114 dogfood finding wf_1785566917680: only prepare-build/start wrote
 // .campaign-runtime/doctor-output.json, so every later standalone doctor run
 // left the retained sidecar frozen at the intake snapshot while reporting
-// fresh state on stdout. Standalone packet-mode doctor now refreshes the
-// sidecar (opt out with --no-write).
+// fresh state on stdout. Explicit packet-mode doctor --write refreshes the
+// sidecar; inspection leaves retained proof unchanged.
 
 function packetFixture() {
   const dir = mkdtempSync(join(tmpdir(), "doctor-sidecar-"));
@@ -18,13 +18,42 @@ function packetFixture() {
   return dir;
 }
 
+test("doctor inspection reports local drift without replacing retained proof", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const runtime = join(dir, ".campaign-runtime");
+  mkdirSync(runtime, { recursive: true });
+  const reportPath = join(runtime, "assembly-report.json");
+  const doctorPath = join(runtime, "doctor-output.json");
+  const report = JSON.stringify({ status: "prepared", stages: { qa: { status: "completed", outputs: ["verdict.json"] } } });
+  const retained = JSON.stringify({ ok: true, status: "ready", generated_at: "2026-09-11T00:00:00Z" });
+  writeFileSync(reportPath, report);
+  writeFileSync(doctorPath, retained);
+  const result = doctorCommand({ packet: packetPath }, { runDoctor: () => ({
+    ok: false, status: "blocked", generated_at: "2026-09-17T00:00:00Z",
+    errors: [{ code: "built_output.fingerprint_stale", message: "Local output differs" }],
+    warnings: [], derived: { assembly_report_path: reportPath },
+  }) });
+  assert.equal(result.ok, false, "local drift still fails the current inspection");
+  assert.equal(result.errors[0].code, "built_output.fingerprint_stale");
+  assert.equal(readFileSync(reportPath, "utf8"), report);
+  assert.equal(readFileSync(doctorPath, "utf8"), retained);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("default doctor inspection does not create a sidecar", () => {
+  const dir = packetFixture();
+  doctorCommand({ packet: join(dir, "campaign-runtime.build.json") });
+  assert.equal(existsSync(join(dir, "target-page-kit/.campaign-runtime")), false);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("standalone doctor refreshes the doctor-output.json sidecar", () => {
   const dir = packetFixture();
   // The example packet declares target_repo "target-page-kit"; the sidecar
   // lives under the target repo, where prepare-build and next write it.
   const sidecar = join(dir, "target-page-kit/.campaign-runtime/doctor-output.json");
   assert.equal(existsSync(sidecar), false);
-  const result = doctorCommand({ packet: join(dir, "campaign-runtime.build.json") });
+  const result = doctorCommand({ write: true, packet: join(dir, "campaign-runtime.build.json") });
   assert.equal(existsSync(sidecar), true);
   const written = JSON.parse(readFileSync(sidecar, "utf8"));
   assert.equal(written.ok, result.ok);
@@ -40,9 +69,9 @@ test("standalone doctor replaces the doctor-output.json sidecar atomically rathe
   const dir = packetFixture();
   const packetPath = join(dir, "campaign-runtime.build.json");
   const sidecar = join(dir, "target-page-kit/.campaign-runtime/doctor-output.json");
-  doctorCommand({ packet: packetPath });
+  doctorCommand({ write: true, packet: packetPath });
   const before = statSync(sidecar).ino;
-  const result = doctorCommand({ packet: packetPath });
+  const result = doctorCommand({ write: true, packet: packetPath });
   assert.notEqual(statSync(sidecar).ino, before, "tmp + rename: the sidecar path names a new file");
   assert.equal(JSON.parse(readFileSync(sidecar, "utf8")).generated_at, result.generated_at);
   rmSync(dir, { recursive: true, force: true });
@@ -50,7 +79,7 @@ test("standalone doctor replaces the doctor-output.json sidecar atomically rathe
 
 test("standalone doctor honors --no-write", () => {
   const dir = packetFixture();
-  doctorCommand({ packet: join(dir, "campaign-runtime.build.json"), "no-write": true });
+  doctorCommand({ write: true, packet: join(dir, "campaign-runtime.build.json"), "no-write": true });
   assert.equal(existsSync(join(dir, "target-page-kit/.campaign-runtime/doctor-output.json")), false);
   assert.equal(existsSync(join(dir, ".campaign-runtime/doctor-output.json")), false);
   rmSync(dir, { recursive: true, force: true });
@@ -59,7 +88,7 @@ test("standalone doctor honors --no-write", () => {
 test("standalone doctor honors --doctor-out override", () => {
   const dir = packetFixture();
   const out = join(dir, "custom-doctor.json");
-  doctorCommand({ packet: join(dir, "campaign-runtime.build.json"), "doctor-out": out });
+  doctorCommand({ write: true, packet: join(dir, "campaign-runtime.build.json"), "doctor-out": out });
   assert.equal(existsSync(out), true);
   assert.equal(existsSync(join(dir, "target-page-kit/.campaign-runtime/doctor-output.json")), false);
   assert.equal(existsSync(join(dir, ".campaign-runtime/doctor-output.json")), false);
@@ -76,12 +105,34 @@ test("standalone doctor owns the matching Assembly Report stage ledger", () => {
     stages: { doctor: { stage: "doctor", status: "pending", inputs: [], outputs: [], commands: [], blockers: [], warnings: [] } },
   }));
 
-  const result = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const result = doctorCommand({ write: true, packet: packetPath, _: ["doctor"] });
   const report = JSON.parse(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"));
   assert.equal(report.stages.doctor.status, result.ok ? (result.warnings.length ? "completed_with_warnings" : "completed") : "blocked");
   assert.equal(report.stages.doctor.checked_at, result.generated_at);
   assert.deepEqual(report.stages.doctor.commands, ["campaigns-os doctor"]);
   assert.equal(report.stages.doctor.outputs.length, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("explicit doctor recovery clears the recorded block and preserves completed QA evidence", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  const runtime = join(dir, ".campaign-runtime");
+  mkdirSync(runtime, { recursive: true });
+  const reportPath = join(runtime, "assembly-report.json");
+  const qa = { stage: "qa", status: "completed", inputs: [], outputs: ["retained-verdict.json"], commands: [], blockers: [], warnings: [], checked_at: "2026-09-11T00:00:00Z" };
+  writeFileSync(reportPath, JSON.stringify({
+    identity: { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug },
+    stages: { doctor: { stage: "doctor", status: "blocked", blockers: ["old blocker"] }, qa },
+  }));
+  const healthy = { ok: true, status: "ready", generated_at: "2026-09-17T00:00:00Z", errors: [], warnings: [], ready: [], derived: { assembly_report_path: reportPath } };
+  doctorCommand({ packet: packetPath }, { runDoctor: () => healthy });
+  assert.equal(JSON.parse(readFileSync(reportPath)).stages.doctor.status, "blocked", "inspection preserves historical status");
+  doctorCommand({ packet: packetPath, write: true }, { runDoctor: () => healthy });
+  const report = JSON.parse(readFileSync(reportPath));
+  assert.equal(report.stages.doctor.status, "completed");
+  assert.deepEqual(report.stages.doctor.blockers, []);
+  assert.deepEqual(report.stages.qa, qa);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -97,14 +148,14 @@ test("a doctor re-run that restates the same outcome leaves the Assembly Report 
 
   // Two runs settle the report: the first creates the doctor stage, the
   // second no longer finds "doctor stage is required" among its blockers.
-  doctorCommand({ packet: packetPath, _: ["doctor"] });
-  const settled = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  doctorCommand({ write: true, packet: packetPath, _: ["doctor"] });
+  const settled = doctorCommand({ write: true, packet: packetPath, _: ["doctor"] });
   const afterSettled = readFileSync(reportPath, "utf8");
   assert.equal(JSON.parse(afterSettled).stages.doctor.checked_at, settled.generated_at);
 
   // Same packet, same outcome: the digest a Run Record took of this file
   // must still verify after the re-run.
-  const rerun = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const rerun = doctorCommand({ write: true, packet: packetPath, _: ["doctor"] });
   assert.deepEqual(rerun.errors.map((issue) => issue.message), settled.errors.map((issue) => issue.message));
   assert.equal(readFileSync(reportPath, "utf8"), afterSettled);
 
@@ -114,7 +165,7 @@ test("a doctor re-run that restates the same outcome leaves the Assembly Report 
   const stale = JSON.parse(afterFirst);
   stale.stages.doctor.blockers = ["a blocker this run no longer finds"];
   writeFileSync(reportPath, JSON.stringify(stale));
-  const third = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const third = doctorCommand({ write: true, packet: packetPath, _: ["doctor"] });
   const afterThird = JSON.parse(readFileSync(reportPath, "utf8"));
   assert.notDeepEqual(afterThird.stages.doctor.blockers, stale.stages.doctor.blockers);
   assert.equal(afterThird.stages.doctor.checked_at, third.generated_at);
@@ -137,7 +188,7 @@ test("standalone doctor records its outcome into the report the Build Context bi
   const defaultReport = JSON.stringify({ identity, stages: { doctor: { stage: "doctor", status: "pending", inputs: [], outputs: [], commands: [], blockers: [], warnings: [] } } });
   writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), defaultReport);
 
-  const result = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const result = doctorCommand({ write: true, packet: packetPath, _: ["doctor"] });
   assert.equal(result.derived.assembly_report_path, join(dir, "custom-report.json"), "the inspection read the bound report");
   assert.equal(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"), defaultReport, "the default report is untouched");
   const bound = JSON.parse(readFileSync(join(dir, "custom-report.json"), "utf8"));
@@ -158,7 +209,7 @@ test("standalone doctor leaves a bound report of another campaign alone and stil
   });
   writeFileSync(join(dir, "other-report.json"), otherReport);
 
-  const result = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const result = doctorCommand({ write: true, packet: packetPath, _: ["doctor"] });
   assert.equal(readFileSync(join(dir, "other-report.json"), "utf8"), otherReport, "another campaign's report is not written");
   assert.equal(existsSync(join(dir, ".campaign-runtime/assembly-report.json")), false, "no default report is created either");
   assert.equal(JSON.parse(readFileSync(join(dir, ".campaign-runtime/doctor-output.json"), "utf8")).generated_at, result.generated_at, "the sidecar is this run's");
@@ -174,7 +225,7 @@ test("standalone doctor never opens a default report it did not inspect, malform
   writeFileSync(join(dir, "custom-report.json"), JSON.stringify({ identity, stages: {} }));
   writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "{ not a report\n");
 
-  const result = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const result = doctorCommand({ write: true, packet: packetPath, _: ["doctor"] });
   assert.equal(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"), "{ not a report\n", "the default report is untouched");
   assert.equal(JSON.parse(readFileSync(join(dir, ".campaign-runtime/doctor-output.json"), "utf8")).generated_at, result.generated_at, "the sidecar is this run's");
   rmSync(dir, { recursive: true, force: true });
@@ -189,7 +240,7 @@ test("standalone doctor executes its packet inspection once when updating the st
     stages: {},
   }));
   let calls = 0;
-  const result = doctorCommand({ packet: packetPath, _: ["doctor"] }, {
+  const result = doctorCommand({ write: true, packet: packetPath, _: ["doctor"] }, {
     runDoctor(path, options) {
       calls += 1;
       return doctorPacket(path, options);
@@ -213,7 +264,7 @@ test("standalone doctor writes the sidecar under the target repo, not beside a p
   writeFileSync(packetPath, JSON.stringify(packet, null, 2));
   mkdirSync(join(dir, "built"), { recursive: true });
 
-  doctorCommand({ packet: packetPath, _: ["doctor"] });
+  doctorCommand({ write: true, packet: packetPath, _: ["doctor"] });
   assert.equal(existsSync(join(dir, "built/.campaign-runtime/doctor-output.json")), true, "written under the target repo");
   assert.equal(existsSync(join(dir, ".campaign-runtime/doctor-output.json")), false, "not beside the packet");
   rmSync(dir, { recursive: true, force: true });

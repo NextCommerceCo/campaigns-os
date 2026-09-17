@@ -37,7 +37,7 @@ Read readiness from two places instead:
 The text report prints a `Readiness:` line directly under `Status:` that reads
 those fields for you. The remedy for a blocked doctor is to resolve its errors
 and re-run `campaigns-os doctor --packet campaign-runtime.build.json
---strip-paths` so the retained sidecar records a ready run.
+--write --strip-paths` so the retained sidecar records a ready run.
 
 ## Canonical bundle
 
