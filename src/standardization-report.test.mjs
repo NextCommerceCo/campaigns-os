@@ -576,6 +576,37 @@ test("standardize is read-only: a run with the built-output doctor leaves the ta
   });
 });
 
+// #312 reported `standardize` writing .campaign-runtime/doctor-output.json.
+// It never did: the repro copied a target-page-kit example that carried a
+// gitignored sidecar from an earlier doctor run in that checkout, and `cp -R`
+// copies ignored files. So the proof is in the issue's own shape — a target
+// that already holds a sidecar, with and without a built _site, with and
+// without --no-doctor — and every byte, mtime and size under the target is
+// unchanged afterwards, the sidecar included. A producer's stamp would make
+// the mistake impossible to repeat: the sidecar now says who wrote it.
+test("standardize never touches an existing doctor sidecar, with or without --no-doctor (#312)", () => {
+  for (const withSite of [false, true]) {
+    withTempDir((dir) => {
+      const home = join(dir, "home");
+      const target = join(dir, "campaign");
+      mkdirSync(home, { recursive: true });
+      writeFixtureRoot(target, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+      if (withSite) write(join(target, "_site", "acme", "index.html"), "<h1>Built</h1>");
+      const sidecar = join(target, ".campaign-runtime", "doctor-output.json");
+      write(sidecar, JSON.stringify({ schema_version: "campaigns-os-doctor-output/v0", generated_at: "2026-09-15T03:02:05.568Z", generated_by: "doctor", ok: true, status: "ready_with_warnings" }, null, 2));
+      const before = snapshotTree(target);
+
+      for (const args of [["--json"], ["--no-doctor", "--json"], []]) {
+        const run = runStandardize(home, ["--target", target, ...args]);
+        assert.notEqual(run.status, 1, run.stderr);
+        assert.deepEqual(snapshotTree(target), before, `standardize ${args.join(" ")} (site: ${withSite}) changed the target`);
+      }
+      assert.equal(JSON.parse(readFileSync(sidecar, "utf8")).generated_by, "doctor", "the sidecar still names its real producer");
+      assert.deepEqual(readdirSync(home), []);
+    });
+  }
+});
+
 test("standardization markdown is operator-readable", () => {
   withTempDir((dir) => {
     writeFixtureRoot(dir);
