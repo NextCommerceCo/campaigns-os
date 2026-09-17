@@ -439,6 +439,47 @@ the same actions in its text report, under a `Required actions:` block below the
 errors and warnings, so an operator reading stdout gets the remediation without
 re-running with `--json`.
 
+### Built-output campaign identity gate (`built_output.campaign_identity`)
+
+Every doctor run that sees built output (the packet path and `doctor --built`
+alike) checks that the pages agree about which campaign they belong to. The
+SDK reads three identity signals per page and reconciles nothing across
+pages: the API key (`<meta name="next-api-key">` beats `window.nextConfig.apiKey`,
+whether inline or in the `config.js` the page loads), the `next-funnel` meta,
+and any `setAttribution({ funnel })` call. A page copied from another funnel
+that still carries the other campaign's key, tag, or attribution call binds,
+builds, and renders without complaint, and creates or attributes the order
+against the wrong campaign. It has shipped twice.
+
+The gate blocks (not waivable — two identities on one funnel cannot both be
+intended) when:
+
+- any two observed API keys differ, from any source on any page, including a
+  page whose meta names one key while its `config.js` names another
+  (`built_output.campaign_identity.api_key_drift`);
+- `next-funnel` differs across pages (`…funnel_drift`), or, once any page
+  carries the tag, a page that declares `next-page-type` has no `next-funnel`
+  (`…funnel_missing`; a campaign that tags no page at all is consistent, and
+  the platform fills the campaign name when the tag is absent);
+- a `setAttribution({ funnel })` string disagrees with the `next-funnel` of the
+  page that calls it, or with the campaign's tag when that page has none
+  (`…attribution_drift`).
+
+One error per finding; each names the two files and the two values, so the
+repair is a one-line edit. Pages whose route contains a `-backup-` or `-old-`
+segment are parked copies: skipped and listed on the gate as `pages_skipped`,
+never scanned. Presence is not asserted: a campaign whose pages carry no key
+at all, or no `setAttribution` anywhere, passes on the funnel tag alone.
+`checkpoint waive` does not register this gate; the repair is the only route.
+
+The gate's evidence lands beside the other checkpoint gates at
+`derived.checkpoint_gates[]` (`id: built_output.campaign_identity`, status
+`pass` | `blocked` | `not_applicable`, `identity: { api_key, api_key_source,
+funnel }`, `findings[]`, `pages_scanned`, `pages_skipped`). It is proven to
+pass on the canonical rendered output of every certified starter family
+(`fixtures/certified-families/`), the reachability bar every static
+built-output gate now carries.
+
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
 ## Artifact Locations

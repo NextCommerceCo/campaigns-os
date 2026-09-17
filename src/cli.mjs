@@ -203,6 +203,7 @@ import {
   evaluateUpsellSelectorScope,
   isPostPurchasePageType,
 } from "./upsell-selector-scope.mjs";
+import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "./campaign-identity.mjs";
 import {
   BUILD_BRIEF_NORMALIZED_REL_PATH,
   BUILD_BRIEF_SCHEMA,
@@ -3030,6 +3031,22 @@ export function doctorBuiltOutput(args) {
   });
   derived.doctor_checks.push(UPSELL_SELECTOR_SCOPE);
 
+  // Cross-page campaign identity (#301). Same placement and the same reasons:
+  // family-independent, needs no packet, and the borrowed-page defect it gates
+  // is most often introduced on exactly the page-kit campaigns this path
+  // inspects.
+  recordCampaignIdentityGate({
+    subject: {
+      public_route_slug: scope.slug || null,
+      site_root: relFromDir(targetRepo, scope.campaign_dir),
+    },
+    pages: collectBuiltPageIdentityInputs(scope, targetRepo),
+    errors,
+    ready,
+    derived,
+  });
+  derived.doctor_checks.push(CAMPAIGN_IDENTITY);
+
   const synthesized = synthesizeMinimalBuildPacket({
     schemaVersion: PACKET_SCHEMA,
     targetRepo,
@@ -3885,6 +3902,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: UPSELL_SELECTOR_SCOPE,
     phase: "built-output",
     run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateUpsellSelectorScope(spec, packet, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: CAMPAIGN_IDENTITY,
+    phase: "built-output",
+    run: ({ packet, errors, ready, derived }) => validateCampaignIdentity(packet, errors, ready, derived),
   },
   {
     id: "built_output.sdk_meta_tags",
@@ -6147,6 +6169,104 @@ function recordUpsellSelectorScopeGate({ subject, pages, waivers, errors, warnin
     return gate;
   }
   ready.push(`Every bundle selector on ${gate.pages_scanned} built post-purchase page(s) is scoped away from the live cart (${gate.selectors_scanned} selector(s) scanned)`);
+  return gate;
+}
+
+// Cross-page campaign identity (#301). Every doctor invocation, like the
+// selector-scope gate above and for the same reason: the borrowed page that
+// carries another funnel's key or tag arrives in a later edit round as often
+// as at first assembly. Enumerates from the filesystem so both doctor paths
+// scan the same pages, and stays blocking regardless of stage status.
+function validateCampaignIdentity(packet, errors, ready, derived) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  const scope = siteRoot && existsSync(siteRoot) ? resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug }) : null;
+  recordCampaignIdentityGate({
+    subject: {
+      public_route_slug: publicRouteSlug || null,
+      site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
+    },
+    pages: scope?.ok ? collectBuiltPageIdentityInputs(scope, targetRepo) : [],
+    errors,
+    ready,
+    derived,
+  });
+}
+
+// The identity evaluator is pure, so the filesystem work happens here: each
+// built page's HTML plus the LOCAL scripts it loads. The API key of every
+// certified family lives in a shared config.js the pages reference by
+// `<script src>`, not in the page itself, so a page-only scan would see no
+// key at all and pass a borrowed page whose config.js names another store.
+// Absolute srcs resolve against the site root first (page-kit emits
+// `/<slug>/config.js`), then the campaign directory (a root-served campaign
+// emits `/config.js`); relative srcs resolve against the page. Remote and
+// missing scripts contribute nothing.
+function collectBuiltPageIdentityInputs(scope, targetRepo) {
+  const scriptCache = new Map();
+  const readScript = (path) => {
+    if (!scriptCache.has(path)) {
+      let content = null;
+      try {
+        if (existsSync(path) && statSync(path).isFile()) content = readFileSync(path, "utf8");
+      } catch {
+        content = null;
+      }
+      scriptCache.set(path, content);
+    }
+    return scriptCache.get(path);
+  };
+  const resolveLocalScript = (src, builtPath) => {
+    const raw = String(src || "").trim();
+    if (!raw || raw.startsWith("//") || isAbsoluteHttpUrl(raw) || raw.startsWith("data:")) return null;
+    const clean = raw.replace(/[?#].*$/, "");
+    if (!clean) return null;
+    if (clean.startsWith("/")) {
+      const rel = clean.replace(/^\/+/, "");
+      const candidates = [join(scope.site_root, rel), join(scope.campaign_dir, rel)];
+      return candidates.find((candidate) => existsSync(candidate)) || null;
+    }
+    return resolve(dirname(builtPath), clean);
+  };
+  return scope.pages.map((page) => {
+    const content = readFileSync(page.built_path, "utf8");
+    const scripts = [];
+    for (const src of externalScriptSources(content)) {
+      const path = resolveLocalScript(src, page.built_path);
+      const scriptContent = path ? readScript(path) : null;
+      if (scriptContent == null) continue;
+      scripts.push({ src, file: relFromDir(targetRepo, path), content: scriptContent });
+    }
+    return {
+      page_id: page.page_id,
+      route: page.route,
+      file: relFromDir(targetRepo, page.built_path),
+      content,
+      scripts,
+    };
+  });
+}
+
+function recordCampaignIdentityGate({ subject, pages, errors, ready, derived }) {
+  const gate = evaluateCampaignIdentity({ subject, pages });
+  if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(gate);
+
+  if (gate.status === "blocked") {
+    // One error per finding, each under its own code, so a report reader can
+    // tell key drift from tag drift without parsing prose; every error carries
+    // the whole gate so the JSON shape matches the other checkpoint gates.
+    for (const finding of gate.findings) {
+      addIssue(errors, finding.code, finding.message, { finding, checkpoint_gate: gate });
+    }
+    return gate;
+  }
+  if (gate.status === "not_applicable") {
+    ready.push("Campaign identity checkpoint not applicable: no built page to scan yet.");
+    return gate;
+  }
+  const skipped = gate.pages_skipped.length ? `; skipped ${gate.pages_skipped.length} parked page(s): ${gate.pages_skipped.join(", ")}` : "";
+  ready.push(`All ${gate.pages_scanned} built page(s) agree on campaign identity (next-funnel ${gate.identity.funnel ? `"${gate.identity.funnel}"` : "not declared"}, API key ${gate.identity.api_key ? "consistent" : "not declared"})${skipped}`);
   return gate;
 }
 
