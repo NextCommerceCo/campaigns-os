@@ -657,11 +657,11 @@ test("the sdk gate's repo_newer advisory names spec derive as a command, and QA 
 // to inference.
 
 test("planSpecDerive binds by terminal segment, falls through a packet binding that names no file, and skips disabled or id-less pages", () => {
-  // A nested spec value reduces to its terminal segment in doctor's eyes, so
-  // it binds by that segment and reads as unchanged, not rewritten.
+  // A nested spec value binds by its terminal segment, and is rewritten to
+  // the route the tree states: prepare-build projects the full route.
   const nested = specFixture((draft) => { draft.funnels[0].pages[2].page_url = "offers/upsell/"; });
   const byTerminal = planSpecDerive({ spec: nested, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
-  assert.deepEqual(byTerminal.unchanged.filter((row) => row.page_id === "upsell").map((row) => [row.before, row.after, row.source]), [["offers/upsell/", "upsell/", "upsell.html"]]);
+  assert.deepEqual(byTerminal.changes.filter((row) => row.page_id === "upsell").map((row) => [row.before, row.after, row.source]), [["offers/upsell/", "upsell/", "upsell.html"]]);
   const prefixed = specFixture((draft) => { draft.funnels[0].pages[1].page_url = "/runtime-packet-demo/checkout/"; });
   const same = planSpecDerive({ spec: prefixed, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES, publicRouteSlug: "runtime-packet-demo" });
   assert.ok(same.unchanged.some((row) => row.page_id === "checkout"), "a slug-prefixed spelling is the same route to doctor");
@@ -986,6 +986,22 @@ test("spec derive re-binds the sidecars' spec identity after a write, and leaves
     assert.deepEqual(drifted.rebound, { build_context: true, assembly_report: false });
     assert.ok(drifted.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound" && /Assembly Report/.test(issue.message)));
     assert.equal(readJson(reportPath).identity.spec_hash, "0".repeat(64));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive survives a malformed Build Context after the write and still stamps the doctor sidecar", () => {
+  const { dir, packetPath, targetRepo } = fixture();
+  try {
+    writeFileSync(join(targetRepo, ".campaign-runtime", "build-context.json"), "{not json");
+    writeJson(join(targetRepo, DOCTOR_SIDECAR_REL_PATH), { schema_version: "campaigns-os-doctor-output/v1", ok: true, status: "ready" });
+    const result = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.equal(result.ok, true);
+    assert.equal(result.written, true);
+    assert.deepEqual(result.rebound, { build_context: false, assembly_report: true });
+    assert.ok(result.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound" && /Build Context could not be read/.test(issue.message)));
+    assert.equal(readJson(join(targetRepo, DOCTOR_SIDECAR_REL_PATH)).stale, true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -309,14 +309,14 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
         notDerived.push({ field, page_id: page.id, reason: "spec_container_invalid", detail: `the spec's ${containerIssue} is not an object, so ${field} cannot be written; repair the spec, then derive again.` });
         continue;
       }
-      // Compared the way doctor reads a route (slug prefix stripped, a
-      // nested value reduced to its terminal segment): a value that differs
-      // only in spelling ("/slug/checkout/", "checkout") is the same route to
-      // doctor and is not rewritten.
-      const sameToDoctor = typeof before === "string"
-        && runtimeRelativeRouteForSpecValue(before, publicRouteSlug) === runtimeRelativeRouteForSpecValue(after, publicRouteSlug)
+      // Compared the way prepare-build projects a route (normalized, slug
+      // prefix stripped): a value that differs only in spelling
+      // ("/slug/checkout/", "checkout") is the same route and is not
+      // rewritten; a value nested differently from the tree is not.
+      const sameRoute = typeof before === "string"
+        && stripPublicRoutePrefix(normalizePageKitRoute(before), publicRouteSlug) === after
         && (before.trim() !== "" || page.is_entry === true);
-      if (sameToDoctor) unchanged.push(row);
+      if (sameRoute) unchanged.push(row);
       else {
         changes.push(row);
         const mirrorAt = mirrorIndex.get(page.id);

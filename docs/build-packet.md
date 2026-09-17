@@ -255,10 +255,11 @@ Each page is bound to one file: the packet's own projection first
 (`source_html.pages[].page_kit.target_path`, the file the build stage wrote
 for that page id), else a file whose route equals the page's current route,
 whose terminal segment equals it, or whose filename is the page id. The
-derived route is compared the way doctor reads a route (slug prefix
-stripped, a nested value reduced to its terminal segment), so a spelling
-doctor already resolves to the tree's route (`checkout`, `/<slug>/checkout/`)
-is not a change. A routing hint in `sdk_hints.meta_tags` (`next-success-url`,
+derived route is compared the way prepare-build projects a route
+(normalized, slug prefix stripped), so a spelling that already resolves to
+the tree's route (`checkout`, `/<slug>/checkout/`) is not a change, and a
+value nested differently from the tree (`offers/upsell/` against
+`upsell.html`) is. A routing hint in `sdk_hints.meta_tags` (`next-success-url`,
 `next-upsell-accept-url`, `next-upsell-decline-url`) that no longer matches
 the derived route of the page it names is reported as
 `spec.derive.routing_hint_stale` on every run until the Map is re-saved;
@@ -275,7 +276,7 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | `spec_ahead` | the spec pin is ahead of the repo pin: the state doctor blocks on with `page-kit sync` as its repair (#413); one command owns it, so derive never moves a spec pin backwards |
 | `page_tree_missing`, `page_file_not_found`, `page_file_ambiguous` | no page tree, no file binds to the page, or more than one does |
 | `entry_route_undeclared` | the page binds to the top-level `index.html` (the entry route, `""`) but is not flagged `is_entry`; doctor honours an empty `page_url` only on the entry page, so the flag is asked for in the Map rather than the route written |
-| `spec_container_invalid` | `global_config`, `analytics` or `analytics.providers.<provider>` exists in the spec but is not an object; reported by the plan so `--dry-run` and the write agree |
+| `spec_container_invalid` | `global_config`, `runtime`, `analytics`, `analytics.providers` or `analytics.providers.<provider>` exists in the spec but is not an object; reported by the plan so `--dry-run` and the write agree |
 | `target_empty` | the entry's `gtm_id` / `fb_pixel_id` is empty while the spec declares an id; an empty repo value never deletes a spec id |
 
 A placeholder id (`GTM-XXXXXXX`, a run of one digit) is `target_invalid`:

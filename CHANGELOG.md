@@ -52,8 +52,9 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   top-level `index.html`, the entry route, but is not flagged `is_entry`;
   doctor honours an empty `page_url` only on the entry page, so the flag is
   asked for rather than the route written), `spec_container_invalid` (the
-  spec's `global_config`, `analytics` or `analytics.providers.<p>` is not an
-  object, reported by the plan so a dry run and a real run agree),
+  spec's `global_config`, `runtime`, `analytics`, `analytics.providers` or
+  `analytics.providers.<p>` is not an object, reported by the plan so a dry
+  run and a real run agree),
   `spec_ahead` (the spec pin is ahead of the repo pin: that is the state
   doctor blocks on with `page-kit sync` as its repair, per #413, and only one
   command may own it, so derive never moves a spec pin backwards), and
@@ -67,10 +68,9 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   whose derived route it no longer matches is reported as
   `spec.derive.routing_hint_stale` on every run until the Map is re-saved;
   hints are a Map projection the editor regenerates and are not rewritten.
-  Routes are compared the way doctor reads them (`runtimeRelativeRouteForSpecValue`:
-  slug prefix stripped, a nested value reduced to its terminal segment), so
-  a spelling that doctor already resolves to the tree's route is not
-  rewritten. After a write, the Build Context's `spec.hash` /
+  Routes are compared the way prepare-build projects them (normalized, slug
+  prefix stripped), so a spelling that already resolves to the tree's route
+  is not rewritten and a value nested differently from the tree is. After a write, the Build Context's `spec.hash` /
   `spec.material_hash` and the Assembly Report's `identity.spec_hash` /
   `identity.spec_material_hash` are re-bound to the new spec when they were
   bound to the one replaced (`rebound` on the result; QA's verdict and the

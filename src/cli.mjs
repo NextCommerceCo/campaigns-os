@@ -5040,7 +5040,13 @@ export function specDeriveCommand(args) {
     const afterMaterialHash = specMaterialHash(spec);
     const boundToOld = (raw, material) => raw === beforeRawHash || material === beforeMaterialHash;
     const contextPath = workspace?.contextPath || null;
-    const context = contextPath ? readJsonIfExists(contextPath) : null;
+    let context = null;
+    try {
+      context = contextPath ? readJsonIfExists(contextPath) : null;
+    } catch (error) {
+      result.rebound.build_context = false;
+      addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context could not be read (${singleLineDetail(error.message)}); its spec identity was not updated. Re-run prepare-build before QA so the bundle correlates.`);
+    }
     if (isObject(context?.spec)) {
       if (boundToOld(context.spec.hash, context.spec.material_hash)) {
         try {
