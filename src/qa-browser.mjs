@@ -3070,6 +3070,15 @@ function stampTestOrderPlan(result, plan) {
 // Convert the browser runner's private result into the private receipt capture
 // envelope. Receipt recognition delegates exclusively to the topology module's
 // canonical terminal classifier; this layer never guesses from URL text.
+//
+// A recognized receipt carries two readings of the same order. `capture` is
+// the receipt document alone; `journeyCapture` is every document the path
+// loaded, collected at the same moment. The SDK fires dl_purchase (and the
+// outbound Purchase it drives) on the FIRST `?ref_id=` page that fetched the
+// order — the upsell page when the funnel has one — and remembers the
+// transaction id so the receipt stays silent (#392). Purchase authority is
+// therefore the journey; the receipt reading rides along as the diagnostic
+// that says which document fired. Neither crosses an unrecognized terminal.
 function receiptAnalyticsAttempt(plan, result) {
   const id = planId(plan);
   const finalUrl = result?.order?.final_url || null;
@@ -3085,6 +3094,12 @@ function receiptAnalyticsAttempt(plan, result) {
       : {}),
     ...(receiptRecognized && result?.receipt_analytics_capture_error
       ? { captureError: stablePrivateCaptureError(result.receipt_analytics_capture_error) }
+      : {}),
+    ...(receiptRecognized && result?.analytics_journey_capture
+      ? { journeyCapture: result.analytics_journey_capture }
+      : {}),
+    ...(receiptRecognized && result?.analytics_journey_capture_error
+      ? { journeyCaptureError: stablePrivateCaptureError(result.analytics_journey_capture_error) }
       : {}),
   };
 }

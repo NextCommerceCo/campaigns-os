@@ -4268,7 +4268,229 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.32.0+agent.1",
-      "changelog_sha256": "d05c39143b50da7a2630d2036536e57045a35a805a0df460a1e594cccb0cf811",
+      "changelog_sha256": "56f6d9524920eb56bf24ab6fba4cd2490265634bd5dc7de7d14847e2b0d6a0d0",
+      "agent_impact": "analytics-correctness:purchase-fires now reads the outbound Purchase across the whole post-checkout journey of the typed-card order instead of the receipt document alone, so a funnel with an offer between checkout and receipt no longer reads absent when the SDK reported dl_purchase on the upsell page (#392). Verdicts on such funnels change from a false blocker (or a waiver) to a pass; the assertion id and the waiver lane are unchanged. evidence.receipts[] entries gain scope, receipt_signals and fired_on.",
+      "compatibility": "compatible",
+      "migration": "None. A recorded purchase-fires waiver on a funnel with an offer page can be retired once the run passes without it.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Analytics correctness: the receipt qualifies the order and the journey is measured; the paragraph that said a checkout or upsell Purchase cannot satisfy a silent receipt is replaced by the SDK first-?ref_id=-page rule and the new scope, receipt_signals and fired_on evidence fields."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Analytics-correctness bullet states the journey-scoped Purchase reading and the receipt-document diagnostic instead of the receipt-only rule; version 1.3.0 -> 1.3.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-qa version 1.3.0 -> 1.3.1."
+        }
+      ],
+      "entry_sha256": "bbd59833a042ca39be0af23007df1649b82506c62069edd27f06a0467726922f"
+    },
+    {
+      "id": "RL-0113",
+      "sequence": 113,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": "1.33.0",
+      "changelog_section": "1.33.0",
+      "changelog_sha256": "67e2329d572bcade3f0df4dcf6fbaf1a1961b585f372d1c2f49ca4a009bff170",
+      "agent_impact": "New qa subcommand: campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json] posts an already-stored QA verdict to the QA portal (POST /api/qa/verdicts, the rail qa run uses) without re-running QA and without placing an order (#328). Without --verdict the committed .campaign-runtime/qa-verdict.json names the run and that run’s full verdict under <target-repo>/qa-output/<map-id>/<run-id>.json is preferred; only the projection on disk is published as source_kind sidecar_projection. Refusals exit 2 with nothing sent and a named refusal.code: spec_hash_mismatch (the verdict’s spec_hash is not the packet’s current spec under the one normalising comparator; both hashes on the result; remedy qa run), spec_hash_absent, already_published (the run’s Run Record records this verdict run_id as published; --republish overrides), verdict_untrusted, campaign_mismatch, verdict_missing / verdict_unreadable / verdict_invalid, order_flags_refused (--test-order, --browser, --max-order-creations, --max-test-orders, --legacy-api-test-order, --select-package, --apply-coupon are refused by name). The post is classified by HTTP status as a remit is: stored, already_stored (409, ok), ok_unparsed_ack are exit 0 with dashboard_url; refused and transport_error exit 1. The result carries orders_placed: 0. Run Record schema (campaigns-os-run-record/v0) gains the optional qa_verdict_publish block (verdict_run_id, publisher qa run | qa publish, attempted, ok, error, endpoint, state skipped | ok | failed, result in the remit_result vocabulary, base_kind, published_at); additive, additionalProperties unchanged, absent on older records. qa run builds the block from its own publish or skip and hands it to the run session, so run end and the QA auto-end stamp it; qa publish stamps the record whose qa_verdict artifact references the verdict; a stored ok is never downgraded. qa run --json gains publish and qa_verdict_publish; a 409 from the portal is now an ok publish rather than a post_error. surface_version 1.32.0 -> 1.33.0; package version 1.33.0.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Adds the optional qa_verdict_publish block (verdict_run_id, publisher, attempted, ok, error, endpoint, state, result, base_kind, published_at); additive, additionalProperties unchanged."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "New subcommand qa publish posts an already-stored verdict to the QA portal without a re-run or an order; refuses a stale spec_hash, an already-published verdict, an untrusted or foreign one, and order-run flags by name; classifies the post by HTTP status; stamps the outcome on the run’s Run Record. qa run --json gains publish and qa_verdict_publish and treats a 409 as an ok publish. Usage and qa --help list the command, --verdict and --republish."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run-record",
+          "summary": "Writes qa_verdict_publish onto the record from the run session’s QA attempt (run end and the QA auto-end), carries a prior ok forward on re-emit, and never downgrades a stored ok."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.32.0 -> 1.33.0; the Run Record schema hash is re-pinned."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The schema row records the 1.33.0 additive qa_verdict_publish block; the CLI row names qa publish."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "version 1.32.0 -> 1.33.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "Package version line reads 1.33.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "version 1.32.0 -> 1.33.0 (equals surface_version); no export, bin, files or dependency change."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lockfile version field follows package.json to 1.33.0; no resolved dependency changed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "New Publish a stored verdict (qa publish) section under Run: the local-then-publish two-command flow, verdict source resolution, the refusal table, outcome classification and exit codes, and the Run Record block."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Remit Channel names the qa_verdict_publish block, who writes it (qa run via the session, qa publish directly) and the never-downgrade rule."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: supported surface at generation time 1.33.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: supported surface at generation time 1.33.0."
+        }
+      ],
+      "entry_sha256": "f19d93074c9a7fd4955fe30c6b5005bcede6be6ee1b7f805ff19758a11e5200e"
+    },
+    {
+      "id": "RL-0114",
+      "sequence": 114,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.33.0+agent.1",
+      "changelog_sha256": "ddffe4ceed65b72e2b98e94926b1caa5e4932c50dd8b848e87f28f51099547cb",
+      "agent_impact": "Doctor gains the built-output check built_output.campaign_identity (#301), run on every doctor invocation that sees built output from both entry points (packet path and doctor --built), beside built_output.upsell_selector_scope in the built-output check registry. It blocks, unwaivably, when a built campaign’s pages disagree about which campaign they belong to: built_output.campaign_identity.api_key_drift (any two observed API keys differ — <meta name=\"next-api-key\">, inline window.nextConfig.apiKey, the apiKey in the local config.js a page loads by <script src>, or the legacy nextCampaign.config({ apiKey }) — from any source on any page, including one page whose meta and config.js disagree), .funnel_drift (next-funnel meta differs across pages), .funnel_missing (a page declares next-page-type but no next-funnel), .attribution_drift (a setAttribution({ funnel }) string disagrees with the calling page’s next-funnel, or with the campaign’s tag when that page has none). One error per finding naming the two files and the two values; the gate’s single required action is the edit, and checkpoint waive does not register the gate. Pages whose route has a -backup- or -old- segment are skipped and listed as pages_skipped. Presence is not asserted (no key anywhere, or no setAttribution anywhere, passes on the funnel tag alone). Evidence: derived.checkpoint_gates[] entry id built_output.campaign_identity with status pass | blocked | not_applicable, code, reason, identity { api_key, api_key_source, funnel }, findings[] { kind, code, a, b, message }, pages_scanned, pages_skipped, required_actions[]; the id is appended to derived.doctor_checks. A consumer that treats every checkpoint_gates[] entry as waivable must read waivable: false on this one. Reachability: fixtures/certified-families/ (rendered output of every certified starter family, regenerated by scripts/refresh-certified-family-fixtures.mjs) and src/doctor-certified-family-reachability.test.mjs prove the gate, and built_output.upsell_selector_scope, pass on real pages from every certified family; the tree is rendered from templates main 11352c3 rather than the catalog pin a7cc8be because at the pin every family’s hidden upsell display selectors predate templates PR #153 and the selector-scope gate correctly blocks there. docs/build-packet.md gains the gate’s section, docs/campaigns-os-build-flow.md the assembly rule, skill next-campaigns-os 1.0.12 -> 1.0.13 extends step 6.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "New built-output check built_output.campaign_identity on both doctor entry points: blocks (not waivable) on cross-page API key, next-funnel and setAttribution drift with one error per finding under built_output.campaign_identity.{api_key_drift,funnel_drift,funnel_missing,attribution_drift}, each naming the two files and the two values; gate at derived.checkpoint_gates[] and id in derived.doctor_checks; -backup-/-old- routes skipped and listed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "New section \"Built-output campaign identity gate (built_output.campaign_identity)\": the three identity signals, the four finding codes, non-waivability, parked-page skips, presence not asserted, the gate’s evidence shape, and the certified-family reachability proof."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Assembly rule \"Every page names the same campaign\" beside the pre-checkout SDK bootstrap rule, naming built_output.campaign_identity as the doctor enforcement."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Step 6 also resolves built_output.campaign_identity on every doctor run that sees built output: one key, one next-funnel, setAttribution agreeing with the page’s tag; not waivable; parked copies skipped; version 1.0.12 -> 1.0.13."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os version 1.0.12 -> 1.0.13."
+        }
+      ],
+      "entry_sha256": "19c8ba412af1b98331c1a3ed91a10d74633b6bb0fe978a6470cd0c192e19539e"
+    },
+    {
+      "id": "RL-0115",
+      "sequence": 115,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.33.0+agent.2",
+      "changelog_sha256": "998f69600eab97a97e36e1466301588734aca739bdbdbfbb1e80425aa3f59b66",
+      "agent_impact": "spec derive gains --write-map [--proxy-base <url>] (#415, the repo -> Map write-back #413 named as the end state): after the local derive, the derived SDK pin is recorded in the saved Map's Build hints field (Campaign Cart SDK version) through the proxy Worker. The Map named by the packet's spec.map_id is read back (GET /api/spec/<map-id>) and re-stated with exactly the pin fields moved (global_config.sdk_version, and runtime.sdk_version only when the Map already declares the alias); every other field is the Map's own read-back, never the local spec, so routes or analytics ids derive wrote locally do not travel. PUT /api/maps/<map-id> carries the packet's Campaigns API key (packet, local spec or declared env source) as X-Campaign-Key and the Map's spec_hash as X-Spec-Hash (a save in between is a 409, not an overwrite); the proxy base is the canonical https://campaign-map.nextcommerce.com unless --proxy-base names another (https, or a loopback host over http with the clear-text warning). Direction of authority as the gate's: the write goes forward or not at all. Result gains write_map and map (null without the flag): map.status written (Map pin absent or behind; map.spec_identity.before/.after carry the Map's spec_hash and saved_at) | unchanged | would_write (--dry-run reads, sends nothing) | refused (warning, exit 0, local derive stands: ahead — a Map pin newer than the repo pin is never moved backwards; pin_unreadable) | skipped (pin not derived: pin_<not_derived reason>; or local derive blocked; nothing read or sent) | failed (error, exit 2, local derive stands: key_missing, key_mismatch, not_found, changed_underneath, rejected, proxy_base_insecure, network_error, http_error, response_invalid), reported as spec.derive.map_<reason> warnings/errors (spec.derive.map_ahead, spec.derive.map_key_mismatch, …) and one text line. A write is recorded on the Assembly Report evidence[] (Map write-back: global_config.sdk_version <before> -> <after> on Map <id> at <time> via spec derive --write-map (Map spec_hash <before> -> <after>); map.recorded \"assembly_report\"), the doctor sidecar is marked stale by spec derive --write-map, and the lifecycle journal the Run Record embeds carries the command; a missing report leaves spec.derive.map_not_recorded with the same line, and a report that took the line while the doctor stamp failed leaves spec.derive.map_doctor_sidecar_not_marked, and one that could not be read back leaves spec.derive.map_recorded_status_unknown (map.recorded \"unknown\"). A 403 on the Map read is key_mismatch, as on the write. src/spec-fetch.mjs errors carry kind and status as fields (no caller parses the message). --write-map is a bare flag (valued is rejected); --proxy-base needs a URL and is refused without --write-map; without the flag nothing is read from or sent to the Map. Doctor: the page_kit.sdk_version.repo_newer gate reason and the refresh_spec action description name --write-map; the action's command, statuses and codes are unchanged. Surface version unchanged (a flag beneath a listed command).",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "spec",
+          "summary": "spec derive --write-map [--proxy-base <url>]: after the local derive, records the derived SDK pin in the saved Map's Build hints field through the proxy Worker (read back, re-state with only the pin moved, PUT under X-Campaign-Key and X-Spec-Hash), never moving a Map pin backwards; result gains write_map and map { status written | unchanged | would_write | refused | skipped | failed, reason, before, after, spec_identity, recorded }; a refusal is a warning (exit 0), a write that could not happen is an error (exit 2); a write is recorded on the Assembly Report evidence[]."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "The page_kit.sdk_version.repo_newer gate reason and the refresh_spec advisory description name spec derive --write-map as the way to record the pin in the Map; command, statuses and codes unchanged."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "CLI commands row notes spec derive's --write-map flag (1.33.0+agent.2) and that it never moves a Map pin backwards; the command list is unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "New subsection \"Recording the pin in the Map (--write-map)\" under spec derive: transport, credential and precondition, the map.status table, traceability on the Assembly Report; the repo_newer bullet and the derive usage line name the flag."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Step 5 names --write-map beside the local derive and the hand re-save of the Map; version 1.0.13 -> 1.0.14."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os version 1.0.13 -> 1.0.14."
+        }
+      ],
+      "entry_sha256": "57ddb9eb74cafaf237afbfaddacd09dcb7cb311cb9c2b6a61281e1478ad9161f"
+    },
+    {
+      "id": "RL-0116",
+      "sequence": 116,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.33.0+agent.3",
+      "changelog_sha256": "b56ed74c0db0aa709891428b4fd6b075a876e1cae97818f971c0b90774699eb5",
       "agent_impact": "campaigns-os spec derive gains an opt-in store source (#432 slice 2): --from-store <subdomain> [--store-token-source env:<VAR>] reads the store's Admin API (GET /store/ at 2024-04-01; GET /pages/ at unstable, same-origin cursors, at most ten requests) with the bearer token in <SUBDOMAIN>_ADMIN_TOKEN (or the named env var; never a command-line value, never echoed) and writes the nine campaign.store_* Store Profile fields into the packet's local spec: store_name, store_url (https://<primary_domain>), store_phone, store_phone_tel (tel: URI, plain numbers only), and store_terms/privacy/contact/returns/shipping as https://<primary_domain>/<slug>/ from the one storefront page carrying the policy (conventional slug first, else slug/title words). Rows join the before -> after diff in Store Profile field order; values compare NFC-normalized and trimmed as page-kit sync does, plus derive's own leniency that URL fields compare without a trailing slash; every value passes the Store Profile shape rule (demo residue, non-http(s), bad tel:, control characters = target_invalid). A field the store cannot state is not_derived and the spec value is left as it is: store_field_missing, store_domain_missing, store_page_not_found, store_page_ambiguous, store_pages_unavailable, store_pages_truncated; a primary domain differing from the spec's store_url host warns spec.derive.store_domain_changed. Result gains store { subdomain, admin_api, token_source, store_read, pages_read, primary_domain }; after a store write next = page-kit sync then doctor. Store read failures refuse with nothing written (exit 2): spec.derive.store_credential_missing, store_credential_invalid (token not one line of printable ASCII, never sent), packet_changed_underneath, store_unauthorized, store_not_found, store_unreachable, store_response_invalid. The default spec derive run is unchanged and offline; SPEC_DERIVE_FIELDS admits campaign.store_*.",
       "compatibility": "additive",
       "migration": "None. Pass --from-store <subdomain> (and export <SUBDOMAIN>_ADMIN_TOKEN, or name a variable with --store-token-source env:<VAR>) to derive the store profile; runs without the flag behave as in 1.31.0.",
@@ -4289,16 +4511,16 @@
           "class": "skill",
           "path": "skills/next-campaigns-os/SKILL.md",
           "surface_entry": null,
-          "summary": "Step 5 names spec derive --from-store for the store profile (a field the store cannot state is left as it is); version 1.0.12 -> 1.0.13."
+          "summary": "Step 5 names spec derive --from-store for the store profile (a field the store cannot state is left as it is); version 1.0.14 -> 1.0.15."
         },
         {
           "class": "skill",
           "path": "skills.json",
           "surface_entry": "skills.json",
-          "summary": "next-campaigns-os version 1.0.12 -> 1.0.13."
+          "summary": "next-campaigns-os version 1.0.14 -> 1.0.15."
         }
       ],
-      "entry_sha256": "5eec0cdbb71ce20a7339964a25ecc29b83a7d2bd1b6c6013fbdc6f6435d86a47"
+      "entry_sha256": "bf9be7f06ddcf125ed3421de4daa4b8d05bd412214a4000ab15992b7184c61c1"
     }
   ]
 }

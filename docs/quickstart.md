@@ -269,7 +269,9 @@ the authority for the SDK pin, the page routes and the analytics ids, and
 those into the local CampaignSpec with a field-by-field diff (`--dry-run`
 first). After a bump in `_data/campaigns.json`, that is the one command that
 brings the spec back in line; doctor's `page_kit.sdk_version.repo_newer`
-warning names it. The store profile (`campaign.store_*`) comes from the store
+warning names it. Add `--write-map` and the pin is also recorded in the saved
+Map's Build hints field, so the Map and its next export stop reading stale.
+The store profile (`campaign.store_*`) comes from the store
 itself: add `--from-store <subdomain>` with the store's Admin API read token
 in `<SUBDOMAIN>_ADMIN_TOKEN` and the same run writes the store's name,
 primary domain, phone and policy-page URLs into the spec too, for `page-kit

@@ -53,6 +53,7 @@ import {
   validateRunRecord,
   validateRunRecordLifecycle,
   writeRunRecord,
+  validateQaVerdictPublish,
 } from "./run-record.mjs";
 import { annotateDoctorIssueCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import {
@@ -90,6 +91,7 @@ import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, stampDoctorProducer, wri
 import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
+import { writeMapSdkPin } from "./map-pin-writeback.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
 import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, describeRemitBaseKind, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
@@ -201,6 +203,7 @@ import {
   evaluateUpsellSelectorScope,
   isPostPurchasePageType,
 } from "./upsell-selector-scope.mjs";
+import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "./campaign-identity.mjs";
 import {
   BUILD_BRIEF_NORMALIZED_REL_PATH,
   BUILD_BRIEF_SCHEMA,
@@ -461,7 +464,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
-  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads the store's Admin API with the token in env:<SUBDOMAIN>_ADMIN_TOKEN (or --store-token-source env:<VAR>; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable).
+  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads the store's Admin API with the token in env:<SUBDOMAIN>_ADMIN_TOKEN (or --store-token-source env:<VAR>; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -477,6 +480,7 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
+  campaigns-os qa publish --packet <json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json]   # post an already-stored verdict (the sidecar's run, or --verdict) to the QA portal without a re-run or an order; refuses a stale spec_hash or an already-published verdict
   campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]   # --order-path-depth writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
@@ -944,6 +948,10 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
     disposition: optionalString(result.verdict.disposition) || optionalString(result.status),
     run_id: optionalString(result.verdict.run_id) || optionalString(result.run_id),
     completed_at: optionalString(result.verdict.completed_at),
+    // What the QA portal answered for this attempt's verdict, in the Run
+    // Record's block shape, so the record this session closes under says
+    // whether the verdict is published and `qa publish` can refuse a repeat.
+    publish: isObject(result.qa_verdict_publish) ? result.qa_verdict_publish : null,
   };
   const updatedFound = {
     ...found,
@@ -1123,9 +1131,9 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // Inequality on purpose: knownCommands() harvests top-level command
     // literals by an equality pattern a subcommand equality would also match.
     if (subcommand !== "derive") throw new Error("Unknown spec subcommand. Use: campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json].");
-    const result = Object.hasOwn(args, "from-store") ? await specDeriveFromStoreCommand(args) : specDeriveCommand(args);
+    const result = await specDeriveWithMapWriteback(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else for (const line of specDeriveTextLines(result)) console.log(line);
+    else for (const line of specDeriveWriteMapTextLines(result)) console.log(line);
     if (!result.ok) process.exitCode = 2;
     return;
   }
@@ -3031,6 +3039,22 @@ export function doctorBuiltOutput(args) {
   });
   derived.doctor_checks.push(UPSELL_SELECTOR_SCOPE);
 
+  // Cross-page campaign identity (#301). Same placement and the same reasons:
+  // family-independent, needs no packet, and the borrowed-page defect it gates
+  // is most often introduced on exactly the page-kit campaigns this path
+  // inspects.
+  recordCampaignIdentityGate({
+    subject: {
+      public_route_slug: scope.slug || null,
+      site_root: relFromDir(targetRepo, scope.campaign_dir),
+    },
+    pages: collectBuiltPageIdentityInputs(scope, targetRepo),
+    errors,
+    ready,
+    derived,
+  });
+  derived.doctor_checks.push(CAMPAIGN_IDENTITY);
+
   const synthesized = synthesizeMinimalBuildPacket({
     schemaVersion: PACKET_SCHEMA,
     targetRepo,
@@ -3886,6 +3910,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: UPSELL_SELECTOR_SCOPE,
     phase: "built-output",
     run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateUpsellSelectorScope(spec, packet, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: CAMPAIGN_IDENTITY,
+    phase: "built-output",
+    run: ({ packet, errors, ready, derived }) => validateCampaignIdentity(packet, errors, ready, derived),
   },
   {
     id: "built_output.sdk_meta_tags",
@@ -6250,6 +6279,104 @@ function recordUpsellSelectorScopeGate({ subject, pages, waivers, errors, warnin
     return gate;
   }
   ready.push(`Every bundle selector on ${gate.pages_scanned} built post-purchase page(s) is scoped away from the live cart (${gate.selectors_scanned} selector(s) scanned)`);
+  return gate;
+}
+
+// Cross-page campaign identity (#301). Every doctor invocation, like the
+// selector-scope gate above and for the same reason: the borrowed page that
+// carries another funnel's key or tag arrives in a later edit round as often
+// as at first assembly. Enumerates from the filesystem so both doctor paths
+// scan the same pages, and stays blocking regardless of stage status.
+function validateCampaignIdentity(packet, errors, ready, derived) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  const scope = siteRoot && existsSync(siteRoot) ? resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug }) : null;
+  recordCampaignIdentityGate({
+    subject: {
+      public_route_slug: publicRouteSlug || null,
+      site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
+    },
+    pages: scope?.ok ? collectBuiltPageIdentityInputs(scope, targetRepo) : [],
+    errors,
+    ready,
+    derived,
+  });
+}
+
+// The identity evaluator is pure, so the filesystem work happens here: each
+// built page's HTML plus the LOCAL scripts it loads. The API key of every
+// certified family lives in a shared config.js the pages reference by
+// `<script src>`, not in the page itself, so a page-only scan would see no
+// key at all and pass a borrowed page whose config.js names another store.
+// Absolute srcs resolve against the site root first (page-kit emits
+// `/<slug>/config.js`), then the campaign directory (a root-served campaign
+// emits `/config.js`); relative srcs resolve against the page. Remote and
+// missing scripts contribute nothing.
+function collectBuiltPageIdentityInputs(scope, targetRepo) {
+  const scriptCache = new Map();
+  const readScript = (path) => {
+    if (!scriptCache.has(path)) {
+      let content = null;
+      try {
+        if (existsSync(path) && statSync(path).isFile()) content = readFileSync(path, "utf8");
+      } catch {
+        content = null;
+      }
+      scriptCache.set(path, content);
+    }
+    return scriptCache.get(path);
+  };
+  const resolveLocalScript = (src, builtPath) => {
+    const raw = String(src || "").trim();
+    if (!raw || raw.startsWith("//") || isAbsoluteHttpUrl(raw) || raw.startsWith("data:")) return null;
+    const clean = raw.replace(/[?#].*$/, "");
+    if (!clean) return null;
+    if (clean.startsWith("/")) {
+      const rel = clean.replace(/^\/+/, "");
+      const candidates = [join(scope.site_root, rel), join(scope.campaign_dir, rel)];
+      return candidates.find((candidate) => existsSync(candidate)) || null;
+    }
+    return resolve(dirname(builtPath), clean);
+  };
+  return scope.pages.map((page) => {
+    const content = readFileSync(page.built_path, "utf8");
+    const scripts = [];
+    for (const src of externalScriptSources(content)) {
+      const path = resolveLocalScript(src, page.built_path);
+      const scriptContent = path ? readScript(path) : null;
+      if (scriptContent == null) continue;
+      scripts.push({ src, file: relFromDir(targetRepo, path), content: scriptContent });
+    }
+    return {
+      page_id: page.page_id,
+      route: page.route,
+      file: relFromDir(targetRepo, page.built_path),
+      content,
+      scripts,
+    };
+  });
+}
+
+function recordCampaignIdentityGate({ subject, pages, errors, ready, derived }) {
+  const gate = evaluateCampaignIdentity({ subject, pages });
+  if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(gate);
+
+  if (gate.status === "blocked") {
+    // One error per finding, each under its own code, so a report reader can
+    // tell key drift from tag drift without parsing prose; every error carries
+    // the whole gate so the JSON shape matches the other checkpoint gates.
+    for (const finding of gate.findings) {
+      addIssue(errors, finding.code, finding.message, { finding, checkpoint_gate: gate });
+    }
+    return gate;
+  }
+  if (gate.status === "not_applicable") {
+    ready.push("Campaign identity checkpoint not applicable: no built page to scan yet.");
+    return gate;
+  }
+  const skipped = gate.pages_skipped.length ? `; skipped ${gate.pages_skipped.length} parked page(s): ${gate.pages_skipped.join(", ")}` : "";
+  ready.push(`All ${gate.pages_scanned} built page(s) agree on campaign identity (next-funnel ${gate.identity.funnel ? `"${gate.identity.funnel}"` : "not declared"}, API key ${gate.identity.api_key ? "consistent" : "not declared"})${skipped}`);
   return gate;
 }
 
@@ -12084,6 +12211,12 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
   const write = args["no-write"] !== true;
+  // The verdict publish outcome this record carries: the session's attempt
+  // for the verdict being recorded (the auto-end and `run end` both close
+  // through here with the session still ambient), else the newest attempt
+  // that has one. Resolved before the prior record is read so an ok already
+  // on disk can win below.
+  const sessionPublish = qaVerdictPublishFromSession(ambient?.session, qaVerdictPath);
   // The record already on disk under this run_id, when a writing run would
   // replace it. run-record is keyed on run_id, and a re-run — an explicit
   // --run-id, a `run end` on a session re-opened under an id that already
@@ -12114,10 +12247,19 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     announceDefaultOnTelemetry(consent.scope || proxyBase);
   }
 
+  // A publish the record already says landed is never downgraded by a
+  // reassembly: the prior ok block wins over a session attempt that did not
+  // land, mirroring the remit carry-forward below.
+  const priorPublish = isObject(prior?.record?.qa_verdict_publish) ? prior.record.qa_verdict_publish : null;
+  const qaVerdictPublish = priorPublish?.state === "ok" && sessionPublish?.state !== "ok"
+    ? priorPublish
+    : (sessionPublish || priorPublish);
+
   const record = assembleRunRecord({
     runId,
     packageVersion: packageVersion(),
     ...toolkitProvenance({ silent }),
+    qaVerdictPublish,
     command: "run-record",
     argvShape: argvShape(args),
     consent: { state: consent.state, source: consent.source },
@@ -12307,6 +12449,22 @@ function readPriorRunRecord(runId, baseDir) {
   } catch {
     return null;
   }
+}
+
+// The publish block the session's QA attempts carry for the verdict this
+// record names (canonical path match), else the newest attempt carrying one.
+// Only a block that validates is returned: the session file is internal and
+// a malformed block must not make the Run Record unwritable.
+function qaVerdictPublishFromSession(session, qaVerdictPath = null) {
+  const attempts = Array.isArray(session?.qa_attempts) ? session.qa_attempts : [];
+  const target = isNonEmptyString(qaVerdictPath) ? canonicalPath(resolve(qaVerdictPath)) : null;
+  const candidates = attempts.filter((attempt) => isObject(attempt?.publish));
+  const matching = target
+    ? candidates.find((attempt) => isNonEmptyString(attempt.path) && canonicalPath(resolve(attempt.path)) === target)
+    : null;
+  const chosen = matching || candidates[candidates.length - 1] || null;
+  if (!chosen) return null;
+  return validateQaVerdictPublish(chosen.publish).length === 0 ? chosen.publish : null;
 }
 
 // The remit outcome a prior record carries, in the shape the stamping code
@@ -13040,4 +13198,172 @@ function formatSkillInstallSummary(skill) {
   if (skill.action === "retired") return `${prefix}${skill.name}: ${skill.note}`;
   if (skill.action === "occupied_by_other") return `${prefix}${skill.name}: ${skill.note}`;
   return `${prefix}${skill.name}: unchanged (${skill.to.label})`;
+}
+
+// `spec derive --write-map`: the Map half of #415, kept apart from
+// specDeriveCommand on purpose (that function and spec-derive.mjs are the
+// local derive; this is the one call site that reaches the Map). The local
+// derive decides the pin (the repo pin, when the plan says the repo states
+// it); this records the same pin into the saved Map's Build hints field
+// through the proxy Worker so the Map and every export of it stop reading
+// stale. The Map is read back first and re-stated with only the pin moved,
+// under the Map's own spec_hash as a precondition, and the write goes forward
+// or not at all (map-pin-writeback.mjs). A refusal is a warning and exit 0
+// (the local derive stood); a write the operator asked for that could not
+// happen — no key, wrong key, Map gone or saved in between, proxy refused —
+// is an error and exit 2. A write is recorded on the Assembly Report's
+// evidence[] (the Run Record references the report by hash) beside the
+// result's `map`. The two flags are validated and stripped here, so the local
+// command sees exactly the argv it always has.
+const SPEC_DERIVE_MAP_FLAGS = Object.freeze(["write-map", "proxy-base"]);
+const SPEC_DERIVE_MAP_ISSUE_PREFIX = "spec.derive.map_";
+
+export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, env = process.env, warn = undefined } = {}) {
+  // `--write-map` is a bare flag: a network write must never be switched on
+  // by a stray value. `--proxy-base` names a URL or is refused here, before
+  // anything is read, as `telemetry` refuses a bare one.
+  if (Object.hasOwn(args, "write-map") && args["write-map"] !== true) {
+    throw new Error(`--write-map takes no value (got ${JSON.stringify(args["write-map"])}); write \`--write-map\` on its own, after the other flags.`);
+  }
+  if (Object.hasOwn(args, "proxy-base") && !optionalString(args["proxy-base"])) {
+    throw new Error("spec derive: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
+  }
+  if (optionalString(args["proxy-base"]) && args["write-map"] !== true) {
+    throw new Error("spec derive: --proxy-base only applies with --write-map; nothing was written.");
+  }
+  const writeMap = args["write-map"] === true;
+  const localArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !SPEC_DERIVE_MAP_FLAGS.includes(key)));
+  // A copy, so nothing here depends on the local command handing out a
+  // mutable object; the Map outcome is added beside its fields, not into them.
+  // The store source (--from-store) is the other network read; it runs
+  // before the Map write-back so the pin it reports is the one written.
+  const local = Object.hasOwn(localArgs, "from-store") ? await specDeriveFromStoreCommand(localArgs) : specDeriveCommand(localArgs);
+  const result = { ...local, write_map: writeMap, map: null };
+  if (!writeMap) return result;
+  const skipped = (reason, detail) => {
+    result.map = { status: "skipped", reason, detail, map_id: null, proxy_base: null, field: "global_config.sdk_version", before: null, after: null, spec_identity: { before: null, after: null }, warnings: [], recorded: null };
+    return result;
+  };
+  if (!result.ok) return skipped("derive_blocked", "the local derive was blocked, so no pin was decided; nothing was sent to the Map.");
+  const pinRow = [...result.changes, ...result.unchanged].find((row) => row.field === "global_config.sdk_version");
+  if (!pinRow) {
+    const held = result.not_derived.find((row) => row.field === "global_config.sdk_version");
+    const reason = held ? `pin_${held.reason}` : "pin_not_derived";
+    skipped(reason, held ? `the pin was not derived (${held.reason}), so it was not written to the Map either: ${held.detail}` : "the pin was not derived, so it was not written to the Map either.");
+    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}skipped`, `Map not written: ${result.map.detail}`, { reason });
+    return result;
+  }
+  let packet = null;
+  try {
+    packet = readJson(result.packet_path);
+  } catch {
+    packet = null;
+  }
+  const mapId = optionalString(packet?.spec?.map_id) || null;
+  const keySource = resolveCampaignsApiKeySource(packet, result.packet_path, env);
+  const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
+  const outcome = await writeMapSdkPin({
+    mapId,
+    repoPin: pinRow.after,
+    campaignKey: keySource.key,
+    proxyBase,
+    dryRun: result.dry_run,
+    ...(fetchImpl ? { fetchImpl } : {}),
+    ...(warn ? { warn } : {}),
+  });
+  if (outcome.status === "failed" && outcome.reason === "key_missing" && keySource.rejected) {
+    outcome.detail = `${describeCampaignKeyRejection(keySource.rejected) || outcome.detail} The Map write needs the key as X-Campaign-Key.`;
+  }
+  result.map = outcome;
+  for (const text of outcome.warnings) addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}validation_warning`, `The proxy accepted the Map with a warning: ${singleLineDetail(text)}`);
+  if (outcome.status === "refused") {
+    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}${outcome.reason}`, `Map ${outcome.map_id} not written: ${outcome.detail}`, { reason: outcome.reason, map_pin: outcome.before, repo_pin: outcome.after });
+    return result;
+  }
+  if (outcome.status === "failed") {
+    addIssue(result.errors, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}${outcome.reason}`, `Map ${outcome.map_id || "(no Map ID)"} not written: ${outcome.detail}`, { reason: outcome.reason });
+    result.ok = false;
+    return result;
+  }
+  if (outcome.status !== "written") return result;
+  // The write is traceable from the campaign's own record: an evidence line
+  // on the Assembly Report, which the Run Record references by hash and
+  // doctor re-reads. The report may legitimately not exist yet (a derive
+  // before prepare-build); the result document still carries the write.
+  const at = new Date().toISOString();
+  const identityNote = outcome.spec_identity.after?.spec_hash
+    ? ` (Map spec_hash ${outcome.spec_identity.before?.spec_hash || "none"} -> ${outcome.spec_identity.after.spec_hash})`
+    : "";
+  const line = `Map write-back: global_config.sdk_version ${outcome.before == null ? "(absent)" : outcome.before} -> ${outcome.after} on Map ${outcome.map_id} at ${at} via spec derive --write-map${identityNote}`;
+  try {
+    const workspace = resolveCampaignWorkspace(result.packet_path, {
+      packet,
+      followContextPointer: true,
+      reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined,
+    });
+    if (!existsSync(workspace.reportPath)) throw new Error(`no Assembly Report at ${workspace.reportPath}`);
+    commitAssemblyReport(workspace, (report) => ({
+      ...report,
+      evidence: [...(Array.isArray(report.evidence) ? report.evidence : []), line],
+    }), {
+      command: "spec derive --write-map",
+      staleReason: `spec derive wrote the repo SDK pin to the Map after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+    });
+    result.map.recorded = "assembly_report";
+  } catch (error) {
+    // The report is written before the doctor sidecar is stamped, so a throw
+    // can leave the line on disk. Read back what is there rather than claim
+    // either way: a line that landed is recorded (only the stamp failed); one
+    // that did not is carried on this result.
+    // A read-back that itself fails is a third answer, "unknown", never
+    // folded into "absent": `recorded` is the one signal an out-of-repo
+    // consumer has, and a torn re-read must not report a landed line as lost.
+    const landed = (() => {
+      try {
+        const written = readJsonIfExists(resolveCampaignWorkspace(result.packet_path, { packet, followContextPointer: true, reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined }).reportPath);
+        return Array.isArray(written?.evidence) && written.evidence.includes(line) ? "landed" : "absent";
+      } catch {
+        return "unknown";
+      }
+    })();
+    result.map.recorded = landed === "landed" ? "assembly_report" : landed === "unknown" ? "unknown" : null;
+    if (landed === "landed") addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}doctor_sidecar_not_marked`, `The Map write is recorded on the Assembly Report, but the retained doctor snapshot could not be marked stale (${singleLineDetail(error.message)}); re-run doctor before trusting it.`);
+    else if (landed === "unknown") addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}recorded_status_unknown`, `The Map was written, but the Assembly Report could not be read back after the record attempt failed (${singleLineDetail(error.message)}); whether the line landed is unknown. Check the report's evidence[] for, or add, this line: ${line}`);
+    else addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}not_recorded`, `The Map was written, but the write was not recorded on the Assembly Report (${singleLineDetail(error.message)}). Keep this result: ${line}`);
+  }
+  return result;
+}
+
+// The text form of a derive-with-Map result: the local printer's lines, with
+// the Map line and any Map errors inserted ahead of the warnings. Map errors
+// are lifted out before the local printer runs so a failed Map write after a
+// successful local write still prints the diff the write made; a blocked
+// local derive prints as it always has (the Map was never reached).
+export function specDeriveWriteMapTextLines(result) {
+  const isMapIssue = (issue) => typeof issue?.code === "string" && issue.code.startsWith(SPEC_DERIVE_MAP_ISSUE_PREFIX);
+  const mapErrors = (result.errors || []).filter(isMapIssue);
+  const lines = specDeriveTextLines({ ...result, errors: (result.errors || []).filter((issue) => !isMapIssue(issue)) });
+  if (!result.map || result.status === "blocked") return lines;
+  const insert = [specDeriveMapLine(result.map)];
+  if (mapErrors.length) {
+    insert.push("Errors:");
+    for (const issue of mapErrors) insert.push(`- ${formatIssueSummary(issue)}`);
+  }
+  const at = lines.findIndex((line) => line === "Warnings:" || line.startsWith("Next: "));
+  if (at === -1) lines.push(...insert);
+  else lines.splice(at, 0, ...insert);
+  return lines;
+}
+
+function specDeriveMapLine(map) {
+  const where = map.map_id ? `Map ${singleLineField(map.map_id)}` : "Map";
+  const pin = `${map.field}: ${map.before == null ? "(absent)" : formatDeriveValue(map.before)} -> ${formatDeriveValue(map.after)}`;
+  switch (map.status) {
+    case "written": return `${where} written: ${pin}${map.spec_identity?.after?.saved_at ? ` (saved ${map.spec_identity.after.saved_at})` : ""}${map.recorded === "assembly_report" ? "" : map.recorded === "unknown" ? " — Assembly Report record unverified (see Warnings)" : " — not recorded on the Assembly Report (see Warnings)"}`;
+    case "would_write": return `${where} (dry run, nothing sent): would write ${pin}`;
+    case "unchanged": return `${where} unchanged: already ${formatDeriveValue(map.after)}`;
+    case "refused": return `${where} not written (${map.reason}): see Warnings`;
+    case "skipped": return `${where} not written (${map.reason}): see Warnings`;
+    default: return `${where} not written (${map.reason || "failed"}): see Errors`;
+  }
 }

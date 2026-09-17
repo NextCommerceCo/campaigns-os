@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.32.0+agent.1] - 2026-09-17
+## [1.33.0+agent.3] - 2026-09-17
 
 ### Added
 
@@ -52,8 +52,224 @@ Notable supported-surface changes are recorded here.
   subdomain that is a URL, a token on the command line) are rejected before
   anything is read. `SPEC_DERIVE_FIELDS` in `src/spec-derive.mjs` now
   admits `campaign.store_*`; `src/spec-derive-store.mjs` is new. Skill
-  `next-campaigns-os` 1.0.13 names the flag. No command, exit code or
+  `next-campaigns-os` 1.0.15 names the flag. No command, exit code or
   existing flag changed.
+
+## [1.33.0+agent.2] - 2026-09-17
+
+### Added
+
+- `campaigns-os spec derive --packet <packet> --write-map [--dry-run]
+  [--proxy-base <url>]` records the derived SDK pin in the saved Map's Build
+  hints field (Campaign Cart SDK version), the repo → Map write-back #413
+  named as the end state and #415 asked for. The local derive already brings
+  the exported spec back in line after a bump; the Map itself stayed at the old
+  pin until someone re-saved Build hints by hand, so every fresh export and
+  everyone opening the Map read stale. After the local write, the Map named by
+  the packet's `spec.map_id` is read back (`GET /api/spec/<map-id>`) and
+  re-stated with exactly the pin fields moved (`global_config.sdk_version`,
+  and `runtime.sdk_version` only when the Map already declares the alias):
+  every other field is the Map's own read-back, never the local spec, so an
+  authored field is not rewritten from a local copy and the routes or
+  analytics ids derive wrote locally do not travel. The `PUT
+  /api/maps/<map-id>` carries the packet's Campaigns API key (packet, local
+  spec or declared env source, the same resolution the remit rail uses) as
+  `X-Campaign-Key` and the Map's `spec_hash` as `X-Spec-Hash`, so a save that
+  landed in between is a 409, not an overwrite. The proxy base is the canonical
+  `https://campaign-map.nextcommerce.com` unless `--proxy-base` names another;
+  it goes through the same TLS gate as every credential-bearing request
+  (https, or a loopback host over http with the clear-text warning). The
+  direction of authority is the gate's: the write goes forward or not at all.
+  The result's new `map` object (and one text line) reports `written` (Map
+  pin absent or behind the repo; `map.spec_identity.before` / `.after` carry
+  the Map's `spec_hash` and `saved_at`), `unchanged` (already the repo pin),
+  `would_write` (`--dry-run` reads the Map and sends nothing), `refused`
+  (warning, exit 0, the local derive stands: `ahead`, a Map pin newer than
+  the repo pin — never moved backwards; `pin_unreadable`, a pin the rule
+  cannot order), `skipped` (the pin was not derived, `pin_<not_derived
+  reason>`, or the local derive was blocked; nothing read or sent) or `failed`
+  (error, exit 2, the local derive stands: `key_missing`, `key_mismatch` 403,
+  `not_found` 404, `changed_underneath` 409, `rejected` 400/422,
+  `proxy_base_insecure`, `network_error`, `http_error`, `response_invalid`),
+  as `spec.derive.map_<reason>` warnings and errors. A write is traceable from
+  the campaign's own record: one line on the Assembly Report's `evidence[]`
+  (`Map write-back: global_config.sdk_version <before> -> <after> on Map <id>
+  at <time> via spec derive --write-map (Map spec_hash <before> -> <after>)`,
+  `map.recorded: "assembly_report"`), the retained doctor sidecar marked stale
+  by `spec derive --write-map`, and the lifecycle journal entry the Run Record
+  embeds; a missing report leaves a `spec.derive.map_not_recorded` warning
+  carrying the same line, and a report that took the line while the doctor
+  stamp failed leaves `spec.derive.map_doctor_sidecar_not_marked` instead,
+  and one that could not be read back after the failure leaves
+  `spec.derive.map_recorded_status_unknown` (`map.recorded: "unknown"`)
+  rather than a claim either way; a 403 on the Map read is `key_mismatch`,
+  as on the write.
+  `--write-map` is a bare flag (a valued one is
+  rejected), `--proxy-base` needs a URL and is refused without `--write-map`,
+  and without the flag nothing is read from or sent to the Map. The result
+  document gains `write_map` and `map` (null without the flag). The
+  `page_kit.sdk_version.repo_newer` gate reason and its `refresh_spec` action
+  description name the flag; the action's command is unchanged.
+  The errors `fetchSpecByMapId` throws (`src/spec-fetch.mjs`) now carry `kind`
+  (`network` | `http` | `invalid_json` | `not_ok`) and `status` as fields, so
+  the write-back routes a 404 on the field rather than on the message.
+  `docs/build-packet.md` gains "Recording the pin in the Map (`--write-map`)";
+  README, `docs/quickstart.md` and `docs/supported-surface.md` name the flag.
+  Skill `next-campaigns-os` 1.0.13 → 1.0.14: step 5 names `--write-map`
+  beside the local derive and the hand re-save.
+
+## [1.33.0+agent.1] - 2026-09-17
+
+Same-surface: a new built-output doctor gate, plus the reachability fixture
+tree every static built-output gate now has to pass on.
+
+### Added
+
+- Doctor check `built_output.campaign_identity` (#301), registered in the
+  built-output check registry beside `built_output.upsell_selector_scope` and
+  reached from both doctor entry points (the packet path and `doctor --built`)
+  on every invocation. It fails a built campaign whose pages disagree about
+  which campaign they belong to. The SDK reads three identity signals per page
+  and reconciles nothing across pages: the API key
+  (`<meta name="next-api-key">` beats `window.nextConfig.apiKey`, inline or in
+  the `config.js` the page loads by `<script src>`; the legacy
+  `nextCampaign.config({ apiKey })` spelling is read too), the `next-funnel`
+  meta, and any `setAttribution({ funnel })` call. One error per finding, each
+  naming the two files and the two values so the repair is a one-line edit:
+  `built_output.campaign_identity.api_key_drift` (any two observed keys differ,
+  from any source on any page, including a page whose meta and `config.js`
+  disagree), `.funnel_drift` (`next-funnel` differs across pages),
+  `.funnel_missing` (once any page carries the tag, a page declares
+  `next-page-type` but no `next-funnel`; a campaign tagging no page at all is
+  consistent),
+  and `.attribution_drift` (a `setAttribution` funnel disagrees with the
+  calling page's tag, or with the campaign's tag when that page has none).
+  Not waivable: `checkpoint waive` does not register it, the gate's only
+  required action is the edit. Pages whose route carries a `-backup-` or
+  `-old-` segment are parked copies, skipped and listed as `pages_skipped`.
+  Presence is not asserted: no key anywhere, or no `setAttribution` anywhere,
+  passes on the funnel tag alone. The gate lands at
+  `derived.checkpoint_gates[]` with `status pass | blocked | not_applicable`,
+  `identity { api_key, api_key_source, funnel }`, `findings[]`,
+  `pages_scanned`, `pages_skipped`, and in `derived.doctor_checks`. Fixtures:
+  `fixtures/campaign-identity/` (clean, key drift, attribution drift).
+- `fixtures/certified-families/`: the rendered `*.html` + `config.js` of every
+  certified starter family, regenerated by
+  `scripts/refresh-certified-family-fixtures.mjs` from the templates repo at
+  the commit the manifest names, so the reachability bar from the #206 ON-2
+  closeout is executable in CI: a static built-output gate ships with proof it
+  passes on real pages from every certified family before it may block
+  anything (`src/doctor-certified-family-reachability.test.mjs`, which now
+  vouches for `built_output.upsell_selector_scope` and
+  `built_output.campaign_identity`). Rendered from templates main
+  `11352c3` rather than the catalog pin `a7cc8be`: at the pin every family's
+  hidden upsell display selectors still lack `data-next-upsell-context`
+  (templates PR #153 fixed that on 2026-09-01), so the selector-scope gate
+  correctly blocks there; the manifest records the reason and the test prints
+  a diagnostic until the catalog is re-synced.
+
+### Changed
+
+- `docs/build-packet.md` gains a "Built-output campaign identity gate" section;
+  `docs/campaigns-os-build-flow.md` adds the every-page-names-the-same-campaign
+  assembly rule beside the pre-checkout bootstrap rule; skill
+  `next-campaigns-os` 1.0.12 -> 1.0.13 extends step 6 with the identity gate.
+## [1.33.0] - 2026-09-17
+
+Additive: the Run Record schema gains an optional `qa_verdict_publish` block,
+and `qa` gains a `publish` subcommand that posts an already-stored verdict.
+
+### Added
+
+- `campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict
+  <full-verdict.json>] [--republish] [--proxy-base <url>] [--json]` posts an
+  already-stored QA verdict to the QA portal through the rail `qa run` uses,
+  without re-running QA and therefore without placing an order (#328: "local
+  first, publish when clean" was a full rerun that placed the whole typed-card
+  order set a second time). Without `--verdict`, the committed
+  `.campaign-runtime/qa-verdict.json` names the run and that run's full
+  verdict under `<target-repo>/qa-output/<map-id>/<run-id>.json` is preferred;
+  when only the projection is on disk it is what goes out and the result says
+  so (`source_kind: sidecar_projection`). Before anything is sent the command
+  refuses, exit `2`, with a named `refusal.code`: `spec_hash_mismatch` (the
+  verdict's `spec_hash` is not the packet's current spec — one comparator, the
+  normalising one from #416, so a `sha256:` prefix or case difference is not a
+  mismatch; the result carries both hashes and the remedy is `qa run`),
+  `spec_hash_absent`, `already_published` (the run's Run Record records this
+  verdict's `run_id` as published; `--republish` overrides), `verdict_untrusted`
+  (`trusted: false`, the `qa promote` chokepoint), `campaign_mismatch`,
+  `verdict_missing` / `verdict_unreadable` / `verdict_invalid`, and
+  `order_flags_refused` (`--test-order`, `--browser`, `--max-order-creations`,
+  `--max-test-orders`, `--legacy-api-test-order`, `--select-package`,
+  `--apply-coupon` have no meaning here and are refused by name rather than
+  ignored). The post is classified by HTTP status the way a remit is (#397):
+  `stored`, `already_stored` (409, an ok), `ok_unparsed_ack`, `refused`,
+  `transport_error`; the last two exit `1` with the local verdict untouched;
+  `0` prints the portal link. The result carries `orders_placed: 0` by
+  construction. The outcome is stamped on the Run Record whose `qa_verdict`
+  artifact references the verdict under the packet's campaign (by digest, by
+  the `<run-id>.json` name, or by an existing block for the run id); a stored
+  `ok` is never downgraded by a failed `--republish`; with no such record the
+  publish still happens and the output says the outcome is unrecorded.
+- Run Record (`campaigns-os-run-record/v0`): optional `qa_verdict_publish`
+  block — `verdict_run_id` (the verdict's own run id, the publish idempotency
+  key), `publisher` (`qa run` | `qa publish`), `attempted`, `ok`, `error`,
+  `endpoint`, `state` (`skipped` | `ok` | `failed`), `result` (the
+  `remit_result` vocabulary), `base_kind` (`canonical` | `loopback` |
+  `proxy`), `published_at`. Additive; `additionalProperties` unchanged.
+  `qa run` now builds the block from its own publish (or its
+  `--no-post-verdict` skip) and hands it to the run session through the QA
+  attempt, so `run end` and the QA auto-end write it on the record; a
+  `run-record` re-emit carries a prior `ok` forward over a later attempt that
+  did not land. Records written before this field carry no block.
+
+### Changed
+
+- `qa run` publishes through the same classified rail: its `--json` result
+  gains `publish` (`attempted`, `ok`, `error`, `endpoint`, `result`,
+  `http_status`, `base_kind`) and `qa_verdict_publish` (the record block);
+  `posted`, `post_error`, `publish_skipped`, `publish_decision` and
+  `dashboard_url` are unchanged. A 409 from the portal, previously a
+  `post_error`, is now an ok publish (`already_stored`) with the portal link.
+- `qa --help` lists `qa publish`, `--verdict` for both `promote` and
+  `publish`, and `--republish`; the `--no-post-verdict` line points at
+  `qa publish`. The top-level usage lists the command.
+
+### Docs
+
+- `docs/qa-and-test-orders.md`: new "Publish a stored verdict (`qa publish`)"
+  section under Run — the two-command local-then-publish flow, verdict source
+  resolution, the refusal table, outcome classification and exit codes, and
+  the Run Record block.
+- `docs/workflow-findings-sidecar.md`: Remit Channel names the
+  `qa_verdict_publish` block, who writes it, and the never-downgrade rule.
+- `docs/supported-surface.md`: the schema row records the 1.33.0 additive Run
+  Record block; the CLI row names `qa publish`.
+## [1.32.0+agent.1] - 2026-09-17
+
+### Fixed
+
+- `analytics-correctness:purchase-fires` judges the outbound Purchase against
+  the whole post-checkout journey of the typed-card order, not the receipt
+  document alone (#392). The SDK raises `dl_purchase`, and the Meta/GA4
+  Purchase it drives, on the first page opened with `?ref_id=` that fetches
+  the order — the upsell page on a funnel that has one — and then remembers
+  the transaction id so the receipt does not report it again, so the
+  receipt-only reading was a structural false negative (`absent`) on every
+  funnel with an offer between checkout and receipt, and the only way through
+  was the waiver lane #198 was written to avoid. The receipt stays the
+  qualification point: a plan still needs a topology-recognized receipt, the
+  same settle window, and the same capture-error and waiver semantics; only
+  the capture the Purchase is read from widened. Each `evidence.receipts[]`
+  entry now also carries `scope` (`journey`; `receipt` for an envelope that
+  holds only the receipt document, which is judged exactly as before; `null`
+  on an unmeasured entry), the receipt document's own `receipt_signals`
+  (journey scope only, `null` otherwise), and `fired_on` (`receipt` or
+  `earlier-page`, `null` when nothing fired), so a reader can tell which
+  document fired. The assertion
+  id, and so `qa waive --assertion analytics-correctness:purchase-fires`, is
+  unchanged. `docs/qa-and-test-orders.md` and the `next-campaigns-qa` skill
+  (1.3.0 → 1.3.1) no longer describe the receipt-only rule.
 
 ## [1.32.0] - 2026-09-17
 

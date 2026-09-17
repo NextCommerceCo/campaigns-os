@@ -34,7 +34,8 @@ import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESS
 import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
-import { remit } from "./remit.mjs";
+import { publishQaVerdict, qaPortalUrl, qaVerdictPublishBlock, QA_VERDICT_PUBLISHERS, skippedQaVerdictPublish } from "./qa-verdict-publish.mjs";
+import { publishStoredVerdict, qaPublishTextLines, QA_PUBLISH_EXIT_CODES } from "./qa-publish.mjs";
 // Shared outgoing-edge resolver, so QA expectations and build-time wiring
 // cannot drift on which declared routing field wins.
 import {
@@ -98,6 +99,7 @@ Usage:
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
+  campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json]   # post an already-stored verdict to the QA portal; no re-run, no orders
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
   campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--browser]   # L7: QA a built _site/ with no packet/spec
@@ -130,10 +132,20 @@ Options:
   --output-dir <path>             Local verdict directory. Default: qa-output under the packet's
                                   target repo (assembly.target_repo, else the packet's directory);
                                   qa-output under the current directory for packet-less runs.
+                                  qa publish reads the same directory when looking up the sidecar's run.
   --post-verdict                  (default) Publish the verdict to the QA portal at
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
                                   Publishing is automatic; this flag is retained for clarity.
   --no-post-verdict, --local-only Skip publishing; write only the local verdict copy (offline / dev / CI).
+                                  Publish it later, without a re-run, with qa publish.
+  --verdict <path>                qa promote / qa publish: the full verdict file under qa-output/. qa publish
+                                  defaults to the run the committed .campaign-runtime/qa-verdict.json names,
+                                  preferring that run's full verdict under <target-repo>/qa-output/ and falling
+                                  back to the projection itself. Refuses a verdict whose spec_hash no longer
+                                  matches the packet's spec (spec_hash_mismatch), one the portal already holds
+                                  per the Run Record (already_published), an untrusted one, or one for another
+                                  campaign. Exit 2 on a refusal, 1 on a failed post, 0 when published.
+  --republish                     qa publish: post a verdict its Run Record already records as published.
   --no-remit                     When an ambient run session is active, write the local Run Record but skip Run Telemetry remit.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
@@ -251,6 +263,12 @@ export async function runQaCli(args, { ambient = null } = {}) {
   if (subcommand === "promote") {
     const result = promoteQaVerdict({ verdictPath: args.verdict, packetPath: args.packet });
     output(result, args);
+    return result;
+  }
+  if (subcommand === "publish") {
+    const result = await publishStoredVerdict(args);
+    output(result, args);
+    process.exitCode = QA_PUBLISH_EXIT_CODES[result.status] ?? 1;
     return result;
   }
   if (subcommand === "install-browser") {
@@ -2326,17 +2344,14 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   }
   const shouldPublish = publishDecision.publish;
   const publishDestination = `${resolved.proxyBase.replace(/\/+$/, "")}/api/qa/verdicts`;
-  let postResult = null;
-  let postError = null;
-  if (shouldPublish) {
-    try {
-      postResult = await postVerdict(verdict, resolved.proxyBase);
-    } catch (error) {
-      postError = error.message;
-    }
-  }
-  const dashboardUrl = postResult?.ok
-    ? `${resolved.proxyBase.replace(/\/+$/, "")}/qa?slug=${encodeURIComponent(resolved.mapId)}&run=${encodeURIComponent(verdict.run_id)}`
+  // One rail with `qa publish`: the outcome is classified by what the portal
+  // answered (a 409 is already_stored, an ok), and the block the Run Record
+  // carries is built here so the auto-end can stamp it without re-deriving.
+  const publishOutcome = shouldPublish ? await publishQaVerdict(verdict, resolved.proxyBase) : skippedQaVerdictPublish();
+  const postResult = publishOutcome.ok ? (publishOutcome.response ?? { ok: true }) : null;
+  const postError = publishOutcome.attempted && !publishOutcome.ok ? publishOutcome.error : null;
+  const dashboardUrl = publishOutcome.ok
+    ? qaPortalUrl(resolved.proxyBase, resolved.mapId, verdict.run_id)
     : null;
   return {
     ok: verdict.disposition !== "blocked",
@@ -2355,6 +2370,10 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     posted: postResult,
     post_error: postError,
     publish_skipped: !shouldPublish,
+    // The classified outcome (attempted, ok, error, endpoint, result,
+    // http_status, base_kind) and the Run Record block derived from it.
+    publish: { ...publishOutcome, response: undefined },
+    qa_verdict_publish: qaVerdictPublishBlock(publishOutcome, { verdictRunId: verdict.run_id, publisher: QA_VERDICT_PUBLISHERS.run, publishedAt: new Date().toISOString() }),
     publish_decision: { ...publishDecision, destination: publishDestination, consent_state: consent?.state ?? null },
     counts: countAssertions(verdict.assertions),
     theme_gate: themeGateSummary(resolved.themeGate),
@@ -2881,17 +2900,6 @@ function extractMetaTags(html) {
   return meta;
 }
 
-// QA verdict publish rides the shared remit rails (see src/remit.mjs). The
-// behavior is unchanged: POST to /api/qa/verdicts, parse the body, throw on a
-// non-2xx so the caller's "never fail the run if publish is unreachable"
-// try/catch still applies.
-async function postVerdict(verdict, proxyBase) {
-  // This publish attaches no credential, so it says so: the transport gate
-  // still requires https (or a loopback host) for the verdict payload, but it
-  // must not tell an operator a credential is travelling in clear.
-  return remit("/api/qa/verdicts", verdict, proxyBase, { label: "QA verdict publish", credential: null });
-}
-
 // Packet 04 Stage A / IC-2 dispatch table for the analytics-correctness leg.
 // forced is the tri-state from forcedAnalyticsCorrectness():
 //   false     → "disabled"       (explicit opt-out wins, even over a declared analytics block)
@@ -2961,6 +2969,10 @@ function writeLocalVerdict(verdict, outputDir) {
 function output(value, args) {
   if (args.json) {
     console.log(JSON.stringify(value, null, 2));
+    return;
+  }
+  if (value.action === "qa-publish") {
+    for (const line of qaPublishTextLines(value, { cmd })) console.log(line);
     return;
   }
   if (value.action === "qa-policy-set") {

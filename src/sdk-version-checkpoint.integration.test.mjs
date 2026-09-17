@@ -116,7 +116,7 @@ test("doctor and next treat a repo pin ahead of the spec as advisory, and QA pro
     assert.deepEqual(gate.state, { expected: "0.4.37", observed: "0.4.38" });
     const warning = doctor.warnings.find((issue) => issue.code === "page_kit.sdk_version.repo_newer");
     assert.ok(warning, "the advisory is a doctor warning");
-    assert.match(warning.message, /Re-derive the spec \(spec derive, the refresh_spec action\) or re-save the Map/);
+    assert.match(warning.message, /Re-derive the spec \(spec derive, the refresh_spec action; add --write-map to record 0\.4\.38 in the Map's Build hints too\) or re-save the Map/);
     assert.ok(doctor.ready.some((line) => /0\.4\.38 is what ships/.test(line)), JSON.stringify(doctor.ready));
 
     const next = nextStage(null, { _: ["next"], packet: packetPath, "no-write": true });
@@ -354,12 +354,14 @@ test("a valid packet-local spec runs the full doctor registry and each checkpoin
     assert.equal(doctor.derived.doctor_checks.filter((id) => id === "page_kit.sdk_version").length, 1);
     assert.equal(doctor.derived.doctor_checks.filter((id) => id === "page_kit.store_profile").length, 1);
     assert.equal(doctor.derived.doctor_checks.filter((id) => id === "built_output.upsell_selector_scope").length, 1);
+    assert.equal(doctor.derived.doctor_checks.filter((id) => id === "built_output.campaign_identity").length, 1);
     assert.deepEqual(doctor.derived.checkpoint_gates.map(({ id, status }) => ({ id, status })), [
       { id: "page_kit.sdk_version", status: "pass" },
       { id: "page_kit.store_profile", status: "pass" },
       // No built _site/ in this fixture, so there is no built upsell page to
       // scan. The gate still runs and still reports, rather than being absent.
       { id: "built_output.upsell_selector_scope", status: "not_applicable" },
+      { id: "built_output.campaign_identity", status: "not_applicable" },
     ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -15,9 +15,14 @@ import {
   mintRunId,
   resolveRunRecordPath,
   RUN_RECORD_COMMIT_PATTERN,
+  RUN_RECORD_QA_VERDICT_PUBLISH_STATES,
+  RUN_RECORD_QA_VERDICT_PUBLISHERS,
+  RUN_RECORD_REMIT_BASE_KINDS,
+  RUN_RECORD_REMIT_RESULTS,
   RUN_RECORD_SCHEMA,
   RUN_RECORD_SURFACE_VERSION_PATTERN,
   selectRunFindingIds,
+  validateQaVerdictPublish,
   validateRunRecord,
   writeRunRecord,
 } from "./run-record.mjs";
@@ -172,6 +177,53 @@ test("validator rejects malformed agent usage fields", () => {
 test("validator rejects invalid remit status fields", () => {
   assert.equal(validateRunRecord(minimalRecord({ remit_state: "maybe" })).ok, false);
   assert.equal(validateRunRecord(minimalRecord({ remit_endpoint: "api/runs" })).ok, false);
+});
+
+test("qa_verdict_publish: the validator and the JSON Schema agree, and malformed blocks are rejected by field", () => {
+  const ok = {
+    verdict_run_id: "MTXEUVC6732A9UV8365MBTDN9V",
+    publisher: "qa publish",
+    attempted: true,
+    ok: true,
+    error: null,
+    endpoint: "/api/qa/verdicts",
+    state: "ok",
+    result: "stored",
+    base_kind: "loopback",
+    published_at: "2026-09-17T09:00:00.000Z",
+  };
+  assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: ok })).ok, true);
+  assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: null })).ok, true);
+  assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: { ...ok, attempted: false, ok: null, endpoint: null, state: "skipped", result: null, base_kind: null, published_at: null } })).ok, true);
+  const codes = (block) => validateQaVerdictPublish(block).map((error) => error.code);
+  assert.deepEqual(codes({ ...ok, verdict_run_id: "" }), ["record.qa_verdict_publish.verdict_run_id"]);
+  assert.deepEqual(codes({ ...ok, publisher: "portal" }), ["record.qa_verdict_publish.publisher"]);
+  assert.deepEqual(codes({ ...ok, state: "pending" }), ["record.qa_verdict_publish.state"]);
+  assert.deepEqual(codes({ ...ok, result: "maybe" }), ["record.qa_verdict_publish.result"]);
+  assert.deepEqual(codes({ ...ok, base_kind: "internet" }), ["record.qa_verdict_publish.base_kind"]);
+  assert.deepEqual(codes({ ...ok, endpoint: "api/qa/verdicts" }), ["record.qa_verdict_publish.endpoint"]);
+  assert.deepEqual(codes({ ...ok, extra: 1 }), ["record.qa_verdict_publish.extra"]);
+  assert.deepEqual(codes([]), ["record.qa_verdict_publish"]);
+  assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: { ...ok, state: "pending" } })).ok, false);
+
+  const schema = JSON.parse(readFileSync(resolve(ROOT, "schemas/campaigns-os-run-record.v0.schema.json"), "utf8"));
+  const published = schema.properties.qa_verdict_publish;
+  assert.equal(published.additionalProperties, false);
+  assert.deepEqual(published.properties.state.enum, RUN_RECORD_QA_VERDICT_PUBLISH_STATES);
+  assert.deepEqual(published.properties.publisher.enum, RUN_RECORD_QA_VERDICT_PUBLISHERS);
+  assert.deepEqual(published.properties.result.enum, [...RUN_RECORD_REMIT_RESULTS, null]);
+  assert.deepEqual(published.properties.base_kind.enum, [...RUN_RECORD_REMIT_BASE_KINDS, null]);
+  assert.deepEqual(Object.keys(published.properties).sort(), Object.keys(ok).sort(), "the validator's allowed field set is the schema's");
+  assert.deepEqual(published.required, ["verdict_run_id", "publisher", "attempted", "state"]);
+});
+
+test("assembleRunRecord carries a qa_verdict_publish block only when one is given", () => {
+  const base = { runId: "run_x", packageVersion: "1.0.0", command: "run-record", argvShape: [] };
+  assert.equal("qa_verdict_publish" in assembleRunRecord(base), false);
+  const block = { verdict_run_id: "V", publisher: "qa run", attempted: false, ok: null, error: null, endpoint: null, state: "skipped", result: null, base_kind: null, published_at: null };
+  const record = assembleRunRecord({ ...base, qaVerdictPublish: block });
+  assert.deepEqual(record.qa_verdict_publish, block);
+  assert.equal(validateRunRecord(record).ok, true);
 });
 
 test("the published JSON Schema doc and the validator agree on the schema_version const", () => {

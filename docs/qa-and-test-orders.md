@@ -644,6 +644,68 @@ npm run campaigns-os -- qa run \
   --base-url https://preview.example.com/campaign/
 ```
 
+### Publish a stored verdict (`qa publish`)
+
+"Run local, publish when clean" is one command, not a rerun. A run kept local
+with `--no-post-verdict` writes the same full verdict under `qa-output/` and
+the same committed sidecar as a publishing run; `qa publish` posts that stored
+verdict to the QA portal through the rail `qa run` uses, without re-running
+QA — and so without placing another typed-card order set (the case in #328
+placed the whole set twice).
+
+```bash
+# 1. local first: the full run, kept off the portal
+npm run campaigns-os -- qa run \
+  --packet campaign-runtime.build.json \
+  --base-url https://preview.example.com/campaign/ \
+  --browser --test-order common --no-post-verdict
+
+# 2. clean: publish the verdict that run wrote — no re-run, no orders
+npm run campaigns-os -- qa publish --packet campaign-runtime.build.json
+```
+
+Which verdict goes out: `--verdict <path>` names a file and is honoured as
+given. Without it, the committed `.campaign-runtime/qa-verdict.json` names the
+run, and the full verdict that run wrote at
+`<target-repo>/qa-output/<map-id>/<run-id>.json` is preferred (it carries the
+evidence the portal shows); a run that wrote under `--output-dir <dir>` is
+found by passing the same `--output-dir` to `qa publish`. When only the
+projection is on disk, the projection is what is published and the output
+says so (`source_kind: sidecar_projection`).
+
+Before anything is sent, the command refuses — exit `2`, nothing posted, no
+order placed — with a named `refusal.code`:
+
+| `refusal.code` | What it means |
+|---|---|
+| `spec_hash_mismatch` | The verdict's `spec_hash` is not the packet's current spec (`spec.local_path`, hashed the way every spec-identity check hashes it, so `sha256:` prefix and case do not matter). A verdict for a spec that has since changed is not evidence about the current one: re-run `qa run`, which publishes by default. The result carries both hashes. |
+| `spec_hash_absent` | The verdict carries no `spec_hash`. Re-run `qa run`. |
+| `already_published` | The run's Run Record records this verdict's `run_id` as published (by the run itself, or by an earlier `qa publish`). Pass `--republish` to post it again; the existing portal link is in the output either way. |
+| `verdict_untrusted` | The verdict is stamped `trusted: false` (a receiver-classified anonymous submission); the same chokepoint `qa promote` holds. |
+| `campaign_mismatch` | The verdict's `campaign_slug` is neither the packet's map id nor its public route slug. |
+| `verdict_missing` / `verdict_unreadable` / `verdict_invalid` | No stored verdict, unreadable JSON, or one that fails local validation. |
+| `order_flags_refused` | `--test-order`, `--browser`, `--max-order-creations` or another order-run flag was given. `qa publish` never places orders, and it says so rather than silently ignoring the flag. |
+
+The post is classified by what the portal answered, exactly as a Run Record
+remit is: a parsed 2xx is `stored`, a 409 is `already_stored` (an ok — the
+portal already holds the run id), a 2xx with a non-JSON body is
+`ok_unparsed_ack`; any other non-2xx is `refused` and no answer is
+`transport_error`, both exit `1` with the local verdict untouched. Exit `0`
+prints the portal link.
+
+The outcome lands on the run's Run Record as the `qa_verdict_publish` block —
+`verdict_run_id`, `publisher` (`qa run` or `qa publish`), `state`
+(`skipped` / `ok` / `failed`), `result` in the remit vocabulary, `base_kind`,
+`published_at` — on the record whose `qa_verdict` artifact references the
+verdict under the packet's campaign. `qa run` records its own publish (or
+its `--no-post-verdict` skip) the same way when the run session closes, which
+is what `already_published` reads. A stored `ok` is never downgraded: a
+`--republish` whose send fails leaves the block as written and reports the
+failure on the command's envelope only. When no record references the
+verdict, the publish still happens and the output says the outcome is
+unrecorded. Nothing under `--json` or in the text output names an order: the
+result carries `orders_placed: 0` by construction.
+
 ## What a published anonymous record is
 
 A published verdict and a remitted Run Record are durable, but they are not
@@ -721,15 +783,29 @@ run:
 2. The existing canonical typed-card order run supplies Purchase evidence. For
    each planned order, the topology classifier must recognize the final URL as
    that plan's receipt, then the runner waits the full `--analytics-settle`
-   window (default `5000` ms) within the order deadline and assesses only events
-   and tag fires emitted by that final receipt document. It does not replay the
-   browser path or place a second order.
+   window (default `5000` ms) within the order deadline and assesses the events
+   and tag fires emitted across every document the path loaded, checkout
+   through receipt. It does not replay the browser path or place a second
+   order.
 
-A receipt qualifies when it emits Purchase through the dataLayer, outbound Meta
-Purchase, or outbound GA4 Purchase. Purchase on checkout or an upsell cannot
-satisfy a silent receipt; the whole checkout-to-receipt capture remains separate
-and is used only by migration parity. Every planned receipt-qualified order must
-emit an effective Purchase for a pass.
+The receipt is the qualification point, not the measurement point. The SDK
+raises `dl_purchase`, and the outbound Purchase it drives, on the **first page
+opened with `?ref_id=`** that fetches the order back — the upsell page on a
+funnel that has one, the receipt only when nothing sits between checkout and
+receipt — and then remembers the transaction id so the receipt does not report
+it again (#392). So a receipt-qualified order passes when Purchase reached the
+dataLayer, an outbound Meta Purchase, or an outbound GA4 Purchase on **any**
+page of its post-checkout journey; a receipt-only rule is a structural false
+negative on every funnel with an offer page. Every planned receipt-qualified
+order must emit an effective Purchase for a pass. Each `evidence.receipts[]`
+entry records `scope` (`journey`; `receipt` when only the receipt document
+was captured; `null` on an unmeasured entry, where `signals`, `receipt_signals`
+and `fired_on` are null too), the judged `signals`, the receipt document's own
+`receipt_signals` (journey scope only — a receipt-scoped judgement has no
+second reading, so it is `null` there), and `fired_on` (`receipt` or
+`earlier-page`, `null` when nothing fired), so a reader can tell which
+document fired without the raw capture. Migration parity reads
+the same journey capture through its own leg.
 
 - A missing attempt or topology-unrecognized final page is
   `MANUAL_REVIEW`/`WARN`.

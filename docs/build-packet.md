@@ -188,10 +188,11 @@ them accordingly:
   warning and a ready line naming what ships; QA projects it as a `warn`
   assertion; `next` does not stop. The gate's `advisory_actions` carry one
   `refresh_spec` command, `campaigns-os spec derive --packet <packet>`
-  (below), which writes the repo pin into the spec; re-saving the Map's Build
-  hints field (Campaign Cart SDK version) to the repo pin is the other way to
-  make the exported spec stop reading stale. Nothing in the repo needs to
-  change, and there is nothing to waive.
+  (below), which writes the repo pin into the spec; with `--write-map` it
+  also records the pin in the Map's Build hints field (Campaign Cart SDK
+  version), which is otherwise re-saved by hand to make the exported spec
+  stop reading stale. Nothing in the repo needs to change, and there is
+  nothing to waive.
 - **Target behind the spec, or still the scaffold's seeded pin beside the demo
   store profile** — blocked, repaired by `page-kit sync` (below) or waived.
 - **Target pin not a released version** — blocked, non-waivable, whatever the
@@ -230,11 +231,11 @@ this command generates the repo-derived ones so doctor compares generated
 against generated instead of refereeing a hand-typed value against the repo:
 
 ```bash
-campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]]
+campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]
 ```
 
-By default it reads the target repo only (no network) and writes into the
-packet's local spec (`spec.local_path`):
+By default it reads the target repo only (no network unless `--from-store` or
+`--write-map`, below) and writes into the packet's local spec (`spec.local_path`):
 
 | Spec field | Repo authority |
 |---|---|
@@ -397,6 +398,63 @@ spec or route by the time the read returns is refused
 `--from-store`, a subdomain that is not one (a URL, a path), or a token
 source that is not `env:<VAR>` is rejected before anything is read.
 
+#### Recording the pin in the Map (`--write-map`)
+
+The local derive fixes the exported spec; the Map itself still shows the old
+pin until someone re-saves Build hints, so anyone opening the Map or a fresh
+export reads stale. `--write-map` closes that half (#415): after the local
+write, the pin the plan derived is recorded into the saved Map's Build hints
+field (Campaign Cart SDK version) through the proxy Worker, with the same
+direction of authority as everything else on this gate: the write goes
+forward or not at all.
+
+```bash
+campaigns-os spec derive --packet campaign-runtime.build.json --write-map [--dry-run] [--proxy-base <url>]
+```
+
+The Map named by the packet's `spec.map_id` is read back (`GET
+/api/spec/<map-id>`) and re-stated with exactly the pin fields moved
+(`global_config.sdk_version`, and `runtime.sdk_version` only when the Map
+already declares the alias): every other field is the Map's own read-back,
+never the local spec, so an authored field is not rewritten from a local copy
+and the routes or analytics ids derive wrote locally do not travel. The `PUT
+/api/maps/<map-id>` carries the packet's Campaigns API key as
+`X-Campaign-Key` (the receiver refuses a key that is not the Map's; the key
+is the public-by-design one the packet, its local spec or the declared env
+source already holds) and the Map's `spec_hash` as `X-Spec-Hash`, so a save
+that landed in between is a conflict, not an overwrite. The proxy base is the
+canonical `https://campaign-map.nextcommerce.com` unless `--proxy-base` names
+another; it must be https, or a loopback host over http (allowed for a local
+receiver, with a stderr warning that the key travels in clear).
+
+The decision, reported on the result's `map` object and as one text line:
+
+| `map.status` | Meaning |
+|---|---|
+| `written` | the Map declared no pin, or one behind the repo pin; it now records the repo pin (`map.spec_identity.before` / `.after` carry the Map's `spec_hash` and `saved_at` either side) |
+| `unchanged` | the Map already records the repo pin; nothing sent |
+| `would_write` | `--dry-run`: the Map was read and the write previewed; nothing sent |
+| `refused` | a warning, exit 0, the local derive stands: `ahead` (the Map pin is newer than the repo pin — a bump the repo never received, doctor's blocked state and `page-kit sync`'s repair; the Map is never moved backwards) or `pin_unreadable` (the Map's pin is not a released version, or two declarations disagree; a value the rule cannot order is not overwritten silently) |
+| `skipped` | the pin was not derived (`pin_<reason>`, the `not_derived` reason: a scaffold's seed, a waiver, `spec_ahead`, …) or the local derive was blocked; nothing was read or sent |
+| `failed` | an error, exit 2, the local derive stands: `key_missing` (no Campaigns API key anywhere), `key_mismatch` (403), `not_found` (404), `changed_underneath` (409: derive again against the current save), `rejected` (the proxy's spec validation refused the re-stated Map: re-save it in the builder first), `proxy_base_insecure`, `network_error`, `http_error`, `response_invalid` (an answer that says neither yes nor no: read the Map back before deriving again) |
+
+A write is traceable from the campaign's own record: one line is appended to
+the Assembly Report's `evidence[]` (`Map write-back: global_config.sdk_version
+<before> -> <after> on Map <id> at <time> via spec derive --write-map (Map
+spec_hash <before> -> <after>)`), the retained doctor sidecar is marked stale
+by `spec derive --write-map`, and the run's lifecycle journal carries the
+command with its argv shape, so the Run Record (which references the report by
+hash) shows both that the write ran and what it changed. A report that does
+not exist yet (a derive before `prepare-build`) leaves a
+`spec.derive.map_not_recorded` warning carrying the same line; a report that
+took the line while the doctor stamp failed leaves
+`spec.derive.map_doctor_sidecar_not_marked` instead, and one that could not be
+read back after the failure leaves `spec.derive.map_recorded_status_unknown`
+(`map.recorded: "unknown"`) rather than a claim either way. A 403 on the read
+is `key_mismatch`, as on the write. Without
+`--write-map` nothing is read from or sent to the Map; `--proxy-base` is
+refused on its own.
+
 ### Polish hidden eager-media checkpoint
 
 The third registered checkpoint is package-owned page-load evidence recorded at
@@ -453,6 +511,47 @@ command or manual step, plus the waiver command. `campaigns-os doctor` prints
 the same actions in its text report, under a `Required actions:` block below the
 errors and warnings, so an operator reading stdout gets the remediation without
 re-running with `--json`.
+
+### Built-output campaign identity gate (`built_output.campaign_identity`)
+
+Every doctor run that sees built output (the packet path and `doctor --built`
+alike) checks that the pages agree about which campaign they belong to. The
+SDK reads three identity signals per page and reconciles nothing across
+pages: the API key (`<meta name="next-api-key">` beats `window.nextConfig.apiKey`,
+whether inline or in the `config.js` the page loads), the `next-funnel` meta,
+and any `setAttribution({ funnel })` call. A page copied from another funnel
+that still carries the other campaign's key, tag, or attribution call binds,
+builds, and renders without complaint, and creates or attributes the order
+against the wrong campaign. It has shipped twice.
+
+The gate blocks (not waivable — two identities on one funnel cannot both be
+intended) when:
+
+- any two observed API keys differ, from any source on any page, including a
+  page whose meta names one key while its `config.js` names another
+  (`built_output.campaign_identity.api_key_drift`);
+- `next-funnel` differs across pages (`…funnel_drift`), or, once any page
+  carries the tag, a page that declares `next-page-type` has no `next-funnel`
+  (`…funnel_missing`; a campaign that tags no page at all is consistent, and
+  the platform fills the campaign name when the tag is absent);
+- a `setAttribution({ funnel })` string disagrees with the `next-funnel` of the
+  page that calls it, or with the campaign's tag when that page has none
+  (`…attribution_drift`).
+
+One error per finding; each names the two files and the two values, so the
+repair is a one-line edit. Pages whose route contains a `-backup-` or `-old-`
+segment are parked copies: skipped and listed on the gate as `pages_skipped`,
+never scanned. Presence is not asserted: a campaign whose pages carry no key
+at all, or no `setAttribution` anywhere, passes on the funnel tag alone.
+`checkpoint waive` does not register this gate; the repair is the only route.
+
+The gate's evidence lands beside the other checkpoint gates at
+`derived.checkpoint_gates[]` (`id: built_output.campaign_identity`, status
+`pass` | `blocked` | `not_applicable`, `identity: { api_key, api_key_source,
+funnel }`, `findings[]`, `pages_scanned`, `pages_skipped`). It is proven to
+pass on the canonical rendered output of every certified starter family
+(`fixtures/certified-families/`), the reachability bar every static
+built-output gate now carries.
 
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
