@@ -307,45 +307,70 @@ test("receipt verdict evidence redacts query/order data and exposes only the fix
     "unqualified_plan_ids",
   ]);
   assert.deepEqual(Object.keys(assertion.evidence.receipts[0]).sort(), [
+    "fired_on",
     "measured",
     "plan_id",
     "purchase_fired",
+    "receipt_signals",
     "receipt_url",
+    "scope",
     "signals",
     "via",
   ]);
   assert.equal(assertion.evidence.receipts[0].measured, true);
   assert.equal(assertion.evidence.receipts[0].receipt_url, "https://shop.example/campaign/receipt/");
-  assert.equal(assertion.expected, "every deterministic receipt-qualified typed-card order emits Purchase via dataLayer, Meta, or GA4.");
+  assert.equal(assertion.expected, "every deterministic receipt-qualified typed-card order emits Purchase via dataLayer, Meta, or GA4 on some page of its post-checkout journey.");
   const serialized = JSON.stringify(assertion);
   assert.doesNotMatch(serialized, /ref_id|utm_source|order-secret|txn-secret|149\.99|USD|pixel-secret|G-SECRET/);
 });
 
-test("browser private envelopes keep journey parity separate from receipt-scoped correctness", () => {
+// #392: the SDK fires dl_purchase (and the outbound Purchase) on the first
+// `?ref_id=` page that fetched the order — the upsell page on a funnel that
+// has one — and dedupes it on the receipt. The receipt attempt therefore
+// carries the journey reading beside the receipt-document reading, and
+// purchase-fires judges the journey. The receipt reading stays as the
+// diagnostic that says which document fired.
+test("browser private envelope: a recognized receipt carries the journey reading beside the receipt document, and purchase-fires judges the journey (#392)", () => {
   const { journeyAnalyticsAttempt, receiptAnalyticsAttempt, stampTestOrderPlan } = __qaBrowserTestHooks;
   const topology = {
     funnel_id: "fixture",
     pages: [
-      { page_id: "checkout", page_type: "checkout", url: "https://shop.example/checkout/", expected_next_url: "https://shop.example/receipt/" },
+      { page_id: "checkout", page_type: "checkout", url: "https://shop.example/checkout/", expected_next_url: "https://shop.example/upsell/" },
+      { page_id: "upsell", page_type: "upsell", url: "https://shop.example/upsell/", accept_url: "https://shop.example/receipt/", decline_url: "https://shop.example/receipt/" },
       { page_id: "receipt", page_type: "receipt", url: "https://shop.example/receipt/" },
     ],
   };
-  const plan = { path: "checkout", topology_plan: resolveTestOrderTopology(topology) };
+  const plan = { path: "accept", topology_plan: resolveTestOrderTopology(topology) };
   const result = stampTestOrderPlan({
     order: { final_url: "https://shop.example/receipt/?ref_id=secret" },
     analytics_journey_capture: capture("datalayer", true),
     receipt_analytics_capture: normalizeCapture(),
   }, plan);
 
-  assert.equal(result.order.plan_id, "checkout", "non-tier/operator plans are stamped too");
+  assert.equal(result.order.plan_id, "accept", "non-tier/operator plans are stamped too");
   const attempt = receiptAnalyticsAttempt(plan, result);
   const journeyAttempt = journeyAnalyticsAttempt(plan, result);
-  assert.equal(attempt.planId, "checkout");
+  assert.equal(attempt.planId, "accept");
   assert.equal(attempt.receiptRecognized, true);
   assert.equal(attempt.receiptUrl, "https://shop.example/receipt/");
-  assert.equal(effectivePurchase(attempt.capture).fired, false, "receipt correctness sees only the silent receipt document");
-  assert.equal(effectivePurchase(journeyAttempt.capture).fired, true, "parity retains the earlier checkout Purchase");
-  assert.equal(assess([attempt], ["checkout"]).status, STATUS.FAIL, "an earlier Purchase cannot false-pass a silent receipt");
+  assert.equal(effectivePurchase(attempt.capture).fired, false, "the receipt document itself is silent after the SDK dedupe");
+  assert.equal(effectivePurchase(attempt.journeyCapture).fired, true, "the journey reading carries the upsell-page Purchase");
+  assert.equal(effectivePurchase(journeyAttempt.capture).fired, true, "parity retains the same journey reading");
+
+  const assertion = assess([attempt], ["accept"]);
+  assert.equal(assertion.status, STATUS.PASS, "a Purchase fired on the upsell page satisfies the receipt-qualified order");
+  assert.deepEqual(assertion.evidence.receipts[0], {
+    plan_id: "accept",
+    receipt_url: "https://shop.example/receipt/",
+    measured: true,
+    scope: "journey",
+    purchase_fired: true,
+    via: "datalayer",
+    signals: { dataLayer: true, meta: false, ga4: false },
+    receipt_signals: { dataLayer: false, meta: false, ga4: false },
+    fired_on: "earlier-page",
+  });
+  assert.doesNotMatch(JSON.stringify(assertion), /ref_id|secret|txn-|149\.99|USD/);
 
   const deceptive = receiptAnalyticsAttempt(plan, {
     order: { final_url: "https://shop.example/not-a-terminal/thank-you-looking-name/?ref_id=secret" },
@@ -354,6 +379,7 @@ test("browser private envelopes keep journey parity separate from receipt-scoped
   assert.equal(deceptive.receiptRecognized, false, "URL wording cannot bypass terminalAtUrl");
   assert.equal(deceptive.receiptUrl, "https://shop.example/not-a-terminal/thank-you-looking-name/");
   assert.equal(deceptive.capture, undefined, "unrecognized traversal evidence never enters receipt correctness");
+  assert.equal(deceptive.journeyCapture, undefined, "the journey reading does not cross an unrecognized terminal either");
   assert.equal(journeyAnalyticsAttempt(plan, {
     order: { final_url: "https://shop.example/not-a-terminal/" },
     analytics_journey_capture: capture("ga4"),

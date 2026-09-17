@@ -160,6 +160,16 @@ export function assessAnalyticsInventory(capture = {}, contract = {}, options = 
 // intentionally pure and emits only a fixed, sanitized evidence projection;
 // raw captures, event payloads, order identifiers, values, currencies, and URL
 // query strings never cross into the verdict.
+//
+// The receipt is the qualification point, not the measurement point (#392).
+// The SDK fires dl_purchase — and the outbound Purchase it drives — on the
+// first `?ref_id=` page that fetched the order, which is the upsell page on a
+// funnel that has one, and then dedupes the transaction so the receipt stays
+// silent. So the reading is the whole post-checkout journey: an attempt's
+// `journeyCapture` is the authority, and the receipt-document `capture` is
+// kept as the diagnostic that says which document fired. An envelope that
+// carries only a receipt capture (no journey reading) is judged on it, so a
+// receipt-only funnel and older callers read exactly as before.
 export function assessReceiptPurchase(receiptAnalytics = {}, options = {}) {
   const plannedPlanIds = Array.isArray(receiptAnalytics?.plannedPlanIds)
     ? receiptAnalytics.plannedPlanIds.map(normalizePlanId).filter(Boolean)
@@ -182,10 +192,21 @@ export function assessReceiptPurchase(receiptAnalytics = {}, options = {}) {
       continue;
     }
 
-    const captureAvailable = !!attempt.capture && typeof attempt.capture === "object";
-    const captureError = !!attempt.captureError || !captureAvailable;
+    const receiptCaptureAvailable = isCapture(attempt.capture);
+    const journeyCaptureAvailable = isCapture(attempt.journeyCapture);
+    // Journey when the envelope carries one; the receipt document otherwise.
+    // A journey reading that failed to collect is not replaced by the receipt
+    // document: a silent receipt on an upsell funnel is exactly the case a
+    // receipt-only fallback would misread as "no Purchase". And a receipt
+    // capture/settle error stays the explicit blocker it always was — the
+    // journey reading taken beside an unsettled receipt is not a settled one.
+    const scope = journeyCaptureAvailable
+      ? "journey"
+      : (attempt.journeyCaptureError ? null : (receiptCaptureAvailable ? "receipt" : null));
+    const judged = scope === "journey" ? attempt.journeyCapture : scope === "receipt" ? attempt.capture : null;
+    const captureError = !judged || !!attempt.captureError;
     if (captureError) captureErrorPlanIds.push(planId);
-    const effective = captureAvailable ? effectivePurchase(attempt.capture) : { fired: false, via: null };
+    const effective = judged ? effectivePurchase(judged) : { fired: false, via: null };
     if (!captureError && !effective.fired) noSignalPlanIds.push(planId);
     // #198 is what happens when an unfalsifiable analytics reading is presented
     // as a measurement. A failed capture and a receipt that genuinely fired
@@ -195,13 +216,23 @@ export function assessReceiptPurchase(receiptAnalytics = {}, options = {}) {
     // measured:false and null signals rather than an all-false reading that
     // looks like evidence.
     const measured = !captureError;
+    // Which document fired is the diagnostic a reader of an upsell funnel
+    // needs: the receipt-document reading is kept beside the judged one, and
+    // `fired_on` names the receipt when it fired there, `earlier-page` when
+    // only the journey did. A receipt-scoped judgement has no earlier page.
+    const receiptFired = receiptCaptureAvailable && !attempt.captureError
+      ? effectivePurchase(attempt.capture).fired
+      : null;
     receipts.push({
       plan_id: planId,
       receipt_url: redactUrlQuery(attempt.receiptUrl),
       measured,
+      scope: measured ? scope : null,
       purchase_fired: measured && !!effective.fired,
       via: measured ? (effective.via || null) : null,
-      signals: measured ? receiptSignals(attempt.capture) : null,
+      signals: measured ? purchaseSignalsOf(judged) : null,
+      receipt_signals: receiptFired === null ? null : purchaseSignalsOf(attempt.capture),
+      fired_on: !measured || !effective.fired ? null : receiptFired ? "receipt" : "earlier-page",
     });
   }
 
@@ -226,7 +257,7 @@ export function assessReceiptPurchase(receiptAnalytics = {}, options = {}) {
     status,
     severity,
     ...(waiver ? { waiver } : {}),
-    expected: "every deterministic receipt-qualified typed-card order emits Purchase via dataLayer, Meta, or GA4.",
+    expected: "every deterministic receipt-qualified typed-card order emits Purchase via dataLayer, Meta, or GA4 on some page of its post-checkout journey.",
     actual: receiptPurchaseActual({
       plannedCount: plannedPlanIds.length,
       receiptCount: receipts.length,
@@ -247,7 +278,11 @@ function unique(values) {
   return [...new Set(values)];
 }
 
-function receiptSignals(capture) {
+function isCapture(value) {
+  return !!value && typeof value === "object";
+}
+
+function purchaseSignalsOf(capture) {
   const signals = capture?.purchaseSignals || {};
   return {
     dataLayer: !!(capture?.purchase?.present || signals.dataLayer),
@@ -263,7 +298,7 @@ function receiptPurchaseActual({ plannedCount, receiptCount, firedCount, unquali
     const suffix = waiver
       ? ` — blocker waived by ${waiver.waived_by}${waiver.waived_at ? ` at ${waiver.waived_at}` : ""}: ${waiver.reason}`
       : "";
-    return `${receiptCount - firedCount} receipt-qualified order(s) emitted no Purchase via dataLayer, Meta, or GA4${suffix}`;
+    return `${receiptCount - firedCount} receipt-qualified order(s) emitted no Purchase via dataLayer, Meta, or GA4 on any page of the journey${suffix}`;
   }
   if (unqualifiedCount) return `${unqualifiedCount} of ${plannedCount} planned order(s) did not reach a recognized receipt`;
   return `${firedCount} of ${plannedCount} receipt-qualified order(s) emitted Purchase`;

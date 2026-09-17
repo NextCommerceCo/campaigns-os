@@ -4167,6 +4167,39 @@
         }
       ],
       "entry_sha256": "3e4028fd8e887253ddc2d8dcf2bd15e9af321ffdb1c042446a3a35a08f781e4e"
+    },
+    {
+      "id": "RL-0111",
+      "sequence": 111,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.31.0+agent.1",
+      "changelog_sha256": "c75dec2730c1baf632720de1f7dcaf76814c83df75b1189bc58ef0f149b9f251",
+      "agent_impact": "analytics-correctness:purchase-fires now reads the outbound Purchase across the whole post-checkout journey of the typed-card order instead of the receipt document alone, so a funnel with an offer between checkout and receipt no longer reads absent when the SDK reported dl_purchase on the upsell page (#392). Verdicts on such funnels change from a false blocker (or a waiver) to a pass; the assertion id and the waiver lane are unchanged. evidence.receipts[] entries gain scope, receipt_signals and fired_on.",
+      "compatibility": "compatible",
+      "migration": "None. A recorded purchase-fires waiver on a funnel with an offer page can be retired once the run passes without it.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Analytics correctness: the receipt qualifies the order and the journey is measured; the paragraph that said a checkout or upsell Purchase cannot satisfy a silent receipt is replaced by the SDK first-?ref_id=-page rule and the new scope, receipt_signals and fired_on evidence fields."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Analytics-correctness bullet states the journey-scoped Purchase reading and the receipt-document diagnostic instead of the receipt-only rule; version 1.3.0 -> 1.3.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-qa version 1.3.0 -> 1.3.1."
+        }
+      ],
+      "entry_sha256": "752a95f5c9460d6f5b3aebeacee546e23e498ddfa065cfadecfffa9001ac7ffb"
     }
   ]
 }

@@ -717,15 +717,26 @@ run:
 2. The existing canonical typed-card order run supplies Purchase evidence. For
    each planned order, the topology classifier must recognize the final URL as
    that plan's receipt, then the runner waits the full `--analytics-settle`
-   window (default `5000` ms) within the order deadline and assesses only events
-   and tag fires emitted by that final receipt document. It does not replay the
-   browser path or place a second order.
+   window (default `5000` ms) within the order deadline and assesses the events
+   and tag fires emitted across every document the path loaded, checkout
+   through receipt. It does not replay the browser path or place a second
+   order.
 
-A receipt qualifies when it emits Purchase through the dataLayer, outbound Meta
-Purchase, or outbound GA4 Purchase. Purchase on checkout or an upsell cannot
-satisfy a silent receipt; the whole checkout-to-receipt capture remains separate
-and is used only by migration parity. Every planned receipt-qualified order must
-emit an effective Purchase for a pass.
+The receipt is the qualification point, not the measurement point. The SDK
+raises `dl_purchase`, and the outbound Purchase it drives, on the **first page
+opened with `?ref_id=`** that fetches the order back — the upsell page on a
+funnel that has one, the receipt only when nothing sits between checkout and
+receipt — and then remembers the transaction id so the receipt does not report
+it again (#392). So a receipt-qualified order passes when Purchase reached the
+dataLayer, an outbound Meta Purchase, or an outbound GA4 Purchase on **any**
+page of its post-checkout journey; a receipt-only rule is a structural false
+negative on every funnel with an offer page. Every planned receipt-qualified
+order must emit an effective Purchase for a pass. Each `evidence.receipts[]`
+entry records `scope` (`journey`, or `receipt` when only the receipt document
+was captured), the judged `signals`, the receipt document's own
+`receipt_signals`, and `fired_on` (`receipt` or `earlier-page`), so a reader
+can tell which document fired without the raw capture. Migration parity reads
+the same journey capture through its own leg.
 
 - A missing attempt or topology-unrecognized final page is
   `MANUAL_REVIEW`/`WARN`.
