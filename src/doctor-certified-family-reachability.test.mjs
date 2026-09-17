@@ -14,6 +14,7 @@ import { test } from "node:test";
 
 import { CAMPAIGN_IDENTITY } from "./campaign-identity.mjs";
 import { doctorBuiltOutput } from "./cli.mjs";
+import { SDK_MARKUP } from "./sdk-markup.mjs";
 import { UPSELL_SELECTOR_SCOPE } from "./upsell-selector-scope.mjs";
 
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -30,7 +31,7 @@ const certified = Object.keys(catalog.families || {})
 // The gates this file vouches for. Every id here must come back pass or
 // not_applicable on every family; `blocked` on canonical output is the #5
 // failure mode by definition.
-const STATIC_BUILT_OUTPUT_GATES = [UPSELL_SELECTOR_SCOPE, CAMPAIGN_IDENTITY];
+const STATIC_BUILT_OUTPUT_GATES = [UPSELL_SELECTOR_SCOPE, CAMPAIGN_IDENTITY, SDK_MARKUP];
 
 const gateOf = (result, id) => (result.derived?.checkpoint_gates || []).find((gate) => gate.id === id) || null;
 
@@ -67,6 +68,21 @@ for (const family of certified) {
     }
     const blockingCodes = result.errors.map((issue) => issue.code).filter((code) => STATIC_BUILT_OUTPUT_GATES.some((id) => code.startsWith(id)));
     assert.deepEqual(blockingCodes, [], `${family}: static gates raised errors on canonical output`);
+    // The advisory codes hold to the same bar: a warning that fires on every
+    // canonical page is noise, not a signal.
+    const advisoryCodes = result.warnings.map((issue) => issue.code).filter((code) => code.startsWith(SDK_MARKUP));
+    assert.deepEqual(advisoryCodes, [], `${family}: SDK markup advisories fired on canonical output`);
+  });
+
+  test(`${family}: SDK markup scans every page and its only advisory is the templates' own data-next-* hooks`, () => {
+    const gate = gateOf(doctorBuiltOutput({ built: FIXTURE_ROOT, slug: family }), SDK_MARKUP);
+    assert.equal(gate.status, "pass");
+    assert.equal(gate.code, `${SDK_MARKUP}.pass`);
+    assert.ok(gate.pages_scanned >= 7, `${family}: only ${gate.pages_scanned} page(s) scanned`);
+    // Not asserted empty on purpose: the templates carry hooks of their own
+    // (data-next-catalog-component and friends) that the SDK never reads.
+    // They are information on the gate; a change here is a templates change.
+    assert.ok(Array.isArray(gate.unknown_attributes));
   });
 
   test(`${family}: campaign identity resolves the key from the shared config.js and one funnel`, () => {

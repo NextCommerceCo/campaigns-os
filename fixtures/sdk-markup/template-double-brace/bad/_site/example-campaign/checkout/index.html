@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>template-double-brace bad</title>
+    <meta name="next-funnel" content="Example">
+    <meta name="next-page-type" content="checkout">
+  </head>
+  <body>
+    <div data-next-cart-summary>
+      <template>
+        <div class="row"><span>{{item.name}}</span><span>{{item.price}}</span></div>
+      </template>
+    </div>
+    <form data-next-checkout><input data-next-checkout-field="email"></form>
+  </body>
+</html>

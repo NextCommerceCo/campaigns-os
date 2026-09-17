@@ -202,6 +202,7 @@ import {
   isPostPurchasePageType,
 } from "./upsell-selector-scope.mjs";
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity } from "./campaign-identity.mjs";
+import { SDK_MARKUP, evaluateSdkMarkup } from "./sdk-markup.mjs";
 import {
   BUILD_BRIEF_NORMALIZED_REL_PATH,
   BUILD_BRIEF_SCHEMA,
@@ -3021,6 +3022,20 @@ export function doctorBuiltOutput(args) {
   });
   derived.doctor_checks.push(CAMPAIGN_IDENTITY);
 
+  // Static SDK markup checks (#303). Same placement, same reasons.
+  recordSdkMarkupGate({
+    subject: {
+      public_route_slug: scope.slug || null,
+      site_root: relFromDir(targetRepo, scope.campaign_dir),
+    },
+    pages: collectBuiltPageIdentityInputs(scope, targetRepo),
+    errors,
+    warnings,
+    ready,
+    derived,
+  });
+  derived.doctor_checks.push(SDK_MARKUP);
+
   const synthesized = synthesizeMinimalBuildPacket({
     schemaVersion: PACKET_SCHEMA,
     targetRepo,
@@ -3877,6 +3892,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: CAMPAIGN_IDENTITY,
     phase: "built-output",
     run: ({ packet, errors, ready, derived }) => validateCampaignIdentity(packet, errors, ready, derived),
+  },
+  {
+    id: SDK_MARKUP,
+    phase: "built-output",
+    run: ({ packet, errors, warnings, ready, derived }) => validateSdkMarkup(packet, errors, warnings, ready, derived),
   },
   {
     id: "built_output.sdk_meta_tags",
@@ -6237,6 +6257,53 @@ function recordCampaignIdentityGate({ subject, pages, errors, ready, derived }) 
   }
   const skipped = gate.pages_skipped.length ? `; skipped ${gate.pages_skipped.length} parked page(s): ${gate.pages_skipped.join(", ")}` : "";
   ready.push(`All ${gate.pages_scanned} built page(s) agree on campaign identity (next-funnel ${gate.identity.funnel ? `"${gate.identity.funnel}"` : "not declared"}, API key ${gate.identity.api_key ? "consistent" : "not declared"})${skipped}`);
+  return gate;
+}
+
+// Static SDK markup checks (#303). Every doctor invocation, both entry points,
+// filesystem enumeration, blocking regardless of stage status — the same
+// contract as the two gates above, for the same reasons.
+function validateSdkMarkup(packet, errors, warnings, ready, derived) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  const scope = siteRoot && existsSync(siteRoot) ? resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug }) : null;
+  recordSdkMarkupGate({
+    subject: {
+      public_route_slug: publicRouteSlug || null,
+      site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
+    },
+    pages: scope?.ok ? collectBuiltPageIdentityInputs(scope, targetRepo) : [],
+    errors,
+    warnings,
+    ready,
+    derived,
+  });
+}
+
+function recordSdkMarkupGate({ subject, pages, errors, warnings, ready, derived }) {
+  const gate = evaluateSdkMarkup({ subject, pages });
+  if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(gate);
+
+  if (gate.status === "not_applicable") {
+    ready.push("SDK markup checkpoint not applicable: no built page to scan yet.");
+    return gate;
+  }
+  // Blockers and advisories each carry their own code (the kit's lint code,
+  // lower-cased, under the gate id) and the finding, so a reader can filter
+  // by shape without parsing prose.
+  for (const item of gate.findings) addIssue(errors, item.code, item.message, { finding: item, checkpoint_gate: gate });
+  for (const item of gate.warned) addIssue(warnings, item.code, item.message, { finding: item, checkpoint_gate: gate });
+  // Unknown data-next-* names are information, not a warning: the certified
+  // templates carry a handful of their own data-next-* hooks the SDK never
+  // reads, and a warning that fires on every canonical build is noise that
+  // trains readers to skip the channel. The list stays on the gate and in
+  // one ready line, where an invented attribute is still one grep away.
+  if (gate.unknown_attributes.length) {
+    ready.push(`SDK markup: ${gate.unknown_attributes.length} data-next-* name(s) not in the Campaign Cart ${gate.sdk_attribute_index_version} attribute index (advisory; the SDK does not read them): ${gate.unknown_attributes.map((item) => item.name).join(", ")}`);
+  }
+  if (gate.status === "blocked") return gate;
+  ready.push(`SDK markup checks passed on ${gate.pages_scanned} built page(s)${gate.warned.length ? ` with ${gate.warned.length} advisory finding(s)` : ""}`);
   return gate;
 }
 

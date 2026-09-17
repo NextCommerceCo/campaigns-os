@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>template-double-brace good</title>
+    <meta name="next-funnel" content="Example">
+    <meta name="next-page-type" content="checkout">
+  </head>
+  <body>
+    <div data-next-cart-summary>
+      <template>
+        <div class="row"><span>{item.name}</span><span>{item.price}</span></div>
+      </template>
+    </div>
+    <!-- A template the SDK never reads may use any syntax it likes. -->
+    <template id="vendor-widget"><div>{{vendor.token}}</div></template>
+    <form data-next-checkout><input data-next-checkout-field="email"></form>
+  </body>
+</html>

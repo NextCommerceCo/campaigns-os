@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>double-selected good</title>
+    <meta name="next-funnel" content="Example">
+    <meta name="next-page-type" content="checkout">
+  </head>
+  <body>
+    <div data-next-bundle-selector data-next-selector-id="main">
+      <div data-next-bundle-card data-next-bundle-id="one" data-next-selected="true">One</div>
+      <div data-next-bundle-card data-next-bundle-id="two" data-next-selected="false">Two</div>
+    </div>
+    <div data-next-bundle-selector data-next-selector-id="second">
+      <div data-next-bundle-card data-next-bundle-id="three" data-next-selected="true">Three</div>
+    </div>
+    <form data-next-checkout><input data-next-checkout-field="email"></form>
+  </body>
+</html>

@@ -422,6 +422,61 @@ pass on the canonical rendered output of every certified starter family
 (`fixtures/certified-families/`), the reachability bar every static
 built-output gate now carries.
 
+### Built-output SDK markup gate (`built_output.sdk_markup`)
+
+Every doctor run that sees built output also runs the static SDK markup
+family: six shapes of `data-next-*` markup that the Campaign Cart SDK binds
+without complaint and that then either do nothing (a field that never reaches
+the order, a button that never enables) or write the cart twice. They sit
+beside `built_output.upsell_selector_scope`, which is the same kind of check
+for one shape. The codes are the ones a partner Campaign Cart kit used, kept so
+the two vocabularies line up; each doctor issue is `built_output.sdk_markup.`
+plus the code lower-cased, and its message leads with the code.
+
+Blockers (not waivable — the markup provably does not do what it says):
+
+- `SWAP_WITH_ADD_TO_CART` — a bundle selector in swap mode (explicit
+  `data-next-selection-mode="swap"`, or the SDK default when the attribute is
+  absent) with an `add-to-cart` button linked to it by `data-next-selector-id`.
+  Both write the cart. An upsell-context selector is exempt: it is select mode
+  by construction.
+- `CHECKOUT_NOT_FORM` — `data-next-checkout` on an element that is not `<form>`.
+- `WRONG_FIELD_NAME` — `data-next-checkout-field` with a value the SDK does not
+  map. The set is vendored from the SDK at a named tag
+  (`src/sdk-attribute-index.mjs`, currently v0.4.38: `email`, `fname`, `lname`,
+  `phone`, `address1`, `address2`, `city`, `province`, `postal`, `country`,
+  `payment-method`, `accepts_marketing`, `cc-number`, `cc-month`, `cc-year`,
+  `exp-month`, `exp-year`, `cvv`, the legacy `card-*` spellings, and any
+  `billing-` prefixed name). The message names the SDK spelling for the usual
+  offenders (`firstName` → `fname`, `zip` → `postal`).
+- `MISSING_SELECTOR_ID_MATCH` — an `add-to-cart` button whose
+  `data-next-selector-id` names no selector on the page.
+
+Warnings (advisory):
+
+- `DOUBLE_SELECTED` — more than one `data-next-selected="true"` card inside one
+  selector.
+- `TEMPLATE_DOUBLE_BRACE` — `{{` inside an SDK-owned `<template>` (one nested
+  in an element carrying a `data-next-*` / `data-item-*` attribute, or one a
+  `*-template-id` attribute points at). SDK tokens are single-brace; a template
+  nothing in the SDK reads may use any syntax.
+
+Information: `data-next-*` names the vendored attribute index does not list are
+collected on the gate (`unknown_attributes[]`) and printed as one advisory ready
+line, never as a warning. That is where an invented attribute such as
+`data-next-coupon-input` shows up; it is information rather than a warning
+because the certified templates carry a handful of their own `data-next-*`
+hooks the SDK never reads.
+
+Markup inside SDK templates is scanned too, since the SDK clones it into the
+live DOM. The gate's evidence lands beside the other checkpoint gates at
+`derived.checkpoint_gates[]` (`id: built_output.sdk_markup`, status `pass` |
+`blocked` | `not_applicable`, `findings[]` for blockers, `warned[]` for
+advisories, `unknown_attributes[]`, `pages_scanned`,
+`sdk_attribute_index_version`). Fixtures: `fixtures/sdk-markup/<code>/{bad,good}`.
+It passes, with no advisory, on the canonical rendered output of every
+certified starter family (`fixtures/certified-families/`).
+
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
 ## Artifact Locations
