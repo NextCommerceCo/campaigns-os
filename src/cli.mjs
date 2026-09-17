@@ -1112,7 +1112,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     if (subcommand !== "derive") throw new Error("Unknown spec subcommand. Use: campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json].");
     const result = await specDeriveWithMapWriteback(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
-    else for (const line of specDeriveTextLines(result)) console.log(line);
+    else for (const line of specDeriveWriteMapTextLines(result)) console.log(line);
     if (!result.ok) process.exitCode = 2;
     return;
   }
@@ -4774,10 +4774,7 @@ export function pageKitSyncCommand(args) {
 // spec, every other file, and anything store-derived (slice 2) are untouched.
 // --dry-run prints the same diff and writes nothing. Exit 2 when the packet,
 // the spec or the target entry is missing.
-const SPEC_DERIVE_FLAGS = Object.freeze(["packet", "dry-run", "json", "report", "write-map", "proxy-base"]);
-// The Map write-back's own issue codes are spec.derive.map_<reason>; the
-// reasons are the result's (map-pin-writeback.mjs).
-const SPEC_DERIVE_MAP_ISSUE_PREFIX = "spec.derive.map_";
+const SPEC_DERIVE_FLAGS = Object.freeze(["packet", "dry-run", "json", "report"]);
 
 // The page files page-kit renders under the campaign's source directory, with
 // the route each one builds to (filename-derived, or the file's permalink;
@@ -4837,18 +4834,6 @@ export function specDeriveCommand(args) {
     throw new Error(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
   }
   if (args.report === true) throw new Error("Missing value for --report");
-  // `--write-map` is a bare flag too: a network write must never be switched
-  // on by a stray value. `--proxy-base` names a URL or is refused here, before
-  // anything is read, as `telemetry` refuses a bare one.
-  if (Object.hasOwn(args, "write-map") && args["write-map"] !== true) {
-    throw new Error(`--write-map takes no value (got ${JSON.stringify(args["write-map"])}); write \`--write-map\` on its own, after the other flags.`);
-  }
-  if (Object.hasOwn(args, "proxy-base") && !optionalString(args["proxy-base"])) {
-    throw new Error("spec derive: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
-  }
-  if (optionalString(args["proxy-base"]) && args["write-map"] !== true) {
-    throw new Error("spec derive: --proxy-base only applies with --write-map; nothing was written.");
-  }
   const dryRun = args["dry-run"] === true;
   const result = {
     ok: false,
@@ -4862,7 +4847,6 @@ export function specDeriveCommand(args) {
     spec_path: null,
     report_path: null,
     dry_run: dryRun,
-    write_map: args["write-map"] === true,
     written: false,
     changes: [],
     unchanged: [],
@@ -4870,7 +4854,6 @@ export function specDeriveCommand(args) {
     not_in_target: [],
     stale_hints: [],
     rebound: { build_context: null, assembly_report: null },
-    map: null,
     errors: [],
     warnings: [],
     next: `${cmd("doctor")} --packet ${shellToken(packetPath)}`,
@@ -5208,102 +5191,11 @@ export function specDeriveCommand(args) {
   return result;
 }
 
-// `spec derive --write-map`: the Map half of #415. The local derive above
-// decides the pin (the repo pin, when the plan says the repo states it); this
-// records the same pin into the saved Map's Build hints field through the
-// proxy Worker so the Map and every export of it stop reading stale. The Map
-// is read back first and re-stated with only the pin moved, under the Map's
-// own spec_hash as a precondition, and the write goes forward or not at all
-// (map-pin-writeback.mjs). A refusal is a warning and exit 0 (the local
-// derive stood); a write the operator asked for that could not happen —
-// no key, wrong key, Map gone or saved in between, proxy refused — is an
-// error and exit 2. A write is recorded on the Assembly Report's evidence[]
-// (the Run Record references the report by hash) beside the result's `map`.
-export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, env = process.env, warn = undefined } = {}) {
-  const result = specDeriveCommand(args);
-  if (args["write-map"] !== true) return result;
-  const skipped = (reason, detail) => {
-    result.map = { status: "skipped", reason, detail, map_id: null, proxy_base: null, field: "global_config.sdk_version", before: null, after: null, spec_identity: { before: null, after: null }, warnings: [], recorded: null };
-    return result;
-  };
-  if (!result.ok) return skipped("derive_blocked", "the local derive was blocked, so no pin was decided; nothing was sent to the Map.");
-  const pinRow = [...result.changes, ...result.unchanged].find((row) => row.field === "global_config.sdk_version");
-  if (!pinRow) {
-    const held = result.not_derived.find((row) => row.field === "global_config.sdk_version");
-    const reason = held ? `pin_${held.reason}` : "pin_not_derived";
-    skipped(reason, held ? `the pin was not derived (${held.reason}), so it was not written to the Map either: ${held.detail}` : "the pin was not derived, so it was not written to the Map either.");
-    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}skipped`, `Map not written: ${result.map.detail}`, { reason });
-    return result;
-  }
-  let packet = null;
-  try {
-    packet = readJson(result.packet_path);
-  } catch {
-    packet = null;
-  }
-  const mapId = optionalString(packet?.spec?.map_id) || null;
-  const keySource = resolveCampaignsApiKeySource(packet, result.packet_path, env);
-  const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
-  const outcome = await writeMapSdkPin({
-    mapId,
-    repoPin: pinRow.after,
-    campaignKey: keySource.key,
-    proxyBase,
-    dryRun: result.dry_run,
-    ...(fetchImpl ? { fetchImpl } : {}),
-    ...(warn ? { warn } : {}),
-  });
-  if (outcome.status === "failed" && outcome.reason === "key_missing" && keySource.rejected) {
-    outcome.detail = `${describeCampaignKeyRejection(keySource.rejected) || outcome.detail} The Map write needs the key as X-Campaign-Key.`;
-  }
-  result.map = outcome;
-  for (const text of outcome.warnings) addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}validation_warning`, `The proxy accepted the Map with a warning: ${singleLineDetail(text)}`);
-  if (outcome.status === "refused") {
-    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}${outcome.reason}`, `Map ${outcome.map_id} not written: ${outcome.detail}`, { reason: outcome.reason, map_pin: outcome.before, repo_pin: outcome.after });
-    return result;
-  }
-  if (outcome.status === "failed") {
-    addIssue(result.errors, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}${outcome.reason}`, `Map ${outcome.map_id || "(no Map ID)"} not written: ${outcome.detail}`, { reason: outcome.reason });
-    result.ok = false;
-    return result;
-  }
-  if (outcome.status !== "written") return result;
-  // The write is traceable from the campaign's own record: an evidence line
-  // on the Assembly Report, which the Run Record references by hash and
-  // doctor re-reads. The report may legitimately not exist yet (a derive
-  // before prepare-build); the result document still carries the write.
-  const at = new Date().toISOString();
-  const identityNote = outcome.spec_identity.after?.spec_hash
-    ? ` (Map spec_hash ${outcome.spec_identity.before?.spec_hash || "none"} -> ${outcome.spec_identity.after.spec_hash})`
-    : "";
-  const line = `Map write-back: global_config.sdk_version ${outcome.before == null ? "(absent)" : outcome.before} -> ${outcome.after} on Map ${outcome.map_id} at ${at} via spec derive --write-map${identityNote}`;
-  try {
-    const workspace = resolveCampaignWorkspace(result.packet_path, {
-      packet,
-      followContextPointer: true,
-      reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined,
-    });
-    if (!existsSync(workspace.reportPath)) throw new Error(`no Assembly Report at ${workspace.reportPath}`);
-    commitAssemblyReport(workspace, (report) => ({
-      ...report,
-      evidence: [...(Array.isArray(report.evidence) ? report.evidence : []), line],
-    }), {
-      command: "spec derive --write-map",
-      staleReason: `spec derive wrote the repo SDK pin to the Map after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
-    });
-    result.map.recorded = "assembly_report";
-  } catch (error) {
-    result.map.recorded = null;
-    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}not_recorded`, `The Map was written, but the write could not be recorded on the Assembly Report (${singleLineDetail(error.message)}). Keep this result: ${line}`);
-  }
-  return result;
-}
-
 export function specDeriveTextLines(result) {
   const lines = [`Status: ${result.status === "dry_run" ? "DRY RUN" : String(result.status || "unknown").toUpperCase()}`];
   if (result.spec_path) lines.push(`Spec: ${singleLineField(result.spec_path)}`);
   if (result.campaigns_path) lines.push(`Target: ${singleLineField(result.campaigns_path)}[${result.public_route_slug || "<public-route-slug>"}]${result.page_tree ? `, page tree ${singleLineField(result.page_tree)}/` : ""}`);
-  if (result.errors?.length && result.status === "blocked") {
+  if (result.errors?.length) {
     lines.push("Errors:");
     for (const issue of result.errors) lines.push(`- ${formatIssueSummary(issue)}`);
     return lines;
@@ -5323,30 +5215,12 @@ export function specDeriveTextLines(result) {
   }
   if (result.unchanged?.length) lines.push(`Unchanged: ${result.unchanged.map((row) => row.field).join(", ")}`);
   if (result.not_in_target?.length) lines.push(`Not in target (left as they are): ${result.not_in_target.join(", ")}`);
-  if (result.map) lines.push(specDeriveMapLine(result.map));
-  if (result.errors?.length) {
-    lines.push("Errors:");
-    for (const issue of result.errors) lines.push(`- ${formatIssueSummary(issue)}`);
-  }
   if (result.warnings?.length) {
     lines.push("Warnings:");
     for (const issue of result.warnings) lines.push(`- ${formatIssueSummary(issue)}`);
   }
   if (result.next) lines.push(`Next: ${result.next}`);
   return lines;
-}
-
-function specDeriveMapLine(map) {
-  const where = map.map_id ? `Map ${singleLineField(map.map_id)}` : "Map";
-  const pin = `${map.field}: ${map.before == null ? "(absent)" : formatDeriveValue(map.before)} -> ${formatDeriveValue(map.after)}`;
-  switch (map.status) {
-    case "written": return `${where} written: ${pin}${map.spec_identity?.after?.saved_at ? ` (saved ${map.spec_identity.after.saved_at})` : ""}${map.recorded ? "" : " — not recorded on the Assembly Report (see Warnings)"}`;
-    case "would_write": return `${where} (dry run, nothing sent): would write ${pin}`;
-    case "unchanged": return `${where} unchanged: already ${formatDeriveValue(map.after)}`;
-    case "refused": return `${where} not written (${map.reason}): see Warnings`;
-    case "skipped": return `${where} not written (${map.reason}): see Warnings`;
-    default: return `${where} not written (${map.reason || "failed"}): see Errors`;
-  }
 }
 
 const PAGE_KIT_PARITY_FLAGS = Object.freeze(["packet", "json", "report"]);
@@ -13034,4 +12908,152 @@ function formatSkillInstallSummary(skill) {
   if (skill.action === "retired") return `${prefix}${skill.name}: ${skill.note}`;
   if (skill.action === "occupied_by_other") return `${prefix}${skill.name}: ${skill.note}`;
   return `${prefix}${skill.name}: unchanged (${skill.to.label})`;
+}
+
+// `spec derive --write-map`: the Map half of #415, kept apart from
+// specDeriveCommand on purpose (that function and spec-derive.mjs are the
+// local derive; this is the one call site that reaches the Map). The local
+// derive decides the pin (the repo pin, when the plan says the repo states
+// it); this records the same pin into the saved Map's Build hints field
+// through the proxy Worker so the Map and every export of it stop reading
+// stale. The Map is read back first and re-stated with only the pin moved,
+// under the Map's own spec_hash as a precondition, and the write goes forward
+// or not at all (map-pin-writeback.mjs). A refusal is a warning and exit 0
+// (the local derive stood); a write the operator asked for that could not
+// happen — no key, wrong key, Map gone or saved in between, proxy refused —
+// is an error and exit 2. A write is recorded on the Assembly Report's
+// evidence[] (the Run Record references the report by hash) beside the
+// result's `map`. The two flags are validated and stripped here, so the local
+// command sees exactly the argv it always has.
+const SPEC_DERIVE_MAP_FLAGS = Object.freeze(["write-map", "proxy-base"]);
+const SPEC_DERIVE_MAP_ISSUE_PREFIX = "spec.derive.map_";
+
+export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, env = process.env, warn = undefined } = {}) {
+  // `--write-map` is a bare flag: a network write must never be switched on
+  // by a stray value. `--proxy-base` names a URL or is refused here, before
+  // anything is read, as `telemetry` refuses a bare one.
+  if (Object.hasOwn(args, "write-map") && args["write-map"] !== true) {
+    throw new Error(`--write-map takes no value (got ${JSON.stringify(args["write-map"])}); write \`--write-map\` on its own, after the other flags.`);
+  }
+  if (Object.hasOwn(args, "proxy-base") && !optionalString(args["proxy-base"])) {
+    throw new Error("spec derive: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
+  }
+  if (optionalString(args["proxy-base"]) && args["write-map"] !== true) {
+    throw new Error("spec derive: --proxy-base only applies with --write-map; nothing was written.");
+  }
+  const writeMap = args["write-map"] === true;
+  const localArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !SPEC_DERIVE_MAP_FLAGS.includes(key)));
+  const result = specDeriveCommand(localArgs);
+  result.write_map = writeMap;
+  result.map = null;
+  if (!writeMap) return result;
+  const skipped = (reason, detail) => {
+    result.map = { status: "skipped", reason, detail, map_id: null, proxy_base: null, field: "global_config.sdk_version", before: null, after: null, spec_identity: { before: null, after: null }, warnings: [], recorded: null };
+    return result;
+  };
+  if (!result.ok) return skipped("derive_blocked", "the local derive was blocked, so no pin was decided; nothing was sent to the Map.");
+  const pinRow = [...result.changes, ...result.unchanged].find((row) => row.field === "global_config.sdk_version");
+  if (!pinRow) {
+    const held = result.not_derived.find((row) => row.field === "global_config.sdk_version");
+    const reason = held ? `pin_${held.reason}` : "pin_not_derived";
+    skipped(reason, held ? `the pin was not derived (${held.reason}), so it was not written to the Map either: ${held.detail}` : "the pin was not derived, so it was not written to the Map either.");
+    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}skipped`, `Map not written: ${result.map.detail}`, { reason });
+    return result;
+  }
+  let packet = null;
+  try {
+    packet = readJson(result.packet_path);
+  } catch {
+    packet = null;
+  }
+  const mapId = optionalString(packet?.spec?.map_id) || null;
+  const keySource = resolveCampaignsApiKeySource(packet, result.packet_path, env);
+  const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
+  const outcome = await writeMapSdkPin({
+    mapId,
+    repoPin: pinRow.after,
+    campaignKey: keySource.key,
+    proxyBase,
+    dryRun: result.dry_run,
+    ...(fetchImpl ? { fetchImpl } : {}),
+    ...(warn ? { warn } : {}),
+  });
+  if (outcome.status === "failed" && outcome.reason === "key_missing" && keySource.rejected) {
+    outcome.detail = `${describeCampaignKeyRejection(keySource.rejected) || outcome.detail} The Map write needs the key as X-Campaign-Key.`;
+  }
+  result.map = outcome;
+  for (const text of outcome.warnings) addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}validation_warning`, `The proxy accepted the Map with a warning: ${singleLineDetail(text)}`);
+  if (outcome.status === "refused") {
+    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}${outcome.reason}`, `Map ${outcome.map_id} not written: ${outcome.detail}`, { reason: outcome.reason, map_pin: outcome.before, repo_pin: outcome.after });
+    return result;
+  }
+  if (outcome.status === "failed") {
+    addIssue(result.errors, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}${outcome.reason}`, `Map ${outcome.map_id || "(no Map ID)"} not written: ${outcome.detail}`, { reason: outcome.reason });
+    result.ok = false;
+    return result;
+  }
+  if (outcome.status !== "written") return result;
+  // The write is traceable from the campaign's own record: an evidence line
+  // on the Assembly Report, which the Run Record references by hash and
+  // doctor re-reads. The report may legitimately not exist yet (a derive
+  // before prepare-build); the result document still carries the write.
+  const at = new Date().toISOString();
+  const identityNote = outcome.spec_identity.after?.spec_hash
+    ? ` (Map spec_hash ${outcome.spec_identity.before?.spec_hash || "none"} -> ${outcome.spec_identity.after.spec_hash})`
+    : "";
+  const line = `Map write-back: global_config.sdk_version ${outcome.before == null ? "(absent)" : outcome.before} -> ${outcome.after} on Map ${outcome.map_id} at ${at} via spec derive --write-map${identityNote}`;
+  try {
+    const workspace = resolveCampaignWorkspace(result.packet_path, {
+      packet,
+      followContextPointer: true,
+      reportPath: isNonEmptyString(args.report) ? resolve(args.report) : undefined,
+    });
+    if (!existsSync(workspace.reportPath)) throw new Error(`no Assembly Report at ${workspace.reportPath}`);
+    commitAssemblyReport(workspace, (report) => ({
+      ...report,
+      evidence: [...(Array.isArray(report.evidence) ? report.evidence : []), line],
+    }), {
+      command: "spec derive --write-map",
+      staleReason: `spec derive wrote the repo SDK pin to the Map after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+    });
+    result.map.recorded = "assembly_report";
+  } catch (error) {
+    result.map.recorded = null;
+    addIssue(result.warnings, `${SPEC_DERIVE_MAP_ISSUE_PREFIX}not_recorded`, `The Map was written, but the write could not be recorded on the Assembly Report (${singleLineDetail(error.message)}). Keep this result: ${line}`);
+  }
+  return result;
+}
+
+// The text form of a derive-with-Map result: the local printer's lines, with
+// the Map line and any Map errors inserted ahead of the warnings. Map errors
+// are lifted out before the local printer runs so a failed Map write after a
+// successful local write still prints the diff the write made; a blocked
+// local derive prints as it always has (the Map was never reached).
+export function specDeriveWriteMapTextLines(result) {
+  const isMapIssue = (issue) => typeof issue?.code === "string" && issue.code.startsWith(SPEC_DERIVE_MAP_ISSUE_PREFIX);
+  const mapErrors = (result.errors || []).filter(isMapIssue);
+  const lines = specDeriveTextLines({ ...result, errors: (result.errors || []).filter((issue) => !isMapIssue(issue)) });
+  if (!result.map || result.status === "blocked") return lines;
+  const insert = [specDeriveMapLine(result.map)];
+  if (mapErrors.length) {
+    insert.push("Errors:");
+    for (const issue of mapErrors) insert.push(`- ${formatIssueSummary(issue)}`);
+  }
+  const at = lines.findIndex((line) => line === "Warnings:" || line.startsWith("Next: "));
+  if (at === -1) lines.push(...insert);
+  else lines.splice(at, 0, ...insert);
+  return lines;
+}
+
+function specDeriveMapLine(map) {
+  const where = map.map_id ? `Map ${singleLineField(map.map_id)}` : "Map";
+  const pin = `${map.field}: ${map.before == null ? "(absent)" : formatDeriveValue(map.before)} -> ${formatDeriveValue(map.after)}`;
+  switch (map.status) {
+    case "written": return `${where} written: ${pin}${map.spec_identity?.after?.saved_at ? ` (saved ${map.spec_identity.after.saved_at})` : ""}${map.recorded ? "" : " — not recorded on the Assembly Report (see Warnings)"}`;
+    case "would_write": return `${where} (dry run, nothing sent): would write ${pin}`;
+    case "unchanged": return `${where} unchanged: already ${formatDeriveValue(map.after)}`;
+    case "refused": return `${where} not written (${map.reason}): see Warnings`;
+    case "skipped": return `${where} not written (${map.reason}): see Warnings`;
+    default: return `${where} not written (${map.reason || "failed"}): see Errors`;
+  }
 }

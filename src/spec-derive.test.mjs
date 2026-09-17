@@ -9,7 +9,7 @@ import { test } from "node:test";
 
 import { createHash } from "node:crypto";
 
-import { checkpointWaive, doctorPacket, specDeriveCommand, specDeriveTextLines, specDeriveWithMapWriteback } from "./cli.mjs";
+import { checkpointWaive, doctorPacket, specDeriveCommand, specDeriveTextLines, specDeriveWithMapWriteback, specDeriveWriteMapTextLines } from "./cli.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
 import { entryInScaffoldState, evaluatePageKitSdkVersion, SPEC_DERIVE_COMMAND } from "./page-kit-sdk-version.mjs";
@@ -1196,7 +1196,7 @@ test("spec derive --write-map writes the derived pin to the Map after the local 
     assert.equal(stamped.stale, true);
     assert.equal(stamped.stale_marked_by, "spec derive --write-map");
 
-    const lines = specDeriveTextLines(result);
+    const lines = specDeriveWriteMapTextLines(result);
     assert.ok(lines.includes("Changes written: 3"));
     assert.ok(lines.includes('Map runtime-packet-demo-k9x2 written: global_config.sdk_version: "0.4.18" -> "0.4.38" (saved 2026-09-17T09:00:00.000Z)'), lines.join("\n"));
     assert.equal(lines.some((line) => line.startsWith("Errors:")), false);
@@ -1208,7 +1208,7 @@ test("spec derive --write-map writes the derived pin to the Map after the local 
     assert.equal(same.map.status, "unchanged");
     assert.deepEqual(again.calls.map((call) => call.method), ["GET"]);
     assert.equal(readJson(reportPath).evidence.length, 1, "an unchanged Map records nothing");
-    assert.ok(specDeriveTextLines(same).includes('Map runtime-packet-demo-k9x2 unchanged: already "0.4.38"'));
+    assert.ok(specDeriveWriteMapTextLines(same).includes('Map runtime-packet-demo-k9x2 unchanged: already "0.4.38"'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1231,7 +1231,7 @@ test("spec derive --write-map refuses a Map pin ahead of the repo (warning, exit
     assert.match(warning.message, /records 0\.4\.40, ahead of the repo pin 0\.4\.38/);
     assert.deepEqual(warning.detail, { reason: "map_ahead", map_pin: "0.4.40", repo_pin: "0.4.38" });
     assert.equal(readJson(reportPath).evidence.length, 0);
-    assert.ok(specDeriveTextLines(result).includes("Map runtime-packet-demo-k9x2 not written (map_ahead): see Warnings"));
+    assert.ok(specDeriveWriteMapTextLines(result).includes("Map runtime-packet-demo-k9x2 not written (map_ahead): see Warnings"));
 
     // A Map pin the rule cannot order is refused the same way.
     const odd = mapProxyMock({ record: mapRecordFixture((draft) => { draft.global_config.sdk_version = "latest"; }) });
@@ -1256,7 +1256,7 @@ test("spec derive --write-map is an error (exit 2) when the Map refuses the writ
     assert.equal(result.map.reason, "key_mismatch");
     assert.deepEqual(result.errors.map((issue) => issue.code), ["spec.derive.map_key_mismatch"]);
     assert.equal(readJson(reportPath).evidence.length, 0);
-    const lines = specDeriveTextLines(result);
+    const lines = specDeriveWriteMapTextLines(result);
     assert.equal(lines[0], "Status: DERIVED");
     assert.ok(lines.includes("Changes written: 3"));
     assert.ok(lines.includes("Map runtime-packet-demo-k9x2 not written (key_mismatch): see Errors"));
@@ -1296,7 +1296,7 @@ test("spec derive --write-map sends nothing when the pin was not derived, when t
     assert.deepEqual(proxy.calls, [], "no pin, no request");
     const skipped = scaffold.warnings.find((issue) => issue.code === "spec.derive.map_skipped");
     assert.match(skipped.message, /not derived \(scaffold_seed\)/);
-    assert.ok(specDeriveTextLines(scaffold).includes("Map not written (pin_scaffold_seed): see Warnings"));
+    assert.ok(specDeriveWriteMapTextLines(scaffold).includes("Map not written (pin_scaffold_seed): see Warnings"));
 
     // Without the flag the Map is never read.
     const plain = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath }, { fetchImpl: proxy.fetchImpl });
@@ -1313,7 +1313,7 @@ test("spec derive --write-map sends nothing when the pin was not derived, when t
     assert.equal(preview.map.status, "would_write");
     assert.equal(preview.map.before, "0.4.18");
     assert.deepEqual(proxy.calls.map((call) => call.method), ["GET"]);
-    assert.ok(specDeriveTextLines(preview).includes('Map runtime-packet-demo-k9x2 (dry run, nothing sent): would write global_config.sdk_version: "0.4.18" -> "0.4.38"'));
+    assert.ok(specDeriveWriteMapTextLines(preview).includes('Map runtime-packet-demo-k9x2 (dry run, nothing sent): would write global_config.sdk_version: "0.4.18" -> "0.4.38"'));
 
     // A blocked local derive never reaches the Map.
     const blocked = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: join(dir, "missing.json"), "write-map": true }, { fetchImpl: proxy.fetchImpl });
@@ -1326,13 +1326,15 @@ test("spec derive --write-map sends nothing when the pin was not derived, when t
   }
 });
 
-test("spec derive rejects a valued --write-map, a bare --proxy-base, and --proxy-base without --write-map, before reading anything", () => {
+test("spec derive rejects a valued --write-map, a bare --proxy-base, and --proxy-base without --write-map, before reading anything", async () => {
   const { dir, packetPath, specPath } = fixture();
   try {
     const before = readFileSync(specPath, "utf8");
-    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "write-map": "yes" }), /--write-map takes no value \(got "yes"\)/);
-    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": true }), /--proxy-base needs a URL/);
-    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "proxy-base": MAP_PROXY }), /--proxy-base only applies with --write-map/);
+    await assert.rejects(specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": "yes" }), /--write-map takes no value \(got "yes"\)/);
+    await assert.rejects(specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": true }), /--proxy-base needs a URL/);
+    await assert.rejects(specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "proxy-base": MAP_PROXY }), /--proxy-base only applies with --write-map/);
+    // The local command itself still knows nothing of the two flags.
+    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "write-map": true }), /Unknown flag for spec derive: --write-map/);
     assert.equal(readFileSync(specPath, "utf8"), before);
     const cli = spawnSync("node", [CLI, "spec", "derive", "--packet", packetPath, "--write-map", "now"], { encoding: "utf8" });
     assert.notEqual(cli.status, 0);
