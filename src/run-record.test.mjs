@@ -898,7 +898,7 @@ test("CLI: lifecycle persistence honors the CAMPAIGNS_OS_LIFECYCLE_LOG env var",
     const lcJournal = join(dir, "env-lc.jsonl");
     const env = { ...process.env, CAMPAIGNS_OS_LIFECYCLE_LOG: lcJournal };
     try {
-      execFileSync("node", [CLI, "doctor", "--packet", packetPath, "--run-id", "run_env"], { encoding: "utf8", env, stdio: "pipe" });
+      execFileSync("node", [CLI, "doctor", "--write", "--packet", packetPath, "--run-id", "run_env"], { encoding: "utf8", env, stdio: "pipe" });
     } catch { /* doctor flags the synthetic packet (exit 2) */ }
     const { entries } = readLifecycleJournal(lcJournal);
     assert.equal(entries.length, 1);
@@ -914,7 +914,7 @@ test("CLI: private --auth-cookie=value is omitted entirely from argv_shape", () 
     const lcJournal = join(dir, "lc.jsonl");
     try {
       execFileSync("node", [
-        CLI, "doctor", "--packet", packetPath, "--run-id", "run_eq",
+        CLI, "doctor", "--write", "--packet", packetPath, "--run-id", "run_eq",
         "--auth-cookie=sterling-SECRET-value", "--lifecycle-journal", lcJournal,
       ], { encoding: "utf8", stdio: "pipe" });
     } catch { /* exit 2 */ }
@@ -939,7 +939,7 @@ test("CLI: re-running run-record over the same journal does not shadow the build
       }
     };
     // Build command writes its lifecycle entry.
-    run(["doctor", "--packet", packetPath, "--run-id", "run_shadow", "--lifecycle-journal", lcJournal]);
+    run(["doctor", "--write", "--packet", packetPath, "--run-id", "run_shadow", "--lifecycle-journal", lcJournal]);
     // First run-record (also writes its own entry to the journal afterward).
     JSON.parse(run(["run-record", "--packet", packetPath, "--journal", join(dir, "wf.jsonl"), "--run-id", "run_shadow", "--lifecycle-journal", lcJournal, "--no-write", "--json"]));
     // Second run-record: must still embed doctor, not run-record's own self-entry.
@@ -962,7 +962,7 @@ test("CLI: a lifecycle journal entry is captured then embedded into the Run Reco
     };
 
     // 1) A command runs with opt-in lifecycle persistence, stamped with run_id.
-    run(["doctor", "--packet", packetPath, "--run-id", "run_lc", "--lifecycle-journal", lcJournal, "--json"]);
+    run(["doctor", "--write", "--packet", packetPath, "--run-id", "run_lc", "--lifecycle-journal", lcJournal, "--json"]);
 
     // 2) run-record embeds the matching lifecycle entry.
     const out = JSON.parse(execFileSync("node", [

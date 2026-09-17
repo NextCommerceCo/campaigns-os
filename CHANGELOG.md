@@ -156,6 +156,19 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   configured campaign whose repo pin moved first is brought back in line by
   `campaigns-os spec derive --packet <p>` (routes and analytics ids included),
   or by re-saving the Map, and never by a hand edit of a derived spec field.
+||||||| 189c127
+## [1.30.0+agent.2] - 2026-09-17
+
+### Changed
+
+- Packet-mode `doctor` now inspects by default. It reports current blockers and
+  keeps the same exit status without rewriting the retained doctor sidecar,
+  Assembly Report, or active run journal. Pass `--write` to record a new doctor
+  result; `--no-write` takes precedence. Callers that previously relied on the
+  implicit write must add `--write`, including when using `--doctor-out`.
+  Build, QA, and `next` retain their existing evidence-producing behavior.
+  Readback of a delivered campaign can therefore diagnose stale local output
+  without replacing the original delivery evidence.
 
 ## [1.30.0+agent.1] - 2026-09-16
 

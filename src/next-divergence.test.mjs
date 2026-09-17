@@ -296,7 +296,8 @@ test("clean repo keeps the divergence shape while surfacing missing-spec checkpo
     "checkpoint.page_kit.store_profile.repair_spec",
     "doctor_recheck",
   ]);
-  assert.equal(result.prompt, "Resolve the doctor errors above before continuing. Re-run `campaigns-os doctor --packet <path>` to confirm, then `campaigns-os next --packet <path>` to advance.");
+  assert.match(result.next_actions.find(action => action.id === "doctor_recheck").command, /--write/);
+  assert.equal(result.prompt, "Resolve the doctor errors above before continuing. Re-run `campaigns-os doctor --packet <path> --write` to record the recovery, then `campaigns-os next --packet <path>` to advance.");
   rmSync(dir, { recursive: true, force: true });
 });
 

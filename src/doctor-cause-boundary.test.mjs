@@ -60,7 +60,7 @@ test("the QA stage refresh keeps the labels on the retained doctor artifact", ()
   const { dir, packetPath } = stagedPacket({ priorErrorCodes: ["source_html.root"] });
 
   // 1. doctor writes the artifact, labels and all.
-  doctorCommand({ _: ["doctor"], packet: packetPath });
+  doctorCommand({ write: true, _: ["doctor"], packet: packetPath });
   const afterDoctor = readDoctorArtifact(dir);
   assert.ok(afterDoctor.cause_summary, "doctor wrote a cause summary");
   assert.ok(afterDoctor.errors.every((issue) => issue.cause), "doctor labelled every error");
