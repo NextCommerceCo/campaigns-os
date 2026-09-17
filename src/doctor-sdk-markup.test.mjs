@@ -162,6 +162,23 @@ test("unknown data-next-* names are collected per campaign as information, not a
   assert.deepEqual(gate.unknown_attributes, [{ name: "data-next-coupon-input", pages: ["p.html", "q.html"] }]);
 });
 
+test("a blocked gate surfaces one disposition: advisories stay on warned[] and are not also doctor warnings; summaries are bounded", () => {
+  const fields = ["firstName", "lastName", "zip", "state", "tel", "apt", "cardnumber"].map((name) => `<input data-next-checkout-field="${name}">`).join("");
+  withTempDir((repo) => {
+    writePage(repo, "checkout", `<form data-next-checkout>${fields}</form><div data-next-bundle-selector><i data-next-selected="true"></i><i data-next-selected="true"></i></div>`);
+    const result = doctorBuiltOutput({ built: repo, slug: SLUG });
+    const gate = gateOf(result);
+    assert.equal(gate.status, "blocked");
+    assert.equal(gate.findings.length, 7);
+    assert.equal(gate.warned.length, 1, "the DOUBLE_SELECTED advisory is kept on the gate");
+    assert.deepEqual(markupCodes(result.warnings), [], "but not pushed as a doctor warning while blockers stand");
+    assert.equal(markupCodes(result.errors).length, 7);
+    assert.match(gate.reason, /7 SDK markup blocker\(s\).*; plus 2 more\).*1 advisory finding\(s\) held in warned\[\]/);
+    assert.ok(gate.reason.length < 600, `reason is bounded, got ${gate.reason.length} chars`);
+    assert.match(gate.required_actions[0].description, /plus 2 more/);
+  });
+});
+
 test("the vendored attribute index names its SDK tag and holds the field-name contract the issue lists", () => {
   assert.equal(SDK_ATTRIBUTE_INDEX_VERSION, "0.4.38");
   assert.ok(SDK_DATA_NEXT_ATTRIBUTES.length > 100);

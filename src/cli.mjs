@@ -6293,7 +6293,13 @@ function recordSdkMarkupGate({ subject, pages, errors, warnings, ready, derived 
   // lower-cased, under the gate id) and the finding, so a reader can filter
   // by shape without parsing prose.
   for (const item of gate.findings) addIssue(errors, item.code, item.message, { finding: item, checkpoint_gate: gate });
-  for (const item of gate.warned) addIssue(warnings, item.code, item.message, { finding: item, checkpoint_gate: gate });
+  // One terminal disposition per gate: while blockers stand, the advisories
+  // stay on gate.warned[] (visible in --json) and are surfaced as warnings
+  // only once the gate passes, so a blocked gate does not also read as a
+  // warned one.
+  if (gate.status !== "blocked") {
+    for (const item of gate.warned) addIssue(warnings, item.code, item.message, { finding: item, checkpoint_gate: gate });
+  }
   // Unknown data-next-* names are information, not a warning: the certified
   // templates carry a handful of their own data-next-* hooks the SDK never
   // reads, and a warning that fires on every canonical build is noise that

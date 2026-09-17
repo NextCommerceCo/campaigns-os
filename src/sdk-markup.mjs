@@ -77,8 +77,12 @@ const TEMPLATE_ID_ATTRIBUTES = /^data-(?:next-)?[a-z0-9-]*template-id$/;
 
 // Containers whose DIRECT <template> child the SDK clones (each does a
 // `:scope > template` lookup at v0.4.38: cart-summary and its
-// data-summary-lines / data-next-discounts sub-containers, bundle-selector
-// and its external bundle-slots element, package-selector, package-toggle).
+// data-summary-lines / data-next-discounts sub-containers; bundle-selector,
+// the card-internal data-next-bundle-slots placeholder
+// (`[data-next-bundle-slots] > template`, template-state.ts) and the external
+// data-next-bundle-slots-for container the enhancer resolves by selector id
+// (`externalSlotsEl.querySelector(':scope > template')`); package-selector;
+// package-toggle).
 // Only the direct child: a vendor template nested deeper inside SDK chrome is
 // never read, so it may use any syntax.
 const TEMPLATE_CONTAINER_ATTRIBUTES = [
@@ -327,11 +331,17 @@ export function evaluateSdkMarkup({ subject, pages = [] } = {}) {
     };
   }
 
+  // Bounded summaries: a checkout with a dozen misspelled fields is a dozen
+  // WRONG_FIELD_NAME findings, each already a doctor error with its full
+  // message. The gate names the shape and the first few, not all of them.
+  const SHOWN = 5;
+  const headline = findings.slice(0, SHOWN).map((item) => `${item.code_name} on ${item.file || item.page_id}`);
+  const more = findings.length > SHOWN ? `; plus ${findings.length - SHOWN} more` : "";
   return {
     ...base,
     status: "blocked",
     code: SDK_MARKUP,
-    reason: `${findings.length} SDK markup blocker(s) on ${list.length} built page(s): ${findings.map((item) => item.message).join(" ")}`,
+    reason: `${findings.length} SDK markup blocker(s) on ${list.length} built page(s) (${headline.join("; ")}${more})${warned.length ? `, and ${warned.length} advisory finding(s) held in warned[] until the blockers clear` : ""}; each blocker is a doctor error with the repair.`,
     findings,
     warned,
     unknown_attributes,
@@ -341,7 +351,7 @@ export function evaluateSdkMarkup({ subject, pages = [] } = {}) {
         id: "repair_sdk_markup",
         kind: "edit",
         command: null,
-        description: `Repair the markup each finding names (${findings.map((item) => `${item.code_name} on ${item.file || item.page_id}`).join("; ")}), rebuild, and re-run doctor. Not waivable: the markup provably does not do what it says.`,
+        description: `Repair the markup each finding names (${headline.join("; ")}${more}), rebuild, and re-run doctor. Not waivable: the markup provably does not do what it says.`,
       },
     ],
   };

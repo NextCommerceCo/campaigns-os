@@ -474,7 +474,9 @@ because the certified templates carry a handful of their own `data-next-*`
 hooks the SDK never reads.
 
 Markup inside SDK templates is scanned too, since the SDK clones it into the
-live DOM. The gate's evidence lands beside the other checkpoint gates at
+live DOM. A gate reports one disposition: while blockers stand, advisories
+stay on the gate's `warned[]` and become doctor warnings only once the
+blockers clear; the gate `reason` names the first five findings and a count. The gate's evidence lands beside the other checkpoint gates at
 `derived.checkpoint_gates[]` (`id: built_output.sdk_markup`, status `pass` |
 `blocked` | `not_applicable`, `findings[]` for blockers, `warned[]` for
 advisories, `unknown_attributes[]`, `pages_scanned`,
