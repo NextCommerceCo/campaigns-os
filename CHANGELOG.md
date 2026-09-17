@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.32.0] - 2026-09-17
+## [1.33.0] - 2026-09-17
 
 Additive: the Run Record schema gains an optional `qa_verdict_publish` block,
 and `qa` gains a `publish` subcommand that posts an already-stored verdict.
@@ -71,8 +71,42 @@ and `qa` gains a `publish` subcommand that posts an already-stored verdict.
   the Run Record block.
 - `docs/workflow-findings-sidecar.md`: Remit Channel names the
   `qa_verdict_publish` block, who writes it, and the never-downgrade rule.
-- `docs/supported-surface.md`: the schema row records the 1.32.0 additive Run
+- `docs/supported-surface.md`: the schema row records the 1.33.0 additive Run
   Record block; the CLI row names `qa publish`.
+## [1.32.0] - 2026-09-17
+
+Additive: the retained doctor sidecar names the command that wrote it.
+
+### Added
+
+- `.campaign-runtime/doctor-output.json` carries `generated_by`, the
+  campaigns-os command that persisted it, beside `generated_at` (#312).
+  Every producer stamps its own name: `doctor` (from `doctor --write`),
+  `next`, `start`, `build`, and `qa run` (the QA stage refresh). The stamp
+  is threaded from the command that knows its name, never inferred from
+  argv at the write, and a producer that gives no name is refused rather
+  than written anonymously — the same discipline `stale_marked_by` already
+  applies to a stale stamp. `schemas/campaigns-os-doctor-output.v0.schema.json`
+  gains the optional `generated_by` string (schema id unchanged; a sidecar
+  written before this release carries no producer and still validates), and
+  the production-shaped fixture bundle carries it. A consumer that reads the
+  sidecar can now attribute it before deciding whether it is stale, current,
+  or someone else's.
+
+### Changed
+
+- `standardize` is documented as what it has always been: read-only. #312
+  reported it writing `doctor-output.json`; the repro copied an example
+  target with `cp -R`, which copies gitignored files, and that checkout's
+  example carried a sidecar from an earlier `doctor` run. The read-only
+  proof in `docs/campaign-standardization-report.md` now covers that shape
+  (a target already holding a sidecar, with and without a built `_site`,
+  with and without `--no-doctor`) and says what `--no-doctor` actually
+  skips: the built-output doctor pass inside the report, not a write, since
+  there is none. `docs/qa-and-test-orders.md` and
+  `docs/migration-sidecar-bundle.md` name the four producers by the names
+  they stamp; the intake producer is `start`/`build` (`prepare-build` runs
+  no doctor).
 
 ## [1.31.0] - 2026-09-17
 

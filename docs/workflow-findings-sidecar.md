@@ -240,7 +240,7 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
   or null when nothing was sent and nothing is known (`--no-remit`, consent
   off).
 - **The QA verdict publish is recorded beside the remit** — since surface
-  1.32.0 a record carries an optional `qa_verdict_publish` block: the
+  1.33.0 a record carries an optional `qa_verdict_publish` block: the
   verdict's own `run_id` (the publish idempotency key — distinct from the
   record's), the `publisher` (`qa run` for the run's own post, `qa publish`
   for a later post of the stored verdict), `attempted` / `ok` / `error` /

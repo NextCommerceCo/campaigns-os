@@ -4175,8 +4175,101 @@
       "kind": "release",
       "surface_version": "1.32.0",
       "changelog_section": "1.32.0",
-      "changelog_sha256": "002106f51d6aa0ff1e6a300b57afada0379c8a7ff691f8c98df05cd26ec3d9a5",
-      "agent_impact": "New qa subcommand: campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json] posts an already-stored QA verdict to the QA portal (POST /api/qa/verdicts, the rail qa run uses) without re-running QA and without placing an order (#328). Without --verdict the committed .campaign-runtime/qa-verdict.json names the run and that run’s full verdict under <target-repo>/qa-output/<map-id>/<run-id>.json is preferred; only the projection on disk is published as source_kind sidecar_projection. Refusals exit 2 with nothing sent and a named refusal.code: spec_hash_mismatch (the verdict’s spec_hash is not the packet’s current spec under the one normalising comparator; both hashes on the result; remedy qa run), spec_hash_absent, already_published (the run’s Run Record records this verdict run_id as published; --republish overrides), verdict_untrusted, campaign_mismatch, verdict_missing / verdict_unreadable / verdict_invalid, order_flags_refused (--test-order, --browser, --max-order-creations, --max-test-orders, --legacy-api-test-order, --select-package, --apply-coupon are refused by name). The post is classified by HTTP status as a remit is: stored, already_stored (409, ok), ok_unparsed_ack are exit 0 with dashboard_url; refused and transport_error exit 1. The result carries orders_placed: 0. Run Record schema (campaigns-os-run-record/v0) gains the optional qa_verdict_publish block (verdict_run_id, publisher qa run | qa publish, attempted, ok, error, endpoint, state skipped | ok | failed, result in the remit_result vocabulary, base_kind, published_at); additive, additionalProperties unchanged, absent on older records. qa run builds the block from its own publish or skip and hands it to the run session, so run end and the QA auto-end stamp it; qa publish stamps the record whose qa_verdict artifact references the verdict; a stored ok is never downgraded. qa run --json gains publish and qa_verdict_publish; a 409 from the portal is now an ok publish rather than a post_error. surface_version 1.31.0 -> 1.32.0; package version 1.32.0.",
+      "changelog_sha256": "86c60cd3c6202607472305bb8c02216df255c9ccbc6a89caa4ac6c31e65867d9",
+      "agent_impact": "The retained doctor sidecar .campaign-runtime/doctor-output.json now carries generated_by, the campaigns-os command that persisted it (doctor, next, start, build, qa run), beside generated_at; schemas/campaigns-os-doctor-output.v0.schema.json gains it as an optional string (schema id unchanged), so a sidecar written before 1.32.0 still validates and simply carries no producer. A consumer attributing a sidecar reads generated_by before deciding what wrote it; a consumer that validated the schema by hash re-pins at 1.32.0. standardize remains read-only (it never wrote the sidecar; #312's repro copied a gitignored one along with the example target) and the docs now say what --no-doctor skips. surface_version 1.31.0 -> 1.32.0; package.json and compatibility.json follow.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-doctor-output.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-doctor-output.v0.schema.json",
+          "summary": "Optional generated_by (non-empty string): the campaigns-os command that persisted the sidecar. Schema id campaigns-os-doctor-output/v0 unchanged; additive."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor --write, next, start, build and the QA stage refresh (qa run) stamp the doctor sidecar generated_by with their own command name through one seam (writeDoctorSidecar / stampDoctorProducer); a producer without a name is refused, never written anonymously. No flag, exit code or stdout shape changed."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.31.0 -> 1.32.0; sha256 of schemas/campaigns-os-doctor-output.v0.schema.json re-pinned."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/doctor-output.json",
+          "surface_entry": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/doctor-output.json",
+          "summary": "The production-shaped doctor sidecar carries generated_by: \"doctor\"."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "Doctor Output row: generated_by names the producing command; a sidecar without it predates the stamp."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The four sidecar producers are named by the names they stamp (doctor, next, start/build, qa run); the intake producer is start/build, not prepare-build."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "standardize stays read-only: the proof now covers a target that already carries a doctor sidecar, with and without --no-doctor; --no-doctor skips the built-output doctor pass inside the report, not a write; the #312 repro was a gitignored sidecar copied with the example target."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "version 1.31.0 -> 1.32.0 to match package.json and surface_version."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "Package version line reads 1.32.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "version 1.31.0 -> 1.32.0 (equals surface_version); no export changed."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lockfile version field follows package.json 1.32.0; no resolved dependency changed."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: supported surface at generation time 1.32.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: supported surface at generation time 1.32.0."
+        }
+      ],
+      "entry_sha256": "d62e1d56b5d007704527d65d5bc797c10f426384697e1a42f3542bfe70e5a5eb"
+    },
+    {
+      "id": "RL-0112",
+      "sequence": 112,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": "1.33.0",
+      "changelog_section": "1.33.0",
+      "changelog_sha256": "67e2329d572bcade3f0df4dcf6fbaf1a1961b585f372d1c2f49ca4a009bff170",
+      "agent_impact": "New qa subcommand: campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json] posts an already-stored QA verdict to the QA portal (POST /api/qa/verdicts, the rail qa run uses) without re-running QA and without placing an order (#328). Without --verdict the committed .campaign-runtime/qa-verdict.json names the run and that run’s full verdict under <target-repo>/qa-output/<map-id>/<run-id>.json is preferred; only the projection on disk is published as source_kind sidecar_projection. Refusals exit 2 with nothing sent and a named refusal.code: spec_hash_mismatch (the verdict’s spec_hash is not the packet’s current spec under the one normalising comparator; both hashes on the result; remedy qa run), spec_hash_absent, already_published (the run’s Run Record records this verdict run_id as published; --republish overrides), verdict_untrusted, campaign_mismatch, verdict_missing / verdict_unreadable / verdict_invalid, order_flags_refused (--test-order, --browser, --max-order-creations, --max-test-orders, --legacy-api-test-order, --select-package, --apply-coupon are refused by name). The post is classified by HTTP status as a remit is: stored, already_stored (409, ok), ok_unparsed_ack are exit 0 with dashboard_url; refused and transport_error exit 1. The result carries orders_placed: 0. Run Record schema (campaigns-os-run-record/v0) gains the optional qa_verdict_publish block (verdict_run_id, publisher qa run | qa publish, attempted, ok, error, endpoint, state skipped | ok | failed, result in the remit_result vocabulary, base_kind, published_at); additive, additionalProperties unchanged, absent on older records. qa run builds the block from its own publish or skip and hands it to the run session, so run end and the QA auto-end stamp it; qa publish stamps the record whose qa_verdict artifact references the verdict; a stored ok is never downgraded. qa run --json gains publish and qa_verdict_publish; a 409 from the portal is now an ok publish rather than a post_error. surface_version 1.32.0 -> 1.33.0; package version 1.33.0.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -4202,37 +4295,37 @@
           "class": "compatibility_policy",
           "path": "contracts/supported-surface.json",
           "surface_entry": "contracts/supported-surface.json",
-          "summary": "surface_version 1.31.0 -> 1.32.0; the Run Record schema hash is re-pinned."
+          "summary": "surface_version 1.32.0 -> 1.33.0; the Run Record schema hash is re-pinned."
         },
         {
           "class": "compatibility_policy",
           "path": "docs/supported-surface.md",
           "surface_entry": "docs/supported-surface.md",
-          "summary": "The schema row records the 1.32.0 additive qa_verdict_publish block; the CLI row names qa publish."
+          "summary": "The schema row records the 1.33.0 additive qa_verdict_publish block; the CLI row names qa publish."
         },
         {
           "class": "compatibility_policy",
           "path": "compatibility.json",
           "surface_entry": "compatibility.json",
-          "summary": "version 1.31.0 -> 1.32.0."
+          "summary": "version 1.32.0 -> 1.33.0."
         },
         {
           "class": "compatibility_policy",
           "path": "docs/versioning.md",
           "surface_entry": "docs/versioning.md",
-          "summary": "Package version line reads 1.32.0."
+          "summary": "Package version line reads 1.33.0."
         },
         {
           "class": "package_export",
           "path": "package.json",
           "surface_entry": null,
-          "summary": "version 1.31.0 -> 1.32.0 (equals surface_version); no export, bin, files or dependency change."
+          "summary": "version 1.32.0 -> 1.33.0 (equals surface_version); no export, bin, files or dependency change."
         },
         {
           "class": "generated_runtime",
           "path": "package-lock.json",
           "surface_entry": null,
-          "summary": "Lockfile version field follows package.json to 1.32.0; no resolved dependency changed."
+          "summary": "Lockfile version field follows package.json to 1.33.0; no resolved dependency changed."
         },
         {
           "class": "named_surface",
@@ -4250,16 +4343,16 @@
           "class": "documentation",
           "path": "docs/orientation-contract-reference.md",
           "surface_entry": "docs/orientation-contract-reference.md",
-          "summary": "Regenerated: supported surface at generation time 1.32.0."
+          "summary": "Regenerated: supported surface at generation time 1.33.0."
         },
         {
           "class": "named_surface",
           "path": "docs/runtime-readiness.md",
           "surface_entry": "docs/runtime-readiness.md",
-          "summary": "Regenerated: supported surface at generation time 1.32.0."
+          "summary": "Regenerated: supported surface at generation time 1.33.0."
         }
       ],
-      "entry_sha256": "36494a7144de6d249be56ef172c7cfec6a341a4a299a2c834eb4b3eca1945cb5"
+      "entry_sha256": "8a00a6b709a92047331c7536d9a5ec9169343435afeef553ab4ef2f4332019f8"
     }
   ]
 }

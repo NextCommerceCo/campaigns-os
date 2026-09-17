@@ -61,9 +61,19 @@ command also runs the existing `doctor --built` checks and folds those
 findings into the report. Use `--no-doctor` to keep the run to source/runtime
 inventory only.
 
-The command is read-only: it never writes into the target repository, and a
-test holds it to that (every file's size, mtime and content hash are identical
-before and after a run that includes the built-output doctor).
+The command is read-only: it never writes into the target repository, and
+tests hold it to that (every file's size, mtime and content hash are identical
+before and after a run that includes the built-output doctor, and again with
+`--no-doctor`, and again when the target already carries a
+`.campaign-runtime/doctor-output.json`). `--no-doctor` only skips the
+built-output doctor pass inside the report; there is no write for it to
+skip. That last case is the one #312 reported as a write: the repro copied
+an example target with `cp -R`, which copies gitignored files, and the
+checkout's example carried a doctor sidecar from an earlier `doctor` run. A
+`.campaign-runtime/doctor-output.json` under a target you just ran
+`standardize` against was written by one of the four producers named in its
+`generated_by` field (`doctor`, `next`, `start`/`build`, `qa run`) — read that
+field before attributing the file.
 
 ### Flags
 

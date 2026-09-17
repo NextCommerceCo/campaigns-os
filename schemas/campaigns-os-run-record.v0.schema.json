@@ -99,7 +99,7 @@
     "qa_verdict_publish": {
       "type": ["object", "null"],
       "additionalProperties": false,
-      "description": "The QA verdict publish outcome recorded for this run (surface 1.32.0): which verdict was posted to the QA portal, by which command, and what the receiver answered, classified into the same vocabulary as remit_result. Absent on records written before the field existed and on runs that produced no verdict. A later `qa publish` of the same verdict reads state ok as already published and refuses without --republish; a stored outcome is never downgraded by a later failed send.",
+      "description": "The QA verdict publish outcome recorded for this run (surface 1.33.0): which verdict was posted to the QA portal, by which command, and what the receiver answered, classified into the same vocabulary as remit_result. Absent on records written before the field existed and on runs that produced no verdict. A later `qa publish` of the same verdict reads state ok as already published and refuses without --republish; a stored outcome is never downgraded by a later failed send.",
       "required": ["verdict_run_id", "publisher", "attempted", "state"],
       "properties": {
         "verdict_run_id": {
