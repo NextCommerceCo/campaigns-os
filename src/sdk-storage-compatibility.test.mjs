@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, readdirSync, realpathSync, symlinkSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {createHash} from 'node:crypto';
 import { buildRunSession, writeRunSession } from './run-session.mjs';
@@ -20,7 +20,7 @@ test('AST finds methods, property operations, lexical string and storage aliases
 });
 test('comments and public store access do not fabricate accesses', () => assert.deepEqual(analyze(`// localStorage.getItem('next-order')\nconst message="localStorage.getItem('next-order')";useOrderStore.getState();`), []));
 test('shadowing, dynamic access, guessed prefixes and object escapes cannot give clean evidence', () => {
-  for (const source of [`function f(localStorage){localStorage.getItem('next-order')}`, `localStorage.getItem(key)`, `localStorage.getItem('campaign:next-order')`, `localStorage.getItem('next-order__othercampaign')`, `let store=localStorage;store.getItem('next-order')`, `const {getItem}=localStorage;getItem('next-order')`, `const read=localStorage.getItem;read('next-order')`]) {
+  for (const source of [`function f(localStorage){localStorage.getItem('next-order')}`, `localStorage.getItem(key)`, `localStorage.getItem('next-order__othercampaign')`, `let store=localStorage;store.getItem('next-order')`, `const {getItem}=localStorage;getItem('next-order')`, `const read=localStorage.getItem;read('next-order')`]) {
     const findings = analyze(source);
     assert.ok(findings.some(f => f.status === 'unknown'), source);
     assert.ok(!findings.some(f => f.status === 'incompatible'), source);
@@ -135,6 +135,10 @@ test('real CLI preserves active/stale sessions and ambient lifecycle journal byt
       const child = spawnSync(process.execPath, [cli, 'sdk', 'storage-check', '--badflag'], { cwd, encoding: 'utf8', env: { ...process.env, CAMPAIGNS_OS_LIFECYCLE_LOG: journal, CAMPAIGNS_OS_TELEMETRY: 'off' } });
       assert.equal(child.status, 1);
       assert.deepEqual(snapshot(), unchanged);
+      const extra = spawnSync(process.execPath, [cli, 'sdk', 'storage-check', 'unexpected', '--target', cwd], { cwd, encoding: 'utf8', env: { ...process.env, CAMPAIGNS_OS_LIFECYCLE_LOG: journal } });
+      assert.equal(extra.status, 1);
+      assert.match(extra.stderr, /Use: campaigns-os sdk storage-check/);
+      assert.deepEqual(snapshot(), unchanged);
       assert.ok(before.length > 0);
     }
   }
@@ -192,4 +196,66 @@ test('plain property and label names are not storage references; bounded browser
 test('named class expressions shadow outer constants within their own class', () => {
   const findings=analyze(`const key='next-order'; const X=class key { method() { sessionStorage.getItem(key); } }; sessionStorage.getItem(key);`);
   assert.deepEqual(findings.map(f=>f.status), ['unknown','incompatible']);
+});
+
+test('unrelated merchant suffixes are unaffected while SDK scoped literals remain unknown', () => {
+  for (const key of ['my-next-order', 'campaign:next-order']) {
+    const findings = analyze(`sessionStorage.getItem('${key}');`);
+    assert.equal(findings[0].status, 'unaffected');
+    assert.equal(findings[0].reason, 'literal-unaffected-key');
+  }
+  assert.equal(analyze(`sessionStorage.getItem('next-order__anothercampaign')`)[0].status, 'unknown');
+});
+test('Storage length is metadata; enumeration, method escape and metadata mutation remain unknown', () => {
+  const findings = analyze(`localStorage.length; sessionStorage['length'];`);
+  assert.equal(findings.length,2);
+  assert.ok(findings.every(f => f.status === 'unaffected' && f.reason === 'storage-metadata-read'));
+  for (const source of [`sessionStorage.key(0)`, `const key=sessionStorage.key; key(0)`, `localStorage.length=0`, `sessionStorage.getItem(sessionStorage.key(0))`]) {
+    assert.ok(analyze(source).some(f=>f.status==='unknown'), source);
+  }
+});
+test('destructured CatchClause.param shadows an outer storage alias and key', () => {
+  const findings = analyze(`const storage=sessionStorage; const key='next-order'; try{} catch({storage,key}) { storage.getItem(key); sessionStorage.getItem(key); } storage.getItem(key);`);
+  assert.ok(!findings.slice(0,-1).some(f=>f.status==='incompatible'));
+  assert.equal(findings.at(-1).status, 'incompatible');
+  assert.ok(findings.some(f=>f.status==='unknown'));
+});
+test('invalid Git target produces one bounded CLI error without incidental Git stderr', () => {
+  const cwd=mkdtempSync(join(tmpdir(),'storage-not-git-'));
+  try {
+    const cli=fileURLToPath(new URL('../bin/campaigns-os.mjs',import.meta.url));
+    const child=spawnSync(process.execPath,[cli,'sdk','storage-check','--target',cwd,'--target-sdk','0.4.38','--manifest','unused.json','--scope','.'],{cwd,encoding:'utf8'});
+    assert.equal(child.status,1);
+    assert.equal(child.stderr,'campaigns-os: SDK storage scan target must be a readable Git repository root.\n');
+    assert.equal(child.stdout,'');
+  } finally {rmSync(cwd,{recursive:true,force:true});}
+});
+test('canonical realpaths accept filesystem case aliases and reject outside sibling sources', t => {
+  const base=mkdtempSync(join(tmpdir(),'storage-case-'));
+  const cwd=join(base,'campaign-case'); const outside=join(base,'campaign-case-sibling');
+  try {
+    mkdirSync(cwd);mkdirSync(outside);
+    execFileSync('git',['-C',cwd,'init'],{stdio:'pipe'});
+    writeFileSync(join(cwd,'source.js'),'sessionStorage.length');
+    writeFileSync(join(cwd,'manifest.json'),JSON.stringify(manifest));
+    writeFileSync(join(outside,'private.js'),"sessionStorage.getItem('next-order')");
+    symlinkSync(join(outside,'private.js'),join(cwd,'outside.js'));
+    mkdirSync(join(cwd,'linked'));writeFileSync(join(cwd,'linked/private.js'),'// tracked placeholder');
+    execFileSync('git',['-C',cwd,'add','.']);
+    rmSync(join(cwd,'linked'),{recursive:true});symlinkSync(outside,join(cwd,'linked'),'dir');
+    const scan=target=>scanSdkStorageCompatibility({cwd:target,targetSdkVersion:'0.4.38',manifestPath:join(cwd,'manifest.json'),scope:['source.js','outside.js','linked/private.js']});
+    let report=scan(cwd);
+    assert.equal(report.findings.find(f=>f.path==='outside.js').reason,'unsafe-source-path');
+    assert.ok(!report.files.some(f=>f.path==='outside.js'));
+    assert.equal(report.findings.find(f=>f.path==='linked/private.js').reason,'unsafe-source-path');
+    assert.ok(!report.files.some(f=>f.path==='linked/private.js'));
+    const alias=join(dirname(cwd),basename(cwd).toUpperCase());
+    try { assert.equal(statSync(alias).dev,statSync(cwd).dev); assert.equal(statSync(alias).ino,statSync(cwd).ino); } catch(error) {
+      if(error.code==='ENOENT'){t.diagnostic('Case alias unavailable on this case-sensitive filesystem; canonical outside-path guard still verified.');return;}
+      throw error;
+    }
+    report=scan(alias);
+    assert.equal(report.files.find(f=>f.path==='source.js').sha256,createHash('sha256').update('sessionStorage.length').digest('hex'));
+    assert.equal(report.findings.find(f=>f.path==='outside.js').reason,'unsafe-source-path');
+  } finally {rmSync(base,{recursive:true,force:true});}
 });

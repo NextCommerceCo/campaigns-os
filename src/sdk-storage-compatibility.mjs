@@ -2,7 +2,7 @@
 import { parse as parseJs } from 'acorn';
 import { parse as parseHtml } from 'parse5';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, lstatSync, realpathSync } from 'node:fs';
+import { readFileSync, lstatSync, realpathSync, statSync } from 'node:fs';
 import { resolve, relative, dirname, posix, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { isUtf8 } from 'node:buffer';
@@ -210,7 +210,7 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
         status = 'unknown';
         reason = 'migration-boundary-unverified';
       }
-      else if (entries.some(e => e.scoped && (matchesTemplate(key, e.key) || matchesTemplate(key, bareKey(e)) || key.startsWith(bareKey(e) + '__') || key.endsWith(bareKey(e))) && key !== bareKey(e))) {
+      else if (entries.some(e => e.scoped && (matchesTemplate(key, e.key) || matchesTemplate(key, bareKey(e)) || key.startsWith(bareKey(e) + '__')) && key !== bareKey(e))) {
         status = 'unknown';
         reason = 'guessed-scoped-sdk-key';
       }
@@ -242,7 +242,11 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
         const operation = parent?.type === 'AssignmentExpression' && parent.left === node ? 'write' : parent?.type === 'UnaryExpression' && parent.operator === 'delete' ? 'remove' : parent?.type === 'UpdateExpression' ? 'write' : 'read';
         const key = node.computed ? literal(node.property, scope) : node.property.name;
         const reserved = ['getItem', 'setItem', 'removeItem', 'clear', 'key', 'length'].includes(key);
-        record(node, storage, key, operation, reserved ? 'unsupported-storage-member' : null);
+        if (key === 'length' && operation === 'read' && !storage.shadowed) {
+          emit(node, { operation, area: storage.name, key, status: 'unaffected', reason: 'storage-metadata-read', replacement: null });
+        } else {
+          record(node, storage, key, operation, reserved ? 'unsupported-storage-member' : null);
+        }
       }
     }
     const storage = area(node, scope);
@@ -262,11 +266,17 @@ export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVers
     throw new Error('At least one explicit --scope is required; include shared script directories explicitly.');
   scope = scope.map(normalizeScope);
   exclude = exclude.map(normalizeScope);
-  const root = execFileSync('git', ['-C', resolve(cwd), 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-  if (realpathSync(root) !== realpathSync(cwd))
+  let root;
+  try { root = execFileSync('git', ['-C', resolve(cwd), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
+  catch { throw new Error('SDK storage scan target must be a readable Git repository root.'); }
+  const rootIdentity = statSync(root);
+  const targetIdentity = statSync(cwd);
+  if (rootIdentity.dev !== targetIdentity.dev || rootIdentity.ino !== targetIdentity.ino)
     throw new Error('--target must be the Git repository root.');
   const { value: manifest, evidence } = readStorageManifest(manifestPath);
-  const tracked = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+  let tracked;
+  try { tracked = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean); }
+  catch { throw new Error('Cannot inventory tracked Git source files.'); }
   for (const item of scope)
     if (!tracked.some(p => inside(p, item)))
       throw new Error(`Scope has no tracked files: ${item}`);
