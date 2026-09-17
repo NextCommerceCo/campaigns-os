@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -8,7 +9,7 @@ import { test } from "node:test";
 
 import { createHash } from "node:crypto";
 
-import { checkpointWaive, doctorPacket, specDeriveCommand, specDeriveTextLines } from "./cli.mjs";
+import { checkpointWaive, doctorPacket, specDeriveCommand, specDeriveTextLines, specDeriveWithMapWriteback } from "./cli.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
 import { entryInScaffoldState, evaluatePageKitSdkVersion, SPEC_DERIVE_COMMAND } from "./page-kit-sdk-version.mjs";
@@ -1125,6 +1126,267 @@ test("the page-tree walker follows symlinked pages inside the repo, drops a BOM,
     const nested = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
     assert.deepEqual(nested.changes.filter((row) => row.page_id === "receipt").map((row) => [row.after, row.source]), [["offers/", "offers/index.html (permalink)"]]);
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- Map write-back (#415) -------------------------------------------------
+
+const MAP_PROXY = "https://proxy.example";
+
+// The saved Map as the proxy hands it back for the fixture packet: the
+// example spec (pinned 0.4.18, key fixture-campaigns-key) under its envelope.
+function mapRecordFixture(patch = null) {
+  const record = readJson(new URL("campaignspec.v42.basic.json", EXAMPLES));
+  record.slug = "runtime-packet-demo-k9x2";
+  record.map_id = "runtime-packet-demo-k9x2";
+  record.saved_at = "2026-09-10T10:00:00.000Z";
+  record.spec_identity = { ...(record.spec_identity || {}), map_id: "runtime-packet-demo-k9x2", spec_hash: "map-hash-before", saved_at: "2026-09-10T10:00:00.000Z" };
+  if (patch) patch(record);
+  return record;
+}
+
+function mapProxyMock({ record = mapRecordFixture(), putStatus = 200, putBody = null } = {}) {
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const method = init.method || "GET";
+    calls.push({ url: String(url), method, headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : null });
+    const respond = (body, status = 200) => ({ ok: status < 300, status, statusText: status < 300 ? "OK" : "Refused", json: async () => body });
+    if (method === "GET") return respond({ ok: true, data: record, expires_at: null });
+    if (putStatus !== 200) return respond(putBody || { ok: false, error: `refused ${putStatus}` }, putStatus);
+    return respond(putBody || { ok: true, map_id: record.map_id, updated: true, spec_identity: { map_id: record.map_id, spec_hash: "map-hash-after", saved_at: "2026-09-17T09:00:00.000Z" }, warnings: [] });
+  };
+  return { calls, fetchImpl };
+}
+
+test("spec derive --write-map writes the derived pin to the Map after the local write, records it on the Assembly Report, and prints it", async () => {
+  const { dir, packetPath, specPath, targetRepo, reportPath } = fixture();
+  try {
+    const sidecarPath = join(targetRepo, DOCTOR_SIDECAR_REL_PATH);
+    writeJson(sidecarPath, { schema_version: "campaigns-os-doctor-output/v1", ok: true, status: "ready_with_warnings", warnings: [] });
+    const proxy = mapProxyMock();
+    const result = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: proxy.fetchImpl });
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "derived");
+    assert.equal(result.write_map, true);
+    assert.equal(readJson(specPath).global_config.sdk_version, "0.4.38", "the local write happened first");
+    assert.equal(result.map.status, "written");
+    assert.equal(result.map.map_id, "runtime-packet-demo-k9x2");
+    assert.equal(result.map.before, "0.4.18");
+    assert.equal(result.map.after, "0.4.38");
+    assert.equal(result.map.proxy_base, MAP_PROXY);
+    assert.equal(result.map.recorded, "assembly_report");
+    assert.deepEqual(proxy.calls.map((call) => [call.method, call.url]), [
+      ["GET", `${MAP_PROXY}/api/spec/runtime-packet-demo-k9x2`],
+      ["PUT", `${MAP_PROXY}/api/maps/runtime-packet-demo-k9x2`],
+    ]);
+    const put = proxy.calls[1];
+    assert.equal(put.headers["X-Campaign-Key"], "fixture-campaigns-key", "the packet-local spec's key");
+    assert.equal(put.headers["X-Spec-Hash"], "map-hash-before");
+    assert.equal(put.body.global_config.sdk_version, "0.4.38");
+    // The Map is re-stated from its own read-back, not from the local spec:
+    // the analytics block derive just created locally does not travel.
+    assert.equal(put.body.analytics, undefined);
+    assert.equal(put.body.spec_identity.spec_hash, "map-hash-before");
+
+    const report = readJson(reportPath);
+    assert.equal(report.evidence.length, 1);
+    assert.match(report.evidence[0], /^Map write-back: global_config\.sdk_version 0\.4\.18 -> 0\.4\.38 on Map runtime-packet-demo-k9x2 at \d{4}-\d{2}-\d{2}T.* via spec derive --write-map \(Map spec_hash map-hash-before -> map-hash-after\)$/);
+    const stamped = readJson(sidecarPath);
+    assert.equal(stamped.stale, true);
+    assert.equal(stamped.stale_marked_by, "spec derive --write-map");
+
+    const lines = specDeriveTextLines(result);
+    assert.ok(lines.includes("Changes written: 3"));
+    assert.ok(lines.includes('Map runtime-packet-demo-k9x2 written: global_config.sdk_version: "0.4.18" -> "0.4.38" (saved 2026-09-17T09:00:00.000Z)'), lines.join("\n"));
+    assert.equal(lines.some((line) => line.startsWith("Errors:")), false);
+
+    // A second run: the spec and the Map both carry the pin; nothing moves.
+    const again = mapProxyMock({ record: mapRecordFixture((draft) => { draft.global_config.sdk_version = "0.4.38"; }) });
+    const same = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: again.fetchImpl });
+    assert.equal(same.status, "unchanged");
+    assert.equal(same.map.status, "unchanged");
+    assert.deepEqual(again.calls.map((call) => call.method), ["GET"]);
+    assert.equal(readJson(reportPath).evidence.length, 1, "an unchanged Map records nothing");
+    assert.ok(specDeriveTextLines(same).includes('Map runtime-packet-demo-k9x2 unchanged: already "0.4.38"'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive --write-map refuses a Map pin ahead of the repo (warning, exit 0), keeps the local write, and PUTs nothing", async () => {
+  const { dir, packetPath, specPath, reportPath } = fixture();
+  try {
+    const proxy = mapProxyMock({ record: mapRecordFixture((draft) => { draft.global_config.sdk_version = "0.4.40"; }) });
+    const result = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: proxy.fetchImpl });
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "derived");
+    assert.equal(readJson(specPath).global_config.sdk_version, "0.4.38");
+    assert.equal(result.map.status, "refused");
+    assert.equal(result.map.reason, "map_ahead");
+    assert.equal(result.map.before, "0.4.40");
+    assert.deepEqual(proxy.calls.map((call) => call.method), ["GET"]);
+    const warning = result.warnings.find((issue) => issue.code === "spec.derive.map_map_ahead");
+    assert.ok(warning, JSON.stringify(result.warnings));
+    assert.match(warning.message, /records 0\.4\.40, ahead of the repo pin 0\.4\.38/);
+    assert.deepEqual(warning.detail, { reason: "map_ahead", map_pin: "0.4.40", repo_pin: "0.4.38" });
+    assert.equal(readJson(reportPath).evidence.length, 0);
+    assert.ok(specDeriveTextLines(result).includes("Map runtime-packet-demo-k9x2 not written (map_ahead): see Warnings"));
+
+    // A Map pin the rule cannot order is refused the same way.
+    const odd = mapProxyMock({ record: mapRecordFixture((draft) => { draft.global_config.sdk_version = "latest"; }) });
+    const held = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: odd.fetchImpl });
+    assert.equal(held.ok, true);
+    assert.equal(held.map.reason, "map_pin_unreadable");
+    assert.ok(held.warnings.some((issue) => issue.code === "spec.derive.map_map_pin_unreadable"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive --write-map is an error (exit 2) when the Map refuses the write, and the diff still prints beside the error", async () => {
+  const { dir, packetPath, specPath, reportPath } = fixture();
+  try {
+    const proxy = mapProxyMock({ putStatus: 403, putBody: { ok: false, error: "X-Campaign-Key does not match this map's campaign." } });
+    const result = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: proxy.fetchImpl });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, "derived", "the local write stood");
+    assert.equal(readJson(specPath).global_config.sdk_version, "0.4.38");
+    assert.equal(result.map.status, "failed");
+    assert.equal(result.map.reason, "key_mismatch");
+    assert.deepEqual(result.errors.map((issue) => issue.code), ["spec.derive.map_key_mismatch"]);
+    assert.equal(readJson(reportPath).evidence.length, 0);
+    const lines = specDeriveTextLines(result);
+    assert.equal(lines[0], "Status: DERIVED");
+    assert.ok(lines.includes("Changes written: 3"));
+    assert.ok(lines.includes("Map runtime-packet-demo-k9x2 not written (key_mismatch): see Errors"));
+    assert.ok(lines.some((line) => line.startsWith("- [spec.derive.map_key_mismatch] Map runtime-packet-demo-k9x2 not written: the Map's stored campaign key does not match")));
+
+    const raced = mapProxyMock({ putStatus: 409, putBody: { ok: false, error: "Map changed since you loaded it." } });
+    const conflict = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: raced.fetchImpl });
+    assert.equal(conflict.ok, false);
+    assert.equal(conflict.map.reason, "map_changed_underneath");
+
+    // No key anywhere: refused before any request.
+    const packet = readJson(packetPath);
+    const spec = readJson(specPath);
+    delete spec.campaign.campaigns_api_key;
+    writeJson(specPath, spec);
+    delete packet.campaign.api_key_source;
+    writeJson(packetPath, packet);
+    const keyless = mapProxyMock();
+    const noKey = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: keyless.fetchImpl, env: {} });
+    assert.equal(noKey.ok, false);
+    assert.equal(noKey.map.reason, "key_missing");
+    assert.deepEqual(keyless.calls, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive --write-map sends nothing when the pin was not derived, when the local derive is blocked, or without the flag; --dry-run previews the Map write", async () => {
+  const { dir, packetPath, campaignsPath, slug } = fixture({ entry: SCAFFOLD_ENTRY });
+  try {
+    const proxy = mapProxyMock();
+    const scaffold = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY }, { fetchImpl: proxy.fetchImpl });
+    assert.equal(scaffold.ok, true);
+    assert.equal(scaffold.status, "partial");
+    assert.equal(scaffold.map.status, "skipped");
+    assert.equal(scaffold.map.reason, "pin_scaffold_seed");
+    assert.deepEqual(proxy.calls, [], "no pin, no request");
+    const skipped = scaffold.warnings.find((issue) => issue.code === "spec.derive.map_skipped");
+    assert.match(skipped.message, /not derived \(scaffold_seed\)/);
+    assert.ok(specDeriveTextLines(scaffold).includes("Map not written (pin_scaffold_seed): see Warnings"));
+
+    // Without the flag the Map is never read.
+    const plain = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath }, { fetchImpl: proxy.fetchImpl });
+    assert.equal(plain.write_map, false);
+    assert.equal(plain.map, null);
+    assert.deepEqual(proxy.calls, []);
+
+    // A configured entry, dry run: the Map is read and the write previewed.
+    const campaigns = readJson(campaignsPath);
+    campaigns[slug] = { ...CONFIGURED_ENTRY };
+    writeJson(campaignsPath, campaigns);
+    const preview = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": MAP_PROXY, "dry-run": true }, { fetchImpl: proxy.fetchImpl });
+    assert.equal(preview.status, "dry_run");
+    assert.equal(preview.map.status, "would_write");
+    assert.equal(preview.map.before, "0.4.18");
+    assert.deepEqual(proxy.calls.map((call) => call.method), ["GET"]);
+    assert.ok(specDeriveTextLines(preview).includes('Map runtime-packet-demo-k9x2 (dry run, nothing sent): would write global_config.sdk_version: "0.4.18" -> "0.4.38"'));
+
+    // A blocked local derive never reaches the Map.
+    const blocked = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: join(dir, "missing.json"), "write-map": true }, { fetchImpl: proxy.fetchImpl });
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.status, "blocked");
+    assert.equal(blocked.map.reason, "derive_blocked");
+    assert.deepEqual(proxy.calls.map((call) => call.method), ["GET"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive rejects a valued --write-map, a bare --proxy-base, and --proxy-base without --write-map, before reading anything", () => {
+  const { dir, packetPath, specPath } = fixture();
+  try {
+    const before = readFileSync(specPath, "utf8");
+    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "write-map": "yes" }), /--write-map takes no value \(got "yes"\)/);
+    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": true }), /--proxy-base needs a URL/);
+    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "proxy-base": MAP_PROXY }), /--proxy-base only applies with --write-map/);
+    assert.equal(readFileSync(specPath, "utf8"), before);
+    const cli = spawnSync("node", [CLI, "spec", "derive", "--packet", packetPath, "--write-map", "now"], { encoding: "utf8" });
+    assert.notEqual(cli.status, 0);
+    assert.match(cli.stderr, /--write-map takes no value/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("spec derive --write-map end to end: the CLI PUTs the pin to a loopback proxy over http with the clear-text warning, and --json carries the map result", async () => {
+  const { dir, packetPath, reportPath } = fixture();
+  const received = [];
+  const record = mapRecordFixture();
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      received.push({ method: req.method, url: req.url, key: req.headers["x-campaign-key"], hash: req.headers["x-spec-hash"], body: body ? JSON.parse(body) : null });
+      res.setHeader("Content-Type", "application/json");
+      if (req.method === "GET") {
+        res.end(JSON.stringify({ ok: true, data: record, expires_at: null }));
+        return;
+      }
+      res.end(JSON.stringify({ ok: true, map_id: record.map_id, updated: true, spec_identity: { map_id: record.map_id, spec_hash: "map-hash-after", saved_at: "2026-09-17T09:00:00.000Z" }, warnings: [] }));
+    });
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    // Spawned asynchronously: the mock proxy lives on this test's event loop,
+    // and a synchronous spawn would block the very loop the CLI is calling.
+    const cli = await new Promise((done) => {
+      execFile("node", [CLI, "spec", "derive", "--packet", packetPath, "--write-map", "--proxy-base", base, "--json"], { encoding: "utf8" }, (error, stdout, stderr) => {
+        done({ status: error ? error.code : 0, stdout, stderr });
+      });
+    });
+    assert.equal(cli.status, 0, cli.stderr);
+    const json = JSON.parse(cli.stdout);
+    assert.equal(json.status, "derived");
+    assert.equal(json.map.status, "written");
+    assert.equal(json.map.proxy_base, base);
+    assert.equal(json.map.recorded, "assembly_report");
+    assert.match(cli.stderr, /spec derive --write-map: http:\/\/127\.0\.0\.1:\d+ is plain http — the Campaigns API key travels in clear/);
+    assert.deepEqual(received.map((call) => [call.method, call.url]), [
+      ["GET", "/api/spec/runtime-packet-demo-k9x2"],
+      ["PUT", "/api/maps/runtime-packet-demo-k9x2"],
+    ]);
+    assert.equal(received[1].key, "fixture-campaigns-key");
+    assert.equal(received[1].hash, "map-hash-before");
+    assert.equal(received[1].body.global_config.sdk_version, "0.4.38");
+    assert.equal(readJson(reportPath).evidence.length, 1);
+  } finally {
+    server.closeAllConnections?.();
+    await new Promise((done) => server.close(done));
     rmSync(dir, { recursive: true, force: true });
   }
 });
