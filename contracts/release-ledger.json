@@ -4299,9 +4299,102 @@
       "sequence": 113,
       "date": "2026-09-17",
       "kind": "release",
+      "surface_version": "1.33.0",
+      "changelog_section": "1.33.0",
+      "changelog_sha256": "67e2329d572bcade3f0df4dcf6fbaf1a1961b585f372d1c2f49ca4a009bff170",
+      "agent_impact": "New qa subcommand: campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json] posts an already-stored QA verdict to the QA portal (POST /api/qa/verdicts, the rail qa run uses) without re-running QA and without placing an order (#328). Without --verdict the committed .campaign-runtime/qa-verdict.json names the run and that run’s full verdict under <target-repo>/qa-output/<map-id>/<run-id>.json is preferred; only the projection on disk is published as source_kind sidecar_projection. Refusals exit 2 with nothing sent and a named refusal.code: spec_hash_mismatch (the verdict’s spec_hash is not the packet’s current spec under the one normalising comparator; both hashes on the result; remedy qa run), spec_hash_absent, already_published (the run’s Run Record records this verdict run_id as published; --republish overrides), verdict_untrusted, campaign_mismatch, verdict_missing / verdict_unreadable / verdict_invalid, order_flags_refused (--test-order, --browser, --max-order-creations, --max-test-orders, --legacy-api-test-order, --select-package, --apply-coupon are refused by name). The post is classified by HTTP status as a remit is: stored, already_stored (409, ok), ok_unparsed_ack are exit 0 with dashboard_url; refused and transport_error exit 1. The result carries orders_placed: 0. Run Record schema (campaigns-os-run-record/v0) gains the optional qa_verdict_publish block (verdict_run_id, publisher qa run | qa publish, attempted, ok, error, endpoint, state skipped | ok | failed, result in the remit_result vocabulary, base_kind, published_at); additive, additionalProperties unchanged, absent on older records. qa run builds the block from its own publish or skip and hands it to the run session, so run end and the QA auto-end stamp it; qa publish stamps the record whose qa_verdict artifact references the verdict; a stored ok is never downgraded. qa run --json gains publish and qa_verdict_publish; a 409 from the portal is now an ok publish rather than a post_error. surface_version 1.32.0 -> 1.33.0; package version 1.33.0.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Adds the optional qa_verdict_publish block (verdict_run_id, publisher, attempted, ok, error, endpoint, state, result, base_kind, published_at); additive, additionalProperties unchanged."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "New subcommand qa publish posts an already-stored verdict to the QA portal without a re-run or an order; refuses a stale spec_hash, an already-published verdict, an untrusted or foreign one, and order-run flags by name; classifies the post by HTTP status; stamps the outcome on the run’s Run Record. qa run --json gains publish and qa_verdict_publish and treats a 409 as an ok publish. Usage and qa --help list the command, --verdict and --republish."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run-record",
+          "summary": "Writes qa_verdict_publish onto the record from the run session’s QA attempt (run end and the QA auto-end), carries a prior ok forward on re-emit, and never downgrades a stored ok."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.32.0 -> 1.33.0; the Run Record schema hash is re-pinned."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The schema row records the 1.33.0 additive qa_verdict_publish block; the CLI row names qa publish."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "version 1.32.0 -> 1.33.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "Package version line reads 1.33.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "version 1.32.0 -> 1.33.0 (equals surface_version); no export, bin, files or dependency change."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lockfile version field follows package.json to 1.33.0; no resolved dependency changed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "New Publish a stored verdict (qa publish) section under Run: the local-then-publish two-command flow, verdict source resolution, the refusal table, outcome classification and exit codes, and the Run Record block."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Remit Channel names the qa_verdict_publish block, who writes it (qa run via the session, qa publish directly) and the never-downgrade rule."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: supported surface at generation time 1.33.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: supported surface at generation time 1.33.0."
+        }
+      ],
+      "entry_sha256": "f19d93074c9a7fd4955fe30c6b5005bcede6be6ee1b7f805ff19758a11e5200e"
+    },
+    {
+      "id": "RL-0114",
+      "sequence": 114,
+      "date": "2026-09-17",
+      "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.32.0+agent.2",
-      "changelog_sha256": "4979aff949b142dfdf9448649857c08c1298237fe28d45879219bddb652347ce",
+      "changelog_section": "1.33.0+agent.1",
+      "changelog_sha256": "be6cc733122add33f47a8251325fa4f02cb75a8f79df75fc517787313cbd0fcf",
       "agent_impact": "spec derive gains --write-map [--proxy-base <url>] (#415, the repo -> Map write-back #413 named as the end state): after the local derive, the derived SDK pin is recorded in the saved Map's Build hints field (Campaign Cart SDK version) through the proxy Worker. The Map named by the packet's spec.map_id is read back (GET /api/spec/<map-id>) and re-stated with exactly the pin fields moved (global_config.sdk_version, and runtime.sdk_version only when the Map already declares the alias); every other field is the Map's own read-back, never the local spec, so routes or analytics ids derive wrote locally do not travel. PUT /api/maps/<map-id> carries the packet's Campaigns API key (packet, local spec or declared env source) as X-Campaign-Key and the Map's spec_hash as X-Spec-Hash (a save in between is a 409, not an overwrite); the proxy base is the canonical https://campaign-map.nextcommerce.com unless --proxy-base names another (https, or a loopback host over http with the clear-text warning). Direction of authority as the gate's: the write goes forward or not at all. Result gains write_map and map (null without the flag): map.status written (Map pin absent or behind; map.spec_identity.before/.after carry the Map's spec_hash and saved_at) | unchanged | would_write (--dry-run reads, sends nothing) | refused (warning, exit 0, local derive stands: ahead — a Map pin newer than the repo pin is never moved backwards; pin_unreadable) | skipped (pin not derived: pin_<not_derived reason>; or local derive blocked; nothing read or sent) | failed (error, exit 2, local derive stands: key_missing, key_mismatch, not_found, changed_underneath, rejected, proxy_base_insecure, network_error, http_error, response_invalid), reported as spec.derive.map_<reason> warnings/errors (spec.derive.map_ahead, spec.derive.map_key_mismatch, …) and one text line. A write is recorded on the Assembly Report evidence[] (Map write-back: global_config.sdk_version <before> -> <after> on Map <id> at <time> via spec derive --write-map (Map spec_hash <before> -> <after>); map.recorded \"assembly_report\"), the doctor sidecar is marked stale by spec derive --write-map, and the lifecycle journal the Run Record embeds carries the command; a missing report leaves spec.derive.map_not_recorded with the same line, and a report that took the line while the doctor stamp failed leaves spec.derive.map_doctor_sidecar_not_marked, and one that could not be read back leaves spec.derive.map_recorded_status_unknown (map.recorded \"unknown\"). A 403 on the Map read is key_mismatch, as on the write. src/spec-fetch.mjs errors carry kind and status as fields (no caller parses the message). --write-map is a bare flag (valued is rejected); --proxy-base needs a URL and is refused without --write-map; without the flag nothing is read from or sent to the Map. Doctor: the page_kit.sdk_version.repo_newer gate reason and the refresh_spec action description name --write-map; the action's command, statuses and codes are unchanged. Surface version unchanged (a flag beneath a listed command).",
       "compatibility": "additive",
       "migration": "none",
@@ -4322,7 +4415,7 @@
           "class": "compatibility_policy",
           "path": "docs/supported-surface.md",
           "surface_entry": "docs/supported-surface.md",
-          "summary": "CLI commands row notes spec derive's --write-map flag (1.32.0+agent.2) and that it never moves a Map pin backwards; the command list is unchanged."
+          "summary": "CLI commands row notes spec derive's --write-map flag (1.33.0+agent.1) and that it never moves a Map pin backwards; the command list is unchanged."
         },
         {
           "class": "named_surface",
@@ -4343,7 +4436,7 @@
           "summary": "next-campaigns-os version 1.0.12 -> 1.0.13."
         }
       ],
-      "entry_sha256": "e9a70faab04346c42eacdf8718a458dbdc3e52ce6eadf0eb260415a4bbcb17e1"
+      "entry_sha256": "9d55e80f8f55024bd85b186da4f2b02fceef32a727e008e4a054ccbc0b8d6147"
     }
   ]
 }
