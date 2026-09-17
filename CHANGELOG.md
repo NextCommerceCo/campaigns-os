@@ -18,10 +18,12 @@ Notable supported-surface changes are recorded here.
   qualification point: a plan still needs a topology-recognized receipt, the
   same settle window, and the same capture-error and waiver semantics; only
   the capture the Purchase is read from widened. Each `evidence.receipts[]`
-  entry now also carries `scope` (`journey`, or `receipt` for an envelope
-  that holds only the receipt document, which is judged exactly as before),
-  the receipt document's own `receipt_signals`, and `fired_on` (`receipt` or
-  `earlier-page`), so a reader can tell which document fired. The assertion
+  entry now also carries `scope` (`journey`; `receipt` for an envelope that
+  holds only the receipt document, which is judged exactly as before; `null`
+  on an unmeasured entry), the receipt document's own `receipt_signals`
+  (journey scope only, `null` otherwise), and `fired_on` (`receipt` or
+  `earlier-page`, `null` when nothing fired), so a reader can tell which
+  document fired. The assertion
   id, and so `qa waive --assertion analytics-correctness:purchase-fires`, is
   unchanged. `docs/qa-and-test-orders.md` and the `next-campaigns-qa` skill
   (1.3.0 → 1.3.1) no longer describe the receipt-only rule.

@@ -180,6 +180,7 @@ test("#392: an envelope with only a receipt capture is judged on the receipt, as
   assert.equal(purchase.status, STATUS.PASS);
   assert.equal(purchase.evidence.receipts[0].scope, "receipt");
   assert.equal(purchase.evidence.receipts[0].fired_on, "receipt");
+  assert.equal(purchase.evidence.receipts[0].receipt_signals, null, "no second reading to keep on a receipt-scoped judgement");
   const silent = receiptAssessment(silentReceiptCapture());
   assert.equal(silent.status, STATUS.FAIL, "without a journey reading a silent receipt is still a silent order");
   assert.equal(silent.evidence.receipts[0].scope, "receipt");
@@ -196,6 +197,21 @@ test("#392: a journey reading that failed to collect is a capture error, never r
   assert.equal(receipt.signals, null);
   assert.equal(receipt.fired_on, null);
   assert.match(purchase.actual, /capture\(s\) failed/);
+});
+
+test("#392: a receipt capture/settle error stays a blocker even when the journey reading fired", () => {
+  const purchase = receiptAssessment(undefined, {}, { journeyCapture: fullCapture(), captureError: { kind: "settleDeadline" } });
+  assert.equal(purchase.status, STATUS.FAIL);
+  assert.equal(purchase.severity, SEVERITY.BLOCKER);
+  assert.deepEqual(purchase.evidence.capture_error_plan_ids, ["accept-decline"]);
+  const receipt = purchase.evidence.receipts[0];
+  assert.equal(receipt.measured, false);
+  assert.equal(receipt.scope, null);
+  assert.equal(receipt.purchase_fired, false, "a journey reading taken beside an unsettled receipt is not a settled one");
+  assert.equal(receipt.signals, null);
+  assert.equal(receipt.receipt_signals, null);
+  assert.equal(receipt.fired_on, null);
+  assert.ok(!purchase.waiver, "capture errors are never waivable");
 });
 
 test("unknown out-of-band vendor → manual review, not a false fail", () => {

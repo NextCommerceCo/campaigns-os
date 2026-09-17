@@ -217,9 +217,11 @@ export function assessReceiptPurchase(receiptAnalytics = {}, options = {}) {
     // looks like evidence.
     const measured = !captureError;
     // Which document fired is the diagnostic a reader of an upsell funnel
-    // needs: the receipt-document reading is kept beside the judged one, and
-    // `fired_on` names the receipt when it fired there, `earlier-page` when
-    // only the journey did. A receipt-scoped judgement has no earlier page.
+    // needs: on a journey-scoped judgement the receipt-document reading is
+    // kept beside the judged one, and `fired_on` names the receipt when it
+    // fired there, `earlier-page` when only the journey did. A receipt-scoped
+    // judgement has no earlier page and no second reading to keep, so
+    // `receipt_signals` is null there. `scope` is null on an unmeasured entry.
     const receiptFired = receiptCaptureAvailable && !attempt.captureError
       ? effectivePurchase(attempt.capture).fired
       : null;
@@ -231,7 +233,7 @@ export function assessReceiptPurchase(receiptAnalytics = {}, options = {}) {
       purchase_fired: measured && !!effective.fired,
       via: measured ? (effective.via || null) : null,
       signals: measured ? purchaseSignalsOf(judged) : null,
-      receipt_signals: receiptFired === null ? null : purchaseSignalsOf(attempt.capture),
+      receipt_signals: measured && scope === "journey" && receiptFired !== null ? purchaseSignalsOf(attempt.capture) : null,
       fired_on: !measured || !effective.fired ? null : receiptFired ? "receipt" : "earlier-page",
     });
   }

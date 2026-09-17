@@ -380,6 +380,26 @@ test("browser private envelope: a recognized receipt carries the journey reading
   assert.equal(deceptive.receiptUrl, "https://shop.example/not-a-terminal/thank-you-looking-name/");
   assert.equal(deceptive.capture, undefined, "unrecognized traversal evidence never enters receipt correctness");
   assert.equal(deceptive.journeyCapture, undefined, "the journey reading does not cross an unrecognized terminal either");
+
+  // The envelope the browser ships when the journey collection failed while
+  // the receipt document was read: the error travels as journeyCaptureError,
+  // no journey capture is invented, and the verdict reads it as unmeasured
+  // rather than falling back to the silent receipt document.
+  const journeyFailed = receiptAnalyticsAttempt(plan, stampTestOrderPlan({
+    order: { final_url: "https://shop.example/receipt/?ref_id=secret" },
+    analytics_journey_capture_error: { code: "analytics_capture_unreadable", detail: "secret-detail" },
+    receipt_analytics_capture: normalizeCapture(),
+  }, plan));
+  assert.equal(journeyFailed.receiptRecognized, true);
+  assert.equal(journeyFailed.journeyCapture, undefined);
+  assert.equal(journeyFailed.journeyCaptureError.code, "analytics_capture_unreadable", "projected to the stable error, detail dropped");
+  assert.ok(effectivePurchase(journeyFailed.capture).fired === false, "the receipt document is still carried");
+  const unmeasured = assess([journeyFailed], ["accept"]);
+  assert.equal(unmeasured.status, STATUS.FAIL);
+  assert.deepEqual(unmeasured.evidence.capture_error_plan_ids, ["accept"]);
+  assert.equal(unmeasured.evidence.receipts[0].measured, false);
+  assert.equal(unmeasured.evidence.receipts[0].scope, null);
+  assert.doesNotMatch(JSON.stringify(unmeasured), /secret-detail/);
   assert.equal(journeyAnalyticsAttempt(plan, {
     order: { final_url: "https://shop.example/not-a-terminal/" },
     analytics_journey_capture: capture("ga4"),

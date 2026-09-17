@@ -732,10 +732,13 @@ dataLayer, an outbound Meta Purchase, or an outbound GA4 Purchase on **any**
 page of its post-checkout journey; a receipt-only rule is a structural false
 negative on every funnel with an offer page. Every planned receipt-qualified
 order must emit an effective Purchase for a pass. Each `evidence.receipts[]`
-entry records `scope` (`journey`, or `receipt` when only the receipt document
-was captured), the judged `signals`, the receipt document's own
-`receipt_signals`, and `fired_on` (`receipt` or `earlier-page`), so a reader
-can tell which document fired without the raw capture. Migration parity reads
+entry records `scope` (`journey`; `receipt` when only the receipt document
+was captured; `null` on an unmeasured entry, where `signals`, `receipt_signals`
+and `fired_on` are null too), the judged `signals`, the receipt document's own
+`receipt_signals` (journey scope only — a receipt-scoped judgement has no
+second reading, so it is `null` there), and `fired_on` (`receipt` or
+`earlier-page`, `null` when nothing fired), so a reader can tell which
+document fired without the raw capture. Migration parity reads
 the same journey capture through its own leg.
 
 - A missing attempt or topology-unrecognized final page is
