@@ -263,6 +263,14 @@ replaces them from the CampaignSpec — `npx campaigns-os page-kit sync --packet
 campaign-runtime.build.json` (`--dry-run` to see the diff first) — and after it
 `page_kit.store_profile` and `page_kit.sdk_version` pass without a waiver.
 
+The other direction exists too. Once the campaign is configured, the repo is
+the authority for the SDK pin, the page routes and the analytics ids, and
+`npx campaigns-os spec derive --packet campaign-runtime.build.json` writes
+those into the local CampaignSpec with a field-by-field diff (`--dry-run`
+first). After a bump in `_data/campaigns.json`, that is the one command that
+brings the spec back in line; doctor's `page_kit.sdk_version.repo_newer`
+warning names it.
+
 It also runs brand-theme discovery in inspect-only mode. When source tokens are
 available, the build context records `context.theme` and the target repo gets
 `.campaign-runtime/theme/theme-report.json`. It does not write
