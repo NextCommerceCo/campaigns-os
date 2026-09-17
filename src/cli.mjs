@@ -826,7 +826,7 @@ export function recordQaStageOutcome(args, result) {
       stage: "qa",
       disposition: verdict.disposition,
       timestamp: verdict.completed_at,
-      command: "campaigns-os qa run",
+      command: `campaigns-os ${QA_RUN_PRODUCER}`,
       outputs: [result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString),
       blockers: verdict.disposition === "blocked" ? failed : [],
       warnings: verdict.disposition === "ready_with_exceptions"
@@ -846,7 +846,9 @@ export function recordQaStageOutcome(args, result) {
     }), {
       stage: "qa",
       // The sidecar names this refresh as its producer (generated_by, #312).
-      command: "qa run",
+      // This function is the `qa run` stage record, whichever token dispatch
+      // matched to reach it.
+      command: QA_RUN_PRODUCER,
       // Updating the QA stage changes the report after the preflight doctor
       // snapshot. Refresh the doctor artifact from the updated ledger in the
       // same producer transaction so closeout never leaves a known-stale green
@@ -2846,6 +2848,13 @@ function toConstantCase(value) {
   return normalized || "WARNING";
 }
 
+// The producer names the four sidecar writers stamp (#312). A producer
+// function that is one command states its own; the intake body, which
+// serves three, receives the dispatched command (`start` | `build`).
+const DOCTOR_PRODUCER = "doctor";
+const NEXT_PRODUCER = "next";
+const QA_RUN_PRODUCER = "qa run";
+
 export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
   // Non-packet mode (learnings L7): doctor a `campaign-build`'d page-kit
   // campaign that has only a built _site/ and no full Build Packet. Resolves
@@ -2892,11 +2901,13 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     // disk leaves the report's bytes, and every digest of them, alone). A
     // report this inspection did not read is not opened at all: its state,
     // malformed included, is not this run's concern.
-    const commandName = optionalString(args._?.[0]) || "doctor";
+    // This function is the `doctor` command; it states its own name for the
+    // stage record and the sidecar's generated_by rather than re-reading
+    // argv, which a programmatic caller may not have shifted (#312).
     commitAssemblyReport(workspace, (report) => recordDoctorStageOutcome(report, result, {
-      command: `campaigns-os ${commandName}`,
+      command: `campaigns-os ${DOCTOR_PRODUCER}`,
       doctorOutPath: workspace.doctorOutPath,
-    }), { stage: "doctor", command: commandName, refreshDoctor: () => result });
+    }), { stage: "doctor", command: DOCTOR_PRODUCER, refreshDoctor: () => result });
   }
   return result;
 }
@@ -9110,7 +9121,7 @@ export function nextStage(stage, args, ambient = null) {
       // Atomic like the assembly report: a torn sidecar would be a corrupted
       // freshness artifact — the exact green-lie shape this refresh exists to
       // prevent (Kilo review, PR #176). Stamped generated_by: "next" (#312).
-      writeDoctorSidecar(doctorOutPath, doctor, { command: "next" });
+      writeDoctorSidecar(doctorOutPath, doctor, { command: NEXT_PRODUCER });
     } catch {
       // sidecar refresh is best-effort; orchestration must not fail on it
     }

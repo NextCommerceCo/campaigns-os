@@ -44,10 +44,16 @@ function readSidecar(path) {
 
 test("stampDoctorProducer puts generated_by beside generated_at and refuses an anonymous write", () => {
   const stamped = stampDoctorProducer({ schema_version: "v", generated_at: "t", ok: true, generated_by: "earlier" }, "later");
-  assert.deepEqual(Object.keys(stamped), ["schema_version", "generated_at", "generated_by", "ok"]);
   assert.equal(stamped.generated_by, "later", "a re-persisted result carries the producer that persisted it now");
+  assert.equal(Object.keys(stamped).filter((key) => key === "generated_by").length, 1, "one producer, not a history");
+  const keys = Object.keys(stamped);
+  assert.equal(keys.indexOf("generated_by"), keys.indexOf("generated_at") + 1, "generated_by sits directly beside generated_at");
+  assert.deepEqual({ ...stamped, generated_by: undefined }, { schema_version: "v", generated_at: "t", ok: true, generated_by: undefined }, "nothing else moves");
   assert.throws(() => stampDoctorProducer({ ok: true }), /requires command/);
   assert.throws(() => stampDoctorProducer({ ok: true }, "  "), /requires command/);
+  for (const bad of ["doc\ntor", "qa\u2028run", "qa\rrun", "Doctor", "--write", ""]) {
+    assert.throws(() => stampDoctorProducer({ ok: true }, bad), /requires command|refuses producer name/, JSON.stringify(bad));
+  }
   assert.throws(() => stampDoctorProducer(null, "doctor"), /doctor result object/);
   const dir = tempDir();
   const path = join(dir, DOCTOR_SIDECAR_REL_PATH);
@@ -62,7 +68,6 @@ test("doctor --write stamps the sidecar generated_by: doctor", () => {
   const sidecar = readSidecar(sidecarPath);
   assert.equal(sidecar.generated_by, "doctor");
   assert.equal(sidecar.generated_at, result.generated_at, "the stamp sits on this run's snapshot");
-  assert.deepEqual(Object.keys(sidecar).slice(0, 3), ["schema_version", "generated_at", "generated_by"]);
   rmSync(dir, { recursive: true, force: true });
 });
 

@@ -25,13 +25,23 @@ export function writeJsonAtomic(path, value) {
 // a stale stamp already names the command that made it (`stale_marked_by`).
 // `generated_at` alone cannot tell a fresh `doctor --write` from a two-day-old
 // gitignored copy carried along by `cp -R` — which is exactly what got a
-// read-only command accused of writing this file. The name is threaded from
-// the producer that knows it (its own argv word), never inferred here, and a
-// producer that forgets to say who it is fails loudly rather than writing an
-// anonymous artifact. Placed beside `generated_at` so the two read together.
+// read-only command accused of writing this file. The name is the producer's
+// own: each producer function states it where it is defined (`doctor`,
+// `next`, `qa run`) or receives it from the dispatch that selected it (the
+// intake body serving `start` / `build`); it is never re-read from argv at
+// the write. A producer that forgets to say who it is fails loudly rather
+// than writing an anonymous artifact, and a name that is not a plain command
+// word (a control character, a stray newline) is refused here, at the seam,
+// so a consumer that greps or re-prints the sidecar reads one producer per
+// line. Placed beside `generated_at` so the two read together.
+const PRODUCER_NAME = /^[a-z0-9][a-z0-9 _-]*$/;
+
 export function stampDoctorProducer(doctor, command) {
   if (typeof command !== "string" || !command.trim()) {
     throw new TypeError("stampDoctorProducer requires command: the retained doctor sidecar names the command that produced it (generated_by).");
+  }
+  if (!PRODUCER_NAME.test(command.trim())) {
+    throw new TypeError(`stampDoctorProducer refuses producer name ${JSON.stringify(command)}: generated_by is a plain command word (${PRODUCER_NAME}).`);
   }
   if (!doctor || typeof doctor !== "object" || Array.isArray(doctor)) {
     throw new TypeError("stampDoctorProducer requires a doctor result object.");
