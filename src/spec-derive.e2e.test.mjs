@@ -7,6 +7,7 @@
 // equivalent in spec-derive.test.mjs replays the same states.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -91,6 +92,16 @@ test("spec derive writes a bumped repo pin and the repo's GTM id into the spec o
 
     const after = JSON.parse(run(["doctor", "--packet", packet, "--json"], campaign, { allowFailure: true }).stdout);
     assert.equal(sdkGate(after).code, "page_kit.sdk_version.pass");
+
+    // The sidecars prepare-build bound to the old spec now carry the new one:
+    // QA and bundle check correlate on these.
+    const specRawHash = createHash("sha256").update(readFileSync(specPath)).digest("hex");
+    const report = JSON.parse(readFileSync(join(campaign, ".campaign-runtime/assembly-report.json"), "utf8"));
+    const context = JSON.parse(readFileSync(join(campaign, ".campaign-runtime/build-context.json"), "utf8"));
+    assert.equal(report.identity.spec_hash, specRawHash);
+    assert.equal(context.spec.hash, specRawHash);
+    assert.equal(report.identity.spec_material_hash, context.spec.material_hash);
+    assert.doesNotMatch(derive.stdout, /identity_not_rebound/);
 
     // The starter's page tree carries the family's pages, not the spec's:
     // every spec page it does state binds, the rest are reported by name.

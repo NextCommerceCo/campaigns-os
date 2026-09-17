@@ -73,6 +73,36 @@ function hasControlCharacters(value) {
   return /[\u0000-\u001f\u007f]/.test(value);
 }
 
+// A repo value echoed in a reason is quoted short: a value mis-pasted into
+// the wrong key (a token, a URL) must not travel whole into warnings.
+function quoteValue(value) {
+  const text = JSON.stringify(value);
+  return text.length > 44 ? `${text.slice(0, 40)}…"` : text;
+}
+
+// The placeholder ids the starter templates document (GTM-XXXXXXX, a run of
+// one digit): well-formed, never a real container or pixel.
+function isPlaceholderId(value) {
+  return /^GTM-X+$/i.test(value) || /^(\d)\1+$/.test(value);
+}
+
+// Whether the containers along a write path can take the value: an existing
+// container of the wrong type (analytics: "off", global_config: []) is a
+// spec defect the plan reports, so a dry run and a real run agree. Returns
+// null when the path is writable, else the offending label.
+function containerProblem(spec, path) {
+  let node = spec;
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const segment = path[index];
+    const nextIsIndex = Number.isInteger(path[index + 1]);
+    const child = node?.[segment];
+    if (child === undefined || child === null) return nextIsIndex ? pathLabel(path.slice(0, index + 1)) : null;
+    if (nextIsIndex ? !Array.isArray(child) : !isPlainObject(child)) return pathLabel(path.slice(0, index + 1));
+    node = child;
+  }
+  return null;
+}
+
 // The public route a page-kit source file builds to, relative to the campaign
 // root: page-kit routes by filename (`checkout.html` -> `checkout/`,
 // `a/b.html` -> `a/b/`, `index.html` -> the directory's route, so the top-level
@@ -205,20 +235,25 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
   if (observed === undefined) {
     notDerived.push({ field: "global_config.sdk_version", reason: "target_missing", detail: `the target entry has no sdk_version; add the Campaign Cart pin the funnel serves to ${sdkSource}, then derive again.` });
   } else if (!isReleasedSdkVersion(observed)) {
-    notDerived.push({ field: "global_config.sdk_version", reason: "target_invalid", detail: `the target pin ${JSON.stringify(observed)} is not a released MAJOR.MINOR.PATCH version; correct ${sdkSource}, then derive again.` });
+    notDerived.push({ field: "global_config.sdk_version", reason: "target_invalid", detail: `the target pin ${quoteValue(observed)} is not a released MAJOR.MINOR.PATCH version; correct ${sdkSource}, then derive again.` });
   } else if (entryInScaffoldState(target)) {
     notDerived.push({ field: "global_config.sdk_version", reason: "scaffold_seed", detail: `the target entry still carries the starter demo store profile, so its pin ${observed} is the starter's seed, not a version anyone chose; the spec seeds the pin in that state (page-kit sync). Sync the scaffold from the spec first, then derive.` });
   } else if (sdkWaiver) {
     notDerived.push({ field: "global_config.sdk_version", reason: "waived", detail: `the SDK pin is covered by an active page_kit.sdk_version waiver recorded by ${sdkWaiver}; spec derive leaves the spec as the waiver accepted it. Withdraw the waiver on the Assembly Report (waivers[]) to let derive write the repo pin.` });
   } else {
-    for (const row of sdkTargets) {
-      const change = { field: row.field, path: row.path, before: row.before, after: observed, source: sdkSource };
-      if (row.before === observed) unchanged.push(change);
-      else {
-        // A spec pin ahead of the repo is a bump the repo never received (or
-        // a lost one). The repo still wins, but the downgrade is flagged.
-        if (specPin.status === "ok" && compareReleasedSdkVersions(specPin.value, observed) > 0) change.downgrade = { from: specPin.value };
-        changes.push(change);
+    // A spec pin ahead of the repo pin is the state doctor blocks on with
+    // page-kit sync as the repair (#413: a bump the repo never received, or
+    // a lost one); the repo moves forward, the spec is not moved back. Only
+    // one command may own that state, so derive reports it and writes nothing.
+    if (specPin.status === "ok" && compareReleasedSdkVersions(specPin.value, observed) > 0) {
+      notDerived.push({ field: "global_config.sdk_version", reason: "spec_ahead", detail: `the spec pin ${specPin.value} is ahead of the target pin ${observed}; doctor blocks on that state and page-kit sync is its repair (it moves the repo forward, and never moves a configured campaign's pin backwards). Run page-kit sync, or lower the spec pin by hand if ${observed} is what should ship, then derive again.` });
+    } else {
+      for (const row of sdkTargets) {
+        const change = { field: row.field, path: row.path, before: row.before, after: observed, source: sdkSource };
+        const problem = containerProblem(spec, row.path);
+        if (problem) notDerived.push({ field: row.field, reason: "spec_container_invalid", detail: `the spec's ${problem} is not an object, so ${row.field} cannot be written; repair the spec, then derive again.` });
+        else if (row.before === observed) unchanged.push(change);
+        else changes.push(change);
       }
     }
   }
@@ -226,6 +261,9 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
   // Page routes: page-kit routes by source filename (or permalink), so the
   // tree is the authority for `page_url`.
   const activePages = activePagesWithPaths(spec);
+  // The route every bound page derives to, changed or not: the standing
+  // check on routing hints reads it, so a hint left stale by an earlier run
+  // keeps surfacing until the Map is re-saved.
   const derivedRouteByPageId = new Map();
   if (pageFiles === null) {
     for (const { page, path } of activePages) {
@@ -256,13 +294,31 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
         continue;
       }
       const row = { field, page_id: page.id, path: [...path, "page_url"], before, after, source };
-      // The route is compared in its normalized page-kit form: a value that
-      // differs only in spelling ("checkout" vs "checkout/") is the same route
-      // to doctor and is not rewritten.
-      if (typeof before === "string" && normalizePageKitRoute(before) === after) unchanged.push(row);
+      // The entry route is the empty string, and doctor honours an empty
+      // page_url only on a page flagged is_entry (publicRouteForPage falls
+      // back to the type's default route otherwise). Writing "" onto any
+      // other page would move it, in doctor's eyes, to a route that does not
+      // exist; the flag is authored in the Map, so it is asked for instead.
+      if (after === "" && page.is_entry !== true) {
+        notDerived.push({ field, page_id: page.id, reason: "entry_route_undeclared", detail: `page "${page.id}" binds to ${source}, the entry route, but the page is not flagged is_entry; doctor reads an empty page_url only on the entry page. Flag it in the Map (or give the file a permalink), then derive again.` });
+        continue;
+      }
+      derivedRouteByPageId.set(page.id, after);
+      const containerIssue = containerProblem(spec, row.path);
+      if (containerIssue) {
+        notDerived.push({ field, page_id: page.id, reason: "spec_container_invalid", detail: `the spec's ${containerIssue} is not an object, so ${field} cannot be written; repair the spec, then derive again.` });
+        continue;
+      }
+      // Compared the way doctor reads a route (slug prefix stripped, a
+      // nested value reduced to its terminal segment): a value that differs
+      // only in spelling ("/slug/checkout/", "checkout") is the same route to
+      // doctor and is not rewritten.
+      const sameToDoctor = typeof before === "string"
+        && runtimeRelativeRouteForSpecValue(before, publicRouteSlug) === runtimeRelativeRouteForSpecValue(after, publicRouteSlug)
+        && (before.trim() !== "" || page.is_entry === true);
+      if (sameToDoctor) unchanged.push(row);
       else {
         changes.push(row);
-        derivedRouteByPageId.set(page.id, after);
         const mirrorAt = mirrorIndex.get(page.id);
         if (mirrorAt !== undefined) {
           const mirror = spec.funnel_pages[mirrorAt];
@@ -273,9 +329,10 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
         }
       }
     }
-    // A routing hint on another page that names a page whose route just
-    // moved is now stale. Hints are a spec projection the editor regenerates
-    // (doctor reads them as build expectations), so they are reported.
+    // A routing hint that names a page whose derived route it does not match
+    // is stale, whether the route moved in this run or an earlier one. Hints
+    // are a spec projection the editor regenerates (doctor reads them as
+    // build expectations), so they are reported, never rewritten.
     for (const { page } of activePages) {
       const metaTags = page.sdk_hints?.meta_tags;
       if (!isPlainObject(metaTags)) continue;
@@ -301,17 +358,23 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
     const source = entrySource(key);
     if (raw === undefined || raw === null || (typeof raw === "string" && !raw.trim())) {
       if (isNonEmptyString(current)) {
-        notDerived.push({ field, reason: "target_empty", detail: `the target entry's ${key} is empty but the spec declares ${field} ${JSON.stringify(current)}; add the id to ${source} if the funnel should carry it, or remove it from the spec. Nothing was written.` });
+        notDerived.push({ field, reason: "target_empty", detail: `the target entry's ${key} is empty but the spec declares ${field} ${quoteValue(current)}; add the id to ${source} if the funnel should carry it, or remove it from the spec. Nothing was written.` });
       } else notInTarget.push(field);
       continue;
     }
     if (typeof raw !== "string" || hasControlCharacters(raw) || !shape.test(raw.trim())) {
-      notDerived.push({ field, reason: "target_invalid", detail: `the target entry's ${key} ${typeof raw === "string" ? JSON.stringify(raw) : `is ${Array.isArray(raw) ? "an array" : `a ${typeof raw}`}`} is not ${describe}; correct ${source}, then derive again.` });
+      notDerived.push({ field, reason: "target_invalid", detail: `the target entry's ${key} ${typeof raw === "string" ? quoteValue(raw) : `is ${Array.isArray(raw) ? "an array" : `a ${typeof raw}`}`} is not ${describe}; correct ${source}, then derive again.` });
       continue;
     }
     const after = raw.trim();
+    if (isPlaceholderId(after)) {
+      notDerived.push({ field, reason: "target_invalid", detail: `the target entry's ${key} ${quoteValue(after)} is a placeholder, not a real id; writing it would declare an analytics contract QA then blocks on. Replace it in ${source} (or clear it), then derive again.` });
+      continue;
+    }
     const row = { field, path: ["analytics", "providers", provider, property], before: current, after, source };
-    if (current === after) unchanged.push(row);
+    const problem = containerProblem(spec, row.path);
+    if (problem) notDerived.push({ field, reason: "spec_container_invalid", detail: `the spec's ${problem} is not an object, so ${field} cannot be written; repair the spec, then derive again.` });
+    else if (current === after) unchanged.push(row);
     else changes.push(row);
   }
 

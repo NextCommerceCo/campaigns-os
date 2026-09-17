@@ -6,7 +6,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
+import { createHash } from "node:crypto";
+
 import { checkpointWaive, doctorPacket, specDeriveCommand, specDeriveTextLines } from "./cli.mjs";
+import { specMaterialHash } from "./spec-identity.mjs";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
 import { entryInScaffoldState, evaluatePageKitSdkVersion, SPEC_DERIVE_COMMAND } from "./page-kit-sdk-version.mjs";
 import { stageRealPackageInstall } from "./package-install-fixture.mjs";
@@ -97,23 +100,29 @@ test("planSpecDerive diffs the pin and the analytics ids, and leaves routes the 
   assert.deepEqual(plan.stale_hints, []);
 });
 
-test("planSpecDerive writes the alias pin too when the spec declares it, and reports a spec pin ahead of the repo as a downgrade", () => {
+test("planSpecDerive writes the alias pin too when the spec declares it, and leaves a spec pin ahead of the repo to page-kit sync", () => {
   const spec = specFixture((draft) => {
-    draft.global_config.sdk_version = "0.4.40";
-    draft.runtime = { sdk_version: "0.4.40" };
+    draft.global_config.sdk_version = "0.4.20";
+    draft.runtime = { sdk_version: "0.4.20" };
   });
   const plan = planSpecDerive({ spec, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
-  const pins = plan.changes.filter((row) => row.field.endsWith("sdk_version"));
-  assert.deepEqual(pins.map((row) => [row.field, row.before, row.after, row.downgrade]), [
-    ["global_config.sdk_version", "0.4.40", "0.4.38", { from: "0.4.40" }],
-    ["runtime.sdk_version", "0.4.40", "0.4.38", { from: "0.4.40" }],
+  assert.deepEqual(plan.changes.filter((row) => row.field.endsWith("sdk_version")).map((row) => [row.field, row.before, row.after]), [
+    ["global_config.sdk_version", "0.4.20", "0.4.38"],
+    ["runtime.sdk_version", "0.4.20", "0.4.38"],
   ]);
+  // A spec pin AHEAD of the repo is doctor's blocked state with page-kit sync
+  // as the repair (#413); derive does not move the spec backwards.
+  const ahead = specFixture((draft) => { draft.global_config.sdk_version = "0.4.40"; draft.runtime = { sdk_version: "0.4.40" }; });
+  const refused = planSpecDerive({ spec: ahead, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
+  assert.deepEqual(refused.not_derived.map((row) => [row.field, row.reason]), [["global_config.sdk_version", "spec_ahead"]]);
+  assert.match(refused.not_derived[0].detail, /page-kit sync/);
+  assert.equal(refused.changes.some((row) => row.field.endsWith("sdk_version")), false);
   // A conflicting pair is resolved by the repo pin, not refused: both end equal.
   const conflicting = specFixture((draft) => { draft.runtime = { sdk_version: "0.4.20" }; });
   const resolved = planSpecDerive({ spec: conflicting, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
-  assert.deepEqual(resolved.changes.filter((row) => row.field.endsWith("sdk_version")).map((row) => [row.field, row.after, row.downgrade]), [
-    ["global_config.sdk_version", "0.4.38", undefined],
-    ["runtime.sdk_version", "0.4.38", undefined],
+  assert.deepEqual(resolved.changes.filter((row) => row.field.endsWith("sdk_version")).map((row) => [row.field, row.after]), [
+    ["global_config.sdk_version", "0.4.38"],
+    ["runtime.sdk_version", "0.4.38"],
   ]);
 });
 
@@ -286,6 +295,9 @@ function fixture({ entry = CONFIGURED_ENTRY, spec: specPatch = null, tree = ["la
   const report = readJson(new URL("assembly-report.example.json", EXAMPLES));
   report.identity.map_id = packet.spec.map_id;
   report.identity.public_route_slug = slug;
+  // Bound to the spec as written, the way prepare-build binds it.
+  report.identity.spec_hash = createHash("sha256").update(readFileSync(specPath)).digest("hex");
+  report.identity.spec_material_hash = specMaterialHash(spec);
   report.stages.setup.status = "skipped";
   report.stages.deploy.status = "skipped";
   report.evidence = [];
@@ -449,9 +461,14 @@ test("spec derive is partial, not blocked, when a page cannot be bound, and stil
     const bound = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
     assert.equal(bound.status, "derived");
     assert.deepEqual(bound.changes.map((row) => [row.field, row.before, row.after, row.source]), [["funnels[0].pages[2].page_url", "upsell/", "upsell-1/", "upsell-1.html"]]);
-    assert.deepEqual(bound.warnings.map((issue) => issue.code), ["spec.derive.routing_hint_stale"]);
+    assert.deepEqual(bound.warnings.map((issue) => issue.code), ["spec.derive.routing_hint_stale", "spec.derive.projection_stale"]);
     assert.match(bound.warnings[0].message, /page "checkout" carries sdk_hints\.meta_tags\.next-success-url "upsell\/"/);
+    assert.match(bound.warnings[1].message, /campaigns-os prepare-build/);
     assert.equal(readJson(specPath).funnels[0].pages[2].page_url, "upsell-1/");
+    // The hint stays reported on every later run until the Map is re-saved.
+    const later = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.equal(later.status, "unchanged");
+    assert.deepEqual(later.warnings.map((issue) => issue.code), ["spec.derive.routing_hint_stale"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -495,14 +512,14 @@ test("spec derive leaves the pin alone while a named-human waiver covers it, and
     assert.ok(result.report_path.endsWith("assembly-report.json"));
     assert.equal(sdkGate(doctorPacket(packetPath)).status, "waived", "derive did not disturb the waiver");
 
-    // Without the waiver the repo pin wins even though it is behind, and the
-    // downgrade is flagged.
+    // Without the waiver the state is the one page-kit sync repairs (the
+    // spec is ahead); derive names it and leaves the spec alone.
     writeJson(result.report_path, { ...readJson(result.report_path), waivers: [] });
     const derived = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
-    assert.equal(derived.status, "derived");
-    assert.deepEqual(derived.changes.map((row) => [row.field, row.before, row.after, row.downgrade]), [["global_config.sdk_version", "0.4.18", "0.4.16", { from: "0.4.18" }]]);
-    assert.ok(derived.warnings.some((issue) => issue.code === "spec.derive.sdk_version_downgraded"));
-    assert.equal(readJson(specPath).global_config.sdk_version, "0.4.16");
+    assert.equal(derived.status, "partial");
+    assert.deepEqual(derived.not_derived.map((row) => [row.field, row.reason]), [["global_config.sdk_version", "spec_ahead"]]);
+    assert.equal(derived.written, false, "the ids were derived by the waived run; nothing else is owed");
+    assert.equal(readJson(specPath).global_config.sdk_version, "0.4.18");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -640,9 +657,14 @@ test("the sdk gate's repo_newer advisory names spec derive as a command, and QA 
 // to inference.
 
 test("planSpecDerive binds by terminal segment, falls through a packet binding that names no file, and skips disabled or id-less pages", () => {
+  // A nested spec value reduces to its terminal segment in doctor's eyes, so
+  // it binds by that segment and reads as unchanged, not rewritten.
   const nested = specFixture((draft) => { draft.funnels[0].pages[2].page_url = "offers/upsell/"; });
   const byTerminal = planSpecDerive({ spec: nested, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
-  assert.deepEqual(byTerminal.changes.filter((row) => row.page_id).map((row) => [row.page_id, row.before, row.after, row.source]), [["upsell", "offers/upsell/", "upsell/", "upsell.html"]]);
+  assert.deepEqual(byTerminal.unchanged.filter((row) => row.page_id === "upsell").map((row) => [row.before, row.after, row.source]), [["offers/upsell/", "upsell/", "upsell.html"]]);
+  const prefixed = specFixture((draft) => { draft.funnels[0].pages[1].page_url = "/runtime-packet-demo/checkout/"; });
+  const same = planSpecDerive({ spec: prefixed, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES, publicRouteSlug: "runtime-packet-demo" });
+  assert.ok(same.unchanged.some((row) => row.page_id === "checkout"), "a slug-prefixed spelling is the same route to doctor");
   const gone = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES, packetBindings: new Map([["upsell", "gone.html"]]) });
   assert.equal(gone.unchanged.find((row) => row.page_id === "upsell").source, "upsell.html", "an absent projection target falls through to the tree");
   const skipped = specFixture((draft) => {
@@ -902,4 +924,69 @@ test("a permalink the tree states must be a relative page-kit route before it be
   assert.equal(isPageTreeIgnoredDir("offers"), false);
   assert.equal(pageRouteForFile("node_modules/x.html"), null);
   assert.equal(pageRouteForFile(".git/x.html"), null);
+});
+
+test("planSpecDerive refuses the entry route on a page not flagged is_entry, a placeholder id, and a container of the wrong type in both modes", () => {
+  const tree = [{ path: "index.html", basename: "index", route: "", permalink: null }, ...PAGE_FILES.filter((file) => file.path !== "landing.html")];
+  const spec = specFixture((draft) => { const page = draft.funnels[0].pages[0]; delete page.page_url; delete page.is_entry; });
+  const plan = planSpecDerive({ spec, entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: new Map([["landing", "index.html"]]) });
+  assert.deepEqual(plan.not_derived.map((row) => [row.page_id, row.reason]), [["landing", "entry_route_undeclared"]]);
+  assert.equal(plan.changes.some((row) => row.page_id === "landing"), false);
+
+  const placeholder = planSpecDerive({ spec: specFixture(), entry: { ...CONFIGURED_ENTRY, gtm_id: "GTM-XXXXXXX", fb_pixel_id: "000000000000000" }, pageFiles: PAGE_FILES });
+  assert.deepEqual(placeholder.not_derived.map((row) => [row.field, row.reason]), [
+    ["analytics.providers.gtm.containerId", "target_invalid"],
+    ["analytics.providers.facebook.pixelId", "target_invalid"],
+  ]);
+  assert.match(placeholder.not_derived[0].detail, /placeholder/);
+
+  const broken = specFixture((draft) => { draft.analytics = "off"; draft.global_config = []; });
+  const container = planSpecDerive({ spec: broken, entry: CONFIGURED_ENTRY, pageFiles: PAGE_FILES });
+  assert.deepEqual(container.not_derived.map((row) => [row.field, row.reason]), [
+    ["global_config.sdk_version", "spec_container_invalid"],
+    ["analytics.providers.gtm.containerId", "spec_container_invalid"],
+    ["analytics.providers.facebook.pixelId", "spec_container_invalid"],
+  ]);
+  assert.match(container.not_derived[0].detail, /global_config is not an object/);
+  assert.deepEqual(container.changes, [], "nothing planned that apply would refuse: a dry run and a real run agree");
+  // A long repo value is quoted short in the reason.
+  const long = planSpecDerive({ spec: specFixture(), entry: { ...CONFIGURED_ENTRY, gtm_id: `https://example.test/?token=${"a".repeat(80)}` }, pageFiles: PAGE_FILES });
+  assert.ok(long.not_derived[0].detail.length < 260, long.not_derived[0].detail);
+  assert.doesNotMatch(long.not_derived[0].detail, /a{50}/);
+});
+
+test("spec derive re-binds the sidecars' spec identity after a write, and leaves an already-drifted identity alone", () => {
+  const { dir, packetPath, specPath, reportPath, targetRepo } = fixture();
+  try {
+    const contextPath = join(targetRepo, ".campaign-runtime", "build-context.json");
+    const before = readJson(reportPath).identity;
+    writeJson(contextPath, { schema_version: "campaign-runtime-build-context/v0", report_path: ".campaign-runtime/assembly-report.json", spec: { path: "../campaignspec.v42.basic.json", hash: before.spec_hash, material_hash: before.spec_material_hash } });
+    const result = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.equal(result.status, "derived");
+    assert.deepEqual(result.rebound, { build_context: true, assembly_report: true });
+    const written = readFileSync(specPath);
+    const rawHash = createHash("sha256").update(written).digest("hex");
+    const materialHash = specMaterialHash(JSON.parse(written.toString("utf8")));
+    assert.notEqual(rawHash, before.spec_hash);
+    assert.deepEqual([readJson(reportPath).identity.spec_hash, readJson(reportPath).identity.spec_material_hash], [rawHash, materialHash]);
+    assert.deepEqual([readJson(contextPath).spec.hash, readJson(contextPath).spec.material_hash], [rawHash, materialHash]);
+    assert.equal(readJson(contextPath).spec.path, "../campaignspec.v42.basic.json", "the rest of the context survives");
+    assert.equal(result.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound"), false);
+
+    // A sidecar bound to some other spec is not touched, and says so.
+    const report = readJson(reportPath);
+    report.identity.spec_hash = "0".repeat(64);
+    report.identity.spec_material_hash = "sha256:" + "1".repeat(64);
+    writeJson(reportPath, report);
+    const campaigns = readJson(join(targetRepo, "_data/campaigns.json"));
+    campaigns["runtime-packet-demo"].gtm_id = "GTM-NEW9999";
+    writeJson(join(targetRepo, "_data/campaigns.json"), campaigns);
+    const drifted = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.equal(drifted.written, true);
+    assert.deepEqual(drifted.rebound, { build_context: true, assembly_report: false });
+    assert.ok(drifted.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound" && /Assembly Report/.test(issue.message)));
+    assert.equal(readJson(reportPath).identity.spec_hash, "0".repeat(64));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

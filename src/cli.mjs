@@ -451,7 +451,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
-  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only, no network; a field the repo cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, or the spec identifies another campaign.
+  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only, no network; a field the repo cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, or the spec identifies another campaign.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -4832,6 +4832,7 @@ export function specDeriveCommand(args) {
     not_derived: [],
     not_in_target: [],
     stale_hints: [],
+    rebound: { build_context: null, assembly_report: null },
     errors: [],
     warnings: [],
     next: `${cmd("doctor")} --packet ${shellToken(packetPath)}`,
@@ -4938,12 +4939,13 @@ export function specDeriveCommand(args) {
   // SDK pin is under a named-human decision derive must not reverse, and its
   // stage ledger whether a terminal build now predates the spec.
   let report = null;
+  let workspace = null;
   try {
     const explicitReport = isNonEmptyString(args.report) ? resolve(args.report) : null;
     if (explicitReport && !(existsSync(explicitReport) && statSync(explicitReport).isFile())) {
       addIssue(result.warnings, "spec.derive.report_unreadable", `--report ${singleLineField(explicitReport)} is not a file; waivers recorded on the Assembly Report were not consulted.`);
     }
-    const workspace = resolveCampaignWorkspace(packetPath, {
+    workspace = resolveCampaignWorkspace(packetPath, {
       packet,
       followContextPointer: true,
       reportPath: explicitReport ?? undefined,
@@ -4988,9 +4990,6 @@ export function specDeriveCommand(args) {
   for (const row of plan.not_derived) {
     addIssue(result.warnings, `spec.derive.${row.reason}`, `${row.field} was not derived: ${row.detail}`, { field: row.field, reason: row.reason, ...(row.page_id ? { page_id: row.page_id } : {}) });
   }
-  for (const row of plan.changes) {
-    if (row.downgrade) addIssue(result.warnings, "spec.derive.sdk_version_downgraded", `${row.field} moves from ${row.downgrade.from} down to the repo pin ${row.after}: the repo is what ships, but the spec declared a newer version, so a bump was lost or never applied. If ${row.after} is not what should ship, bump ${PAGE_KIT_CAMPAIGNS_REL_PATH}[${publicRouteSlug}].sdk_version and derive again.`, { from: row.downgrade.from, to: row.after });
-  }
   for (const hint of plan.stale_hints) {
     addIssue(result.warnings, "spec.derive.routing_hint_stale", `page "${hint.page_id}" carries sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)}, but page "${hint.target_page_id}" now derives to ${JSON.stringify(hint.derived_route)}. Routing hints are a Map projection derive does not rewrite; re-save the Map (or edit the hint) so the built meta tag and doctor's expectation agree.`, hint);
   }
@@ -5006,23 +5005,87 @@ export function specDeriveCommand(args) {
     if (serialize(spec) !== text) {
       addIssue(result.warnings, "spec.derive.file_reformatted", `${result.spec_path} was re-serialized with ${indent === "\t" ? "tab" : `${indent.length}-space`} indentation; formatting outside the derived fields (key order, whitespace, number spelling) may differ from the original. Review the file diff before committing.`);
     }
-    applySpecDerive(spec, plan);
+    // The identity the sidecars bound to the spec BEFORE this write, so the
+    // re-bind below can tell "bound to the spec being replaced" from "already
+    // drifted" and only ever moves the former.
+    const beforeRawHash = createHash("sha256").update(text).digest("hex");
+    const beforeMaterialHash = specMaterialHash(spec);
+    // The plan already refused every path its containers cannot take, so a
+    // throw here is a defect in this toolkit rather than in the spec; it is
+    // still a structured error, never a crash past the --json contract.
+    try {
+      applySpecDerive(spec, plan);
+    } catch (error) {
+      addIssue(result.errors, "spec.derive.spec_invalid", `The CampaignSpec could not take the derived values (${singleLineDetail(error.message)}); nothing was written.`);
+      return result;
+    }
+    const serialized = serialize(spec);
     // Staged through a temp file and rename, keeping the original's mode
     // bits, so an interrupted write can never leave the spec half-written.
     const tmpPath = join(dirname(result.spec_path), `.${basename(result.spec_path)}.${randomUUID()}.tmp`);
     try {
-      writeFileSync(tmpPath, serialize(spec), { flag: "wx" });
+      writeFileSync(tmpPath, serialized, { flag: "wx" });
       chmodSync(tmpPath, statSync(result.spec_path).mode & 0o7777);
       renameSync(tmpPath, result.spec_path);
     } finally {
       rmSync(tmpPath, { force: true });
     }
     result.written = true;
+    // The Build Context and the Assembly Report carry the spec's identity
+    // (raw and material hashes) from prepare-build, and QA's verdict is
+    // correlated against the material hash by the bundle check. Each sidecar
+    // that was bound to the spec just replaced is re-bound to the new one;
+    // one that already carried another identity is left as it is and named.
+    const afterRawHash = createHash("sha256").update(serialized).digest("hex");
+    const afterMaterialHash = specMaterialHash(spec);
+    const boundToOld = (raw, material) => raw === beforeRawHash || material === beforeMaterialHash;
+    const contextPath = workspace?.contextPath || null;
+    const context = contextPath ? readJsonIfExists(contextPath) : null;
+    if (isObject(context?.spec)) {
+      if (boundToOld(context.spec.hash, context.spec.material_hash)) {
+        try {
+          writeJsonAtomic(contextPath, { ...context, spec: { ...context.spec, hash: afterRawHash, material_hash: afterMaterialHash } });
+          result.rebound.build_context = true;
+        } catch (error) {
+          result.rebound.build_context = false;
+          addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context's spec identity could not be updated (${singleLineDetail(error.message)}); re-run prepare-build before QA so the bundle correlates.`);
+        }
+      } else {
+        result.rebound.build_context = false;
+        addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context's spec identity was already bound to a different spec than the one derive replaced; it was left as it is. Re-run prepare-build before QA so the bundle correlates.`);
+      }
+    }
+    if (report && isObject(report.identity) && workspace) {
+      if (boundToOld(report.identity.spec_hash, report.identity.spec_material_hash)) {
+        try {
+          commitAssemblyReport(workspace, (current) => ({ ...current, identity: { ...current.identity, spec_hash: afterRawHash, spec_material_hash: afterMaterialHash } }), {
+            command: "spec derive",
+            staleReason: `spec derive rewrote the CampaignSpec after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+          });
+          result.rebound.assembly_report = true;
+        } catch (error) {
+          result.rebound.assembly_report = false;
+          addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Assembly Report's spec identity could not be updated (${singleLineDetail(error.message)}); re-run prepare-build before QA so the bundle correlates.`);
+        }
+      } else {
+        result.rebound.assembly_report = false;
+        addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Assembly Report's spec identity was already bound to a different spec than the one derive replaced; it was left as it is. Re-run prepare-build before QA so the bundle correlates.`);
+      }
+    }
+    // The packet's own page-kit projection (source_html.pages[].page_kit)
+    // and the Build Context's page map were prepared from the routes the
+    // spec carried; a derived route change leaves them describing the old
+    // ones until prepare-build runs again.
+    if (plan.changes.some((row) => row.page_id)) {
+      addIssue(result.warnings, "spec.derive.projection_stale", `A page route moved, and the packet's page-kit projection (source_html.pages[].page_kit) and the Build Context were prepared from the old routes. Re-run ${cmd("prepare-build")} (or start) before the next build so they describe the routes the spec now carries.`);
+    }
     if (stageIsTerminal(report?.stages?.assembly?.status)) {
-      addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec just rewritten; doctor's spec fingerprint will report the drift. Re-run the build stage before polish, deploy or QA if a route or the pin moved.`);
+      addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec just rewritten. Re-run the build stage before polish, deploy or QA if a route or the pin moved; QA correlates its verdict against the spec identity the sidecars now carry.`);
       result.next = `${cmd("doctor")} --packet ${shellToken(packetPath)}, then rebuild: set stages.assembly.status back to "pending" on the Assembly Report and run ${cmd("next")} --packet ${shellToken(packetPath)}`;
     }
     // The retained doctor snapshot (if any) now predates the spec it judged.
+    // commitAssemblyReport stamps it when the report was re-bound; every
+    // other path stamps it here.
     try {
       markDoctorSidecarStale(targetRepo, {
         command: "spec derive",

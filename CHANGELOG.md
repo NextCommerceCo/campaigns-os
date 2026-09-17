@@ -48,16 +48,38 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   digits-only pixel id), `waived` (an active named-human
   `page_kit.sdk_version` waiver covers the pair; the spec stays as the waiver
   accepted it), `page_tree_missing` / `page_file_not_found` /
-  `page_file_ambiguous`, and `target_empty` (the entry's id is empty while
-  the spec declares one; an empty repo value never deletes a spec id). A
-  derived field the entry does not carry at all is listed in
-  `not_in_target[]` and left alone. A spec pin ahead of the repo pin is still
-  written — the repo is what ships — with a
-  `spec.derive.sdk_version_downgraded` warning so a lost bump stays visible.
-  A routing hint on another page (`sdk_hints.meta_tags.next-success-url`,
+  `page_file_ambiguous`, `entry_route_undeclared` (the page binds to the
+  top-level `index.html`, the entry route, but is not flagged `is_entry`;
+  doctor honours an empty `page_url` only on the entry page, so the flag is
+  asked for rather than the route written), `spec_container_invalid` (the
+  spec's `global_config`, `analytics` or `analytics.providers.<p>` is not an
+  object, reported by the plan so a dry run and a real run agree),
+  `spec_ahead` (the spec pin is ahead of the repo pin: that is the state
+  doctor blocks on with `page-kit sync` as its repair, per #413, and only one
+  command may own it, so derive never moves a spec pin backwards), and
+  `target_empty` (the entry's id is empty while the spec declares one; an
+  empty repo value never deletes a spec id). A placeholder id
+  (`GTM-XXXXXXX`, a run of one digit) is `target_invalid`: writing it would
+  declare an analytics contract QA then blocks on. A derived field the entry
+  does not carry at all is listed in `not_in_target[]` and left alone. A
+  routing hint (`sdk_hints.meta_tags.next-success-url`,
   `next-upsell-accept-url`, `next-upsell-decline-url`) that names a page
-  whose route moved is reported as `spec.derive.routing_hint_stale`; hints
-  are a Map projection the editor regenerates and are not rewritten. Write
+  whose derived route it no longer matches is reported as
+  `spec.derive.routing_hint_stale` on every run until the Map is re-saved;
+  hints are a Map projection the editor regenerates and are not rewritten.
+  Routes are compared the way doctor reads them (`runtimeRelativeRouteForSpecValue`:
+  slug prefix stripped, a nested value reduced to its terminal segment), so
+  a spelling that doctor already resolves to the tree's route is not
+  rewritten. After a write, the Build Context's `spec.hash` /
+  `spec.material_hash` and the Assembly Report's `identity.spec_hash` /
+  `identity.spec_material_hash` are re-bound to the new spec when they were
+  bound to the one replaced (`rebound` on the result; QA's verdict and the
+  bundle check correlate against the material hash), and a sidecar already
+  carrying another identity is left alone with a
+  `spec.derive.identity_not_rebound` warning naming prepare-build; a derived
+  route change also warns `spec.derive.projection_stale`, because the
+  packet's page-kit projection and the Build Context page map were prepared
+  from the old routes and prepare-build regenerates them. Write
   discipline is `page-kit sync`'s: one read serves the plan and the write;
   the file is edited in place and re-serialized with its own top-level
   indentation, line ending and trailing newline (`spec.derive.file_reformatted`
@@ -84,9 +106,9 @@ Additive: one new CLI command, `spec`, joins the supported argv surface.
   `--json` emits `{ ok, action: "spec derive", status, packet_path,
   public_route_slug, target_repo, campaigns_path, page_tree, spec_path,
   report_path, dry_run, written, changes[] { field, path, before, after,
-  source, page_id?, downgrade? }, unchanged[], not_derived[] { field, reason,
-  detail, page_id? }, not_in_target[], stale_hints[], errors[], warnings[],
-  next }`. The command is not pipeline-advancing and never records a
+  source, page_id? }, unchanged[], not_derived[] { field, reason, detail,
+  page_id? }, not_in_target[], stale_hints[], rebound { build_context,
+  assembly_report }, errors[], warnings[], next }`. The command is not pipeline-advancing and never records a
   deviation. `contracts/supported-surface.json` `cli_commands` gains `spec`
   and `surface_version` moves 1.30.0 → 1.31.0 (`package.json` and
   `compatibility.json` follow); `docs/supported-surface.md`,
