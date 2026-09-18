@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.34.1+agent.2] - 2026-09-18
+
+### Changed
+
+- Document the page-kit change procedure after handoff: PM proposals are
+  reconciled against a known baseline and the current reviewed repository spec.
+  Conflicting authored edits require a recorded decision; generated and API-owned
+  fields retain their own authority. The worked example preserves a developer's
+  SDK upgrade and new page URL while accepting an authored upsell change.
+- Keep Map pin write-back explicit and store refresh with the authorized operator.
+  The procedure names the review and evidence requirements for the next build,
+  including fresh fingerprints after authored-only changes. It adds no automatic
+  synchronization, portal writes or spec prerequisite for static SDK upgrades.
+
 ## [1.34.1+agent.1] - 2026-09-18
 
 ### Changed

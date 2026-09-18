@@ -4848,6 +4848,27 @@
         }
       ],
       "entry_sha256": "ae6ef7c17e02e52cad5ba4faa1e4adf8ba3bba375acac36e3e9046d8273c053f"
+    },
+    {
+      "id": "RL-0122",
+      "sequence": 122,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.34.1+agent.2",
+      "changelog_sha256": "9040b9de8b53c85f910754eebd92b2a865db74ab345f01b7e36eb69f30d074e2",
+      "agent_impact": "For page-kit campaigns after handoff, reconcile PM proposals against their baseline and the current reviewed repository spec. Record authored conflicts and regenerate build evidence for the accepted revision. Map pin write-back remains explicit; static SDK upgrades do not gain a spec requirement.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document PM/developer ownership, authored reconciliation, reviewed build evidence and the boundary for future Git-backed portal saves."
+        }
+      ],
+      "entry_sha256": "8715c3cdcf1d7b6236bff8f9c7f9142428dfbe4f47dec9da8e9b28f764157b83"
     }
   ]
 }

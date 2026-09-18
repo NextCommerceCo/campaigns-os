@@ -120,7 +120,15 @@ states (the SDK pin, page routes, analytics ids) into the local CampaignSpec,
 and with `--write-map` records the pin in the saved Map's Build hints too, so
 a bump in the repo is one edit followed by a derive rather than a hand edit
 in two tools; with `--from-store <subdomain>` and the store's Admin API read
-token in the environment it derives the store profile from the store as well. Everything after `start` is agent-driven: after `start`
+token in the environment it derives the store profile from the store as well.
+Map write-back stays explicit and pin-only.
+
+For changes after handoff, follow the
+[spec review procedure](docs/build-packet.md#changing-a-campaign-after-handoff):
+apply the PM's authored changes to the current repository spec, preserve derived
+fields, and resolve competing edits before the next build.
+
+Everything after `start` is agent-driven: after `start`
 and after every stage, run `next` and do what it prints — it names the skill
 and the exact commands for the next stage, already spelled `npx campaigns-os
 …` for this install, which is why `install-skills` comes first. The browser

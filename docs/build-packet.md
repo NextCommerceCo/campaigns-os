@@ -220,6 +220,113 @@ action. A configured campaign whose pin is newer than the spec's is the
 advisory case above: no required action, and sync never moves that pin
 backwards; `spec derive` is the command that closes it from the spec side.
 
+### Changing a campaign after handoff
+
+For page-kit campaigns, the reviewed repository spec determines the next build.
+New handoffs use `.campaigns-os/campaign.spec.json`; existing packets keep their
+`spec.local_path` until a separate, reviewed migration. Static campaigns do not
+need a spec or packet for an SDK upgrade. This procedure implements the operating
+agreement in [#432](https://github.com/NextCommerceCo/campaigns-os/issues/432)
+and [#447](https://github.com/NextCommerceCo/campaigns-os/issues/447). It is a
+review procedure, not an automatic Map import or a portal editing lock.
+
+A PM can keep using Map Builder to propose a change. Saving the Map does not
+change the campaign repository or approve that change for the next build.
+
+| Responsibility | Owner |
+|---|---|
+| Propose offers, copy, page sequence and other authored intent; confirm the intended result | Campaign PM or named campaign owner |
+| Compare the proposal with the current repository, prepare the spec/code change and run checks | Developer, assisted by an agent where useful |
+| Resolve competing edits to the same authored field | PM confirms intent; developer checks the resulting implementation |
+| Review and merge the repository change | The campaign's existing authorized reviewer, under its normal PR rules |
+| Refresh store-derived data requiring an Admin token | Authorized operator or PM; never a routine developer SDK-bump prerequisite |
+
+Record the actual PM and developer/reviewer in the campaign change request. An
+agent can prepare a diff and evidence, but cannot supply a missing human decision.
+This procedure does not grant new merge, store-write or deployment authority.
+
+#### Propose and reconcile a change
+
+1. **Identify the starting revision.** Record the campaign repo, Git commit and
+   packet's spec path that the PM reviewed. Keep that spec as the baseline. A Map
+   ID identifies lineage, not the revision: also retain the proposed Map export
+   and its save/hash evidence. Do not overwrite the repository spec with it.
+2. **Compare three versions.** Compare the baseline with the PM's proposal, then
+   with the current repository spec. Match pages and packages by their stable
+   identifiers, not array position. Explain additions, removals and routing
+   changes as well as changed values. The
+   [field-class contract](https://github.com/NextCommerceCo/campaigns-os/issues/432#issuecomment-5707550439)
+   identifies what a PM can author and what the repo, API or editor owns.
+3. **Apply the intended change to the current spec on a branch.** Transfer only
+   the PM's authored changes. Keep current repo-derived SDK pins, page URLs and
+   analytics IDs; preserve API/store records and editor metadata under their own
+   authority. An offer selection may change, but a proposed price does not
+   rewrite an API-owned price: route that commercial setup change to its owner
+   and obtain refreshed readback before building it.
+4. **Resolve conflicts before accepting the change.** If PM and developer changed
+   the same authored field differently, neither value wins automatically. Record
+   the chosen value and PM confirmation in the PR. If the baseline is missing,
+   pause the import: ask the PM to restate the change against the current spec.
+   Do not infer intent from every difference in a stale export. If the repository
+   advances during review, repeat the comparison against the new revision.
+5. **Refresh and validate the result.** Preview `spec derive --dry-run`, inspect
+   every refused or unresolved field, then apply the accepted derivation. Plain
+   derive is local; it does not merge authored intent. Follow the packet's normal
+   `page-kit sync`, build, doctor and relevant QA steps. Resolve stale routing
+   hints and rebuild affected pages. A successful derive exit alone is not build
+   or QA approval. After an authored-only edit, derive may return `unchanged`
+   and leave the Assembly Report's spec hash at the previous build. Record fresh
+   build evidence and verify its spec fingerprint before accepting it. A changed
+   spec must not reuse evidence for the older build.
+6. **Review the intended result and record the revision.** The PM confirms the
+   commercial change and the developer supplies the checked diff and preview
+   evidence. Record the reviewed spec's exact-byte SHA-256, the tested repository
+   revision, and the doctor/QA evidence in the PR. Build or deploy from that
+   reviewed revision under the campaign's existing rules; rerun affected checks
+   if the spec or code changes afterwards. Tell the PM which proposal was accepted
+   and identify any remaining Map differences, so the saved Map is not mistaken
+   for a synchronized copy.
+
+A change request needs only: baseline commit/spec path, the proposal or requested
+field changes, current repository revision, conflict decisions, named reviewers,
+and the final spec hash with build/QA evidence. Use existing PRs and campaign
+records for this; there is no additional sidecar schema or new CLI command.
+
+#### Example: the PM changes an upsell while the developer upgrades the SDK
+
+The PM starts from reviewed revision A and replaces the first upsell's selected
+package with package B, already present in the campaign API. Meanwhile the
+repository reaches revision R with a newer SDK pin and a changed page permalink.
+The PM's export still contains A's SDK pin and generated page URL.
+
+| Value | PM proposal | Current repo R | Reviewed result |
+|---|---|---|---|
+| Selected upsell package (authored) | B | Original package | B, after PM confirmation |
+| SDK pin (repo-derived) | Old pin from A | Newer pin | Newer pin |
+| Page URL (repo-derived) | Old URL from A | New permalink | URL derived from the new permalink |
+| Package price (API-owned) | Copied API value | Current API value | Current API value; selection does not change the price |
+
+Start from R, change the selected package, and derive the repo-owned fields. Review
+routing references and rebuild the affected upsell page. If the developer also
+changed the selected package to C, record a conflict and obtain a choice before
+merging. Do not apply B merely because the Map was saved later.
+
+#### Map write-back and future portal saves
+
+`spec derive --write-map` remains an explicit, pin-only action. A developer or
+operator may request it when updating the Map's SDK hint is part of their task;
+it is not a default SDK-bump or reconciliation step. It retains the existing
+hash precondition and refusal to overwrite a newer Map pin. It does not mark a
+PM proposal accepted or synchronize offers, routes or other authored content.
+Store refresh through `--from-store` remains a separate authorized operator step.
+
+A future Git-backed portal save can replace the manual transfer only when it
+identifies the repository/spec and base revision, shows the authored diff,
+preserves each field's authority, detects concurrent changes, and submits the
+change through the same review process. It must show whether a change is merely
+proposed, reviewed or used by a build. That is separate portal work; this
+agreement does not enable portal writes.
+
 ### Deriving the spec from the repo (`spec derive`)
 
 Every CampaignSpec field has a class: **authored** (a human writes it: offers,
