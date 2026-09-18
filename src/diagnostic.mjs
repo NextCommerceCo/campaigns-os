@@ -56,8 +56,12 @@ export function diagnosticExport({ tooling = null, doctor = null, platform = "al
   else if (mode === "checkout" && tooling?.git?.status === "ok" && Number.isInteger(tooling.git.behind) && tooling.git.behind >= 0) {
     freshness = tooling.git.behind > 0 ? "local_ref_behind" : "local_ref_current";
   }
-  if (tooling?.skills?.ok === false) {
-    reasonIds.add("tooling.skills_stale"); actionIds.add("install-skills"); recovery.push(RECOVERY.skills);
+  if (tooling) {
+    if (typeof tooling.skills?.ok !== "boolean") {
+      reasonIds.add("diagnostic.unsupported_value");
+    } else if (tooling.skills.ok === false) {
+      reasonIds.add("tooling.skills_stale"); actionIds.add("install-skills"); recovery.push(RECOVERY.skills);
+    }
   }
   if (freshness === "unknown") { reasonIds.add("tooling.freshness_unknown"); recovery.push(RECOVERY.pin); }
   if (freshness === "local_ref_behind") { reasonIds.add("tooling.checkout_behind"); recovery.push(RECOVERY.update); }
