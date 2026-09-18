@@ -5156,6 +5156,57 @@
         }
       ],
       "entry_sha256": "51781e61741ac908cb8407935f8af301eac88213700eac5605951c920be11920"
+    },
+    {
+      "id": "RL-0126",
+      "sequence": 126,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": "1.37.1",
+      "changelog_section": "1.37.1",
+      "changelog_sha256": "2c7f1178c26f0d5c920a5842f03e78fa01446bc2738974f7d792fe6c72f4ba8b",
+      "agent_impact": "When a demo destination changes during copying, preserve its files and retry with a different new directory. Argument validation, ownership checks and cleanup semantics are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the compatible package patch to 1.37.1 without changing hashed contracts."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Keep the package patch identity at 1.37.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Keep the exact lockfile package identity at 1.37.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for package version 1.37.1."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Explain raw argv validation before private parsed-target extraction without altering dispatch."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface version 1.37.1."
+        }
+      ],
+      "entry_sha256": "76423be9a8624b8a3b398f4a4bfd47ff17b48f45d6a3bc44a22e122172684c6a"
     }
   ]
 }

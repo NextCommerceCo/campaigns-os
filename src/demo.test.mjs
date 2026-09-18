@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,6 +60,26 @@ test("failed copy cleans only owned files and preserves foreign files", () => {
       throw Error("injected replacement");
     } }), /injected replacement/);
     assert.equal(readFileSync(join(replaced, "NOTICE.txt"), "utf8"), "foreign replacement");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a replaced destination aborts copying and preserves files authored in the replacement", () => {
+  const root = scratch();
+  try {
+    const target = join(root, "sample"), original = join(root, "original");
+    let writes = 0;
+    assert.throws(() => createDemo(target, { writeBytes(fd, bytes) {
+      writeFileSync(fd, bytes);
+      writes++;
+      renameSync(target, original);
+      mkdirSync(target);
+      writeFileSync(join(target, "authored.txt"), "preserve replacement edits");
+    } }), /demo\.target_changed: destination changed during copy; inspect and preserve its files, then retry with a different new directory/);
+    assert.equal(writes, 1, "ownership failure must stop subsequent artifact writes");
+    assert.deepEqual(readdirSync(target), ["authored.txt"]);
+    assert.equal(readFileSync(join(target, "authored.txt"), "utf8"), "preserve replacement edits");
+    assert.deepEqual(readdirSync(original), ["NOTICE.txt"], "the first write completed before destination replacement");
+    assert.equal(readFileSync(join(original, "NOTICE.txt"), "utf8"), readFileSync(join(BUNDLE, "NOTICE.txt"), "utf8"));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
