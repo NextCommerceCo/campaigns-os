@@ -1,5 +1,5 @@
 import { mkdirSync, openSync, fstatSync, lstatSync, writeFileSync, closeSync, unlinkSync, rmdirSync, realpathSync } from "node:fs";
-import { resolve, dirname, join } from "node:path";
+import { resolve, dirname, basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateDemoArtifact } from "./demo-artifact.mjs";
 
@@ -9,16 +9,21 @@ function owns(path, stat) {
   try { const current = lstatSync(path); return !current.isSymbolicLink() && same(current, stat); } catch { return false; }
 }
 
+export function resolveDemoTarget(target, { resolveParent = realpathSync } = {}) {
+  if (typeof target !== "string" || !target.trim()) throw Error("demo.target_required: use --target <new-directory>");
+  const destination = resolve(target), name = basename(destination);
+  if (!name) throw Error("demo.target_invalid: choose a new directory below an existing parent");
+  return join(resolveParent(dirname(destination)), name);
+}
+
 // Exclusive creation only. Failure cleanup removes precisely the entries this
 // invocation created, and never recursively removes a caller's directory.
 export function createDemo(target, { bundle = BUNDLE, writeBytes = writeFileSync } = {}) {
   if (typeof target !== "string" || !target.trim()) throw Error("demo.target_required: use --target <new-directory>");
   const artifact = validateDemoArtifact(bundle);
-  const destination = resolve(target);
-  const parent = dirname(destination);
   // Resolve the existing parent once; mkdir remains exclusive at the final
   // component, so an existing directory, file or symlink cannot be overwritten.
-  const root = join(realpathSync(parent), destination.slice(parent.length + 1));
+  const root = resolveDemoTarget(target);
   const directories = [], files = [];
   function directory(path) {
     mkdirSync(path);

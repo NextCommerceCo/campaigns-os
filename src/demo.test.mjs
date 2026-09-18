@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { createDemo } from "./demo.mjs";
+import { createDemo, resolveDemoTarget } from "./demo.mjs";
 import { validateDemoArtifact } from "./demo-artifact.mjs";
 import { buildRunSession, isRunSessionStale } from "./run-session.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -15,6 +15,16 @@ const BUNDLE = join(ROOT, "demo/apollo-v0");
 const scratch = () => mkdtempSync(join(realpathSync(tmpdir()), "campaigns-os-demo-test-"));
 function tree(root) { return readdirSync(root, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? tree(join(root, entry.name)) : [[join(root, entry.name), readFileSync(join(root, entry.name)).toString("base64")]]); }
 function cli(args, cwd, { preload } = {}) { return spawnSync(process.execPath, [...(preload ? ["--import", preload] : []), CLI, "demo", ...args], { cwd, encoding: "utf8", env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "on" } }); }
+
+test("root-parent target resolution preserves the entire basename without accessing the filesystem root", () => {
+  const parents = [];
+  const resolveParent = parent => { parents.push(parent); return "/simulated-owned-parent"; };
+  assert.equal(resolveDemoTarget("/tmp", { resolveParent }), "/simulated-owned-parent/tmp");
+  assert.equal(resolveDemoTarget("/sample", { resolveParent }), "/simulated-owned-parent/sample");
+  assert.deepEqual(parents, ["/", "/"]);
+  assert.throws(() => resolveDemoTarget("/", { resolveParent }), /demo.target_invalid/);
+  assert.deepEqual(parents, ["/", "/"], "filesystem root itself must fail before parent resolution");
+});
 
 test("demo copies the complete validated inert artifact and never overwrites directories, files or symlinks", () => {
   const root = scratch();
