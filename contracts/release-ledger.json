@@ -5045,7 +5045,7 @@
       "id": "RL-0124",
       "sequence": 124,
       "date": "2026-09-18",
-      "kind": "release",
+      "kind": "amendment",
       "surface_version": null,
       "changelog_section": "1.36.0+agent.1",
       "changelog_sha256": "ed7fb01c149dc14453dbba713e7ca4d8278a36c67a32c608ee528866ee6f7f3a",
@@ -5055,12 +5055,14 @@
       "changes": [
         {
           "class": "named_surface",
-          "path": "docs/progress-snapshots.md",
+          "path": null,
           "surface_entry": "docs/progress-snapshots.md",
           "summary": "Document strict context binding and bounded dead-owner allocation recovery, with explicit offline recovery for an interrupted claim."
         }
       ],
-      "entry_sha256": "2caddaf3713e8120bf31a5c8c7dd0398f78853ecf1a2342a4ecfe9b937709110"
+      "entry_sha256": "62716dd67dad35c1f6aeca337f0a8a47bd4daf78d65461f348fbf6234c6850b1",
+      "amends": "RL-0123",
+      "amendment_reason": "Clarify the strict context binding and allocation recovery recorded for the unreleased progress producer; runtime repairs and positive integration coverage were accepted before candidate publication. The document path is covered once by RL-0123 across the full candidate PR range."
     }
   ]
 }
