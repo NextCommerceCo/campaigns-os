@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { diagnosticExport, diagnosticTextLines } from "./diagnostic.mjs";
 import { toolingDiagnose } from "./cli.mjs";
+import { buildRunSession, isRunSessionStale } from "./run-session.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SECRET = "seeded-support-secret-user@example.test";
@@ -52,19 +53,24 @@ function snapshotTree(dir) {
     ? snapshotTree(join(dir, entry.name)) : [[join(dir, entry.name), readFileSync(join(dir, entry.name)).toString("base64")]]);
 }
 
-test("CLI diagnostic does not sweep stale active sessions, mutate evidence, or capture a requested lifecycle journal", () => {
+for (const stale of [false, true]) test(`CLI diagnostic preserves a valid ${stale ? "stale" : "active"} session, evidence and requested lifecycle journal`, () => {
   const scratch = mkdtempSync(join(tmpdir(), "campaigns-os-diagnostic-"));
   try {
     cpSync(join(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped"), scratch, { recursive: true });
     const stateDir = join(scratch, ".campaign-runtime");
-    writeFileSync(join(stateDir, "run-session.json"), JSON.stringify({ schema_version: "campaigns-os-run-session/v0", run_id: SECRET, opened_at: "2000-01-01T00:00:00Z", packet_path: SECRET }));
-    const before = snapshotTree(scratch);
+    const packet = join(scratch, "campaign-runtime.build.json");
     const journal = join(scratch, "sensitive-lifecycle.jsonl");
-    const result = execFileSync(process.execPath, [join(ROOT, "bin/campaigns-os.mjs"), "tooling", "diagnose", "--platform", "codex", "--packet", join(scratch, "campaign-runtime.build.json"), "--write", "--lifecycle-journal", journal, "--json"], { cwd: scratch, encoding: "utf8", env: { ...process.env, CAMPAIGNS_OS_LIFECYCLE_LOG: journal } });
-    const parsed = JSON.parse(result);
+    const session = buildRunSession({ runId: SECRET, packet, lifecycleJournal: journal, now: new Date(stale ? "2000-01-01T00:00:00Z" : Date.now()) });
+    assert.equal(isRunSessionStale(session), stale, "fixture must exercise the runtime stale predicate");
+    writeFileSync(join(stateDir, "run-session.json"), JSON.stringify(session));
+    const before = snapshotTree(scratch);
+    const result = spawnSync(process.execPath, [join(ROOT, "bin/campaigns-os.mjs"), "tooling", "diagnose", "--platform", "codex", "--packet", packet, "--write", "--lifecycle-journal", journal, "--json"], { cwd: scratch, encoding: "utf8", env: { ...process.env, CAMPAIGNS_OS_LIFECYCLE_LOG: journal } });
+    assert.equal(result.status, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout);
     assert.equal(parsed.schema_version, "campaigns-os-diagnostic/v0");
-    assert.equal(result.includes(scratch), false);
-    assert.equal(result.includes(SECRET), false);
+    const output = result.stdout + result.stderr;
+    assert.equal(output.includes(scratch), false);
+    assert.equal(output.includes(SECRET), false);
     assert.equal(existsSync(journal), false);
     assert.deepEqual(snapshotTree(scratch), before);
   } finally { rmSync(scratch, { recursive: true, force: true }); }
