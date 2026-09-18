@@ -1,5 +1,6 @@
 import { withHtmlScanSnapshot, readHtmlScanText, htmlScanDigest } from "./html-scan.mjs";
 import { createHash, randomUUID } from "node:crypto";
+import { createDemo, demoArguments } from "./demo.mjs";
 import { execFileSync } from "node:child_process";
 import {
   accessSync,
@@ -22,6 +23,8 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
+import { diagnosticExport, diagnosticTextLines } from "./diagnostic.mjs";
+import { observeProgress, PROGRESS_OBSERVATION } from "./progress-node.mjs";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
@@ -444,6 +447,7 @@ const HELP = `Campaigns OS toolkit
 
 Usage:
   campaigns-os help
+  campaigns-os demo --target <new-directory>   # offline inert sample; open landing/index.html; no campaign evidence
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
@@ -472,8 +476,9 @@ Usage:
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # install-mode (checkout or pinned package), git, and skill freshness preflight
+  campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
-  campaigns-os next --packet <json> [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
+  campaigns-os next --packet <json> [--no-write] [--no-remit] [--proxy-base <url>] [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next polish --packet <json> --report <json> [--json]
@@ -597,6 +602,24 @@ export async function main(argv) {
   // "Unknown command: campaigns-os".
   if (args._[0] === "campaigns-os") args._.shift();
   const command = args._[0] || "help";
+
+  // An offline sample must not recover sessions or emit lifecycle evidence.
+  if (command === "demo") {
+    // Validate raw tokens here: parsing loses duplicate flags. The private
+    // dispatcher then rechecks the parsed shape and extracts the target.
+    demoArguments(args, argv);
+    await dispatch(command, args);
+    return;
+  }
+
+  // Diagnostic export is an inspection, including when a run is active or
+  // stale. Bypass session sweeping, ambient resolution, and lifecycle capture
+  // so no closeout/remit or journal write can occur before the projection.
+  if (command === "tooling" && args._[1] === "diagnose") {
+    const result = toolingDiagnose(args);
+    console.log(args.json ? JSON.stringify(result, null, 2) : diagnosticTextLines(result).join("\n"));
+    return;
+  }
 
   // Ambient run session (Tier 3): when `run start` is active, every command
   // shares its run_id WITHOUT --run-id. Explicit --run-id still wins. Resolved
@@ -1010,6 +1033,17 @@ const PREPARE_MODES = Object.freeze({
 });
 
 async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null, sessionHolder = null) {
+  if (command === "demo") {
+    // main() already validated raw argv before entering this private function.
+    const target = demoArguments(args);
+    if (target === null) {
+      console.log("campaigns-os demo --target <new-directory>\nOffline Apollo sample only. Open the printed landing/index.html file. Start a real campaign in a separate new Page Kit folder; preserve your sample edits.");
+      return;
+    }
+    const result = createDemo(target);
+    console.log(`Offline sample only; no campaign evidence.\nOpen: ${result.index}\nStart a real campaign in a separate new Page Kit folder. Preserve sample edits; demo is never converted automatically.`);
+    return;
+  }
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
@@ -1171,6 +1205,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // explicit stage (`next build`, `next polish`, etc.) is unchanged.
     const stage = args._[1] || null;
     const result = nextStage(stage, args, ambient);
+    await observeProgress(args, result, { packageVersion: packageVersion(), resolveKey: resolveCampaignsApiKeySource });
     writeResult(result, args, result.ok ? 0 : 2);
     printNextTinyPrompt(result, args);
     return;
@@ -1182,7 +1217,14 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // command a QA run prints has to agree with the run_id this session will
     // later close and remit under.
     const result = await runQaCli(args, { ambient });
-    if (args._[1] === "run" && result?.verdict) recordQaStageOutcome(args, result);
+    if (args._[1] === "run" && result?.verdict && recordQaStageOutcome(args, result)) {
+      // Observe committed QA before the existing closeout; this cannot close
+      // a run or change the QA disposition. Reuse the canonical picker.
+      try {
+        const continuation = nextStage(null, { ...args, "no-write": true }, null);
+        await observeProgress(args, continuation, { qaResult: result, packageVersion: packageVersion(), resolveKey: resolveCampaignsApiKeySource });
+      } catch { /* optional progress never changes lifecycle closeout */ }
+    }
     if (sessionHolder) sessionHolder.qaResult = result;
     return;
   }
@@ -1327,7 +1369,10 @@ async function resolveSpecPath(args, opts = {}) {
     const spec = await fetchSpecByMapId(mapId, { proxyBase, fetchImpl: opts.fetchImpl });
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
-    return { specPath: cachePath, source: "remote", mapId, proxyBase };
+    return { specPath: cachePath, source: "remote", mapId, proxyBase,
+      savedMapRevision: { map_id: mapId, hash: spec.spec_identity?.spec_hash || spec.spec_hash || null,
+        algorithm: "map-store-v1", local_spec_material_hash: specMaterialHash(spec) },
+    };
   }
   throw new Error(
     "Either --spec <path> or --map-id <id> is required. " +
@@ -2478,6 +2523,7 @@ function prepareBuild(args, options = {}) {
       : null,
     map_id: specInput?.mapId || null,
     proxy_base: specInput?.proxyBase || null,
+    saved_map_revision: specInput?.savedMapRevision || null,
     source_root: portable(sourceRoot),
     target_repo: portable(targetRepo),
     template_family: explicitTemplateFamily || null,
@@ -9500,6 +9546,10 @@ export function nextStage(stage, args, ambient = null) {
     runRecordCloseout = null;
   }
   const finalize = (result) => {
+    Object.defineProperty(result, PROGRESS_OBSERVATION, { value: {
+      workspace: { packet, packetPath, targetRepo, contextPath, reportPath },
+      context: readJsonIfExists(contextPath), report, doctor,
+    } });
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo });
@@ -10917,7 +10967,9 @@ function toolingCommand(args) {
   } else if (install.mode !== "checkout" && cli.global_binary.status === "found_other_install") {
     // An npx cache is ephemeral: never tell the operator to put its .bin on
     // PATH. The pinned npx form is what makes the inspected copy run.
-    warnings.push(install.mode === "npx_cache"
+    warnings.push(install.mode === "global"
+      ? `The campaigns-os on PATH is a different install; use \`${cli.invocation_prefix} <command>\` to run the global copy inspected here.`
+      : install.mode === "npx_cache"
       ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${install.location}); bare commands would run that other copy. Use \`${cli.invocation_prefix} <command>\` so the pinned copy runs.`
       : cli.bin_dir
         ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${cli.local_bin}); bare commands would run that other copy. Run export PATH="${cli.bin_dir}:$PATH" to put this install first.`
@@ -10946,6 +10998,24 @@ function toolingCommand(args) {
     actions,
     warnings,
   };
+}
+
+export function toolingDiagnose(args, { runTooling = toolingCommand, runDoctor = doctorCommand } = {}) {
+  let tooling = null;
+  let doctor = null;
+  let inspectionFailed = false;
+  const platform = args.platform || "all";
+  // Inputs are used only by local producers, never echoed, and mutation flags
+  // are not forwarded. Even an exception's message may contain a secret path.
+  try {
+    tooling = runTooling({ _: ["tooling", "status"], platform, ...(typeof args.target === "string" ? { target: args.target } : {}) });
+  } catch { /* unavailable, no raw producer exception in a support export */ }
+  if (args.packet !== undefined) {
+    try {
+      doctor = runDoctor({ packet: args.packet, "no-write": true, ...(typeof args.context === "string" ? { context: args.context } : {}), ...(typeof args.report === "string" ? { report: args.report } : {}) });
+    } catch { inspectionFailed = true; }
+  }
+  return diagnosticExport({ tooling, doctor, platform, inspectionFailed });
 }
 
 function localCliStatus(pkg, install = { mode: "checkout", pinned: null }) {

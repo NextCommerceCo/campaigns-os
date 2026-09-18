@@ -61,19 +61,48 @@ is a refusal, not a value to interpret. And a prepared runtime can build and
 type-check but **cannot run browser QA** — preparation suppresses lifecycle
 scripts, which is also what suppresses the browser download.
 
-The recipe describes preparing a runtime from a **checkout**. The supported
-way to *run* the toolkit without a checkout is as a **pinned devDependency of
-the campaign folder** (a page-kit project): `npm i -D
-"github:NextCommerceCo/campaigns-os#<sha>"` there, then `npx campaigns-os …`
-from that folder. The same pin discipline applies — the sha is the one you
-oriented on — and npm records the resolved commit in that folder's
-`package.json` and `package-lock.json`, so CI and the deploy host install the
-same commit and `tooling status` reads the pin back (`Install mode: package
-install …`). It runs the package's own lifecycle script at install time, so it
-is not a recipe execution and makes no claim under the recipe's output
-checks. Every command the toolkit prints for you to copy is spelled for the
-install it came from (`npx campaigns-os …` there). A recipe kind for package
-installs is not published yet.
+The recipe describes preparing a runtime from a **checkout**. The primary
+way to *run* the toolkit is an **exact project-local devDependency** in the
+campaign's Page Kit folder: `npm install --save-dev --save-exact
+@nextcommerce/campaigns-os@<reviewed-version>`, then `npx campaigns-os …` from
+that folder. Review the release's source tag and provenance against the commit
+you oriented on; installation cannot supply its own trust decision. Commit
+`package.json` and `package-lock.json` so other hosts install the same bytes.
+For an unreleased reviewed commit use `npm install --save-dev --save-exact
+"github:NextCommerceCo/campaigns-os#<full-sha>"` instead. Both run package
+lifecycle scripts and are separate from this checkout-only recipe.
+
+An exact global registry install is also supported:
+`npm install -g @nextcommerce/campaigns-os@<reviewed-version>`. `tooling status`
+reports whether the installation is local, global, or a checkout, its version,
+and a source commit when derivable. It does not check registry currency. Use
+its printed invocation to avoid another installation on PATH; a project-local
+installation prints `npx campaigns-os`, while a shadowed global copy prints an
+explicit invocation of that copy. Use `--platform claude` or `--platform codex`
+consistently for profile-only setup and preflight, and install bundled skills
+before following the stage recommendations. Browser proof uses the package's
+`qa install-browser`; optional Playwright absence does not block other commands.
+
+[Activation, access, and evidence](docs/activation-and-evidence.md) describes
+public milestones without introducing another lifecycle. For support,
+`tooling diagnose [--packet <packet>] [--platform <profile>] [--json]` reads
+status and the read-only doctor's existing `next` recommendation and exports a
+strict allowlist summary. It neither establishes orientation trust nor changes
+campaign evidence or run sessions. See [diagnostics](docs/diagnostics.md).
+
+Candidate 1.36.0 also records minimal progress observations after canonical
+`next` and committed QA. Run `next` after agent-owned stages to observe their
+reports. `--no-write` disables capture and send; `--no-remit` keeps it local.
+The portable `./progress` contract preserves separate saved Map, semantic spec
+and output identities, and grants no orientation or deployment trust. See
+[progress snapshots](docs/progress-snapshots.md).
+
+Candidate 1.37.0 adds `demo --target <new-directory>`, an offline visual sample
+that copies a pinned inert Apollo bundle and prints its landing/index.html path.
+It bypasses session recovery and creates no campaign evidence or telemetry.
+Unsupported flags, including no-write and dry-run, are rejected before writes.
+Start real work in a separate new Page Kit folder and preserve sample edits.
+See [offline demo preview](docs/demo-preview.md).
 
 ## Supported versus internal
 

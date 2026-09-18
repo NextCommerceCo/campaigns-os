@@ -4854,9 +4854,368 @@
       "sequence": 122,
       "date": "2026-09-18",
       "kind": "release",
+      "surface_version": "1.35.0",
+      "changelog_section": "1.35.0",
+      "changelog_sha256": "efc41d5b5f2fa2005f6cd93d1ab6e287403edff5be0fbb120e09aef825e7501a",
+      "agent_impact": "Use exact project-local npm releases by default; installed skills and global recovery run the intended copy. Optional tooling diagnose exports redacted installation and local lifecycle evidence without changing sessions or campaign artifacts. Existing lifecycle, orientation trust and QA publication recovery remain unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "Use exact project-local releases, profile-specific preflight, package-owned browser installation, and read-only redacted diagnostics without changing orientation trust."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Declare the activation/evidence contract and diagnostic reference as named supported documents."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/activation-and-evidence.md",
+          "surface_entry": "docs/activation-and-evidence.md",
+          "summary": "Document six distinct public milestones, access inputs, independent trust/freshness/revisions, and retained-verdict publication recovery."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/diagnostics.md",
+          "surface_entry": "docs/diagnostics.md",
+          "summary": "Document the read-only allowlist export, unsupported vocabulary behavior, independent freshness, and recovery ownership."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Ship the activation/evidence and diagnostic references in npm packages."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance all five bundled skill versions for installed-package command conventions."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Add tooling diagnose with read-only doctor/next projection, no session sweeping/capture, fixed exception summaries, and global invocation recovery."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the declarative reference for supported surface 1.35.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the declarative reference for supported surface 1.35.0."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record additive package release 1.35.0 in the exact lockfile."
+        }
+      ],
+      "entry_sha256": "4a93e18a369cb149ccd8b80927b31133cc816735ac5d1c4d7a589c234e5a3963"
+    },
+    {
+      "id": "RL-0123",
+      "sequence": 123,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": "1.36.0",
+      "changelog_section": "1.36.0",
+      "changelog_sha256": "a5f32730cb50238ef8c0d8a0300119410f240ce114a98f574ae5014e8699995a",
+      "agent_impact": "Progress observations reuse canonical next and committed QA without lifecycle or closeout changes. Consumers may validate strict minimal snapshots and group separate Map/spec/build histories; absent binding and unknown vocabulary confer no readiness or trust.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "Explain canonical stage observations, opt-out flags and independent identity/trust semantics."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/progress/observation.v0.json",
+          "surface_entry": "contracts/fixtures/progress/observation.v0.json",
+          "summary": "Provide a digest-verified receiver agreement fixture with separate Map/spec/build identities."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Declare portable progress helpers, strict snapshot schema, provenance extension and supported reference/fixture."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate declarative supported-surface reference for candidate1.36.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Document bounded progress wire, independent identities, consent-scoped delivery, exact acknowledgments and receiver remit."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate declarative runtime reference for candidate1.36.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Describe additive portable progress consumption without readiness or trust authority."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record additive candidate1.36.0 in the exact lockfile."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Publish portable progress and JSON schema exports plus their reference in candidate1.36.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "summary": "Declare optional saved Map provenance and its separate fetched local semantic baseline."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-progress-snapshot.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-progress-snapshot.v0.schema.json",
+          "summary": "Add strict bounded versioned progress wire with fixed vocabulary, independent stage/binding and continuation observations."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Observe after canonical next and successful committed QA, and retain fresh fetched Map provenance in context intake."
+        }
+      ],
+      "entry_sha256": "181049ebc0cdf27935453579a11e7878b200dadb5bbbc73798226259a684a6a5"
+    },
+    {
+      "id": "RL-0124",
+      "sequence": 124,
+      "date": "2026-09-18",
+      "kind": "amendment",
       "surface_version": null,
-      "changelog_section": "1.34.1+agent.2",
-      "changelog_sha256": "9040b9de8b53c85f910754eebd92b2a865db74ab345f01b7e36eb69f30d074e2",
+      "changelog_section": "1.36.0+agent.1",
+      "changelog_sha256": "ed7fb01c149dc14453dbba713e7ca4d8278a36c67a32c608ee528866ee6f7f3a",
+      "agent_impact": "Require a nonempty matching context packet pointer before accepting saved revision provenance or its source endpoint. Retry after live allocation completes; stop all target writers before the documented offline recovery for interrupted lock reclamation.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": null,
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Document strict context binding and bounded dead-owner allocation recovery, with explicit offline recovery for an interrupted claim."
+        }
+      ],
+      "entry_sha256": "62716dd67dad35c1f6aeca337f0a8a47bd4daf78d65461f348fbf6234c6850b1",
+      "amends": "RL-0123",
+      "amendment_reason": "Clarify the strict context binding and allocation recovery recorded for the unreleased progress producer; runtime repairs and positive integration coverage were accepted before candidate publication. The document path is covered once by RL-0123 across the full candidate PR range."
+    },
+    {
+      "id": "RL-0125",
+      "sequence": 125,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": "1.37.0",
+      "changelog_section": "1.37.0",
+      "changelog_sha256": "683559dec36726ceb6114bfca9239ca0e2dac39adabac933dd6317d0e20879ec",
+      "agent_impact": "Agents can create an offline static Apollo sample without campaign configuration, session changes, networking or evidence. Real campaigns begin in a separate new folder; existing targets and unsupported flags are refused.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "Document offline sample isolation, strict arguments and the separate real-campaign transition."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/agent-relevant-change-policy.v1.json",
+          "surface_entry": "contracts/agent-relevant-change-policy.v1.json",
+          "summary": "Classify internal static projection files while retaining derived manifest and notice obligations."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Add the demo command, reference, attribution notice and hashed provenance manifest at surface 1.37.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "demo/apollo-v0/NOTICE.txt",
+          "surface_entry": "demo/apollo-v0/NOTICE.txt",
+          "summary": "Retain pinned NEXT attribution and Page Kit/Tailwind notices without an additional template licence grant."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "demo/apollo-v0/provenance.json",
+          "surface_entry": "demo/apollo-v0/provenance.json",
+          "summary": "Pin the published maintainer toolchain, input hashes and every validated output digest."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/activation-and-evidence.md",
+          "surface_entry": "docs/activation-and-evidence.md",
+          "summary": "Describe offline visual sampling without granting campaign proof."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/demo-preview.md",
+          "surface_entry": "docs/demo-preview.md",
+          "summary": "Specify exclusive creation, offline exploration, regeneration and preserved sample edits."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the reference with the explicit internal static projection classification."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for package version 1.37.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Document the supported command and provenance boundary."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Keep exact package identity at candidate 1.37.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Ship the static bundle and reference without adding runtime compiler or Page Kit dependencies."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Dispatch demo before session recovery and lifecycle capture, rejecting unsupported arguments before creation."
+        }
+      ],
+      "entry_sha256": "51781e61741ac908cb8407935f8af301eac88213700eac5605951c920be11920"
+    },
+    {
+      "id": "RL-0126",
+      "sequence": 126,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": "1.37.1",
+      "changelog_section": "1.37.1",
+      "changelog_sha256": "2c7f1178c26f0d5c920a5842f03e78fa01446bc2738974f7d792fe6c72f4ba8b",
+      "agent_impact": "When a demo destination changes during copying, preserve its files and retry with a different new directory. Argument validation, ownership checks and cleanup semantics are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the compatible package patch to 1.37.1 without changing hashed contracts."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Keep the package patch identity at 1.37.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Keep the exact lockfile package identity at 1.37.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for package version 1.37.1."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Explain raw argv validation before private parsed-target extraction without altering dispatch."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface version 1.37.1."
+        }
+      ],
+      "entry_sha256": "76423be9a8624b8a3b398f4a4bfd47ff17b48f45d6a3bc44a22e122172684c6a"
+    },
+    {
+      "id": "RL-0127",
+      "sequence": 127,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.37.1+agent.1",
+      "changelog_sha256": "4eef81fac283eb699daff04ea5de96a4ad768099f8b9e0556f57e671435479ca",
       "agent_impact": "For page-kit campaigns after handoff, reconcile PM proposals against their baseline and the current reviewed repository spec. Record authored conflicts and regenerate build evidence for the accepted revision. Map pin write-back remains explicit; static SDK upgrades do not gain a spec requirement.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4868,7 +5227,7 @@
           "summary": "Document PM/developer ownership, authored reconciliation, reviewed build evidence and the boundary for future Git-backed portal saves."
         }
       ],
-      "entry_sha256": "8715c3cdcf1d7b6236bff8f9c7f9142428dfbe4f47dec9da8e9b28f764157b83"
+      "entry_sha256": "7a643454252eff345d8015246440a037f69dab2041aee2f8fbafe1367caef087"
     }
   ]
 }

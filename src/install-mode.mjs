@@ -5,12 +5,14 @@
 import { accessSync, constants as fsConstants, existsSync, readFileSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { basename, delimiter, dirname, join, relative, resolve, sep } from "node:path";
+import { shellToken } from "./shell-token.mjs";
 
 const PACKAGE_INSTALL_MODE_LABELS = Object.freeze({
   checkout: "git checkout",
   npx_cache: "package install (npx cache)",
   node_modules: "package install (node_modules)",
   package_directory: "package install",
+  global: "global package install",
 });
 
 const PUBLIC_GIT_SOURCE = "github:NextCommerceCo/campaigns-os";
@@ -111,9 +113,18 @@ export function localInstallStatus(root, pkg = {}) {
   const segments = root.split(sep);
   const npxIndex = segments.indexOf("_npx");
   const inNpxCache = npxIndex >= 0 && /^[0-9a-f]{8,}$/i.test(segments[npxIndex + 1] || "") && segments[npxIndex + 2] === "node_modules";
+  const modules = enclosingNodeModules(root);
+  // npm's global layout is prefix/lib/node_modules on POSIX and
+  // prefix/node_modules on Windows. Verify the prefix's own bin points to
+  // this package, independently of PATH, which may select another install.
+  const globalPrefix = modules && (process.platform === "win32" ? dirname(modules) : basename(dirname(modules)) === "lib" ? dirname(dirname(modules)) : null);
+  const globalBin = globalPrefix ? join(globalPrefix, process.platform === "win32" ? "campaigns-os.cmd" : "bin/campaigns-os") : null;
+  const ownBin = resolve(root, typeof pkg.bin === "object" ? pkg.bin["campaigns-os"] || "bin/campaigns-os.mjs" : "bin/campaigns-os.mjs");
+  const globalInstall = globalBin && existsSync(globalBin) && executableTargetPath(globalBin) === realpathOrSelf(ownBin);
   const mode = inNpxCache
     ? "npx_cache"
-    : enclosingNodeModules(root)
+    : globalInstall ? "global"
+    : modules
       ? "node_modules"
       : "package_directory";
   const pinned = derivePackagePin(root, pkg);
@@ -227,6 +238,7 @@ export function resolveInvocation(root, pkg = {}, install = localInstallStatus(r
   if (install.mode === "checkout") prefix = "npm run campaigns-os --";
   else if (install.mode === "npx_cache") prefix = install.pinned?.spec ? `npx --yes ${install.pinned.spec}` : "campaigns-os";
   else if (install.mode === "node_modules") prefix = "npx campaigns-os";
+  else if (install.mode === "global") prefix = matches ? "campaigns-os" : `node ${shellToken(localBin)}`;
   else prefix = "campaigns-os";
   return {
     install,

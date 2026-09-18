@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.34.1+agent.2] - 2026-09-18
+## [1.37.1+agent.1] - 2026-09-18
 
 ### Changed
 
@@ -15,6 +15,93 @@ Notable supported-surface changes are recorded here.
   The procedure names the review and evidence requirements for the next build,
   including fresh fingerprints after authored-only changes. It adds no automatic
   synchronization, portal writes or spec prerequisite for static SDK upgrades.
+
+## [1.37.1] - 2026-09-18
+
+### Fixed
+
+- Demo copies that detect a changed destination explain how to preserve its
+  files and retry with a different new directory. Ownership checks and cleanup
+  remain unchanged; a replacement-directory regression proves copying stops
+  after the first write and preserves files authored in the replacement.
+- Clarify that demo raw arguments are validated in the CLI entry point before
+  the private dispatcher rechecks the parsed shape and extracts the target.
+
+## [1.37.0] - 2026-09-18
+
+### Added
+
+- `demo --target <new-directory>` copies four pinned inert Apollo sample pages
+  for direct local-file exploration, with active sample navigation, disabled
+  commerce controls, local assets and restrictive CSP. It downloads nothing,
+  bypasses session recovery, and emits no campaign evidence or telemetry.
+- Exclusive target creation refuses existing files, directories and symlinks.
+  Failed copies clean only owned entries; unsupported flags fail before writes.
+  A hashed provenance manifest and retained notices document the static projection,
+  pinned published Page Kit toolchain, build-time CSS and system font fallback.
+  Real campaigns begin separately, preserving sample edits.
+
+## [1.36.0+agent.1] - 2026-09-18
+
+### Fixed
+
+- Progress treats a missing Build Context packet pointer as unconfirmed binding
+  and refuses its source endpoint. Sequence allocation recovers dead owners while
+  preserving live writers; interrupted recovery has an explicit offline procedure.
+- Integration coverage now observes the actual next picker and committed QA with
+  complete local spec/build identity, then independently changes each binding.
+
+## [1.36.0] - 2026-09-18
+
+### Added
+
+- Minimal progress snapshots observe canonical next-stage recommendations and
+  committed QA without replacing lifecycle rules or altering closeout. Separate
+  saved Map, semantic spec and output identities prevent completion claims from
+  crossing builds. A strict portable progress export, v0 schema and example
+  fixture support receiver validation and grouped histories without readiness
+  inference.
+- Immutable local capture precedes consent-scoped delivery to the planned
+  progress receiver. Bounded retry preserves exact bytes and requires a matching
+  digest acknowledgment; failures leave the lifecycle result unchanged.
+  No-write disables capture/send and no-remit keeps observations local.
+
+### Changed
+
+- Telemetry disclosure includes minimal stage observations intended for Workspace.
+  Noncanonical progress sharing requires explicit scoped opt-in; unscoped
+  environment ON does not bypass that protection. Fetched Map provenance retains
+  its original saved hash and local baseline separately from raw spec bytes.
+
+## [1.35.0] - 2026-09-18
+
+### Added
+
+- A public activation/access/evidence contract separates installed tooling,
+  demo previews, saved Maps, resolved campaigns, observed previews, and recorded
+  QA while preserving the existing lifecycle and independent trust/freshness
+  and revision checks.
+- `tooling diagnose [--packet <packet>] [--platform <profile>] [--json]`
+  projects installation status and the read-only doctor's next recommendation
+  into a compact support export. A fixed allowlist excludes paths, URLs,
+  credentials, identities, order values, content, argv, and environment.
+  Unknown producer values receive fixed markers and no repair authority.
+  Diagnosis never sweeps sessions, writes evidence, runs orders, or publishes.
+
+### Changed
+
+- Exact npm project-local devDependency installation is the primary public
+  path; exact global releases and reviewed full-SHA sources remain supported.
+  Installed skills use the package-owned browser command and explain invocation
+  translation for local, global, and contributor installations.
+
+### Fixed
+
+- Global npm installations are distinguished from campaign-local dependencies.
+  Global recovery commands address the inspected copy even when another
+  installation shadows it; project-local commands continue to resolve via npx.
+  Publication recovery continues to use `qa publish` on retained evidence,
+  without repeating checkout or placing another order.
 
 ## [1.34.1+agent.1] - 2026-09-18
 
