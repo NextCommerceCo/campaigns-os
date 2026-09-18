@@ -485,8 +485,8 @@ async function main() {
         path: sourceFixture,
         token,
       });
+      const adaptedFixture = adaptFixtureForCampaignsOs(sourceFixture, fixtureText);
       if (!args.dryRun) {
-        const adaptedFixture = adaptFixtureForCampaignsOs(sourceFixture, fixtureText);
         writeText(targetFixture, adaptedFixture.endsWith("\n") ? adaptedFixture : `${adaptedFixture}\n`);
       }
     }

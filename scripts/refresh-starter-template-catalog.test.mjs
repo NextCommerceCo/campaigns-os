@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -10,6 +14,43 @@ import {
   preserveLocalOnlyFamilies,
   resolveSnapshotSource,
 } from "./refresh-starter-template-catalog.mjs";
+
+test("actual dry-run adapts known fixtures and rejects malformed JSON without changing any files", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-refresh-dry-run-")));
+  try {
+    mkdirSync(join(root, "scripts"));
+    mkdirSync(join(root, "contracts"));
+    const script = join(root, "scripts", "refresh.mjs");
+    writeFileSync(script, readFileSync(new URL("./refresh-starter-template-catalog.mjs", import.meta.url)));
+    writeFileSync(join(root, "contracts", "commerce-surface-catalog.json"), '{"families":{}}\n');
+    const fixture = "docs/fixtures/campaign-specs/apollo-tiered-apollo-layout.json";
+    const catalog = { families: { apollo: { agentContract: { fixtures: [fixture] } } } };
+    const preload = join(root, "mock-fetch.mjs");
+    function snapshot(dir = root) {
+      return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).map((entry) => {
+        const path = join(dir, entry.name);
+        return [entry.name, entry.isDirectory() ? snapshot(path) : readFileSync(path).toString("base64")];
+      });
+    }
+    for (const [content, expectedExit] of [["{ malformed fixture", 1], ['{"funnels":[]}', 0]]) {
+      const payloads = { "docs/commerce-surface-catalog.json": JSON.stringify(catalog), "template-verification.json": '{"families":{},"evidence":{}}', [fixture]: content };
+      writeFileSync(preload, `const payloads = ${JSON.stringify(payloads)};
+globalThis.fetch = async (url) => {
+  const path = new URL(url).pathname.split('/contents/')[1];
+  if (!Object.hasOwn(payloads, path)) throw Error('Unexpected network request');
+  return new Response(JSON.stringify({encoding:'base64',content:Buffer.from(payloads[path]).toString('base64')}));
+};\n`);
+      const before = snapshot();
+      const result = spawnSync(process.execPath, ["--import", preload, script, "--synced-from-sha", "a".repeat(40), "--dry-run"], { cwd: root, encoding: "utf8", timeout: 10_000, env: { ...process.env, STARTER_TEMPLATES_TOKEN: "", GITHUB_TOKEN: "" } });
+      assert.equal(result.status, expectedExit, result.stderr);
+      if (expectedExit) assert.match(result.stderr, /JSON/);
+      else assert.match(result.stdout, /Checked/);
+      assert.deepEqual(snapshot(), before, "dry-run leaves the complete tree unchanged");
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("fixture refresh preserves the established two-step select role and unrelated source changes", () => {
   const path = "docs/fixtures/campaign-specs/olympus-mv-two-step-configurable.json";
