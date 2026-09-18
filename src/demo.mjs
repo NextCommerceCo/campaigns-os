@@ -43,11 +43,11 @@ export function createDemo(target, { bundle = BUNDLE, writeBytes = writeFileSync
       const parts = name.split("/"); parts.pop();
       let current = root;
       for (const part of parts) {
-        if (!owns(current, created.get(current))) throw Error("demo.target_changed");
+        if (!owns(current, created.get(current))) throw Error("demo.target_changed: destination changed during copy; inspect and preserve its files, then retry with a different new directory");
         current = join(current, part);
         if (!created.has(current)) created.set(current, directory(current));
       }
-      if (!owns(current, created.get(current))) throw Error("demo.target_changed");
+      if (!owns(current, created.get(current))) throw Error("demo.target_changed: destination changed during copy; inspect and preserve its files, then retry with a different new directory");
       const fd = openSync(path, "wx");
       try {
         files.push({ path, stat: fstatSync(fd) });

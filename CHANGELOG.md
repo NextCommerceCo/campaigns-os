@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.37.1] - 2026-09-18
+
+### Fixed
+
+- Demo copies that detect a changed destination explain how to preserve its
+  files and retry with a different new directory. Ownership checks and cleanup
+  remain unchanged; a replacement-directory regression proves copying stops
+  after the first write and preserves files authored in the replacement.
+- Clarify that demo raw arguments are validated in the CLI entry point before
+  the private dispatcher rechecks the parsed shape and extracts the target.
+
 ## [1.37.0] - 2026-09-18
 
 ### Added
