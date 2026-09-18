@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -12,6 +13,38 @@ import {
 } from "./template-freshness.mjs";
 
 const POLICY = { provenance: { latest_known_release: "0.4.36" } };
+
+test("vendored release evidence remains valid when policy and verification advance independently", () => {
+  const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
+  const policy = defaultSdkSupportPolicy();
+  assert.ok(parseSdkVersion(policy.provenance.latest_known_release));
+  assert.ok(compareSdkVersions(policy.provenance.latest_known_release, "0.4.38") >= 0, "the policy must retain the recorded release floor");
+  const current = resolveCurrentSdkVersion({ catalog, sdkSupportPolicy: policy });
+  assert.ok(compareSdkVersions(current.version, policy.provenance.latest_known_release) >= 0);
+  for (const [family, entry] of Object.entries(catalog.families)) {
+    if (!entry.verification) continue;
+    assert.ok(parseSdkVersion(entry.verification.sdk_version), family);
+    assert.ok(compareSdkVersions(current.version, entry.verification.sdk_version) >= 0, family);
+    const assessment = assessTemplateFreshness({ family, catalog, sdkSupportPolicy: policy });
+    assert.equal(assessment.current_sdk_version, current.version, family);
+    assert.equal(assessment.verified_sdk_version, entry.verification.sdk_version, family);
+    assert.ok(["current", "stale"].includes(assessment.state), family);
+  }
+});
+
+test("a captured release ahead of family evidence reports stale without inventing re-verification", () => {
+  const policy = { provenance: { latest_known_release: "0.4.38" } };
+  const older = catalogWith({ apollo: { sdk_version: "0.4.37", verified_at: "2026-08-21T15:26:00Z" } });
+  const stale = assessTemplateFreshness({ family: "apollo", catalog: older, sdkSupportPolicy: policy });
+  assert.equal(stale.state, "stale");
+  assert.equal(stale.current_sdk_version, "0.4.38");
+  assert.equal(stale.verified_sdk_version, "0.4.37");
+  assert.equal(stale.verified_at, "2026-08-21T15:26:00Z");
+  assert.match(renderTemplateFreshness(stale), /An older evidence record is not current certification/);
+  const newerPolicy = { provenance: { latest_known_release: "0.4.39" } };
+  const verified = catalogWith({ apollo: { sdk_version: "0.4.38", verified_at: "2026-09-15T16:51:10Z" } });
+  assert.equal(assessTemplateFreshness({ family: "apollo", catalog: verified, sdkSupportPolicy: newerPolicy }).state, "stale");
+});
 
 function catalogWith(verifications) {
   const families = {};

@@ -372,6 +372,58 @@ function writeText(path, text) {
   writeFileSync(fullPath, text);
 }
 
+export function adaptFixtureForCampaignsOs(sourcePath, text) {
+  const fixture = sourcePath.replace(/^docs\/fixtures\/campaign-specs\//, "");
+  const routeFamilies = {
+    "apollo-tiered-apollo-layout.json": "apollo",
+    "demeter-editorial-tiered.json": "demeter",
+    "olympus-tiered-standard-free.json": "olympus",
+    "shop-single-step-upsell-receipt.json": "shop-single-step",
+    "shop-three-step-dynamic-shipping.json": "shop-three-step",
+  };
+  const family = Object.hasOwn(routeFamilies, fixture) ? routeFamilies[fixture] : null;
+  const selectFixture = sourcePath === "docs/fixtures/campaign-specs/olympus-mv-two-step-configurable.json";
+  if (!selectFixture && (!family || sourcePath !== `${TEMPLATE_FIXTURE_PREFIX}${fixture}`)) return text;
+  const spec = JSON.parse(text);
+  let changed = false;
+  for (const funnel of spec.funnels || []) {
+    for (const page of funnel.pages || []) {
+      // Campaigns OS #228 made this pre-checkout selection step a real select
+      // role. Preserve that correction over the upstream example's legacy
+      // landing label only while its explicit product/select contract matches.
+      // Distinct future roles and unrelated upstream fields remain source-owned.
+      if (selectFixture && page.id === "select" && page.type === "landing"
+        && page.template === "src/olympus-mv-two-step/select.html"
+        && page.sdk_hints?.sdk_page_type === "product"
+        && page.sdk_hints?.template_family === "olympus-mv-two-step" && page.next_page === "checkout.html") {
+        page.type = "select";
+        changed = true;
+      }
+      // #233 aligned these explicit forward links with the authored page URL,
+      // rather than the starter's source filename. Preserve only that known
+      // contract; a changed route, template or forward edge stays source-owned.
+      const target = (funnel.pages || []).find((entry) => entry.id === "upsell-stepper"
+        && entry.type === "upsell" && entry.page_url === "/upsell-stepper/"
+        && entry.template === `src/${family}/upsell-bundle-stepper.html`);
+      if (family && page.id === (family === "shop-three-step" ? "billing" : "checkout")
+        && page.type === "checkout" && page.template === `src/${family}/${page.id}.html`
+        && ["upsell-bundle-stepper.html", "upsell-stepper.html"].includes(page.next_page) && target) {
+        if (page.next_page === "upsell-bundle-stepper.html") {
+          page.next_page = "upsell-stepper.html";
+          changed = true;
+        }
+        if (family === "shop-three-step" && page.sdk_hints?.template_family === family
+          && page.sdk_hints?.sdk_page_type === "checkout"
+          && page.sdk_hints?.frontmatter?.next_url === "upsell-bundle-stepper.html") {
+          page.sdk_hints.frontmatter.next_url = "upsell-stepper.html";
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed ? `${JSON.stringify(spec, null, 2)}\n` : text;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const token = process.env.STARTER_TEMPLATES_TOKEN || process.env.GITHUB_TOKEN || "";
@@ -433,8 +485,9 @@ async function main() {
         path: sourceFixture,
         token,
       });
+      const adaptedFixture = adaptFixtureForCampaignsOs(sourceFixture, fixtureText);
       if (!args.dryRun) {
-        writeText(targetFixture, fixtureText.endsWith("\n") ? fixtureText : `${fixtureText}\n`);
+        writeText(targetFixture, adaptedFixture.endsWith("\n") ? adaptedFixture : `${adaptedFixture}\n`);
       }
     }
   }

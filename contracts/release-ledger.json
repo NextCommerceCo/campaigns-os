@@ -5228,6 +5228,51 @@
         }
       ],
       "entry_sha256": "7a643454252eff345d8015246440a037f69dab2041aee2f8fbafe1367caef087"
+    },
+    {
+      "id": "RL-0128",
+      "sequence": 128,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": "1.37.2",
+      "changelog_section": "1.37.2",
+      "changelog_sha256": "96345150e314126c0b639cedebd4359085cb841af80cbf6e4ba0fb4554ce6d4c",
+      "agent_impact": "Use released SDK 0.4.38 for freshness comparisons. Public family verification, Apollo reference and upsell shipping-copy guidance now follow the pinned September 15 template source; older SDK evidence remains stale. Private overlays and rendered fixture bytes are preserved. Catalog refresh preserves the established select role and authored forward routes in exact known examples without overriding distinct future source contracts.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the compatible package patch to 1.37.2."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Ship refreshed template evidence, SDK release policy and controlled refresh adapters that preserve established example roles and routes as package 1.37.2."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Keep the exact lockfile package identity at 1.37.2."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface version 1.37.2."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for package version 1.37.2."
+        }
+      ],
+      "entry_sha256": "174e0bac2ba34b94fbb7b30257d0baf4e417440cdbcfdc5685b9f48fa565ce26"
     }
   ]
 }

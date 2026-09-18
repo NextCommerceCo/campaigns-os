@@ -2,7 +2,7 @@
   "schema_version": "certified-family-fixtures/v0",
   "source_repo": "NextCommerceCo/campaign-cart-starter-templates",
   "source_sha": "11352c30c596db258679fd3a552b906086b11bb9",
-  "source_note": "templates main at 2026-09-15; the catalog pin a7cc8be (2026-08-24) predates templates PR #153, which scoped the hidden upsell display selectors to the order, so at the pin every family blocks on built_output.upsell_selector_scope. Re-sync the catalog and regenerate at the new pin.",
+  "source_note": "catalog pin (_synced_from_sha)",
   "page_kit_version": "0.2.0",
   "rendered_with": "campaign-build (CPK_ENV=production)",
   "rewrites": [
