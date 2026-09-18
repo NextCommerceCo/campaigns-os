@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.37.0] - 2026-09-18
+
+### Added
+
+- `demo --target <new-directory>` copies four pinned inert Apollo sample pages
+  for direct local-file exploration, with active sample navigation, disabled
+  commerce controls, local assets and restrictive CSP. It downloads nothing,
+  bypasses session recovery, and emits no campaign evidence or telemetry.
+- Exclusive target creation refuses existing files, directories and symlinks.
+  Failed copies clean only owned entries; unsupported flags fail before writes.
+  A hashed provenance manifest and retained notices document the static projection,
+  pinned published Page Kit toolchain, build-time CSS and system font fallback.
+  Real campaigns begin separately, preserving sample edits.
+
 ## [1.36.0+agent.1] - 2026-09-18
 
 ### Fixed

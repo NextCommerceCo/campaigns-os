@@ -87,6 +87,7 @@
     { "match": { "kind": "prefix", "value": "contracts/fixtures/" }, "reason": "Test fixtures. Consumer-facing fixtures reach the supported surface through contracts/supported-surface.json named[], which the derived pass classifies first." },
     { "match": { "kind": "prefix", "value": "fixtures/" }, "reason": "Test fixtures." },
     { "match": { "kind": "prefix", "value": "scripts/" }, "reason": "Repository checkers. Explicitly unsupported implementation (docs/supported-surface.md)." },
+    { "match": { "kind": "prefix", "value": "demo/" }, "reason": "Static projection implementation copied by the supported demo command; the declared provenance manifest pins all output digests. Named and hashed entries are classified by the derived supported-surface pass first." },
     { "match": { "kind": "prefix", "value": "src/" }, "reason": "Implementation. Explicitly unsupported except through declared package exports, which package.json changes classify." },
     { "match": { "kind": "prefix", "value": "campaign-spec/" }, "reason": "Tests, fixtures, and packaging metadata for the generated runtime. The runtime sources a consumer must rebuild are classified by the generated_runtime rule first; only that rule's exclusions reach here." },
     { "match": { "kind": "prefix", "value": "examples/" }, "reason": "Illustrative, regenerated at will (docs/supported-surface.md)." },

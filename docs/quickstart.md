@@ -49,6 +49,14 @@ Diagnostics and corrected global invocation rendering require 1.35.0 or later;
 if that version is not yet published, use a reviewed full-SHA source pin rather
 than expecting those features from the published 1.34.1 example.
 
+For an optional visual walkthrough, candidate 1.37.0 provides
+`npx campaigns-os demo --target ./apollo-sample`. Open the printed local
+`landing/index.html` file. This offline sample has no live commerce or campaign
+proof. Preserve sample edits and create a separate new Page Kit folder for the
+real campaign. The published 1.34.1 example lacks this command; use a reviewed
+full-SHA candidate or an exact release at least 1.37.0 after publication.
+See [offline sample preview](demo-preview.md).
+
 Global use is also supported, with an exact release:
 
 ```bash

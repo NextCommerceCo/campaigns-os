@@ -33,6 +33,7 @@ test("knownCommands covers the real dispatch branches", () => {
   const commands = knownCommands();
   for (const expected of [
     "help",
+    "demo",
     "start",
     "prepare-build",
     "build",
@@ -64,7 +65,7 @@ test("knownCommands covers the real dispatch branches", () => {
 // directory.)
 test("knownCommands is exactly the dispatch branches, nothing leaked from comments", () => {
   assert.deepEqual([...knownCommands()].sort(), [
-    "build", "bundle", "checkpoint", "doctor", "findings", "help",
+    "build", "bundle", "checkpoint", "demo", "doctor", "findings", "help",
     "install-agent-context", "install-skills", "next", "page-kit", "polish", "prepare-build",
     "qa", "run", "run-record", "sdk", "spec", "standardize", "start",
     "telemetry", "theme", "tooling", "validate-assembly-report",
