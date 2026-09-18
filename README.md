@@ -19,28 +19,31 @@ This toolkit gives campaign developers and AI coding tools a clear path for asse
 
 The toolkit is contract-backed: starter templates describe which parts are reusable page structure, which parts are live commerce wiring, and which demo values must be replaced for a real campaign. That helps AI tools avoid common mistakes like carrying over sample package IDs, copying shipping options from the wrong template shape, or editing SDK-owned checkout surfaces as plain HTML.
 
+See [activation, access, and evidence](docs/activation-and-evidence.md) for what
+installation, a saved Map, preview observation, and recorded QA each establish.
+
 ## Quick Start
 
 You do not need to clone this repository to use it. The toolkit is pinned as a
 devDependency of the campaign folder (a page-kit project) and runs through
-`npx campaigns-os …` from that folder — the pin is committed in `package.json`,
-so CI and the deploy host install the same commit. Requirements: Node
+`npx campaigns-os …` from that folder — the pin is committed in `package.json`
+and the lockfile, so CI and the deploy host install the same package bytes. Requirements: Node
 `>=20.19.0` and npm 10 or 11 (Node 22 ships npm 10). Three steps, in this
 order:
 
 1. **Orient before you run anything.** Read
    [`AGENTS.md`](AGENTS.md), `contracts/supported-surface.json`,
    `contracts/release-ledger.json` and `CHANGELOG.md` on GitHub at one commit,
-   and keep that commit's sha. Orientation is a read of declarative data; it
+   using the canonical reading order in `AGENTS.md`, and keep that commit's sha. Orientation is a read of declarative data; it
    never executes toolkit code.
-2. **Pin the toolkit and install its agent skills** from that same commit.
-3. **Start a build** from that same commit.
+2. **Pin the reviewed release and install its agent skills.** Check the release tag/provenance against the reviewed source commit.
+3. **Start a real campaign build** from that installation.
 
 ```bash
 mkdir "<route>" && cd "<route>"
 npm init -y && npm i next-campaign-page-kit
 npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
-npm i -D "github:NextCommerceCo/campaigns-os#<sha>"
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.34.1
 npx campaigns-os tooling status --platform claude
 npx campaigns-os install-skills --platform claude
 mkdir -p source
@@ -50,8 +53,9 @@ The toolkit is also published to npm as `@nextcommerce/campaigns-os`, so the
 CLI can be installed once, globally, instead of pinned per campaign:
 
 ```bash
-npm install -g @nextcommerce/campaigns-os
+npm install -g @nextcommerce/campaigns-os@1.34.1
 campaigns-os tooling status --platform claude
+campaigns-os install-skills --platform claude
 ```
 
 A global install ships without a browser. Polish capture and QA need the
@@ -65,22 +69,29 @@ runs the full check in an unprivileged job and publishes the verified tarball
 with provenance from a second, environment-gated job.
 
 For an existing page-kit campaign, skip the first three lines and `cd` into it
-(its `package.json` already declares `next-campaign-page-kit`). `#<sha>` is
-the commit you oriented on, so the code that runs is the code whose contracts
-you read; npm records the resolved commit in the folder's `package.json` and
-`package-lock.json`, which is how `tooling status` can print `Install mode:
-package install (node_modules), pinned at <version> @ <sha>`. The install runs
-the package's own build step (about 7 s). On a fresh profile that first
-`tooling status --platform claude` exits 2 with `ATTENTION_REQUIRED` and one
-action, the `install-skills` line — it is telling you the skills are not
-installed yet, not that the install failed; run it again after
-`install-skills` for `READY`. Without `--platform`, status checks every agent
-profile (Claude, Codex, shared) and stays at exit 2 until each is installed.
+(its `package.json` already declares `next-campaign-page-kit`). `1.34.1` is
+an exact published example; choose the release you reviewed, never a floating
+dist-tag for a reproducible build. Commit `package.json` and `package-lock.json`.
+The new `tooling diagnose` command requires 1.35.0 or later. When that release
+is not published yet, use the reviewed full-SHA source pin below; the 1.34.1
+example does not include diagnostics or the global invocation rendering fix.
+A Git source pin remains supported when using an unreleased reviewed commit:
+`npm install --save-dev --save-exact "github:NextCommerceCo/campaigns-os#<full-sha>"`.
+The lockfile records the resolved source and integrity; `tooling status` reports
+install mode, package version, and a source commit when derivable. It does not
+check registry currency or establish trust. On a fresh profile, preflight exits
+2 with `ATTENTION_REQUIRED` until that profile's skills are installed. Run
+`tooling status --platform claude` again after `install-skills` for `READY`;
+use `--platform codex` for a Codex-only profile. Without `--platform`, status
+checks every supported agent profile.
 `install-skills` writes `~/.claude/skills` (`--platform codex` writes
 `~/.codex/skills`), replacing same-name folders; restart the agent after.
+Run commands from the campaign folder: `npx` selects its local installation
+even when another global copy is on PATH. A global-only installation prints
+bare commands when its binary matches PATH, or an explicit `node` invocation
+when another install shadows it.
 Prepared page HTML goes in `./source`, which must exist even when every page is
-template stock. To move to a newer commit, re-orient on it and run `npm i -D
-"github:NextCommerceCo/campaigns-os#<new-sha>"` again.
+template stock. To update, review the new release source and install its exact version again.
 
 > **Heads up — `start` turns on run telemetry, and remit is ON by default.**
 > The first `start` opens a run session in the target folder and, unless you

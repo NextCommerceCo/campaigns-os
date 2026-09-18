@@ -1,10 +1,26 @@
 ---
 name: next-campaigns-os
-version: 1.0.16
+version: 1.0.17
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
 # Campaigns OS
+
+## Installed toolkit commands
+
+Run from the campaign folder with an exact project-local devDependency and
+committed lockfile. Orient on reviewed source before installation; check release
+provenance or pin the full reviewed Git SHA. Preflight with `npx campaigns-os
+tooling status --platform <claude|codex>` and refresh bundled skills for the same
+profile. Use the invocation printed by status and `next` to avoid PATH shadowing.
+
+In the instructions below, bare `campaigns-os …` means `npx campaigns-os …`
+from that campaign folder. Global-only users substitute the global copy's printed invocation for
+each `npx campaigns-os` example; toolkit contributors translate to `npm run campaigns-os -- …` in
+the toolkit checkout. Browser installation is `npx campaigns-os qa
+install-browser`, not a campaign npm script. `tooling diagnose --packet <p>
+--json` provides a redacted support export without changing retained evidence.
+
 
 Use this skill to orient a campaign build, run preflight, decide the next stage, and keep the lifecycle honest.
 
@@ -32,7 +48,7 @@ Workflow:
 7. If doctor's `next` block says `doctor-blocked` or `prepare-build` (it names the same stage `campaigns-os next` would), stop and resolve the named blockers.
 8. If doctor returns `build`, hand off with `campaigns-os next build --packet <packet>` and follow `next-campaigns-build`'s recommended **build → independent review → repair → verification** loop.
 9. After build, require polish and a preview deploy before QA. During Polish,
-   install the package-owned browser once with `npm run qa:install-browser`,
+   install the package-owned browser once with `npx campaigns-os qa install-browser`,
    serve the current build, and run `campaigns-os polish capture --packet <p> --base-url <served-build-url>` before recording a terminal Polish status.
    The package-owned producer attaches `visual_review.page_load`; never
    hand-author it. Nonwaivable incomplete evidence blocks. A complete hidden
@@ -41,7 +57,7 @@ Workflow:
    Doctor/next report `ready_with_waivers`; QA
    retains each attributed exception as `ready_with_exceptions`, and one
    exception never suppresses another blocker.
-10. Run the package-owned proof path in sequence: ensure `npm run qa:install-browser` has completed, run `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common`.
+10. Run the package-owned proof path in sequence: ensure `npx campaigns-os qa install-browser` has completed, run `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common`.
 11. Treat typed-card proof coverage as the control. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed. `common` runs checkout, first-offer accept and decline, and a deduplicated shortest real receipt path when that adds coverage (at most four orders). `full` walks every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The accidental-flood cap remains `6`, and an overflow names the exact explicit `--max-test-orders` raise. Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.
 12. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
 

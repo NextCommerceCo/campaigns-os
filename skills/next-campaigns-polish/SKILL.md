@@ -1,10 +1,26 @@
 ---
 name: next-campaigns-polish
-version: 1.1.1
+version: 1.1.2
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
 # Next Campaigns Polish
+
+## Installed toolkit commands
+
+Run from the campaign folder with an exact project-local devDependency and
+committed lockfile. Orient on reviewed source before installation; check release
+provenance or pin the full reviewed Git SHA. Preflight with `npx campaigns-os
+tooling status --platform <claude|codex>` and refresh bundled skills for the same
+profile. Use the invocation printed by status and `next` to avoid PATH shadowing.
+
+In the instructions below, bare `campaigns-os …` means `npx campaigns-os …`
+from that campaign folder. Global-only users substitute the global copy's printed invocation for
+each `npx campaigns-os` example; toolkit contributors translate to `npm run campaigns-os -- …` in
+the toolkit checkout. Browser installation is `npx campaigns-os qa
+install-browser`, not a campaign npm script. `tooling diagnose --packet <p>
+--json` provides a redacted support export without changing retained evidence.
+
 
 Use this after build has produced a runnable page-kit campaign.
 
@@ -33,7 +49,7 @@ Responsibilities:
 - For exit-intent pops and promo-code inputs, polish the wrapper/copy states without breaking SDK coupon/voucher apply hooks or `cart.hasCoupon("CODE")` conditional labels.
 - If `report.theme` or `context.theme` exists, verify brand-theme load order after `next-core.css`, source-token parity for primary color/CTA/surface/text/font/radius when present, and SDK safety. When the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.
 - Before recording a terminal Polish status, install the package-owned browser
-  once with `npm run qa:install-browser`, serve the current build, and run
+  once with `npx campaigns-os qa install-browser`, serve the current build, and run
   `campaigns-os polish capture --packet <packet> --base-url <served-build-url>`.
   The package captures every mapped route at fixed desktop/mobile viewports and
   attaches `stages.polish.evidence.visual_review.page_load`. Never hand-author,

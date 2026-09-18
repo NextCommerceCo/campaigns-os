@@ -4848,6 +4848,111 @@
         }
       ],
       "entry_sha256": "ae6ef7c17e02e52cad5ba4faa1e4adf8ba3bba375acac36e3e9046d8273c053f"
+    },
+    {
+      "id": "RL-0122",
+      "sequence": 122,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": "1.35.0",
+      "changelog_section": "1.35.0",
+      "changelog_sha256": "efc41d5b5f2fa2005f6cd93d1ab6e287403edff5be0fbb120e09aef825e7501a",
+      "agent_impact": "Use exact project-local npm releases by default; installed skills and global recovery run the intended copy. Optional tooling diagnose exports redacted installation and local lifecycle evidence without changing sessions or campaign artifacts. Existing lifecycle, orientation trust and QA publication recovery remain unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "Use exact project-local releases, profile-specific preflight, package-owned browser installation, and read-only redacted diagnostics without changing orientation trust."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Declare the activation/evidence contract and diagnostic reference as named supported documents."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/activation-and-evidence.md",
+          "surface_entry": "docs/activation-and-evidence.md",
+          "summary": "Document six distinct public milestones, access inputs, independent trust/freshness/revisions, and retained-verdict publication recovery."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/diagnostics.md",
+          "surface_entry": "docs/diagnostics.md",
+          "summary": "Document the read-only allowlist export, unsupported vocabulary behavior, independent freshness, and recovery ownership."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Ship the activation/evidence and diagnostic references in npm packages."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance all five bundled skill versions for installed-package command conventions."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Explain exact installed-package command resolution and package-owned browser installation for this lifecycle skill."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Add tooling diagnose with read-only doctor/next projection, no session sweeping/capture, fixed exception summaries, and global invocation recovery."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the declarative reference for supported surface 1.35.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the declarative reference for supported surface 1.35.0."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record additive package release 1.35.0 in the exact lockfile."
+        }
+      ],
+      "entry_sha256": "4a93e18a369cb149ccd8b80927b31133cc816735ac5d1c4d7a589c234e5a3963"
     }
   ]
 }

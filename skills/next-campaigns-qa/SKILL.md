@@ -1,26 +1,42 @@
 ---
 name: next-campaigns-qa
-version: 1.3.1
+version: 1.3.2
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
 # Next Campaigns QA
 
+## Installed toolkit commands
+
+Run from the campaign folder with an exact project-local devDependency and
+committed lockfile. Orient on reviewed source before installation; check release
+provenance or pin the full reviewed Git SHA. Preflight with `npx campaigns-os
+tooling status --platform <claude|codex>` and refresh bundled skills for the same
+profile. Use the invocation printed by status and `next` to avoid PATH shadowing.
+
+In the instructions below, bare `campaigns-os …` means `npx campaigns-os …`
+from that campaign folder. Global-only users substitute the global copy's printed invocation for
+each `npx campaigns-os` example; toolkit contributors translate to `npm run campaigns-os -- …` in
+the toolkit checkout. Browser installation is `npx campaigns-os qa
+install-browser`, not a campaign npm script. `tooling diagnose --packet <p>
+--json` provides a redacted support export without changing retained evidence.
+
+
 Use this after the campaign has a preview or production URL and the assembly report records build and polish status. The public v0 runner is Node/npm-based, with an owned Playwright browser pass:
 
 ```bash
-npm run qa:install-browser
-npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
-npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url>
+npx campaigns-os qa install-browser
+npx campaigns-os qa resolve --packet campaign-runtime.build.json
+npx campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url>
 # Fixture-driven migration parity proof. Publishes to the QA portal by default.
-npm run campaigns-os -- qa parity --fixture <parity-fixture.json> --scenario <scenario-id> --base-url <preview-url>
+npx campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> --base-url <preview-url>
 # Browser QA + typed-card proof. Publishes to the QA portal by default and prints the portal link.
-npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common
+npx campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common
 # Offline / dev / CI only: keep the verdict local
-npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common --no-post-verdict
+npx campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common --no-post-verdict
 ```
 
-`npm run qa:install-browser` is part of the standard QA sequence. Run it once
+`npx campaigns-os qa install-browser` is part of the standard QA sequence. Run it once
 after install/update before using `--browser` or `--test-order`; do not skip it
 unless the local Playwright browser binary is already installed.
 

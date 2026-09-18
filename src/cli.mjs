@@ -22,6 +22,7 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
+import { diagnosticExport, diagnosticTextLines } from "./diagnostic.mjs";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
@@ -472,6 +473,7 @@ Usage:
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # install-mode (checkout or pinned package), git, and skill freshness preflight
+  campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next --packet <json> [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
@@ -597,6 +599,15 @@ export async function main(argv) {
   // "Unknown command: campaigns-os".
   if (args._[0] === "campaigns-os") args._.shift();
   const command = args._[0] || "help";
+
+  // Diagnostic export is an inspection, including when a run is active or
+  // stale. Bypass session sweeping, ambient resolution, and lifecycle capture
+  // so no closeout/remit or journal write can occur before the projection.
+  if (command === "tooling" && args._[1] === "diagnose") {
+    const result = toolingDiagnose(args);
+    console.log(args.json ? JSON.stringify(result, null, 2) : diagnosticTextLines(result).join("\n"));
+    return;
+  }
 
   // Ambient run session (Tier 3): when `run start` is active, every command
   // shares its run_id WITHOUT --run-id. Explicit --run-id still wins. Resolved
@@ -10917,7 +10928,9 @@ function toolingCommand(args) {
   } else if (install.mode !== "checkout" && cli.global_binary.status === "found_other_install") {
     // An npx cache is ephemeral: never tell the operator to put its .bin on
     // PATH. The pinned npx form is what makes the inspected copy run.
-    warnings.push(install.mode === "npx_cache"
+    warnings.push(install.mode === "global"
+      ? `The campaigns-os on PATH is a different install; use \`${cli.invocation_prefix} <command>\` to run the global copy inspected here.`
+      : install.mode === "npx_cache"
       ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${install.location}); bare commands would run that other copy. Use \`${cli.invocation_prefix} <command>\` so the pinned copy runs.`
       : cli.bin_dir
         ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${cli.local_bin}); bare commands would run that other copy. Run export PATH="${cli.bin_dir}:$PATH" to put this install first.`
@@ -10946,6 +10959,24 @@ function toolingCommand(args) {
     actions,
     warnings,
   };
+}
+
+export function toolingDiagnose(args, { runTooling = toolingCommand, runDoctor = doctorCommand } = {}) {
+  let tooling = null;
+  let doctor = null;
+  let inspectionFailed = false;
+  const platform = args.platform || "all";
+  // Inputs are used only by local producers, never echoed, and mutation flags
+  // are not forwarded. Even an exception's message may contain a secret path.
+  try {
+    tooling = runTooling({ _: ["tooling", "status"], platform, ...(typeof args.target === "string" ? { target: args.target } : {}) });
+  } catch { /* unavailable, no raw producer exception in a support export */ }
+  if (args.packet !== undefined) {
+    try {
+      doctor = runDoctor({ packet: args.packet, "no-write": true, ...(typeof args.context === "string" ? { context: args.context } : {}), ...(typeof args.report === "string" ? { report: args.report } : {}) });
+    } catch { inspectionFailed = true; }
+  }
+  return diagnosticExport({ tooling, doctor, platform, inspectionFailed });
 }
 
 function localCliStatus(pkg, install = { mode: "checkout", pinned: null }) {
