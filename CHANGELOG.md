@@ -2,6 +2,22 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.37.2] - 2026-09-18
+
+### Fixed
+
+- Refresh the public starter catalog, per-family SDK verification and CampaignSpec
+  examples from template commit `11352c30`. The vendored SDK policy now records
+  released SDK 0.4.38, so freshness compares older certification against that
+  release instead of reporting SDK 0.4.37 as current.
+- Carry forward private families and local QA structure. Refresh Apollo Template
+  Reference provenance and upsell shipping-copy guidance from the same source.
+  Reconcile certified fixture and payment-chrome provenance with the catalog;
+  rendered pages, config files and payment asset hashes remain unchanged.
+- Preserve the toolkit's established pre-checkout select role and authored
+  forward routes when refreshing the known public examples. Narrow adapters
+  retain unrelated source updates and leave distinct future contracts unchanged.
+
 ## [1.37.1+agent.1] - 2026-09-18
 
 ### Changed

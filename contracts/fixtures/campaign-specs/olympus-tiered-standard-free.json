@@ -38,7 +38,7 @@
     "source": "campaign-cart-starter-templates agent fixture"
   },
   "global_config": {
-    "sdk_version": "0.4.37"
+    "sdk_version": "0.4.38"
   },
   "funnels": [
     {

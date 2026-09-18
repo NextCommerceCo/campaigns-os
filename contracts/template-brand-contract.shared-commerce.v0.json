@@ -55,7 +55,7 @@
       },
       "asset_pin": {
         "repo": "NextCommerceCo/campaign-cart-starter-templates",
-        "sha": "a7cc8beaf9d332c5d8e501d36fb9d4d7e3667468",
+        "sha": "11352c30c596db258679fd3a552b906086b11bb9",
         "path": "src/<family>/assets/<asset>",
         "note": "asset_sha256 is the sha256 of each shipped starter asset at this commit (the commerce-surface-catalog _synced_from_sha pin; the bytes are identical across every family). A served asset whose bytes hash to the shipped value is the untouched starter asset and counts as residue even though its markup names no method; different bytes mean it was edited in place. check-template-doctrine verifies these hashes against the pinned checkout."
       },

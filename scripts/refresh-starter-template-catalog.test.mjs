@@ -3,12 +3,63 @@ import test from "node:test";
 
 import {
   adaptCatalogForCampaignsOs,
+  adaptFixtureForCampaignsOs,
   fetchWithTimeout,
   mergeLocalQaStructure,
   mergeTemplateVerification,
   preserveLocalOnlyFamilies,
   resolveSnapshotSource,
 } from "./refresh-starter-template-catalog.mjs";
+
+test("fixture refresh preserves the established two-step select role and unrelated source changes", () => {
+  const path = "docs/fixtures/campaign-specs/olympus-mv-two-step-configurable.json";
+  const page = { id: "select", type: "landing", template: "src/olympus-mv-two-step/select.html", sdk_hints: { sdk_page_type: "product", template_family: "olympus-mv-two-step", added_hint: true }, next_page: "checkout.html", label: "Updated source label" };
+  const source = { global_config: { sdk_version: "0.4.38" }, funnels: [{ pages: [page, { id: "checkout", type: "checkout" }] }] };
+  const text = `${JSON.stringify(source, null, 2)}\n`;
+  const adapted = adaptFixtureForCampaignsOs(path, text);
+  assert.deepEqual(JSON.parse(adapted), { ...source, funnels: [{ pages: [{ ...page, type: "select" }, source.funnels[0].pages[1]] }] });
+  assert.equal(adaptFixtureForCampaignsOs(path, adapted), adapted, "refresh is idempotent");
+  assert.equal(adaptFixtureForCampaignsOs("docs/fixtures/campaign-specs/another-family.json", text), text);
+  for (const change of [{ id: "another-page" }, { type: "checkout" }, { template: "src/another/select.html" }, { next_page: "another-checkout.html" }, { sdk_hints: { sdk_page_type: "landing" } }, { sdk_hints: { sdk_page_type: "product", template_family: "another-family" } }]) {
+    const future = JSON.stringify({ ...source, funnels: [{ pages: [{ ...page, ...change }] }] });
+    assert.equal(adaptFixtureForCampaignsOs(path, future), future, "a distinct upstream contract stays unchanged");
+  }
+});
+
+test("fixture refresh keeps known forward edges on their authored routes without changing future contracts", () => {
+  const fixtures = [
+    ["apollo-tiered-apollo-layout", "apollo"], ["demeter-editorial-tiered", "demeter"],
+    ["olympus-tiered-standard-free", "olympus"], ["shop-single-step-upsell-receipt", "shop-single-step"],
+    ["shop-three-step-dynamic-shipping", "shop-three-step"],
+  ];
+  for (const [fixture, family] of fixtures) {
+    const path = `docs/fixtures/campaign-specs/${fixture}.json`;
+    const id = family === "shop-three-step" ? "billing" : "checkout";
+    const page = { id, type: "checkout", template: `src/${family}/${id}.html`, next_page: "upsell-bundle-stepper.html", label: "New upstream label" };
+    if (family === "shop-three-step") page.sdk_hints = { template_family: family, sdk_page_type: "checkout", frontmatter: { next_url: "upsell-bundle-stepper.html", new_field: true } };
+    const target = { id: "upsell-stepper", type: "upsell", template: `src/${family}/upsell-bundle-stepper.html`, page_url: "/upsell-stepper/" };
+    const source = { global_config: { sdk_version: "0.4.38" }, funnels: [{ pages: [page, target] }] };
+    const text = JSON.stringify(source);
+    const adapted = adaptFixtureForCampaignsOs(path, text);
+    const expectedPage = { ...page, next_page: "upsell-stepper.html" };
+    if (page.sdk_hints) expectedPage.sdk_hints = { ...page.sdk_hints, frontmatter: { ...page.sdk_hints.frontmatter, next_url: "upsell-stepper.html" } };
+    assert.deepEqual(JSON.parse(adapted), { ...source, funnels: [{ pages: [expectedPage, target] }] }, fixture);
+    assert.equal(adaptFixtureForCampaignsOs(path, adapted), adapted);
+    assert.equal(adaptFixtureForCampaignsOs(`other/${fixture}.json`, text), text);
+    for (const changed of [{ ...target, page_url: "/different/" }, { ...target, template: "src/other/upsell.html" }, { ...target, type: "landing" }]) {
+      const future = JSON.stringify({ ...source, funnels: [{ pages: [page, changed] }] });
+      assert.equal(adaptFixtureForCampaignsOs(path, future), future);
+    }
+    for (const next_page of [undefined, "new-upsell.html"]) {
+      const future = JSON.stringify({ ...source, funnels: [{ pages: [{ ...page, next_page }, target] }] });
+      assert.equal(adaptFixtureForCampaignsOs(path, future), future);
+    }
+    if (page.sdk_hints) {
+      const future = JSON.stringify({ ...source, funnels: [{ pages: [{ ...page, next_page: "upsell-stepper.html", sdk_hints: { ...page.sdk_hints, frontmatter: { next_url: "new-upsell.html" } } }, target] }] });
+      assert.equal(adaptFixtureForCampaignsOs(path, future), future, "distinct frontmatter edge stays source-owned");
+    }
+  }
+});
 
 test("dispatch provenance SHA also pins the content fetch without resolving a moving ref", async () => {
   const sha = "a".repeat(40);

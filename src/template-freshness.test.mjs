@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -12,6 +13,26 @@ import {
 } from "./template-freshness.mjs";
 
 const POLICY = { provenance: { latest_known_release: "0.4.36" } };
+
+test("vendored release evidence resolves SDK 0.4.38 and rejects older certification as current", () => {
+  const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
+  const policy = defaultSdkSupportPolicy();
+  assert.equal(catalog.families.apollo.templateReference.source_commit, "84a63fe7af8cf49cd8cfdaaa66eb00ef6dd9bc4a");
+  assert.equal(policy.provenance.latest_known_release, "0.4.38");
+  assert.equal(resolveCurrentSdkVersion({ catalog, sdkSupportPolicy: policy }).version, "0.4.38");
+  for (const [family, entry] of Object.entries(catalog.families)) {
+    if (!entry.verification) continue;
+    const current = assessTemplateFreshness({ family, catalog, sdkSupportPolicy: policy });
+    assert.equal(current.current_sdk_version, "0.4.38", family);
+    assert.equal(current.state, "current", family);
+    assert.equal(current.verified_at, "2026-09-15T16:51:10Z", family);
+  }
+  const older = catalogWith({ apollo: { sdk_version: "0.4.37", verified_at: "2026-08-21T15:26:00Z" } });
+  const stale = assessTemplateFreshness({ family: "apollo", catalog: older, sdkSupportPolicy: policy });
+  assert.equal(stale.state, "stale");
+  assert.equal(stale.current_sdk_version, "0.4.38");
+  assert.match(renderTemplateFreshness(stale), /An older evidence record is not current certification/);
+});
 
 function catalogWith(verifications) {
   const families = {};

@@ -166,13 +166,15 @@
         "items_json",
         "vouchers_json",
         "accept_text",
-        "decline_text"
+        "decline_text",
+        "retail_shipping",
+        "offer_shipping"
       ],
       "sourceOfTruth": [
         "CampaignSpec upsell/downsell pages",
         "Campaigns API package refs and vouchers/offers"
       ],
-      "agentRule": "Post-purchase upsells do not use shipping_methods. Package refs and vouchers must come from the upsell page contract."
+      "agentRule": "Post-purchase upsells do not use shipping_methods. Package refs and vouchers must come from the upsell page contract. `retail_shipping` and `offer_shipping` are display copy for the offer price block (the struck retail shipping line and the offer shipping line), not shipping method refs. The starter defaults claim `+$4.95 SHIPPING` and `+ FREE SHIPPING`; set both from the target campaign's real shipping figures whenever they differ."
     },
     "upsell_bundle_tiers": {
       "purpose": "Tiered post-purchase bundle upsell rows.",
@@ -493,9 +495,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.37",
-        "verified_at": "2026-08-21T15:26:00Z",
-        "evidence": "sdk-0.4.37-2026-08-21",
+        "sdk_version": "0.4.38",
+        "verified_at": "2026-09-15T16:51:10Z",
+        "evidence": "sdk-0.4.38-2026-09-15",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -505,8 +507,8 @@
       "templateReference": {
         "id": "template-reference-apollo",
         "family": "apollo",
-        "version": "sdk-0.4.37-2026-08-21",
-        "source_commit": "e9a2fc17beefe572b8ddc0c4f9b1b8e2f97f9a59",
+        "version": "sdk-0.4.38-revalidated-2026-09-03",
+        "source_commit": "84a63fe7af8cf49cd8cfdaaa66eb00ef6dd9bc4a",
         "provenance_url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/README.md",
         "contract_path": "contracts/commerce-surface-catalog.json",
         "standard_viewport_refs": [
@@ -832,9 +834,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.37",
-        "verified_at": "2026-08-21T15:26:00Z",
-        "evidence": "sdk-0.4.37-2026-08-21",
+        "sdk_version": "0.4.38",
+        "verified_at": "2026-09-15T16:51:10Z",
+        "evidence": "sdk-0.4.38-2026-09-15",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1038,9 +1040,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.37",
-        "verified_at": "2026-08-21T15:26:00Z",
-        "evidence": "sdk-0.4.37-2026-08-21",
+        "sdk_version": "0.4.38",
+        "verified_at": "2026-09-15T16:51:10Z",
+        "evidence": "sdk-0.4.38-2026-09-15",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1235,9 +1237,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.37",
-        "verified_at": "2026-08-21T15:26:00Z",
-        "evidence": "sdk-0.4.37-2026-08-21",
+        "sdk_version": "0.4.38",
+        "verified_at": "2026-09-15T16:51:10Z",
+        "evidence": "sdk-0.4.38-2026-09-15",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1469,9 +1471,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.37",
-        "verified_at": "2026-08-21T15:26:00Z",
-        "evidence": "sdk-0.4.37-2026-08-21",
+        "sdk_version": "0.4.38",
+        "verified_at": "2026-09-15T16:51:10Z",
+        "evidence": "sdk-0.4.38-2026-09-15",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1802,9 +1804,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.37",
-        "verified_at": "2026-08-21T15:26:00Z",
-        "evidence": "sdk-0.4.37-2026-08-21",
+        "sdk_version": "0.4.38",
+        "verified_at": "2026-09-15T16:51:10Z",
+        "evidence": "sdk-0.4.38-2026-09-15",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2052,9 +2054,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.37",
-        "verified_at": "2026-08-21T15:26:00Z",
-        "evidence": "sdk-0.4.37-2026-08-21",
+        "sdk_version": "0.4.38",
+        "verified_at": "2026-09-15T16:51:10Z",
+        "evidence": "sdk-0.4.38-2026-09-15",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2236,9 +2238,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.37",
-        "verified_at": "2026-08-21T15:26:00Z",
-        "evidence": "sdk-0.4.37-2026-08-21",
+        "sdk_version": "0.4.38",
+        "verified_at": "2026-09-15T16:51:10Z",
+        "evidence": "sdk-0.4.38-2026-09-15",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2448,5 +2450,5 @@
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
   "_synced_from_ref": "main",
-  "_synced_from_sha": "a7cc8beaf9d332c5d8e501d36fb9d4d7e3667468"
+  "_synced_from_sha": "11352c30c596db258679fd3a552b906086b11bb9"
 }
