@@ -77,6 +77,14 @@ is not published yet, use the reviewed full-SHA source pin below; the 1.34.1
 example does not include diagnostics or the global invocation rendering fix.
 A Git source pin remains supported when using an unreleased reviewed commit:
 `npm install --save-dev --save-exact "github:NextCommerceCo/campaigns-os#<full-sha>"`.
+
+For a visual sample, candidate 1.37.0 adds
+`npx campaigns-os demo --target ./apollo-sample`. Open the printed
+`landing/index.html` directly to explore four inert Apollo pages. This command
+requires a reviewed candidate or a published release at least 1.37.0; the 1.34.1
+example above does not include it. It downloads nothing and creates no campaign
+evidence. Keep sample edits and start a real campaign in a separate new Page Kit
+folder. See [offline sample preview](docs/demo-preview.md).
 The lockfile records the resolved source and integrity; `tooling status` reports
 install mode, package version, and a source commit when derivable. It does not
 check registry currency or establish trust. On a fresh profile, preflight exits

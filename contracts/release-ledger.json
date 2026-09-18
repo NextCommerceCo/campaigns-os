@@ -5063,6 +5063,99 @@
       "entry_sha256": "62716dd67dad35c1f6aeca337f0a8a47bd4daf78d65461f348fbf6234c6850b1",
       "amends": "RL-0123",
       "amendment_reason": "Clarify the strict context binding and allocation recovery recorded for the unreleased progress producer; runtime repairs and positive integration coverage were accepted before candidate publication. The document path is covered once by RL-0123 across the full candidate PR range."
+    },
+    {
+      "id": "RL-0125",
+      "sequence": 125,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": "1.37.0",
+      "changelog_section": "1.37.0",
+      "changelog_sha256": "683559dec36726ceb6114bfca9239ca0e2dac39adabac933dd6317d0e20879ec",
+      "agent_impact": "Agents can create an offline static Apollo sample without campaign configuration, session changes, networking or evidence. Real campaigns begin in a separate new folder; existing targets and unsupported flags are refused.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "Document offline sample isolation, strict arguments and the separate real-campaign transition."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/agent-relevant-change-policy.v1.json",
+          "surface_entry": "contracts/agent-relevant-change-policy.v1.json",
+          "summary": "Classify internal static projection files while retaining derived manifest and notice obligations."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Add the demo command, reference, attribution notice and hashed provenance manifest at surface 1.37.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "demo/apollo-v0/NOTICE.txt",
+          "surface_entry": "demo/apollo-v0/NOTICE.txt",
+          "summary": "Retain pinned NEXT attribution and Page Kit/Tailwind notices without an additional template licence grant."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "demo/apollo-v0/provenance.json",
+          "surface_entry": "demo/apollo-v0/provenance.json",
+          "summary": "Pin the published maintainer toolchain, input hashes and every validated output digest."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/activation-and-evidence.md",
+          "surface_entry": "docs/activation-and-evidence.md",
+          "summary": "Describe offline visual sampling without granting campaign proof."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/demo-preview.md",
+          "surface_entry": "docs/demo-preview.md",
+          "summary": "Specify exclusive creation, offline exploration, regeneration and preserved sample edits."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the reference with the explicit internal static projection classification."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for package version 1.37.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Document the supported command and provenance boundary."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Keep exact package identity at candidate 1.37.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Ship the static bundle and reference without adding runtime compiler or Page Kit dependencies."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Dispatch demo before session recovery and lifecycle capture, rejecting unsupported arguments before creation."
+        }
+      ],
+      "entry_sha256": "51781e61741ac908cb8407935f8af301eac88213700eac5605951c920be11920"
     }
   ]
 }

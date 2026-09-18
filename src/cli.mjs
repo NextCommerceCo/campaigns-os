@@ -1,5 +1,6 @@
 import { withHtmlScanSnapshot, readHtmlScanText, htmlScanDigest } from "./html-scan.mjs";
 import { createHash, randomUUID } from "node:crypto";
+import { createDemo, demoArguments } from "./demo.mjs";
 import { execFileSync } from "node:child_process";
 import {
   accessSync,
@@ -446,6 +447,7 @@ const HELP = `Campaigns OS toolkit
 
 Usage:
   campaigns-os help
+  campaigns-os demo --target <new-directory>   # offline inert sample; open landing/index.html; no campaign evidence
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
@@ -600,6 +602,13 @@ export async function main(argv) {
   // "Unknown command: campaigns-os".
   if (args._[0] === "campaigns-os") args._.shift();
   const command = args._[0] || "help";
+
+  // An offline sample must not recover sessions or emit lifecycle evidence.
+  if (command === "demo") {
+    demoArguments(args, argv);
+    await dispatch(command, args);
+    return;
+  }
 
   // Diagnostic export is an inspection, including when a run is active or
   // stale. Bypass session sweeping, ambient resolution, and lifecycle capture
@@ -1022,6 +1031,16 @@ const PREPARE_MODES = Object.freeze({
 });
 
 async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null, sessionHolder = null) {
+  if (command === "demo") {
+    const target = demoArguments(args);
+    if (target === null) {
+      console.log("campaigns-os demo --target <new-directory>\nOffline Apollo sample only. Open the printed landing/index.html file. Start a real campaign in a separate new Page Kit folder; preserve your sample edits.");
+      return;
+    }
+    const result = createDemo(target);
+    console.log(`Offline sample only; no campaign evidence.\nOpen: ${result.index}\nStart a real campaign in a separate new Page Kit folder. Preserve sample edits; demo is never converted automatically.`);
+    return;
+  }
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;

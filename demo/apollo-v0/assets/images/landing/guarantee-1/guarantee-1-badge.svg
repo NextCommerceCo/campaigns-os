@@ -1,0 +1,8 @@
+<svg width="170" height="170" viewBox="0 0 170 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="85" cy="85" r="84.6" stroke="#0F75FF" stroke-width="0.8"/>
+  <circle cx="85" cy="85" r="80" fill="#0F75FF"/>
+  <text x="85" y="64" text-anchor="middle" fill="#FFFFFF" font-family="Plus Jakarta Sans, sans-serif" font-size="54" font-weight="800" letter-spacing="-0.1">90</text>
+  <text x="85" y="92" text-anchor="middle" fill="#FFFFFF" font-family="Plus Jakarta Sans, sans-serif" font-size="27" font-weight="800">DAY</text>
+  <text x="85" y="118" text-anchor="middle" fill="#FFFFFF" font-family="Plus Jakarta Sans, sans-serif" font-size="16" font-weight="600" letter-spacing="-0.08">money-back</text>
+  <text x="85" y="136" text-anchor="middle" fill="#FFFFFF" font-family="Plus Jakarta Sans, sans-serif" font-size="16" font-weight="600" letter-spacing="-0.08">guarantee</text>
+</svg>

@@ -1,0 +1,292 @@
+<!DOCTYPE html><html lang="en"><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; form-action 'none'; base-uri 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'"><link rel="stylesheet" href="../assets/css/demo.css">
+    <meta charset="utf-8">
+    <title>Apollo — Receipt</title>
+    
+    <meta property="og:type" content="website">
+<meta property="og:title" content="Apollo — Receipt">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Apollo — Receipt">
+
+
+<meta property="og:description" content="Apollo checkout funnel">
+<meta name="twitter:description" content="Apollo checkout funnel">
+
+
+
+
+<meta property="og:site_name" content="Next Commerce">
+
+
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    
+    
+    
+    
+    
+    
+
+    
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+    
+    
+
+    
+
+
+    <link href="../assets/css/next-core.css" rel="stylesheet" type="text/css">
+    
+
+    
+    
+  </head>
+  <body><aside data-demo-banner="true" class="demo-banner"><strong>Demo only</strong><span>Sample content. Checkout, payment and source controls are disabled.</span><nav aria-label="Sample pages"><a data-demo-nav="true" href="../landing/index.html">Landing</a><a data-demo-nav="true" href="../checkout/index.html">Checkout</a><a data-demo-nav="true" href="../upsell-bundle-stepper/index.html">Offer</a><a data-demo-nav="true" href="../receipt/index.html">Receipt</a></nav><p>For a real campaign, start in a new folder with a saved Campaign Map. Keep this demo and any edits as reference.</p></aside>
+    
+
+    <div class="page-wrapper">
+
+      <div class="main-wrapper">
+        
+
+
+        <div class="checkout-content">
+          <div class="checkout__content">
+            <div class="checkout__layout">
+              <div class="checkout__column checkout__column--left">
+                <div class="checkout__form-container cc-checkout">
+                  <div class="checkout__header-brand cc-shop"><img src="../assets/images/next-dark.svg" alt="Next Commerce" class="brand-logo" loading="eager"></div>
+                  <div class="order-summary-mobile">
+                    <div data-initial-state="closed" data-open-text="Hide Order Summary" data-close-text="Show Order Summary" data-toggle-class="next-expanded" class="order-summary-mobile__accordion">
+                      <div aria-disabled="true" class="order-summary__trigger demo-inert">
+                        <div class="order-summary__inner">
+                          <div class="order-summary__mobile-left">
+                            <div class="summary-toggle">
+                              <div class="summary-toggle__text show_text">Sample order summary</div>
+                            </div>
+                          </div>
+                          <div class="order-summary__mobile-right">
+                            <div class="summary_price price--crossed cc-sm"><span>$29.00 (sample)</span></div>
+                            <div class="summary_price price--total">$29.00 (sample)</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="accordion__panel payment-method__form--expanded">
+                        <div class="order-summary">
+                          <h4 class="order-summary__title">Order Summary</h4>
+                          <div class="order-summary__content">
+                            
+<div class="cart-items">
+  
+  <div>
+    <div data-item-template-id="order-item-template" class="cart-items__list"></div>
+  </div>
+</div>
+
+                            <div>
+                              <div class="order-totals">
+                                <div class="order-totals__line">
+                                  <div class="order-totals__label">Subtotal</div>
+                                  <div class="order-totals__value">$29.00 (sample)</div>
+                                </div>
+                                <div class="order-totals__section">
+                                  <div class="order-totals__line">
+                                    <div class="order-totals__label-group">
+                                      <div class="order-totals__label">Shipping<br></div>
+                                    </div>
+                                    <div class="order-totals__value-group">
+                                      <div class="order-totals__value">Sample</div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div class="order-totals__section">
+                                  <div class="order-totals__line">
+                                    <div class="order-totals__label-group">
+                                      <div class="order-totals__label">Tax<br></div>
+                                    </div>
+                                    <div class="order-totals__value-group">
+                                      <div class="order-totals__value">$29.00 (sample)</div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div class="order-totals__section cc-total">
+                                  <div class="order-totals__line order-totals__line--total">
+                                    <div class="order-totals__label order-totals__label--total">Total</div>
+                                    <div class="order-totals__value-group">
+                                      <div class="summary-total__coin">Sample</div>
+                                      <div class="order-totals__value order-totals__value--total">$29.00 (sample)</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="receipt_head">
+                    <div class="receipt-check"><svg width="100%" height="100%" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M49 25C49 38.2548 38.2548 49 25 49C11.7452 49 1 38.2548 1 25C1 11.7452 11.7452 1 25 1C38.2548 1 49 11.7452 49 25Z" stroke="currentColor" stroke-width="2"></path>
+                        <path d="M15 24.5113L22.3067 31.818L35.1247 19" stroke="currentColor" stroke-width="2"></path>
+                      </svg></div>
+                    <div class="receipt-heading">
+                      <div class="receipt-subtitle">Confirmation #<span>Sample</span><br></div>
+                      <h2 class="receipt_order">Thank you, <span>Sample product</span></h2>
+                    </div>
+                  </div>
+                  <div class="receipt_section">
+                    <div class="receipt_section-head">
+                      <div class="display-xs">Your order is confirmed</div>
+                      <div class="receipt_section-head--desc">You’ll get a confirmation email with your order number soon.</div>
+                    </div>
+                  </div>
+                  <div class="receipt_section">
+                    <div class="receipt_section-head">
+                      <div class="display-xs">Order details</div>
+                    </div>
+                    <div class="order_receipt-grid">
+                      <div class="order_receipt-col">
+                        <div class="order_receipt-sec">
+                          <div class="sec_title">Contact information</div>
+                          <div class="sec_value">Sample</div>
+                        </div>
+                        <div class="order_receipt-sec">
+                          <div class="sec_title">Shipping address</div>
+                          <div class="order_receipt--group">
+                            <div class="sec_value">Sample product</div>
+                            <div class="sec_value">Sample</div>
+                            <div class="sec_value">Sample</div>
+                            <div class="sec_value"><span>Sample</span>, <span>Sample</span>, <span>Sample</span></div>
+                            <div class="sec_value">Sample</div>
+                          </div>
+                        </div>
+                        <div class="order_receipt-sec">
+                          <div class="sec_title">Shipping method</div>
+                          <div class="order_receipt--group">
+                            <div class="sec_value">Sample</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="order_receipt-col">
+                        <div class="order_receipt-sec">
+                          <div class="sec_title">Payment method</div>
+                          <div class="sec_value">Sample</div>
+                        </div>
+                        <div class="order_receipt-sec">
+                          <div class="sec_title">Billing address</div>
+                          <div class="order_receipt--group">
+                            <div class="sec_value">Sample product</div>
+                            <div class="sec_value">Sample</div>
+                            <div class="sec_value">Sample</div>
+                            <div class="sec_value"><span>Sample</span>, <span>Sample</span>, <span>Sample</span></div>
+                            <div class="sec_value">Sample</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="receipt_info">
+                    <div class="receipt-flex">
+                      <div>Need help?</div>
+                      <a target="_blank" aria-disabled="true" class="link demo-inert">
+                        <div>Contact Us</div>
+                      </a>
+                    </div>
+                    <a target="_blank" aria-disabled="true" class="button cc-auto demo-inert">
+                      <div>Continue shopping</div>
+                    </a>
+                  </div>
+                  <div class="checkout-footer-links">
+                    <a target="_blank" aria-disabled="true" class="link demo-inert">
+                      <div>Return policy</div>
+                    </a>
+                    <a target="_blank" aria-disabled="true" class="link demo-inert">
+                      <div>Privacy policy</div>
+                    </a>
+                    <a target="_blank" aria-disabled="true" class="link demo-inert">
+                      <div>Terms of service</div>
+                    </a>
+                  </div>
+                </div>
+              </div>
+              <div class="checkout__column checkout__column--right">
+                <div class="checkout__summary">
+                  <div class="summary-desktop">
+                    <div class="summary-wrap">
+                      <div class="summary-holder">
+                        <div class="order-summary">
+                          <h4 class="order-summary__title checkout">Order Summary</h4>
+                          <div class="order-summary__content">
+                            
+<div class="cart-items">
+  
+  <div>
+    <div data-item-template-id="order-item-template" class="cart-items__list"></div>
+  </div>
+</div>
+
+                            <div>
+                              <div class="order-totals">
+                                <div class="order-totals__line">
+                                  <div class="order-totals__label">Subtotal</div>
+                                  <div class="order-totals__value">$29.00 (sample)</div>
+                                </div>
+                                <div class="order-totals__section">
+                                  <div class="order-totals__line">
+                                    <div class="order-totals__label-group">
+                                      <div class="order-totals__label">Shipping<br></div>
+                                    </div>
+                                    <div class="order-totals__value-group">
+                                      <div class="order-totals__value">Sample</div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div class="order-totals__section">
+                                  <div class="order-totals__line">
+                                    <div class="order-totals__label-group">
+                                      <div class="order-totals__label">Tax<br></div>
+                                    </div>
+                                    <div class="order-totals__value-group">
+                                      <div class="order-totals__value">$29.00 (sample)</div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div class="order-totals__section cc-total">
+                                  <div class="order-totals__line order-totals__line--total">
+                                    <div class="order-totals__label order-totals__label--total">Total</div>
+                                    <div class="order-totals__value-group">
+                                      <div class="summary-total__coin">Sample</div>
+                                      <div class="order-totals__value order-totals__value--total">$29.00 (sample)</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    
+  
+
+</body></html>
