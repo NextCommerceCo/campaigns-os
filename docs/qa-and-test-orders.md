@@ -1689,3 +1689,29 @@ meta assertions to avoid duplicating their values into the verdict.
 Older verdicts lacking this assertion were not checked. Consumers must retain
 run/time/spec-hash context and segregate server-stamped untrusted submissions;
 a trusted submission attests the runner, not execution or resource identity.
+
+### Playwright updates and consumer installs
+
+After installing or updating Campaigns OS, run `npx campaigns-os qa install-browser`
+from the campaign project (or `campaigns-os qa install-browser` for a global
+installation). This resolves the same Playwright package as QA and polish capture.
+A project's own `npx playwright install` can resolve a different version and install
+a different Chromium build. Campaigns OS is an optional-dependency owner, not a
+Playwright peer dependency: npm may share a compatible copy or install a nested one.
+The consumer project's lockfile determines its installed version; this repository's
+lockfile only controls checkout builds.
+
+CI reports independent types, unit, contracts, and browser lanes under the existing
+required `check` status. `npm run check:browser` requires working Chromium and fails
+on launch errors. `npm run check:consumer` installs the packed package into fresh
+projects with a shared Playwright, an older conflicting version, and `latest`, then
+installs and launches Campaigns OS's Chromium. These checks use local fixture pages;
+they do not place merchant orders. `npm run check` remains the browser-free contributor
+check; run the browser commands separately after installing Chromium.
+
+Dependency PRs must include any required release-ledger entries. If the set of
+install-script dependencies changes, update the runtime recipe's exact expectation,
+advance its revision and the supported-surface/package patch version, and regenerate
+the runtime-readiness guide and fixtures. The v1 recipe still uses exact agreement:
+removing a dependency does not authorize silently reinterpreting that field as an
+allowlist. Dependabot groups minor/patch updates; major API upgrades remain separate.

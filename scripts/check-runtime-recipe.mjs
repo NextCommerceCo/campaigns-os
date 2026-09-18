@@ -158,7 +158,7 @@ export function validateTargetAgreement(recipe, { packageJson, lockfile }) {
     if (JSON.stringify(withInstallScripts) !== JSON.stringify(declared)) {
       refuse(
         `the resolved dependency set declares install scripts for [${withInstallScripts.join(", ")}], but the recipe was authored against [${declared.join(", ")}]. ` +
-          "A new install-scripted dependency is code that would run the moment the suppressing flag was dropped, so it is a reviewed change rather than a silent one",
+          "The v1 recipe requires exact agreement for additions and removals; update target_expectations.install_script_dependencies, advance recipe_revision and surface_version, regenerate runtime docs/fixtures, and record the release",
       );
     }
   }

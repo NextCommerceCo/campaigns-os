@@ -6,7 +6,7 @@
 // replaced by the fixture shim.
 //
 // Chromium is not part of `npm ci --ignore-scripts`, so the whole file skips
-// when it cannot launch (CI). The browser-free halves of the same logic are
+// when it cannot launch locally. The browser CI lane requires Chromium. The browser-free halves of the same logic are
 // covered unconditionally in qa-cart-entry.test.mjs.
 
 import test from "node:test";
@@ -27,7 +27,8 @@ async function chromiumAvailable() {
     const browser = await chromium.launch();
     await browser.close();
     return true;
-  } catch {
+  } catch (error) {
+    if (process.env.CAMPAIGNS_OS_REQUIRE_BROWSER === "1") throw error;
     return false;
   }
 }
@@ -123,7 +124,7 @@ const stepsByName = (steps) => Object.fromEntries(steps.map((entry) => [entry.st
 const available = await chromiumAvailable();
 const browserTest = available ? test : test.skip;
 if (!available) {
-  test("Playwright Chromium is unavailable; browser-backed cart-entry proof skipped (run `npm run qa:install-browser`)", () => {});
+  test.skip("Playwright Chromium is unavailable; browser-backed cart-entry proof skipped (run `npm run qa:install-browser`)", () => {});
 }
 
 browserTest("landing-entry: the runner enters through the landing page, the SDK lands it on checkout, and it submits a non-empty cart", async () => {

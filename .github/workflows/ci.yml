@@ -5,9 +5,23 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  check:
+  validate:
+    name: ${{ matrix.lane }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [types, unit, contracts, browser]
+    defaults:
+      run:
+        working-directory: campaigns-os
+    env:
+      STARTER_TEMPLATES_PATH: ${{ github.workspace }}/campaign-cart-starter-templates
     steps:
       - uses: actions/checkout@v7
         with:
@@ -24,6 +38,8 @@ jobs:
       # Falls back to `main` for legacy snapshots that predate provenance stamping.
       - name: Resolve templates pin from catalog provenance
         id: pin
+        if: matrix.lane == 'unit' || matrix.lane == 'contracts'
+        working-directory: ${{ github.workspace }}
         run: |
           sha="$(jq -r '._synced_from_sha // empty' campaigns-os/contracts/commerce-surface-catalog.json)"
           if [ -z "$sha" ]; then
@@ -37,6 +53,7 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v7
+        if: matrix.lane == 'unit' || matrix.lane == 'contracts'
         with:
           repository: NextCommerceCo/campaign-cart-starter-templates
           ref: ${{ steps.pin.outputs.ref }}
@@ -48,36 +65,47 @@ jobs:
           # is compiled to plain JS and runs on engines.node (>=20); this newer
           # toolchain version only gates running the .ts tests in CI.
           node-version: "24"
-      # Install dependencies without prepare; check owns the single working-tree
-      # build, and its final pack check validates that already-built output.
+          cache: npm
+          cache-dependency-path: campaigns-os/package-lock.json
       - run: npm ci --ignore-scripts
-        working-directory: campaigns-os
-      - run: npm run check
-        working-directory: campaigns-os
+      - run: npm run build:spec
+      - name: TypeScript tests
+        if: matrix.lane == 'types'
+        run: npm run check:spec
+      - name: Published package
+        if: matrix.lane == 'types'
+        run: npm run check:pack -- --skip-prepare
+      - name: Unit tests
+        if: matrix.lane == 'unit'
+        run: npm run check:tests
+      - name: Contracts and generated artifacts
+        if: matrix.lane == 'contracts'
+        run: npm run check:contracts
+      - name: Release gates
+        if: matrix.lane == 'contracts' && github.event_name == 'pull_request'
         env:
-          STARTER_TEMPLATES_PATH: ${{ github.workspace }}/campaign-cart-starter-templates
-      # `npm run check` already validates manifest <-> frontmatter parity. This
-      # adds the half that needs git history: a skill package whose files changed
-      # in this PR must also advance its version, so an install can never find
-      # two different builds wearing the same version.
-      - name: Changed skill packages advance their version
-        if: github.event_name == 'pull_request'
-        run: node ./scripts/check-skill-versions.mjs --base "${{ github.event.pull_request.base.sha }}"
-        working-directory: campaigns-os
-      # Same discipline for the downstream contract: a hashed supported-surface
-      # file (runtime schemas) changed in this PR must advance surface_version,
-      # so consumers can see the contract move in one place.
-      - name: Changed supported surface advances surface_version
-        if: github.event_name == 'pull_request'
-        run: node ./scripts/check-supported-surface.mjs --base "${{ github.event.pull_request.base.sha }}"
-        working-directory: campaigns-os
-      # And the half of the release contract that needs git history: every
-      # agent-relevant changed path in this PR has exactly one release-ledger
-      # change item, every new change item maps to a classified change or a
-      # reviewed amendment, and historical entries are byte-identical to base.
-      # `npm run check` runs only the structural half; completeness needs a
-      # comparison point.
-      - name: Agent-relevant changes advance the release ledger
-        if: github.event_name == 'pull_request'
-        run: node ./scripts/check-release-ledger.mjs --base "${{ github.event.pull_request.base.sha }}"
-        working-directory: campaigns-os
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node ./scripts/check-skill-versions.mjs --base "$BASE_SHA"
+          node ./scripts/check-supported-surface.mjs --base "$BASE_SHA"
+          node ./scripts/check-release-ledger.mjs --base "$BASE_SHA"
+      - name: Install Chromium and Linux dependencies
+        if: matrix.lane == 'browser'
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+      - name: Required browser proof
+        if: matrix.lane == 'browser'
+        run: npm run check:browser
+      - name: Consumer installation and browser resolution
+        if: matrix.lane == 'browser'
+        run: npm run check:consumer
+
+  # Retain the existing required status name. Missing/skipped lanes cannot pass.
+  check:
+    if: always()
+    needs: [validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All validation lanes passed
+        env:
+          RESULT: ${{ needs.validate.result }}
+        run: test "$RESULT" = success

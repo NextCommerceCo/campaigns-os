@@ -3,7 +3,7 @@
   "_growth_note": "When a bound below is genuinely reached, the answer is to find out why before raising it. A dependency install that exceeds its bound on a warm machine is a supply-chain change, not a slow morning; an output inventory that exceeds its file or byte bound is a build that went wrong, not a package that grew 50x overnight. Raising a bound is the fallback, it advances recipe_revision, and it owes a release-ledger entry. Widening the accepted npm range follows the same path, and its trigger is external and checkable: widen when a Node release line ships that npm major by default, not when a particular machine happens to have it installed.",
   "schema": "campaigns-os-runtime-recipe/v1",
   "recipe_kind": "campaigns-os-node-v1",
-  "recipe_revision": "1.0.1",
+  "recipe_revision": "1.0.2",
   "refusal_reason_code": "runtime_recipe_refused",
   "fail_closed": true,
   "unperformable_check_disposition": "failed",
@@ -82,7 +82,7 @@
       "stdin": "closed",
       "lifecycle_scripts": "disabled",
       "timeout_bound": "install_seconds",
-      "rationale": "ci rather than install, so the lockfile is authoritative and the tree is reproducible. --ignore-scripts is the load-bearing flag: it suppresses every dependency lifecycle script and the target's own prepare. Exactly one dependency in the resolved tree declares an install script, and it ships a prebuilt binary in its published tarball, so nothing in the tree needs its scripts to function. --no-audit and --fund=false remove two network- and output-side effects that are not part of preparing a runtime."
+      "rationale": "ci rather than install, so the lockfile is authoritative and the tree is reproducible. --ignore-scripts is the load-bearing flag: it suppresses every dependency lifecycle script and the target's own prepare. No dependency in the resolved tree declares an install script. The exact list in target_expectations remains a reviewed expectation: additions and removals require a recipe revision, so existing v1 consumers retain the same agreement semantics. --no-audit and --fund=false remove two network- and output-side effects that are not part of preparing a runtime."
     },
     {
       "id": "build",
@@ -284,9 +284,7 @@
       "build:spec": "tsc -p campaign-spec/tsconfig.build.json",
       "prepare": "npm run build:spec"
     },
-    "install_script_dependencies": [
-      "fsevents"
-    ]
+    "install_script_dependencies": []
   },
   "capabilities": {
     "_note": "What a generation prepared by this recipe can and cannot do. Stated explicitly because 'runtime ready' invites the wrong reading: the same flag that makes the install safe also means the prepared generation has no browser to drive. Preparing a runtime and being able to run browser QA are different readiness questions, and this recipe answers only the first.",
