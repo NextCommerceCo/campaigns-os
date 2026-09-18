@@ -4821,6 +4821,33 @@
         }
       ],
       "entry_sha256": "e7bb42ad4d748d9fefed5d15a9cef195638f465cf7e93cff2892fde3bd72a1c5"
+    },
+    {
+      "id": "RL-0121",
+      "sequence": 121,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.34.1+agent.1",
+      "changelog_sha256": "8b3ea071381418b1516d5e02d4b6b26ce39e7b9f4c0b0fc8ff5b3e05a841ae39",
+      "agent_impact": "HTML parsing uses parse5 8.0.1 and entities 8.1.0. Existing ESM imports and the declared Node >=20.19.0 minimum remain compatible. No consumer action is required.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Upgrade parse5 to ^8.0.1 without changing package exports or the supported Node range."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lock parse5 8.0.1 and entities 8.1.0 as the reviewed HTML parser dependencies."
+        }
+      ],
+      "entry_sha256": "ae6ef7c17e02e52cad5ba4faa1e4adf8ba3bba375acac36e3e9046d8273c053f"
     }
   ]
 }
