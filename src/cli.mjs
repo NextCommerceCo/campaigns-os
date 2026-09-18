@@ -23,6 +23,7 @@ import { basename, delimiter, dirname, extname, isAbsolute, join, relative, reso
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { diagnosticExport, diagnosticTextLines } from "./diagnostic.mjs";
+import { observeProgress, PROGRESS_OBSERVATION } from "./progress-node.mjs";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
@@ -475,7 +476,7 @@ Usage:
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # install-mode (checkout or pinned package), git, and skill freshness preflight
   campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
-  campaigns-os next --packet <json> [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
+  campaigns-os next --packet <json> [--no-write] [--no-remit] [--proxy-base <url>] [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next polish --packet <json> --report <json> [--json]
@@ -1182,6 +1183,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // explicit stage (`next build`, `next polish`, etc.) is unchanged.
     const stage = args._[1] || null;
     const result = nextStage(stage, args, ambient);
+    await observeProgress(args, result, { packageVersion: packageVersion(), resolveKey: resolveCampaignsApiKeySource });
     writeResult(result, args, result.ok ? 0 : 2);
     printNextTinyPrompt(result, args);
     return;
@@ -1193,7 +1195,14 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // command a QA run prints has to agree with the run_id this session will
     // later close and remit under.
     const result = await runQaCli(args, { ambient });
-    if (args._[1] === "run" && result?.verdict) recordQaStageOutcome(args, result);
+    if (args._[1] === "run" && result?.verdict && recordQaStageOutcome(args, result)) {
+      // Observe committed QA before the existing closeout; this cannot close
+      // a run or change the QA disposition. Reuse the canonical picker.
+      try {
+        const continuation = nextStage(null, { ...args, "no-write": true }, null);
+        await observeProgress(args, continuation, { qaResult: result, packageVersion: packageVersion(), resolveKey: resolveCampaignsApiKeySource });
+      } catch { /* optional progress never changes lifecycle closeout */ }
+    }
     if (sessionHolder) sessionHolder.qaResult = result;
     return;
   }
@@ -1338,7 +1347,10 @@ async function resolveSpecPath(args, opts = {}) {
     const spec = await fetchSpecByMapId(mapId, { proxyBase, fetchImpl: opts.fetchImpl });
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
-    return { specPath: cachePath, source: "remote", mapId, proxyBase };
+    return { specPath: cachePath, source: "remote", mapId, proxyBase,
+      savedMapRevision: { map_id: mapId, hash: spec.spec_identity?.spec_hash || spec.spec_hash || null,
+        algorithm: "map-store-v1", local_spec_material_hash: specMaterialHash(spec) },
+    };
   }
   throw new Error(
     "Either --spec <path> or --map-id <id> is required. " +
@@ -2489,6 +2501,7 @@ function prepareBuild(args, options = {}) {
       : null,
     map_id: specInput?.mapId || null,
     proxy_base: specInput?.proxyBase || null,
+    saved_map_revision: specInput?.savedMapRevision || null,
     source_root: portable(sourceRoot),
     target_repo: portable(targetRepo),
     template_family: explicitTemplateFamily || null,
@@ -9511,6 +9524,10 @@ export function nextStage(stage, args, ambient = null) {
     runRecordCloseout = null;
   }
   const finalize = (result) => {
+    Object.defineProperty(result, PROGRESS_OBSERVATION, { value: {
+      workspace: { packet, packetPath, targetRepo, contextPath, reportPath },
+      context: readJsonIfExists(contextPath), report, doctor,
+    } });
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo });

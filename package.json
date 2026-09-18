@@ -1,6 +1,6 @@
 {
   "name": "@nextcommerce/campaigns-os",
-  "version": "1.35.0",
+  "version": "1.36.0",
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
   "license": "Apache-2.0",
   "repository": {
@@ -47,7 +47,12 @@
     "./schemas/campaigns-os-legacy-migration-inventory.v0.schema.json": "./schemas/campaigns-os-legacy-migration-inventory.v0.schema.json",
     "./schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json": "./schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json",
     "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json": "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./progress": {
+      "import": "./src/progress.mjs",
+      "default": "./src/progress.mjs"
+    },
+    "./schemas/campaigns-os-progress-snapshot.v0.schema.json": "./schemas/campaigns-os-progress-snapshot.v0.schema.json"
   },
   "scripts": {
     "campaigns-os": "node ./bin/campaigns-os.mjs",
@@ -136,6 +141,7 @@
     "CHANGELOG.md",
     "docs/sdk-storage-compatibility.md",
     "docs/activation-and-evidence.md",
-    "docs/diagnostics.md"
+    "docs/diagnostics.md",
+    "docs/progress-snapshots.md"
   ]
 }

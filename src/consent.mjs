@@ -298,7 +298,7 @@ let defaultOnAnnounced = false;
 export function announceDefaultOnTelemetry(endpoint, { write = (line) => process.stderr.write(line) } = {}) {
   if (defaultOnAnnounced) return false;
   defaultOnAnnounced = true;
-  write(`[campaigns-os] Run telemetry is ON by default: anonymized run records are sent to ${endpoint || CANONICAL_REMIT_SCOPE} to improve templates, tooling, and guidance. Disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off.\n`);
+  write(`[campaigns-os] Run telemetry is ON by default: anonymized run records and minimal stage observations are sent to ${endpoint || CANONICAL_REMIT_SCOPE} to improve templates, tooling, and guidance; stage observations support Workspace progress. Disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off.\n`);
   return true;
 }
 
@@ -338,7 +338,7 @@ export async function promptAndPersistConsent({
   if (!isTTY) return { state: "off", source: "default", resolved: false, prompted: false };
 
   const answer = await ask(
-    "Campaigns OS can send build telemetry to Next Commerce to improve templates, tools, and guidance. Share telemetry from this machine? [Y/n] (change any time): ",
+    "Campaigns OS can send build telemetry and minimal stage observations to Next Commerce to improve templates, tools, and guidance; stage observations support Workspace progress. Share telemetry from this machine? [Y/n] (change any time): ",
   );
   const normalized = String(answer || "").trim().toLowerCase();
   const state = (normalized === "" || ["y", "yes", "1", "true", "on"].includes(normalized)) ? "on" : "off";

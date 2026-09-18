@@ -1,6 +1,6 @@
 {
-  "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act \u2014 hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here \u2014 src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) \u2014 is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.35.0",
+  "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
+  "surface_version": "1.36.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -10,7 +10,9 @@
     "./schemas/campaign-spec.v4.schema.json",
     "./schemas/campaigns-os-legacy-migration-inventory.v0.schema.json",
     "./schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json",
-    "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json"
+    "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json",
+    "./progress",
+    "./schemas/campaigns-os-progress-snapshot.v0.schema.json"
   ],
   "bin": [
     "campaigns-os"
@@ -56,7 +58,7 @@
       "sha256": "3fa085f2ad368567983cdc9c01e7c712682d02df9c28e69a2b7befb45d444468"
     },
     "schemas/campaign-runtime-build-context.v0.schema.json": {
-      "sha256": "15118c9d05adc7b21dca06f4e3a33acac4ba7b342df3c3a14be19bea71de533c"
+      "sha256": "f310c1b7844d9b1994864d15858ff0c6f17efc1e5285ba193d181bdb2dd4be2f"
     },
     "schemas/campaign-runtime-build-packet.v0.schema.json": {
       "sha256": "91853bbd1b14c080e2fe2ec32f1aa643f53e62df280b543093bf158ae924dd4b"
@@ -102,6 +104,9 @@
     },
     "schemas/source-html-manifest.v0.schema.json": {
       "sha256": "841c1f884260ce3eb3ddb518960a127bc915992a9539c818e5986ce156acff1f"
+    },
+    "schemas/campaigns-os-progress-snapshot.v0.schema.json": {
+      "sha256": "c572756be7df03351843ffc361fc657e3fd819702b4e6f0a78a3c8efd0b0f046"
     }
   },
   "named": [
@@ -179,6 +184,8 @@
     "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/tripwire.mjs",
     "docs/sdk-storage-compatibility.md",
     "docs/activation-and-evidence.md",
-    "docs/diagnostics.md"
+    "docs/diagnostics.md",
+    "docs/progress-snapshots.md",
+    "contracts/fixtures/progress/observation.v0.json"
   ]
 }

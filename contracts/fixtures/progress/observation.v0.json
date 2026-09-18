@@ -1,0 +1,89 @@
+{
+  "schema_version": "campaigns-os-progress-snapshot/v0",
+  "stream_id": "progress_11111111111111111111111111111111",
+  "sequence": 1,
+  "previous_snapshot_id": null,
+  "observed_at": "2026-09-18T00:00:00.000Z",
+  "package_version": "1.36.0",
+  "producer": "next",
+  "identity": {
+    "map_id": "example-map",
+    "map_revision_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "map_revision_algorithm": "map-store-v1",
+    "saved_revision_alignment": "aligned",
+    "local_spec_material_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "local_spec_material_algorithm": "campaign-spec-material-v1",
+    "build_fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "build_fingerprint_algorithm": "sha256-manifest/v1"
+  },
+  "stages": [
+    {
+      "stage": "prepare_build",
+      "status": "completed",
+      "build_binding": "unconfirmed",
+      "source_build_fingerprint": null
+    },
+    {
+      "stage": "setup",
+      "status": "completed",
+      "build_binding": "unconfirmed",
+      "source_build_fingerprint": null
+    },
+    {
+      "stage": "assembly",
+      "status": "completed",
+      "build_binding": "matching",
+      "source_build_fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "stage": "polish",
+      "status": "pending",
+      "build_binding": "unconfirmed",
+      "source_build_fingerprint": null
+    },
+    {
+      "stage": "deploy",
+      "status": "pending",
+      "build_binding": "unconfirmed",
+      "source_build_fingerprint": null
+    },
+    {
+      "stage": "qa",
+      "status": "pending",
+      "build_binding": "unconfirmed",
+      "source_build_fingerprint": null
+    }
+  ],
+  "preview": {
+    "present": false,
+    "url_hash": null
+  },
+  "continuation": {
+    "stage": "polish",
+    "blocked": false,
+    "divergent": false,
+    "action_ids": [
+      "polish_skill"
+    ],
+    "gates": [
+      {
+        "id": "doctor",
+        "state": "pass"
+      },
+      {
+        "id": "prepare_build",
+        "state": "pass"
+      },
+      {
+        "id": "theme_gate",
+        "state": "waived"
+      },
+      {
+        "id": "polish_gate",
+        "state": "not_applicable"
+      }
+    ]
+  },
+  "qa": null,
+  "snapshot_id": "sha256:f52f2418c30e6696471fbcc86dcc3fc28caa7e17df9151b58d150747dd3f48fb"
+}

@@ -24,6 +24,48 @@
       },
       "description": "Context-relative reference to the normalized Design Source Package. sha256 hashes the exact artifact bytes; material_fingerprint drives freshness gates."
     },
+    "intake": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "saved_map_revision": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "map_id",
+                "hash",
+                "algorithm",
+                "local_spec_material_hash"
+              ],
+              "properties": {
+                "map_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "hash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "algorithm": {
+                  "const": "map-store-v1"
+                },
+                "local_spec_material_hash": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
     "spec": {
       "type": "object",
       "required": ["path", "hash", "active_pages"],
