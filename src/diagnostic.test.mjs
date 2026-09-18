@@ -36,6 +36,33 @@ test("unsupported diagnostic enums and package version never echo their raw valu
   assert.ok(result.reason_ids.includes("diagnostic.unsupported_value"));
 });
 
+test("present tooling marks only non-boolean skills.ok values unsupported", () => {
+  const invalid = [
+    ["missing skills", () => { const value = { ...tooling }; delete value.skills; return value; }],
+    ["missing ok", () => ({ ...tooling, skills: {} })],
+    ["null", () => ({ ...tooling, skills: { ok: null } })],
+    ["zero", () => ({ ...tooling, skills: { ok: 0 } })],
+    ["string", () => ({ ...tooling, skills: { ok: SECRET } })],
+  ];
+  for (const [name, makeTooling] of invalid) {
+    const result = diagnosticExport({ tooling: makeTooling() });
+    assert.ok(result.reason_ids.includes("diagnostic.unsupported_value"), name);
+    assert.equal(result.reason_ids.includes("tooling.skills_stale"), false, name);
+    assert.equal(result.action_ids.includes("install-skills"), false, name);
+    assert.ok(result.recovery.some((item) => item.owner === "toolkit_maintainer"), name);
+    assert.equal(JSON.stringify(result).includes(SECRET), false, name);
+  }
+
+  const active = diagnosticExport({ tooling: { ...tooling, skills: { ok: true } } });
+  assert.equal(active.reason_ids.includes("diagnostic.unsupported_value"), false);
+  assert.equal(active.reason_ids.includes("tooling.skills_stale"), false);
+
+  const stale = diagnosticExport({ tooling: { ...tooling, skills: { ok: false } } });
+  assert.equal(stale.reason_ids.includes("diagnostic.unsupported_value"), false);
+  assert.ok(stale.reason_ids.includes("tooling.skills_stale"));
+  assert.ok(stale.action_ids.includes("install-skills"));
+});
+
 test("diagnose forwards only read-only inputs and suppresses sensitive producer exceptions", () => {
   let readArgs;
   const result = toolingDiagnose({ packet: SECRET, write: true, "doctor-out": SECRET, remit: true, platform: "claude" }, {
