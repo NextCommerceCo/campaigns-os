@@ -4953,6 +4953,93 @@
         }
       ],
       "entry_sha256": "4a93e18a369cb149ccd8b80927b31133cc816735ac5d1c4d7a589c234e5a3963"
+    },
+    {
+      "id": "RL-0123",
+      "sequence": 123,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": "1.36.0",
+      "changelog_section": "1.36.0",
+      "changelog_sha256": "a5f32730cb50238ef8c0d8a0300119410f240ce114a98f574ae5014e8699995a",
+      "agent_impact": "Progress observations reuse canonical next and committed QA without lifecycle or closeout changes. Consumers may validate strict minimal snapshots and group separate Map/spec/build histories; absent binding and unknown vocabulary confer no readiness or trust.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "Explain canonical stage observations, opt-out flags and independent identity/trust semantics."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/progress/observation.v0.json",
+          "surface_entry": "contracts/fixtures/progress/observation.v0.json",
+          "summary": "Provide a digest-verified receiver agreement fixture with separate Map/spec/build identities."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Declare portable progress helpers, strict snapshot schema, provenance extension and supported reference/fixture."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate declarative supported-surface reference for candidate1.36.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Document bounded progress wire, independent identities, consent-scoped delivery, exact acknowledgments and receiver remit."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate declarative runtime reference for candidate1.36.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Describe additive portable progress consumption without readiness or trust authority."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record additive candidate1.36.0 in the exact lockfile."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Publish portable progress and JSON schema exports plus their reference in candidate1.36.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "summary": "Declare optional saved Map provenance and its separate fetched local semantic baseline."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-progress-snapshot.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-progress-snapshot.v0.schema.json",
+          "summary": "Add strict bounded versioned progress wire with fixed vocabulary, independent stage/binding and continuation observations."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Observe after canonical next and successful committed QA, and retain fresh fetched Map provenance in context intake."
+        }
+      ],
+      "entry_sha256": "181049ebc0cdf27935453579a11e7878b200dadb5bbbc73798226259a684a6a5"
     }
   ]
 }

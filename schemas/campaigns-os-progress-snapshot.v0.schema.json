@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-progress-snapshot.v0.schema.json",
+  "title": "Campaigns OS minimal progress observation v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "snapshot_id",
+    "stream_id",
+    "sequence",
+    "previous_snapshot_id",
+    "observed_at",
+    "package_version",
+    "producer",
+    "identity",
+    "stages",
+    "preview",
+    "continuation",
+    "qa"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "campaigns-os-progress-snapshot/v0"
+    },
+    "snapshot_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "stream_id": {
+      "type": "string",
+      "pattern": "^progress_[0-9a-f]{32}$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "previous_snapshot_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "observed_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "package_version": {
+      "type": "string",
+      "pattern": "^\\d{1,6}\\.\\d{1,6}\\.\\d{1,6}$"
+    },
+    "producer": {
+      "enum": [
+        "next",
+        "qa"
+      ]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "map_id",
+        "map_revision_hash",
+        "map_revision_algorithm",
+        "saved_revision_alignment",
+        "local_spec_material_hash",
+        "local_spec_material_algorithm",
+        "build_fingerprint",
+        "build_fingerprint_algorithm"
+      ],
+      "properties": {
+        "map_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "map_revision_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "map_revision_algorithm": {
+          "const": "map-store-v1"
+        },
+        "saved_revision_alignment": {
+          "enum": [
+            "aligned",
+            "unconfirmed"
+          ]
+        },
+        "local_spec_material_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "local_spec_material_algorithm": {
+          "const": "campaign-spec-material-v1"
+        },
+        "build_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "build_fingerprint_algorithm": {
+          "const": "sha256-manifest/v1"
+        }
+      }
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stage",
+          "status",
+          "build_binding",
+          "source_build_fingerprint"
+        ],
+        "properties": {
+          "stage": {
+            "enum": [
+              "prepare_build",
+              "setup",
+              "assembly",
+              "polish",
+              "deploy",
+              "qa"
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "required",
+              "blocked",
+              "completed",
+              "completed_with_warnings",
+              "skipped",
+              "unknown"
+            ]
+          },
+          "build_binding": {
+            "enum": [
+              "matching",
+              "unconfirmed"
+            ]
+          },
+          "source_build_fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "preview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "present",
+        "url_hash"
+      ],
+      "properties": {
+        "present": {
+          "type": "boolean"
+        },
+        "url_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage",
+        "blocked",
+        "divergent",
+        "action_ids",
+        "gates"
+      ],
+      "properties": {
+        "stage": {
+          "enum": [
+            "prepare-build",
+            "doctor-blocked",
+            "setup",
+            "build",
+            "polish",
+            "deploy",
+            "qa",
+            "done",
+            "unknown"
+          ]
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "divergent": {
+          "type": "boolean"
+        },
+        "action_ids": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "doctor_recheck",
+              "restore_prepare_build_binding",
+              "recheck",
+              "rerun_prepare_build",
+              "divergence_inspect",
+              "setup_skill",
+              "build_skill",
+              "build_local_proof",
+              "build_production_parity",
+              "polish_skill",
+              "deploy",
+              "advance",
+              "install_browser",
+              "qa_run",
+              "run_end",
+              "run_record_present",
+              "run_record_remit_recovery",
+              "run_record_closeout",
+              "purchase_proof_unknown",
+              "theme_gate.starter_palette_blocks_qa",
+              "theme_gate.brand_contract_unreadable",
+              "theme_gate.theme_generate",
+              "theme_gate.apply_brand_layer",
+              "theme_gate.waive_theme",
+              "theme_gate.fix_load_order",
+              "polish_gate.rerun_build",
+              "polish_gate.run_polish",
+              "polish_gate.repair_waiver",
+              "checkpoint.page_kit.sdk_version.repair_spec",
+              "checkpoint.page_kit.sdk_version.refresh_spec",
+              "checkpoint.page_kit.store_profile.repair_spec",
+              "checkpoint.built_output.upsell_selector_scope.repair_selectors",
+              "checkpoint.page_kit.sdk_version.repair_target",
+              "checkpoint.page_kit.sdk_version.align_store_profile",
+              "checkpoint.page_kit.sdk_version.align_sdk_version",
+              "checkpoint.page_kit.sdk_version.repair_waiver",
+              "checkpoint.page_kit.sdk_version.waive",
+              "checkpoint.page_kit.store_profile.repair_target",
+              "checkpoint.page_kit.store_profile.align_store_profile",
+              "checkpoint.page_kit.store_profile.align_sdk_version",
+              "checkpoint.page_kit.store_profile.repair_waiver",
+              "checkpoint.page_kit.store_profile.waive",
+              "checkpoint.built_output.upsell_selector_scope.repair_target",
+              "checkpoint.built_output.upsell_selector_scope.align_store_profile",
+              "checkpoint.built_output.upsell_selector_scope.align_sdk_version",
+              "checkpoint.built_output.upsell_selector_scope.repair_waiver",
+              "checkpoint.built_output.upsell_selector_scope.waive",
+              "checkpoint.polish.hidden_eager_media.capture",
+              "checkpoint.polish.hidden_eager_media.install_browser",
+              "checkpoint.polish.hidden_eager_media.repair",
+              "checkpoint.polish.hidden_eager_media.repair_authority",
+              "checkpoint.polish.hidden_eager_media.local_proof_rebuild",
+              "checkpoint.polish.hidden_eager_media.waive",
+              "unknown"
+            ]
+          }
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "state"
+            ],
+            "properties": {
+              "id": {
+                "enum": [
+                  "doctor",
+                  "prepare_build",
+                  "theme_gate",
+                  "polish_gate",
+                  "page_kit.sdk_version",
+                  "page_kit.store_profile",
+                  "built_output.upsell_selector_scope",
+                  "polish.hidden_eager_media",
+                  "unknown"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "pass",
+                  "blocked",
+                  "waived",
+                  "not_applicable",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "qa": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "verdict_id",
+            "disposition",
+            "binding",
+            "publish_state"
+          ],
+          "properties": {
+            "verdict_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "disposition": {
+              "enum": [
+                "ready",
+                "ready_with_exceptions",
+                "blocked",
+                "unknown"
+              ]
+            },
+            "binding": {
+              "enum": [
+                "matching",
+                "unconfirmed"
+              ]
+            },
+            "publish_state": {
+              "enum": [
+                "skipped",
+                "ok",
+                "failed",
+                "unknown"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

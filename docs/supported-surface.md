@@ -82,3 +82,9 @@ the package a consumer installs."
    the PR body — downstream pins (Campaigns Agent context spine, ops-repo
    `public-contracts.manifest.json`) update on their own cadence against a
    version they can see move.
+
+Candidate 1.36.0 adds the portable `./progress` export, its strict v0 JSON schema,
+[progress observation reference](progress-snapshots.md), and supported example
+fixture. Observations preserve canonical continuation and separate Map/spec/build
+identities; consumers must not treat history presence or scope-key matching as
+readiness or trust.

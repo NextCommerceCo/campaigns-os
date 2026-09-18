@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.36.0] - 2026-09-18
+
+### Added
+
+- Minimal progress snapshots observe canonical next-stage recommendations and
+  committed QA without replacing lifecycle rules or altering closeout. Separate
+  saved Map, semantic spec and output identities prevent completion claims from
+  crossing builds. A strict portable progress export, v0 schema and example
+  fixture support receiver validation and grouped histories without readiness
+  inference.
+- Immutable local capture precedes consent-scoped delivery to the planned
+  progress receiver. Bounded retry preserves exact bytes and requires a matching
+  digest acknowledgment; failures leave the lifecycle result unchanged.
+  No-write disables capture/send and no-remit keeps observations local.
+
+### Changed
+
+- Telemetry disclosure includes minimal stage observations intended for Workspace.
+  Noncanonical progress sharing requires explicit scoped opt-in; unscoped
+  environment ON does not bypass that protection. Fetched Map provenance retains
+  its original saved hash and local baseline separately from raw spec bytes.
+
 ## [1.35.0] - 2026-09-18
 
 ### Added
