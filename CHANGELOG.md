@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.34.1] - 2026-09-18
+
+### Fixed
+
+- Playwright 1.63.0 and YAML 2.9.1 are validated with runtime recipe 1.0.2,
+  whose install-script expectation reflects removal of fsevents. The v1
+  contract retains exact agreement for additions and removals.
+- CI runs independent TypeScript, unit, contract and required Chromium checks
+  behind the existing `check` status. Missing Chromium fails browser proof.
+  Installed-package checks exercise shared, conflicting and latest consumer
+  Playwright versions using the package-owned browser installer and launcher.
+- Unit tests are discovered automatically as the codebase grows. Dependabot
+  groups minor/patch updates and leaves major API upgrades separate.
+
 ## [1.34.0] - 2026-09-17
 
 ### Added

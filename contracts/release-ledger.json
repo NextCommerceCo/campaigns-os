@@ -4668,6 +4668,159 @@
         }
       ],
       "entry_sha256": "1db46aa2c1f7fee6ebc788cb355690113e08ff0542a0494c6011f439f4fa0ba1"
+    },
+    {
+      "id": "RL-0120",
+      "sequence": 120,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": "1.34.1",
+      "changelog_section": "1.34.1",
+      "changelog_sha256": "79fdc2f42ae0258ffb29a9f8950b50894386cfc38bae80ae711181f0ce5fe872",
+      "agent_impact": "Runtime recipe 1.0.2 reflects Playwright removing fsevents. Exact v1 agreement semantics remain unchanged. Browser installation uses the Playwright resolved beside Campaigns OS.",
+      "compatibility": "compatible",
+      "migration": "After a dependency update, run campaigns-os qa install-browser to install the matching Chromium.",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/ci.yml",
+          "surface_entry": null,
+          "summary": "Require independent types, unit, contracts, browser and consumer-install proof behind check."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/missing-required-field.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/missing-required-field.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "summary": "Regenerate recipe fixtures against revision 1.0.2 and surface 1.34.1."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "surface_entry": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "summary": "Advance recipe to 1.0.2 with an empty exact install-script dependency expectation."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.34.1 and refresh the runtime recipe hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document runtime recipe 1.0.2 and package-owned browser installation and validation."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Document runtime recipe 1.0.2 and package-owned browser installation and validation."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lock reviewed dependency updates and remove the retired fsevents install script."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Validate Playwright 1.63 and YAML 2.9.1; expose independent CI checks and automatic unit-test discovery."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for supported surface 1.34.1."
+        }
+      ],
+      "entry_sha256": "e7bb42ad4d748d9fefed5d15a9cef195638f465cf7e93cff2892fde3bd72a1c5"
     }
   ]
 }

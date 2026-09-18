@@ -1,6 +1,6 @@
 {
-  "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act \u2014 hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here \u2014 src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) \u2014 is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.34.0",
+  "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
+  "surface_version": "1.34.1",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -44,7 +44,7 @@
       "sha256": "f5097f6cccaf211d442c1ebc584d2c76d5a07a44e587df130de02117a9412db0"
     },
     "contracts/runtime-recipe.campaigns-os-node-v1.json": {
-      "sha256": "f06944b37ddbcfc6353ebc01dbc1eaf9ee5ebe3dbc91609214e25252905915ff"
+      "sha256": "18c426e5c35301530d9548e7ab973e9e1264bef1787e6023ef5d925a07911429"
     },
     "schemas/campaign-build-brief.v1.schema.json": {
       "sha256": "d524003184131398dc15fdb84385af1be0de0c69d6c5ede7278689a5b6101b81"

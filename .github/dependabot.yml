@@ -28,6 +28,8 @@ updates:
       root:
         patterns:
           - "*"
+        # Major upgrades stay separate so API migrations are reviewed alone.
+        update-types: ["minor", "patch"]
     commit-message:
       prefix: "deps"
     ignore:

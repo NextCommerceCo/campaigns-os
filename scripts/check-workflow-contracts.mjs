@@ -147,7 +147,7 @@ export function loadWorkflow(path = resolve(root, REFRESH_WORKFLOW_PATH)) {
 }
 
 function main() {
-  const errors = validateRefreshWorkflow(loadWorkflow());
+  const errors = [...validateRefreshWorkflow(loadWorkflow()), ...validateCiWorkflow(loadWorkflow(resolve(root, ".github/workflows/ci.yml")))];
   if (errors.length > 0) {
     console.error(`check-workflow-contracts: ${errors.length} error(s):`);
     for (const error of errors) console.error(`  - ${error}`);
@@ -158,3 +158,30 @@ function main() {
 
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
 if (import.meta.url === invokedPath) main();
+
+// Validate outcomes, not action versions or incidental step names: each lane
+// must run independently and the stable branch-protection status must fail closed.
+export function validateCiWorkflow(workflow) {
+  const errors = [];
+  const validate = workflow?.jobs?.validate;
+  const lanes = validate?.strategy?.matrix?.lane ?? [];
+  for (const lane of ["types", "unit", "contracts", "browser"]) {
+    if (!lanes.includes(lane)) errors.push(`CI is missing the ${lane} lane`);
+  }
+  if (validate?.strategy?.["fail-fast"] !== false) errors.push("CI lanes must not cancel one another on failure");
+  if (validate?.needs) errors.push("validation lanes must run independently");
+  const steps = validate?.steps ?? [];
+  for (const [lane, command] of [["types", "check:spec"], ["types", "check:pack"], ["unit", "check:tests"], ["contracts", "check:contracts"], ["browser", "check:browser"], ["browser", "check:consumer"]]) {
+    const step = steps.find((s) => runText(s).includes(`npm run ${command}`) && s.if === `matrix.lane == '${lane}'`);
+    if (!step || step["continue-on-error"]) errors.push(`${lane} must require ${command}`);
+  }
+  const browserInstall = steps.findIndex((s) => runText(s).includes("playwright install --with-deps chromium"));
+  const browserProof = steps.findIndex((s) => runText(s) === "npm run check:browser");
+  if (browserInstall < 0 || browserInstall >= browserProof) errors.push("Chromium and OS dependencies must be installed before browser proof");
+  const gate = workflow?.jobs?.check;
+  if (gate?.if !== "always()" || !gate?.needs?.includes("validate")) errors.push("check must always aggregate validation, including failures and skips");
+  if (!gate?.steps?.some((s) => s.env?.RESULT === "${{ needs.validate.result }}" && runText(s) === 'test "$RESULT" = success' && !s["continue-on-error"])) {
+    errors.push("check must only pass when all validation lanes succeed");
+  }
+  return errors;
+}

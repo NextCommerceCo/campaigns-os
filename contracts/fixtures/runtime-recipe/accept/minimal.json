@@ -1,7 +1,7 @@
 {
   "schema": "campaigns-os-runtime-recipe/v1",
   "recipe_kind": "campaigns-os-node-v1",
-  "recipe_revision": "1.0.1",
+  "recipe_revision": "1.0.2",
   "refusal_reason_code": "runtime_recipe_refused",
   "fail_closed": true,
   "unperformable_check_disposition": "failed",
@@ -79,7 +79,7 @@
       "stdin": "closed",
       "lifecycle_scripts": "disabled",
       "timeout_bound": "install_seconds",
-      "rationale": "ci rather than install, so the lockfile is authoritative and the tree is reproducible. --ignore-scripts is the load-bearing flag: it suppresses every dependency lifecycle script and the target's own prepare. Exactly one dependency in the resolved tree declares an install script, and it ships a prebuilt binary in its published tarball, so nothing in the tree needs its scripts to function. --no-audit and --fund=false remove two network- and output-side effects that are not part of preparing a runtime."
+      "rationale": "ci rather than install, so the lockfile is authoritative and the tree is reproducible. --ignore-scripts is the load-bearing flag: it suppresses every dependency lifecycle script and the target's own prepare. No dependency in the resolved tree declares an install script. The exact list in target_expectations remains a reviewed expectation: additions and removals require a recipe revision, so existing v1 consumers retain the same agreement semantics. --no-audit and --fund=false remove two network- and output-side effects that are not part of preparing a runtime."
     },
     {
       "id": "build",
@@ -281,9 +281,7 @@
       "build:spec": "tsc -p campaign-spec/tsconfig.build.json",
       "prepare": "npm run build:spec"
     },
-    "install_script_dependencies": [
-      "fsevents"
-    ]
+    "install_script_dependencies": []
   },
   "capabilities": {
     "_note": "What a generation prepared by this recipe can and cannot do. Stated explicitly because 'runtime ready' invites the wrong reading: the same flag that makes the install safe also means the prepared generation has no browser to drive. Preparing a runtime and being able to run browser QA are different readiness questions, and this recipe answers only the first.",

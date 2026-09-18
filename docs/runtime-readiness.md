@@ -8,7 +8,7 @@
 
 How a checkout of this repository at one commit becomes a usable installed runtime, and how a consumer decides whether a prepared one is still trustworthy. Everything below is generated from `contracts/runtime-recipe.campaigns-os-node-v1.json`, which is the only authority for these values.
 
-Recipe kind `campaigns-os-node-v1`, revision `1.0.1`, validated by `schemas/campaigns-os-runtime-recipe.v1.schema.json` (`Campaigns OS Runtime Recipe v1`). Supported surface at generation time: `1.34.0`.
+Recipe kind `campaigns-os-node-v1`, revision `1.0.2`, validated by `schemas/campaigns-os-runtime-recipe.v1.schema.json` (`Campaigns OS Runtime Recipe v1`). Supported surface at generation time: `1.34.1`.
 
 ## What this is
 
@@ -65,7 +65,7 @@ npm ci --ignore-scripts --no-audit --fund=false
 
 Working directory `target_root`, stdin `closed`, lifecycle scripts `disabled`, bounded by `install_seconds`.
 
-ci rather than install, so the lockfile is authoritative and the tree is reproducible. --ignore-scripts is the load-bearing flag: it suppresses every dependency lifecycle script and the target's own prepare. Exactly one dependency in the resolved tree declares an install script, and it ships a prebuilt binary in its published tarball, so nothing in the tree needs its scripts to function. --no-audit and --fund=false remove two network- and output-side effects that are not part of preparing a runtime.
+ci rather than install, so the lockfile is authoritative and the tree is reproducible. --ignore-scripts is the load-bearing flag: it suppresses every dependency lifecycle script and the target's own prepare. No dependency in the resolved tree declares an install script. The exact list in target_expectations remains a reviewed expectation: additions and removals require a recipe revision, so existing v1 consumers retain the same agreement semantics. --no-audit and --fund=false remove two network- and output-side effects that are not part of preparing a runtime.
 
 ### build
 
@@ -170,7 +170,7 @@ What this revision assumes about the target, stated as values a checker can comp
 | Lockfile | `package-lock.json`, version `3`, integrity pinned `true` |
 | Script `build:spec` | `tsc -p campaign-spec/tsconfig.build.json` |
 | Script `prepare` | `npm run build:spec` |
-| Dependencies declaring an install script | `fsevents` |
+| Dependencies declaring an install script | none |
 
 ## Bounds
 

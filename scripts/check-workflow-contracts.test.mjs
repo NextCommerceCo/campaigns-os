@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadWorkflow, validateRefreshWorkflow } from "./check-workflow-contracts.mjs";
+import { loadWorkflow, validateRefreshWorkflow, validateCiWorkflow } from "./check-workflow-contracts.mjs";
 
 const clone = (value) => structuredClone(value);
 
@@ -100,4 +100,21 @@ test("collapsing the dispatch ref back into its SHA fails the workflow contract"
   resolve.run = resolve.run.replace('source_ref="$DISPATCH_SOURCE_REF"', 'source_ref="$DISPATCH_SOURCE_SHA"');
   const errors = validateRefreshWorkflow(workflow);
   assert.ok(errors.some((error) => error.includes("named source ref separately")));
+});
+
+const ci = () => loadWorkflow(new URL("../.github/workflows/ci.yml", import.meta.url));
+test("CI keeps independent validation and a fail-closed aggregate status", () => {
+  assert.deepEqual(validateCiWorkflow(ci()), []);
+  for (const mutate of [
+    (w) => { w.jobs.validate.strategy["fail-fast"] = true; },
+    (w) => { w.jobs.validate.strategy.matrix.lane = ["unit"]; },
+    (w) => { w.jobs.check.if = "success()"; },
+    (w) => { w.jobs.check.steps[0].run = "true"; },
+    (w) => { w.jobs.validate.steps = w.jobs.validate.steps.filter((s) => !s.run?.includes("--with-deps")); },
+    (w) => { w.jobs.validate.steps.find((s) => s.run === "npm run check:browser")["continue-on-error"] = true; },
+  ]) {
+    const workflow = ci();
+    mutate(workflow);
+    assert.ok(validateCiWorkflow(workflow).length > 0);
+  }
 });

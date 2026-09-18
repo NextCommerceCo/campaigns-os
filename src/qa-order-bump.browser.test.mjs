@@ -8,7 +8,7 @@
 // own `aria-hidden` checkbox input precedes its rendered tick.
 //
 // Chromium is not part of `npm ci --ignore-scripts`, so the file skips when it
-// cannot launch (CI), matching qa-cart-entry.browser.test.mjs.
+// cannot launch locally. The browser CI lane requires Chromium.
 
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
@@ -39,7 +39,8 @@ async function chromiumAvailable() {
   try {
     await sharedBrowser();
     return true;
-  } catch {
+  } catch (error) {
+    if (process.env.CAMPAIGNS_OS_REQUIRE_BROWSER === "1") throw error;
     return false;
   }
 }
@@ -63,7 +64,7 @@ async function bumpEvidence() {
 const available = await chromiumAvailable();
 const browserTest = available ? test : test.skip;
 if (!available) {
-  test("Playwright Chromium is unavailable; browser-backed order-bump proof skipped (run `npm run qa:install-browser`)", () => {});
+  test.skip("Playwright Chromium is unavailable; browser-backed order-bump proof skipped (run `npm run qa:install-browser`)", () => {});
 }
 
 browserTest("an accepted bump resolves its rendered tick, not the toggle's own aria-hidden checkbox, and reads checked", async () => {
