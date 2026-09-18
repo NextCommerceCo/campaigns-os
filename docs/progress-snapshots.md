@@ -65,6 +65,7 @@ crash gap is recoverable after ten seconds. If recovery itself is interrupted,
 capture fails closed: stop all Campaigns OS writers for that target, then remove
 the abandoned `.allocation-lock` directory in the affected progress scope before
 retrying `next`. Do not remove a lock while a writer is active.
+
 An unchanged projection reuses its ID, timestamp and sequence. Identity
 changes start a new stream. Each local scope retains at most 32 snapshots and
 separate remit metadata; retention can leave an incomplete history. There is no
@@ -76,20 +77,26 @@ snapshots remain in the bounded local history, without background sends.
 observation local with `map_id_missing`; a missing campaign key similarly yields
 `campaign_key_missing`. Capture or delivery failures never alter the lifecycle
 result or exit status.
+Capture may wait up to 1.5 seconds for allocation. Delivery is awaited within
+its separate two-second network budget. Unchanged lifecycle results mean the
+command's output and status remain unchanged; these bounded waits can add latency.
 
 The planned ops receiver is `POST /api/progress`. Destination precedence is an
 explicit `--proxy-base`, then the bound Build Context's `intake.proxy_base`, then
 the canonical NEXT endpoint only when there is no source binding. An invalid or
 foreign source binding fails closed, including a context without a nonempty
 matching packet pointer. An explicit endpoint override remains independent of
-that context, and cannot confirm its saved revision. HTTPS and plain HTTP loopback are accepted;
+that context, and cannot confirm its saved revision.
+
+HTTPS and plain HTTP loopback are accepted;
 userinfo, query, fragment and other protocols are refused. Redirects are refused.
 The existing campaign-key resolver supplies `X-Campaign-Key`; keys never enter
 snapshots or metadata.
 
 The same telemetry on/off choice governs sharing. Canonical delivery defaults on;
 explicit off, malformed environment/configuration and scope mismatch keep delivery
-off. Noncanonical progress delivery requires an explicit matching scoped file
+off. Consent off still permits the sanitized local capture and sends no request.
+Noncanonical progress delivery requires an explicit matching scoped file
 opt-in (`telemetry on --proxy-base <endpoint>`). Unlike existing Run Record remit,
 unscoped environment ON cannot bypass scope for progress; it yields
 `scoped_consent_required`. Minimal stage observations are intended to be visible
