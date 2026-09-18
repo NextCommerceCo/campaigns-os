@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { validateDemoArtifact } from "./demo-artifact.mjs";
 
 const BUNDLE = fileURLToPath(new URL("../demo/apollo-v0", import.meta.url));
+const TARGET_CHANGED_MESSAGE = "demo.target_changed: destination changed during copy; inspect and preserve its files, then retry with a different new directory";
 const same = (left, right) => left.dev === right.dev && left.ino === right.ino;
 function owns(path, stat) {
   try { const current = lstatSync(path); return !current.isSymbolicLink() && same(current, stat); } catch { return false; }
@@ -43,11 +44,11 @@ export function createDemo(target, { bundle = BUNDLE, writeBytes = writeFileSync
       const parts = name.split("/"); parts.pop();
       let current = root;
       for (const part of parts) {
-        if (!owns(current, created.get(current))) throw Error("demo.target_changed: destination changed during copy; inspect and preserve its files, then retry with a different new directory");
+        if (!owns(current, created.get(current))) throw Error(TARGET_CHANGED_MESSAGE);
         current = join(current, part);
         if (!created.has(current)) created.set(current, directory(current));
       }
-      if (!owns(current, created.get(current))) throw Error("demo.target_changed: destination changed during copy; inspect and preserve its files, then retry with a different new directory");
+      if (!owns(current, created.get(current))) throw Error(TARGET_CHANGED_MESSAGE);
       const fd = openSync(path, "wx");
       try {
         files.push({ path, stat: fstatSync(fd) });
