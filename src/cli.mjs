@@ -459,6 +459,7 @@ Usage:
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
+  campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json]
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
@@ -608,7 +609,8 @@ export async function main(argv) {
   // run never inherits an old run_id — but an ignored session was also an
   // abandoned one: nine of them were found lingering with no Run Record and
   // nothing remitted. Closing out is best-effort and never blocks the command.
-  const sweptStale = await closeOutStaleRunSessions(command, args);
+  const storageInspection = command === "sdk" && args._[1] === "storage-check";
+  const sweptStale = storageInspection ? [] : await closeOutStaleRunSessions(command, args);
   const ambient = ambientRunSession(args);
 
   // Wrap every command in the lifecycle instrumentation (T6): it captures the
@@ -757,7 +759,7 @@ function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = 
 // not break a command (telemetry never blocks a build). `help` is a no-op
 // command and is not worth recording.
 function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder) {
-  if (command === "help") return;
+  if (command === "help" || (command === "sdk" && args._[1] === "storage-check")) return;
   // An inspection must not append to a delivered campaign's active run either.
   if (command === "doctor" && args.packet && (args.write !== true || args["no-write"] === true)) return;
   const ambient = sessionHolder?.current || null;
@@ -1057,6 +1059,24 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // the published conformance schema, where stage_blocked carries the same
     // answer.
     writeResult(result, args, result.ok ? 0 : 2, { headerLines: [sidecarBundleReadinessLine(result)] });
+    return;
+  }
+
+  if (command === "sdk") {
+    if (args._[1] !== "storage-check" || args._.length !== 2) throw new Error("Use: campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json].");
+    const known = new Set(["_", "target", "target-sdk", "manifest", "scope", "exclude", "json"]);
+    if (args.json !== undefined && args.json !== true) throw new Error("--json is a boolean flag and takes no value.");
+    for (const key of Object.keys(args)) if (!known.has(key)) throw new Error(`Unknown SDK storage-check flag: --${key}`);
+    const { scanSdkStorageCompatibility, formatStorageCompatibilityReport } = await import("./sdk-storage-compatibility.mjs");
+    const result = scanSdkStorageCompatibility({
+      cwd: requireArg(args, "target"),
+      targetSdkVersion: requireArg(args, "target-sdk"),
+      manifestPath: requireArg(args, "manifest"),
+      scope: requireArg(args, "scope").split(","),
+      exclude: args.exclude === undefined ? [] : requireArg(args, "exclude").split(","),
+    });
+    console.log(args.json ? JSON.stringify(result, null, 2) : formatStorageCompatibilityReport(result));
+    process.exitCode = result.status === "source-compatible" ? 0 : 2;
     return;
   }
 

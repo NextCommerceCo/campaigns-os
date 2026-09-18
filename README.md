@@ -211,6 +211,8 @@ design markup separate from SDK-owned commerce controls.
 
 ## Important Commands
 
+Before an SDK bump, scan explicitly scoped tracked merchant HTML/JS with [SDK storage compatibility](docs/sdk-storage-compatibility.md). The SDK-generated manifest is supplied separately; a clean result covers static source compatibility only.
+
 ```bash
 npm run campaigns-os -- tooling status
 npm run campaigns-os -- install-skills --dry-run
@@ -219,6 +221,7 @@ npm run campaigns-os -- qa install-browser
 npm run skills -- status
 npm run campaigns-os -- prepare-build --spec <spec.json> --source <html-dir> --target <page-kit-repo> --template-family <family> --brief <campaign-build-brief.yaml>
 npm run campaigns-os -- doctor --packet <page-kit-repo>/campaign-runtime.build.json
+npm run campaigns-os -- sdk storage-check --target <campaign-git-root> --target-sdk 0.4.38 --manifest <sdk-storage-manifest.json> --scope <campaign,shared> --json
 npm run campaigns-os -- standardize --target <page-kit-repo-or-cpk-repo> --json
 npm run campaigns-os -- theme inspect --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- theme generate --packet <page-kit-repo>/campaign-runtime.build.json --json

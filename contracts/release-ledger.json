@@ -4593,6 +4593,81 @@
         }
       ],
       "entry_sha256": "76e84afa5f9228efd00a3f8aca8fd2a601a01955ebac370209598633ae3f790c"
+    },
+    {
+      "id": "RL-0119",
+      "sequence": 119,
+      "date": "2026-09-17",
+      "kind": "release",
+      "surface_version": "1.34.0",
+      "changelog_section": "1.34.0",
+      "changelog_sha256": "d0753f1573b293528397ff0d3bee714f6e5fdb74d94d4f19cc14066bf2720ac8",
+      "agent_impact": "New sdk storage-check command scans explicitly scoped Git-tracked HTML/JavaScript against an SDK-owned storage migration manifest. Supply target SDK version and manifest path; inspect incompatible and unknown findings before a bump. The scanner writes neither campaign files nor run journals. Reports carry file hashes and manifest provenance. Unsupported SDK versions and unresolved code cannot establish compatibility; source evidence never replaces browser/order/analytics proof. The SDK manifest is supplied explicitly while campaign-cart #102 awaits publication.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Package compatibility version follows supported surface 1.34.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Add sdk CLI command and the scanner reference to supported surface; version 1.34.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface 1.34.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate runtime readiness for surface 1.34.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Document explicit manifest provenance, target version, tracked scope, statuses, exclusions and source-only evidence limits."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "Document package and supported surface version 1.34.0."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Lockfile package version follows 1.34.0; dependencies unchanged."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version 1.34.0 and ship the SDK storage compatibility reference."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "sdk",
+          "summary": "New read-only sdk storage-check dispatch, flags and report; suppress lifecycle and session writes for this inspection."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Document sdk storage-check as a supported CLI command."
+        }
+      ],
+      "entry_sha256": "1db46aa2c1f7fee6ebc788cb355690113e08ff0542a0494c6011f439f4fa0ba1"
     }
   ]
 }
