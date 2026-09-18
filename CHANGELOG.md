@@ -2,6 +2,36 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.35.0] - 2026-09-18
+
+### Added
+
+- A public activation/access/evidence contract separates installed tooling,
+  demo previews, saved Maps, resolved campaigns, observed previews, and recorded
+  QA while preserving the existing lifecycle and independent trust/freshness
+  and revision checks.
+- `tooling diagnose [--packet <packet>] [--platform <profile>] [--json]`
+  projects installation status and the read-only doctor's next recommendation
+  into a compact support export. A fixed allowlist excludes paths, URLs,
+  credentials, identities, order values, content, argv, and environment.
+  Unknown producer values receive fixed markers and no repair authority.
+  Diagnosis never sweeps sessions, writes evidence, runs orders, or publishes.
+
+### Changed
+
+- Exact npm project-local devDependency installation is the primary public
+  path; exact global releases and reviewed full-SHA sources remain supported.
+  Installed skills use the package-owned browser command and explain invocation
+  translation for local, global, and contributor installations.
+
+### Fixed
+
+- Global npm installations are distinguished from campaign-local dependencies.
+  Global recovery commands address the inspected copy even when another
+  installation shadows it; project-local commands continue to resolve via npx.
+  Publication recovery continues to use `qa publish` on retained evidence,
+  without repeating checkout or placing another order.
+
 ## [1.34.1+agent.1] - 2026-09-18
 
 ### Changed

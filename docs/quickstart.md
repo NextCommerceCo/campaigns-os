@@ -1,5 +1,8 @@
 # Quickstart
 
+Read [activation, access, and evidence](activation-and-evidence.md) before
+interpreting an installed toolkit, saved Map, demo, or preview as campaign proof.
+
 This path is optimized for a developer using Claude Code or another AI coding tool with a prepared campaign design.
 
 ## Install without a clone
@@ -8,16 +11,16 @@ Requirements: Node `>=20.19.0` and npm 10 or 11 (Node 22 ships npm 10). The
 primary way to run Campaigns OS is pinned as a devDependency of the campaign
 folder — a page-kit project — and run through `npx campaigns-os …` from that
 folder. Nothing is cloned, nothing goes on PATH, and the pin is committed in
-`package.json`, so CI and the deploy host install the same commit.
+`package.json`, so CI and the deploy host install the same package bytes.
 
 Do the steps in this order:
 
 1. **Orient.** Read [`AGENTS.md`](../AGENTS.md), `contracts/supported-surface.json`,
    `contracts/release-ledger.json` and `CHANGELOG.md` on GitHub at one commit.
-   That is a read of declarative data, not a run of toolkit code. Keep the
-   commit sha.
-2. **Pin the toolkit, preflight, and install skills** at that sha.
-3. **Start** at that sha.
+   Follow its canonical reading order. That is a read of declarative data,
+   not a run of toolkit code. Keep the commit sha.
+2. **Pin the toolkit, preflight, and install skills** at the exact reviewed release version.
+3. **Start** at the exact reviewed release version.
 
 New campaign folder:
 
@@ -31,21 +34,36 @@ Existing page-kit campaign: `cd` into it (its `package.json` declares
 `next-campaign-page-kit`). Then, in the campaign folder:
 
 ```bash
-npm i -D "github:NextCommerceCo/campaigns-os#<sha>"
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.34.1
 npx campaigns-os tooling status --platform claude
 ```
 
-`#<sha>` is the commit you oriented on, so the code that runs is the code
-whose contracts you read; without a pin you would get the default branch as
-of that moment, which may be ahead of what you reviewed. npm records the
-resolved commit in the folder's `package.json` and `package-lock.json`; that
-record is what `tooling status` reads back. The install runs the package's
-own build step (about 7 s on a warm machine, verified on npm 10.9.8 and
-11.19.1 with a full 40-character sha). To move to a newer commit, re-orient on
-it and run `npm i -D "github:NextCommerceCo/campaigns-os#<new-sha>"` again.
-`npm install -g github:…` is not an alternative on either npm major — the
-nested build install inherits global mode and fails — which is one reason the
-toolkit lives in the campaign folder.
+`1.34.1` is an exact published example. Select the release you reviewed and
+verify its tag/provenance against the source commit; do not use a floating
+dist-tag. Commit both `package.json` and `package-lock.json`. An unreleased
+reviewed commit may instead be pinned with
+`npm install --save-dev --save-exact "github:NextCommerceCo/campaigns-os#<full-sha>"`.
+The package install runs its own lifecycle build; it is separate from the
+checkout-only runtime preparation recipe and makes no claim under that recipe.
+Diagnostics and corrected global invocation rendering require 1.35.0 or later;
+if that version is not yet published, use a reviewed full-SHA source pin rather
+than expecting those features from the published 1.34.1 example.
+
+Global use is also supported, with an exact release:
+
+```bash
+npm install -g @nextcommerce/campaigns-os@1.34.1
+campaigns-os tooling status --platform claude
+campaigns-os install-skills --platform claude
+```
+
+Global Git-source installation is not the supported path: npm's nested build
+can inherit global mode. Global registry installations ship without Chromium;
+run `campaigns-os qa install-browser` once. If optional Playwright was omitted,
+ordinary commands still work and browser commands explain the missing package.
+When another install shadows the global binary, status prints an explicit
+invocation of the inspected copy. In a campaign folder, `npx campaigns-os`
+selects the project-local dependency ahead of the global binary on PATH.
 
 `tooling status` is the preflight for "am I current?". It names the install
 mode and checks package identity, CLI entrypoint, and installed Campaigns OS
@@ -54,8 +72,8 @@ skills:
 - From a campaign folder it reports `Install mode: package install
   (node_modules), pinned at <version> @ <sha>`; git freshness is
   `not_applicable` because the pinned commit is the freshness answer, and
-  there is no npm dist-tag to compare against. Commands are spelled `npx
-  campaigns-os <command>`; if a different install of the toolkit is on PATH,
+  there is no npm dist-tag to compare against. An npm release reports its version even when a source commit is not derivable.
+  Commands are spelled `npx campaigns-os <command>`; if a different install of the toolkit is on PATH,
   it says so and points you back to `npx`.
 - From a git checkout it reports `Install mode: git checkout at <path>` plus
   branch, upstream, ahead/behind, and whether the tree is dirty.
@@ -68,7 +86,8 @@ profile and stays at exit 2 until each is installed.
 
 Everything the toolkit prints for you to run (`next`, gate remediations, the
 browser-missing hints) is spelled for the install it came from: `npx
-campaigns-os …` from a campaign folder, bare `campaigns-os …` from a checkout.
+campaigns-os …` from a campaign folder, bare `campaigns-os …` from a global installation
+whose binary matches PATH, and the documented checkout translation below.
 
 ## Contributor / local checkout
 

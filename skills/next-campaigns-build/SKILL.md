@@ -1,10 +1,26 @@
 ---
 name: next-campaigns-build
-version: 1.0.2
+version: 1.0.3
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
 
 # Next Campaigns Build
+
+## Installed toolkit commands
+
+Run from the campaign folder with an exact project-local devDependency and
+committed lockfile. Orient on reviewed source before installation; check release
+provenance or pin the full reviewed Git SHA. Preflight with `npx campaigns-os
+tooling status --platform <claude|codex>` and refresh bundled skills for the same
+profile. Use the invocation printed by status and `next` to avoid PATH shadowing.
+
+In the instructions below, bare `campaigns-os …` means `npx campaigns-os …`
+from that campaign folder. Global-only users substitute the global copy's printed invocation for
+each `npx campaigns-os` example; toolkit contributors translate to `npm run campaigns-os -- …` in
+the toolkit checkout. Browser installation is `npx campaigns-os qa
+install-browser`, not a campaign npm script. `tooling diagnose --packet <p>
+--json` provides a redacted support export without changing retained evidence.
+
 
 ## Recommended Build Loop
 

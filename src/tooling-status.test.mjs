@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   cpSync,
   mkdtempSync,
@@ -86,6 +86,36 @@ function snapshotTree(root) {
   if (statSync(root).isDirectory()) walk(root);
   return snapshot;
 }
+
+test("global npm layout retains global invocation under a competing project binary", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "campaigns-os-global-mode-"));
+  const originalPath = process.env.PATH;
+  try {
+    const prefix = join(scratch, "global copy");
+    const pkgRoot = stageRealPackageInstall(join(prefix, "lib"));
+    const binDir = join(prefix, "bin");
+    mkdirSync(binDir, { recursive: true });
+    symlinkSync(join(pkgRoot, "bin/campaigns-os.mjs"), join(binDir, "campaigns-os"));
+    const pkg = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
+    process.env.PATH = `${binDir}:${originalPath}`;
+    const global = cliInstallMode.resolveInvocation(pkgRoot, pkg);
+    assert.equal(global.install.mode, "global");
+    assert.equal(global.prefix, "campaigns-os");
+    const otherDir = join(scratch, "other-bin");
+    mkdirSync(otherDir);
+    symlinkSync(CLI, join(otherDir, "campaigns-os"));
+    process.env.PATH = `${otherDir}:${binDir}:${originalPath}`;
+    const shadowed = cliInstallMode.resolveInvocation(pkgRoot, pkg);
+    assert.equal(shadowed.install.mode, "global");
+    assert.equal(shadowed.global_binary.status, "found_other_install");
+    assert.match(shadowed.prefix, /^node '/);
+    const diagnostic = execFileSync("/bin/sh", ["-c", `${shadowed.prefix} tooling diagnose --json`], { cwd: scratch, encoding: "utf8" });
+    assert.equal(JSON.parse(diagnostic).install_mode, "global");
+  } finally {
+    process.env.PATH = originalPath;
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
 
 test("tooling skill actions have an explicit actionable and warning-only vocabulary", () => {
   assert.equal(typeof cliModule.classifyToolingSkillActions, "function");
