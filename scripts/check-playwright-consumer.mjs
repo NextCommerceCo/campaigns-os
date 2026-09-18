@@ -2,12 +2,18 @@
 // Exercise the published tarball in real npm consumers, outside this checkout's
 // module tree. Check both npm hoisting and a consumer with a conflicting version.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+// CI builds before this check. Standalone runs must not silently pack absent output.
+for (const entry of ["index.js", "index.d.ts"]) {
+  if (!existsSync(join(root, "campaign-spec/dist", entry))) {
+    throw new Error(`campaign-spec/dist/${entry} is missing; run npm run build:spec before check:consumer`);
+  }
+}
 const scratch = mkdtempSync(join(tmpdir(), "campaigns-os-consumer-"));
 const locked = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")).packages["node_modules/playwright"].version;
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -35,11 +41,15 @@ try {
     writeFileSync(join(consumer, "proof.mjs"), `
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { existsSync } from 'node:fs';
+import { validateSpec } from '@nextcommerce/campaigns-os/campaign-spec';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 const host = createRequire(import.meta.url);
 const packageJson = host.resolve('@nextcommerce/campaigns-os/package.json');
 const owned = createRequire(packageJson);
+assert.ok(existsSync(join(dirname(packageJson), 'campaign-spec/dist/index.d.ts')), 'published TypeScript declarations must be present');
+assert.equal(validateSpec({})[0]?.ruleId, 'Normalize', 'compiled public entry must resolve and run');
 const hostPath = host.resolve('playwright/package.json');
 const ownedPath = owned.resolve('playwright/package.json');
 if (${JSON.stringify(label)} === 'shared') assert.equal(ownedPath, hostPath);

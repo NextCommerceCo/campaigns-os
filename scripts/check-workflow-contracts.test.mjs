@@ -118,3 +118,34 @@ test("CI keeps independent validation and a fail-closed aggregate status", () =>
     assert.ok(validateCiWorkflow(workflow).length > 0);
   }
 });
+
+test("CI command matching accepts comments/multiline and --silent without accepting other script names", () => {
+  for (const command of ["npm run check:browser # browser proof", "# required proof\nnpm run --silent check:browser\n", "npm run -s check:browser"]) {
+    const workflow = ci();
+    workflow.jobs.validate.steps.find((s) => s.run === "npm run check:browser").run = command;
+    assert.deepEqual(validateCiWorkflow(workflow), [], command);
+  }
+  for (const command of ["npm run check:browser-headed", "echo npm run check:browser", "# npm run check:browser"]) {
+    const workflow = ci();
+    workflow.jobs.validate.steps.find((s) => s.run === "npm run check:browser").run = command;
+    assert.ok(validateCiWorkflow(workflow).some((error) => error.includes("must require check:browser")), command);
+  }
+});
+
+test("CI requires a PR trigger and Chromium setup in the same browser lane", () => {
+  const withoutTrigger = ci();
+  delete withoutTrigger.on.pull_request;
+  assert.ok(validateCiWorkflow(withoutTrigger).some((error) => error.includes("pull requests")));
+  for (const change of [
+    (w, step) => { step.if = "matrix.lane == 'unit'"; },
+    (w, step) => { step["continue-on-error"] = true; },
+    (w, step) => {
+      w.jobs.setup = { steps: [step] };
+      w.jobs.validate.steps = w.jobs.validate.steps.filter((s) => s !== step);
+    },
+  ]) {
+    const workflow = ci();
+    change(workflow, workflow.jobs.validate.steps.find((s) => s.run?.includes("--with-deps")));
+    assert.ok(validateCiWorkflow(workflow).some((error) => error.includes("Chromium")));
+  }
+});

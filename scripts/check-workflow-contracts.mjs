@@ -161,8 +161,16 @@ if (import.meta.url === invokedPath) main();
 
 // Validate outcomes, not action versions or incidental step names: each lane
 // must run independently and the stable branch-protection status must fail closed.
+function runsNpmScript(step, command) {
+  // Match a complete command token on a command line, not a script-name prefix
+  // or an echo/comment. Accept multiline run blocks and npm's silent flag.
+  const escaped = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\s*npm\\s+run(?:\\s+(?:--silent|-s))?\\s+${escaped}(?=\\s|$)`, "m").test(runText(step));
+}
+
 export function validateCiWorkflow(workflow) {
   const errors = [];
+  if (!Object.hasOwn(workflow?.on ?? {}, "pull_request")) errors.push("CI must run on pull requests");
   const validate = workflow?.jobs?.validate;
   const lanes = validate?.strategy?.matrix?.lane ?? [];
   for (const lane of ["types", "unit", "contracts", "browser"]) {
@@ -172,11 +180,14 @@ export function validateCiWorkflow(workflow) {
   if (validate?.needs) errors.push("validation lanes must run independently");
   const steps = validate?.steps ?? [];
   for (const [lane, command] of [["types", "check:spec"], ["types", "check:pack"], ["unit", "check:tests"], ["contracts", "check:contracts"], ["browser", "check:browser"], ["browser", "check:consumer"]]) {
-    const step = steps.find((s) => runText(s).includes(`npm run ${command}`) && s.if === `matrix.lane == '${lane}'`);
+    const step = steps.find((s) => runsNpmScript(s, command) && s.if === `matrix.lane == '${lane}'`);
     if (!step || step["continue-on-error"]) errors.push(`${lane} must require ${command}`);
   }
-  const browserInstall = steps.findIndex((s) => runText(s).includes("playwright install --with-deps chromium"));
-  const browserProof = steps.findIndex((s) => runText(s) === "npm run check:browser");
+  const browserInstall = steps.findIndex((s) =>
+    runText(s).includes("playwright install --with-deps chromium") &&
+    s.if === "matrix.lane == 'browser'" && !s["continue-on-error"],
+  );
+  const browserProof = steps.findIndex((s) => runsNpmScript(s, "check:browser") && s.if === "matrix.lane == 'browser'");
   if (browserInstall < 0 || browserInstall >= browserProof) errors.push("Chromium and OS dependencies must be installed before browser proof");
   const gate = workflow?.jobs?.check;
   if (gate?.if !== "always()" || !gate?.needs?.includes("validate")) errors.push("check must always aggregate validation, including failures and skips");
