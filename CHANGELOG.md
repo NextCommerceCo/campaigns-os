@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.34.1+agent.1] - 2026-09-18
+
+### Changed
+
+- Upgrade HTML parsing to parse5 8.0.1 and entities 8.1.0. Existing ESM
+  imports and the Node 20.19 minimum remain compatible; no consumer migration
+  or supported API change is required.
+
 ## [1.34.1] - 2026-09-18
 
 ### Fixed
