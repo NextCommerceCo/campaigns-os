@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,writeFileSync,mkdtempSync,mkdirSync,rmSync,readdirSync,cpSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdtempSync,mkdirSync,rmSync,readdirSync,cpSync,utimesSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {spawnSync,spawn} from 'node:child_process';
 import {createServer} from 'node:http';
 import Ajv from 'ajv/dist/2020.js';
 import {PROGRESS_SNAPSHOT_SCHEMA,PROGRESS_STAGES,canonicalProgressJson,progressSnapshotId,verifyProgressSnapshot,validateProgressSnapshot,groupProgressHistories,progressStorageKey} from './progress.mjs';
@@ -11,6 +11,7 @@ import {projectProgressObservation,persistProgressObservation,remitProgressSnaps
 import {specMaterialHash} from './spec-identity.mjs';
 import {writeConsentConfig} from './consent.mjs';
 import {nextStage,recordQaStageOutcome} from './cli.mjs';
+import {computeBuildFingerprint} from './built-site-scope.mjs';
 const ROOT=new URL('..',import.meta.url).pathname;
 const fixture=JSON.parse(readFileSync(join(ROOT,'contracts/fixtures/progress/observation.v0.json'),'utf8'));
 const H=letter=>`sha256:${letter.repeat(64)}`;
@@ -78,6 +79,31 @@ test('source endpoint precedence, malformed/credential transport and foreign con
  assert.equal(resolveProgressEndpoint({},workspace,{}).base,'https://campaign-map.nextcommerce.com');
  for(const base of ['http://remote.test','https://user:secret@host','https://host/?token=secret','https://host/#secret','ftp://127.0.0.1','',true]) assert.equal(resolveProgressEndpoint({'proxy-base':base},workspace,context).ok,false);
  context.packet_path='other.json';assert.deepEqual(resolveProgressEndpoint({},workspace,context),{ok:false,reason:'source_binding_invalid'});
+ delete context.packet_path;assert.deepEqual(resolveProgressEndpoint({},workspace,context),{ok:false,reason:'source_binding_invalid'});
+ assert.equal(resolveProgressEndpoint({'proxy-base':'http://127.0.0.1:1234'},workspace,context).ok,true,'explicit override remains independent of context');
+ assert.equal(projectProgressObservation({...setup(dir),context}).identity.saved_revision_alignment,'unconfirmed');
+}));
+
+test('abandoned allocation owners recover while a live owner remains exclusive',scratch(async dir=>{
+ const lock=join(dir,'.allocation-lock');mkdirSync(lock);const old=new Date(Date.now()-20000);utimesSync(lock,old,old);
+ assert.equal((await persistProgressObservation(observation(),{dir})).snapshot.sequence,1,'old ownerless crash gap recovers');
+ mkdirSync(lock);const child=spawnSync(process.execPath,['-e','process.exit(0)']);
+ writeFileSync(join(lock,'owner.json'),JSON.stringify({pid:child.pid,token:'dead-owner'}));
+ assert.equal((await persistProgressObservation(observation(),{dir})).reused,true,'dead PID owner recovers immediately');
+ mkdirSync(lock);const owner=JSON.stringify({pid:process.pid,token:'live-owner'});writeFileSync(join(lock,'owner.json'),owner);
+ await assert.rejects(persistProgressObservation(observation(),{dir}),/progress.lock_unavailable/);
+ assert.equal(readFileSync(join(lock,'owner.json'),'utf8'),owner,'a live owner is never evicted');
+ rmSync(lock,{recursive:true});mkdirSync(lock);writeFileSync(join(lock,'owner.json'),JSON.stringify({pid:child.pid,token:'dead-owner'}));mkdirSync(join(lock,'.recovery'));
+ await assert.rejects(persistProgressObservation(observation(),{dir}),/progress.lock_unavailable/,'interrupted recovery requires the documented offline procedure');
+ assert.equal(existsSync(join(lock,'.recovery')),true,'ambiguous recovery is not stolen');
+ rmSync(lock,{recursive:true});assert.equal(existsSync(lock),false);assert.equal((await persistProgressObservation(observation(),{dir})).reused,true);
+}));
+
+test('multiple processes reclaim one dead owner without evicting new live allocation',scratch(async dir=>{
+ const lock=join(dir,'.allocation-lock');mkdirSync(lock);const dead=spawnSync(process.execPath,['-e','process.exit(0)']);writeFileSync(join(lock,'owner.json'),JSON.stringify({pid:dead.pid,token:'dead-owner'}));
+ const moduleUrl=new URL('./progress-node.mjs',import.meta.url).href;
+ const run=index=>new Promise((resolve,reject)=>{const child=spawn(process.execPath,['--input-type=module','-e',`import {persistProgressObservation} from ${JSON.stringify(moduleUrl)};const result=await persistProgressObservation(${JSON.stringify({...observation(),preview:{present:true,url_hash:H(String(index))}})},{dir:${JSON.stringify(dir)}});console.log(JSON.stringify(result.snapshot));`],{stdio:['ignore','pipe','pipe']});let out='',err='';child.stdout.on('data',value=>out+=value);child.stderr.on('data',value=>err+=value);child.on('error',reject);child.on('exit',code=>code===0?resolve(JSON.parse(out)):reject(new Error(err)));});
+ const results=await Promise.all(Array.from({length:6},(_,index)=>run(index)));assert.deepEqual(results.map(value=>value.sequence).sort(),[1,2,3,4,5,6]);assert.equal(new Set(results.map(value=>value.stream_id)).size,1);assert.equal(existsSync(lock),false);
 }));
 
 test('unchanged observation reuses immutable ID/time; serialized concurrent allocation and build isolation',scratch(async dir=>{
@@ -154,6 +180,36 @@ test('real next dispatch observes actual picker, no-write capture disabled and n
   const parsed=JSON.parse(result.stdout);assert.equal(parsed.stage,continuation.stage);assert.equal(result.status,parsed.ok?0:2);
   const runtime=readdirSync(join(dir,'.campaign-runtime'));assert.equal(runtime.includes('run-session.json'),false);assert.equal(runtime.includes('progress'),!noWrite);
  }
+}));
+
+test('actual next and committed QA bind complete local spec/build evidence and reject independent mutations',scratch(async dir=>{
+ cpSync(join(ROOT,'contracts/fixtures/sidecar-bundle/production-shaped'),dir,{recursive:true});
+ cpSync(join(ROOT,'examples/campaignspec.v42.basic.json'),join(dir,'campaignspec.v42.basic.json'));
+ cpSync(join(ROOT,'examples/source-html'),join(dir,'source-html'),{recursive:true});
+ const packetPath=join(dir,'campaign-runtime.build.json');const packet=JSON.parse(readFileSync(packetPath));
+ const specPath=join(dir,packet.spec.local_path);const spec=JSON.parse(readFileSync(specPath));
+ spec.spec_identity={map_id:packet.spec.map_id,spec_hash:H('a')};writeFileSync(specPath,JSON.stringify(spec));
+ const localHash=specMaterialHash(spec);const contextPath=join(dir,'.campaign-runtime/build-context.json');const context=JSON.parse(readFileSync(contextPath));
+ context.intake={proxy_base:'https://bound.example.test',saved_map_revision:{map_id:packet.spec.map_id,hash:H('a'),algorithm:'map-store-v1',local_spec_material_hash:localHash}};
+ context.spec.hash=H('f');context.spec.material_hash=localHash;writeFileSync(contextPath,JSON.stringify(context));
+ const output=join(dir,'_site',packet.campaign.public_route_slug);mkdirSync(output,{recursive:true});writeFileSync(join(output,'index.html'),'<html><body>Local fixture</body></html>');
+ const build=computeBuildFingerprint(output).fingerprint;const reportPath=join(dir,'.campaign-runtime/assembly-report.json');const report=JSON.parse(readFileSync(reportPath));
+ report.identity.spec_material_hash=localHash;report.stages.assembly.status='completed';report.stages.assembly.build_fingerprint=build;writeFileSync(reportPath,JSON.stringify(report));
+ const qaResult={verdict:{run_id:'qa_bound_example',disposition:'ready_with_exceptions',completed_at:'2026-09-18T00:00:00.000Z',spec_hash:localHash,assertions:[{id:'template-residue:landing:placeholder-text',status:'pass'}]},local_path:join(dir,'qa_bound_example.json'),qa_verdict_publish:{state:'failed'}};
+ writeFileSync(qaResult.local_path,JSON.stringify(qaResult.verdict));assert.equal(recordQaStageOutcome({packet:packetPath},qaResult),true);
+ const project=()=>{const continuation=nextStage(null,{packet:packetPath,'no-write':true},null);return {continuation,source:continuation[PROGRESS_OBSERVATION],snapshot:projectProgressObservation({...continuation[PROGRESS_OBSERVATION],continuation,qaResult,packageVersion:'1.36.0'})};};
+ const positive=project();assert.equal(positive.source.doctor.derived.build_output_fingerprint.status,'pass');assert.equal(positive.snapshot.identity.saved_revision_alignment,'aligned');
+ assert.equal(positive.snapshot.stages.find(stage=>stage.stage==='assembly').build_binding,'matching');
+ assert.deepEqual(positive.snapshot.qa,{verdict_id:'qa_bound_example',disposition:'ready_with_exceptions',binding:'matching',publish_state:'failed'});
+ assert.equal(positive.source.report.stages.qa.verdict_run_id,qaResult.verdict.run_id,'actual QA producer committed this verdict');
+ assert.equal(positive.snapshot.continuation.stage,positive.continuation.stage,'canonical picker alone determines continuation');
+ const originalContext=readFileSync(contextPath,'utf8');const originalPacket=readFileSync(packetPath,'utf8');packet.design_source_package={};writeFileSync(packetPath,JSON.stringify(packet));delete context.packet_path;writeFileSync(contextPath,JSON.stringify(context));
+ const foreign=project();assert.equal(foreign.continuation.stage,'prepare-build');assert.match(foreign.continuation.reason,/context_packet_mismatch/);assert.equal(foreign.snapshot.identity.saved_revision_alignment,'unconfirmed');assert.ok(foreign.snapshot.stages.every(stage=>stage.status==='unknown'));assert.equal(foreign.snapshot.qa.binding,'unconfirmed');assert.equal(foreign.snapshot.continuation.blocked,true);assert.equal(resolveProgressEndpoint({},foreign.source.workspace,foreign.source.context).reason,'source_binding_invalid');
+ writeFileSync(packetPath,originalPacket);writeFileSync(contextPath,originalContext);const originalSpec=readFileSync(specPath,'utf8');spec.campaign={...spec.campaign,slug:'changed'};writeFileSync(specPath,JSON.stringify(spec));
+ assert.equal(project().snapshot.identity.saved_revision_alignment,'unconfirmed');assert.equal(project().snapshot.qa.binding,'unconfirmed');
+ writeFileSync(specPath,originalSpec);writeFileSync(join(output,'index.html'),'<html><body>Changed build</body></html>');
+ const stale=project();assert.equal(stale.source.doctor.derived.build_output_fingerprint.status,'stale');assert.equal(stale.snapshot.stages.find(stage=>stage.stage==='assembly').build_binding,'unconfirmed');assert.equal(stale.snapshot.qa.binding,'unconfirmed');assert.equal(stale.snapshot.continuation.blocked,true);
+ writeFileSync(join(output,'index.html'),'<html><body>Local fixture</body></html>');qaResult.verdict.run_id='qa_other';assert.equal(project().snapshot.qa.binding,'unconfirmed');
 }));
 
 for(const disposition of ['ready','ready_with_exceptions','blocked']) test(`QA ${disposition} observation never changes closed records or session ownership`,scratch(async dir=>{

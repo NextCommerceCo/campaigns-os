@@ -5040,6 +5040,27 @@
         }
       ],
       "entry_sha256": "181049ebc0cdf27935453579a11e7878b200dadb5bbbc73798226259a684a6a5"
+    },
+    {
+      "id": "RL-0124",
+      "sequence": 124,
+      "date": "2026-09-18",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.36.0+agent.1",
+      "changelog_sha256": "ed7fb01c149dc14453dbba713e7ca4d8278a36c67a32c608ee528866ee6f7f3a",
+      "agent_impact": "Require a nonempty matching context packet pointer before accepting saved revision provenance or its source endpoint. Retry after live allocation completes; stop all target writers before the documented offline recovery for interrupted lock reclamation.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Document strict context binding and bounded dead-owner allocation recovery, with explicit offline recovery for an interrupted claim."
+        }
+      ],
+      "entry_sha256": "2caddaf3713e8120bf31a5c8c7dd0398f78853ecf1a2342a4ecfe9b937709110"
     }
   ]
 }

@@ -59,7 +59,13 @@ across them. A progress stream is independent of a run-session ID.
 
 Sanitized immutable snapshots are written under the target repository's
 `.campaign-runtime/progress/` before any request. Allocation uses an exclusive
-local lock. An unchanged projection reuses its ID, timestamp and sequence. Identity
+local lock with a process owner. Dead owners are recovered through an exclusive
+recovery claim and an atomic rename; a live process is never evicted. An ownerless
+crash gap is recoverable after ten seconds. If recovery itself is interrupted,
+capture fails closed: stop all Campaigns OS writers for that target, then remove
+the abandoned `.allocation-lock` directory in the affected progress scope before
+retrying `next`. Do not remove a lock while a writer is active.
+An unchanged projection reuses its ID, timestamp and sequence. Identity
 changes start a new stream. Each local scope retains at most 32 snapshots and
 separate remit metadata; retention can leave an incomplete history. There is no
 daemon. A later observation retries its current pending delivery; old pending
@@ -74,7 +80,9 @@ result or exit status.
 The planned ops receiver is `POST /api/progress`. Destination precedence is an
 explicit `--proxy-base`, then the bound Build Context's `intake.proxy_base`, then
 the canonical NEXT endpoint only when there is no source binding. An invalid or
-foreign source binding fails closed. HTTPS and plain HTTP loopback are accepted;
+foreign source binding fails closed, including a context without a nonempty
+matching packet pointer. An explicit endpoint override remains independent of
+that context, and cannot confirm its saved revision. HTTPS and plain HTTP loopback are accepted;
 userinfo, query, fragment and other protocols are refused. Redirects are refused.
 The existing campaign-key resolver supplies `X-Campaign-Key`; keys never enter
 snapshots or metadata.

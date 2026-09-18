@@ -1,6 +1,6 @@
 // Best-effort producer adapter. Sanitized immutable bytes are durable before delivery.
 import {randomBytes,createHash} from 'node:crypto';
-import {mkdirSync,readFileSync,writeFileSync,renameSync,rmSync,readdirSync} from 'node:fs';
+import {mkdirSync,readFileSync,writeFileSync,renameSync,rmSync,readdirSync,lstatSync} from 'node:fs';
 import {join,resolve,dirname} from 'node:path';
 import {PROGRESS_SCHEMA_VERSION,PROGRESS_STAGES,PROGRESS_STAGE_STATUSES,PROGRESS_CONTINUATIONS,PROGRESS_ACTION_IDS,PROGRESS_GATE_IDS,canonicalProgressJson,progressSnapshotId,verifyProgressSnapshot} from './progress.mjs';
 import {specMaterialHash} from './spec-identity.mjs';
@@ -18,7 +18,7 @@ function atomic(path,value) {const tmp=`${path}.${randomBytes(8).toString('hex')
 export function resolveProgressEndpoint(args,workspace,context) {
   // A foreign context cannot donate a source endpoint or quietly fall back.
   const named=context?.packet_path;
-  const bound=!named||sameFile(resolve(workspace.targetRepo,named),workspace.packetPath,{requireExisting:true});
+  const bound=typeof named==='string'&&named.trim()&&sameFile(resolve(workspace.targetRepo,named),workspace.packetPath,{requireExisting:true});
   const explicit=args['proxy-base'];
   const source=context?.intake?.proxy_base;
   if (!explicit && !bound && source) return {ok:false,reason:'source_binding_invalid'};
@@ -42,7 +42,7 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
   const localHash=spec?hash(specMaterialHash(spec)):null;
   const localMapId=id(spec?.spec_identity?.map_id||spec?.map_id);
   const baseline=context?.intake?.saved_map_revision;
-  const contextBound=!context?.packet_path||sameFile(resolve(workspace.targetRepo,context.packet_path),workspace.packetPath,{requireExisting:true});
+  const contextBound=typeof context?.packet_path==='string'&&context.packet_path.trim()&&sameFile(resolve(workspace.targetRepo,context.packet_path),workspace.packetPath,{requireExisting:true});
   const aligned=contextBound&&mapId&&localMapId===mapId&&baseline?.map_id===mapId&&baseline?.algorithm==='map-store-v1'&&hash(baseline.hash)&&localHash&&localHash===hash(baseline.local_spec_material_hash);
   const build=hash(doctor?.derived?.build_output_fingerprint?.value);
   const recordedBuild=hash(report?.stages?.assembly?.build_fingerprint);
@@ -71,11 +71,38 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
   };
 }
 async function lock(dir,fn,{budgetMs=1500}={}) {
-  const path=join(dir,'.allocation-lock'); const start=Date.now();
+  const path=join(dir,'.allocation-lock'); const start=Date.now();const token=randomBytes(16).toString('hex');
+  const abandoned=(unownedMtime=null)=>{
+    try {
+      const stat=lstatSync(path);if(!stat.isDirectory()||stat.isSymbolicLink())return false;
+      const owner=read(join(path,'owner.json'));
+      if(Number.isInteger(owner?.pid)&&owner.pid>0&&typeof owner.token==='string') {
+        try {process.kill(owner.pid,0);return false;}catch(error){return error.code==='ESRCH';}
+      }
+      // A killed process can leave the directory before writing its owner.
+      // Give a live allocator ample time to finish that tiny synchronous gap.
+      return Date.now()-(unownedMtime??stat.mtimeMs)>10000;
+    }catch{return false;}
+  };
+  const recover=()=>{
+    if(!abandoned())return;
+    let originalMtime;try{originalMtime=lstatSync(path).mtimeMs;}catch{return;}
+    const claim=join(path,'.recovery');
+    // Only this exclusive claimant can rename the old lock. An interrupted
+    // recovery claim fails closed for explicit offline recovery; recursively
+    // stealing recovery claims would reintroduce a check/rename race.
+    try {mkdirSync(claim);atomic(join(claim,'owner.json'),{pid:process.pid,token});}catch{return;}
+    let moved=false;
+    try {
+      if(!abandoned(originalMtime))return;
+      const tomb=`${path}.abandoned-${token}`;
+      renameSync(path,tomb);moved=true;rmSync(tomb,{recursive:true,force:true});
+    }catch{}finally{if(!moved&&read(join(claim,'owner.json'))?.token===token){try{rmSync(claim,{recursive:true,force:true});}catch{}}}
+  };
   while (true) {
-    try {mkdirSync(path);break;}catch(error){if(error.code!=='EEXIST'||Date.now()-start>=budgetMs)throw new Error('progress.lock_unavailable');await new Promise(resolve=>setTimeout(resolve,20));}
+    try {mkdirSync(path);atomic(join(path,'owner.json'),{pid:process.pid,token});break;}catch(error){if(error.code!=='EEXIST'||Date.now()-start>=budgetMs)throw new Error('progress.lock_unavailable');recover();await new Promise(resolve=>setTimeout(resolve,20));}
   }
-  try{return await fn();}finally{rmSync(path,{recursive:true,force:true});}
+  try{return await fn();}finally{if(read(join(path,'owner.json'))?.token===token)rmSync(path,{recursive:true,force:true});}
 }
 export async function persistProgressObservation(observation,{dir,now=()=>new Date(),historyLimit=32}={}) {
   mkdirSync(dir,{recursive:true,mode:0o700});
@@ -142,5 +169,9 @@ export async function observeProgress(args,continuation,{qaResult=null,packageVe
     atomic(metaPath,{...remit,snapshot_id:snapshot.snapshot_id});
     if(remit.state==='failed')warn('[campaigns-os] Progress delivery pending; the local observation is retained. Lifecycle result is unchanged.');
     return {...remit,snapshot_id:snapshot.snapshot_id,reused};
-  } catch {warn('[campaigns-os] Progress observation unavailable; lifecycle result is unchanged.');return {state:'failed',reason:'capture_unavailable'};}
+  } catch(error) {
+    if(error?.message==='progress.lock_unavailable')warn('[campaigns-os] Progress allocation lock occupied; wait for the current writer. For abandoned or interrupted recovery, stop target writers and follow the offline lock recovery in docs/progress-snapshots.md. Lifecycle result is unchanged.');
+    else warn('[campaigns-os] Progress observation unavailable; lifecycle result is unchanged.');
+    return {state:'failed',reason:'capture_unavailable'};
+  }
 }
