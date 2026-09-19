@@ -43,7 +43,7 @@ order:
 mkdir "<route>" && cd "<route>"
 npm init -y && npm i next-campaign-page-kit
 npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.34.1
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.2
 npx campaigns-os tooling status --platform claude
 npx campaigns-os install-skills --platform claude
 mkdir -p source
@@ -53,7 +53,7 @@ The toolkit is also published to npm as `@nextcommerce/campaigns-os`, so the
 CLI can be installed once, globally, instead of pinned per campaign:
 
 ```bash
-npm install -g @nextcommerce/campaigns-os@1.34.1
+npm install -g @nextcommerce/campaigns-os@1.37.2
 campaigns-os tooling status --platform claude
 campaigns-os install-skills --platform claude
 ```
@@ -69,20 +69,16 @@ runs the full check in an unprivileged job and publishes the verified tarball
 with provenance from a second, environment-gated job.
 
 For an existing page-kit campaign, skip the first three lines and `cd` into it
-(its `package.json` already declares `next-campaign-page-kit`). `1.34.1` is
+(its `package.json` already declares `next-campaign-page-kit`). `1.37.2` is
 an exact published example; choose the release you reviewed, never a floating
 dist-tag for a reproducible build. Commit `package.json` and `package-lock.json`.
-The new `tooling diagnose` command requires 1.35.0 or later. When that release
-is not published yet, use the reviewed full-SHA source pin below; the 1.34.1
-example does not include diagnostics or the global invocation rendering fix.
+`tooling diagnose` requires 1.35.0 or later and `demo` requires 1.37.0 or later.
 A Git source pin remains supported when using an unreleased reviewed commit:
 `npm install --save-dev --save-exact "github:NextCommerceCo/campaigns-os#<full-sha>"`.
 
-For a visual sample, candidate 1.37.0 adds
-`npx campaigns-os demo --target ./apollo-sample`. Open the printed
-`landing/index.html` directly to explore four inert Apollo pages. This command
-requires a reviewed candidate or a published release at least 1.37.0; the 1.34.1
-example above does not include it. It downloads nothing and creates no campaign
+For a visual sample, `npx campaigns-os demo --target ./apollo-sample`
+(1.37.0 or later) copies four inert Apollo pages; open the printed
+`landing/index.html` directly. It downloads nothing and creates no campaign
 evidence. Keep sample edits and start a real campaign in a separate new Page Kit
 folder. See [offline sample preview](docs/demo-preview.md).
 The lockfile records the resolved source and integrity; `tooling status` reports

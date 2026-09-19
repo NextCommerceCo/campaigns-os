@@ -9,7 +9,7 @@ milestones below describe evidence, not a second state machine.
 | Milestone | What it establishes | What is still needed |
 |---|---|---|
 | Toolkit installed | The selected package can run and its agent skills can be checked with `tooling status`. | Campaign inputs and workflow evidence. Installation needs npm access; it does not grant store, Map, deploy, or QA access. |
-| Demo preview | Pinned sample pages can be opened locally for a visual walkthrough; candidate 1.37.0 provides `demo --target <new-directory>`. | A separate real campaign folder, configuration, replaced demo values, and the ordinary build and proof gates. Demo behavior is not live commerce proof. |
+| Demo preview | Pinned sample pages can be opened locally for a visual walkthrough; 1.37.0 and later provide `demo --target <new-directory>`. | A separate real campaign folder, configuration, replaced demo values, and the ordinary build and proof gates. Demo behavior is not live commerce proof. |
 | Map saved | Campaign Map Builder has retained the authored campaign plan. A local export is an alternative build input. | Export/revision agreement and resolution of live campaign data. Saving a Map does not establish Campaigns App or store access. |
 | Campaign resolved | The package-owned resolver has read the campaign's live configuration and produced resolution evidence. | Build, preview, and runtime proof. Confirm Campaigns App keys and allowed domains; store Admin API reads need their own read token. |
 | Preview observed | A browser has inspected the served current build at the tested URL. | Retained package-owned Polish capture and QA evidence tied to that build. A deployed URL alone is not an observation. |

@@ -34,11 +34,11 @@ Existing page-kit campaign: `cd` into it (its `package.json` declares
 `next-campaign-page-kit`). Then, in the campaign folder:
 
 ```bash
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.34.1
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.2
 npx campaigns-os tooling status --platform claude
 ```
 
-`1.34.1` is an exact published example. Select the release you reviewed and
+`1.37.2` is an exact published example. Select the release you reviewed and
 verify its tag/provenance against the source commit; do not use a floating
 dist-tag. Commit both `package.json` and `package-lock.json`. An unreleased
 reviewed commit may instead be pinned with
@@ -46,21 +46,18 @@ reviewed commit may instead be pinned with
 The package install runs its own lifecycle build; it is separate from the
 checkout-only runtime preparation recipe and makes no claim under that recipe.
 Diagnostics and corrected global invocation rendering require 1.35.0 or later;
-if that version is not yet published, use a reviewed full-SHA source pin rather
-than expecting those features from the published 1.34.1 example.
+`demo` requires 1.37.0 or later.
 
-For an optional visual walkthrough, candidate 1.37.0 provides
-`npx campaigns-os demo --target ./apollo-sample`. Open the printed local
+For an optional visual walkthrough, `npx campaigns-os demo --target ./apollo-sample`
+writes an offline sample. Open the printed local
 `landing/index.html` file. This offline sample has no live commerce or campaign
 proof. Preserve sample edits and create a separate new Page Kit folder for the
-real campaign. The published 1.34.1 example lacks this command; use a reviewed
-full-SHA candidate or an exact release at least 1.37.0 after publication.
-See [offline sample preview](demo-preview.md).
+real campaign. See [offline sample preview](demo-preview.md).
 
 Global use is also supported, with an exact release:
 
 ```bash
-npm install -g @nextcommerce/campaigns-os@1.34.1
+npm install -g @nextcommerce/campaigns-os@1.37.2
 campaigns-os tooling status --platform claude
 campaigns-os install-skills --platform claude
 ```

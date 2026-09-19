@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.37.2+agent.1] - 2026-09-19
+
+### Changed
+
+- Point the install examples at the published 1.37.2 release. `README.md` and
+  `docs/quickstart.md` still pinned `@nextcommerce/campaigns-os@1.34.1`, three
+  releases behind the tag they ship in, so a reader following the GitHub or npm
+  README installed a toolkit without `demo` or `tooling diagnose`. The
+  minimum-version notes for those commands stay; the
+  "not published yet" caveats and their full-SHA workarounds are gone.
+- Stop calling 1.37.0 a candidate. `AGENTS.md`, `docs/supported-surface.md`,
+  `docs/activation-and-evidence.md`, `docs/demo-preview.md` and the quick starts
+  described `demo` as a "candidate 1.37.0" feature; 1.37.0 through 1.37.2 are
+  published releases and the wording now says so.
+
 ## [1.37.2] - 2026-09-18
 
 ### Fixed
