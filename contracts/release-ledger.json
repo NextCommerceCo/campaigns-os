@@ -5357,6 +5357,45 @@
         }
       ],
       "entry_sha256": "fb317fe901bbab34f0c909b523a9e4e07040285a5f6883ee572c6f927681c0b1"
+    },
+    {
+      "id": "RL-0131",
+      "sequence": 131,
+      "date": "2026-09-19",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.37.3+agent.1",
+      "changelog_sha256": "46f21d1154cbd769f70ad006d60c7e37664367ca7e1f91a964ee92ec2753789d",
+      "agent_impact": "docs/versioning.md no longer states a package version literal; read the number from package.json, surface_version, or the registry. The progress export is documented as shipped in 1.37.1 and later, not as a candidate. No command, schema, skill or export changed.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "Drop the restated package version; point at package.json, surface_version and the registry instead."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Describe the progress export as shipped in 1.37.1 and later, not a candidate absent from the published install."
+        },
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "Describe 1.36.0 progress observations as published in 1.37.1 and later, not a candidate."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Describe the 1.36.0 progress export as published in 1.37.1 and later, not a candidate."
+        }
+      ],
+      "entry_sha256": "2d229149aed64ab580016056719f83edb65634dabacb824c0f4d89c003a9b4ae"
     }
   ]
 }
