@@ -5273,6 +5273,45 @@
         }
       ],
       "entry_sha256": "174e0bac2ba34b94fbb7b30257d0baf4e417440cdbcfdc5685b9f48fa565ce26"
+    },
+    {
+      "id": "RL-0129",
+      "sequence": 129,
+      "date": "2026-09-19",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.37.2+agent.1",
+      "changelog_sha256": "42e4e70bfa7b428b564e7347761b8b98ab2a4fc8a0ee413307e5bf9011980a43",
+      "agent_impact": "Install examples in README.md and docs/quickstart.md now name the published 1.37.2 release instead of 1.34.1; demo is documented as shipped in 1.37.0 and later rather than as a candidate. No command, schema, skill or export changed.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "Describe demo as shipped in 1.37.0, not a candidate."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Describe the demo CLI command as shipped in 1.37.0, not a candidate."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/activation-and-evidence.md",
+          "surface_entry": "docs/activation-and-evidence.md",
+          "summary": "Describe demo --target as available in 1.37.0 and later."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/demo-preview.md",
+          "surface_entry": "docs/demo-preview.md",
+          "summary": "Drop the 1.34.1 caveat; demo ships in 1.37.0 and later."
+        }
+      ],
+      "entry_sha256": "6a6ec662ac52c5c38532683c8c7dd24cb7cdd068fb0cdbedd56095c5cd366902"
     }
   ]
 }

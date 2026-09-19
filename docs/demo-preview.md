@@ -1,8 +1,7 @@
 # Offline sample preview
 
-Candidate 1.37.0 adds `campaigns-os demo`. The published 1.34.1 installation
-example does not contain this command; install a reviewed full-SHA candidate
-or an exact release at least 1.37.0 after publication.
+`campaigns-os demo` ships in 1.37.0 and later; install an exact published
+release at least 1.37.0 (or a reviewed full-SHA source pin).
 
 From the folder containing your exact project-local toolkit installation:
 

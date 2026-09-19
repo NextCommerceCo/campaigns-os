@@ -97,7 +97,7 @@ The portable `./progress` contract preserves separate saved Map, semantic spec
 and output identities, and grants no orientation or deployment trust. See
 [progress snapshots](docs/progress-snapshots.md).
 
-Candidate 1.37.0 adds `demo --target <new-directory>`, an offline visual sample
+1.37.0 adds `demo --target <new-directory>`, an offline visual sample
 that copies a pinned inert Apollo bundle and prints its landing/index.html path.
 It bypasses session recovery and creates no campaign evidence or telemetry.
 Unsupported flags, including no-write and dry-run, are rejected before writes.

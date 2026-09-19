@@ -89,7 +89,7 @@ fixture. Observations preserve canonical continuation and separate Map/spec/buil
 identities; consumers must not treat history presence or scope-key matching as
 readiness or trust.
 
-Candidate 1.37.0 adds the `demo` CLI command, [offline sample reference](demo-preview.md),
+1.37.0 adds the `demo` CLI command, [offline sample reference](demo-preview.md),
 a hashed `demo/apollo-v0/provenance.json` and named attribution notice. The command
 exclusively creates a new target with validated inert pages. Its internal static
 files are covered by the provenance output hashes; they are not independent
