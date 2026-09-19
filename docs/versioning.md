@@ -2,10 +2,14 @@
 
 This repo uses independent compatibility versions:
 
-- package version: `1.34.0` — equals `surface_version` in
-  `contracts/supported-surface.json` (`check:supported-surface` enforces it)
-  and is the version published to the npm registry; `+agent.N` changelog
-  sections are same-surface changes and are not published on their own
+- package version: the `version` in `package.json`, which equals
+  `surface_version` in `contracts/supported-surface.json`
+  (`check:supported-surface` enforces it) and is the latest release published
+  to the npm registry. This document does not restate the number: read it from
+  either file, or from `npm view @nextcommerce/campaigns-os version`.
+  `+agent.N` changelog sections are same-surface changes and are not published
+  on their own; a version with a changelog section but no tag ships inside the
+  next published release
 - Build Packet: `campaign-runtime-build-packet/v0`
 - Build Context: `campaign-runtime-build-context/v0`
 - Assembly Report: `campaign-runtime-assembly-report/v0`
