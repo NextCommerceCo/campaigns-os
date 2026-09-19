@@ -1,8 +1,8 @@
 # Minimal progress observations
 
 Release **1.36.0** adds the portable `@nextcommerce/campaigns-os/progress`
-export and `schemas/campaigns-os-progress-snapshot.v0.schema.json`; it ships in
-1.37.1 and later, the first published releases to carry it. Progress is a compact
+export and `schemas/campaigns-os-progress-snapshot.v0.schema.json`; it first
+shipped in 1.37.1 and is in every later release. Progress is a compact
 observation of the existing lifecycle, not a second workflow or proof of readiness.
 
 `next --packet <packet>` records the canonical picker result after the same doctor

@@ -90,9 +90,10 @@ status and the read-only doctor's existing `next` recommendation and exports a
 strict allowlist summary. It neither establishes orientation trust nor changes
 campaign evidence or run sessions. See [diagnostics](docs/diagnostics.md).
 
-1.36.0 (published in 1.37.1 and later) also records minimal progress
-observations after canonical `next` and committed QA. Run `next` after agent-owned stages to observe their
-reports. `--no-write` disables capture and send; `--no-remit` keeps it local.
+1.36.0 (shipped in 1.37.1 and later) also records minimal progress observations
+after canonical `next` and committed QA. Run `next` after agent-owned stages to
+observe their reports. `--no-write` disables capture and send; `--no-remit`
+keeps it local.
 The portable `./progress` contract preserves separate saved Map, semantic spec
 and output identities, and grants no orientation or deployment trust. See
 [progress snapshots](docs/progress-snapshots.md).
