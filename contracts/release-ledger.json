@@ -5312,6 +5312,51 @@
         }
       ],
       "entry_sha256": "7d7c4900e75bcb51f771416ce8c87e2e88111e184a5485fc6b7ac6634152241c"
+    },
+    {
+      "id": "RL-0130",
+      "sequence": 130,
+      "date": "2026-09-19",
+      "kind": "release",
+      "surface_version": "1.37.3",
+      "changelog_section": "1.37.3",
+      "changelog_sha256": "4fa53214f29b66d2dfff6011aaa373455e0d44d3cb1c5021cd867b473737fd08",
+      "agent_impact": "Install from 1.37.3 to get README and quick-start install examples that name the current release; demo is documented as shipped in 1.37.0 and later. Commands, schemas, skills and exports are unchanged from 1.37.2.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the compatible package patch to 1.37.3."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Ship the corrected install documentation as package 1.37.3."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Keep the exact lockfile package identity at 1.37.3."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface version 1.37.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for package version 1.37.3."
+        }
+      ],
+      "entry_sha256": "fb317fe901bbab34f0c909b523a9e4e07040285a5f6883ee572c6f927681c0b1"
     }
   ]
 }

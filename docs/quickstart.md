@@ -34,11 +34,11 @@ Existing page-kit campaign: `cd` into it (its `package.json` declares
 `next-campaign-page-kit`). Then, in the campaign folder:
 
 ```bash
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.2
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.3
 npx campaigns-os tooling status --platform claude
 ```
 
-`1.37.2` is an exact published example. Select the release you reviewed and
+`1.37.3` is an exact published example. Select the release you reviewed and
 verify its tag/provenance against the source commit; do not use a floating
 dist-tag. Commit both `package.json` and `package-lock.json`. An unreleased
 reviewed commit may instead be pinned with
@@ -57,7 +57,7 @@ real campaign. See [offline sample preview](demo-preview.md).
 Global use is also supported, with an exact release:
 
 ```bash
-npm install -g @nextcommerce/campaigns-os@1.37.2
+npm install -g @nextcommerce/campaigns-os@1.37.3
 campaigns-os tooling status --platform claude
 campaigns-os install-skills --platform claude
 ```

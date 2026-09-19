@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.37.3] - 2026-09-19
+
+### Changed
+
+- Publish the corrected install documentation. The README and quick start in
+  the 1.37.2 tarball still pinned `@nextcommerce/campaigns-os@1.34.1` and called
+  `demo` a candidate feature; this release carries the 1.37.2+agent.1 wording
+  (install examples at the current release, `demo` documented as shipped in
+  1.37.0 and later) so the npm package page matches the portal. No command,
+  schema, skill or export changes.
+
 ## [1.37.2+agent.1] - 2026-09-19
 
 ### Changed
