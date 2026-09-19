@@ -43,7 +43,7 @@ order:
 mkdir "<route>" && cd "<route>"
 npm init -y && npm i next-campaign-page-kit
 npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.2
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.3
 npx campaigns-os tooling status --platform claude
 npx campaigns-os install-skills --platform claude
 mkdir -p source
@@ -53,7 +53,7 @@ The toolkit is also published to npm as `@nextcommerce/campaigns-os`, so the
 CLI can be installed once, globally, instead of pinned per campaign:
 
 ```bash
-npm install -g @nextcommerce/campaigns-os@1.37.2
+npm install -g @nextcommerce/campaigns-os@1.37.3
 campaigns-os tooling status --platform claude
 campaigns-os install-skills --platform claude
 ```
@@ -69,7 +69,7 @@ runs the full check in an unprivileged job and publishes the verified tarball
 with provenance from a second, environment-gated job.
 
 For an existing page-kit campaign, skip the first three lines and `cd` into it
-(its `package.json` already declares `next-campaign-page-kit`). `1.37.2` is
+(its `package.json` already declares `next-campaign-page-kit`). `1.37.3` is
 an exact published example; choose the release you reviewed, never a floating
 dist-tag for a reproducible build. Commit `package.json` and `package-lock.json`.
 `tooling diagnose` requires 1.35.0 or later and `demo` requires 1.37.0 or later.
