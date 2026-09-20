@@ -2,6 +2,25 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.37.3+agent.1] - 2026-09-19
+
+### Changed
+
+- Stop restating the package version in prose. `docs/versioning.md` said the
+  package version was `1.34.0` while `package.json` and
+  `contracts/supported-surface.json` said `1.37.3`; the gate compares those two
+  files to each other, never to the sentence, so the literal rotted through
+  four releases. The document now says where the number lives (`package.json`,
+  `surface_version`, or `npm view @nextcommerce/campaigns-os version`) and
+  states the rule that a version with a changelog section but no tag ships
+  inside the next published release. No number to drift.
+- Stop calling 1.36.0 a candidate. `docs/progress-snapshots.md`, `AGENTS.md`
+  and `docs/supported-surface.md` still described the progress export as
+  "candidate 1.36.0", and the progress reference said the published install
+  example did not include it. 1.36.0 was never tagged on its own; its surface
+  ships in 1.37.1 and every later release, and the wording now says so, as the
+  1.37.2+agent.1 pass already did for 1.37.0. (#457)
+
 ## [1.37.3] - 2026-09-19
 
 ### Changed
