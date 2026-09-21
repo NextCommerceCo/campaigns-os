@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.38.0+agent.1] - 2026-09-21
+
+### Changed
+
+- Correct the packaged `next-campaigns-os` skill step 5 to use gateway login
+  credentials by default for store derivation within the admitted owned-store
+  private pilot. Existing direct Admin callers must explicitly select
+  `--store-token-source env:<VAR>`; there is no implicit environment lookup or
+  fallback after gateway failure. Bump this skill to 1.0.18 and align its manifest.
+  This documents the 1.38.0 migration already implemented; no runtime behavior,
+  package version or supported-surface version changes.
+
 ## [1.38.0] - 2026-09-21
 
 ### Added

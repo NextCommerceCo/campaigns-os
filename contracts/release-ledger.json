@@ -5465,6 +5465,33 @@
         }
       ],
       "entry_sha256": "7a48d75f0b2e9413126d288faced22a2f5dbb58bd7548374631bb42f8e979a14"
+    },
+    {
+      "id": "RL-0133",
+      "sequence": 133,
+      "date": "2026-09-21",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.38.0+agent.1",
+      "changelog_sha256": "48e5f9e0cd7d0be7c34bebfa811c3671a1722840f69dccc513f3d98c027ccc78",
+      "agent_impact": "The packaged lifecycle skill now matches the 1.38.0 gateway-default store-read behavior. Existing direct Admin callers must explicitly select env:<VAR>; implicit environment lookup and gateway-failure fallback are not supported.",
+      "compatibility": "compatible",
+      "migration": "Refresh the installed next-campaigns-os skill to 1.0.18. The runtime migration remains the one recorded in RL-0132: use an admitted gateway login or explicitly select --store-token-source env:<VAR>.",
+      "changes": [
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Align only the next-campaigns-os manifest version to 1.0.18."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Correct step 5 to gateway login default and explicit warned direct-token selection; bump skill to 1.0.18."
+        }
+      ],
+      "entry_sha256": "c31d5b0fe0f4bcd871897d923466d529f5399010b0bb009326789d69294e00c8"
     }
   ]
 }
