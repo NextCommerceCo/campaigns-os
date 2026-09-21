@@ -476,7 +476,7 @@ Usage:
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os login [--store <subdomain>]
   campaigns-os logout [--store <subdomain>]
-  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # install-mode (checkout or pinned package), git, and skill freshness preflight
+  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # install-mode, git, skill freshness, and local gateway login/store/expiry/reported version
   campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next --packet <json> [--no-write] [--no-remit] [--proxy-base <url>] [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
@@ -497,7 +497,7 @@ Usage:
   campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--new-run] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--list] [--json]
     run_id: --run-id > the active run session > the most recent Run Record for this packet's campaign (re-emitted in place; a remitted one is left as written) > freshly minted. --new-run always mints; --list prints the run ids on disk for this packet (id, created_at, remit state, path) and, like --no-write, writes and sends nothing.
 
-  Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
+  Commands other than login, logout, demo, and tooling diagnose accept [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
   campaigns-os telemetry off [--json]                                  # turn remit off for every endpoint (takes no --proxy-base)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
@@ -11012,7 +11012,9 @@ export async function toolingStatusCommand(args, options = {}) {
   const { gatewayLoginStatus } = await import("./admin-transport.mjs");
   result.gateway_login = await gatewayLoginStatus(options);
   const auth = result.gateway_login;
-  if (!auth.accounts.length) result.warnings.push(`Gateway login: ${auth.state}. Use campaigns-os login --store <subdomain>.`);
+  if (!auth.accounts.length) result.warnings.push(auth.state === "unavailable"
+    ? "Gateway credential storage is unavailable or busy. Check user credential directory permissions and keychain access; wait for another campaigns-os process to finish. See docs/gateway-login.md for interrupted-process recovery."
+    : `Gateway login: ${auth.state}. Use campaigns-os login --store <subdomain>.`);
   for (const account of auth.accounts) (account.state === "logged_in" ? result.ready : result.warnings).push(`Gateway login: ${account.state}; store ${account.store}; access remaining ${account.remaining_seconds}s; gateway ${auth.gateway}; reported version ${account.gateway_version || "unavailable"} (local credential metadata only).`);
   return result;
 }

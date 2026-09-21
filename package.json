@@ -1,6 +1,6 @@
 {
   "name": "@nextcommerce/campaigns-os",
-  "version": "1.37.3",
+  "version": "1.38.0",
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
   "license": "Apache-2.0",
   "repository": {
@@ -112,6 +112,7 @@
     "contracts",
     "docs/brand-theme-bridge.md",
     "docs/build-packet.md",
+    "docs/gateway-login.md",
     "docs/campaign-build-brief.md",
     "docs/campaign-standardization-report.md",
     "docs/campaigns-os-build-flow.md",
