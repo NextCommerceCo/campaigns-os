@@ -475,6 +475,8 @@ Usage:
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
+  campaigns-os login [--store <subdomain>]
+  campaigns-os logout [--store <subdomain>]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # install-mode (checkout or pinned package), git, and skill freshness preflight
   campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
@@ -537,7 +539,7 @@ Examples:
 
 // Top-level commands the CLI dispatches, used to offer a did-you-mean
 // suggestion on a typo instead of a bare "Unknown command". Derived from the
-// `command === "…"` literals in dispatch() itself (memoized on first use) so
+// `command === "…"` literals in main() and dispatch() (memoized on first use) so
 // the list cannot drift as dispatch branches are added or removed. The regex
 // tolerates whitespace and either quote style so common reformats don't
 // silently empty the list; a known-commands test guards against a refactor
@@ -546,7 +548,7 @@ let knownCommandsCache = null;
 export function knownCommands() {
   if (knownCommandsCache) return knownCommandsCache;
   const found = new Set(["help"]);
-  for (const match of dispatch.toString().matchAll(/command\s*===\s*["']([^"']+)["']/g)) {
+  for (const match of (main.toString() + dispatch.toString()).matchAll(/command\s*===\s*["']([^"']+)["']/g)) {
     found.add(match[1]);
   }
   knownCommandsCache = [...found];
@@ -593,7 +595,7 @@ function closestCommand(input) {
   return bestDistance <= budget ? best : null;
 }
 
-export async function main(argv) {
+export async function main(argv, { authentication } = {}) {
   const args = parseArgs(argv);
   // `npx --yes -p <spec> campaigns-os <command>` and `npx --yes <spec>
   // campaigns-os <command>` both hand the bin its own name as the first
@@ -602,6 +604,13 @@ export async function main(argv) {
   // "Unknown command: campaigns-os".
   if (args._[0] === "campaigns-os") args._.shift();
   const command = args._[0] || "help";
+
+  // Authentication never recovers/remits run sessions or records argv in a
+  // lifecycle journal. Credentials belong only in the user credential store.
+  if (command === "login" || command === "logout") {
+    const { runAuthentication } = await import("./login.mjs");
+    return runAuthentication(argv[0] === "campaigns-os" ? argv.slice(1) : argv, authentication);
+  }
 
   // An offline sample must not recover sessions or emit lifecycle evidence.
   if (command === "demo") {
