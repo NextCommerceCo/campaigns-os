@@ -292,7 +292,6 @@ import {
 } from "./spec-derive.mjs";
 import {
   adminApiBaseForStore,
-  defaultStoreTokenEnvVar,
   normalizeStoreSubdomain,
   parseStoreTokenSource,
   planStoreProfileDerive,
@@ -470,7 +469,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
-  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads the store's Admin API with the token in env:<SUBDOMAIN>_ADMIN_TOKEN (or --store-token-source env:<VAR>; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
+  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads through campaigns-os login gateway credentials (--store-token-source env:<VAR> explicitly selects the warned break-glass Admin path; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -1203,7 +1202,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "tooling") {
-    const result = toolingCommand(args);
+    const result = await toolingStatusCommand(args);
     writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
@@ -4927,8 +4926,8 @@ export function pageKitSyncCommand(args) {
 // refereed by doctor. Exactly the derived fields are written; the rest of the
 // spec and every other file are untouched. The store-derived fields (the nine
 // campaign.store_* Store Profile fields, slice 2) join the write only behind
-// --from-store <subdomain>, which reads the store's Admin API with the token
-// named by --store-token-source env:<VAR> (default env:<SUBDOMAIN>_ADMIN_TOKEN);
+// --from-store <subdomain>, which reads the store's Admin API
+// through gateway login, or the explicit --store-token-source env:<VAR> break-glass path;
 // the default run stays offline. --dry-run prints the same diff and writes
 // nothing. Exit 2 when the packet, the spec or the target entry is missing,
 // or the store cannot be read.
@@ -4947,7 +4946,7 @@ function parseSpecDeriveStoreFlags(args) {
   if (!subdomain) {
     throw new Error(`--from-store takes the store's subdomain (the <store> of <store>.29next.store), got ${JSON.stringify(args["from-store"] === true ? "" : args["from-store"])}.`);
   }
-  let tokenEnv = defaultStoreTokenEnvVar(subdomain);
+  let tokenEnv = null;
   if (Object.hasOwn(args, "store-token-source")) {
     const parsed = parseStoreTokenSource(args["store-token-source"] === true ? "" : String(args["store-token-source"] ?? ""));
     if (parsed.problem) throw new Error(`--store-token-source ${parsed.problem}`);
@@ -4959,23 +4958,22 @@ function parseSpecDeriveStoreFlags(args) {
 // `spec derive --from-store`: resolve the credential, read the store, then
 // run the same command with the store read in hand. The only network the
 // command ever does happens here, and the token never leaves this function:
-// the result names the env var, not its value.
-export async function specDeriveFromStoreCommand(args, { fetchImpl = globalThis.fetch, env = process.env } = {}) {
+// the result names the credential source, never its value.
+export async function specDeriveFromStoreCommand(args, { fetchImpl = globalThis.fetch, env = process.env, credentials, warn = console.warn } = {}) {
   const store = parseSpecDeriveStoreFlags(args);
   if (!store) return specDeriveCommand(args);
-  const token = typeof env[store.token_env] === "string" ? env[store.token_env].trim() : "";
-  if (!token) {
-    return specDeriveCommand(args, { store: { ...store, status: "credential_missing", detail: `${store.token_env} is not set (or empty) in the environment; export the store's Admin API access token there (Settings > API Access, scopes store:read and content:read), or name another variable with --store-token-source env:<VAR>.` } });
-  }
-  // Local preconditions first: a packet, spec or entry the command would
-  // refuse is refused before the token is sent anywhere. The preflight run
-  // stops at the store gate and writes nothing.
   const preflight = specDeriveCommand(args, { store: { ...store, status: "preflight" } });
   if (preflight.errors.length) return preflight;
-  const read = await readStoreProfile({ subdomain: store.subdomain, token, fetchImpl });
-  // The real run re-reads the packet; it must still be the campaign the
-  // preflight checked, or the store's profile lands in another campaign's
-  // spec.
+  let read;
+  if (store.token_env) {
+    warn("Warning: explicit Admin environment credentials are a break-glass path. Use campaigns-os login --store <subdomain> and omit --store-token-source for supported gateway reads.");
+    const token = typeof env[store.token_env] === "string" ? env[store.token_env].trim() : "";
+    read = token ? await readStoreProfile({ subdomain: store.subdomain, token, fetchImpl }) : { status: "credential_missing", detail: `${store.token_env} is not set (or empty); use campaigns-os login --store ${store.subdomain}, or explicitly supply the break-glass environment credential.` };
+  } else {
+    const { readGatewayStoreProfile } = await import("./admin-transport.mjs");
+    read = await readGatewayStoreProfile({ subdomain: store.subdomain, credentials, fetchImpl });
+  }
+  // Recheck the original packet/spec identity after the network operation.
   return specDeriveCommand(args, { store: { ...store, ...read, expected: { spec_path: preflight.spec_path, public_route_slug: preflight.public_route_slug } } });
 }
 
@@ -5062,7 +5060,7 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     not_in_target: [],
     stale_hints: [],
     store: storeFlags
-      ? { subdomain: storeFlags.subdomain, admin_api: adminApiBaseForStore(storeFlags.subdomain), token_source: `env:${storeFlags.token_env}`, store_read: null, pages_read: null, primary_domain: null }
+      ? { subdomain: storeFlags.subdomain, admin_api: adminApiBaseForStore(storeFlags.subdomain), ...(storeFlags.token_env ? {} : { transport: "gateway", endpoint: "https://mcp.nextcommerce.com/admin/" }), token_source: storeFlags.token_env ? `env:${storeFlags.token_env}` : "gateway:login", store_read: null, pages_read: null, primary_domain: null }
       : null,
     rebound: { build_context: null, assembly_report: null },
     errors: [],
@@ -5245,8 +5243,8 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     return result;
   }
   if (storeRead && storeRead.status !== "ok") {
-    const codes = { credential_missing: "store_credential_missing", credential_invalid: "store_credential_invalid", unauthorized: "store_unauthorized", not_found: "store_not_found", unreachable: "store_unreachable", invalid: "store_response_invalid" };
-    addIssue(result.errors, `spec.derive.${codes[storeRead.status] || "store_unreachable"}`, `${storeRead.detail} Nothing was written.`, { subdomain: storeRead.subdomain, token_source: `env:${storeRead.token_env}` });
+    const codes = { credential_unavailable: "store_credential_unavailable", credential_missing: "store_credential_missing", credential_invalid: "store_credential_invalid", unauthorized: "store_unauthorized", not_found: "store_not_found", unreachable: "store_unreachable", invalid: "store_response_invalid" };
+    addIssue(result.errors, `spec.derive.${codes[storeRead.status] || "store_unreachable"}`, `${storeRead.detail} Nothing was written.`, { subdomain: storeRead.subdomain, token_source: storeRead.token_env ? `env:${storeRead.token_env}` : "gateway:login" });
     return result;
   }
   const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug });
@@ -5449,7 +5447,7 @@ export function specDeriveTextLines(result) {
   if (result.spec_path) lines.push(`Spec: ${singleLineField(result.spec_path)}`);
   if (result.campaigns_path) lines.push(`Target: ${singleLineField(result.campaigns_path)}[${result.public_route_slug || "<public-route-slug>"}]${result.page_tree ? `, page tree ${singleLineField(result.page_tree)}/` : ""}`);
   if (result.store) {
-    lines.push(`Store: ${singleLineField(result.store.admin_api)} (token ${singleLineField(result.store.token_source)}${result.store.primary_domain ? `, primary domain ${singleLineField(result.store.primary_domain)}` : ""}${result.store.pages_read && result.store.pages_read !== "ok" ? `, pages ${result.store.pages_read}` : ""})`);
+    lines.push(`Store: ${singleLineField(result.store.endpoint || result.store.admin_api)} (token ${singleLineField(result.store.token_source)}${result.store.primary_domain ? `, primary domain ${singleLineField(result.store.primary_domain)}` : ""}${result.store.pages_read && result.store.pages_read !== "ok" ? `, pages ${result.store.pages_read}` : ""})`);
   }
   if (result.errors?.length) {
     lines.push("Errors:");
@@ -11009,6 +11007,16 @@ function toolingCommand(args) {
   };
 }
 
+export async function toolingStatusCommand(args, options = {}) {
+  const result = toolingCommand(args);
+  const { gatewayLoginStatus } = await import("./admin-transport.mjs");
+  result.gateway_login = await gatewayLoginStatus(options);
+  const auth = result.gateway_login;
+  if (!auth.accounts.length) result.warnings.push(`Gateway login: ${auth.state}. Use campaigns-os login --store <subdomain>.`);
+  for (const account of auth.accounts) (account.state === "logged_in" ? result.ready : result.warnings).push(`Gateway login: ${account.state}; store ${account.store}; access remaining ${account.remaining_seconds}s; gateway ${auth.gateway}; reported version ${account.gateway_version || "unavailable"} (local credential metadata only).`);
+  return result;
+}
+
 export function toolingDiagnose(args, { runTooling = toolingCommand, runDoctor = doctorCommand } = {}) {
   let tooling = null;
   let doctor = null;
@@ -12941,7 +12949,7 @@ const TELEMETRY_LIST_TIMEOUT_MS = 15_000;
 
 const TELEMETRY_LIST_MAX_BODY_BYTES = 4_000_000; // the receiver caps a listing at 500 summaries
 
-async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
+export async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("Global fetch is not available. Upgrade to Node 18+.");
   // Same transport gate the remit rail uses: https, or a loopback host with a
   // loud warning that the credential is in clear. Anything else throws here,
@@ -12977,6 +12985,7 @@ async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
     const envName = optionalString(args["admin-key-env"]) || DEFAULT_ADMIN_KEY_ENV;
     const adminKey = process.env[envName];
     if (!isNonEmptyString(adminKey)) throw new Error(`telemetry list: set ${envName} (the ops admin key) for the cross-tenant listing, or pass --packet <campaign-runtime.build.json> for a tenant-scoped one.`);
+    console.warn("Warning: CAMPAIGN_OPS_ADMIN_KEY (or the selected admin-key env) is a break-glass /api/runs listing credential. Use campaigns-os login for supported store-profile reads; login does not grant cross-tenant run listing.");
     headers["X-Campaigns-Ops-Admin-Key"] = adminKey.trim();
     scope = "admin";
   }

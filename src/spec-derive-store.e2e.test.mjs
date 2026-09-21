@@ -1,7 +1,7 @@
 // End-to-end: `spec derive --from-store` against a REAL store's Admin API
 // (network, credential). Opt in with CAMPAIGNS_OS_E2E_STORE=<subdomain> and
 // the store's read token in <SUBDOMAIN>_ADMIN_TOKEN (the command's own
-// default); the hermetic equivalent in spec-derive-store.test.mjs replays
+// explicit break-glass source); the hermetic equivalent in spec-derive-store.test.mjs replays
 // the same states against a fake Admin API. The run is a dry run then a
 // write on a temp copy of the example campaign; the store is only read.
 import assert from "node:assert/strict";
@@ -69,7 +69,7 @@ test("spec derive --from-store reads a real store and writes what it states into
   const { dir, packetPath, specPath } = fixture();
   try {
     const before = readFileSync(specPath, "utf8");
-    const dry = JSON.parse(run(["spec", "derive", "--packet", packetPath, "--from-store", SUBDOMAIN, "--dry-run", "--json"]).stdout);
+    const dry = JSON.parse(run(["spec", "derive", "--packet", packetPath, "--from-store", SUBDOMAIN, "--store-token-source", `env:${TOKEN_ENV}`, "--dry-run", "--json"]).stdout);
     assert.equal(dry.ok, true, JSON.stringify(dry.errors));
     assert.equal(dry.store.store_read, "ok");
     assert.equal(dry.store.token_source, `env:${TOKEN_ENV}`);
@@ -82,14 +82,14 @@ test("spec derive --from-store reads a real store and writes what it states into
     for (const field of SPEC_DERIVE_STORE_FIELDS) assert.ok(touched.has(field), `${field} is accounted for`);
     assert.ok(dry.changes.some((row) => row.field === "campaign.store_name"), "the store's name replaces the example's");
 
-    const written = JSON.parse(run(["spec", "derive", "--packet", packetPath, "--from-store", SUBDOMAIN, "--json"]).stdout);
+    const written = JSON.parse(run(["spec", "derive", "--packet", packetPath, "--from-store", SUBDOMAIN, "--store-token-source", `env:${TOKEN_ENV}`, "--json"]).stdout);
     assert.equal(written.written, true);
     assert.deepEqual(written.changes.map((row) => [row.field, row.after]), dry.changes.map((row) => [row.field, row.after]), "dry run and write agree");
     const spec = readJson(specPath);
     for (const row of written.changes.filter((change) => change.field.startsWith("campaign.store_"))) {
       assert.equal(spec.campaign[row.field.slice("campaign.".length)], row.after);
     }
-    const again = JSON.parse(run(["spec", "derive", "--packet", packetPath, "--from-store", SUBDOMAIN, "--json"]).stdout);
+    const again = JSON.parse(run(["spec", "derive", "--packet", packetPath, "--from-store", SUBDOMAIN, "--store-token-source", `env:${TOKEN_ENV}`, "--json"]).stdout);
     assert.equal(again.changes.length, 0, "a second run is a no-op");
 
     // The wrong subdomain is a refusal, not a partial write.

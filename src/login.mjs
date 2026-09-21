@@ -97,15 +97,16 @@ export async function runAuthentication(argv, { fetchImpl = globalThis.fetch, cr
         try {
           // Include network/clock skew in the decision; never retry a consumed
           // refresh blindly after an uncertain response.
-          if (record.access_expires_at <= now() + 60000) {
-            const started = now();
-            const data = await gatewayRequest('/token', { fetchImpl, form: { grant_type: 'refresh_token', client_id: CLIENT_ID, resource: RESOURCE, refresh_token: record.refresh_token } });
-            record = credentialFromResponse(data, store, started);
+          if (!record.refresh_pending && record.access_expires_at <= now() + 60000) {
+            const { rotateLockedCredential } = await import('./admin-transport.mjs');
+            record = await rotateLockedCredential(storage, record, { fetchImpl, now });
           }
+          // Pending refresh means its outcome is unknown. Try access revocation
+          // once, never replay that refresh, then clear the local selection.
           const result = await gatewayRequest('/revoke', { fetchImpl, accessToken: record.access_token });
           if (result.revoked !== true) throw new GatewayError('invalid_response');
           remote = 'revoked';
-        } catch (error) { remote = error?.status === 401 ? 'unrecognized' : 'unconfirmed'; }
+        } catch (error) { remote = error?.status === 401 || error?.httpStatus === 401 ? 'unrecognized' : 'unconfirmed'; }
       } finally { cleanup = storage.clear(); }
     });
     output(localIssue ? 'Local login selection cleared. Local credentials could not be read; remote revocation was not attempted.' : remote === 'revoked' ? 'Logged out. Gateway grant revoked and local login selection cleared.' : remote === 'unrecognized' ? 'Local login selection cleared. Gateway no longer recognizes this grant; remote revocation was not confirmed.' : remote === 'unconfirmed' ? 'Local login selection cleared. Remote revocation was not confirmed because the gateway request failed.' : 'No local login for this store.');

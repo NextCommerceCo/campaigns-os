@@ -96,9 +96,9 @@ export function createCredentialStore({ home = os.homedir(), keychain = macKeych
           if (typeof raw !== 'string' || Buffer.byteLength(raw) > MAX_BYTES) throw fail();
           try { return JSON.parse(raw); } catch { throw fail(); }
         };
-        const stored = readFile();
-        const pointer = stored === null ? null : parse(stored);
-        const keychainPointer = pointer?.backend === 'keychain';
+        let stored = readFile();
+        let pointer = stored === null ? null : parse(stored);
+        let keychainPointer = pointer?.backend === 'keychain';
         if (keychainPointer && (!/^[a-f0-9]{64}$/.test(pointer.account) || !keychain.available)) throw fail();
         // A private pointer commits a staged keychain item atomically. A failed
         // keychain write never replaces the previously valid login. Existing
@@ -125,19 +125,23 @@ export function createCredentialStore({ home = os.homedir(), keychain = macKeych
           if (record.gateway !== binding.gateway || record.client_id !== binding.client_id || record.store !== binding.store) throw fail();
           const value = JSON.stringify(record);
           if (Buffer.byteLength(value) > MAX_BYTES) throw fail();
-          if (!useKeychain) { atomicFile(value); return; }
+          if (!useKeychain) { atomicFile(value); stored = value; pointer = record; keychainPointer = false; return; }
           const account = createHash('sha256').update(id + randomUUID()).digest('hex');
+          const oldAccount = keychainPointer ? pointer.account : null;
+          const nextPointer = { backend: 'keychain', account, ...binding };
           try {
             keychain.write(account, value);
-            atomicFile(JSON.stringify({ backend: 'keychain', account }));
+            atomicFile(JSON.stringify(nextPointer));
+            pointer = nextPointer; stored = JSON.stringify(nextPointer); keychainPointer = true;
           } catch (error) { try { keychain.clear(account); } catch { /* staged item is never selected */ } throw error; }
-          if (keychainPointer) { try { keychain.clear(pointer.account); } catch { /* old item is no longer selected */ } }
+          if (oldAccount) { try { keychain.clear(oldAccount); } catch { /* old item is no longer selected */ } }
         };
         const clear = () => {
           let keychainRemoved = true;
           try { if (keychainPointer) keychain.clear(pointer.account); }
           catch { keychainRemoved = false; }
           if (inspect(file, false)) fs.unlinkSync(file);
+          stored = null; pointer = null; keychainPointer = false;
           return { local_cleared: true, keychain_item_removed: keychainRemoved };
         };
         return await operation({ read, write, clear });
@@ -146,6 +150,33 @@ export function createCredentialStore({ home = os.homedir(), keychain = macKeych
         if (error instanceof Error && error.message.startsWith('Credential storage')) throw error;
         throw fail();
       } finally { try { fs.rmdirSync(lock); } catch { throw fail(); } }
+    },
+    async listBindings() {
+      try {
+        if (!inspect(root, true, false, false) || !inspect(directory, true)) return [];
+        const names = fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name));
+        if (names.length > 1024) throw fail();
+        const bindings = [];
+        for (const name of names) {
+          const file = path.join(directory, name); inspect(file, false);
+          const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+          let value;
+          try {
+            const stat = fs.fstatSync(fd);
+            if (!stat.isFile() || stat.size > MAX_BYTES || stat.nlink !== 1 || (stat.mode & 0o777) !== 0o600 || (uid !== undefined && stat.uid !== uid)) throw fail();
+            value = JSON.parse(fs.readFileSync(fd, 'utf8'));
+          } finally { fs.closeSync(fd); }
+          if (value?.backend === 'keychain' && !value.store) {
+            if (!keychain.available || !/^[a-f0-9]{64}$/.test(value.account)) throw fail();
+            value = JSON.parse(keychain.read(value.account));
+          }
+          if (!value || typeof value.gateway !== 'string' || typeof value.client_id !== 'string' || typeof value.store !== 'string') throw fail();
+          const binding = { gateway: value.gateway, client_id: value.client_id, store: value.store };
+          if (identifier(binding) + '.json' !== name) throw fail();
+          bindings.push(binding);
+        }
+        return bindings;
+      } catch { throw fail(); }
     },
     read(binding) { return this.transaction(binding, storage => storage.read()); },
   };
