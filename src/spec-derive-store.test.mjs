@@ -324,7 +324,7 @@ test("spec derive --from-store writes the nine store fields, names the env var a
   try {
     const api = fakeAdminApi();
     const env = { ACME_ADMIN_TOKEN: " secret-token " };
-    const dry = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "Acme", "dry-run": true }, { fetchImpl: api.fetchImpl, env });
+    const dry = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "Acme", "store-token-source": "env:ACME_ADMIN_TOKEN", "dry-run": true }, { fetchImpl: api.fetchImpl, env });
     assert.equal(dry.ok, true, JSON.stringify(dry.errors));
     assert.equal(dry.status, "dry_run");
     assert.equal(dry.written, false);
@@ -339,7 +339,7 @@ test("spec derive --from-store writes the nine store fields, names the env var a
     assert.match(lines.find((line) => line.startsWith("Store:")), /^Store: https:\/\/acme\.29next\.store\/api\/admin\/ \(token env:ACME_ADMIN_TOKEN, primary domain shop\.acme\.example\)$/);
     assert.equal(readJson(specPath).campaign.store_name, "Example Store", "dry run wrote nothing");
 
-    const written = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: fakeAdminApi().fetchImpl, env });
+    const written = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: fakeAdminApi().fetchImpl, env });
     assert.equal(written.status, "derived");
     assert.equal(written.written, true);
     assert.deepEqual(written.changes.map((row) => [row.field, row.after]), dry.changes.map((row) => [row.field, row.after]), "dry run and write plan the same rows");
@@ -351,7 +351,7 @@ test("spec derive --from-store writes the nine store fields, names the env var a
     assert.equal(spec.campaign.store_phone_tel, "tel:8335550142");
     assert.equal(spec.campaign.name, "Runtime Packet Demo", "a mirrored field beside the store block is untouched");
 
-    const again = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: fakeAdminApi().fetchImpl, env });
+    const again = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: fakeAdminApi().fetchImpl, env });
     assert.equal(again.status, "unchanged");
     assert.equal(again.unchanged.filter((row) => row.field.startsWith("campaign.store_")).length, 9);
     assert.equal(again.next, `campaigns-os doctor --packet ${packetPath}`);
@@ -359,7 +359,7 @@ test("spec derive --from-store writes the nine store fields, names the env var a
 
     // Partial: the store cannot state two fields; the spec keeps them.
     const sparse = fakeAdminApi({ store: { ...STORE, contact_address: { phone_number: "" } } });
-    const partial = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: sparse.fetchImpl, env });
+    const partial = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: sparse.fetchImpl, env });
     assert.equal(partial.status, "partial");
     assert.deepEqual(partial.not_derived.map((row) => [row.field, row.reason]), [["campaign.store_phone", "store_field_missing"], ["campaign.store_phone_tel", "store_field_missing"]]);
     assert.ok(partial.warnings.some((issue) => issue.code === "spec.derive.store_field_missing"));
@@ -374,31 +374,31 @@ test("spec derive --from-store refuses a missing credential, a bad token, an unk
   const { dir, packetPath, specPath } = fixture();
   try {
     const before = readFileSync(specPath, "utf8");
-    const missing = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: fakeAdminApi().fetchImpl, env: {} });
+    const missing = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: fakeAdminApi().fetchImpl, env: {} });
     assert.equal(missing.ok, false);
     assert.deepEqual(missing.errors.map((issue) => issue.code), ["spec.derive.store_credential_missing"]);
-    assert.match(missing.errors[0].message, /ACME_ADMIN_TOKEN is not set.*--store-token-source env:<VAR>.*Nothing was written/);
+    assert.match(missing.errors[0].message, /ACME_ADMIN_TOKEN is not set.*campaigns-os login.*Nothing was written/);
     const empty = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:OTHER" }, { fetchImpl: fakeAdminApi().fetchImpl, env: { OTHER: "  " } });
     assert.deepEqual(empty.errors.map((issue) => issue.code), ["spec.derive.store_credential_missing"]);
     assert.equal(empty.store.token_source, "env:OTHER");
     for (const [status, code] of [[401, "spec.derive.store_unauthorized"], [404, "spec.derive.store_not_found"], [500, "spec.derive.store_unreachable"]]) {
-      const result = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: fakeAdminApi({ storeStatus: status }).fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
+      const result = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: fakeAdminApi({ storeStatus: status }).fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
       assert.equal(result.ok, false);
       assert.deepEqual(result.errors.map((issue) => issue.code), [code]);
       assert.equal(result.written, false);
       assert.equal(result.store.store_read, null);
     }
-    const invalid = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: async () => ({ ok: true, status: 200, json: async () => null }), env: { ACME_ADMIN_TOKEN: "t" } });
+    const invalid = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: async () => ({ ok: true, status: 200, json: async () => null }), env: { ACME_ADMIN_TOKEN: "t" } });
     assert.deepEqual(invalid.errors.map((issue) => issue.code), ["spec.derive.store_response_invalid"]);
     // A local precondition still comes first: a bad packet is reported
     // without touching the network.
     let fetched = 0;
     const neverFetch = async () => { fetched += 1; throw new Error("must not be called"); };
-    const local = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: join(dir, "nope.json"), "from-store": "acme" }, { fetchImpl: neverFetch, env: { ACME_ADMIN_TOKEN: "t" } });
+    const local = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: join(dir, "nope.json"), "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: neverFetch, env: { ACME_ADMIN_TOKEN: "t" } });
     assert.deepEqual(local.errors.map((issue) => issue.code), ["spec.derive.packet_invalid"]);
     assert.equal(fetched, 0, "the token is not sent for a packet the command refuses");
     writeFileSync(specPath, "[]\n");
-    const badSpec = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: neverFetch, env: { ACME_ADMIN_TOKEN: "t" } });
+    const badSpec = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: neverFetch, env: { ACME_ADMIN_TOKEN: "t" } });
     assert.deepEqual(badSpec.errors.map((issue) => issue.code), ["spec.derive.spec_invalid"]);
     assert.equal(fetched, 0);
     assert.equal(badSpec.written, false);
@@ -410,7 +410,7 @@ test("spec derive --from-store refuses a missing credential, a bad token, an unk
     rmSync(specPath);
     symlinkSync(outside, specPath);
     try {
-      const escaped = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: neverFetch, env: { ACME_ADMIN_TOKEN: "t" } });
+      const escaped = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: neverFetch, env: { ACME_ADMIN_TOKEN: "t" } });
       assert.deepEqual(escaped.errors.map((issue) => issue.code), ["spec.derive.spec_escapes_boundary"]);
       assert.equal(fetched, 0);
     } finally {
@@ -433,7 +433,7 @@ test("spec derive store flags are validated before any read, and the sync comman
     assert.throws(() => specDeriveCommand({ ...base, "store-token-source": "env:X" }), /--store-token-source only applies with --from-store/);
     assert.throws(() => specDeriveCommand({ ...base, "from-store": "acme", "store-token-source": "sk_live_x" }), /never written on the command line/);
     assert.throws(() => specDeriveCommand({ ...base, "from-store": "acme", "store-token-source": true }), /--store-token-source is empty/);
-    assert.throws(() => specDeriveCommand({ ...base, "from-store": "acme" }), /must be dispatched through specDeriveFromStoreCommand/);
+    assert.throws(() => specDeriveCommand({ ...base, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }), /must be dispatched through specDeriveFromStoreCommand/);
     assert.throws(() => specDeriveCommand({ ...base, "from-stor": "acme" }), /Unknown flag for spec derive: --from-stor\..*--from-store, --store-token-source/);
     // The offline run is unchanged: no store block, no network.
     const offline = specDeriveCommand({ ...base, "dry-run": true });
@@ -441,11 +441,11 @@ test("spec derive store flags are validated before any read, and the sync comman
     assert.equal(offline.store, null);
     assert.doesNotMatch(specDeriveTextLines(offline).join("\n"), /^Store:/m);
 
-    const run = spawnSync("node", [CLI, "spec", "derive", "--packet", packetPath, "--from-store", "acme", "--dry-run", "--json"], { encoding: "utf8", env: { ...process.env, ACME_ADMIN_TOKEN: "" } });
+    const run = spawnSync("node", [CLI, "spec", "derive", "--packet", packetPath, "--from-store", "acme", "--store-token-source", "env:ACME_ADMIN_TOKEN", "--dry-run", "--json"], { encoding: "utf8", env: { ...process.env, ACME_ADMIN_TOKEN: "" } });
     assert.equal(run.status, 2, run.stderr);
     const result = JSON.parse(run.stdout);
     assert.deepEqual(result.errors.map((issue) => issue.code), ["spec.derive.store_credential_missing"]);
-    const text = spawnSync("node", [CLI, "spec", "derive", "--packet", packetPath, "--from-store", "acme"], { encoding: "utf8", env: { ...process.env, ACME_ADMIN_TOKEN: "" } });
+    const text = spawnSync("node", [CLI, "spec", "derive", "--packet", packetPath, "--from-store", "acme", "--store-token-source", "env:ACME_ADMIN_TOKEN"], { encoding: "utf8", env: { ...process.env, ACME_ADMIN_TOKEN: "" } });
     assert.equal(text.status, 2);
     assert.match(text.stdout, /^Store: https:\/\/acme\.29next\.store\/api\/admin\/ \(token env:ACME_ADMIN_TOKEN\)$/m);
     assert.match(text.stdout, /spec\.derive\.store_credential_missing/);
@@ -583,7 +583,7 @@ test("specDeriveFromStoreCommand without --from-store is the offline run, and an
     // A store read with a status this toolkit does not know maps to the
     // transport error, never to a silent write.
     const before = readFileSync(specPath, "utf8");
-    const odd = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { store: { subdomain: "acme", token_env: "ACME_ADMIN_TOKEN", status: "weird", detail: "Something new." } });
+    const odd = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { store: { subdomain: "acme", token_env: "ACME_ADMIN_TOKEN", status: "weird", detail: "Something new." } });
     assert.equal(odd.ok, false);
     assert.deepEqual(odd.errors.map((issue) => [issue.code, issue.message]), [["spec.derive.store_unreachable", "Something new. Nothing was written."]]);
     assert.deepEqual(odd.errors[0].detail, { subdomain: "acme", token_source: "env:ACME_ADMIN_TOKEN" });
@@ -599,7 +599,7 @@ test("spec derive --from-store on a store with no primary domain and unlistable 
   try {
     const original = readJson(specPath).campaign;
     const api = fakeAdminApi({ store: { ...STORE, primary_domain: "" }, pagesStatus: 500 });
-    const result = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: api.fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
+    const result = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: api.fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
     assert.equal(result.ok, true, JSON.stringify(result.errors));
     assert.equal(result.status, "partial");
     assert.equal(result.written, true);
@@ -617,7 +617,7 @@ test("spec derive --from-store on a store with no primary domain and unlistable 
     // Pages listed but truncated: the same five links are kept, the Store
     // line says truncated, and the primary domain is shown.
     const many = fakeAdminApi({ pages: Array.from({ length: STORE_PAGES_MAX_REQUESTS + 1 }, (_, index) => ({ slug: `page-${index}`, title: `Page ${index}` })), pageSize: 1 });
-    const truncated = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "dry-run": true }, { fetchImpl: many.fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
+    const truncated = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN", "dry-run": true }, { fetchImpl: many.fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
     assert.equal(truncated.status, "partial", "a dry run with a miss reports partial");
     assert.equal(truncated.written, false);
     assert.equal(truncated.dry_run, true);
@@ -635,7 +635,7 @@ test("spec derive --from-store reports a local spec error before the store error
     // The spec file is gone: the local error is the only one, though the
     // store read also failed.
     rmSync(specPath);
-    const local = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: fakeAdminApi({ storeStatus: 401 }).fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
+    const local = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: fakeAdminApi({ storeStatus: 401 }).fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
     assert.equal(local.ok, false);
     assert.equal(local.errors.length, 1);
     assert.doesNotMatch(local.errors[0].code, /store_/);
@@ -651,7 +651,7 @@ test("spec derive --from-store reports a local spec error before the store error
     campaigns[second.slug].gtm_id = "GTM-ABC1234";
     writeJson(second.campaignsPath, campaigns);
     const before = readFileSync(second.specPath, "utf8");
-    const result = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: second.packetPath, "from-store": "acme" }, { fetchImpl: fakeAdminApi({ storeStatus: 403 }).fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
+    const result = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: second.packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: fakeAdminApi({ storeStatus: 403 }).fetchImpl, env: { ACME_ADMIN_TOKEN: "t" } });
     assert.deepEqual(result.errors.map((issue) => issue.code), ["spec.derive.store_unauthorized"]);
     assert.equal(result.written, false);
     assert.deepEqual(result.changes, []);
@@ -760,7 +760,7 @@ test("adversarial guards: a malformed token is never sent or echoed, phone exten
       writeJson(packetPath, { ...packet, spec: { ...packet.spec, local_path: "other.spec.json" } });
       return fakeAdminApi().fetchImpl(url, init);
     };
-    const result = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: swap, env: { ACME_ADMIN_TOKEN: "t" } });
+    const result = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: swap, env: { ACME_ADMIN_TOKEN: "t" } });
     assert.deepEqual(result.errors.map((issue) => issue.code), ["spec.derive.packet_changed_underneath"]);
     assert.equal(result.written, false);
     assert.equal(readJson(otherPath).campaign.store_name, "Example Store");
@@ -772,9 +772,40 @@ test("adversarial guards: a malformed token is never sent or echoed, phone exten
       rmSync(specPath, { force: true });
       return fakeAdminApi().fetchImpl(url, init);
     };
-    const gone = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme" }, { fetchImpl: vanish, env: { ACME_ADMIN_TOKEN: "t" } });
+    const gone = await specDeriveFromStoreCommand({ _: ["spec", "derive"], packet: packetPath, "from-store": "acme", "store-token-source": "env:ACME_ADMIN_TOKEN" }, { fetchImpl: vanish, env: { ACME_ADMIN_TOKEN: "t" } });
     assert.deepEqual(gone.errors.map((issue) => issue.code), ["spec.derive.spec_missing"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+
+test("default gateway derive accounts for all nine fields with no Admin env; outage never falls back", async () => {
+  const { createCredentialStore } = await import('./credential-store.mjs');
+  const { credentialFromResponse, GATEWAY, CLIENT_ID, RESOURCE, SCOPE } = await import('./login.mjs');
+  const { dir, packetPath, specPath } = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'gateway-derive-home-'));
+  const credentials = createCredentialStore({ home, keychain: { available: false } });
+  const binding = { gateway: GATEWAY, client_id: CLIENT_ID, store: 'acme.29next.store' };
+  const pair = { access_token: 'dummy-gateway-access', refresh_token: 'dummy-gateway-refresh', token_type: 'Bearer', resource: RESOURCE, scope: SCOPE, expires_in: 3600, grant_id: 'dummy-grant', gateway_version: 'a3-offline' };
+  try {
+    await credentials.transaction(binding, storage => storage.write(credentialFromResponse(pair, binding.store, Date.now())));
+    const before = readFileSync(specPath, 'utf8'), calls = [];
+    const fetchImpl = async (url, init) => { calls.push(url); assert.equal(init.headers.Authorization, 'Bearer ' + pair.access_token); return Response.json(url.endsWith('/store/') ? STORE : { results: PAGES }); };
+    const args = { _: ['spec', 'derive'], packet: packetPath, 'from-store': 'acme', 'dry-run': true };
+    const dry = await specDeriveFromStoreCommand(args, { credentials, fetchImpl, env: {} });
+    assert.equal(dry.ok, true, JSON.stringify(dry.errors)); assert.equal(dry.store.token_source, 'gateway:login');
+    assert.equal(dry.store.transport, 'gateway'); assert.equal(dry.store.endpoint, GATEWAY + '/admin/');
+    assert.equal(dry.store.admin_api, 'https://acme.29next.store/api/admin/');
+    assert.match(specDeriveTextLines(dry).find(line => line.startsWith('Store:')), /^Store: https:\/\/mcp\.nextcommerce\.com\/admin\//);
+    assert.deepEqual([...dry.changes, ...dry.unchanged, ...dry.not_derived].map(row => row.field).filter(field => SPEC_DERIVE_STORE_FIELDS.includes(field)).sort(), [...SPEC_DERIVE_STORE_FIELDS].sort());
+    assert.equal(dry.changes.filter(row => SPEC_DERIVE_STORE_FIELDS.includes(row.field)).length, 9);
+    assert.equal(readFileSync(specPath, 'utf8'), before); assert.deepEqual(calls, [GATEWAY + '/admin/store/', GATEWAY + '/admin/pages/']);
+    const outageCalls = [];
+    const failed = await specDeriveFromStoreCommand(args, { credentials, env: { ACME_ADMIN_TOKEN: 'dummy-admin-must-not-fallback' }, fetchImpl: async url => { outageCalls.push(url); throw new Error('unavailable'); } });
+    assert.equal(failed.ok, false); assert.equal(failed.errors[0].code, 'spec.derive.store_unreachable'); assert.deepEqual(outageCalls, [GATEWAY + '/admin/store/']); assert.equal(readFileSync(specPath, 'utf8'), before);
+    const warnings = [], direct = fakeAdminApi();
+    const explicit = await specDeriveFromStoreCommand({ ...args, 'store-token-source': 'env:ACME_ADMIN_TOKEN' }, { fetchImpl: direct.fetchImpl, env: { ACME_ADMIN_TOKEN: 'dummy-admin-explicit' }, warn: value => warnings.push(value) });
+    assert.equal(explicit.ok, true); assert.match(warnings.join(''), /break-glass.*campaigns-os login/); assert.ok(direct.calls.every(call => call.url.startsWith('https://acme.29next.store/api/admin/')));
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });

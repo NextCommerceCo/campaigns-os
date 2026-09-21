@@ -90,14 +90,24 @@ for (const stale of [false, true]) test(`CLI diagnostic preserves a valid ${stal
     const session = buildRunSession({ runId: SECRET, packet, lifecycleJournal: journal, now: new Date(stale ? "2000-01-01T00:00:00Z" : Date.now()) });
     assert.equal(isRunSessionStale(session), stale, "fixture must exercise the runtime stale predicate");
     writeFileSync(join(stateDir, "run-session.json"), JSON.stringify(session));
+    // Diagnose must take main's early read-only branch, never status auth.
+    const loader = join(scratch, "reject-gateway.mjs");
+    writeFileSync(loader, `export async function resolve(specifier, context, nextResolve) {
+      if (specifier.endsWith('/admin-transport.mjs')) throw new Error('GATEWAY_STATUS_LOADED');
+      return nextResolve(specifier, context);
+    }`);
     const before = snapshotTree(scratch);
-    const result = spawnSync(process.execPath, [join(ROOT, "bin/campaigns-os.mjs"), "tooling", "diagnose", "--platform", "codex", "--packet", packet, "--write", "--lifecycle-journal", journal, "--json"], { cwd: scratch, encoding: "utf8", env: { ...process.env, CAMPAIGNS_OS_LIFECYCLE_LOG: journal } });
+    const result = spawnSync(process.execPath, ["--no-warnings", "--loader", loader, join(ROOT, "bin/campaigns-os.mjs"), "tooling", "diagnose", "--platform", "codex", "--packet", packet, "--write", "--lifecycle-journal", journal, "--json"], { cwd: scratch, encoding: "utf8", env: { ...process.env, CAMPAIGNS_OS_LIFECYCLE_LOG: journal } });
     assert.equal(result.status, 0, result.stderr);
     const parsed = JSON.parse(result.stdout);
     assert.equal(parsed.schema_version, "campaigns-os-diagnostic/v0");
     const output = result.stdout + result.stderr;
     assert.equal(output.includes(scratch), false);
     assert.equal(output.includes(SECRET), false);
+    assert.equal(Object.hasOwn(parsed, "gateway_login"), false);
+    assert.equal(output.includes(".29next.store"), false);
+    assert.equal(output.includes("mcp.nextcommerce.com"), false);
+    assert.equal(output.includes("GATEWAY_STATUS_LOADED"), false);
     assert.equal(existsSync(journal), false);
     assert.deepEqual(snapshotTree(scratch), before);
   } finally { rmSync(scratch, { recursive: true, force: true }); }

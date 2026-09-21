@@ -72,7 +72,10 @@ selects the project-local dependency ahead of the global binary on PATH.
 
 `tooling status` is the preflight for "am I current?". It names the install
 mode and checks package identity, CLI entrypoint, and installed Campaigns OS
-skills:
+skills. It also reports local gateway login metadata across saved store bindings,
+without a `--store` flag or a remote validity check. No credential values are
+shown; unavailable storage is reported without guessing that the user is logged
+out. See [gateway login](gateway-login.md).
 
 - From a campaign folder it reports `Install mode: package install
   (node_modules), pinned at <version> @ <sha>`; git freshness is
@@ -296,8 +299,11 @@ brings the spec back in line; doctor's `page_kit.sdk_version.repo_newer`
 warning names it. Add `--write-map` and the pin is also recorded in the saved
 Map's Build hints field, so the Map and its next export stop reading stale.
 The store profile (`campaign.store_*`) comes from the store
-itself: add `--from-store <subdomain>` with the store's Admin API read token
-in `<SUBDOMAIN>_ADMIN_TOKEN` and the same run writes the store's name,
+itself: the 1.38.0 candidate uses gateway login for `--from-store <subdomain>`
+within the admitted owned-store private pilot. Existing direct callers must add
+`--store-token-source env:<VAR>` explicitly; there is no implicit environment
+fallback. See [gateway login and migration](gateway-login.md). A successful read
+writes the available store name,
 primary domain, phone and policy-page URLs into the spec too, for `page-kit
 sync` to carry into the repo.
 

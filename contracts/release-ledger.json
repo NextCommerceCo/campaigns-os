@@ -5396,6 +5396,102 @@
         }
       ],
       "entry_sha256": "2d229149aed64ab580016056719f83edb65634dabacb824c0f4d89c003a9b4ae"
+    },
+    {
+      "id": "RL-0132",
+      "sequence": 132,
+      "date": "2026-09-21",
+      "kind": "release",
+      "surface_version": "1.38.0",
+      "changelog_section": "1.38.0",
+      "changelog_sha256": "d5fcdc641de2c9fa774e4802732cb54b835243e1252b98cfb68bf9cb92c9170c",
+      "agent_impact": "Login/logout are additive; spec derive --from-store now requires gateway login by default. Existing direct callers must explicitly name their Admin-token environment variable. Store derivation rules remain unchanged. Gateway availability is limited to the admitted owned-store private pilot.",
+      "compatibility": "breaking",
+      "migration": "For admitted pilot stores, run campaigns-os login --store <subdomain> before default store derivation. To retain existing direct Admin reads, explicitly add --store-token-source env:<VAR> using the existing variable. No implicit environment fallback remains. Publication and external trials are separately gated.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Register login/logout and the gateway guide; bump supported surface to 1.38.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Replace implicit Admin environment lookup with gateway default and explicit direct-token migration."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/gateway-login.md",
+          "surface_entry": "docs/gateway-login.md",
+          "summary": "Explain browser consent, credential storage, refresh/logout recovery, explicit direct migration and private-pilot limits."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate supported-surface version reference for 1.38.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate supported-surface version reference for 1.38.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Document login commands and breaking gateway-default migration within the private pilot."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Align root package version to 1.38.0 without dependency changes."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance package to 1.38.0 and ship the gateway guide for login commands and breaking default transport migration."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "login",
+          "summary": "Add login/logout wiring, gateway-default store reads with explicit warned direct-token migration, local safe status and separate telemetry warning; clarify lifecycle exclusions."
+        }
+      ],
+      "entry_sha256": "7a48d75f0b2e9413126d288faced22a2f5dbb58bd7548374631bb42f8e979a14"
+    },
+    {
+      "id": "RL-0133",
+      "sequence": 133,
+      "date": "2026-09-21",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.38.0+agent.1",
+      "changelog_sha256": "48e5f9e0cd7d0be7c34bebfa811c3671a1722840f69dccc513f3d98c027ccc78",
+      "agent_impact": "The packaged lifecycle skill now matches the 1.38.0 gateway-default store-read behavior. Existing direct Admin callers must explicitly select env:<VAR>; implicit environment lookup and gateway-failure fallback are not supported.",
+      "compatibility": "compatible",
+      "migration": "Refresh the installed next-campaigns-os skill to 1.0.18. The runtime migration remains the one recorded in RL-0132: use an admitted gateway login or explicitly select --store-token-source env:<VAR>.",
+      "changes": [
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Align only the next-campaigns-os manifest version to 1.0.18."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Correct step 5 to gateway login default and explicit warned direct-token selection; bump skill to 1.0.18."
+        }
+      ],
+      "entry_sha256": "c31d5b0fe0f4bcd871897d923466d529f5399010b0bb009326789d69294e00c8"
     }
   ]
 }

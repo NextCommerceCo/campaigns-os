@@ -2,6 +2,45 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.38.0+agent.1] - 2026-09-21
+
+### Changed
+
+- Correct the packaged `next-campaigns-os` skill step 5 to use gateway login
+  credentials by default for store derivation within the admitted owned-store
+  private pilot. Existing direct Admin callers must explicitly select
+  `--store-token-source env:<VAR>`; there is no implicit environment lookup or
+  fallback after gateway failure. Bump this skill to 1.0.18 and align its manifest.
+  This documents the 1.38.0 migration already implemented; no runtime behavior,
+  package version or supported-surface version changes.
+
+## [1.38.0] - 2026-09-21
+
+### Added
+
+- `login [--store <subdomain>]` and `logout [--store <subdomain>]` for the
+  admitted owned-store gateway pilot. Browser consent saves gateway credentials
+  in the user keychain or private user files outside the project. Failed login
+  preserves the prior login. Logout reports local cleanup separately from
+  confirmed remote revocation.
+- Local-only gateway metadata in `tooling status`: saved store bindings,
+  access expiry and reported gateway version, with no credential values.
+
+### Changed
+
+- **Breaking:** `spec derive --from-store` now defaults to gateway credentials.
+  Existing direct Admin callers must explicitly pass
+  `--store-token-source env:<VAR>` using their existing variable, or use an
+  admitted gateway login. The explicit direct path warns that it bypasses
+  gateway custody; a gateway failure never falls back to it.
+- Gateway reads preserve the nine-field Store Profile derivation rules and
+  identify the actual transport endpoint alongside the logical upstream source.
+  Refresh is serialized and durably marked before consumption; an uncertain
+  refresh requires login rather than replay on the next invocation.
+- Document the migration, storage recovery, separate telemetry admin key and
+  pilot limits. This is a release candidate: publication, general merchant
+  rollout and external client trials remain separately gated.
+
 ## [1.37.3+agent.1] - 2026-09-19
 
 ### Changed

@@ -444,17 +444,25 @@ network, which the default run never touches, so it is opt-in:
 campaigns-os spec derive --packet campaign-runtime.build.json --from-store <subdomain> [--store-token-source env:<VAR>] [--dry-run] [--json]
 ```
 
-`<subdomain>` is the store's `<store>.29next.store` subdomain (the Admin API
-lives at `https://<subdomain>.29next.store/api/admin/`). The read token is
-taken from the environment, never from the command line: from
-`<SUBDOMAIN>_ADMIN_TOKEN` (upper-cased, dashes as underscores) by default,
-or from the variable `--store-token-source env:<VAR>` names. An Admin API
-access token with the `store:read` and `content:read` scopes (Settings >
-API Access) is enough; the token is sent as a bearer and appears nowhere in
-the output, which names the variable instead (a value that is not one line
-of printable ASCII is refused unsent, `spec.derive.store_credential_invalid`,
-and a transport error that quotes a header is redacted). The store is only
-read.
+`<subdomain>` is the store's `<store>.29next.store` subdomain. In the
+1.38.0 candidate, the default read uses gateway credentials saved by
+`campaigns-os login --store <subdomain>`, through
+`https://mcp.nextcommerce.com/admin/`. This is an admitted owned-store
+private pilot, not general merchant availability. Missing, expired or uncertain
+credentials require login; gateway failure never falls back to an environment
+token. See [gateway login and migration](gateway-login.md).
+
+**Migration for existing direct callers:** add
+`--store-token-source env:<VAR>` explicitly, naming your existing environment
+variable (for example `EXAMPLE_ADMIN_TOKEN`). The former implicit
+`<SUBDOMAIN>_ADMIN_TOKEN` lookup is removed. This break-glass path warns that it
+bypasses gateway custody and contacts
+`https://<subdomain>.29next.store/api/admin/` directly. A `store:read` and
+`content:read` Admin token is sufficient. Tokens are never CLI arguments or
+output; invalid bearer values are refused unsent. Both paths only read the store.
+Gateway page pagination is consolidated by custody into a bounded list; the CLI
+does not follow an upstream cursor on this path. The explicit direct path keeps
+its existing bounded cursor traversal.
 
 | Spec field | Store authority |
 |---|---|
@@ -489,14 +497,17 @@ return). A slug that is not one honest path segment (a separator, `.` or
 spec was stale and the diff is the correction, or `--from-store` names
 another merchant's store and the spec should be restored.
 
-The result carries a `store` block (`subdomain`, `admin_api`,
-`token_source`, `store_read`, `pages_read`, `primary_domain`), and the text
+The result carries a `store` block (gateway reads add `transport: "gateway"`
+and the actual gateway `endpoint`; `admin_api` remains the logical upstream
+source), with `subdomain`, `admin_api`,
+`token_source`, `store_read`, `pages_read`, `primary_domain`, and the text
 output a `Store:` line. After a write that moved a store field, `next` is
 `page-kit sync` first (doctor's `page_kit.store_profile` gate now sees the
 spec ahead of the repo and names sync as its repair), then doctor. A store
 that cannot be read is a refusal with nothing written, repo fields included,
-exit 2: `spec.derive.store_credential_missing` (the variable is unset or
-empty), `store_unauthorized` (401/403), `store_not_found` (404: no store at
+exit 2: `spec.derive.store_credential_missing` (no gateway login, or the explicitly
+selected variable is unset or empty), `store_credential_unavailable` (local
+storage is busy or unavailable), `store_unauthorized` (401/403), `store_not_found` (404: no store at
 that subdomain), `store_unreachable` (transport, timeout, 5xx) or
 `store_response_invalid`. Local preconditions (packet, spec, target entry, spec boundary, page tree)
 are checked before the store is contacted, and a packet that names another
