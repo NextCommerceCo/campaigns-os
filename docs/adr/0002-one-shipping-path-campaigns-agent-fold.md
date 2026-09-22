@@ -27,7 +27,7 @@ The kernel (`src/`) decides campaign truth: lifecycle order, doctor, verdicts, R
 
 After the fold the repository holds `src/agent/` for the installer, the per-harness adapters and a tool face if one is built; `contracts/effects.v1.json` on the supported surface; `skills/` holding the kernel's five lifecycle skills plus four re-authored skills, with `skills.json` gaining a `bundle_revision`; `agents/` holding the generated adapters, committed, classified as agent-relevant and declared on the supported surface in the first pull request that introduces agent files; the charter merged into `AGENTS.md`; `docs/harness-matrix.md` recording what each harness consumes with a verified-on date per cell; and this record under `docs/adr/`.
 
-### Subcommands
+### New subcommands
 
 `campaigns-os readback <target> [--json] [--packet <path>] [--example]` is unconditional: it is the port of the Python artifact readback into the kernel, with its known freshness defect fixed and its output contract versioned, and `--example` runs it over a bundled, clearly synthetic evidence-bearing sample.
 
@@ -99,7 +99,7 @@ The rules by which the content trial is read are written before the session, so 
 
 1. The selected campaign has no usable or current evidence and the agent says so accurately: that is correct limitation handling, with an artifact-production follow-up if useful; product utility and archive remain unproven, and there is no tool-face trigger.
 2. Skills or charter fail to load, installation needs undocumented repair, or the selected executable or version is wrong: repair installation or binding and repeat the affected check.
-3. The shell command runs correctly but the answer is materially wrong, stale evidence is stated as current, or the agent attempts an action outside the agreed task: revise skill or authority behaviour and repeat, do not label the transport inadequate, and record attempted and completed effects separately from the harness's own permission log.
+3. The shell command runs correctly but the answer is materially wrong, stale evidence is stated as current, or the agent attempts an action outside the agreed task: revise skill or authority behaviour and repeat, do not label the transport inadequate, and record attempted and completed effects separately, from the harness's own permission log.
 4. The job is useful but a reproducible tool-discovery or invocation limitation remains in the participant's harness after using the documented CLI path: a bounded tool-face prototype for that limitation is justified, compared on the same job.
 5. The developer completes a useful real task, corrections are recorded and the shell path suffices: continue with skills plus CLI and no tool face; archive still requires the released-path check and the migration decision, and voluntary reuse remains separate evidence.
 6. The developer stops at a credential step, whether an API key, a store token or a deploy target: that is not a transport or skill finding but evidence for the credential handshake, and what was pasted and by whom is recorded.
@@ -111,7 +111,7 @@ Each step carries its own proof.
 - Step 1: this record.
 - Step 2: the kernel items independent of the plan, which are issue #459 with the refused-command case under an effect test, the telemetry default documented where the agent surface states it, and the participant's harness cells verified first-party in `docs/harness-matrix.md` with the rest marked unverified.
 - Step 3: the readback port with the freshness fix, plus `--dry-run` on the mutating commands that lack it.
-- Step 3b: CLI credential transport, `login` and `logout`, built by the gateway track.
+- Step 3b: CLI credential transport, `login` and `logout`, built by the gateway track; already present at the commit that adds this record.
 - Step 4: the first agent-files pull request, all in one — `effects.v1.json` with a row per command and its effect tests, `bundle_revision`, the minimal `--skills-revision` checker with match and mismatch tests, the four re-authored skills with the revision header and tools named in the body, the charter in `AGENTS.md`, the new paths classified and declared supported, the follow-every-reference exercise, and the generated-output assertion.
 - Step 5: a content trial, skills plus CLI, no tool face, not the released installer, with the entry path recorded exactly, credentials via `login` and never a pasted token, and the harness's own permission prompts on.
 - Step 6: decide the tool face from step 5's observation.
@@ -148,17 +148,25 @@ The attended local posture loses one mechanical control, for an agent in a shell
 
 ## Evidence
 
-This record relies on the following repository-relative artifacts.
+This record relies on the following repository-relative artifacts. They are listed in two groups, because this record is step 1 of the build sequence and most of what it names does not exist yet.
+
+Present in this repository at the commit that adds this record:
 
 - `contracts/supported-surface.json` — the surface on which `contracts/effects.v1.json` and the generated adapters under `agents/` are declared in the first pull request that introduces agent files.
-- `contracts/agent-relevant-change-policy.v1.json` — the change-policy classification, which classifies the new agent paths and, with the effect test, fails a silent capability promotion.
-- `contracts/effects.v1.json` — the effect declarations, one row per command and effect-changing flag, each proved by its effect test.
-- `skills.json` — the skill bundle manifest, gaining `bundle_revision`.
+- `contracts/agent-relevant-change-policy.v1.json` — the change-policy classification that will classify the new agent paths and, with the effect test, fail a silent capability promotion.
+- `skills.json` — the skill bundle manifest.
 - `compatibility.json` — with the npm version pin, the binding contract that replaces the blob pin to a reviewed kernel commit.
-- `AGENTS.md` — the charter's home.
-- `docs/harness-matrix.md` — what each harness consumes, with a verified-on date per cell.
-- The import-boundary test over `src/agent/`, the `install-skills` compatibility tests, the `--skills-revision` match and mismatch tests, the generated-output assertion, the follow-every-reference installation exercise, and the readback regression corpus with its mixed-age, tied-packet, unknown or missing, bounded-read and nested-worktree cases.
+- `AGENTS.md` — the charter's home once the charter is merged into it.
 - campaigns-os issue #459 — `--no-write` coverage of the lifecycle journal, with the refused-command case.
+
+Introduced by the build sequence, and not present here:
+
+- `docs/harness-matrix.md`, recording what each harness consumes with a verified-on date per cell, is introduced by step 2.
+- The readback regression corpus, carried forward and extended with its mixed-age, tied-packet, unknown or missing, bounded-read and nested-worktree cases, is introduced by step 3.
+- `contracts/effects.v1.json` — the effect declarations, one row per command and effect-changing flag, each proved by its effect test — is introduced by step 4.
+- `bundle_revision` in `skills.json`, and the `--skills-revision` match and mismatch tests, are introduced by step 4.
+- The generated-output assertion and the follow-every-reference installation exercise are introduced by step 4.
+- `src/agent/` and the import-boundary test over it, and the `install-skills` compatibility tests, are introduced by step 4 or step 7, with the installer of step 7 at the latest.
 
 Campaigns Agent's own records stay in that repository and are cited from here.
 
