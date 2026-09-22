@@ -132,8 +132,9 @@ See [offline demo preview](docs/demo-preview.md).
   `package_exports`, and `bin`. You may pin these, verify their bytes, and build
   behavior on them. A change here is versioned, and it is loud.
 - **Internal** — everything else: `src/**`, `scripts/**`, `examples/**`,
-  `prompts/**`, `agents/**`, and `contracts/**` other than the entries the
-  manifest names. Read them for context if you like. Never depend on them. A
+  `prompts/**`, and whatever under `agents/**` and `contracts/**` the manifest
+  does not name (the four harness files under `agents/` are named, and so
+  supported). Read them for context if you like. Never depend on them. A
   consumer manifest that pins an internal path is invalid, and it will break
   without notice or ceremony.
 
