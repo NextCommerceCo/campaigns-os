@@ -1,6 +1,6 @@
 # Skills bundle revision
 
-The five skills Campaigns OS bundles are installed into shared agent skill
+The skills Campaigns OS bundles (nine as of 1.40.0) are installed into shared agent skill
 directories and then **read into an agent's context once**, at the start of a
 task. They are not re-read afterwards. The CLI underneath that session, however,
 can be replaced at any moment — an `npm install` in the campaign folder, an
@@ -101,7 +101,7 @@ An agent that carries only the frontmatter of the single skill it loaded can
 pass that instead:
 
 ```bash
-campaigns-os tooling status --skills-revision next-campaigns-qa@1.3.3
+campaigns-os tooling status --skills-revision next-campaigns-qa@1.3.4
 ```
 
 The version is checked against that skill's entry in the manifest, and the

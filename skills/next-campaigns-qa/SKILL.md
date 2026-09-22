@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.3
+version: 1.3.4
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.40.0+skills.1
-Run `campaigns-os tooling status --skills-revision 1.40.0+skills.1` at the start of each
+Bundle revision: 1.40.0+skills.2
+Run `campaigns-os tooling status --skills-revision 1.40.0+skills.2` at the start of each
 task and start a fresh session if it reports `mismatch`, because this text is
 already in your context and is never re-read while the CLI on disk can move
 under it.
@@ -120,4 +120,4 @@ Canonical test-order flow:
 6. On upsell pages, click the actual accept or decline button for the target path.
 7. Verify receipt/order evidence and summarize order number, `ref_id`, selected cart, active vouchers/promo codes, discounts, upsell path, and line-item result.
 
-Do not use `campaigns-os qa --legacy-api-test-order` as the canonical proof path. It bypasses the deployed campaign page and the SDK checkout/upsell surfaces; keep it only as a diagnostic fallback when explicitly requested.
+Do not use `campaigns-os qa run --legacy-api-test-order` as the canonical proof path. It bypasses the deployed campaign page and the SDK checkout/upsell surfaces; keep it only as a diagnostic fallback when explicitly requested.

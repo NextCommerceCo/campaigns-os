@@ -220,7 +220,7 @@ export function validateReservedNames(manifest, reserved, label) {
 }
 
 /**
- * The bundle revision: one identity for the five skills TOGETHER, spelled
+ * The bundle revision: one identity for the bundled skills TOGETHER, spelled
  * `<package version>+skills.<n>`.
  *
  * Per-skill versions already exist and are not enough for the failure this

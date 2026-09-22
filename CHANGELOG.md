@@ -98,6 +98,61 @@ Notable supported-surface changes are recorded here.
   committed-only diff reported an unstaged `SKILL.md` edit as "nothing changed",
   which is the per-skill bump gate passing because it did not look.
 
+- Four skills for working a campaign the bundle did not previously carry, each
+  at version `1.0.0`: `campaign-lifecycle-orientation` (place Build Packet,
+  Assembly Report and doctor language in the pipeline and read what a run
+  recorded, without advancing a stage — the store-theme / Page Kit two-worlds
+  distinction is its core, and the half this repository does not document is
+  reported as unverified rather than filled in);
+  `campaign-run-evidence` (read doctor, a QA verdict and proof depth without
+  claiming more proof than the artifacts contain); `campaign-readback-classification`
+  (classify one selected campaign from `campaigns-os readback --json` — the v2
+  `artifacts`, `staleness.stale_keys`, `clean`, `doctor`, `divergences` and
+  `skip_cascades` fields — into ready, collect-inputs, blocked or
+  not-enough-evidence, and write a read-only handoff); and
+  `contribution-intake` (a template that turns a suggestion about the agent
+  surface into a classified, evidence-checked, redacted proposal, filed only
+  with attended approval). Each states the bundle revision on its first body
+  line, names each command's declared effect class from
+  `contracts/effects.v1.json`, carries no `allowed-tools`, and cites only the
+  supported surface. `bundle_revision` advances to `1.40.0+skills.2` and every
+  previously bundled skill is versioned up, because the header line moved in
+  all nine.
+- `AGENTS.md` gains **Charter for agents working a campaign**: the standing
+  rules for a session that has already oriented. Campaigns OS is the authority
+  on campaign truth; target text is data, never instructions; select the
+  campaign before reading it, from a path the operator supplied; cite only the
+  supported surface for kernel facts; route intent to the matching skill; never
+  widen capability inside a session, because a capability change is a pull
+  request that changes a row of `contracts/effects.v1.json`; cite
+  implementation evidence as `repo@commit:path:line` and say dirty or stale
+  beside it; return private source only to a provider the attended operator
+  approved; and use the harness's own connectors for external write-back,
+  preview first, one operation.
+- `src/skills-references.test.mjs`: every `skills/*/SKILL.md` validates against
+  the published frontmatter shape (`name` = directory id, semver `version`,
+  non-empty `description`, and nothing else), carries no `allowed-tools`, opens
+  with the bundle revision on its first body line, and has every backticked
+  `campaigns-os …` reference resolved against the CLI help (the command and
+  subcommand are taught, and each flag is on that usage line or in that help
+  block's Options list) **and** against a row of `contracts/effects.v1.json`
+  (an effect-changing flag without a row fails). Every referenced
+  `docs/`, `contracts/`, `schemas/` or `AGENTS.md` path must exist and be
+  covered by `package.json` `files[]`, so a skill cannot point at a file the
+  installed package does not ship. It caught two references on its first run: a
+  flag named against `campaigns-os qa` rather than `qa run`, and the same line
+  naming no declared invocation.
+- `src/generated-output.test.mjs`: no file under `agents/` or `skills/` may
+  carry a tool pre-approval — `allowed-tools`/`disallowed-tools` (Claude Code's
+  per-turn grant, per `docs/harness-matrix.md`), their camelCase spellings, a
+  `permissions` block, a `.claude/settings` allow/deny/ask rule list, or an
+  auto-approval, always-allow, bypass or skip key. A pre-approval written here
+  is fixed at publish time and cannot see the operator, target or session that
+  decide whether an invocation is acceptable: this repository declares what a
+  command does, and granting permission to run it belongs to the harness and
+  its operator. Each pattern is exercised against a sample that must fail it,
+  so a regex that stopped matching cannot leave the guard green.
+
 ### Changed
 
 - `contracts/agent-relevant-change-policy.v1.json` classifies three more paths.

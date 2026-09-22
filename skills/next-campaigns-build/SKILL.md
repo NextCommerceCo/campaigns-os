@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-build
-version: 1.0.4
+version: 1.0.5
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
 
-Bundle revision: 1.40.0+skills.1
-Run `campaigns-os tooling status --skills-revision 1.40.0+skills.1` at the start of each
+Bundle revision: 1.40.0+skills.2
+Run `campaigns-os tooling status --skills-revision 1.40.0+skills.2` at the start of each
 task and start a fresh session if it reports `mismatch`, because this text is
 already in your context and is never re-read while the CLI on disk can move
 under it.
