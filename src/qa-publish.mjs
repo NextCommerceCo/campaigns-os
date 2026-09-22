@@ -20,6 +20,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { campaignSidecarPaths, targetRepoFor } from "./campaign-workspace.mjs";
+import { refused } from "./lifecycle.mjs";
 import { SIDECAR_RELATIVE_PATH } from "./qa-sidecar.mjs";
 import { qaVerdictIdentityMatch } from "./qa-verdict-discovery.mjs";
 import { publishQaVerdict, qaPortalUrl, qaVerdictPublishBlock, QA_VERDICT_PUBLISH_ENDPOINT, QA_VERDICT_PUBLISHERS } from "./qa-verdict-publish.mjs";
@@ -172,8 +173,11 @@ export function findRunRecordForVerdict({ records, packet, verdictRunId, verdict
 export async function publishStoredVerdict(args, operations = {}) {
   // `--dry-run` is a bare flag; `--dry-run true` must fail rather than quietly
   // become a real POST.
+  // An up-front flag refusal, tagged like every other so the lifecycle
+  // journal records nothing for it (a plain Error here would be journaled as
+  // a handler failure).
   if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
-    throw new Error(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
+    throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
   }
   const dryRun = args["dry-run"] === true;
   const result = await attemptPublish(args, operations, dryRun);
