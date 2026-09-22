@@ -39,8 +39,8 @@ const SCANNED_DIRS = ["agents", "skills"];
  * below rather than by a name this repository would be inventing for them.
  */
 const FORBIDDEN = [
-  { pattern: /allowed-tools/i, why: "Claude Code's per-turn tool pre-approval for a skill (docs/harness-matrix.md)" },
-  { pattern: /disallowed-tools/i, why: "Claude Code's per-turn tool removal for a skill (docs/harness-matrix.md)" },
+  { pattern: /allowed-tools/i, why: "Claude Code's per-turn tool pre-approval for a skill (docs/harness-matrix.md in the repository)" },
+  { pattern: /disallowed-tools/i, why: "Claude Code's per-turn tool removal for a skill (docs/harness-matrix.md in the repository)" },
   { pattern: /\ballowedTools\b/, why: "the camelCase spelling of a tool pre-approval list" },
   { pattern: /\bdisallowedTools\b/, why: "the camelCase spelling of a tool denial list" },
   { pattern: /"permissions"\s*:/, why: "a settings permissions block" },

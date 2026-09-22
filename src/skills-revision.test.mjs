@@ -179,8 +179,34 @@ test("skills-revision: a bare --skills-revision is refused, not treated as unche
     const run = status(target, ["--skills-revision", "--json"]);
     assert.notEqual(run.status, 0);
     assert.match(run.stderr, /Missing value for --skills-revision/);
+    // The example in the refusal is the shipped bundle, never a stale literal.
+    assert.ok(run.stderr.includes(`--skills-revision ${BUNDLE_REVISION}`), `refusal must cite the shipped bundle revision: ${run.stderr}`);
     // Silently reading a value-less flag as "no check requested" would report
     // `unchecked` to an agent that asked for a check.
     assert.doesNotMatch(run.stdout, /revision_check/);
   });
+});
+
+test("skills-revision: docs/skills-revision.md states the bundle this tree ships, everywhere it states one", () => {
+  // The document is a named surface entry and an operator copies its examples
+  // verbatim. A literal that lags skills.json turns the documented command into
+  // a false `mismatch` — the exact signal the feature exists to avoid — and no
+  // other gate compares the two, so this one does.
+  const doc = readFileSync(join(ROOT, "docs", "skills-revision.md"), "utf8");
+  for (const needle of [
+    `"bundle_revision": "${BUNDLE_REVISION}"`,
+    `Bundle revision: ${BUNDLE_REVISION}`,
+    `--skills-revision ${BUNDLE_REVISION}`,
+  ]) {
+    assert.ok(doc.includes(needle), `docs/skills-revision.md must contain ${JSON.stringify(needle)}`);
+  }
+  // Every stated bundle identity that shares this tree's version prefix must
+  // be this tree's bundle; the ordering example deliberately uses other
+  // versions and is not caught by the prefix.
+  const prefix = BUNDLE_REVISION.replace(/\.\d+$/, ".");
+  for (const [, stated] of doc.matchAll(/(?:Bundle revision:|"bundle_revision":|--skills-revision|on disk|\(|"|\b)\s*"?(\d+\.\d+\.\d+\+skills\.\d+)/g)) {
+    if (stated.startsWith(prefix) && !/is therefore ahead of/.test(doc.split(stated)[1]?.slice(0, 80) ?? "") && !/ahead of `$/.test(doc.split(stated)[0]?.slice(-12) ?? "")) {
+      assert.equal(stated, BUNDLE_REVISION, `docs/skills-revision.md states ${stated}; this tree ships ${BUNDLE_REVISION}`);
+    }
+  }
 });

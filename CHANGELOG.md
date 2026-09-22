@@ -144,7 +144,7 @@ Notable supported-surface changes are recorded here.
   naming no declared invocation.
 - `src/generated-output.test.mjs`: no file under `agents/` or `skills/` may
   carry a tool pre-approval — `allowed-tools`/`disallowed-tools` (Claude Code's
-  per-turn grant, per `docs/harness-matrix.md`), their camelCase spellings, a
+  per-turn grant, per `docs/harness-matrix.md` in the repository), their camelCase spellings, a
   `permissions` block, a `.claude/settings` allow/deny/ask rule list, or an
   auto-approval, always-allow, bypass or skip key. A pre-approval written here
   is fixed at publish time and cannot see the operator, target or session that

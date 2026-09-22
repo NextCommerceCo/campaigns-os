@@ -248,12 +248,42 @@ test("skills-references: every campaigns-os reference resolves against the CLI h
   console.log(`skills-references: ${checked} command references resolved against the CLI help`);
 });
 
+/**
+ * The tier a skill cites for a reference, when the reference is followed by a
+ * `(tier \`X\`` parenthetical before any other backticked text (the
+ * parenthetical may wrap onto the next line or two). The tier is the one
+ * agent-facing value a skill restates from the contract that nothing else
+ * re-derives; a re-tiered row must not leave the skill teaching the old one.
+ */
+function citedTier(source, reference) {
+  const lines = source.split("\n");
+  const window = lines.slice(reference.line - 1, reference.line + 2).join(" ");
+  const start = window.indexOf(reference.text);
+  if (start < 0) return null;
+  const after = window.slice(start + reference.text.length);
+  // The reference's own closing backtick comes first; then nothing backticked
+  // may sit between it and the parenthetical.
+  const match = /^`?[^`]*?\(tier `([^`]+)`/.exec(after);
+  return match ? match[1] : null;
+}
+
 test("skills-references: every campaigns-os reference resolves against contracts/effects.v1.json", () => {
   let checked = 0;
+  let tiersChecked = 0;
   for (const skill of skills) {
-    for (const reference of commandReferences(read(skill.path))) {
+    const source = read(skill.path);
+    for (const reference of commandReferences(source)) {
       const where = `${skill.path}:${reference.line}: \`${reference.text}\``;
       const rows = matchingRows(reference);
+      const tier = citedTier(source, reference);
+      if (tier !== null && rows.length) {
+        assert.ok(
+          rows.some((row) => row.tier === tier),
+          `${where}: the skill cites tier \`${tier}\` but no row of contracts/effects.v1.json for that invocation ` +
+            `carries it (rows: ${[...new Set(rows.map((row) => row.tier))].join(", ")})`,
+        );
+        tiersChecked += 1;
+      }
       // `campaigns-os qa` with no subcommand and no flag names the command
       // FAMILY, not an invocation — and the contract says so itself by
       // declaring rows for qa's subcommands and none for a bare `qa`. Exempt
@@ -284,7 +314,8 @@ test("skills-references: every campaigns-os reference resolves against contracts
       checked += 1;
     }
   }
-  console.log(`skills-references: ${checked} command references resolved against the effects contract`);
+  assert.ok(tiersChecked >= 20, `expected the bundled skills to cite tiers beside references; saw ${tiersChecked}`);
+  console.log(`skills-references: ${checked} command references resolved against the effects contract; ${tiersChecked} cited tiers match`);
 });
 
 /* ------------------------------------------------------------------ */

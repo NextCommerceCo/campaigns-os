@@ -11169,7 +11169,10 @@ function toolingCommand(args) {
   if (args.target === true) throw refused("Missing value for --target");
   if (args.platform === true) throw refused("Missing value for --platform");
   if (args["skills-revision"] === true) {
-    throw refused("Missing value for --skills-revision. Pass the bundle revision the skill you loaded states on its first body line (for example --skills-revision 1.40.0+skills.1), or that skill's <skill-id>@<version>.");
+    // The example is the bundle this CLI ships, read from skills.json, so the
+    // refusal never teaches a revision that has since moved.
+    const shipped = readJson(join(ROOT, "skills.json")).bundle_revision;
+    throw refused(`Missing value for --skills-revision. Pass the bundle revision the skill you loaded states on its first body line (for example --skills-revision ${shipped}), or that skill's <skill-id>@<version>.`);
   }
 
   const pkg = readJson(join(ROOT, "package.json"));

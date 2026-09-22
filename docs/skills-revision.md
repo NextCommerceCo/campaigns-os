@@ -16,7 +16,7 @@ that the copy on disk moved.
 `skills.json` carries one top-level field:
 
 ```json
-"bundle_revision": "1.40.0+skills.1"
+"bundle_revision": "1.40.0+skills.2"
 ```
 
 The spelling is `<package version>+skills.<n>`:
@@ -37,7 +37,7 @@ The first body line of every bundled `SKILL.md`, immediately after the
 frontmatter, is exactly:
 
 ```
-Bundle revision: 1.40.0+skills.1
+Bundle revision: 1.40.0+skills.2
 ```
 
 followed by one sentence telling the agent to run the check below at the start of
@@ -47,7 +47,7 @@ the agent is actually reading, not from a file it would have to go and open.
 ## The check
 
 ```bash
-campaigns-os tooling status --skills-revision 1.40.0+skills.1
+campaigns-os tooling status --skills-revision 1.40.0+skills.2
 ```
 
 The value is compared against the bundle revision of the **CLI the command runs
@@ -60,20 +60,20 @@ directory, which in a campaign repo has no `skills.json` at all.
 "revision_check": "match",
 "skills_revision": {
   "status": "match",
-  "requested": "1.40.0+skills.1",
+  "requested": "1.40.0+skills.2",
   "spelling": "bundle",
-  "on_disk": "1.40.0+skills.1",
+  "on_disk": "1.40.0+skills.2",
   "on_disk_skill": null,
-  "message": "match (1.40.0+skills.1)"
+  "message": "match (1.40.0+skills.2)"
 }
 ```
 
 The text view prints one named line, as a header above the rest of the status:
 
 ```
-Skills revision: match (1.40.0+skills.1)
-Skills revision: mismatch: loaded 1.39.0+skills.1, on disk 1.40.0+skills.1 — start a fresh session
-Skills revision: unchecked (on disk 1.40.0+skills.1)
+Skills revision: match (1.40.0+skills.2)
+Skills revision: mismatch: loaded 1.39.0+skills.1, on disk 1.40.0+skills.2 — start a fresh session
+Skills revision: unchecked (on disk 1.40.0+skills.2)
 ```
 
 `unchecked` is the state when the flag is absent. It is not an error — an
