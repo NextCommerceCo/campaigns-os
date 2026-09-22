@@ -1,0 +1,4558 @@
+{
+  "schema": "campaigns-os-effects/v1",
+  "_note": "The declared effect of every supported invocation: what it writes, what it sends, and the test case that proves it. One row per command, per subcommand and per effect-changing flag (vocabulary.effect_changing_flags). A row is not publishable without its effect test — scripts/check-effects.mjs refuses one, and refuses a flag from that list that a help usage line carries and no row declares. Read this with docs/effects.md.",
+  "contract_version": "1.1.0",
+  "vocabulary": {
+    "annotations": {
+      "readOnlyHint": "The invocation changes nothing: no file under the target, the working directory or the user's machine, and no request off the machine. The command-lifecycle journal counts — a journal append is a write like any other, so every readOnlyHint: true row is an invocation the CLI exempts from lifecycle capture (the converse does not hold: some journal-exempt invocations, such as demo and the --no-write forms, still write other declared files).",
+      "destructiveHint": "The invocation can overwrite, clear or discard state that existed before it ran (a waiver over a blocking gate, a cleared run session, an overwritten verdict or assembly report). Only meaningful when readOnlyHint is false.",
+      "openWorldHint": "The invocation can contact an endpoint off this machine. True exactly when the row declares at least one send.",
+      "idempotentHint": "Repeating the invocation with the same arguments adds no effect beyond the first run."
+    },
+    "tiers": {
+      "none": "No effect: nothing written anywhere, nothing sent.",
+      "B": "Writes: files are created or updated under the target, the working directory or the user's machine. Nothing leaves the machine.",
+      "A": "Sends: the invocation can contact an endpoint off this machine (it may write locally too).",
+      "C": "Destructive: the invocation overwrites, clears or discards state that was already there (it may send too).",
+      "_ranking": "A row carries the HIGHEST tier it can reach, ranked none < B < A < C."
+    },
+    "locations": {
+      "{target}": "The target the invocation names: the directory given to --target, or the Page Kit target repository the Build Packet points at.",
+      "{cwd}": "The working directory the invocation runs in.",
+      "{packet}": "The Build Packet the invocation names (--packet), wherever it lives — it need not be the copy inside the target repository.",
+      "{spec}": "The CampaignSpec file the Build Packet names (spec.local_path), which need not live inside the target repository.",
+      "{home}": "The user's machine: the home directory and the config root under it (XDG_CONFIG_HOME when set).",
+      "{lifecycle-journal}": "The command-lifecycle journal wherever it was selected for the invocation — the active run session's journal, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG.",
+      "{proxy-base}": "The endpoint --proxy-base names, or the canonical NEXT endpoint when it does not.",
+      "{base-url}": "The campaign under test, as --base-url names it or as the packet derives it.",
+      "{map-id}": "The saved Map the CampaignSpec identifies."
+    },
+    "conditions": {
+      "no_session": "No run session at the target or the working directory.",
+      "ambient_session": "An active ambient run session opened by `run start` at the target.",
+      "stale_session": "A run session at the target idle past the 12 h TTL, and one at the working directory too.",
+      "lifecycle_log": "CAMPAIGNS_OS_LIFECYCLE_LOG names a journal outside the runtime directory.",
+      "persisted_consent": "Run Telemetry consent PERSISTED on the machine for the loopback receiver's scope — the record `telemetry on --proxy-base <loopback>` writes — with no CAMPAIGNS_OS_TELEMETRY override, a synthetic campaign key in the environment, no run session, and the receiver named by --proxy-base wherever the command takes one. The condition exists because consent must not be read from the row under test: under the other four the fixture switches consent on only for rows that DECLARE a consent-gated send, so a send nobody declared ran with consent off and left no trace. Here every row runs consented, and any request the receiver sees that no declared send covers fails the row."
+    },
+    "test_scope": {
+      "full": "The invocation executes past its preflight in the offline fixture, so every declared write and send with a non-empty observed_in is observed by the test.",
+      "preflight": "The invocation cannot execute past its preflight offline (a browser, a live gateway, a real credential, a real store). The test proves the preflight refusal writes nothing beyond what the row declares, and — where a loopback receiver can stand in for the destination — that the declared destination IS the one contacted."
+    },
+    "observed_in": "The conditions in which the effect test must SEE this write or send. An empty list declares an effect the offline fixture cannot reach; it then requires a not_observed_reason, and check-effects refuses the row without one. The test always refuses an effect that is NOT declared, in every condition.",
+    "effect_changing_flags": [
+      "--browser",
+      "--built",
+      "--dry-run",
+      "--emit-packet",
+      "--example",
+      "--force",
+      "--from-store",
+      "--list",
+      "--no-post-verdict",
+      "--no-probe",
+      "--no-remit",
+      "--no-run-session",
+      "--no-write",
+      "--republish",
+      "--test-order",
+      "--write",
+      "--write-map"
+    ],
+    "preflight": "What the preflight itself may do, on a `test_scope: \"preflight\"` row, declared apart from the effects the row declares for the invocation that gets past it: `may_write` is the complete list of paths the refusal may write (no `**` — an allowance that licenses a subtree licenses the home directory the refusal must not touch) and `may_contact` the exact request paths the loopback receiver may see. The test enforces both independently of `writes`/`sends`, so a write declared for the success path cannot license the preflight to write there."
+  },
+  "rows": [
+    {
+      "command": "help",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: help",
+      "test_scope": "full",
+      "notes": "Prints usage. The CLI skips lifecycle capture for `help`, so not even the journal is appended."
+    },
+    {
+      "command": "readback",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: readback",
+      "test_scope": "full",
+      "notes": "A read-only projection of one run's artifacts. readback bypasses run-session resolution and the stale sweep, and persistLifecycleIfRequested writes no entry for it, so an active or stale session at the target is left exactly as found."
+    },
+    {
+      "command": "readback",
+      "subcommand": null,
+      "flags": [
+        "--example"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: readback --example",
+      "test_scope": "full",
+      "notes": "Projects the bundled synthetic sample; reads nothing under the target."
+    },
+    {
+      "command": "run",
+      "subcommand": "status",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: run status",
+      "test_scope": "full",
+      "notes": "Read-only by contract: it never sweeps a stale session and never journals (persistLifecycleIfRequested returns early for `run status`)."
+    },
+    {
+      "command": "doctor",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: doctor",
+      "test_scope": "full",
+      "notes": "Inspection is the default. With --packet and without --write, doctor writes no sidecar AND appends no lifecycle entry, so an inspection of a delivered campaign leaves the target byte-identical."
+    },
+    {
+      "command": "doctor",
+      "subcommand": null,
+      "flags": [
+        "--no-write"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: doctor --no-write",
+      "test_scope": "full",
+      "notes": "--no-write wins over --write: no doctor sidecar, no assembly-report update, no journal entry."
+    },
+    {
+      "command": "sdk",
+      "subcommand": "storage-check",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: sdk storage-check",
+      "test_scope": "full",
+      "notes": "A static scan of tracked source in a Git checkout. Exempted from lifecycle capture by name in persistLifecycleIfRequested, and it bypasses the stale-session sweep."
+    },
+    {
+      "command": "tooling",
+      "subcommand": "diagnose",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: tooling diagnose",
+      "test_scope": "full",
+      "notes": "A redacted support summary. Dispatched before session resolution and lifecycle capture, so it cannot close out a stale session or journal."
+    },
+    {
+      "command": "*refused*",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: a refused invocation",
+      "test_scope": "full",
+      "notes": "An unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front. A refused invocation writes no file of its own and appends no lifecycle entry. The generated case runs the unknown-command shape; the companion case \"effects: the other two refused shapes write nothing either\" runs the other two under the same five conditions. The one exception is declared on the start/prepare-build/build/run start/run end rows: those close out a STALE session at the root they are about to act on BEFORE argv is refused."
+    },
+    {
+      "command": "page-kit",
+      "subcommand": "sync",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: page-kit sync --dry-run",
+      "test_scope": "full",
+      "notes": "page-kit sync --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+    },
+    {
+      "command": "spec",
+      "subcommand": "derive",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: spec derive --dry-run",
+      "test_scope": "full",
+      "notes": "spec derive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+    },
+    {
+      "command": "install-skills",
+      "subcommand": null,
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: install-skills --dry-run",
+      "test_scope": "full",
+      "notes": "install-skills --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+    },
+    {
+      "command": "install-agent-context",
+      "subcommand": null,
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: install-agent-context --dry-run",
+      "test_scope": "full",
+      "notes": "install-agent-context --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+    },
+    {
+      "command": "qa",
+      "subcommand": "publish",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: qa publish --dry-run",
+      "test_scope": "full",
+      "notes": "qa publish --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+    },
+    {
+      "command": "checkpoint",
+      "subcommand": "waive",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: checkpoint waive --dry-run",
+      "test_scope": "full",
+      "notes": "checkpoint waive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+    },
+    {
+      "command": "theme",
+      "subcommand": "waive",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: theme waive --dry-run",
+      "test_scope": "full",
+      "notes": "theme waive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+    },
+    {
+      "command": "run-record",
+      "subcommand": null,
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: run-record --dry-run",
+      "test_scope": "full",
+      "notes": "run-record --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+    },
+    {
+      "command": "run-record",
+      "subcommand": null,
+      "flags": [
+        "--no-write"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: run-record --no-write",
+      "test_scope": "full",
+      "notes": "--no-write skips the assembly's reads as well as the write, and suppresses the lifecycle append and the stale-session closeout, so the invocation leaves the target byte-identical."
+    },
+    {
+      "command": "next",
+      "subcommand": null,
+      "flags": [
+        "--no-write"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved for the invocation (its last-seen timestamp advances)",
+          "observed_in": [
+            "ambient_session"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: next --no-write",
+      "test_scope": "full",
+      "notes": "--no-write suppresses the progress snapshot, the doctor sidecar refresh and the lifecycle append, so under no session the invocation leaves the target byte-identical. It is NOT readOnlyHint: true, because resolving an ambient run session advances that session file — the one write --no-write does not suppress. Under the other three conditions nothing at all changes. No progress observation leaves the machine: the base `next` row declares that send, and this flag is what stops it (observed under persisted scoped consent, where the base form's POST is seen and this form's is not)."
+    },
+    {
+      "command": "bundle",
+      "subcommand": "check",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: bundle check",
+      "test_scope": "full",
+      "notes": "Validates the canonical bundle and writes no artifact of its own. Its only write is the command-lifecycle journal, which every command outside the read-only set appends when a journal is selected — so the row is tier B, not none."
+    },
+    {
+      "command": "standardize",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: standardize",
+      "test_scope": "full",
+      "notes": "Produces a report on stdout and writes no file. Its only write is the command-lifecycle journal. `standardize --target <repo>` names no packet, so an ambient session bound to a packet elsewhere is not resolved for it and no entry is appended under that session."
+    },
+    {
+      "command": "theme",
+      "subcommand": "inspect",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: theme inspect",
+      "test_scope": "full",
+      "notes": "Inspects the brand theme and returns the decision; it writes no theme report (that is `theme generate`). Only the lifecycle journal is written."
+    },
+    {
+      "command": "validate-assembly-report",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: validate-assembly-report",
+      "test_scope": "full",
+      "notes": "Schema-validates a report file in place and writes nothing back. Only the lifecycle journal is written."
+    },
+    {
+      "command": "tooling",
+      "subcommand": "status",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: tooling status",
+      "test_scope": "full",
+      "notes": "Reports install mode, git state, skill freshness and the local gateway login. It reads the credential store but never writes it. Only the lifecycle journal is written."
+    },
+    {
+      "command": "findings",
+      "subcommand": "list",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: findings list",
+      "test_scope": "full",
+      "notes": "Reads the findings journal. Only the command-lifecycle journal is written."
+    },
+    {
+      "command": "findings",
+      "subcommand": "export",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: findings export",
+      "test_scope": "full",
+      "notes": "Projects the findings journal to stdout. Only the command-lifecycle journal is written."
+    },
+    {
+      "command": "run-record",
+      "subcommand": null,
+      "flags": [
+        "--list"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: run-record --list",
+      "test_scope": "full",
+      "notes": "Prints the run ids on disk for this packet and, like --no-write, writes and sends nothing of its own — but unlike --no-write it is not exempt from lifecycle capture, so a selected journal is appended."
+    },
+    {
+      "command": "qa",
+      "subcommand": "policy set",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{packet}",
+          "when": "one of the named fields (--allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth) differs from the packet's current value",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the packet edit invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "--order-path-depth is given and the report exists — the report's proof_policy mirror is refreshed through the ledger write",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: qa policy set",
+      "test_scope": "full",
+      "notes": "Writes the named fields into the BUILD PACKET (not the CampaignSpec): campaign.allowed_domains_confirmed, deploy.target/preview_url/production_url and qa.proof_policy.order_path_depth. A packet edit invalidates the retained doctor sidecar, which is stamped stale, and --order-path-depth also refreshes the assembly report's proof_policy mirror. An invocation whose values all match the packet already changes nothing but the lifecycle journal — which is what the row once declared, because the case passed values the fixture already held."
+    },
+    {
+      "command": "page-kit",
+      "subcommand": "parity",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the parity render completes — stages.assembly.evidence.local_proof.production_parity is recorded",
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is not a local-serve deploy target and has no page-kit renderer to build with, so the command refuses before the verdict is recorded"
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the recorded parity verdict invalidates the retained doctor sidecar",
+          "observed_in": [],
+          "not_observed_reason": "the parity verdict the stamp follows is never recorded offline"
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: page-kit parity (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: production parity needs deploy.target local-serve and a page-kit renderer to build the development and production renders with; neither exists in the offline fixture, so the command refuses (exit 2) and writes nothing but the lifecycle entry. What it writes when it does run is declared here and was missing: the parity verdict lands on the assembly report (stages.assembly.evidence.local_proof.production_parity) and stamps the retained doctor sidecar stale. The renders themselves go to temporary directories outside the target.",
+      "preflight": {
+        "may_write": [
+          "{lifecycle-journal}"
+        ],
+        "may_contact": []
+      }
+    },
+    {
+      "command": "doctor",
+      "subcommand": null,
+      "flags": [
+        "--built"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: doctor --built",
+      "test_scope": "full",
+      "notes": "Doctors a built _site/ with no Build Packet. Without --emit-packet it writes no artifact; only the lifecycle journal is written. (The read-only journal exemption is scoped to the --packet inspection form, so --built journals.)"
+    },
+    {
+      "command": "doctor",
+      "subcommand": null,
+      "flags": [
+        "--built",
+        "--emit-packet"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/minimal-build-packet.json",
+          "when": "always — the minimal Build Packet derived from the built site is emitted (--emit-packet <path> writes it where the path names instead)",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: doctor --built --emit-packet",
+      "test_scope": "full",
+      "notes": "--emit-packet turns the inspection into a writer: the minimal Build Packet derived from the built _site/ is written under the target's runtime directory (or to the path the flag names), so QA can run against the same campaign without a packet of its own."
+    },
+    {
+      "command": "telemetry",
+      "subcommand": "status",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: telemetry status",
+      "test_scope": "full",
+      "notes": "Reports the stored consent scope and checks it against an endpoint; it reads the machine config and never writes it. Only the lifecycle journal is written."
+    },
+    {
+      "command": "demo",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": false
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/**",
+          "when": "always — the offline sample is projected into the new --target directory",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: demo",
+      "test_scope": "full",
+      "notes": "An inert offline sample. It writes ONLY the new directory named by --target: no campaign evidence, no session recovery, no lifecycle entry (demo is dispatched before lifecycle capture). The card's §5.1 draft listed demo under inspection; the code writes a directory, so the row is tier B."
+    },
+    {
+      "command": "doctor",
+      "subcommand": null,
+      "flags": [
+        "--write"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "always under --write — the doctor sidecar is (re)written",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the run's doctor evidence on the assembly report changes",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: doctor --write",
+      "test_scope": "full",
+      "notes": "--write turns the inspection into a recording run: the doctor sidecar and the report's doctor evidence are rewritten, and the lifecycle exemption for the read-only form no longer applies."
+    },
+    {
+      "command": "theme",
+      "subcommand": "generate",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "always — the generated brand theme report is written",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/**",
+          "when": "the generated CSS and token files, when --out-dir is not redirected",
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture's packet has no generatable brand source, so generation stops at the report"
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the theme decision invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: theme generate",
+      "test_scope": "full",
+      "notes": "Generation is a write even when it produces no CSS: the theme report lands under the target and the retained doctor sidecar is stamped."
+    },
+    {
+      "command": "theme",
+      "subcommand": "generate",
+      "flags": [
+        "--force"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "always — the generated brand theme report is written",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/**",
+          "when": "the generated CSS and token files, when --out-dir is not redirected",
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture's packet has no generatable brand source, so generation stops at the report"
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the theme decision invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: theme generate --force",
+      "test_scope": "full",
+      "notes": "DESTRUCTIVE: --force overwrites a generated brand theme that is already there, where the base form refuses to clobber it. The writes are the base form's."
+    },
+    {
+      "command": "page-kit",
+      "subcommand": "sync",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/_data/campaigns.json",
+          "when": "one of the ten Store Profile / SDK-pin fields is usable and differs from the entry",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the sync invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: page-kit sync",
+      "test_scope": "full",
+      "notes": "Writes only those ten fields of the packet's route entry, only from usable spec values."
+    },
+    {
+      "command": "spec",
+      "subcommand": "derive",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{spec}",
+          "when": "the target repo states a field the spec does not (SDK pin, page_url, analytics ids)",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the derive invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: spec derive",
+      "test_scope": "full",
+      "notes": "Repo-derived fields only and no network by default. The write lands on the packet's local CampaignSpec (spec.local_path), which is outside the target repo in the shipped example layout — hence the {spec} location token."
+    },
+    {
+      "command": "findings",
+      "subcommand": "add",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": false
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{cwd}/.campaign-runtime/workflow-findings.jsonl",
+          "when": "always — the finding is appended to the journal",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: findings add",
+      "test_scope": "full",
+      "notes": "Appends one Workflow Finding. Not idempotent: a second identical invocation appends a second entry."
+    },
+    {
+      "command": "findings",
+      "subcommand": "harvest",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: findings harvest",
+      "test_scope": "full",
+      "notes": "Derives findings from the packet, context and report and PRINTS them. Without --write it appends nothing but the lifecycle entry; --write has its own row."
+    },
+    {
+      "command": "findings",
+      "subcommand": "harvest",
+      "flags": [
+        "--write"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{cwd}/.campaign-runtime/workflow-findings.jsonl",
+          "when": "--write is given and the harvest derives findings the journal does not already carry",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: findings harvest --write",
+      "test_scope": "full",
+      "notes": "--write is what makes the harvest a writer: the derived findings the journal does not already hold are appended to the workflow findings sidecar beside the working directory."
+    },
+    {
+      "command": "qa",
+      "subcommand": "promote",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the named verdict is projected over the committed sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: qa promote",
+      "test_scope": "full",
+      "notes": "Projects one explicit qa-output verdict over the committed sidecar; the sidecar that was there is replaced, which is why destructiveHint is true."
+    },
+    {
+      "command": "install-agent-context",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/agent-context/*",
+          "when": "always — the four agent context files are written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: install-agent-context",
+      "test_scope": "full",
+      "notes": "Writes the agent context files into the target's runtime directory. The .gitignore line is added only when it is not already there — under the ambient condition `run start` has already added it."
+    },
+    {
+      "command": "install-skills",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{home}/.claude/skills/**",
+          "when": "--platform claude (or all): the skill bundle is copied into the user's skills directory",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{home}/.codex/skills/**",
+          "when": "--platform codex or all",
+          "observed_in": [],
+          "not_observed_reason": "the effect test installs the claude platform only, so the codex and agents destinations are declared but not exercised"
+        },
+        {
+          "path": "{home}/.agents/skills/**",
+          "when": "--platform agents or all",
+          "observed_in": [],
+          "not_observed_reason": "the effect test installs the claude platform only, so the codex and agents destinations are declared but not exercised"
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: install-skills",
+      "test_scope": "full",
+      "notes": "A MACHINE write, not a target write: the destination is the user's home directory, so the target repo is untouched. --target <skills-dir> redirects it."
+    },
+    {
+      "command": "telemetry",
+      "subcommand": "on",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{home}/.config/campaigns-os/config.json",
+          "when": "always — consent is recorded for ONE endpoint (the canonical NEXT endpoint, or the --proxy-base named)",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: telemetry on",
+      "test_scope": "full",
+      "notes": "Machine-level consent, honouring XDG_CONFIG_HOME. It records consent; it sends nothing itself."
+    },
+    {
+      "command": "telemetry",
+      "subcommand": "off",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{home}/.config/campaigns-os/config.json",
+          "when": "always — remit is turned off for every endpoint",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: telemetry off",
+      "test_scope": "full",
+      "notes": "Takes no --proxy-base: consent is withdrawn for every endpoint at once."
+    },
+    {
+      "command": "logout",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{home}/.campaigns-os/credentials/*",
+          "when": "a stored gateway credential for the named store exists and is cleared",
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture has no stored credential, so the clear is a no-op; the row is proved by the no-credential path writing nothing"
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: logout (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: clearing a credential needs one to have been minted by a gateway login, which is unreachable offline. The case proves the no-credential path writes NOTHING. Authentication never resolves or remits a run session and never records argv in a lifecycle journal — login and logout are dispatched ahead of both. Credentials live only in the user credential store (the macOS keychain, or a file under the user's home).",
+      "preflight": {
+        "may_write": [],
+        "may_contact": []
+      }
+    },
+    {
+      "command": "next",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the stage progress snapshot and its queued remit envelope are captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the recomputed gates invalidate the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved for the invocation",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit and --no-write were not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: next",
+      "test_scope": "full",
+      "notes": "next self-decides the stage. The local capture always happens; the .remit.json envelope beside each snapshot records what the delivery did. It SENDS the progress observation: the snapshot captured under .campaign-runtime/progress/ is POSTed to {proxy-base}/api/progress when Run Telemetry consent resolves ON for that endpoint and the packet's campaign key resolves. Consent persisted for the endpoint (`telemetry on --proxy-base <url>`) is what reaches it; a CAMPAIGNS_OS_TELEMETRY=on override alone does not, because an env grant carries no scope and the remit refuses an unscoped grant for a non-canonical endpoint (scope_bypassed). That is why the four session conditions — which run with consent off for a row declaring no consent-gated send — saw no request, and why this row once declared none."
+    },
+    {
+      "command": "next",
+      "subcommand": "setup",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the stage progress snapshot and its queued remit envelope are captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the recomputed gates invalidate the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved for the invocation",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit and --no-write were not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: next setup",
+      "test_scope": "full",
+      "notes": "next setup recomputes that stage's gates and captures a progress snapshot. The local capture always happens; the .remit.json envelope beside each snapshot records what the delivery did. It SENDS the progress observation: the snapshot captured under .campaign-runtime/progress/ is POSTed to {proxy-base}/api/progress when Run Telemetry consent resolves ON for that endpoint and the packet's campaign key resolves. Consent persisted for the endpoint (`telemetry on --proxy-base <url>`) is what reaches it; a CAMPAIGNS_OS_TELEMETRY=on override alone does not, because an env grant carries no scope and the remit refuses an unscoped grant for a non-canonical endpoint (scope_bypassed). That is why the four session conditions — which run with consent off for a row declaring no consent-gated send — saw no request, and why this row once declared none."
+    },
+    {
+      "command": "next",
+      "subcommand": "build",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the stage progress snapshot and its queued remit envelope are captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the recomputed gates invalidate the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved for the invocation",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit and --no-write were not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: next build",
+      "test_scope": "full",
+      "notes": "next build recomputes that stage's gates and captures a progress snapshot. The local capture always happens; the .remit.json envelope beside each snapshot records what the delivery did. It SENDS the progress observation: the snapshot captured under .campaign-runtime/progress/ is POSTed to {proxy-base}/api/progress when Run Telemetry consent resolves ON for that endpoint and the packet's campaign key resolves. Consent persisted for the endpoint (`telemetry on --proxy-base <url>`) is what reaches it; a CAMPAIGNS_OS_TELEMETRY=on override alone does not, because an env grant carries no scope and the remit refuses an unscoped grant for a non-canonical endpoint (scope_bypassed). That is why the four session conditions — which run with consent off for a row declaring no consent-gated send — saw no request, and why this row once declared none."
+    },
+    {
+      "command": "next",
+      "subcommand": "polish",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the stage progress snapshot and its queued remit envelope are captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the recomputed gates invalidate the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved for the invocation",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit and --no-write were not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: next polish",
+      "test_scope": "full",
+      "notes": "next polish recomputes that stage's gates and captures a progress snapshot. The local capture always happens; the .remit.json envelope beside each snapshot records what the delivery did. It SENDS the progress observation: the snapshot captured under .campaign-runtime/progress/ is POSTed to {proxy-base}/api/progress when Run Telemetry consent resolves ON for that endpoint and the packet's campaign key resolves. Consent persisted for the endpoint (`telemetry on --proxy-base <url>`) is what reaches it; a CAMPAIGNS_OS_TELEMETRY=on override alone does not, because an env grant carries no scope and the remit refuses an unscoped grant for a non-canonical endpoint (scope_bypassed). That is why the four session conditions — which run with consent off for a row declaring no consent-gated send — saw no request, and why this row once declared none."
+    },
+    {
+      "command": "next",
+      "subcommand": "deploy",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the stage progress snapshot and its queued remit envelope are captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the recomputed gates invalidate the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved for the invocation",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit and --no-write were not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: next deploy",
+      "test_scope": "full",
+      "notes": "next deploy recomputes that stage's gates and captures a progress snapshot. The local capture always happens; the .remit.json envelope beside each snapshot records what the delivery did. It SENDS the progress observation: the snapshot captured under .campaign-runtime/progress/ is POSTed to {proxy-base}/api/progress when Run Telemetry consent resolves ON for that endpoint and the packet's campaign key resolves. Consent persisted for the endpoint (`telemetry on --proxy-base <url>`) is what reaches it; a CAMPAIGNS_OS_TELEMETRY=on override alone does not, because an env grant carries no scope and the remit refuses an unscoped grant for a non-canonical endpoint (scope_bypassed). That is why the four session conditions — which run with consent off for a row declaring no consent-gated send — saw no request, and why this row once declared none."
+    },
+    {
+      "command": "next",
+      "subcommand": "qa",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the stage progress snapshot and its queued remit envelope are captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the recomputed gates invalidate the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved for the invocation",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit and --no-write were not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: next qa",
+      "test_scope": "full",
+      "notes": "next qa recomputes that stage's gates and captures a progress snapshot. The local capture always happens; the .remit.json envelope beside each snapshot records what the delivery did. It SENDS the progress observation: the snapshot captured under .campaign-runtime/progress/ is POSTed to {proxy-base}/api/progress when Run Telemetry consent resolves ON for that endpoint and the packet's campaign key resolves. Consent persisted for the endpoint (`telemetry on --proxy-base <url>`) is what reaches it; a CAMPAIGNS_OS_TELEMETRY=on override alone does not, because an env grant carries no scope and the remit refuses an unscoped grant for a non-canonical endpoint (scope_bypassed). That is why the four session conditions — which run with consent off for a row declaring no consent-gated send — saw no request, and why this row once declared none."
+    },
+    {
+      "command": "next",
+      "subcommand": null,
+      "flags": [
+        "--no-remit"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the stage progress snapshot and its queued remit envelope are captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the recomputed gates invalidate the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved for the invocation",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: next --no-remit",
+      "test_scope": "full",
+      "notes": "--no-remit suppresses the remit for this run. The local capture is unchanged, which is the point: capture is always local and consent gates only the send. No progress observation leaves the machine: the base `next` row declares that send, and this flag is what stops it (observed under persisted scoped consent, where the base form's POST is seen and this form's is not)."
+    },
+    {
+      "command": "qa",
+      "subcommand": "resolve",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{base-url}",
+          "what": "an HTTP probe of each derived entry URL",
+          "when": "the resolution is not blocked before the probe",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture's resolution comes back blocked before a probe is issued, so no request leaves for the derived entry URLs"
+        }
+      ],
+      "effect_test": "effects: qa resolve (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: the probe needs a resolution that is not blocked. The case proves the blocked resolution contacts the loopback stand-in for --base-url zero times and writes nothing but the lifecycle entry.",
+      "preflight": {
+        "may_write": [
+          "{lifecycle-journal}"
+        ],
+        "may_contact": []
+      }
+    },
+    {
+      "command": "qa",
+      "subcommand": "resolve",
+      "flags": [
+        "--no-probe"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: qa resolve --no-probe",
+      "test_scope": "full",
+      "notes": "--no-probe removes the only send: the URLs are derived and reported ready_unprobed. Only the lifecycle journal is written."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before the campaign is reached, so no request leaves for the base URL"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt keeps the session open and assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa run",
+      "test_scope": "full",
+      "notes": "Destructive and not idempotent: each attempt overwrites the committed verdict sidecar and the report's QA stage, and a ready verdict clears the ambient run session. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--no-remit"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before the campaign is reached, so no request leaves for the base URL"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt keeps the session open and assembles no Run Record, so nothing is remitted"
+        }
+      ],
+      "effect_test": "effects: qa run --no-remit",
+      "test_scope": "full",
+      "notes": "The base `qa run` row's writes, without any remit: --no-remit stops the progress observation and the Run Record remit. The verdict publish is NOT a remit and is not gated by the flag — it still posts to the QA portal under the consent seam, which --no-post-verdict is the opt-out from."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--no-post-verdict"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before the campaign is reached, so no request leaves for the base URL"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt keeps the session open and assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa run --no-post-verdict",
+      "test_scope": "full",
+      "notes": "The base `qa run` row's writes, without the verdict publish: --no-post-verdict is the opt-out from posting the verdict to the QA portal. The progress observation is a separate delivery and still leaves under persisted consent; --no-remit is the flag that stops that one."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--test-order"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test, INCLUDING order creation against the live store",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before the order ladder is reached; the mode is proved by the gate refusing without placing an order"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa run --test-order",
+      "test_scope": "full",
+      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--browser"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{base-url}",
+          "what": "browser navigation and HTTP requests against the campaign under test",
+          "when": "a browser is installed and the gates pass",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the browser run cannot execute offline; the case proves the gate refusal"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt assembles no Run Record"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa run --browser (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: --browser needs an installed Chromium and a reachable campaign, neither of which exists offline. The case proves the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request.",
+      "preflight": {
+        "may_write": [
+          "{target}/qa-output/**",
+          "{cwd}/.campaign-runtime/qa-verdict.json",
+          "{target}/.campaign-runtime/assembly-report.json",
+          "{target}/.campaign-runtime/progress/**",
+          "{target}/.campaign-runtime/doctor-output.json",
+          "{target}/.campaign-runtime/run-session.json",
+          "{lifecycle-journal}"
+        ],
+        "may_contact": [
+          "/api/qa/verdicts",
+          "/api/progress"
+        ]
+      }
+    },
+    {
+      "command": "qa",
+      "subcommand": "publish",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the already-stored verdict",
+          "when": "the verdict's spec_hash is current and it is not already published",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa publish",
+      "test_scope": "full",
+      "notes": "Posts an already-stored verdict without a re-run and without an order. It is NOT gated by Run Telemetry consent — the publish is the operator's explicit act."
+    },
+    {
+      "command": "qa",
+      "subcommand": "publish",
+      "flags": [
+        "--republish"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the already-stored verdict",
+          "when": "the verdict's spec_hash is current and it is not already published",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa publish --republish",
+      "test_scope": "full",
+      "notes": "--republish lifts the already-published refusal: the same POST to the QA portal for a verdict that was already delivered. Not destructive locally — nothing under the target is overwritten — and not gated by Run Telemetry consent."
+    },
+    {
+      "command": "run-record",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "always — the assembled Run Record is written (re-emitted in place for an existing run id)",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: run-record",
+      "test_scope": "full",
+      "notes": "Capture is always local; the remit is what consent gates. The record lands beside the working directory's runtime tree, not the target repo's."
+    },
+    {
+      "command": "run-record",
+      "subcommand": null,
+      "flags": [
+        "--no-remit"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "always — the assembled Run Record is written",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: run-record --no-remit",
+      "test_scope": "full",
+      "notes": "--no-remit drops the send for this run and leaves the local capture untouched."
+    },
+    {
+      "command": "run",
+      "subcommand": "start",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "no session is active at the root — the ambient session file is created",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
+          "observed_in": [
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the stale closeout remits under consent, but this invocation takes no --proxy-base to point at a loopback stand-in, so it is never run consented at an endpoint the test can watch (the persisted grant is scoped to the loopback, so a canonical remit resolves OFF and sends nothing). The closeout is proved under stale_session by the local Run Record it writes"
+        }
+      ],
+      "effect_test": "effects: run start",
+      "test_scope": "full",
+      "notes": "Opening a session is not idempotent: a second `run start` with a session already active is refused (exit 1). A STALE session at the root is closed out first — Run Record assembled and remitted under the usual consent — which is a declared effect of this command even when argv is then refused."
+    },
+    {
+      "command": "run",
+      "subcommand": "start",
+      "flags": [
+        "--force"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "always — the ambient session file is written, over an ACTIVE session's file too (which is what the base form refuses to do)",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
+          "observed_in": [
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the stale closeout remits under consent, but this invocation takes no --proxy-base to point at a loopback stand-in, so it is never run consented at an endpoint the test can watch (the persisted grant is scoped to the loopback, so a canonical remit resolves OFF and sends nothing). The closeout is proved under stale_session by the local Run Record it writes"
+        }
+      ],
+      "effect_test": "effects: run start --force",
+      "test_scope": "full",
+      "notes": "DESTRUCTIVE: --force opens a new session over one that is already active at the root, discarding the session file that was there (the run it identified is no longer the ambient run). The base form refuses instead. The stale-session closeout is the base form's."
+    },
+    {
+      "command": "run",
+      "subcommand": "end",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a session is active (or stale) at the root — the aggregated Run Record is written",
+          "observed_in": [
+            "ambient_session",
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "always on a successful close — the session file is REMOVED",
+          "observed_in": [
+            "ambient_session",
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [
+            "ambient_session",
+            "stale_session"
+          ]
+        }
+      ],
+      "effect_test": "effects: run end",
+      "test_scope": "full",
+      "notes": "Destructive: the close CLEARS the session. With no session at the root it refuses (exit 1) and writes only the lifecycle entry."
+    },
+    {
+      "command": "run",
+      "subcommand": "end",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: run end --dry-run",
+      "test_scope": "full",
+      "notes": "--dry-run is handed on to run-record: the aggregated record is assembled and printed, and nothing is written or sent. The run session is LEFT OPEN, so the close can still be made for real afterwards, and the pre-dispatch stale sweep is skipped for the same reason."
+    },
+    {
+      "command": "run",
+      "subcommand": "end",
+      "flags": [
+        "--no-write"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "a session is active at the root — the close still CLEARS the session file",
+          "observed_in": [
+            "ambient_session"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: run end --no-write",
+      "test_scope": "full",
+      "notes": "DESTRUCTIVE, and not what the flag reads like: --no-write suppresses the Run Record, the remit and the lifecycle entry, but the close still CLEARS the active session file — the one byte-visible effect the flag does not suppress. (The pre-dispatch stale sweep IS skipped, so an aged session at a root this invocation is not closing stays put.) The row states what the code does; the help text's \"leaves the target byte-identical\" is about the suppressed closeout, not about the session this command is asked to end."
+    },
+    {
+      "command": "run",
+      "subcommand": "end",
+      "flags": [
+        "--no-remit"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a session is active (or stale) at the root — the aggregated Run Record is written",
+          "observed_in": [
+            "ambient_session",
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "always on a successful close — the session file is REMOVED",
+          "observed_in": [
+            "ambient_session",
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: run end --no-remit",
+      "test_scope": "full",
+      "notes": "Destructive: the close still CLEARS the session and writes the aggregated Run Record — --no-remit only stops the record leaving the machine. The flag is handed on to run-record, and the stale closeout at cwd inherits it too."
+    },
+    {
+      "command": "telemetry",
+      "subcommand": "list",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "a read of the stored Run Records under the tenant or ops-admin credential",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: telemetry list (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: the cross-tenant listing needs a real ops admin key and a real endpoint, so the listing itself cannot be exercised offline. The case proves the declared destination IS the one contacted (the loopback receiver sees GET /api/runs) and that the refusal that follows writes nothing but the lifecycle entry.",
+      "preflight": {
+        "may_write": [
+          "{lifecycle-journal}"
+        ],
+        "may_contact": [
+          "/api/runs"
+        ]
+      }
+    },
+    {
+      "command": "checkpoint",
+      "subcommand": "waive",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the waiver is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the waiver invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: checkpoint waive",
+      "test_scope": "full",
+      "notes": "Destructive: a waiver overrides a blocking gate, so the state a later doctor reads is not the state it measured. One bound (an expiry or a review condition) and a named human are required."
+    },
+    {
+      "command": "theme",
+      "subcommand": "waive",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the theme-gate waiver is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the waiver invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: theme waive",
+      "test_scope": "full",
+      "notes": "Destructive for the same reason as `checkpoint waive`: the brand-layer gate stops blocking. Placeholders such as \"operator\" are refused for --waived-by."
+    },
+    {
+      "command": "start",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/campaign-runtime.build.json",
+          "when": "always — the Build Packet is written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "always — the build context sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the assembly report for the run",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "always — the normalized brief and the design source package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "the theme policy is not off",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/agent-context/*",
+          "when": "always for `start` — the agent context files are installed into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "the ambient run session is auto-opened (suppressed by --no-run-session)",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
+          "observed_in": [
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given instead of --spec",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect test seeds a local --spec, so the Map Builder fetch is declared and not exercised"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the stale closeout remits under consent and this invocation does take --proxy-base, but no condition pairs a STALE session with persisted consent: the stale-session condition runs with consent off, and the persisted-consent condition opens no session to close out. The closeout itself is proved under stale_session by the local Run Record it writes"
+        }
+      ],
+      "effect_test": "effects: start",
+      "test_scope": "full",
+      "notes": "Intake: Build Packet, sidecars, agent context and the auto-opened run session. Not idempotent — a second `start` over an assembly report that carries stage evidence is refused without --force."
+    },
+    {
+      "command": "start",
+      "subcommand": null,
+      "flags": [
+        "--force"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/campaign-runtime.build.json",
+          "when": "always — the Build Packet is written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "always — the build context sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the assembly report for the run",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "always — the normalized brief and the design source package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "the theme policy is not off",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/agent-context/*",
+          "when": "always for `start` — the agent context files are installed into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "the ambient run session is auto-opened (suppressed by --no-run-session)",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
+          "observed_in": [
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given instead of --spec",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect test seeds a local --spec"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the stale closeout remits under consent and this invocation does take --proxy-base, but no condition pairs a STALE session with persisted consent: the stale-session condition runs with consent off, and the persisted-consent condition opens no session to close out. The closeout itself is proved under stale_session by the local Run Record it writes"
+        }
+      ],
+      "effect_test": "effects: start --force",
+      "test_scope": "full",
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `start` destructive; the base form refuses instead."
+    },
+    {
+      "command": "start",
+      "subcommand": null,
+      "flags": [
+        "--no-run-session"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/campaign-runtime.build.json",
+          "when": "always — the Build Packet is written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "always — the build context sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the assembly report for the run",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "always — the normalized brief and the design source package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "the theme policy is not off",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/agent-context/*",
+          "when": "always for `start` — the agent context files are installed into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given instead of --spec",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect test seeds a local --spec"
+        }
+      ],
+      "effect_test": "effects: start --no-run-session",
+      "test_scope": "full",
+      "notes": "--no-run-session opts this run out of ambient telemetry: no session file is opened, and with no session to open there is no stale session to close out at the target either."
+    },
+    {
+      "command": "prepare-build",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/campaign-runtime.build.json",
+          "when": "always — the Build Packet is written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "always — the build context sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the assembly report for the run",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "always — the normalized brief and the design source package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "the theme policy is not off",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "the ambient run session is auto-opened (suppressed by --no-run-session)",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
+          "observed_in": [
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given instead of --spec",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect test seeds a local --spec"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the stale closeout remits under consent and this invocation does take --proxy-base, but no condition pairs a STALE session with persisted consent: the stale-session condition runs with consent off, and the persisted-consent condition opens no session to close out. The closeout itself is proved under stale_session by the local Run Record it writes"
+        }
+      ],
+      "effect_test": "effects: prepare-build",
+      "test_scope": "full",
+      "notes": "Intake without doctor and without the agent-context install: the packet, the sidecars and the auto-opened session. Same stale-session closeout as `start`."
+    },
+    {
+      "command": "prepare-build",
+      "subcommand": null,
+      "flags": [
+        "--no-run-session"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/campaign-runtime.build.json",
+          "when": "always — the Build Packet is written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "always — the build context sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the assembly report for the run",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "always — the normalized brief and the design source package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "the theme policy is not off",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected by --lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG — with no session opened, an ambient one at the target is not adopted for this run",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given instead of --spec",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect test seeds a local --spec"
+        }
+      ],
+      "effect_test": "effects: prepare-build --no-run-session",
+      "test_scope": "full",
+      "notes": "--no-run-session opts this run out of ambient telemetry: no session file is opened, and with no session to open there is no stale session to close out at the target either. The intake writes are the base form's."
+    },
+    {
+      "command": "prepare-build",
+      "subcommand": null,
+      "flags": [
+        "--force"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/campaign-runtime.build.json",
+          "when": "always — the Build Packet is written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "always — the build context sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the assembly report for the run",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "always — the normalized brief and the design source package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "the theme policy is not off",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "the ambient run session is auto-opened (suppressed by --no-run-session)",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
+          "observed_in": [
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given instead of --spec",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect test seeds a local --spec"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the stale closeout remits under consent and this invocation does take --proxy-base, but no condition pairs a STALE session with persisted consent: the stale-session condition runs with consent off, and the persisted-consent condition opens no session to close out. The closeout itself is proved under stale_session by the local Run Record it writes"
+        }
+      ],
+      "effect_test": "effects: prepare-build --force",
+      "test_scope": "full",
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `prepare-build` destructive; the base form refuses instead. Everything else it writes is the base form's intake."
+    },
+    {
+      "command": "build",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/campaign-runtime.build.json",
+          "when": "always — the Build Packet is written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "always — the build context sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the assembly report for the run",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "always — the normalized brief and the design source package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "the theme policy is not off",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "the ambient run session is auto-opened (suppressed by --no-run-session)",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
+          "observed_in": [
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given instead of --spec",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect test seeds a local --spec"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the stale closeout remits under consent and this invocation does take --proxy-base, but no condition pairs a STALE session with persisted consent: the stale-session condition runs with consent off, and the persisted-consent condition opens no session to close out. The closeout itself is proved under stale_session by the local Run Record it writes"
+        }
+      ],
+      "effect_test": "effects: build",
+      "test_scope": "full",
+      "notes": "The intake alias for prepare-build + doctor: the same packet and sidecars, plus the doctor sidecar. It does not install the agent context."
+    },
+    {
+      "command": "build",
+      "subcommand": null,
+      "flags": [
+        "--no-run-session"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/campaign-runtime.build.json",
+          "when": "always — the Build Packet is written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "always — the build context sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the assembly report for the run",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "always — the normalized brief and the design source package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "the theme policy is not off",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected by --lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG — with no session opened, an ambient one at the target is not adopted for this run",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given instead of --spec",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect test seeds a local --spec"
+        }
+      ],
+      "effect_test": "effects: build --no-run-session",
+      "test_scope": "full",
+      "notes": "--no-run-session opts this run out of ambient telemetry: no session file is opened, and with no session to open there is no stale session to close out at the target either. The intake writes are the base form's."
+    },
+    {
+      "command": "build",
+      "subcommand": null,
+      "flags": [
+        "--force"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/campaign-runtime.build.json",
+          "when": "always — the Build Packet is written into the target",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "always — the build context sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the assembly report for the run",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "always — the normalized brief and the design source package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "when": "the theme policy is not off",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "the ambient run session is auto-opened (suppressed by --no-run-session)",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the target does not already ignore the runtime directory",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
+          "observed_in": [
+            "stale_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given instead of --spec",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect test seeds a local --spec"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the stale closeout remits under consent and this invocation does take --proxy-base, but no condition pairs a STALE session with persisted consent: the stale-session condition runs with consent off, and the persisted-consent condition opens no session to close out. The closeout itself is proved under stale_session by the local Run Record it writes"
+        }
+      ],
+      "effect_test": "effects: build --force",
+      "test_scope": "full",
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `build` destructive; the base form refuses instead. Everything else it writes is the base form's intake."
+    },
+    {
+      "command": "spec",
+      "subcommand": "derive",
+      "flags": [
+        "--from-store"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{spec}",
+          "when": "the store states one of the nine campaign.store_* fields",
+          "observed_in": [],
+          "not_observed_reason": "the store read is refused for a missing credential before any field is derived"
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "the 29next Admin API for the named store, through the campaigns-os login gateway",
+          "what": "GET /store/ and GET /pages/ under the stored gateway credential",
+          "when": "a gateway credential (or the break-glass --store-token-source env:<VAR>) resolves",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the gateway is unreachable offline and the fixture holds no credential; the case proves the refusal (exit 2) writes nothing"
+        }
+      ],
+      "effect_test": "effects: spec derive --from-store (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: reading a store needs a live gateway and a real credential. The case proves that the credential refusal writes nothing under the target or the spec — only the lifecycle entry.",
+      "preflight": {
+        "may_write": [
+          "{lifecycle-journal}"
+        ],
+        "may_contact": []
+      }
+    },
+    {
+      "command": "spec",
+      "subcommand": "derive",
+      "flags": [
+        "--write-map"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{spec}",
+          "when": "the target repo states a field the spec does not",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the derive invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the Map write succeeds and is recorded on the report's evidence[]",
+          "observed_in": [],
+          "not_observed_reason": "the Map write is not reachable against a loopback stand-in"
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the saved Map read that supplies the spec_hash precondition",
+          "when": "always under --write-map",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{proxy-base}/api/maps/{map-id}",
+          "what": "PUT of the derived Campaign Cart SDK pin into the Map's Build hints, under X-Campaign-Key with the Map's spec_hash as the X-Spec-Hash precondition",
+          "when": "the Map declares no pin or one behind the repo",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the loopback stand-in cannot satisfy the Map read's precondition, so the PUT is never reached"
+        }
+      ],
+      "effect_test": "effects: spec derive --write-map (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED for the PUT. The case proves the declared destination IS the one contacted — the loopback receiver sees the Map read at /api/spec/{map-id} — and that the refusal that follows (exit 2) adds no report evidence.",
+      "preflight": {
+        "may_write": [
+          "{spec}",
+          "{target}/.campaign-runtime/doctor-output.json",
+          "{lifecycle-journal}"
+        ],
+        "may_contact": [
+          "/api/spec/{map-id}"
+        ]
+      }
+    },
+    {
+      "command": "polish",
+      "subcommand": "capture",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/polish/**",
+          "when": "the capture completes — screenshots and the polish evidence bundle",
+          "observed_in": [],
+          "not_observed_reason": "the capture is refused before the browser is launched"
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the capture completes and its evidence is recorded",
+          "observed_in": [],
+          "not_observed_reason": "the capture is refused before the browser is launched"
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{base-url}",
+          "what": "browser navigation and asset loads against the deployed campaign",
+          "when": "assembly is complete and a browser is installed",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the capture refuses before the browser is launched, so nothing leaves"
+        }
+      ],
+      "effect_test": "effects: polish capture (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: capture needs an installed browser and a reachable --base-url. The case proves the refusal (\"requires completed assembly before browser evidence collection\") writes nothing but the lifecycle entry and contacts nothing.",
+      "preflight": {
+        "may_write": [
+          "{lifecycle-journal}"
+        ],
+        "may_contact": []
+      }
+    },
+    {
+      "command": "login",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{home}/.campaigns-os/credentials/*",
+          "when": "the gateway login completes — the credential is written to the user credential store (the macOS keychain, or a file under the user's home)",
+          "observed_in": [],
+          "not_observed_reason": "the gateway is unreachable offline, so no credential is ever minted"
+        }
+      ],
+      "sends": [
+        {
+          "destination": "the campaigns-os login gateway",
+          "what": "the browser-consent login exchange",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the gateway is unreachable offline and the exchange needs browser consent"
+        }
+      ],
+      "effect_test": "effects: login (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: login needs a reachable gateway and a human at a browser. The case proves the failure path writes NOTHING — no credential, no lifecycle entry (authentication is dispatched ahead of lifecycle capture), and no session recovery.",
+      "preflight": {
+        "may_write": [],
+        "may_contact": []
+      }
+    }
+  ]
+}

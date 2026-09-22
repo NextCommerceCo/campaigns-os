@@ -353,6 +353,7 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 - [Developer Evaluation](docs/developer-evaluation.md)
 - [QA And Test Orders](docs/qa-and-test-orders.md)
 - [Run-Artifact Readback](docs/readback.md) — `campaigns-os readback`: a read-only projection of one run's emitted artifacts, with per-artifact freshness against the checkout and a versioned JSON contract to gate on
+- [Declared Command Effects](docs/effects.md) — what every supported invocation writes and sends, one row per command and effect-changing flag, each row proved by a test that runs the real CLI in a disposable target
 - [Legacy Migration Contract](docs/legacy-migration.md) — pure inventory, preview-plan, receipt, Offer request/readback, and token-free evidence helpers for bounded SDK 0.3.x shadow migrations
 - [Template Family vs Figma-extraction vs Hybrid](docs/template-vs-extraction-decision.md) — when to mint a template family, when to extract a bespoke design, and when to do both
 - [Small PR Review Path](docs/small-pr-review-path.md)

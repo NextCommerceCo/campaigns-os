@@ -1,6 +1,6 @@
 {
   "name": "@nextcommerce/campaigns-os",
-  "version": "1.39.0",
+  "version": "1.40.0",
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
   "license": "Apache-2.0",
   "repository": {
@@ -64,7 +64,7 @@
     "build:spec": "tsc -p campaign-spec/tsconfig.build.json",
     "prepare": "npm run build:spec",
     "check:spec": "node --test \"campaign-spec/test/**/*.test.ts\"",
-    "check": "npm run check:provenance && npm run check:workflows && npm run check:changelog-structure && npm run build:spec && npm run check:tests && npm run check:spec && npm run check:fixtures && npm run check:legacy-migration && npm run check:spec-conformance && npm run check:private-strings && npm run check:template-doctrine && npm run check:slot-manifest && npm run check:skill-versions && npm run check:cart-readiness && npm run check:sidecar-bundle && npm run check:supported-surface && npm run check:release-ledger && npm run check:runtime-recipe && npm run check:orientation-docs && npm run check:runtime-docs && npm run check:pack -- --skip-prepare",
+    "check": "npm run check:provenance && npm run check:workflows && npm run check:changelog-structure && npm run build:spec && npm run check:tests && npm run check:spec && npm run check:fixtures && npm run check:legacy-migration && npm run check:spec-conformance && npm run check:private-strings && npm run check:template-doctrine && npm run check:slot-manifest && npm run check:skill-versions && npm run check:cart-readiness && npm run check:sidecar-bundle && npm run check:supported-surface && npm run check:effects && npm run check:release-ledger && npm run check:runtime-recipe && npm run check:orientation-docs && npm run check:runtime-docs && npm run check:pack -- --skip-prepare",
     "check:tests": "node ./scripts/check-tests.mjs",
     "check:legacy-migration": "node ./scripts/check-legacy-migration.mjs",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
@@ -78,6 +78,7 @@
     "check:workflows": "node ./scripts/check-workflow-contracts.mjs",
     "check:skill-versions": "node ./scripts/check-skill-versions.mjs",
     "check:supported-surface": "node ./scripts/check-supported-surface.mjs",
+    "check:effects": "node ./scripts/check-effects.mjs",
     "check:release-ledger": "node ./scripts/check-release-ledger.mjs",
     "check:changelog-structure": "node ./scripts/check-changelog-structure.mjs",
     "check:orientation-docs": "node ./scripts/generate-orientation-reference.mjs --check",
@@ -88,7 +89,7 @@
     "check:sidecar-bundle": "node ./bin/campaigns-os.mjs bundle check --packet contracts/fixtures/sidecar-bundle/production-shaped/campaign-runtime.build.json --require-qa --json",
     "check:browser": "node ./scripts/check-tests.mjs --browser",
     "check:consumer": "node ./scripts/check-playwright-consumer.mjs",
-    "check:contracts": "npm run check:provenance && npm run check:workflows && npm run check:changelog-structure && npm run check:fixtures && npm run check:legacy-migration && npm run check:spec-conformance && npm run check:private-strings && npm run check:template-doctrine && npm run check:slot-manifest && npm run check:skill-versions && npm run check:cart-readiness && npm run check:sidecar-bundle && npm run check:supported-surface && npm run check:release-ledger && npm run check:runtime-recipe && npm run check:orientation-docs && npm run check:runtime-docs"
+    "check:contracts": "npm run check:provenance && npm run check:workflows && npm run check:changelog-structure && npm run check:fixtures && npm run check:legacy-migration && npm run check:spec-conformance && npm run check:private-strings && npm run check:template-doctrine && npm run check:slot-manifest && npm run check:skill-versions && npm run check:cart-readiness && npm run check:sidecar-bundle && npm run check:supported-surface && npm run check:effects && npm run check:release-ledger && npm run check:runtime-recipe && npm run check:orientation-docs && npm run check:runtime-docs"
   },
   "engines": {
     "node": ">=20.19.0"
@@ -117,6 +118,7 @@
     "docs/campaign-standardization-report.md",
     "docs/campaigns-os-build-flow.md",
     "docs/design-source-package.md",
+    "docs/effects.md",
     "docs/legacy-migration.md",
     "docs/migration-sidecar-bundle.md",
     "docs/orientation-contract-reference.md",

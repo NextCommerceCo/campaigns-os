@@ -2,6 +2,69 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.40.0] - 2026-09-22
+
+### Added
+
+- `contracts/effects.v1.json`: the declared effect of every supported
+  invocation — 87 rows, one per command, per subcommand and per effect-changing
+  flag, stating what the invocation **writes** (with location tokens, so a write
+  to your home directory or your machine config is not mistaken for a write to
+  the campaign) and what it **sends**, alongside the four MCP-style annotations
+  (`readOnlyHint`, `destructiveHint`, `openWorldHint`, `idempotentHint`) and an
+  effect tier (`none` < `B` writes < `A` sends < `C` destructive). One row is
+  not a command: `{"command": "*refused*"}` declares what an invocation refused
+  before its handler runs costs. Its shape is published as
+  `schemas/campaigns-os-effects.v1.schema.json` and its prose as
+  `docs/effects.md`.
+- Every row is proved by a case in `src/effects.test.mjs`, which runs the real
+  CLI in a disposable target under five conditions — no run session, an active
+  ambient session, a session idle past the 12 h TTL,
+  `CAMPAIGNS_OS_LIFECYCLE_LOG`, and **Run Telemetry consent persisted for a
+  loopback receiver's scope** — snapshotting the whole tree (paths plus sha256)
+  before and after while a loopback receiver counts requests. The assertion runs
+  both ways: nothing the row does not declare may change in any condition, and
+  every declared effect whose `observed_in` names a condition must be seen in
+  it. The fifth condition is the one that does not take the row's word for
+  whether consent is on — under the other four, consent is switched on only for
+  rows that declare a consent-gated send, so a send nobody declared ran with
+  consent off and left no trace. It is also what pins the send declarations of
+  `next`, its five stage forms and the three `qa run` rows, each of which POSTs
+  under persisted consent: the stage progress observation to
+  `{proxy-base}/api/progress`, and for `qa run` the verdict to
+  `{proxy-base}/api/qa/verdicts`, on blocked attempts included. 78 rows are
+  proved end to end; 9 whose command cannot execute past its preflight offline
+  (`login`, `logout`, `page-kit parity`, `polish capture`, `qa resolve`,
+  `qa run --browser`, `spec derive --from-store`, `spec derive --write-map`,
+  `telemetry list`) carry `test_scope: "preflight"` and a `preflight` allowance
+  — the exact paths the refusal may write and the exact request paths it may
+  contact — so a home-directory write or an undeclared endpoint fails the row
+  even when the row declares that path or destination for its success path.
+- `npm run check:effects` (`scripts/check-effects.mjs`, in `npm run check` and
+  `npm run check:contracts`): every command on the supported CLI surface, every
+  subcommand the help text teaches **and every effect-changing flag a help usage
+  line carries** (`vocabulary.effect_changing_flags`) has a row; every row names
+  the test case the per-row generator gives it and has argv in the test's
+  invocation table; every effect the offline fixture cannot reach states why;
+  every preflight row declares allowances that name no whole location and no
+  home-directory subtree; every declared condition is one the suite runs; and
+  the annotations have to agree with the row. **A row without its test is not
+  publishable, and a flag without its row is not either.**
+
+### Changed
+
+- `contracts/agent-relevant-change-policy.v1.json` classifies three more paths.
+  `contracts/effects.v1.json` is `compatibility_policy`. The `agents/` prefix is
+  `documentation` — it was ignored as "illustrative" while nothing consumed it,
+  and the four per-platform instruction files are now named supported surface.
+  The `src/agent/` prefix is `cli_surface`, declared ahead of the subtree
+  existing and ahead of the broad `src/` ignore, so its first change cannot be
+  born unclassified.
+- `contracts/supported-surface.json` advances to `1.40.0` and adds
+  `contracts/effects.v1.json` and `schemas/campaigns-os-effects.v1.schema.json`
+  as hashed entries, plus `docs/effects.md` and the four `agents/**` files as
+  named entries.
+
 ## [1.39.0] - 2026-09-22
 
 ### Added

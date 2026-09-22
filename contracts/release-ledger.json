@@ -5582,6 +5582,75 @@
         }
       ],
       "entry_sha256": "d067458fd7c0a8c81f52d03010eb68576df019fdb3bfb527bc27e201fe2de08b"
+    },
+    {
+      "id": "RL-0136",
+      "sequence": 136,
+      "date": "2026-09-22",
+      "kind": "release",
+      "surface_version": "1.40.0",
+      "changelog_section": "1.40.0",
+      "changelog_sha256": "a51d88e7e1aec256810b972415bc71aa8869692b92078c92c010873081cd3357",
+      "agent_impact": "A consumer can now read what a command does BEFORE running it. contracts/effects.v1.json declares, for every supported invocation, what it writes and what it sends: 87 rows, one per command, per subcommand and per effect-changing flag, each carrying the four MCP-style annotations (readOnlyHint, destructiveHint, openWorldHint, idempotentHint), an effect tier (none < B writes < A sends < C destructive), the write paths as globs over location tokens ({target}, {cwd}, {packet}, {spec}, {home}, {lifecycle-journal}) and the send destinations. An agent that needs to know whether an invocation needs a human in the loop reads `tier` and `destructiveHint`; one that needs to know what will change on disk reads `writes[]`; one that needs to know what leaves the machine reads `sends[]`, which names the endpoint path and whether Run Telemetry consent gates it. Several things in the file will surprise a reader who assumed otherwise, and all of them are what the code does. First, readOnlyHint counts the command-lifecycle journal, so the readOnlyHint: true rows are exactly the invocations the CLI exempts from lifecycle capture (help, readback, run status, doctor inspection, doctor --no-write, sdk storage-check, tooling diagnose, a refused invocation, run-record --no-write, and every --dry-run form on the commands that implement the flag); `standardize`, `bundle check`, `qa resolve --no-probe` and the other inspections that write no artifact of their own are tier B because they append that entry. Second, `demo` is tier B, not an inspection: it writes the new directory --target names. Third, `next --no-write` is not read-only: it suppresses the progress snapshot, the doctor refresh and the journal append, but resolving an ambient run session still advances that session file. Fourth, `next` and its five stage forms are tier A, not B: each POSTs the stage progress observation to {proxy-base}/api/progress once Run Telemetry consent is persisted for that endpoint and the packet's campaign key resolves, and all three `qa run` rows POST the verdict to {proxy-base}/api/qa/verdicts and the progress observation as well, on blocked attempts included — publishing rides the consent seam rather than a flag of its own, and --no-post-verdict and --no-remit (each now a row) are the opt-outs. Fifth, `qa policy set` writes the Build Packet it is given, stamps the retained doctor sidecar stale and refreshes the assembly report's proof_policy mirror; `doctor --built --emit-packet` writes the emitted packet under the target; and `run end --no-write` still CLEARS the active session file, which is the one byte-visible effect that flag does not suppress. Every row is proved by a case in src/effects.test.mjs that runs the real CLI in a disposable target under FIVE conditions (no session, an active ambient session, a session idle past the 12 h TTL, CAMPAIGNS_OS_LIFECYCLE_LOG, and Run Telemetry consent persisted for a loopback receiver's scope with a synthetic campaign key), snapshots the tree before and after and counts a loopback receiver's requests; the assertion runs both ways, so an undeclared write or an undeclared request fails the row and a declared effect that never happens fails it too. The fifth condition is the one that does not read consent from the row under test — under the other four, consent is switched on only for rows that already declare a consent-gated send, which is how nine rows came to declare none while each of them sent. Nothing in the suite reaches the network: the persisted grant is scoped to the loopback receiver, so a canonical-endpoint fallback resolves consent off, and every invocation in that condition runs under NODE_DEBUG=net with its connection log asserted to name no host but 127.0.0.1. 78 rows are proved end to end; 9 whose command cannot execute past its preflight with no network, no browser, no renderer and no credentials carry test_scope “preflight”, and each now declares a preflight allowance — the exact paths the refusal may write and the exact request paths it may contact — so a home-directory write or a request to an undeclared endpoint fails the row even when the row declares that path or destination for the success path it cannot reach. npm run check:effects refuses a row without its test, a row whose test name is not the one the generator gives it, a row with no argv in the test's invocation table, a supported command or documented subcommand without a row, an EFFECT-CHANGING FLAG a help usage line carries without a row of its own (deleting the `page-kit sync --dry-run` or `doctor --write` row is now a failure, where coverage by command alone accepted it), an unreachable effect with no stated reason, a preflight allowance that licenses a whole location or a home-directory subtree, a condition the suite does not run, and annotations that disagree with the row. Separately, three paths change classification: contracts/effects.v1.json is compatibility_policy, the agents/ prefix moves from ignored (“illustrative”) to documentation because its four per-platform instruction files are now named supported surface, and the src/agent/ prefix is declared cli_surface ahead of the subtree existing so its first change cannot be born unclassified. No command, flag, output or schema changed behaviour.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.40.0 and add the effects contract and its schema as hashed entries, plus docs/effects.md and the four agents/** per-platform instruction files as named entries (their bytes are unchanged in this release; what changed is that a consumer may now depend on them)."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/agent-relevant-change-policy.v1.json",
+          "surface_entry": "contracts/agent-relevant-change-policy.v1.json",
+          "summary": "Classify contracts/effects.v1.json as compatibility_policy, the agents/ prefix as documentation (removing its ignore), and the src/agent/ prefix as cli_surface ahead of the broad src/ ignore."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Publish the declared effect of every supported invocation: 87 rows of writes, sends, annotations, tier, the test case that proves the row, and whether that proof is end to end or at the preflight — including the progress and QA-verdict POSTs that `next`, its five stage forms and the three `qa run` rows make under persisted scoped consent, the packet/report/sidecar writes of `qa policy set`, the assembly-report and sidecar writes `page-kit parity` makes when it can run, and a row for every effect-changing flag a help usage line carries."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-effects.v1.schema.json",
+          "surface_entry": "schemas/campaigns-os-effects.v1.schema.json",
+          "summary": "Publish the campaigns-os-effects/v1 shape: the row, its write and send entries, the location-token vocabulary, the effect-changing flag list, the five conditions, the two test scopes, and the preflight allowances a preflight row must declare."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Document the vocabulary, the tiers, how to read a row, how a row is proved under the five conditions (and why the persisted-consent one exists), the flag-coverage rule, the preflight allowances, which rows are preflight-proved and why, and the rule that a row without its test is not published."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface version 1.40.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for surface version 1.40.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version 1.40.0, ship docs/effects.md in the npm pack, and add check:effects to the check and check:contracts pipelines."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Regenerated lockfile version fields for 1.40.0."
+        }
+      ],
+      "entry_sha256": "10f0aac0174e568af09b8d3a351e49bfe48f92afa3ef6a620487fe77f5327c36"
     }
   ]
 }
