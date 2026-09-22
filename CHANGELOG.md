@@ -92,7 +92,15 @@ Notable supported-surface changes are recorded here.
   freshly regenerated artifact reported a whole stale set as fresh and
   `clean: true`; that is a change of meaning in a published field, hence the
   new schema version rather than an edit in place. `newest_key` is kept as
-  information only and `artifact_times` is unchanged.
+  information only and `artifact_times` is unchanged. An artifact that recorded
+  a `generated_at` this readback cannot parse has an age it never established,
+  so it is not left to a fresh sibling to speak for: `staleness.unparseable_keys`
+  names such artifacts in render order, their artifact rows carry the shape of
+  the refused value (never the value itself), the text view lists them under
+  `*** UNKNOWN ARTIFACT AGE ***`, and `clean` is false whenever that list is
+  non-empty. `computable` and `stale` keep their meanings, and an artifact with
+  no `generated_at` key at all is unchanged — it recorded no age to check, so it
+  stays out of the comparison and is not by itself unclean.
 - `campaigns-os readback --example [--json]` projects the synthetic sample
   bundled at `contracts/fixtures/sidecar-bundle/production-shaped/` with no
   target argument. The sample is a packaged fixture directory rather than a Git

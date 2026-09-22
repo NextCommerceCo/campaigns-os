@@ -3549,10 +3549,12 @@ export function themeWaive(args) {
  * makes runs on both: the report must exist, it must parse (a torn one fails by
  * name), the mutator's own refusals fire, its result must be an Assembly Report
  * object, and the derived summary is restated over that result. A dry run
- * differs in one statement: the mutator returns `null`, which is
- * commitAssemblyReport's own "nothing to write" answer, so the report is not
- * rewritten and the doctor sidecar is not stamped stale. Nothing is
- * re-implemented and nothing is skipped but the write itself.
+ * differs in one statement: this wrapper — not the mutator — returns `null` to
+ * commitAssemblyReport, which is its "nothing to write" answer, so the report
+ * is not rewritten and the doctor sidecar is not stamped stale. Nothing is
+ * re-implemented and nothing is skipped but the write itself. A mutator that
+ * returns nothing does not get to borrow that sentinel: it is a bug, and it
+ * throws here on both paths.
  *
  * The result-shape check and the summary restatement sit here rather than being
  * left to commitAssemblyReport alone because they must run in BOTH modes and
@@ -3561,11 +3563,16 @@ export function themeWaive(args) {
  * now fails on this line and never on the copy in stage-ledger.mjs, so the two
  * cannot drift into different text.
  */
-function commitWaiverToAssemblyReport(workspace, mutate, options, { dryRun = false } = {}) {
+export function commitWaiverToAssemblyReport(workspace, mutate, options, { dryRun = false } = {}) {
   const previewOrCommit = (report) => {
     const mutated = mutate(report);
-    if (mutated === null || mutated === undefined) return mutated;
-    if (!isPlainObject(mutated)) throw new TypeError("commitAssemblyReport mutate(report) must return an Assembly Report object, null, or undefined.");
+    // null and undefined are refused here rather than forwarded. Both waive
+    // mutators always return the report they built, and commitAssemblyReport
+    // reads a null result as "nothing to write" — so a mutator that forgot to
+    // return would skip the write silently while the command still reported the
+    // waiver recorded. That is a bug in the mutator and fails loudly. The dry
+    // run's own "do not write" is this wrapper's null below, not the mutator's.
+    if (!isPlainObject(mutated)) throw new TypeError("commitAssemblyReport mutate(report) must return an Assembly Report object.");
     if (!dryRun) return mutated;
     applyDerivedAssemblyReportSummary(mutated);
     return null;
@@ -12628,8 +12635,8 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
   // What a real run of this command line would write, and what this one does:
-  // a dry run assembles and validates the record a real run would write, and
-  // stops at the write itself (persistRunRecord).
+  // a dry run assembles and validates the record a real run would write
+  // (assertRunRecordValid), and stops at the write itself (writeRunRecord).
   const wouldWrite = args["no-write"] !== true;
   const write = wouldWrite && !dryRun;
   // The verdict publish outcome this record carries: the session's attempt
@@ -12716,9 +12723,6 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     agentUsage,
   });
 
-  // Write before any network call so local capture does not depend on telemetry
-  // being fast or reachable. If a crash lands before the final rewrite below,
-  // the durable record is explicitly pending instead of silently skipped.
   const shouldAttemptRemit = !remitDisabled && consent.state === "on";
   const remitBaseKind = describeRemitBaseKind(proxyBase);
 
@@ -12778,8 +12782,10 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   }
 
   // The record is validated whenever a real run of this command line would
-  // write one — under --dry-run too, where only the write is skipped.
-  const recordPath = wouldWrite ? persistRunRecord(record, { baseDir, dryRun }) : null;
+  // write one — under --dry-run too — and always BEFORE the remit below, so an
+  // invalid record refuses ahead of any send on both paths. The write itself is
+  // separate and happens after the remit; validating here does not write.
+  if (wouldWrite) assertRunRecordValid(record);
 
   // Remit is consent-gated, non-fatal, bounded, and keyed on run_id — the
   // receiver holds one record per id and refuses a second POST for one it
@@ -12844,7 +12850,11 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     record.remit_base_kind = remitStatus.attempted ? remitBaseKind : null;
   }
 
-  if (write) persistRunRecord(record, { baseDir });
+  // The record's one and only write, after the remit so the file that lands
+  // carries this run's remit_* outcome rather than the placeholders it was
+  // assembled with. Validated above, ahead of the send; nothing is written
+  // under --dry-run or --no-write.
+  const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
 
   const summary = {
     ok: true,
@@ -12906,23 +12916,22 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
 }
 
 /**
- * The Run Record's one write, real or previewed. `writeRunRecord` validates the
- * record before it writes and refuses an invalid one; that refusal belongs to
- * the command rather than to the write, so it runs here on both paths and the
- * write itself is the only thing a dry run skips. Both modes therefore refuse
- * the same record with the same message and the same exit code: the check fires
- * on this line, never on the identical one inside run-record.mjs (which stays
- * as the writer's own last guard). The validator is that writer's — imported,
- * not re-stated — so the two cannot disagree about what a valid record is.
- * Returns the written path, or null when a dry run stopped at the write.
+ * The Run Record's refusal, lifted out of the write. `writeRunRecord` validates
+ * the record before it writes and refuses an invalid one; that refusal belongs
+ * to the command rather than to the write, because it has to fire on the dry
+ * path (which never writes) and ahead of the remit on the real one (which
+ * writes only afterwards). Both modes therefore refuse the same record with the
+ * same message and the same exit code, before any send: the check fires here,
+ * never on the identical one inside run-record.mjs (which stays as the writer's
+ * own last guard). The validator is that writer's — imported, not re-stated —
+ * so the two cannot disagree about what a valid record is. Writes nothing.
  */
-function persistRunRecord(record, { baseDir, dryRun = false } = {}) {
+function assertRunRecordValid(record) {
   const validation = validateRunRecord(record);
   if (!validation.ok) {
     const detail = validation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
     throw new Error(`Run Record failed validation; refusing to write: ${detail}`);
   }
-  return dryRun ? null : writeRunRecord(record, { baseDir });
 }
 
 // The record already written under `runId` for this target, or null when there

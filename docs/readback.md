@@ -146,6 +146,7 @@ QA VERDICT  [QA verdict; disposition: ready — Campaigns OS is the verdict auth
     "computable": true,
     "stale": true,
     "stale_keys": ["report"],
+    "unparseable_keys": [],
     "artifacts": {
       "doctor": { "generated_at": "2026-09-01T12:00:00Z", "stale": false },
       "report": { "generated_at": "2026-06-23T00:00:00Z", "stale": true }
@@ -186,7 +187,14 @@ to the keys the caller asked for. Each record carries:
   (`packet_selection` records which);
 - `state` — one of `loaded`, `absent`, `unreadable`, `unrecognized`;
 - `detail` — the readback's explanation for a non-`loaded` state; the empty
-  string for `loaded` and `absent`.
+  string for `loaded` and `absent`. One exception: a `loaded` artifact named in
+  [`staleness.unparseable_keys`](#staleness) carries the *shape* of the
+  `generated_at` value that did not parse (`generated_at is a 12-character
+  string that is not an ISO-8601 instant, so this artifact's age could not be
+  compared against the checkout`), so a consumer reading `artifacts` alone can
+  see that this artifact's age was never established. The value itself is not
+  reproduced: a hand-edited or foreign artifact can carry an arbitrarily long
+  string there.
 
 The artifact's own parsed contents are deliberately not included. A consumer
 that wants an artifact's payload should read that artifact directly; this
@@ -296,10 +304,21 @@ against each other.
   recorded HEAD movement. Always `false` when `computable` is false; absence of
   the signal is not evidence of freshness;
 - `stale_keys` — the stale artifact keys, in the fixed render order;
+- `unparseable_keys` — the loaded artifacts that **recorded** a `generated_at`
+  this readback could not parse, in the fixed render order. Their age was never
+  established, so they are neither fresh nor stale, they are absent from
+  `artifacts` and `artifact_times`, and `clean` is `false` while this list is
+  non-empty (condition 3 under [`clean`](#clean)). Each one's artifact row
+  carries the shape of the refused value in its `detail`. This list does not
+  change `computable` or `stale`, which keep their meanings: a set whose only
+  comparable artifact is fresh still reports `stale: false`, and the unknown age
+  is reported here rather than by widening a field that answers a different
+  question;
 - `artifacts` — every loaded artifact that carried a parseable `generated_at`,
   keyed by artifact key, each as `{"generated_at", "stale"}`. An artifact with
   no parseable `generated_at` is neither fresh nor stale: it is absent from this
-  map, and if it is the only artifact the assessment is not computable;
+  map, and if it is the only artifact the assessment is not computable. Where it
+  recorded a `generated_at` that did not parse, `unparseable_keys` names it;
 - `newest_key` — the artifact key holding the newest `generated_at`, or `null`
   when not computable. **Information only**: it no longer decides the aggregate;
 - `head_time` — the last recorded HEAD movement, or `null` when the reflog gave
@@ -307,6 +326,22 @@ against each other.
 - `head_detail` — why `head_time` is `null`; the empty string when it is not;
 - `artifact_times` — every loaded artifact's parseable `generated_at`, keyed by
   artifact key. Carried unchanged for consumers that already read it.
+
+Two kinds of missing age are deliberately kept apart, because they say different
+things about the run:
+
+- an artifact that **recorded** a `generated_at` this readback could not parse
+  claimed an age the readback failed to establish. It is named in
+  `unparseable_keys`, its artifact row says so, the text view lists it under
+  *UNKNOWN ARTIFACT AGE*, and `clean` is `false`. The parser is a port of
+  CPython's `datetime.fromisoformat`, so this is what a hand-edited, foreign or
+  corrupt artifact reaches — exactly the case the readback exists to inspect;
+- an artifact with **no `generated_at` key at all** recorded no age, so there is
+  no claim about its currency to check. It is simply absent from the comparison,
+  it is not named in `unparseable_keys`, and it does not by itself make the
+  projection unclean. (If no other artifact carries a parseable `generated_at`,
+  the comparison is not computable and `clean` is `false` for that reason
+  instead.)
 
 `staleness` is `null` only if a programmatic caller builds a payload without an
 assessment; the CLI always supplies one.
@@ -361,7 +396,7 @@ failure lines up with a completed stage. This too is the readback's own layer.
 
 ## `clean`
 
-`clean` is true if and only if **all four** of the following hold:
+`clean` is true if and only if **all five** of the following hold:
 
 1. **Every artifact the readback found is loaded and recognized.** Formally: no
    artifact is in state `unreadable` or `unrecognized`. An `absent` artifact
@@ -375,8 +410,18 @@ failure lines up with a completed stage. This too is the readback's own layer.
    that the artifacts describe the current checkout, and an unknown age must
    never read as a fresh one. Since `stale` is now the any-artifact aggregate, a
    target with one stale artifact and five fresh ones is not clean.
-3. **`divergences` is empty.**
-4. **`doctor.error_count` is zero.**
+3. **No loaded artifact recorded a `generated_at` the readback could not
+   parse.** Formally: `staleness.unparseable_keys` is empty. Such an artifact
+   leaves the comparison — it is neither fresh nor stale — so without this
+   condition a fresh sibling carried the aggregate and an artifact whose
+   currency was never established shipped inside a `clean: true` payload. That
+   is the same "an unknown age must never read as a fresh one" rule as condition
+   2, applied per artifact rather than to the comparison as a whole. An artifact
+   that recorded **no** `generated_at` at all is not covered by this condition:
+   it made no claim about its age, so there is nothing here that the readback
+   failed to check.
+4. **`divergences` is empty.**
+5. **`doctor.error_count` is zero.**
 
 Doctor warnings — of either group — do not affect `clean`. Neither does a
 blocked QA verdict, a blocked assembly report, or a non-empty `skip_cascades`.
@@ -385,8 +430,9 @@ blocked QA verdict, a blocked assembly report, or a non-empty `skip_cascades`.
 
 `clean` is a statement about the readback's own view, not a verdict on the
 campaign. It means: the readback read every artifact that was there, understood
-all of them, can show that none of them is older than the checkout, found no
-contradiction between them, and saw no doctor error. Campaigns OS remains the
+all of them, can show — for every artifact that recorded an age — that none of
+them is older than the checkout, found no contradiction between them, and saw no
+doctor error. Campaigns OS remains the
 lifecycle and verdict authority; the readback never reinterprets a verdict.
 
 The practical consequence for a caller: `clean: true` says the artifacts are
@@ -404,12 +450,20 @@ Two corollaries worth stating because they surprise people:
 - A target whose artifacts are fine but which is not a Git checkout is never
   `clean: true`, for the same reason: staleness has no HEAD movement to compare
   against. The bundled `--example` sample is exactly this case.
+- A target carrying one artifact whose recorded `generated_at` the readback
+  cannot parse is never `clean: true`, even when every artifact it *can* read is
+  newer than the checkout and `stale` is `false`: condition 3 fails, and
+  `unparseable_keys` names the artifact. An artifact that recorded no
+  `generated_at` at all does not trip that condition — it is the absence of a
+  claim, not an unverified one.
 
 ## What changed from v1 (and why the version moved)
 
 The readback began life outside this repository, emitting
 `campaigns-agent-readback/v1`. This command is that module's port into the
-kernel, and it carries one behaviour fix.
+kernel, and it carries one behaviour fix — assessed per artifact — together with
+the `clean` rule that keeps an artifact of unknown age from riding along on a
+fresh sibling.
 
 **v1 assessed staleness from the newest artifact only.** It found the loaded
 artifact with the latest `generated_at` and compared that one instant against
@@ -427,11 +481,26 @@ is true when any of them is stale, and the text view names each stale artifact
 rather than only the newest one. `newest_key` is kept but demoted to
 information; `artifact_times` is kept unchanged.
 
+**v2 also refuses to call an unknown age a fresh one.** Assessing every artifact
+left one way for the old answer to survive: an artifact whose recorded
+`generated_at` does not parse leaves the comparison entirely, so with a fresh
+sibling beside it the aggregate found nothing stale and the projection reported
+`clean: true` — for a set containing an artifact whose currency was never
+established. v2 adds `staleness.unparseable_keys`, which names those artifacts
+in render order; their artifact rows carry the shape of the value that did not
+parse, the text view lists them under *UNKNOWN ARTIFACT AGE*, and `clean` is
+`false` whenever the list is non-empty. `computable` and `stale` are unchanged —
+the unknown age is reported in its own field rather than folded into one that
+answers a different question — and an artifact carrying no `generated_at` key at
+all keeps its previous behaviour: out of the comparison, and not by itself
+unclean.
+
 That is a change of meaning in a published field — a `stale` a consumer already
 gates on now answers a different question — and `docs/versioning.md` makes that
 a breaking change to a machine-readable contract requiring a new schema version
 rather than a silent edit. Hence `campaigns-os-readback/v2`. Everything else in
-the payload keeps its v1 field names and meanings.
+the payload keeps its v1 field names and meanings; `unparseable_keys` is a new
+field, and `clean` — already v2's own flag — states the rule above.
 
 Migration for a consumer already reading the v1 payload:
 
@@ -443,6 +512,9 @@ Migration for a consumer already reading the v1 payload:
   relying on the defect.
 - To report *which* artifacts are stale rather than only that some are, read
   `stale_keys` or `artifacts`.
+- A gate that reads `clean` needs no change either, and now refuses one more
+  case: a set containing an artifact whose recorded age the readback could not
+  parse. To report which artifact that is, read `unparseable_keys`.
 
 ## Related
 

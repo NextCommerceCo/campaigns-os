@@ -17,9 +17,10 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
+import { commitWaiverToAssemblyReport } from "./cli.mjs";
 import { createVerdict, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { buildRunSession, resolveRunSessionPath, writeRunSession } from "./run-session.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
@@ -59,7 +60,14 @@ function snapshot(dir) {
   return files;
 }
 
-async function startReceiver() {
+/**
+ * A loopback stand-in for the remit/publish endpoint.
+ *
+ * `onRequest` runs while the POST is still in flight, which is how the
+ * write-ordering test below observes the target's state mid-remit without a
+ * file watcher.
+ */
+async function startReceiver({ onRequest = null } = {}) {
   const posts = [];
   const server = createServer((request, response) => {
     let body = "";
@@ -68,6 +76,7 @@ async function startReceiver() {
     });
     request.on("end", () => {
       posts.push({ method: request.method, url: request.url, payload: JSON.parse(body || "null") });
+      if (onRequest) onRequest(posts[posts.length - 1]);
       response.writeHead(201, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ ok: true }));
     });
@@ -78,8 +87,7 @@ async function startReceiver() {
 
 /**
  * The real CLI, spawned. `nodeArgs` are node's own flags, ahead of the entry
- * point — `--no-experimental-fetch` is how a runtime without a global fetch is
- * reproduced here, since every supported Node ships one.
+ * point — see noFetchNodeArgs for the runtime-without-a-fetch rows.
  */
 async function runCli(argv, { cwd, telemetry = "off", lifecycleLog = "", nodeArgs = [] } = {}) {
   try {
@@ -92,6 +100,31 @@ async function runCli(argv, { cwd, telemetry = "off", lifecycleLog = "", nodeArg
   } catch (error) {
     return { code: error.code, stdout: error.stdout || "", stderr: error.stderr || "" };
   }
+}
+
+/**
+ * Node's own flags for a child runtime that has no global fetch, as a preload
+ * module the test writes into a temp directory of its own.
+ *
+ * NOT `--no-experimental-fetch`. That flag removes the global on Node 22, where
+ * these tests are developed, and is a no-op on Node 24, where CI runs them:
+ * fetch is stable there and the flag no longer takes it away. The rows that use
+ * this compare a dry run against a REAL invocation, so a flag that silently
+ * stops working does not weaken the runtime — it breaks the row, because the
+ * real invocation keeps its transport and never reaches the refusal the dry run
+ * is being compared against. Deleting the global in a preload module is the
+ * same runtime on every version. Verified with
+ * `node --import no-fetch.mjs -e 'console.log(typeof fetch)'` -> `undefined`.
+ */
+function noFetchNodeArgs(t) {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-no-fetch-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const preload = join(dir, "no-fetch.mjs");
+  writeFileSync(preload, "delete globalThis.fetch;\n");
+  // A file URL rather than a bare path: `--import` resolves its argument as a
+  // module specifier, and the URL form is the one that cannot be mistaken for
+  // a package name on any platform.
+  return ["--import", pathToFileURL(preload).href];
 }
 
 /**
@@ -230,6 +263,46 @@ test("run-record --dry-run assembles the record, writes no file and contacts no 
   assert.equal(receiver.posts.length, 1, "the real run is visible to the receiver");
   assert.equal(receiver.posts[0].url, "/api/runs");
   assert.equal(receiver.posts[0].payload.run_id, summary.record.run_id);
+});
+
+// The real path's write count, which --dry-run's "writes nothing" says nothing
+// about. The record used to be written twice on every default run-record: once
+// before the remit, with `remit_*` still placeholders, and once after it with
+// the send's outcome. The end state on disk was right, but the interim file was
+// a published record claiming a pending remit. One write now, after the remit.
+//
+// Counted without a file watcher: the receiver reads the records directory
+// while the POST is in flight. A pre-remit write would be sitting there.
+test("a real run-record writes its record exactly once, after the remit", async (t) => {
+  const { dir, packetPath } = seedTarget(t);
+  const recordsDir = join(dir, ".campaign-runtime/run-records");
+  let duringRemit = null;
+  const receiver = await startReceiver({
+    onRequest: () => {
+      duringRemit = existsSync(recordsDir) ? readdirSync(recordsDir) : [];
+    },
+  });
+  t.after(() => receiver.close());
+
+  const real = await runCli(
+    ["run-record", "--packet", packetPath, "--proxy-base", receiver.base, "--json"],
+    { cwd: dir, telemetry: "on" },
+  );
+  assert.equal(real.code, 0, real.stderr);
+  const summary = JSON.parse(real.stdout);
+  assert.equal(receiver.posts.length, 1, "one remit");
+  assert.deepEqual(duringRemit, [], "and no record on disk while it was in flight: the first write is gone");
+
+  const recordFile = `${summary.record.run_id}.json`;
+  assert.deepEqual(readdirSync(recordsDir), [recordFile], "one record file, and no .tmp left behind by a second write");
+  const onDisk = readJson(join(recordsDir, recordFile));
+  assert.equal(onDisk.remit_state, "ok", "the one file that landed carries the post-remit fields");
+  assert.equal(onDisk.remit_attempted, true);
+  assert.equal(onDisk.remit_ok, true);
+  assert.equal(onDisk.remit_endpoint, "/api/runs");
+  assert.equal(onDisk.remit_result, "stored");
+  assert.deepEqual(onDisk, summary.record, "and is exactly the record the envelope reported");
+  assert.equal(summary.record_path, join(recordsDir, recordFile));
 });
 
 test("run-record --dry-run with --no-remit or --no-write still writes nothing and reports no endpoint", async (t) => {
@@ -628,7 +701,7 @@ const PARITY_ROWS = [
     // approved a publish on a runtime that cannot make the request at all.
     command: "qa publish",
     label: "a runtime with no global fetch: the transport's first precondition, ahead of the destination gate",
-    nodeArgs: ["--no-experimental-fetch"],
+    noFetch: true,
     argv: ({ packetPath, verdictPath }) => ["qa", "publish", "--packet", packetPath, "--verdict", verdictPath, "--proxy-base", "https://proxy.test", "--json"],
     refusal: /Global fetch is not available\. Upgrade to Node 18\+ or pass fetchImpl\./,
   },
@@ -704,11 +777,12 @@ test("--dry-run refuses exactly what the real path refuses before its first effe
       const target = seedTarget(inner);
       if (row.seed) await row.seed(target);
       const argv = row.argv(target);
+      const nodeArgs = row.noFetch ? noFetchNodeArgs(inner) : [];
       const before = snapshot(target.dir);
 
-      const dry = await runCli([...argv, "--dry-run"], { cwd: target.dir, nodeArgs: row.nodeArgs });
+      const dry = await runCli([...argv, "--dry-run"], { cwd: target.dir, nodeArgs });
       assert.deepEqual(snapshot(target.dir), before, "the dry run wrote nothing");
-      const real = await runCli(argv, { cwd: target.dir, nodeArgs: row.nodeArgs });
+      const real = await runCli(argv, { cwd: target.dir, nodeArgs });
 
       assert.notEqual(real.code, 0, `the real invocation refuses this input: ${real.stdout}${real.stderr}`);
       assert.equal(dry.code, real.code, "the dry run exits as the real invocation does");
@@ -789,7 +863,7 @@ test("run-record --dry-run refuses a send it has no fetch for, exactly as the re
   const { dir, packetPath } = seedTarget(t);
   const receiver = await startReceiver();
   t.after(() => receiver.close());
-  const nodeArgs = ["--no-experimental-fetch"];
+  const nodeArgs = noFetchNodeArgs(t);
   const before = snapshot(dir);
 
   const dry = await runCli(
@@ -814,6 +888,42 @@ test("run-record --dry-run refuses a send it has no fetch for, exactly as the re
   assert.equal(record.remit_state, "failed", "the real run's remit failed locally");
   assert.equal(record.remit_error, summary.would_remit_refused, "by the exact message the dry run previewed");
   assert.equal(receiver.posts.length, 0, "the real run had no transport to reach the receiver with either");
+});
+
+// The one guard in commitWaiverToAssemblyReport that no shipped input reaches:
+// both waive mutators always return the report they built. commitAssemblyReport
+// reads a null result as "nothing to write", so a future mutator that forgot to
+// return would skip the write while the command still reported the waiver
+// recorded — silently, on the REAL path. It is a bug, and it throws on both
+// paths. The dry run's own "do not write" is the wrapper's return value, not
+// the mutator's, so refusing the mutator's null costs that contract nothing.
+test("a waive mutator that returns nothing is refused, not read as nothing-to-write", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-waive-result-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const reportPath = join(dir, "assembly-report.json");
+  writeJson(reportPath, { identity: { map_id: "map_test" }, stages: {} });
+  const workspace = { reportPath, targetRepo: dir };
+  const options = { command: "theme waive", staleReason: "A waiver was recorded after this doctor snapshot." };
+  const before = snapshot(dir);
+
+  for (const dryRun of [false, true]) {
+    for (const [label, mutate] of [["undefined", () => undefined], ["null", () => null]]) {
+      assert.throws(
+        () => commitWaiverToAssemblyReport(workspace, mutate, options, { dryRun }),
+        /mutate\(report\) must return an Assembly Report object/,
+        `returning ${label} under dryRun=${dryRun}`,
+      );
+    }
+  }
+  assert.deepEqual(snapshot(dir), before, "and nothing was written on the way to any of those refusals");
+
+  // The control: a mutator that returns the report previews under a dry run and
+  // writes without one, so the guard above refuses only the bug.
+  const record = (report) => ({ ...report, theme: { waiver: { waived_by: "Jordan Lee" } } });
+  assert.equal(commitWaiverToAssemblyReport(workspace, record, options, { dryRun: true }).written, false);
+  assert.deepEqual(snapshot(dir), before, "the dry run wrote nothing");
+  assert.equal(commitWaiverToAssemblyReport(workspace, record, options).written, true);
+  assert.notDeepEqual(snapshot(dir), before, "the real commit is the one that writes");
 });
 
 test("help offers --dry-run on all four mutating commands", async () => {
