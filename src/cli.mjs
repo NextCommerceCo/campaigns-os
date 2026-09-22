@@ -486,7 +486,7 @@ Usage:
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os login [--store <subdomain>]
   campaigns-os logout [--store <subdomain>]
-  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # install-mode, git, skill freshness, and local gateway login/store/expiry/reported version
+  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--skills-revision <bundle-revision|skill-id@version>] [--json]   # install-mode, git, skill freshness, and local gateway login/store/expiry/reported version. --skills-revision checks the bundle revision the skill you loaded states on its first body line (or that one skill's <skill-id>@<version>) against the bundle THIS CLI ships: revision_check is match, mismatch or unchecked, and a mismatch prints the full status and exits 2 because skill text already in context cannot be refreshed by re-running — start a fresh session. See docs/skills-revision.md
   campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next --packet <json> [--no-write] [--no-remit] [--proxy-base <url>] [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
@@ -1320,7 +1320,10 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "tooling") {
     const result = await toolingStatusCommand(args);
-    writeResult(result, args, result.ok ? 0 : 2);
+    // The revision line is a header, so a mismatch is stated before the status
+    // an operator would otherwise read as fine — and the full status still
+    // prints, because the exit code is set after the render, not instead of it.
+    writeResult(result, args, result.ok ? 0 : 2, { headerLines: skillsRevisionTextLines(result) });
     return;
   }
 
@@ -11082,11 +11085,92 @@ function toolingSkillIdentity(skill) {
   return `${prefix}${skill?.name || "unknown skill"}`;
 }
 
+/**
+ * `--skills-revision <value>`: the skills bundle identity an agent read, checked
+ * against the bundle THIS CLI ships.
+ *
+ * The asymmetry is the whole point, and it is why the reported revision is named
+ * `on_disk`. A skill's text is pulled into an agent's context once, at the start
+ * of the task, and is never re-read; the CLI on disk, meanwhile, can be updated
+ * underneath that session by an `npm install`, an `npx` cache refresh, or a
+ * `git pull` in the checkout. So the only honest comparison is "what you are
+ * still reading" against "what is installed right now", and the only honest
+ * remedy for a mismatch is a fresh session — re-running the command cannot pull
+ * the newer skill text into a context that already has the older one.
+ *
+ * The bundle spelling (`<package version>+skills.<n>`) is what every SKILL.md
+ * states on its first body line. The `<skill-id>@<version>` spelling is a
+ * fallback for an agent that carries only the frontmatter of the one skill it
+ * loaded; it is checked against that skill's manifest entry. An id this bundle
+ * does not ship is a mismatch, not a refusal: an agent quoting a skill that is
+ * not here is reading text from some other bundle, which is exactly the
+ * condition this flag exists to catch.
+ */
+export function parseSkillsRevisionArg(value) {
+  const text = String(value).trim();
+  const at = text.lastIndexOf("@");
+  if (at > 0 && at < text.length - 1) {
+    return { spelling: "skill", id: text.slice(0, at), version: text.slice(at + 1), requested: text };
+  }
+  return { spelling: "bundle", requested: text };
+}
+
+export function evaluateSkillsRevision(value, manifest) {
+  const onDisk = typeof manifest?.bundle_revision === "string" ? manifest.bundle_revision : null;
+  if (value === undefined) {
+    return {
+      status: "unchecked",
+      requested: null,
+      spelling: null,
+      on_disk: onDisk,
+      on_disk_skill: null,
+      message: `unchecked (on disk ${onDisk || "unknown"})`,
+    };
+  }
+  const parsed = parseSkillsRevisionArg(value);
+  if (parsed.spelling === "skill") {
+    const entry = (manifest?.skills || []).find((skill) => skill?.id === parsed.id) || null;
+    const onDiskSkill = entry ? { id: entry.id, version: entry.version ?? null } : null;
+    const match = Boolean(entry) && entry.version === parsed.version;
+    return {
+      status: match ? "match" : "mismatch",
+      requested: parsed.requested,
+      spelling: "skill",
+      on_disk: onDisk,
+      on_disk_skill: onDiskSkill,
+      message: match
+        ? `match (${parsed.requested}; bundle ${onDisk || "unknown"})`
+        : `mismatch: loaded ${parsed.requested}, on disk ${
+            onDiskSkill ? `${onDiskSkill.id}@${onDiskSkill.version}` : `no skill named ${parsed.id}`
+          } (bundle ${onDisk || "unknown"}) — start a fresh session`,
+    };
+  }
+  const match = Boolean(onDisk) && onDisk === parsed.requested;
+  return {
+    status: match ? "match" : "mismatch",
+    requested: parsed.requested,
+    spelling: "bundle",
+    on_disk: onDisk,
+    on_disk_skill: null,
+    message: match
+      ? `match (${onDisk})`
+      : `mismatch: loaded ${parsed.requested}, on disk ${onDisk || "unknown"} — start a fresh session`,
+  };
+}
+
+export function skillsRevisionTextLines(result) {
+  const revision = result?.skills_revision;
+  return revision ? [`Skills revision: ${revision.message}`] : [];
+}
+
 function toolingCommand(args) {
   const action = args._[1] || "status";
   if (action !== "status") throw refused(`Unknown tooling command: ${action}`);
   if (args.target === true) throw refused("Missing value for --target");
   if (args.platform === true) throw refused("Missing value for --platform");
+  if (args["skills-revision"] === true) {
+    throw refused("Missing value for --skills-revision. Pass the bundle revision the skill you loaded states on its first body line (for example --skills-revision 1.40.0+skills.1), or that skill's <skill-id>@<version>.");
+  }
 
   const pkg = readJson(join(ROOT, "package.json"));
   const skillStatus = installSkills(args.target, true, args.platform || "all");
@@ -11191,11 +11275,22 @@ function toolingCommand(args) {
     warnings.push("This checkout has uncommitted changes; verify they are intentional before publishing or comparing freshness.");
   }
 
+  // The manifest THIS CLI ships, read from its own package root — never from the
+  // working directory, which may be a campaign repo with no skills.json at all.
+  const skillsRevision = evaluateSkillsRevision(args["skills-revision"], readJsonIfExists(join(ROOT, "skills.json")) || {});
+  if (skillsRevision.status === "mismatch") {
+    actions.push(`Start a fresh session: the skills text you are reading is ${skillsRevision.requested}, and this CLI ships ${skillsRevision.on_disk || "an unknown bundle revision"}. Re-running this command cannot refresh skill text already in context.`);
+  }
+
   const gitBlocks = git.status === "ok" && Number.isFinite(git.behind) && git.behind > 0;
-  const ok = !gitBlocks && staleSkills.length === 0;
+  const ok = !gitBlocks && staleSkills.length === 0 && skillsRevision.status !== "mismatch";
   return {
     ok,
     status: ok ? "ready" : "attention_required",
+    // A bare status string, so a consumer can branch on it without reaching into
+    // an object; the detail sits beside it under skills_revision.
+    revision_check: skillsRevision.status,
+    skills_revision: skillsRevision,
     install,
     package: packageStatus,
     git,

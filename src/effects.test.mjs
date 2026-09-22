@@ -128,7 +128,7 @@ async function startReceiver() {
   return { hits, base: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((done) => server.close(done)) };
 }
 
-async function runCli(argv, { cwd, home, telemetry, lifecycleLog = "", campaignKey = "", traceNetwork = false }) {
+async function runCli(argv, { cwd, home, telemetry, lifecycleLog = "", campaignKey = "", traceNetwork = false, extraEnv = {} }) {
   try {
     const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, ...argv], {
       cwd,
@@ -146,6 +146,14 @@ async function runCli(argv, { cwd, home, telemetry, lifecycleLog = "", campaignK
         CAMPAIGNS_OS_LIFECYCLE_LOG: lifecycleLog,
         CAMPAIGNS_API_KEY: campaignKey,
         ...(traceNetwork ? { NODE_DEBUG: "net" } : {}),
+        // Per-invocation environment, for rows whose command reads the world
+        // through one. `qa install-browser` drives the Playwright installer,
+        // which resolves its registry from PLAYWRIGHT_BROWSERS_PATH and its
+        // archive from PLAYWRIGHT_DOWNLOAD_HOST; both are pinned so the case
+        // is the same on every platform and the download cannot leave the
+        // machine. Applied LAST, so a value inherited from the developer's own
+        // environment cannot decide what the row proves.
+        ...extraEnv,
       },
     });
     return { code: 0, stdout, stderr };
@@ -299,7 +307,42 @@ function seedCleanIntake(seed) {
   rmSync(join(seed.targetRepo, ".campaign-runtime"), { recursive: true, force: true });
 }
 
+/**
+ * The shipped parity fixture, copied INTO the disposable target: `qa parity`
+ * is fixture-driven and writes its evidence bundle beside the run, so the
+ * fixture has to live where the snapshot can see anything that lands near it.
+ */
+function seedParityFixture(seed) {
+  cpSync(join(ROOT, "fixtures/parity/example-sdk04-offers.json"), join(seed.dir, "parity-fixture.json"));
+}
+
+/**
+ * The environment `qa parity` and `qa install-browser` are proved under.
+ *
+ * Both drive Playwright, and Playwright reads the machine: the browser
+ * registry comes from PLAYWRIGHT_BROWSERS_PATH (defaulting to a per-platform
+ * cache under HOME) and the browser archive from PLAYWRIGHT_DOWNLOAD_HOST.
+ * Left alone, the row would prove one thing on a developer's laptop with
+ * Chromium installed and another in CI, and `qa install-browser` would
+ * download ~150 MB from the Playwright CDN — a real network call, in a suite
+ * whose whole claim is that it makes none.
+ *
+ * So both are pinned. The registry is an empty directory inside the target, so
+ * "no browser is installed" is a fact of the fixture rather than of the
+ * machine; the download host is a closed loopback port, so the archive fetch
+ * fails at connect and the only host the trace can name is 127.0.0.1.
+ */
+const CLOSED_LOOPBACK_PORT = "http://127.0.0.1:1";
+const playwrightEnv = (seed) => ({
+  PLAYWRIGHT_BROWSERS_PATH: join(seed.home, "ms-playwright"),
+  PLAYWRIGHT_DOWNLOAD_HOST: CLOSED_LOOPBACK_PORT,
+});
+
 const WAIVE = ["--reason", "Pin held for a compatibility window", "--waived-by", "Jordan Lee"];
+// The one assertion `qa waive`'s lane is scoped to, and a scenario the shipped
+// parity fixture declares. Both are spelled here so a rename is one edit.
+const WAIVABLE_QA_ASSERTION = "analytics-correctness:purchase-fires";
+const PARITY_SCENARIO = "root-accessory-oto50";
 const CHECKPOINT_WAIVE = [...WAIVE, "--review-condition", "Re-evaluate before launch"];
 const intake = (command, seed, extra = []) => [
   command, "--spec", seed.specPath, "--source", seed.sourceDir, "--target", seed.targetRepo,
@@ -311,6 +354,9 @@ const intake = (command, seed, extra = []) => [
  * the invocation; `target` names the directory the row's `{target}` token
  * resolves to (the packet's target repo unless the invocation names another);
  * `prepare` adjusts the seed for rows the base fixture cannot exercise;
+ * `env` pins the environment a row's command reads the machine through (the
+ * Playwright registry and download host, for the two rows that drive it), so
+ * the row proves the same thing on a laptop with Chromium installed as in CI;
  * `proxyBase: true` marks a command that TAKES --proxy-base, which the
  * persisted-consent condition appends so the consented endpoint is the loopback
  * receiver rather than the canonical fallback. A command that does not take the
@@ -374,6 +420,16 @@ const INVOCATIONS = {
   "qa run|--no-remit": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-remit", "--json"] },
   "qa run|--test-order": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--json"] },
   "qa run|--browser": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--browser", "--json"] },
+  "qa parity": {
+    prepare: seedParityFixture, env: playwrightEnv,
+    argv: (s, receiver) => ["qa", "parity", "--fixture", join(s.dir, "parity-fixture.json"), "--scenario", PARITY_SCENARIO, "--base-url", receiver, "--json"],
+  },
+  "qa parity|--no-post-verdict": {
+    prepare: seedParityFixture, env: playwrightEnv,
+    argv: (s, receiver) => ["qa", "parity", "--fixture", join(s.dir, "parity-fixture.json"), "--scenario", PARITY_SCENARIO, "--base-url", receiver, "--no-post-verdict", "--json"],
+  },
+  "qa waive": { argv: (s) => ["qa", "waive", "--packet", s.packetPath, "--assertion", WAIVABLE_QA_ASSERTION, ...WAIVE, "--json"] },
+  "qa install-browser": { env: playwrightEnv, argv: () => ["qa", "install-browser", "--json"] },
   "qa promote": { argv: (s) => ["qa", "promote", "--packet", s.packetPath, "--verdict", s.verdictPath, "--json"] },
   "qa publish": { argv: (s, receiver) => ["qa", "publish", "--packet", s.packetPath, "--verdict", s.verdictPath, "--proxy-base", receiver, "--json"] },
   "qa publish|--dry-run": { argv: (s, receiver) => ["qa", "publish", "--packet", s.packetPath, "--verdict", s.verdictPath, "--proxy-base", receiver, "--dry-run", "--json"] },
@@ -517,6 +573,7 @@ async function runCondition(row, invocation, condition) {
     );
     const result = await runCli(argv, {
       cwd: seed.dir, home: seed.home, telemetry, lifecycleLog, traceNetwork: true,
+      ...(invocation.env ? { extraEnv: invocation.env(seed) } : {}),
       ...(persisted ? { campaignKey: SYNTHETIC_CAMPAIGN_KEY } : {}),
     });
     // Every run, not only the consented ones: "no test in this repository

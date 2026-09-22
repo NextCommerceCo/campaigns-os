@@ -25,7 +25,8 @@
       "{lifecycle-journal}": "The command-lifecycle journal wherever it was selected for the invocation — the active run session's journal, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG.",
       "{proxy-base}": "The endpoint --proxy-base names, or the canonical NEXT endpoint when it does not.",
       "{base-url}": "The campaign under test, as --base-url names it or as the packet derives it.",
-      "{map-id}": "The saved Map the CampaignSpec identifies."
+      "{map-id}": "The saved Map the CampaignSpec identifies.",
+      "{playwright-download-host}": "Where Playwright fetches browser builds from: PLAYWRIGHT_DOWNLOAD_HOST when set, else the Playwright CDN (cdn.playwright.dev). The one destination in this file that is not a Campaigns OS endpoint — `qa install-browser` is the one supported invocation that downloads from a third party."
     },
     "conditions": {
       "no_session": "No run session at the target or the working directory.",
@@ -2652,6 +2653,214 @@
       "effect_test": "effects: qa publish --republish",
       "test_scope": "full",
       "notes": "--republish lifts the already-published refusal: the same POST to the QA portal for a verdict that was already delivered. Not destructive locally — nothing under the target is overwritten — and not gated by Run Telemetry consent."
+    },
+    {
+      "command": "qa",
+      "subcommand": "parity",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{cwd}/qa-output/**",
+          "when": "the capture completes — the evidence bundle (<run-id>.parity-bundle.json: the assessed order, the candidate capture and any baseline capture) and the full verdict, both under the fixture's campaign slug. `qa parity` takes no packet, so the directory is qa-output under the working directory unless --output-dir names another",
+          "observed_in": [],
+          "not_observed_reason": "the parity capture drives the candidate funnel through Playwright, and the refusal (\"Playwright Chromium is not installed\") lands before a page is opened, so the run never reaches the bundle write or the verdict"
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — --lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG. This invocation takes no --packet, so an ambient run session opened at a target repo is not its session and its journal is not selected",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{base-url}",
+          "what": "browser navigation and typed-card order traversal of the scenario's checkout and upsell routes against the candidate campaign — real orders through the deployed checkout",
+          "when": "a Chromium is installed and the scenario's routes resolve; the base URL is --base-url, else the fixture's candidate_base_url",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "no browser is installed in the fixture's pinned Playwright registry, so the capture is refused before the first navigation and the loopback stand-in for --base-url is never contacted"
+        },
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the parity verdict for the attempt, published to the QA portal",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the parity capture drives the candidate funnel through Playwright, and the refusal (\"Playwright Chromium is not installed\") lands before a page is opened, so the run never reaches the bundle write or the verdict"
+        }
+      ],
+      "effect_test": "effects: qa parity (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: fixture-driven migration parity. The capture needs an installed Chromium and a reachable candidate funnel, neither of which exists offline; the effect fixture pins PLAYWRIGHT_BROWSERS_PATH at an empty registry inside the target so that is a fact of the fixture rather than of the machine. The case proves the refusal writes nothing but the lifecycle entry and contacts the loopback stand-in for --base-url zero times. Reads the fixture and (with --parity-order-json) a saved capture bundle; writes NOTHING under the packet or the target repo — `qa parity` takes no packet, projects no verdict sidecar and stamps no assembly report, which is what separates it from every `qa run` form.",
+      "preflight": {
+        "may_write": [
+          "{lifecycle-journal}"
+        ],
+        "may_contact": []
+      }
+    },
+    {
+      "command": "qa",
+      "subcommand": "parity",
+      "flags": [
+        "--no-post-verdict"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{cwd}/qa-output/**",
+          "when": "the capture completes — the evidence bundle (<run-id>.parity-bundle.json: the assessed order, the candidate capture and any baseline capture) and the full verdict, both under the fixture's campaign slug. `qa parity` takes no packet, so the directory is qa-output under the working directory unless --output-dir names another",
+          "observed_in": [],
+          "not_observed_reason": "the parity capture drives the candidate funnel through Playwright, and the refusal (\"Playwright Chromium is not installed\") lands before a page is opened, so the run never reaches the bundle write or the verdict"
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — --lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG. This invocation takes no --packet, so an ambient run session opened at a target repo is not its session and its journal is not selected",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{base-url}",
+          "what": "browser navigation and typed-card order traversal of the scenario's checkout and upsell routes against the candidate campaign — real orders through the deployed checkout",
+          "when": "a Chromium is installed and the scenario's routes resolve; the base URL is --base-url, else the fixture's candidate_base_url",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "no browser is installed in the fixture's pinned Playwright registry, so the capture is refused before the first navigation and the loopback stand-in for --base-url is never contacted"
+        }
+      ],
+      "effect_test": "effects: qa parity --no-post-verdict (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: fixture-driven migration parity. The capture needs an installed Chromium and a reachable candidate funnel, neither of which exists offline; the effect fixture pins PLAYWRIGHT_BROWSERS_PATH at an empty registry inside the target so that is a fact of the fixture rather than of the machine. The case proves the refusal writes nothing but the lifecycle entry and contacts the loopback stand-in for --base-url zero times. Reads the fixture and (with --parity-order-json) a saved capture bundle; writes NOTHING under the packet or the target repo — `qa parity` takes no packet, projects no verdict sidecar and stamps no assembly report, which is what separates it from every `qa run` form. --no-post-verdict (--local-only) drops the verdict POST only: the evidence bundle and the verdict are still written locally, and the capture still drives the campaign under test, so the row stays tier A. `qa publish` posts the stored verdict later without a re-run.",
+      "preflight": {
+        "may_write": [
+          "{lifecycle-journal}"
+        ],
+        "may_contact": []
+      }
+    },
+    {
+      "command": "qa",
+      "subcommand": "waive",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the waiver is recorded at stages.qa.waivers[<assertion>] (reason, waived_by, waived_at) and appended to the report's evidence[]",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the waiver invalidates the retained doctor sidecar — the report edit postdates the doctor snapshot",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: qa waive",
+      "test_scope": "full",
+      "notes": "Destructive for the same reason as `theme waive` and `checkpoint waive`: the waiver changes what the next `qa run` concludes — a FAILING blocker is downgraded to a warning with this attribution and the disposition becomes ready_with_exceptions, never plain ready — so the state a later doctor reads is not the state it measured. The lane is scoped to exactly one assertion, analytics-correctness:purchase-fires; any other --assertion is refused. --reason is required and is recorded verbatim; --waived-by defaults to $USER@local. The report is the packet target repo's unless --report names another."
+    },
+    {
+      "command": "qa",
+      "subcommand": "install-browser",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{home}/ms-playwright/.links/*",
+          "when": "always — Playwright records this package's installation in the browser registry as one link entry, named for the installing package's path, before it looks at what is already downloaded",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{home}/ms-playwright/**",
+          "when": "the download completes — the Chromium build (a ~150 MB archive) is unpacked into a revision directory of the same registry",
+          "observed_in": [],
+          "not_observed_reason": "the effect fixture pins PLAYWRIGHT_DOWNLOAD_HOST at a closed loopback port, so the archive is never fetched and no browser directory is created"
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — --lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG. This invocation takes no --packet, so an ambient run session opened at a target repo is not its session and its journal is not selected",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{playwright-download-host}",
+          "what": "a GET of the Chromium build archive (~150 MB) and of the headless shell beside it",
+          "when": "the registry does not already hold the revision this package's Playwright pins",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect fixture pins PLAYWRIGHT_DOWNLOAD_HOST at a closed loopback port, so the fetch fails at connect; the NODE_DEBUG=net trace the case asserts on names no host but 127.0.0.1"
+        }
+      ],
+      "effect_test": "effects: qa install-browser (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: the one-time browser install cannot complete with no network — it downloads the Chromium build from the Playwright CDN. This is the only row in this file whose send is not a Campaigns OS endpoint, and the only one that writes the user's machine outside the config root. The case proves the failed install writes exactly one path there — the registry's link entry — and nothing else anywhere, and that the download attempt leaves the machine zero times. The registry is PLAYWRIGHT_BROWSERS_PATH when set, else the platform browser cache under the home directory (~/Library/Caches/ms-playwright on macOS, ~/.cache/ms-playwright on Linux, %LOCALAPPDATA%\\ms-playwright on Windows); the fixture pins it to {home}/ms-playwright so the proved path is the same on every platform. Not destructive: an already-installed revision is left alone, which is also why the run is idempotent. Runs the Playwright CLI bundled with THIS package, never whatever `npx playwright` resolves to.",
+      "preflight": {
+        "may_write": [
+          "{home}/ms-playwright/.links/*",
+          "{lifecycle-journal}"
+        ],
+        "may_contact": []
+      }
     },
     {
       "command": "run-record",

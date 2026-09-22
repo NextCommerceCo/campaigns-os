@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
+  bundleRevisionAdvanced,
+  parseBundleRevision,
+  skillSurfaceChanged,
+  validateBundleBump,
+  validateBundleRevisionShape,
   semverTuple,
   semverLte,
   frontmatterField,
@@ -14,6 +23,8 @@ import {
   validateBumps,
   validateReservedNames,
 } from "./check-skill-versions.mjs";
+
+const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const manifestText = JSON.stringify({
   skills: [
@@ -311,4 +322,93 @@ test("a retired skill id missing from the reserved list fails — retirement mus
   assert.match(unreserved[0], /retired skill id "next-campaigns-setup" is not in c/);
   const reserved = validateReservedNames(manifest, { reserved: { "next-campaigns-setup": "published scaffolder" } }, "c");
   assert.deepEqual(reserved, []);
+});
+
+test("parseBundleRevision accepts <package version>+skills.<n> and rejects anything else", () => {
+  assert.deepEqual(parseBundleRevision("1.40.0+skills.1", "m"), { version: "1.40.0", revision: 1 });
+  assert.deepEqual(parseBundleRevision("1.40.0+skills.0", "m"), { version: "1.40.0", revision: 0 });
+  assert.throws(() => parseBundleRevision("1.40.0", "m"), /must be spelled/);
+  assert.throws(() => parseBundleRevision("1.40.0+skills", "m"), /must be spelled/);
+  assert.throws(() => parseBundleRevision("1.40.0+skills.01", "m"), /must be spelled/, "a padded counter is two spellings of one revision");
+  assert.throws(() => parseBundleRevision(undefined, "m"), /must be spelled/);
+});
+
+test("bundleRevisionAdvanced compares the prefix first, then the counter", () => {
+  const rev = (value) => parseBundleRevision(value, "m");
+  assert.equal(bundleRevisionAdvanced(rev("1.40.0+skills.1"), rev("1.40.0+skills.2")), true);
+  assert.equal(bundleRevisionAdvanced(rev("1.40.0+skills.1"), rev("1.40.0+skills.1")), false, "equal is not advanced");
+  assert.equal(bundleRevisionAdvanced(rev("1.40.0+skills.7"), rev("1.41.0+skills.1")), true, "the counter resets with the prefix");
+  assert.equal(bundleRevisionAdvanced(rev("1.41.0+skills.1"), rev("1.40.0+skills.9")), false, "a newer counter cannot rescue an older prefix");
+  assert.equal(bundleRevisionAdvanced(rev("1.40.0+skills.10"), rev("1.40.0+skills.9")), false, "10 is newer than 9");
+});
+
+test("validateBundleRevisionShape requires the prefix to be the package version", () => {
+  assert.deepEqual(validateBundleRevisionShape({ bundle_revision: "1.40.0+skills.1" }, "1.40.0", "skills.json"), []);
+  const errors = validateBundleRevisionShape({ bundle_revision: "1.39.0+skills.1" }, "1.40.0", "skills.json");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /is prefixed 1\.39\.0, which is not the package version 1\.40\.0/);
+  const missing = validateBundleRevisionShape({}, "1.40.0", "skills.json");
+  assert.equal(missing.length, 1);
+  assert.match(missing[0], /must be spelled/);
+});
+
+test("skillSurfaceChanged counts any file under skills/, and manifest skill entries, but not the rest of skills.json", () => {
+  const old = { bundle_revision: "1.40.0+skills.1", skills: [{ id: "a", version: "1.0.0", path: "skills/a/SKILL.md" }] };
+  const same = { bundle_revision: "1.40.0+skills.2", skills: old.skills };
+  assert.equal(skillSurfaceChanged(["skills/a/references/intake.md"], old, same), true, "a reference doc is skill text too");
+  assert.equal(skillSurfaceChanged(["src/cli.mjs"], old, same), false);
+  assert.equal(skillSurfaceChanged(["skills.json"], old, same), false, "a description edit alone is not a skill change");
+  const renamed = { bundle_revision: "1.40.0+skills.2", skills: [{ id: "a", version: "1.0.1", path: "skills/a/SKILL.md" }] };
+  assert.equal(skillSurfaceChanged(["skills.json"], old, renamed), true, "a re-versioned entry changes what installs");
+});
+
+test("an edited skill without a bundle bump fails --base, and passes once the bundle advances", () => {
+  // The negative control for the whole mechanism: skill text moved, the identity
+  // an agent quotes back did not, so a stale agent would be told it is current.
+  const base = {
+    bundle_revision: "1.40.0+skills.1",
+    skills: [{ id: "next-campaigns-qa", version: "1.3.3", path: "skills/next-campaigns-qa/SKILL.md" }],
+  };
+  const changed = ["skills/next-campaigns-qa/SKILL.md"];
+
+  const unbumped = validateBundleBump(base, { ...base }, changed, "skills.json");
+  assert.equal(unbumped.length, 1);
+  assert.match(unbumped[0], /bundle_revision did not advance \(1\.40\.0\+skills\.1 -> 1\.40\.0\+skills\.1\)/);
+
+  const bumped = validateBundleBump(base, { ...base, bundle_revision: "1.40.0+skills.2" }, changed, "skills.json");
+  assert.deepEqual(bumped, []);
+});
+
+test("validateBundleBump ignores changes outside the skill surface, and an introducing manifest", () => {
+  const base = { bundle_revision: "1.40.0+skills.1", skills: [] };
+  assert.deepEqual(validateBundleBump(base, base, ["src/cli.mjs", "docs/effects.md"], "skills.json"), []);
+  // No bundle_revision at the base: there is nothing to advance past. The shape
+  // check still runs, so this cannot become a way to ship the field malformed.
+  assert.deepEqual(
+    validateBundleBump({ skills: [] }, { bundle_revision: "1.40.0+skills.1", skills: [] }, ["skills/a/SKILL.md"], "skills.json"),
+    [],
+  );
+});
+
+test("a bundle_revision that goes backwards or malformed fails rather than reading as a bump", () => {
+  const base = { bundle_revision: "1.40.0+skills.4", skills: [] };
+  const back = validateBundleBump(base, { bundle_revision: "1.40.0+skills.3", skills: [] }, ["skills/a/SKILL.md"], "skills.json");
+  assert.equal(back.length, 1);
+  assert.match(back[0], /did not advance \(1\.40\.0\+skills\.4 -> 1\.40\.0\+skills\.3\)/);
+  const malformed = validateBundleBump(base, { bundle_revision: "nonsense", skills: [] }, ["skills/a/SKILL.md"], "skills.json");
+  assert.equal(malformed.length, 1);
+  assert.match(malformed[0], /must be spelled/);
+});
+
+test("every bundled SKILL.md states the shipped bundle revision on its first body line", () => {
+  // The header line IS the identity an agent quotes back to --skills-revision. A
+  // skill whose header disagrees with the manifest hands out a value that will
+  // report mismatch against the very CLI it shipped with.
+  const manifest = JSON.parse(readFileSync(join(REPO_ROOT, "skills.json"), "utf8"));
+  for (const skill of manifest.skills) {
+    const text = readFileSync(join(REPO_ROOT, skill.path), "utf8");
+    const body = text.split(/\r?\n/).slice(text.split(/\r?\n/).indexOf("---", 1) + 1);
+    const first = body.find((line) => line.trim() !== "");
+    assert.equal(first, `Bundle revision: ${manifest.bundle_revision}`, `${skill.path} first body line`);
+  }
 });

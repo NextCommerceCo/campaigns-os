@@ -15,12 +15,12 @@
 //    never owes a ledger entry.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { checkEffects, declaredTestNames, generatedTestName, helpInvocations, helpUsageLines, invocationKeys, rowKey, testConditions } from "./check-effects.mjs";
+import { checkEffects, declaredTestNames, generatedTestName, HELP_SOURCE_PATHS, helpInvocations, helpUsageLines, invocationKeys, rowKey, testConditions } from "./check-effects.mjs";
 import { classifyPath } from "./orientation-contract.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -33,16 +33,20 @@ const contract = readJson("contracts/effects.v1.json");
 const schema = readJson("schemas/campaigns-os-effects.v1.schema.json");
 const cliSource = read("src/cli.mjs");
 const testSource = read("src/effects.test.mjs");
+// Every help block the CLI prints, the way `main()` assembles them. The
+// single-source spelling (`cliSource`) stays in the rule-by-rule cases below,
+// where the point is one rule and not the coverage input.
+const helpSources = HELP_SOURCE_PATHS.map((path) => ({ path, source: read(path) }));
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const run = (mutate) => {
   const mutated = clone(contract);
   mutate(mutated);
-  return checkEffects({ contract: mutated, schema, surface, cliSource, testSource });
+  return checkEffects({ contract: mutated, schema, surface, helpSources, testSource });
 };
 
 test("check-effects passes on the repository as it stands", () => {
-  assert.deepEqual(checkEffects({ contract, schema, surface, cliSource, testSource }), []);
+  assert.deepEqual(checkEffects({ contract, schema, surface, helpSources, testSource }), []);
 });
 
 test("check-effects refuses a supported command with no row", () => {
@@ -154,6 +158,54 @@ test("check-effects refuses the deletion of an effect-changing flag's row", () =
       `deleting the ${command} ${flag} row was accepted:\n${errors.join("\n")}`,
     );
   }
+});
+
+test("check-effects reads the qa help block too, and refuses a subcommand only it documents", () => {
+  // The gap this closed: `campaigns-os qa` prints its own help from
+  // src/qa-node.mjs, and a scan that read only src/cli.mjs never required a row
+  // for the three subcommands documented there alone. All three were missing
+  // and the gate was green.
+  const invocations = helpInvocations(helpSources);
+  for (const subcommand of ["parity", "waive", "install-browser"]) {
+    assert.ok(invocations.get("qa")?.has(subcommand), `the help scan missed \`qa ${subcommand}\``);
+    // …and it is the QA module's block that teaches it, not the main one.
+    assert.equal(
+      helpInvocations(cliSource).get("qa").has(subcommand),
+      false,
+      `\`qa ${subcommand}\` is now in the main help too — this case no longer proves the second source is read`,
+    );
+    const errors = run((mutated) => {
+      mutated.rows = mutated.rows.filter((row) => !(row.command === "qa" && row.subcommand === subcommand));
+    });
+    assert.ok(
+      errors.some((error) => error.includes(`campaigns-os qa ${subcommand}`) && error.includes("src/qa-node.mjs")),
+      `deleting the qa ${subcommand} row was accepted:\n${errors.join("\n")}`,
+    );
+  }
+  // The flag half of the same gap: `qa parity --no-post-verdict` is spelled on
+  // a usage line only the QA block carries.
+  const errors = run((mutated) => {
+    mutated.rows = mutated.rows.filter((row) => !(row.command === "qa" && row.subcommand === "parity" && row.flags.includes("--no-post-verdict")));
+  });
+  assert.ok(
+    errors.some((error) => error.includes('--no-post-verdict" is an effect-changing flag') && error.includes("src/qa-node.mjs")),
+    errors.join("\n"),
+  );
+});
+
+test("HELP_SOURCE_PATHS names every module that owns a usage block", () => {
+  // The list is a constant, so it can go stale the moment a command grows its
+  // own help. Derived here from the source rather than restated: any file under
+  // src/ that declares `const HELP = \`` and spells a `campaigns-os <cmd>` usage
+  // line owes its subcommands a row, so it has to be scanned.
+  const owners = readdirSync(resolve(root, "src"))
+    .filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"))
+    .filter((name) => {
+      const source = read(`src/${name}`);
+      return source.includes("const HELP = `") && /^ {2}campaigns-os /m.test(source);
+    })
+    .map((name) => `src/${name}`);
+  assert.deepEqual(owners.sort(), [...HELP_SOURCE_PATHS].sort());
 });
 
 test("check-effects refuses a row whose generated test name is not the one the generator gives it", () => {

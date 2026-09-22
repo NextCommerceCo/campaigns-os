@@ -5651,6 +5651,101 @@
         }
       ],
       "entry_sha256": "10f0aac0174e568af09b8d3a351e49bfe48f92afa3ef6a620487fe77f5327c36"
+    },
+    {
+      "id": "RL-0137",
+      "sequence": 137,
+      "date": "2026-09-23",
+      "kind": "amendment",
+      "amends": "RL-0136",
+      "amendment_reason": "The skills bundle revision ships in the 1.40.0 release section alongside the effects contract, so it edits the body of a CHANGELOG section RL-0136 already hashed. RL-0136 is committed at the base of this range, and the ledger is append-only, so its change items and its changelog_sha256 cannot be extended in place. This amendment links the same 1.40.0 section, re-hashes it, and carries the change items for the bundle revision, the five skill packages, the tooling status flag, and the supported-surface doc and package.json updates that accompany them. It claims no surface_version: RL-0136 minted 1.40.0 and no hashed entry, command, export or bin moved here.",
+      "surface_version": null,
+      "changelog_section": "1.40.0",
+      "changelog_sha256": "03c2b0ee467baf7dd74004b2e72d1334ce78b1b7470dea2b472569a52daa5391",
+      "agent_impact": "The five bundled skills gain a shared identity, and the CLI gains the check that reads it. skills.json carries bundle_revision — 1.40.0+skills.1, spelled <package version>+skills.<n>, where <n> is a counter that resets with the prefix, so 1.41.0+skills.1 is ahead of 1.40.0+skills.7 — and every SKILL.md states it on its first body line, followed by one sentence telling the agent to run `campaigns-os tooling status --skills-revision <value>` at the start of each task. The failure this addresses is one the per-skill versions cannot see. A skill's text enters an agent's context once, at the start of a task, and is never re-read; the CLI underneath that session can be replaced at any moment by an npm install, an npx cache refresh or a git pull. The result is an agent following one release's instructions while calling another release's CLI, and nothing in the per-skill versions makes that visible, because the agent has no reason to read them and no way to notice that the copy on disk moved. The check compares the value the agent read against the bundle revision of the CLI the command runs from — the installed package's skills.json, never the working directory, which in a campaign repo has no skills.json at all. --json reports revision_check as a bare \"match\", \"mismatch\" or \"unchecked\" beside a skills_revision object (requested, spelling, on_disk, on_disk_skill, message); the text view prints one named header line: `Skills revision: match (1.40.0+skills.1)`, `Skills revision: mismatch: loaded 1.39.0+skills.1, on disk 1.40.0+skills.1 — start a fresh session`, or `Skills revision: unchecked (on disk 1.40.0+skills.1)`. unchecked is the state when the flag is absent and is not an error, and the on-disk revision is reported anyway so the run still says what is installed. A mismatch prints the FULL status and only then exits 2 — the revision line is a header on the report, never a replacement for it — and pushes an action naming the only remedy there is: a fresh session, because re-running cannot refresh skill text that is already in context. That asymmetry is exactly why the reported value is named on_disk rather than something symmetric: the requested side is text you are still reading and nothing short of a new session can change it, while the on-disk side is what is installed right now and is the side that moved. tooling status also exits 2 for unrelated reasons (skills needing a refresh, a checkout behind its upstream), so a consumer should branch on revision_check, not on the exit code. An agent carrying only one skill's frontmatter may pass <skill-id>@<version> instead; the version is checked against that skill's manifest entry and the bundle revision is reported beside it. A skill id this bundle does not ship reports mismatch rather than refusing, because an agent quoting a skill that is not here is reading text from some other bundle — which is the condition the flag exists to catch. The flag is refused, via the usual refusal path, when given without a value: silently reading a value-less flag as \"no check requested\" would report unchecked to an agent that asked for a check. Project-pin reporting is deliberately NOT built. tooling status resolves no project-level skills-revision pin, so it cannot distinguish unpinned from conflicting_pin; both would need a pin to read first, and the command reports only what it can observe. docs/skills-revision.md records this as the open follow-up. scripts/check-skill-versions.mjs enforces both halves. Without --base (inside npm run check) bundle_revision must exist, be spelled correctly, and be prefixed with package.json's version — a revision naming another release is not an identity. With --base <ref> it must have ADVANCED whenever any file under skills/ changed (a reference doc an agent reads is skill text too) or skills.json's skills[] entries changed (a renamed or re-versioned entry changes what installs without touching a SKILL.md); equal fails and backwards fails. Its changed set is now the union of the base diff, the working tree and untracked files — the same three-way union the release-ledger gate already measured — because a committed-only diff reported an unstaged SKILL.md edit as \"nothing changed\", which is the pre-existing per-skill bump gate passing because it did not look. Finally, each kernel command the five skills reference now carries its declared effect class from contracts/effects.v1.json in one short parenthetical, so an agent reading a skill sees the tier before it runs the command: doctor as tier none, page-kit sync and theme generate as tier B, start/prepare-build/next/polish capture/qa resolve/spec derive --from-store and --write-map/login as tier A, and checkpoint waive, theme waive, run end and every qa run form as tier C. The parenthetical is added at each command's primary reference rather than at every mention, so the instruction text stays readable. Three commands the QA skill names — qa parity, qa install-browser and qa waive — had no row in contracts/effects.v1.json, and the reason was the coverage scan rather than the contract: scripts/check-effects.mjs read the HELP block in src/cli.mjs alone, and `campaigns-os qa` prints its own from src/qa-node.mjs, so a subcommand documented only there was never required to declare anything. Every module that owns a usage block is now scanned (HELP_SOURCE_PATHS), the error names which help block taught the invocation, and a test derives the list of owners from the source rather than restating it, so a command that grows its own help cannot leave the scan quietly. The widened scan surfaced four invocations that owed a row and had none — qa parity, qa parity --no-post-verdict, qa waive and qa install-browser — and all four are declared and proved here, taking the file to 91 rows (79 end to end, 12 at the preflight). qa waive is tier C and proved end to end: it records the waiver at stages.qa.waivers[<assertion>] on the assembly report with its reason, named human and timestamp, appends an evidence line, and stamps the retained doctor sidecar stale — destructive for the same reason as theme waive and checkpoint waive, because a FAILING blocker becomes a warning and the disposition becomes ready_with_exceptions rather than ready. The lane is scoped to the single assertion analytics-correctness:purchase-fires and every other --assertion is refused. qa parity and its --no-post-verdict form are tier A and preflight-proved: fixture-driven parity drives the scenario through the candidate funnel with real typed-card orders and publishes the verdict, but it takes no packet, so it writes the evidence bundle and the verdict only under qa-output/ beside the working directory and touches neither the packet, the assembly report nor the verdict sidecar — which is what separates it from every qa run form. Offline the capture is refused before the first navigation, and the case proves the refusal writes nothing but the lifecycle entry and contacts the loopback stand-in for --base-url zero times. qa install-browser is tier A and preflight-proved, and is unlike every other row in the file twice over. Its send is not a Campaigns OS endpoint — the Chromium build is fetched from the Playwright CDN, or from PLAYWRIGHT_DOWNLOAD_HOST when set, declared through a new {playwright-download-host} location token — and it writes the user's machine outside the config root, namely the Playwright browser registry (PLAYWRIGHT_BROWSERS_PATH when set, else ~/Library/Caches/ms-playwright, ~/.cache/ms-playwright or %LOCALAPPDATA%\\ms-playwright). The effect fixture pins both, so the row proves the same thing on a laptop with Chromium already installed as in CI and the ~150 MB download cannot leave the machine: the registry is an empty directory inside the disposable target and the download host is a closed loopback port. The case proves the failed install writes exactly one path under the home directory — the registry's link entry, named exactly, because a preflight allowance may not license a home-directory subtree — and nothing else anywhere, and that the fetch leaves the machine zero times. Not destructive and idempotent: an already-installed revision is left alone. The QA skill now carries the effect class of all three commands in the same one-parenthetical style as the rest of the bundle. One thing is deferred, and a consumer should read it as deferred rather than missing: docs/skills-revision.md ships in the npm pack and is what the CLI help and the skills row of docs/supported-surface.md point at, but it is NOT yet an entry in contracts/supported-surface.json named[]. Adding it there is a surface move, and the surface gate requires surface_version to advance in lockstep with package.json's version, which this change does not cut. The doc is therefore documentation of record at its path, not pinned surface, until a release that moves the version adds it.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare the four invocations the widened help scan surfaced and nothing declared: qa waive (tier C, proved end to end — the waiver on the assembly report, the evidence line and the stale doctor sidecar), qa parity and qa parity --no-post-verdict (tier A, preflight-proved — the qa-output evidence bundle and verdict beside the working directory, the candidate funnel, the verdict publish; no packet, report or sidecar write) and qa install-browser (tier A, preflight-proved — the Playwright browser registry on the user's machine and the Chromium build fetch). 87 rows -> 91. Adds one location token, {playwright-download-host}: the first destination in the file that is not a Campaigns OS endpoint."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Recompute the sha256 of the hashed contracts/effects.v1.json entry for the four added rows and the added location token. No entry, command, export or bin moved."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Say that the coverage scan reads every help block the CLI prints, not one file's, and name the gap that made the point (qa parity, qa waive and qa install-browser owed no row while only src/cli.mjs was read). Add {playwright-download-host} to the location-token table and the three new preflight rows to the table of what the offline fixture cannot reach."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Add bundle_revision (1.40.0+skills.1, spelled <package version>+skills.<n>): one identity for the five bundled skills together, documented in the manifest's own description, and bump every bundled skill's version because every SKILL.md changed in this release."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "State the bundle revision on the first body line with the instruction to run tooling status --skills-revision at task start, and name the declared effect class of each kernel command the lifecycle workflow references (start/prepare-build, doctor, page-kit sync, spec derive and its --from-store/--write-map forms, login, theme generate/waive, checkpoint waive, next build, polish capture, qa resolve, qa run, run end, run status, standardize); version 1.0.18 -> 1.0.19."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "State the bundle revision on the first body line with the task-start check, and name the declared effect class of doctor and of the start/prepare-build entry points setup follows; version 2.0.1 -> 2.0.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "State the bundle revision on the first body line with the task-start check, and name the declared effect class of doctor and theme generate; version 1.0.3 -> 1.0.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "State the bundle revision on the first body line with the task-start check, and name the declared effect class of next polish, theme generate, theme waive, polish capture and checkpoint waive; version 1.1.2 -> 1.1.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "State the bundle revision on the first body line with the task-start check, and name the declared effect class of qa resolve, every qa run form (tier C, including --no-post-verdict) and theme waive, and — now that the widened help scan has forced their rows — of qa install-browser and qa parity (tier A, with the --no-post-verdict form named) and of the qa waive recorded against analytics-correctness:purchase-fires (tier C: it overwrites the assembly report and doctor output); version 1.3.2 -> 1.3.3."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "tooling",
+          "summary": "Add tooling status --skills-revision <bundle-revision|skill-id@version>: revision_check reports match, mismatch or unchecked in --json beside a skills_revision object, the text view prints one named header line, a mismatch prints the full status and then exits 2 with an action naming the fresh session, the on-disk revision is reported as on-disk, <skill-id>@<version> is accepted as a fallback spelling, and the flag is refused when given without a value."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Extend the skills row: the manifest now also carries bundle_revision, every SKILL.md states it, tooling status --skills-revision checks it, and it must advance whenever any bundled skill changes."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Ship docs/skills-revision.md in the npm pack, as every named surface entry must be."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Register the skills-revision guide (bundle revision, loaded-revision check, exit codes, fallback spelling) as a named supported-surface document."
+        }
+      ],
+      "entry_sha256": "85bfcc28b825a5ba7c37604d200c85abb88d841c6e531743fd1542bf142b1b6f"
     }
   ]
 }

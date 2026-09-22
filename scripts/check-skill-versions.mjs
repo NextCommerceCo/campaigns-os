@@ -30,6 +30,7 @@ import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 
 const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const BUNDLE_REVISION_RE = /^(\d+\.\d+\.\d+)\+skills\.(0|[1-9]\d*)$/;
 const SKILLS_DIR = "skills";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
@@ -218,6 +219,95 @@ export function validateReservedNames(manifest, reserved, label) {
   return errors;
 }
 
+/**
+ * The bundle revision: one identity for the five skills TOGETHER, spelled
+ * `<package version>+skills.<n>`.
+ *
+ * Per-skill versions already exist and are not enough for the failure this
+ * guards. An agent loads a skill's text into its context once and never re-reads
+ * it, while the CLI underneath that session can be replaced by an install or a
+ * pull. To notice that, the agent needs one short string it can quote back —
+ * `tooling status --skills-revision <value>` — and that string has to move
+ * whenever ANY bundled skill's text moves, or an agent holding stale text gets
+ * told it is current. Hence a bundle-wide counter rather than five versions the
+ * agent would have to reconcile.
+ *
+ * `<n>` is a plain counter, not a semver: it says "this is the nth skill-text
+ * revision published against this package version" and resets with the prefix,
+ * so `1.41.0+skills.1` is ahead of `1.40.0+skills.7`.
+ */
+export function parseBundleRevision(value, label) {
+  const match = BUNDLE_REVISION_RE.exec(String(value ?? ""));
+  if (!match) {
+    throw new Error(
+      `${label}: bundle_revision must be spelled <package version>+skills.<n> (got ${JSON.stringify(value ?? null)})`,
+    );
+  }
+  return { version: match[1], revision: Number(match[2]) };
+}
+
+/** True when `current` is strictly ahead of `previous`: newer package version, or the same version with a higher counter. */
+export function bundleRevisionAdvanced(previous, current) {
+  const left = semverTuple(previous.version);
+  const right = semverTuple(current.version);
+  for (let i = 0; i < 3; i += 1) {
+    if (left[i] !== right[i]) return left[i] < right[i];
+  }
+  return current.revision > previous.revision;
+}
+
+/** Shape, and the prefix agreeing with package.json — a bundle revision that names another release is not an identity. */
+export function validateBundleRevisionShape(manifest, packageVersion, label) {
+  let parsed;
+  try {
+    parsed = parseBundleRevision(manifest?.bundle_revision, label);
+  } catch (error) {
+    return [error.message];
+  }
+  if (packageVersion && parsed.version !== packageVersion) {
+    return [
+      `${label}: bundle_revision ${JSON.stringify(manifest.bundle_revision)} is prefixed ${parsed.version}, ` +
+        `which is not the package version ${packageVersion} — the prefix names the release the skills ship with`,
+    ];
+  }
+  return [];
+}
+
+/**
+ * The bump gate for the bundle as a whole. Deliberately wider than the per-skill
+ * gate: any file under skills/ counts (a reference doc an agent reads is skill
+ * text too), and so does any edit to the manifest's own skill entries, because a
+ * renamed or re-versioned entry changes what installs without touching a
+ * SKILL.md.
+ */
+export function skillSurfaceChanged(changedPaths, oldManifest, currentManifest) {
+  if (changedPaths.some((path) => path === SKILLS_DIR || path.startsWith(`${SKILLS_DIR}/`))) return true;
+  if (!changedPaths.includes("skills.json")) return false;
+  return JSON.stringify(oldManifest?.skills ?? null) !== JSON.stringify(currentManifest?.skills ?? null);
+}
+
+export function validateBundleBump(oldManifest, currentManifest, changedPaths, label) {
+  if (!skillSurfaceChanged(changedPaths, oldManifest, currentManifest)) return [];
+  // An introducing change has nothing to advance past; the shape check still ran.
+  if (oldManifest?.bundle_revision === undefined) return [];
+  let previous;
+  let current;
+  try {
+    previous = parseBundleRevision(oldManifest.bundle_revision, `${label} (base)`);
+    current = parseBundleRevision(currentManifest?.bundle_revision, label);
+  } catch (error) {
+    return [error.message];
+  }
+  if (!bundleRevisionAdvanced(previous, current)) {
+    return [
+      `skills.json: a bundled skill changed but bundle_revision did not advance ` +
+        `(${oldManifest.bundle_revision} -> ${currentManifest.bundle_revision}) — an agent holding the old ` +
+        `skill text would be told it is current`,
+    ];
+  }
+  return [];
+}
+
 export function validateBumps(oldVersions, currentVersions, changedIds) {
   const errors = [];
   for (const id of [...changedIds].sort()) {
@@ -247,6 +337,21 @@ function gitSucceeds(...args) {
 const refExists = (ref) => gitSucceeds("rev-parse", "--verify", "--quiet", `${ref}^{commit}`);
 const blobExists = (ref, path) => gitSucceeds("cat-file", "-e", `${ref}:${path}`);
 
+/**
+ * The changed set, the same three-way union check-release-ledger.mjs measures:
+ * committed since the base, plus the working tree, plus untracked files. A
+ * committed-only diff answers the wrong question for a bump gate — an unstaged
+ * SKILL.md edit is the exact state a local `--base` run is asked about, and
+ * reporting it as "nothing changed" is the gate passing because it did not look.
+ */
+function changedPathsSince(base) {
+  return [...new Set([
+    ...git("diff", "--name-only", `${base}...HEAD`).split("\n"),
+    ...git("diff", "--name-only", "HEAD").split("\n"),
+    ...git("ls-files", "--others", "--exclude-standard").split("\n"),
+  ])].filter(Boolean);
+}
+
 function validate(base) {
   const manifestPath = join(root, "skills.json");
   let manifest;
@@ -258,7 +363,16 @@ function validate(base) {
     return [error.message];
   }
 
-  const errors = validateParity(manifest, {
+  let packageVersion = null;
+  try {
+    packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version ?? null;
+  } catch (error) {
+    return [`package.json: could not be read for the bundle_revision prefix check: ${error.message}`];
+  }
+
+  const errors = validateBundleRevisionShape(manifest, packageVersion, "skills.json");
+
+  errors.push(...validateParity(manifest, {
     readSkill: (path) => {
       const full = join(root, path);
       return existsSync(full) && statSync(full).isFile() ? readFileSync(full, "utf8") : null;
@@ -270,7 +384,7 @@ function validate(base) {
         .filter((item) => item.isDirectory())
         .map((item) => item.name);
     },
-  });
+  }));
 
   // Required, not optional: if the reserved-names contract goes missing the
   // guard must fail loudly rather than degrade into the pre-2026-08 state where
@@ -305,9 +419,10 @@ function validate(base) {
   try {
     const oldManifest = loadManifest(git("show", `${base}:skills.json`), `${base}:skills.json`);
     const oldVersions = versionMap(oldManifest, `${base}:skills.json.skills`);
-    const changedPaths = git("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
+    const changedPaths = changedPathsSince(base);
     const pairs = [...packageDirs(manifest), ...packageDirs(oldManifest)];
     errors.push(...validateBumps(oldVersions, currentVersions, changedSkillIds(changedPaths, pairs)));
+    errors.push(...validateBundleBump(oldManifest, manifest, changedPaths, "skills.json"));
   } catch (error) {
     errors.push(`base comparison failed for ${JSON.stringify(base)}: ${error.message}`);
   }

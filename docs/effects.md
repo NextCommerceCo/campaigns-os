@@ -67,6 +67,7 @@ with one of these:
 | `{lifecycle-journal}` | The command-lifecycle journal wherever it was selected for this invocation. |
 | `{proxy-base}` | The endpoint `--proxy-base` names, or the canonical NEXT endpoint when it does not. |
 | `{base-url}` | The campaign under test, as `--base-url` names it or as the packet derives it. |
+| `{playwright-download-host}` | Where Playwright fetches browser builds from: `PLAYWRIGHT_DOWNLOAD_HOST` when set, else the Playwright CDN. The one destination in the file that is not a Campaigns OS endpoint — `qa install-browser` is the one supported invocation that downloads from a third party. |
 
 The tokens matter because effects are not all under the target. `install-skills`
 writes your **home** directory, not the campaign. `telemetry on` writes your
@@ -103,6 +104,14 @@ flags that change what the invocation does to the world are listed once, in
 `--no-post-verdict`, `--no-probe`, `--no-remit`, `--no-run-session`,
 `--no-write`, `--republish`, `--test-order`, `--write`, `--write-map`. Flags
 that only change the output shape (`--json`, `--report`) deliberately do not.
+
+**"The help text" is every help block the CLI prints**, not one file's.
+`campaigns-os qa` prints its own from `src/qa-node.mjs`, and while the coverage
+scan read only `src/cli.mjs` the three subcommands documented there alone — `qa
+parity`, `qa waive` and `qa install-browser` — owed no row, had none, and the
+gate stayed green. Every module that owns a usage block is listed in
+`HELP_SOURCE_PATHS` and scanned the same way; a test derives that list from the
+source, so a command that grows its own help cannot quietly leave the scan.
 
 **Every one of those flags that a help usage line carries owes a row**, and
 `scripts/check-effects.mjs` fails when one does not have it. Coverage by command
@@ -193,6 +202,8 @@ in for the destination — that the **declared destination is the one contacted*
 | `logout` | A credential minted by a gateway login. Proved: the no-credential path writes nothing. |
 | `page-kit parity` | A `local-serve` deploy target and a page-kit renderer to build the two renders with. Proved: the refusal writes nothing but the journal entry. |
 | `polish capture` | An installed browser and a reachable `--base-url`. Proved: the refusal writes nothing but the journal entry and contacts nothing. |
+| `qa install-browser` | The Playwright CDN, and the ~150 MB Chromium archive it serves. Proved: the failed download writes exactly one path under your machine — the registry's link entry — and nothing else anywhere, and leaves the machine zero times. |
+| `qa parity` (and `--no-post-verdict`) | An installed Chromium and a reachable candidate funnel. Proved: the refusal writes nothing but the journal entry and contacts the stand-in for `--base-url` zero times. |
 | `qa resolve` | A resolution that is not blocked before the probe. Proved: the blocked resolution contacts the stand-in zero times. |
 | `qa run --browser` | An installed Chromium and a reachable campaign. Proved: the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. |
 | `spec derive --from-store` | A live gateway and a real store credential. Proved: the credential refusal writes nothing under the target or the spec. |
@@ -242,8 +253,9 @@ reason. What it may not be is silent.
 **A row without its test is not published.** `scripts/check-effects.mjs` (in
 `npm run check` and `npm run check:contracts`) fails when:
 
-- a command on the supported CLI surface, a subcommand the help text teaches, or
-  an effect-changing flag a help usage line carries, has no row;
+- a command on the supported CLI surface, a subcommand any help block teaches
+  (`src/cli.mjs` and `src/qa-node.mjs`), or an effect-changing flag a help usage
+  line carries, has no row;
 - a row names no `effect_test`, names one `src/effects.test.mjs` does not
   declare, or names one the per-row generator would not produce (the cases are
   generated from this file, so an unchecked name made the link vacuous);

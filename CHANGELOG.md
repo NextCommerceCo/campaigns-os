@@ -7,7 +7,7 @@ Notable supported-surface changes are recorded here.
 ### Added
 
 - `contracts/effects.v1.json`: the declared effect of every supported
-  invocation — 87 rows, one per command, per subcommand and per effect-changing
+  invocation — 91 rows, one per command, per subcommand and per effect-changing
   flag, stating what the invocation **writes** (with location tokens, so a write
   to your home directory or your machine config is not mistaken for a write to
   the campaign) and what it **sends**, alongside the four MCP-style annotations
@@ -32,24 +32,71 @@ Notable supported-surface changes are recorded here.
   `next`, its five stage forms and the three `qa run` rows, each of which POSTs
   under persisted consent: the stage progress observation to
   `{proxy-base}/api/progress`, and for `qa run` the verdict to
-  `{proxy-base}/api/qa/verdicts`, on blocked attempts included. 78 rows are
-  proved end to end; 9 whose command cannot execute past its preflight offline
-  (`login`, `logout`, `page-kit parity`, `polish capture`, `qa resolve`,
-  `qa run --browser`, `spec derive --from-store`, `spec derive --write-map`,
-  `telemetry list`) carry `test_scope: "preflight"` and a `preflight` allowance
+  `{proxy-base}/api/qa/verdicts`, on blocked attempts included. 79 rows are
+  proved end to end; 12 whose command cannot execute past its preflight offline
+  (`login`, `logout`, `page-kit parity`, `polish capture`,
+  `qa install-browser`, `qa parity`, `qa parity --no-post-verdict`,
+  `qa resolve`, `qa run --browser`, `spec derive --from-store`,
+  `spec derive --write-map`, `telemetry list`) carry `test_scope: "preflight"`
+  and a `preflight` allowance
   — the exact paths the refusal may write and the exact request paths it may
   contact — so a home-directory write or an undeclared endpoint fails the row
   even when the row declares that path or destination for its success path.
 - `npm run check:effects` (`scripts/check-effects.mjs`, in `npm run check` and
   `npm run check:contracts`): every command on the supported CLI surface, every
-  subcommand the help text teaches **and every effect-changing flag a help usage
-  line carries** (`vocabulary.effect_changing_flags`) has a row; every row names
+  subcommand **any** help block teaches **and every effect-changing flag a help
+  usage line carries** (`vocabulary.effect_changing_flags`) has a row. "Any help
+  block" is the point: `campaigns-os qa` prints its own from `src/qa-node.mjs`,
+  and a scan that read only `src/cli.mjs` never required a row for the three
+  subcommands documented there alone — `qa parity`, `qa waive` and
+  `qa install-browser`, all three of which the QA skill tells an agent to run.
+  Every module that owns a usage block is now scanned, and a test derives that
+  list from the source so a command that grows its own help cannot leave the
+  scan quietly. Beyond that: every row names
   the test case the per-row generator gives it and has argv in the test's
   invocation table; every effect the offline fixture cannot reach states why;
   every preflight row declares allowances that name no whole location and no
   home-directory subtree; every declared condition is one the suite runs; and
   the annotations have to agree with the row. **A row without its test is not
   publishable, and a flag without its row is not either.**
+
+- `skills.json` carries `bundle_revision` (`1.40.0+skills.1`, spelled
+  `<package version>+skills.<n>`): one identity for the five bundled skills
+  together, stated on the first body line of every `SKILL.md` as
+  `Bundle revision: 1.40.0+skills.1`. It exists because a skill's text enters an
+  agent's context once and is never re-read, while the CLI underneath that
+  session can be replaced by an `npm install`, an `npx` cache refresh or a
+  `git pull` — an agent following one release's instructions against another
+  release's CLI. `<n>` is a counter, not a semver component, and resets with the
+  prefix, so `1.41.0+skills.1` is ahead of `1.40.0+skills.7`. Every bundled skill
+  is versioned up in this release (the header line changed in all five), and each
+  kernel command a skill names now carries its declared effect class from
+  `contracts/effects.v1.json` in one short parenthetical.
+- `campaigns-os tooling status --skills-revision <bundle-revision|skill-id@version>`
+  compares the value an agent read against the bundle revision of the CLI the
+  command runs from. `--json` reports `revision_check` as `match`, `mismatch` or
+  `unchecked` beside a `skills_revision` object (`requested`, `spelling`,
+  `on_disk`, `on_disk_skill`, `message`); the text view prints one named header
+  line — `Skills revision: match (1.40.0+skills.1)`, `Skills revision: mismatch:
+  loaded 1.39.0+skills.1, on disk 1.40.0+skills.1 — start a fresh session`, or
+  `Skills revision: unchecked (on disk 1.40.0+skills.1)`. A mismatch prints the
+  **full** status and then exits `2`, and adds an action naming the remedy: a
+  fresh session, because re-running cannot refresh skill text already in
+  context. That asymmetry is why the reported revision is named `on_disk` — the
+  requested value is what you are still reading, the reported one is what is
+  installed and is the side that moved. `<skill-id>@<version>` is accepted as a
+  fallback for an agent carrying only one skill's frontmatter, and a skill id
+  this bundle does not ship reports `mismatch` rather than refusing. The flag is
+  refused when given without a value. Prose: `docs/skills-revision.md`.
+- `scripts/check-skill-versions.mjs` gains the bundle gate. Without `--base` it
+  requires `bundle_revision` to exist, to be spelled correctly, and to be
+  prefixed with `package.json`'s `version`. With `--base <ref>` it requires the
+  revision to have **advanced** whenever any file under `skills/` changed or
+  `skills.json`'s `skills[]` entries changed — equal fails, backwards fails. Its
+  changed set is now the union of the base diff, the working tree and untracked
+  files (the three-way union the release-ledger gate already measured); a
+  committed-only diff reported an unstaged `SKILL.md` edit as "nothing changed",
+  which is the per-skill bump gate passing because it did not look.
 
 ### Changed
 

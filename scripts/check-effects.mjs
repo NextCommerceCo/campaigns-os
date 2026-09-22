@@ -14,6 +14,13 @@
  *      the file and then be surprised by it. A FLAG with no row is the same
  *      failure one level down: `doctor --write` writes three files the base
  *      form does not, so "doctor is declared" is not an answer.
+ *      "The help text" is every help block the CLI prints, not one file's.
+ *      `campaigns-os qa` prints its OWN block from src/qa-node.mjs, and a scan
+ *      that read only src/cli.mjs never required a row for the three
+ *      subcommands documented there alone — `qa parity`, `qa waive` and
+ *      `qa install-browser` — nor for the `--no-post-verdict` form of `qa
+ *      parity`. Every module that owns a usage block is therefore listed in
+ *      HELP_SOURCE_PATHS and scanned the same way.
  *   2. Proof. Every row names a node:test case in src/effects.test.mjs, and
  *      that case EXISTS. Because the cases are GENERATED from this file
  *      (`test(row.effect_test, …)`), "the name exists" is only meaningful if
@@ -49,6 +56,19 @@ export const EFFECTS_SCHEMA_PATH = "schemas/campaigns-os-effects.v1.schema.json"
 export const EFFECTS_TEST_PATH = "src/effects.test.mjs";
 export const SURFACE_PATH = "contracts/supported-surface.json";
 export const CLI_PATH = "src/cli.mjs";
+export const QA_CLI_PATH = "src/qa-node.mjs";
+
+/**
+ * Every module that owns a `const HELP = \`…\`` block the CLI prints. The
+ * coverage scan reads all of them, because a subcommand documented in any of
+ * them is a subcommand an operator was taught and an agent will run.
+ *
+ * Keeping this list right is not a matter of remembering: `npm run
+ * check:effects` is the gate, and the assertion that the list is the complete
+ * set of usage-block owners lives in scripts/check-effects.test.mjs, which
+ * greps src/ for the block shape rather than trusting the constant.
+ */
+export const HELP_SOURCE_PATHS = [CLI_PATH, QA_CLI_PATH];
 
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
@@ -130,12 +150,15 @@ export function testConditions(testSource) {
  * line continues the one above it; any other line ends the record. The flags
  * are read from the whole record, brackets or not — `readback --example` spells
  * its flag without them.
+ *
+ * `path` names the module the block came from, so an error can say WHICH help
+ * text teaches an invocation nobody declared.
  */
-export function helpUsageLines(cliSource) {
-  const start = cliSource.indexOf("const HELP = `");
-  if (start === -1) throw new Error(`${CLI_PATH}: could not find the HELP block`);
-  const end = cliSource.indexOf("\n`;", start);
-  const help = cliSource.slice(start, end === -1 ? undefined : end);
+export function helpUsageLines(source, path = CLI_PATH) {
+  const start = source.indexOf("const HELP = `");
+  if (start === -1) throw new Error(`${path}: could not find the HELP block`);
+  const end = source.indexOf("\n`;", start);
+  const help = source.slice(start, end === -1 ? undefined : end);
   const records = [];
   let current = null;
   for (const line of help.split("\n")) {
@@ -143,7 +166,7 @@ export function helpUsageLines(cliSource) {
     if (usage) {
       const [, command, second] = usage;
       // A second token that is a value placeholder or a flag is not a subcommand.
-      current = { command, subcommand: second && !second.startsWith("-") ? second : null, text: line, flags: new Set() };
+      current = { command, subcommand: second && !second.startsWith("-") ? second : null, help: path, text: line, flags: new Set() };
       records.push(current);
       continue;
     }
@@ -160,19 +183,32 @@ export function helpUsageLines(cliSource) {
 }
 
 /**
- * Every `campaigns-os <command> <subcommand>` pair the help text teaches.
+ * The usage lines of EVERY help block the CLI prints, as one list.
+ * `helpSources` is `[{ path, source }]` — see HELP_SOURCE_PATHS.
  */
-export function helpInvocations(cliSource) {
+export function allHelpUsageLines(helpSources) {
+  return helpSources.flatMap(({ path, source }) => helpUsageLines(source, path));
+}
+
+/**
+ * Every `campaigns-os <command> <subcommand>` pair the help text teaches.
+ * Takes one source's text or the `[{ path, source }]` list of all of them.
+ */
+export function helpInvocations(helpSources) {
   const found = new Map();
-  for (const record of helpUsageLines(cliSource)) {
+  const records = typeof helpSources === "string" ? helpUsageLines(helpSources) : allHelpUsageLines(helpSources);
+  for (const record of records) {
     if (!found.has(record.command)) found.set(record.command, new Set());
     if (record.subcommand) found.get(record.command).add(record.subcommand);
   }
   return found;
 }
 
-export function checkEffects({ contract, schema, surface, cliSource, testSource }) {
+export function checkEffects({ contract, schema, surface, helpSources, cliSource, testSource }) {
   const errors = [];
+  // `cliSource` is the single-block spelling the rule-by-rule cases use; the
+  // real run passes every help block the CLI prints.
+  const sources = helpSources ?? [{ path: CLI_PATH, source: cliSource }];
   const rows = contract.rows ?? [];
   if (contract.schema !== "campaigns-os-effects/v1") {
     errors.push(`${EFFECTS_PATH}: schema must be "campaigns-os-effects/v1"`);
@@ -214,11 +250,18 @@ export function checkEffects({ contract, schema, surface, cliSource, testSource 
     // scan sees its first token, so index by that.
     if (row.subcommand) coveredSubcommands.get(row.command).add(row.subcommand.split(" ")[0]);
   }
-  const usageLines = helpUsageLines(cliSource);
-  for (const [command, subcommands] of helpInvocations(cliSource)) {
+  const usageLines = allHelpUsageLines(sources);
+  const documentedIn = new Map();
+  for (const record of usageLines) {
+    if (record.subcommand) documentedIn.set(`${record.command} ${record.subcommand}`, record.help);
+  }
+  for (const [command, subcommands] of helpInvocations(sources)) {
     for (const subcommand of subcommands) {
       if (!coveredSubcommands.get(command)?.has(subcommand)) {
-        errors.push(`${EFFECTS_PATH}: "campaigns-os ${command} ${subcommand}" is documented in the CLI help but has no row`);
+        errors.push(
+          `${EFFECTS_PATH}: "campaigns-os ${command} ${subcommand}" is documented in the CLI help` +
+            ` (${documentedIn.get(`${command} ${subcommand}`)}) but has no row`,
+        );
       }
     }
   }
@@ -246,8 +289,8 @@ export function checkEffects({ contract, schema, surface, cliSource, testSource 
       if (!covered) {
         const invocation = `campaigns-os ${[record.command, record.subcommand].filter(Boolean).join(" ")}`;
         errors.push(
-          `${EFFECTS_PATH}: "${invocation} ${flag}" is an effect-changing flag the CLI help carries but no row declares` +
-            ` — a flag row is how a reader learns that ${flag} changes what the invocation does`,
+          `${EFFECTS_PATH}: "${invocation} ${flag}" is an effect-changing flag the CLI help carries (${record.help})` +
+            ` but no row declares — a flag row is how a reader learns that ${flag} changes what the invocation does`,
         );
       }
     }
@@ -444,7 +487,7 @@ export function main() {
     contract,
     schema: JSON.parse(read(EFFECTS_SCHEMA_PATH)),
     surface,
-    cliSource: read(CLI_PATH),
+    helpSources: HELP_SOURCE_PATHS.map((path) => ({ path, source: read(path) })),
     testSource: read(EFFECTS_TEST_PATH),
   });
   if (errors.length) {
@@ -456,7 +499,8 @@ export function main() {
   console.log(
     `check-effects: OK — ${contract.rows.length} declared invocations ` +
       `(${contract.rows.length - preflight} proved end to end, ${preflight} proved at the preflight), ` +
-      `${surface.cli_commands.length} supported commands covered`,
+      `${surface.cli_commands.length} supported commands covered, ` +
+      `help scanned from ${HELP_SOURCE_PATHS.join(" + ")}`,
   );
 }
 
