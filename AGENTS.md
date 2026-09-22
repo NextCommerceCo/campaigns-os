@@ -99,14 +99,22 @@ and output identities, and grants no orientation or deployment trust. See
 [progress snapshots](docs/progress-snapshots.md).
 
 Run Telemetry remit is on by default for the canonical endpoint, and the CLI
-announces that on stderr the first time a process remits. Capture is always
-local: it stays on disk under the target whether or not anything is sent, and
-`--no-write` suppresses the local lifecycle-journal append as well. Turn remit
-off with `campaigns-os telemetry off`, with `CAMPAIGNS_OS_TELEMETRY=off`, or
-per command with `--no-remit`. Every remitting command is declared open-world
-with its destination named once the effect declarations ship, and the agent
-onboarding skill will require an explicit telemetry choice before the first
-remitting command.
+announces that on stderr the first time a process remits. Capture is local and
+opt-in: a lifecycle entry is written only when a journal is selected — by
+`--lifecycle-journal`, by `CAMPAIGNS_OS_LIFECYCLE_LOG`, or by an active run
+session — and it then stays on disk under the target whether or not anything is
+sent. `--no-write` writes nothing: not the lifecycle append, and not the
+stale-session closeout named at the end of this paragraph. Turn remit off with `campaigns-os
+telemetry off`, with `CAMPAIGNS_OS_TELEMETRY=off`, or per command with
+`--no-remit`. A refused invocation — an unknown command, an unknown subcommand
+refused before its handler runs, or a flag the command refuses up front —
+appends no lifecycle entry and creates no file of its own. One effect does
+precede argument refusal: `start`, `prepare-build`, `build`, `run start` and
+`run end` close out a stale run session at the root they are about to act on
+before argv is refused, which is a declared effect of those commands and is
+suppressed by `--no-write`. Every remitting command's effect declaration, when
+published, names its destination as open-world, and the agent onboarding skill
+records an explicit telemetry choice before the first remitting command.
 
 1.37.0 adds `demo --target <new-directory>`, an offline visual sample
 that copies a pinned inert Apollo bundle and prints its landing/index.html path.

@@ -106,6 +106,7 @@ import {
   REFUSED_INVOCATION,
   refusalSeen,
   refused,
+  refusing,
   runWithRefusalScope,
   withCommandLifecycle,
 } from "./lifecycle.mjs";
@@ -502,7 +503,8 @@ Usage:
     run_id: --run-id > the active run session > the most recent Run Record for this packet's campaign (re-emitted in place; a remitted one is left as written) > freshly minted. --new-run always mints; --list prints the run ids on disk for this packet (id, created_at, remit state, path) and, like --no-write, writes and sends nothing.
 
   Commands other than login, logout, demo, and tooling diagnose accept [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
-    --no-write suppresses that append for every command, however the journal was selected (flag, env, or the active run session); a refused invocation (unknown command, unknown subcommand, or a flag the command refuses up front) and \`run status\` never append one at all.
+    --no-write suppresses that append for every command, however the journal was selected (flag, env, or the active run session); a refused invocation (unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front) and \`run status\` never append one at all.
+    A refused invocation writes no file of its own. One effect still precedes argument refusal: \`start\`, \`prepare-build\`, \`build\`, \`run start\` and \`run end\` close out a STALE run session at the root they are about to act on (Run Record assembled and remitted under the usual consent, session file cleared) before argv is refused — a declared effect of those commands. --no-write suppresses that closeout too, so a --no-write invocation leaves the target byte-identical.
   campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
   campaigns-os telemetry off [--json]                                  # turn remit off for every endpoint (takes no --proxy-base)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
@@ -820,16 +822,19 @@ function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder, th
   //      an unknown subcommand (`tooling statuss`), or a flag the command
   //      refuses up front (`standardize --dryrun`). None of them reached a
   //      handler, so a typo must not materialize a journal under the target.
-  //      The refusal itself carries the tag (refused(), the single mechanism);
-  //      knownCommands() stays as the top-level backstop for a refusal that
-  //      never becomes a throw. Neither is a second command list.
+  //      The tag the refusal carries IS the mechanism, read two ways: on the
+  //      thrown error, or via refusalSeen() when the refusal was caught and
+  //      rendered instead of thrown. There is deliberately no command-list
+  //      backstop here — knownCommands() is regex-harvested and documented as
+  //      fragile, so a second reading of it would be a second command list that
+  //      could disagree with dispatch.
   //   3. `run status` is read-only: it never sweeps and never journals.
   if (args["no-write"] === true) return;
   if (refusalSeen() || thrown?.code === REFUSED_INVOCATION) return;
-  if (!knownCommands().includes(command)) return;
   if (command === "run" && args._[1] === "status") return;
   // An inspection must not append to a delivered campaign's active run either.
-  if (command === "doctor" && args.packet && (args.write !== true || args["no-write"] === true)) return;
+  // (--no-write is handled above, so only the read-only `doctor` form is left.)
+  if (command === "doctor" && args.packet && args.write !== true) return;
   const ambient = sessionHolder?.current || null;
   // A session auto-started DURING this command (start/prepare-build) is
   // published into sessionHolder by autoStartRunSession; this command's own
@@ -12100,11 +12105,24 @@ async function closeRunSession(found, { packet, extraArgs = {}, silent = false, 
 // forms. `run status` never sweeps — it is read-only.
 // Best-effort throughout: a closeout failure clears the file and says so on
 // stderr; it never blocks the command that triggered it.
+//
+// The sweep is an effect of the command that triggers it, and it runs BEFORE
+// dispatch — so it happens even when the argv that follows is refused. That is
+// deliberate (the stale session at the target is closed out either way), but it
+// makes the sweep the one place where `--no-write` could still write: it
+// assembles a Run Record and removes the session file. `--no-write` writes
+// nothing, the closeout included; see the guard below.
 const STALE_SWEEP_TARGET_COMMANDS = new Set(["start", "prepare-build", "build"]);
 
 async function closeOutStaleRunSessions(command, args) {
   // A command that opted out of sessions altogether must not sweep either.
   if (args["no-run-session"] === true) return [];
+  // --no-write leaves the tree byte-identical. Inheriting the flag into the
+  // closeout was not enough: it suppressed the Run Record but clearRunSession
+  // still deleted the session file, so `--no-write` moved bytes. Skip the
+  // sweep entirely instead — the stale session stays for the next run that
+  // does write.
+  if (args["no-write"] === true) return [];
   const roots = [];
   if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
   if (command === "run" && (args._[1] === "start" || args._[1] === "end")) {
@@ -12121,8 +12139,11 @@ async function closeOutStaleRunSessions(command, args) {
     }
   }
   // The closeout inherits the invoking command's remit controls: an explicit
-  // --no-remit / --no-write stays an opt-out, and a run pointed at a custom
-  // --proxy-base never remits the stale record to the canonical endpoint.
+  // --no-remit stays an opt-out, and a run pointed at a custom --proxy-base
+  // never remits the stale record to the canonical endpoint. --no-write is
+  // carried too, though the guard above means it never arrives true: if the
+  // sweep ever becomes conditional rather than skipped, the closeout must
+  // still see it.
   const inherited = {};
   for (const flag of ["no-remit", "no-write", "proxy-base"]) {
     if (args[flag] !== undefined) inherited[flag] = args[flag];
@@ -12891,15 +12912,11 @@ function toolkitProvenance({ silent = false } = {}) {
 // The call sites below are the up-front ones: the base comes straight off argv
 // and is checked before any configuration read or write, before a credential is
 // attached, and before a request. The tag therefore goes HERE, where the
-// position is known. The message and the exit code stay the validator's own;
-// only the verdict the lifecycle journal reads is added.
-function refuseInsecureProxyBase(proxyBase, options) {
-  try {
-    return assertSecureProxyBase(proxyBase, options);
-  } catch (error) {
-    throw refused(error.message);
-  }
-}
+// position is known — `refusing()` is the shared form of that contract. The
+// message and the exit code stay the validator's own; only the verdict the
+// lifecycle journal reads is added.
+const refuseInsecureProxyBase = (proxyBase, options) =>
+  refusing(() => assertSecureProxyBase(proxyBase, options));
 
 async function telemetryCommand(args) {
   const sub = args._[1] || "status";

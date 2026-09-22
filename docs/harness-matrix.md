@@ -17,9 +17,13 @@ vendor documents a directory says where the harness *reads*, not that installing
 into it succeeded, merged cleanly, or was picked up.
 
 Two skill placements are in scope for the first release: `.claude/skills` and
-`.agents/skills`. Note that Codex does not merge same-name skills across its
-search path — a skill with the same name found in two of its directories is
-listed twice.
+`.agents/skills`. That is a scope decision, not a census of the rows below —
+Cursor additionally documents `.cursor/skills` (and `~/.cursor/skills`), which
+is deliberately not a first-release placement because Cursor already reads
+`.agents/skills`, so a second copy under `.cursor/` would buy nothing and could
+drift. Note also that Codex does not merge same-name skills across its search
+path — a skill with the same name found in two of its directories is listed
+twice.
 
 All first-party cells below were verified 2026-09-22 against the cited pages.
 
@@ -27,7 +31,7 @@ All first-party cells below were verified 2026-09-22 against the cited pages.
 
 | Harness | Instruction file | Skills directory | Plugin manifest | MCP registration | Status |
 | --- | --- | --- | --- | --- | --- |
-| Claude Code | [`CLAUDE.md` / `.claude/CLAUDE.md` (project), `~/.claude/CLAUDE.md` (user); `AGENTS.md` also readable](https://code.claude.com/docs/en/memory) | [`~/.claude/skills/<name>/SKILL.md` (personal), `.claude/skills/<name>/SKILL.md` (project); `.agents/skills` is not documented](https://code.claude.com/docs/en/skills) | unverified — not retrieved first-party this cycle | [`.mcp.json` at project root (project scope); `~/.claude.json` (user/local scope); `claude mcp add --scope`](https://code.claude.com/docs/en/mcp) | first-party (verified 2026-09-22) |
+| Claude Code | [`CLAUDE.md` / `.claude/CLAUDE.md` (project), `~/.claude/CLAUDE.md` (user); `AGENTS.md` also readable](https://code.claude.com/docs/en/memory) | [`~/.claude/skills/<name>/SKILL.md` (personal), `.claude/skills/<name>/SKILL.md` (project)](https://code.claude.com/docs/en/skills) | unverified — not retrieved first-party this cycle | [`.mcp.json` at project root (project scope); `~/.claude.json` (user/local scope); `claude mcp add --scope`](https://code.claude.com/docs/en/mcp) | first-party (verified 2026-09-22) |
 | Codex | [`~/.codex/AGENTS.md` (global; override variant preferred), then `AGENTS.md` / `AGENTS.override.md` from the git root down to the cwd, merged, closer wins; 32 KiB cap](https://learn.chatgpt.com/codex/agent-configuration/agents-md#how-codex-discovers-guidance) | [`$CWD/.agents/skills`, `$REPO_ROOT/.agents/skills`, `$HOME/.agents/skills`, `/etc/codex/skills`; same-name skills are not merged and both are listed](https://learn.chatgpt.com/docs/build-skills) | unverified (local artifact only) | [`[mcp_servers.<name>]` in `~/.codex/config.toml`; `codex mcp add`](https://learn.chatgpt.com/codex/extend/mcp#configure-with-configtoml) | first-party (verified 2026-09-22) |
 | Cursor | [`.cursor/rules/*.mdc` (project rules); `AGENTS.md` in the root and in subdirectories; order Team → Project → User](https://cursor.com/docs/context/rules) | [project `.agents/skills/`, `.cursor/skills/`; user `~/.agents/skills/`, `~/.cursor/skills/`; compatibility `.claude/skills`, `.codex/skills` (project and `~`); nested directories discovered](https://cursor.com/docs/skills#skill-directories) | unverified | [`.cursor/mcp.json` (project), `~/.cursor/mcp.json` (global)](https://cursor.com/docs/context/mcp) | first-party (verified 2026-09-22) |
 | Grok Build | unverified | unverified | unverified | unverified | unverified |
@@ -41,9 +45,11 @@ The six `unverified` harnesses are not first-release targets. Nothing is claimed
 about them here, in either direction: an empty row is an absence of first-party
 evidence, not a statement that the harness lacks the feature.
 
-## Further first-party notes
+## Further notes
 
-These do not fit a column but bear on how a skill behaves once installed.
+These do not fit a column but bear on how a skill behaves once installed. The
+first two cite a vendor page; the last is a dated reading of one, which is a
+weaker thing and says so.
 
 - Claude Code skill lifecycle: the text of an invoked `SKILL.md` stays in
   context and is not re-read on later turns
@@ -52,6 +58,11 @@ These do not fit a column but bear on how a skill behaves once installed.
 - Claude Code tool permissions: `allowed-tools` is a per-turn permission grant,
   and `disallowed-tools` removes tools per turn
   ([pre-approve tools for a skill](https://code.claude.com/docs/en/skills#pre-approve-tools-for-a-skill)).
+- Claude Code skills paths, observation: reading the skills page on 2026-09-22,
+  the two paths in the matrix row were the only ones listed on it — no
+  `.agents/skills` path appeared. That is a reading of one page on one date, not
+  a first-party statement that the path is unsupported: a citation can support
+  what a page says, not what it omits.
 
 ## Changing this file
 

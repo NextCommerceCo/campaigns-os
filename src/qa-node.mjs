@@ -63,7 +63,7 @@ import { commitAssemblyReport } from "./stage-ledger.mjs";
 // Tags a refusal raised before a qa handler runs, so the CLI's lifecycle
 // persist step suppresses the journal append from one place. lifecycle.mjs
 // imports nothing from this repository, so this cannot be circular.
-import { refused } from "./lifecycle.mjs";
+import { refused, refusing } from "./lifecycle.mjs";
 import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
@@ -2014,16 +2014,11 @@ function parityReplayEvidence(bundle) {
 // SHARED with the order-creation budget, which every browser path builds after
 // a browser has launched and orders may already have been created; a throw from
 // there is a handler failure and must still be journaled, so the refusal tag
-// cannot live inside the validator. It goes here, at the two entries that check
-// the flag before anything is resolved or launched, where a bad value has cost
-// the operator nothing. The message and exit code are the validator's own.
-function refuseBadOrderCreationLimit(args) {
-  try {
-    return validatedOrderCreationLimit(args);
-  } catch (error) {
-    throw refused(error.message);
-  }
-}
+// cannot live inside the validator. It goes here via `refusing()`, at the two
+// entries that check the flag before anything is resolved or launched, where a
+// bad value has cost the operator nothing. Message and exit code are the
+// validator's own.
+const refuseBadOrderCreationLimit = (args) => refusing(() => validatedOrderCreationLimit(args));
 
 async function runParityQa(args) {
   // Checked here as well as on the budget itself: the budget is built after a

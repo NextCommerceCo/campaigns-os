@@ -8,8 +8,10 @@
 //     way the journal was selected (--lifecycle-journal, the env variable, or
 //     an ambient run session);
 //   - a refused invocation — an unknown top-level command, an unknown
-//     subcommand, or a flag the command refuses up front — writes nothing at
-//     all, with or without `--no-write`;
+//     subcommand refused before its handler runs, or a flag the command
+//     refuses up front — writes nothing OF ITS OWN, with or without
+//     `--no-write`; the one effect that precedes refusal is the invoked
+//     command's own stale-session closeout, which (l) and (m) pin;
 //   - `run status` is read-only.
 // Case (f) is the positive control: the same harness DOES observe the append a
 // journal-selecting command makes without `--no-write`, so a green run of the
@@ -17,12 +19,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { main } from "./cli.mjs";
+import { refusalSeen, refused, runWithRefusalScope } from "./lifecycle.mjs";
+import { RUN_SESSION_TTL_MS } from "./run-session.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -215,9 +219,10 @@ test("(f) positive control: without --no-write the same command appends exactly 
 });
 
 // The top-level command is KNOWN in (g), (h) and (i) — only the subcommand or
-// the flag is refused, so knownCommands() cannot suppress these. They are the
-// cases the challenger found journaling an entry for an invocation the CLI had
-// already refused; each one also re-asserts the refusal itself is unchanged.
+// the flag is refused, so nothing about the command name could suppress these.
+// They are the cases the challenger found journaling an entry for an invocation
+// the CLI had already refused; each one also re-asserts the refusal itself is
+// unchanged. The refusal tag is what suppresses them, here and everywhere.
 test("(g) a refused subcommand `tooling statuss` with the env journal writes nothing", () => {
   withTempTarget((dir) => {
     const journal = join(dir, "x.jsonl");
@@ -432,4 +437,118 @@ test("(k) two interleaved in-process invocations keep their refusal verdicts sep
   assert.equal(entries.length, 1, JSON.stringify(entries));
   assert.equal(entries[0].command, "tooling");
   rmSync(dir, { recursive: true, force: true });
+});
+
+// (l) and (m) are the sweep: the ONE effect that precedes argument refusal.
+// `start`, `prepare-build`, `build`, `run start` and `run end` close out a
+// stale run session at the root they are about to act on BEFORE dispatch, so a
+// refused `start` still performs it — that closeout is an effect of the
+// command, not of the refusal. What it may not do is happen under `--no-write`,
+// which is the bug (l) pins: the flag was inherited by the closeout, so no Run
+// Record was written, but the session file was deleted anyway and the tree
+// moved. Every other refusal case above runs in a fresh directory with no
+// session, which is why none of them could see this.
+//
+// The fixture is the real examples/ tree, copied: the sweep only assembles a
+// record when the session names a packet that exists, and the packet's
+// assembly.target_repo is what roots the session.
+const EXAMPLES = resolve(ROOT, "examples");
+const REFUSED_START = /Either --spec <path> or --map-id <id> is required/;
+
+// A copy of examples/ with an ambient session opened at the packet's target
+// repo and backdated past RUN_SESSION_TTL_MS, so the next command sweeps it.
+function withStaleSessionTarget(run) {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-stale-"));
+  try {
+    cpSync(EXAMPLES, dir, { recursive: true });
+    const packet = join(dir, "build-packet.basic.json");
+    const started = runCli(["run", "start", "--packet", packet, "--no-remit", "--json"], { cwd: dir });
+    assert.equal(started.status, 0, started.stderr);
+    const { session, session_path: sessionPath } = JSON.parse(started.stdout);
+    const target = resolve(sessionPath, "..", "..");
+
+    const idle = new Date(Date.now() - RUN_SESSION_TTL_MS - 60 * 60 * 1000).toISOString();
+    writeFileSync(sessionPath, `${JSON.stringify({ ...session, started_at: idle, updated_at: idle }, null, 2)}\n`);
+
+    run({ dir, target, sessionPath, session });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("(l) a refused `start --no-write` over a stale session leaves the tree byte-identical", () => {
+  withStaleSessionTarget(({ dir, target, sessionPath }) => {
+    const before = snapshotTree(dir);
+
+    const refusedStart = runCli(["start", "--target", target, "--no-write", "--no-remit", "--json"], { cwd: dir });
+    assert.notEqual(refusedStart.status, 0, "start without --spec/--map-id must exit non-zero");
+    assert.match(`${refusedStart.stderr}${refusedStart.stdout}`, REFUSED_START);
+
+    assert.deepEqual(snapshotTree(dir), before, "--no-write must not sweep: no Run Record, no session-file deletion");
+    assert.equal(existsSync(sessionPath), true, "--no-write must leave the stale session for a run that writes");
+  });
+});
+
+test("(m) the same refused `start` WITHOUT --no-write performs the closeout and still journals nothing", () => {
+  withStaleSessionTarget(({ dir, target, sessionPath, session }) => {
+    const recordsDir = join(dir, ".campaign-runtime", "run-records");
+    assert.equal(existsSync(recordsDir), false, "the fixture starts with no Run Records");
+
+    const refusedStart = runCli(["start", "--target", target, "--no-remit", "--json"], { cwd: dir });
+    assert.notEqual(refusedStart.status, 0, "start without --spec/--map-id must exit non-zero");
+    assert.match(`${refusedStart.stderr}${refusedStart.stdout}`, REFUSED_START);
+
+    // The declared effect of `start`: the stale session is closed out into its
+    // Run Record and cleared, and the operator is told on stderr.
+    assert.deepEqual(readdirSync(recordsDir), [`${session.run_id}.json`]);
+    assert.match(refusedStart.stderr, new RegExp(`Stale run session ${session.run_id} .* closed out`));
+    assert.equal(existsSync(sessionPath), false, "the stale session file must be cleared by the closeout");
+
+    // The refusal itself remains silent: no lifecycle entry for an invocation
+    // that never reached a handler, even though the sweep ran.
+    assert.equal(existsSync(session.lifecycle_journal), false, "a refused invocation must journal nothing");
+  });
+});
+
+// (n) is the invariant documented at `refused()`: the scope is marked at
+// CONSTRUCTION, so a refusal must be thrown or rendered and never swallowed.
+// Unit-level on purpose — it states the contract the CLI cases above rely on,
+// and it is the test a future `refused()` inside a discarding `try` would have
+// to argue with.
+test("(n) refusalSeen() is per-scope: false in a fresh scope, true once refused() is called in it", () => {
+  const seen = runWithRefusalScope(() => {
+    const before = refusalSeen();
+    const error = refused("nope");
+    return { before, after: refusalSeen(), message: error.message };
+  });
+  assert.equal(seen.before, false, "a fresh refusal scope starts clean");
+  assert.equal(seen.after, true, "constructing a refusal marks the scope it was built in");
+  assert.equal(seen.message, "nope", "the message is passed through untouched");
+  // The verdict does not leak out of the scope it was recorded in.
+  assert.equal(refusalSeen(), false, "outside any scope there is no verdict");
+  assert.equal(runWithRefusalScope(() => refusalSeen()), false, "the next scope starts clean again");
+});
+
+// (o) pins the unknown-command case to the TAG and nothing else. (c) and (d)
+// cover the same typo but pass `--no-write`, which suppresses the append one
+// rule earlier — so on their own they cannot tell the refusal rule from the
+// --no-write rule. Here the journal is live and the only reason nothing is
+// appended is that the refusal carried its tag. This is the case a re-added
+// command-list backstop would make redundant, and the case its removal has to
+// keep green.
+test("(o) an unknown top-level command WITHOUT --no-write journals nothing: the tag is the only suppressor", () => {
+  withTempTarget((dir) => {
+    const journal = join(dir, "x.jsonl");
+    const before = snapshotTree(dir);
+
+    const refusedRun = runCli(["frobnicate", "--no-remit", "--json"], {
+      cwd: dir,
+      env: { CAMPAIGNS_OS_LIFECYCLE_LOG: journal },
+    });
+    assert.notEqual(refusedRun.status, 0, "an unknown command must exit non-zero");
+    assert.match(refusedRun.stderr, /Unknown command: frobnicate/);
+
+    assert.deepEqual(snapshotTree(dir), before, "a refused command must leave the target tree untouched");
+    assert.equal(existsSync(journal), false, "a refused command must not create the env-selected journal");
+  });
 });

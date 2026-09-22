@@ -46,6 +46,17 @@ export const LIFECYCLE_JOURNAL_REL_PATH = ".campaign-runtime/command-lifecycle.j
 // module calling `refused()` directly in a unit test — there is no store and
 // `refusalSeen()` is false; the error tag is added either way.
 //
+// LIMITATION, stated so it is not mistaken for a bug: the store is only active
+// for work that runs inside `runWithRefusalScope`. A `refused()` DEFERRED past
+// the end of that scope — built in a setImmediate/setTimeout/unawaited callback
+// that fires after main() returned — finds no store, so `refusalSeen()` reads
+// false while the error still carries the tag, and the two readings disagree.
+// This is not defended against, because refusals are synchronous BY CONTRACT:
+// they are raised up front, before the handler runs, on the same tick as the
+// argv check that rejects the invocation. A refusal that needs to be deferred
+// is not an up-front refusal and should be a handler failure instead — which is
+// journaled, as it should be.
+//
 // This lives here, not in the CLI, because refusals are raised in command
 // modules too (`qa`'s unknown subcommand) and those modules are imported BY
 // cli.mjs: importing the factory back out of cli.mjs would be circular, and
@@ -60,6 +71,17 @@ export function runWithRefusalScope(fn) {
   return refusalScope.run({ seen: false }, fn);
 }
 
+/**
+ * Build a tagged refusal. INVARIANT: a refusal must be thrown or rendered —
+ * never built and swallowed. The scope is marked HERE, at construction, not at
+ * the throw, because the paths that catch a refusal to render it (waiveOrRefuse)
+ * hand onFinish no error to inspect. The cost of marking early is that a
+ * `refused()` built inside a `try` that discards it would suppress the journal
+ * entry for an invocation whose handler did run. No call site does that today
+ * (no `requireArg` sits inside a `try`), and none may: if you need to probe
+ * whether an argument is present, test for it — do not construct a refusal
+ * speculatively.
+ */
 export function refused(message) {
   const store = refusalScope.getStore();
   if (store) store.seen = true;
@@ -70,6 +92,25 @@ export function refused(message) {
 
 export function refusalSeen() {
   return refusalScope.getStore()?.seen === true;
+}
+
+/**
+ * Run `fn()` and re-throw anything it throws as a tagged refusal, message
+ * byte-identical. The contract it encodes: THE TAG IS APPLIED AT THE UP-FRONT
+ * CALL SITE, NOT INSIDE THE VALIDATOR. The validators this wraps are shared —
+ * `assertSecureProxyBase` also runs mid-handler on the remit rail, and the
+ * order-creation limit is re-checked after a browser has launched — and a throw
+ * from those positions is a handler failure, the most valuable lifecycle entry
+ * there is. Only the caller knows it is checking argv before anything has been
+ * resolved, read, written, or launched, so only the caller may say "refusal".
+ * Wrap the up-front call; leave the shared validator untagged.
+ */
+export function refusing(fn) {
+  try {
+    return fn();
+  } catch (error) {
+    throw refused(error.message);
+  }
 }
 
 function isNonEmptyString(value) {
