@@ -2,6 +2,87 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.39.0] - 2026-09-22
+
+### Added
+
+- `campaigns-os readback <target-repo-root> [--json] [--packet <path>]
+  [--doctor <path>] [--context <path>] [--report <path>] [--qa-verdict <path>]
+  [--findings <path>]`: a read-only projection of the artifacts a run has
+  already emitted into a target — the Build Packet, doctor output, build
+  context, assembly report, QA verdict and findings export. It reports each
+  artifact's state, per-artifact freshness against the checkout's HEAD reflog,
+  doctor warning grouping, fail-to-skip cascades and cross-artifact
+  divergences. The command writes nothing under the target, starts no process,
+  touches no network, and records no lifecycle entry even when a journal is
+  configured; exit `0` for any projection it can form, `2` for a request that
+  cannot form one (missing target root, a Build Packet set freshness cannot
+  single out, `--example` combined with a target or an override).
+- Output contract `campaigns-os-readback/v2`, published as
+  `schemas/campaigns-os-readback.v2.schema.json` with prose in
+  `docs/readback.md`: field semantics, the exact `clean` rule, exit codes, and
+  the migration for a consumer that read the previous projection. Staleness is
+  assessed **per artifact** — `staleness.artifacts` carries each loaded
+  artifact's own verdict, `staleness.stale_keys` names the stale ones in render
+  order, and the aggregate `staleness.stale` is true when ANY loaded artifact
+  is stale. The earlier projection compared only the newest artifact, so one
+  freshly regenerated artifact reported a whole stale set as fresh and
+  `clean: true`; that is a change of meaning in a published field, hence the
+  new schema version rather than an edit in place. `newest_key` is kept as
+  information only and `artifact_times` is unchanged.
+- `campaigns-os readback --example [--json]` projects the synthetic sample
+  bundled at `contracts/fixtures/sidecar-bundle/production-shaped/` with no
+  target argument. The sample is a packaged fixture directory rather than a Git
+  checkout, so it reports freshness as not computable by design and
+  `clean: false`; artifact rows are package-relative so the sample's output is
+  identical wherever it is installed.
+- `--dry-run` on the four mutating commands that lacked it: `run-record`,
+  `qa publish`, `checkpoint waive` and `theme waive`. Each one does everything
+  the real command does except the write and the send, and exits as the real
+  command would: every validation on the route from argv to the first effect
+  runs under the flag, by the same code and with the same message and exit
+  code, including the ones that live inside the effect itself — the Run Record
+  validator that refuses a record before it is written, the committing path's
+  check on what a waiver mutator returns, and the transport's destination gate.
+  A dry run therefore never previews an invocation that could not have
+  happened. `run-record --dry-run` assembles the Run Record and prints it
+  (`--json`: `dry_run: true`, `would_write`, `would_remit`, and
+  `would_remit_refused` naming the gate's refusal when the proxy base is one
+  the transport declines before any request) without writing the file or
+  remitting — where `--no-write` skips the assembly's reads as well; an invalid
+  record is refused with the writer's own message and exit 1; `run end` hands
+  the flag on and leaves the run session open. `qa publish --dry-run` runs
+  every refusal check (stale `spec_hash`, already published, untrusted,
+  campaign mismatch) and reports `status: "dry_run"` with `would_publish` and
+  `would_post` (endpoint, base kind, verdict run id, payload bytes) instead of
+  posting; a refusal still exits 2, and a `--proxy-base` the transport refuses
+  before it opens a socket (a non-URL, or plain http to anything but a loopback
+  host) still reports `publish_failed` and exits 1. `checkpoint waive
+  --dry-run` and `theme waive --dry-run` run the same validation (named human,
+  bounds, registered and waivable gate) through the committing path itself over
+  the same Assembly Report — one that is torn, or that is not an Assembly
+  Report object, is refused identically on both paths — and report the waiver
+  they would record with `would_write`, leaving the report and the doctor
+  sidecar untouched. No `--dry-run`
+  invocation writes under the target and none opens a network connection. That
+  covers the command-lifecycle journal, which the commands that implement the
+  flag skip the way doctor's inspection mode does, and the pre-dispatch
+  stale-session sweep, which such an invocation skips entirely instead of
+  assembling, remitting and deleting an idle session behind the flag: a stale
+  session is left on disk for a real invocation to close out, so `run end
+  --dry-run` at a root whose only session is stale reports `No active run
+  session to end` rather than a closeout. Both exemptions are scoped to the
+  commands that implement the flag: the shared parser accepts `--dry-run` on
+  any command, and one that does not implement it (`qa run`, say) records its
+  lifecycle entry, sweeps as usual, and behaves exactly as before.
+
+### Changed
+
+- Supported surface 1.39.0: `cli_commands` gains `readback`, `hashed{}` gains
+  `schemas/campaigns-os-readback.v2.schema.json`, and `named[]` gains
+  `docs/readback.md`. Additive — no existing command, schema, export or
+  document changed.
+
 ## [1.38.0+agent.1] - 2026-09-21
 
 ### Changed

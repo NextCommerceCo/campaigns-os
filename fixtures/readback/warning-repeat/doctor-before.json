@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "status": "ready_with_warnings",
+  "errors": [],
+  "warnings": [
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: packages.main_package=1"
+    },
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: upsell_offer.package_id=3"
+    },
+    {
+      "code": "frontmatter.replaceFromSpecOrApi",
+      "message": "Must be replaced from CampaignSpec/API: packages.*"
+    },
+    {
+      "code": "copy.hardcoded_phone",
+      "message": "Campaign Store Profile phone is \"1-800-555-0100\", but prepared HTML contains different hardcoded phone numbers outside skipped regions: target:_includes/customer-info-form.html:55 \"201-555-0123\". Use the campaign.store_phone binding or remove static phone strings."
+    }
+  ],
+  "ready": [
+    "Build Packet schema campaign-runtime-build-packet/v0"
+  ],
+  "derived": {
+    "map_id": "runtime-packet-demo-k9x2",
+    "public_route_slug": "runtime-packet-demo",
+    "template_family": "olympus"
+  },
+  "next": {
+    "stage": "assembly",
+    "status": "ready_with_warnings",
+    "owner": "build",
+    "blocked_stages": [
+      "qa"
+    ]
+  }
+}

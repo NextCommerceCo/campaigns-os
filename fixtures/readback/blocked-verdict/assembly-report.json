@@ -1,0 +1,435 @@
+{
+  "schema_version": "campaign-runtime-assembly-report/v0",
+  "run_id": "asm_1785647107961",
+  "generated_at": "2026-08-02T05:05:07.961Z",
+  "status": "blocked_at_qa",
+  "identity": {
+    "map_id": "runtime-packet-demo-k9x2",
+    "public_route_slug": "runtime-packet-demo",
+    "campaign_directory": "runtime-packet-demo",
+    "live_url_path": "/runtime-packet-demo/",
+    "spec_hash": "09a9c8c82598da2234cb3312c9d0ff3706734338272dbe899327ba0c0aa37624"
+  },
+  "inputs": {
+    "packet_path": "./campaign-runtime.build.json",
+    "context_path": ".campaign-runtime/build-context.json",
+    "build_brief_path": ".campaign-runtime/input/campaign-build-brief.normalized.json",
+    "spec_path": "../fixture/campaignspec.v42.basic.json",
+    "source": {
+      "kind": "html_funnel",
+      "root": "../fixture/source-html"
+    },
+    "target_repo": "."
+  },
+  "template_family": {
+    "value": "olympus",
+    "locked": true,
+    "locked_by": "operator_flag",
+    "commerce_catalog_version": null,
+    "candidates": []
+  },
+  "stages": {
+    "prepare_build": {
+      "stage": "prepare_build",
+      "status": "completed",
+      "inputs": [],
+      "outputs": [
+        "./campaign-runtime.build.json",
+        ".campaign-runtime/build-context.json",
+        ".campaign-runtime/input/campaign-build-brief.normalized.json",
+        ".campaign-runtime/assembly-report.json"
+      ],
+      "commands": [],
+      "blockers": [],
+      "warnings": []
+    },
+    "doctor": {
+      "stage": "doctor",
+      "status": "completed",
+      "inputs": [],
+      "outputs": [],
+      "commands": [
+        "campaigns-os doctor --packet campaign-runtime.build.json"
+      ],
+      "blockers": [],
+      "warnings": []
+    },
+    "setup": {
+      "stage": "setup",
+      "status": "completed",
+      "inputs": [],
+      "outputs": [
+        "src/runtime-packet-demo/ (215 files, atomic olympus family slice)",
+        "_data/campaigns.json",
+        ".campaign-runtime/setup-handoff.json"
+      ],
+      "commands": [
+        "campaign-init --non-interactive --json --template olympus --slug runtime-packet-demo --overwrite"
+      ],
+      "blockers": [],
+      "warnings": []
+    },
+    "assembly": {
+      "stage": "assembly",
+      "status": "completed",
+      "inputs": [],
+      "outputs": [
+        "src/runtime-packet-demo/{landing,checkout,upsell,receipt}.html",
+        "_site/runtime-packet-demo/*",
+        ".campaign-runtime/page-kit-build-summary.json"
+      ],
+      "commands": [
+        "python build-edits (spec wiring)",
+        "npx campaign-build --json > .campaign-runtime/page-kit-build-summary.json"
+      ],
+      "blockers": [],
+      "warnings": [
+        "Build Brief brand_palette_cta and bundle_pricing_presentation unanswered: template-default palette and single-tier simple pricing chosen; needs merchant confirmation before launch"
+      ],
+      "build_fingerprint": "sha256:43ed73beb0af5aa557d7ec83b4c2a91c3ad0d10f8e6c868ccdbd45f455ed33ee",
+      "completed_at": "2026-08-02T05:14:34.360171+00:00"
+    },
+    "polish": {
+      "stage": "polish",
+      "status": "completed",
+      "inputs": [],
+      "outputs": [
+        "_site/runtime-packet-demo/* (rebuilt after polish)"
+      ],
+      "commands": [
+        "python polish edits",
+        "npx campaign-build --json"
+      ],
+      "blockers": [],
+      "warnings": [
+        "Mobile visual evidence not captured",
+        "Authored copy missing from source for product subtitle/guarantee/trust surfaces \u2014 flagged, not invented",
+        "SDK commerce surfaces unverifiable against live API with fixture key"
+      ],
+      "evidence": {
+        "brand_review": {
+          "favicon": {
+            "byte_match": false,
+            "status": "source_provides_no_favicon_neutral_next_starter_retained"
+          },
+          "brand_bleed": {
+            "cleared": true,
+            "promo_codes": "none",
+            "favicon": "neutral starter, no prior-campaign icon",
+            "fonts": "family defaults, source specifies none",
+            "colors": "tokenized, no literals added"
+          }
+        },
+        "checkout_review": {
+          "bump_compare_price_rule": {
+            "status": "not_applicable",
+            "reason": "order bumps removed; CampaignSpec has no prepurchase packages"
+          }
+        },
+        "copy_residue": {
+          "lorem": "removed",
+          "starter_product_name": "replaced with spec package name Demo Bundle",
+          "trust_claims": "unbacked 180k-families and 90-day-guarantee claims removed, flagged as missing authored copy",
+          "sdk_display_fallbacks": "Package Title fallback inside data-next-display retained (SDK-owned)"
+        },
+        "screenshots": {
+          "desktop_checkout": "captured via local preview http://localhost:3000/runtime-packet-demo/checkout/",
+          "mobile": "NOT captured - evidence gap"
+        },
+        "runtime": {
+          "sdk_data": "bundle selector renders skeleton only: fixture API key fixture-campaigns-key has no live campaign data; full SDK render deferred to QA"
+        },
+        "visual_review": {
+          "desktop_checkout": "browser-pane screenshot of http://localhost:3000/runtime-packet-demo/checkout/?debugger=true (rendered header/brand/phone/steps verified)",
+          "mobile": "not captured - recorded as gap"
+        },
+        "template_residue_review": {
+          "lorem": "removed",
+          "starter_product_name": "replaced from spec",
+          "starter_favicon": "neutral starter retained; source supplies none",
+          "next_blue": "template tokens unchanged; no design palette supplied (brief unanswered)",
+          "promo_banner": "stripped",
+          "guarantee_trust_claims": "removed (unbacked)"
+        },
+        "commerce_flow_review": {
+          "flow": "landing -> checkout -> upsell -> receipt via campaign-rooted meta",
+          "notes": "single package, single shipping method, card-only payment per spec; no force-package two-step flow"
+        },
+        "issues": [
+          {
+            "severity": "high",
+            "qa_blocking": true,
+            "summary": "SDK commerce surfaces render skeleton only: fixture API key has no live campaign; bundle card/pricing/payment iframes unverifiable locally"
+          },
+          {
+            "severity": "medium",
+            "qa_blocking": false,
+            "summary": "Mobile visual evidence not captured"
+          },
+          {
+            "severity": "low",
+            "qa_blocking": false,
+            "summary": "Authored copy missing for product subtitle; surface left minimal rather than invented"
+          }
+        ],
+        "commands": [
+          "python polish edits",
+          "npx campaign-build --json",
+          "browser-pane screenshot"
+        ]
+      },
+      "performed_by": "next-campaigns-polish",
+      "source_build_fingerprint": "sha256:43ed73beb0af5aa557d7ec83b4c2a91c3ad0d10f8e6c868ccdbd45f455ed33ee",
+      "completed_at": "2026-08-02T05:14:34.360171+00:00"
+    },
+    "deploy": {
+      "stage": "deploy",
+      "status": "completed",
+      "inputs": [],
+      "outputs": [
+        "local preview http://localhost:3000/runtime-packet-demo/ (campaign-dev)"
+      ],
+      "commands": [
+        "npx campaign-dev --campaign runtime-packet-demo"
+      ],
+      "blockers": [],
+      "warnings": [
+        "Local preview only; no remote deploy attempted (out of scope for this run); non-localhost origins not allowlisted"
+      ]
+    },
+    "qa": {
+      "stage": "qa",
+      "status": "blocked",
+      "inputs": [],
+      "outputs": [
+        "qa-output/runtime-packet-demo-k9x2/MSBCJ4WIC7R6BMKJQRU4OC4K6T.json"
+      ],
+      "commands": [
+        "campaigns-os qa resolve --packet",
+        "campaigns-os qa run --packet --base-url http://localhost:3000 --browser --test-order common"
+      ],
+      "blockers": [
+        "polish.evidence_incomplete: None",
+        "fixture API key fixture-campaigns-key has no live campaign in Campaigns App: SDK cannot load packages/pricing, typed-card test-order path cannot execute"
+      ],
+      "warnings": [],
+      "completed_at": "2026-08-02T05:15:32.724661+00:00"
+    }
+  },
+  "decisions": [
+    {
+      "id": "dec_page_map_landing",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"landing\" to source file \"landing.html\"",
+      "confidence": "high",
+      "evidence": [
+        "matched source filename against page keys: landing, landing-1, index"
+      ]
+    },
+    {
+      "id": "dec_page_map_checkout",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"checkout\" to source file \"checkout.html\"",
+      "confidence": "high",
+      "evidence": [
+        "matched source filename against page keys: checkout, checkout-1"
+      ]
+    },
+    {
+      "id": "dec_page_map_upsell",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"upsell\" to source file \"upsell.html\"",
+      "confidence": "high",
+      "evidence": [
+        "matched source filename against page keys: upsell, upsell-1"
+      ]
+    },
+    {
+      "id": "dec_page_map_receipt",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"receipt\" to source file \"receipt.html\"",
+      "confidence": "high",
+      "evidence": [
+        "matched source filename against page keys: receipt, thankyou, thankyou-1, thank-you"
+      ]
+    },
+    {
+      "id": "dec_page_kit_target_landing",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "projected CampaignSpec page \"landing\" to Page Kit target \"landing.html\" with CPK page_type \"product\"",
+      "confidence": "high",
+      "evidence": [
+        "source path \"landing.html\" remains producer provenance",
+        "target path \"src/runtime-packet-demo/landing.html\" derives from CampaignSpec route \"landing/\" and public slug \"runtime-packet-demo\""
+      ]
+    },
+    {
+      "id": "dec_page_kit_target_checkout",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "projected CampaignSpec page \"checkout\" to Page Kit target \"checkout.html\" with CPK page_type \"checkout\"",
+      "confidence": "high",
+      "evidence": [
+        "source path \"checkout.html\" remains producer provenance",
+        "target path \"src/runtime-packet-demo/checkout.html\" derives from CampaignSpec route \"checkout/\" and public slug \"runtime-packet-demo\""
+      ]
+    },
+    {
+      "id": "dec_page_kit_target_upsell",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "projected CampaignSpec page \"upsell\" to Page Kit target \"upsell.html\" with CPK page_type \"upsell\"",
+      "confidence": "high",
+      "evidence": [
+        "source path \"upsell.html\" remains producer provenance",
+        "target path \"src/runtime-packet-demo/upsell.html\" derives from CampaignSpec route \"upsell/\" and public slug \"runtime-packet-demo\""
+      ]
+    },
+    {
+      "id": "dec_page_kit_target_receipt",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "projected CampaignSpec page \"receipt\" to Page Kit target \"receipt.html\" with CPK page_type \"receipt\"",
+      "confidence": "high",
+      "evidence": [
+        "source path \"receipt.html\" remains producer provenance",
+        "target path \"src/runtime-packet-demo/receipt.html\" derives from CampaignSpec route \"receipt/\" and public slug \"runtime-packet-demo\""
+      ]
+    },
+    {
+      "stage": "assembly",
+      "decision": "packages.main_package=1, shipping_methods.standard=1 from CampaignSpec (spec package ref_id 1, shipping ref_id 1); shipping_methods.free and bundle tiers 2x/3x removed \u2014 spec defines a single package and single shipping method"
+    },
+    {
+      "stage": "assembly",
+      "decision": "Order bumps removed (order_bump_variant=none, order_bump frontmatter deleted) \u2014 CampaignSpec has no prepurchase packages"
+    },
+    {
+      "stage": "assembly",
+      "decision": "PayPal/Klarna/Apple Pay/Google Pay removed from payment-methods include and express-checkout include removed; config.js expressCheckout.enabled=false \u2014 CampaignSpec available_payment_methods=[card] only"
+    },
+    {
+      "stage": "assembly",
+      "decision": "Upsell built from upsell-bundle-tier-cards shape as single-tier offer packageId=1 qty 1, vouchers removed \u2014 spec offers[] empty, single upsell package; stepper/pills/tier-cards variant pages and presell removed (not in funnel)"
+    },
+    {
+      "stage": "assembly",
+      "decision": "Routing meta campaign-rooted: /runtime-packet-demo/{checkout,upsell,receipt}/; sdk_version 0.4.18 from spec global_config"
+    },
+    {
+      "stage": "assembly",
+      "decision": "Landing = prepared source body passthrough on base.html layout (source is real standalone stub); CTA flow via next_url"
+    },
+    {
+      "stage": "assembly",
+      "decision": "Market-neutral shipping copy replaces USPS/USA claims in used include (available_shipping_countries=all); hardcoded phone placeholder now binds campaign.store_phone; unused stepper/pills offer includes retained for atomic family slice, flagged copy there is non-rendered"
+    }
+  ],
+  "build_brief": {
+    "schema_version": "campaigns-os-build-brief/v1",
+    "mode": "guided_draft",
+    "status": "needs_answers",
+    "input_path": null,
+    "normalized_path": ".campaign-runtime/input/campaign-build-brief.normalized.json",
+    "question_count": 2,
+    "gate_count": 0,
+    "questions": [
+      {
+        "id": "brand_palette_cta",
+        "priority": 2,
+        "field": "brand",
+        "question": "Which palette and CTA style should commerce pages use?",
+        "reason": "Commerce pages need a business-approved brand layer instead of silent template defaults. Missing brand.commerce_palette_source or brand.cta_style.",
+        "options": [
+          "landing palette + matched CTA",
+          "shared token file",
+          "template palette"
+        ],
+        "blocking": true
+      },
+      {
+        "id": "bundle_pricing_presentation",
+        "priority": 4,
+        "field": "offer_presentation.bundle_cards",
+        "question": "How should bundle cards present pricing: simple unit price, savings-led, or full accounting?",
+        "reason": "CampaignSpec owns prices; the brief owns which shopper-facing price story is appropriate. Missing offer_presentation.bundle_cards.primary_price.",
+        "options": [
+          "discounted unit price",
+          "savings-led",
+          "full accounting"
+        ],
+        "blocking": true
+      }
+    ],
+    "gates": []
+  },
+  "adapter_decisions": {
+    "raw_html_conversion_status": "pending",
+    "source_asset_strategy": "pagekit_campaign_asset_root",
+    "route_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "config_script_strategy": "campaign_asset",
+    "commerce_shell_adoption": "not_required",
+    "wrapper_policy": "strip_document_wrappers",
+    "frontmatter_policy": "pagekit_yaml_frontmatter",
+    "script_style_reference_policy": "frontmatter_or_campaign_asset",
+    "cta_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "layout_choice": "campaign_layout",
+    "template_files_copied": {
+      "status": "pending",
+      "required_groups": [
+        "pages",
+        "_includes",
+        "_layouts",
+        "assets/css",
+        "assets/js",
+        "frontmatter_vocabulary"
+      ],
+      "groups": [],
+      "paths": []
+    }
+  },
+  "proof_policy": {
+    "browser_qa_required": true,
+    "typed_card_depth": "common",
+    "localhost_development_domain_allowed": true,
+    "non_localhost_origin_allowlist_required": true,
+    "order_path_depth": "common",
+    "operator_approval_state": "not_required_global_test_cards",
+    "qa_portal_publish_default": true
+  },
+  "theme": {
+    "status": "skipped",
+    "css_path": null,
+    "load_order": "unknown",
+    "commerce_pages": [],
+    "evidence": [
+      "theme inspect completed; no generated brand theme was applied during prepare-build."
+    ],
+    "warnings": [],
+    "repair_loop_defect": null
+  },
+  "evidence": [],
+  "blockers": [],
+  "warnings": [
+    {
+      "code": "SOURCE_COMMERCE_REVIEW",
+      "stage": "assembly",
+      "message": "Source HTML contains possible commerce zones. Preserve catalog-owned runtime surfaces."
+    },
+    {
+      "code": "BUILD_BRIEF_GUIDED_QUESTIONS",
+      "stage": "prepare_build",
+      "message": "Generated Campaign Build Brief draft has 2 high-impact question(s) to confirm before first-shot assembly."
+    }
+  ],
+  "next": {
+    "stage": "assembly",
+    "owner": "next-campaigns-build",
+    "action": "Run build with this packet and context."
+  }
+}

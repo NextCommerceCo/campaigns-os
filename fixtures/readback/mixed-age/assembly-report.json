@@ -1,0 +1,20 @@
+{
+  "schema_version": "campaign-runtime-assembly-report/v0",
+  "run_id": "run-fixture-mixed-age-0001",
+  "generated_at": "2026-06-23T00:00:00.000Z",
+  "status": "completed",
+  "identity": {
+    "map_id": "fixture-mixed-age-b7k3",
+    "public_route_slug": "fixture-mixed-age"
+  },
+  "template_family": "olympus",
+  "stages": {
+    "prepare_build": { "stage": "prepare_build", "status": "completed" },
+    "doctor": { "stage": "doctor", "status": "completed" },
+    "assembly": { "stage": "assembly", "status": "completed" },
+    "polish": { "stage": "polish", "status": "completed" }
+  },
+  "blockers": [],
+  "warnings": [],
+  "_fixture_note": "Synthetic. This report is the STALE half of the mixed-age case: its generated_at is older than the HEAD movement the test writes into the reflog, while the doctor output beside it is newer. Under the v1 rule (newest artifact only) this set reported stale: false; under v2 it reports stale: true and names this artifact."
+}

@@ -1,0 +1,286 @@
+{
+  "ok": true,
+  "status": "ready_with_warnings",
+  "errors": [],
+  "warnings": [
+    {
+      "code": "campaign.allowed_domains_confirmed",
+      "message": "Non-localhost preview/production origins are not confirmed in the Campaigns App SDK origin allowlist. SDK runtime checks may be blocked after deploy."
+    },
+    {
+      "code": "spec.store_profile.placeholder_store_url",
+      "message": "CampaignSpec campaign.store_url \"https://store.example.com\" looks like a local/placeholder store, not a live storefront. Localhost is valid as a Development-domain QA origin, but a real shopper cannot transact against it. Set the merchant's production store_url before launch."
+    },
+    {
+      "code": "spec.store_profile.payment_methods_default_on",
+      "message": "Starter-template checkout pages enable paypal, klarna, apple_pay, google_pay in the payment-methods include by default, but the CampaignSpec does not list them in available_payment_methods/available_express_payment_methods. If you build on a starter template family, remove the show_* arg(s) from the checkout payment-methods include (or add the method to the spec) so unsupported methods do not ship."
+    },
+    {
+      "code": "routing_meta.runtime_root",
+      "message": "CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like \"/runtime-packet-demo/upsell/\" for next-success-url, next-upsell-accept-url, next-upsell-decline-url; found checkout:next-success-url=upsell/; upsell:next-upsell-accept-url=receipt/; upsell:next-upsell-decline-url=receipt/."
+    },
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: packages.main_package=1"
+    },
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: packages.prepurchase_1=7"
+    },
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: packages.prepurchase_2=9"
+    },
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: shipping_methods.standard=2"
+    },
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: shipping_methods.free=1"
+    },
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: upsell_offer.package_id=3"
+    },
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: upsell_offer.vouchers_json=[\"UP50\"]"
+    },
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: upsell_bundle_tiers packageId=3"
+    },
+    {
+      "code": "frontmatter.replaceFromSpecOrApi",
+      "message": "Must be replaced from CampaignSpec/API: packages.*"
+    },
+    {
+      "code": "frontmatter.replaceFromSpecOrApi",
+      "message": "Must be replaced from CampaignSpec/API: shipping_methods.*"
+    },
+    {
+      "code": "frontmatter.replaceFromSpecOrApi",
+      "message": "Must be replaced from CampaignSpec/API: bundles[].shipping_method"
+    },
+    {
+      "code": "frontmatter.replaceFromSpecOrApi",
+      "message": "Must be replaced from CampaignSpec/API: order_bump.*.package_id"
+    },
+    {
+      "code": "frontmatter.replaceFromSpecOrApi",
+      "message": "Must be replaced from CampaignSpec/API: upsell_offer.*"
+    },
+    {
+      "code": "frontmatter.replaceFromSpecOrApi",
+      "message": "Must be replaced from CampaignSpec/API: upsell_bundle_tiers[].items_json"
+    },
+    {
+      "code": "frontmatter.replaceFromSpecOrApi",
+      "message": "Must be replaced from CampaignSpec/API: upsell_bundle_tiers[].vouchers_json"
+    },
+    {
+      "code": "frontmatter.removeWhenUnsupported",
+      "message": "Remove when unsupported by target campaign: bundles[].shipping_method when no tier-specific shipping exists"
+    },
+    {
+      "code": "frontmatter.removeWhenUnsupported",
+      "message": "Remove when unsupported by target campaign: bump includes when prepurchase packages are absent"
+    },
+    {
+      "code": "frontmatter.removeWhenUnsupported",
+      "message": "Remove when unsupported by target campaign: unsupported payment method rows"
+    },
+    {
+      "code": "frontmatter.removeWhenUnsupported",
+      "message": "Remove when unsupported by target campaign: upsell pages not present in the funnel"
+    },
+    {
+      "code": "market_copy.us_specific_claims",
+      "message": "Campaign market scope needs copy review (available_shipping_countries=all), and source/template files contain US-specific starter copy: target:_includes/shipping-address-form.html:22 \"US-only shipping\"; target:_includes/upsell-bundle-stepper-offer.html:145 \"USPS\"; target:_includes/upsell-bundle-stepper-offer.html:147 \"ships from the USA\"; target:_includes/upsell-bundle-tier-cards-offer.html:130 \"USPS\"; target:_includes/upsell-bundle-tier-cards-offer.html:131 \"ships from the USA\"; target:_includes/upsell-bundle-tier-pills-offer.html:148 \"USPS\"; target:_includes/upsell-bundle-tier-pills-offer.html:149 \"ships from the USA\". Confirm or replace this copy; do not remove it automatically."
+    },
+    {
+      "code": "copy.hardcoded_phone",
+      "message": "Campaign Store Profile phone is \"1-800-555-0100\", but prepared HTML contains different hardcoded phone numbers outside skipped regions: target:_includes/customer-info-form.html:55 \"201-555-0123\". Use the campaign.store_phone binding or remove static phone strings."
+    },
+    {
+      "code": "build_brief.guided_questions",
+      "message": "Generated Campaign Build Brief draft has 2 high-impact business question(s) to confirm: brand_palette_cta, bundle_pricing_presentation."
+    },
+    {
+      "code": "deploy.preview_url",
+      "message": "No preview or production URL yet. QA remains blocked after build/polish."
+    },
+    {
+      "code": "context.prompts_required.BUILD_BRIEF_BRAND_PALETTE_CTA",
+      "message": "Which palette and CTA style should commerce pages use?"
+    },
+    {
+      "code": "context.prompts_required.BUILD_BRIEF_BUNDLE_PRICING_PRESENTATION",
+      "message": "How should bundle cards present pricing: simple unit price, savings-led, or full accounting?"
+    }
+  ],
+  "ready": [
+    "Build Packet schema campaign-runtime-build-packet/v0",
+    "Template family \"olympus\" is certified (commerce catalog + brand contract)",
+    "Target campaign output directory exists",
+    "Target page-kit dependency ^0.2.0",
+    "Local CampaignSpec parsed",
+    "CampaignSpec spec_identity includes map_id and public_route_slug",
+    "CampaignSpec public page routes are Page Kit-compatible",
+    "CampaignSpec required Store Profile fields are present for page-kit campaigns.json",
+    "Target campaigns.json SDK version matches CampaignSpec (0.4.18)",
+    "CampaignSpec shipping countries: all countries",
+    "Source mappings cover active CampaignSpec pages",
+    "All mapped CampaignSpec pages are build candidates",
+    "CampaignSpec package purchase availability has no unavailable package refs in active build data",
+    "Built HTML structure and commerce refs checked in _site/runtime-packet-demo/ for 4 page(s)",
+    "Built SDK meta tags checked in _site/runtime-packet-demo/ for 2 page(s)",
+    "Page Kit build summary verified for \"runtime-packet-demo\": 4 page(s) built, no build errors or shape warnings",
+    "Built routes match CampaignSpec page routes (4/4 verified)",
+    "Campaigns API key available via CampaignSpec campaign.campaigns_api_key",
+    "Commerce catalog sharedFrontmatterVocabulary loaded",
+    "Template agentContract loaded for olympus",
+    "Template brand/residue/pricing contract loaded for olympus",
+    "Template family inventory matrix loaded for olympus",
+    "olympus upsell offers have code-backed discounts or no code-less discount offer binding requirement",
+    "source_html.adapter_contract adapter decision fields loaded",
+    "qa.proof_policy loaded: browser=true, typed_card_depth=common, order_path_depth=common",
+    "Build context schema campaign-runtime-build-context/v0",
+    "Source commerce zones inspected; no SDK-owned commerce shell placeholders declared",
+    "context.adapter_decisions adapter decision fields loaded",
+    "Brand theme context missing (none confidence)",
+    "Assembly report schema campaign-runtime-assembly-report/v0",
+    "Assembly report theme skipped",
+    "report.adapter_decisions adapter decision fields loaded",
+    "report.proof_policy loaded: browser=true, typed_card_depth=common, order_path_depth=common",
+    "Theme gate passed: brand layer applied after next-core.css on commerce pages.",
+    "Campaign CSS has no display:none rules on olympus pricing surfaces"
+  ],
+  "derived": {
+    "packet_path": "/tmp/fixture-campaign/target/campaign-runtime.build.json",
+    "map_id": "runtime-packet-demo-k9x2",
+    "public_route_slug": "runtime-packet-demo",
+    "template_family": "olympus",
+    "source_root": "/tmp/fixture-campaign/fixture/source-html",
+    "target_repo": "/tmp/fixture-campaign/target",
+    "target_output_dir": "/tmp/fixture-campaign/target/src/runtime-packet-demo",
+    "spec_path": "/tmp/fixture-campaign/fixture/campaignspec.v42.basic.json",
+    "doctor_checks": [
+      "campaign-spec.rule-registry",
+      "spec.identity_export",
+      "spec.public_routes",
+      "spec.store_profile",
+      "page_kit.sdk_version",
+      "spec.shipping_countries",
+      "spec.routing_meta_tags",
+      "source_html.coverage",
+      "spec.package_availability",
+      "built_output.pages",
+      "built_output.sdk_meta_tags",
+      "built_output.build_summary",
+      "built_output.route_drift",
+      "built_output.content_residue",
+      "built_output.proof_attestation",
+      "campaign.api_key",
+      "assembly.commerce_catalog",
+      "market_copy",
+      "source_html.adapter_contract",
+      "qa.proof_policy",
+      "build_brief.artifact",
+      "context.shape",
+      "assembly_report.shape"
+    ],
+    "scaffold_required": false,
+    "scaffold_reason": null,
+    "scope": {
+      "mode": "full",
+      "built_pages": [
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "role": "visual",
+          "route": "landing/",
+          "source_path": "landing.html"
+        },
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "role": "runtime",
+          "route": "checkout/",
+          "source_path": "checkout.html"
+        },
+        {
+          "page_id": "upsell",
+          "type": "upsell",
+          "role": "runtime",
+          "route": "upsell/",
+          "source_path": "upsell.html"
+        },
+        {
+          "page_id": "receipt",
+          "type": "thankyou",
+          "role": "runtime",
+          "route": "receipt/",
+          "source_path": "receipt.html"
+        }
+      ],
+      "out_of_scope_pages": [],
+      "out_of_scope_reasons": [],
+      "previewable_routes": [
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing/"
+        },
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout/"
+        },
+        {
+          "page_id": "upsell",
+          "type": "upsell",
+          "route": "upsell/"
+        },
+        {
+          "page_id": "receipt",
+          "type": "thankyou",
+          "route": "receipt/"
+        }
+      ],
+      "blocked_runtime_pages": []
+    },
+    "theme_gate": {
+      "status": "pass",
+      "code": "theme_gate.nothing_generatable",
+      "reason": "No generatable brand theme was found; the gate passes without a brand layer.",
+      "commerce_pages": [
+        "checkout",
+        "upsell",
+        "receipt"
+      ],
+      "waiver": null,
+      "required_actions": []
+    },
+    "polish_gate": {
+      "status": "not_applicable",
+      "code": "polish.not_applicable",
+      "reason": "Assembly is not completed yet; polish evidence is required after build completion."
+    }
+  },
+  "next": {
+    "stage": "assembly",
+    "status": "ready_with_warnings",
+    "owner": "build",
+    "default_skill": "next-campaigns-build",
+    "command": "campaigns-os next build --packet /tmp/fixture-campaign/target/campaign-runtime.build.json",
+    "actions": [
+      "Use the template agentContract to replace demo values from CampaignSpec/API."
+    ],
+    "blocked_stages": [
+      "qa",
+      "runtime-sdk-verification"
+    ]
+  }
+}

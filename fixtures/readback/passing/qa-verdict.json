@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "run_id": "FIXTUREREADYRUN0000000000",
+  "campaign_slug": "runtime-packet-demo-k9x2",
+  "campaign_ref_id": 424242,
+  "spec_version": "4.2",
+  "spec_hash": "sha256:ce1d4ed5dd469870ee6ce91b000613e0b760384e3318b347d34822d3948c94bb",
+  "started_at": "2026-08-02T06:00:00.000Z",
+  "completed_at": "2026-08-02T06:02:00.000Z",
+  "runtime": "campaigns-os-node-qa@0.1.0-alpha.0",
+  "operator": "operator@local",
+  "base_url": "http://localhost:3000/runtime-packet-demo/",
+  "disposition": "ready",
+  "assertions": [
+    {
+      "id": "polish.evidence_complete",
+      "family": "polish_gate",
+      "page": "campaign",
+      "status": "pass",
+      "expected": "current structured Polish evidence",
+      "actual": "Polish evidence is current for the build fingerprint."
+    },
+    {
+      "id": "theme_gate.nothing_generatable",
+      "family": "theme_gate",
+      "page": "campaign",
+      "status": "pass",
+      "expected": "theme gate pass or not applicable",
+      "actual": "No generatable brand theme was found; the gate passes without a brand layer."
+    },
+    {
+      "id": "funnel-flow.entry_reachable",
+      "family": "funnel-flow",
+      "page": "landing",
+      "status": "pass",
+      "expected": "entry URL reachable",
+      "actual": "Landing responded 200."
+    },
+    {
+      "id": "meta-tags.routing_meta_present",
+      "family": "meta-tags",
+      "page": "checkout",
+      "status": "pass",
+      "expected": "routing meta tags present",
+      "actual": "Campaign-rooted routing meta verified."
+    }
+  ],
+  "test_orders": [],
+  "exceptions": []
+}
