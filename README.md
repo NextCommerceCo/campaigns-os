@@ -357,6 +357,7 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 - [Small PR Review Path](docs/small-pr-review-path.md)
 - [Run Telemetry](docs/workflow-findings-sidecar.md) — per-run Run Record (system signal + workflow findings) tagged by improvement surface; captured locally always, remitted to Next Commerce only with up-front opt-out consent
 - [Versioning](docs/versioning.md)
+- [ADR 0002: One shipping path](docs/adr/0002-one-shipping-path-campaigns-agent-fold.md) — the agent surface (skills, charter, declared effects, readback) lives in this repository; Campaigns Agent folds in
 
 ## Status
 
