@@ -55,6 +55,8 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
+import Ajv2020 from "ajv/dist/2020.js";
+
 import {
   ARTIFACT_TITLES,
   DEFAULT_RELATIVE_PATHS,
@@ -634,7 +636,7 @@ test("artifacts at or after the HEAD movement are not stale", (t) => {
   const output = projectReadback(views, staleness);
   assert.equal(staleness.stale, false);
   assert.ok(!output.includes("STALE ARTIFACTS"));
-  assert.ok(output.includes("is not older than the last recorded HEAD movement"));
+  assert.ok(output.includes("none of those is older than the last recorded HEAD movement"));
 });
 
 test("a sub-second artifact time leaves the whole-second HEAD comparison unchanged", (t) => {
@@ -1543,7 +1545,7 @@ test("#130: the text view names each stale artifact", (t) => {
   const { views, staleness, packetSelection } = projectTarget(root);
   const output = projectReadback(views, staleness, packetSelection);
   assert.ok(output.includes("*** STALE ARTIFACTS ***"));
-  assert.ok(output.includes("after 1 of 2 loaded artifact(s):"));
+  assert.ok(output.includes("of 2 loaded artifact(s), 2 could be compared and 1 predate it:"));
   assert.ok(output.includes(`    ${ARTIFACT_TITLES.report} (generated 2026-06-23T00:00:00Z)`));
   assert.ok(!output.includes(`    ${ARTIFACT_TITLES.doctor} (generated`));
 });
@@ -1570,7 +1572,9 @@ test("#130: every loaded artifact stale reports every key", (t) => {
   assert.equal(payload.staleness.stale, true);
   assert.equal(payload.clean, false);
   const { views, staleness } = projectTarget(root);
-  assert.ok(projectReadback(views, staleness).includes("after 2 of 2 loaded artifact(s):"));
+  assert.ok(
+    projectReadback(views, staleness).includes("of 2 loaded artifact(s), 2 could be compared and 2 predate it:"),
+  );
 });
 
 test("#130: every loaded artifact fresh reports no stale key", (t) => {
@@ -1585,7 +1589,11 @@ test("#130: every loaded artifact fresh reports no stale key", (t) => {
   assert.equal(payload.staleness.artifacts.report.stale, false);
   assert.equal(payload.clean, true);
   const { views, staleness } = projectTarget(root);
-  assert.ok(projectReadback(views, staleness).includes("every loaded artifact (2) is not older than"));
+  assert.ok(
+    projectReadback(views, staleness).includes(
+      "of 2 loaded artifact(s), 2 could be compared, and none of those is older than",
+    ),
+  );
 });
 
 test("#130: an unparseable generated_at stays unknown while a sibling is stale", (t) => {
@@ -1601,6 +1609,7 @@ test("#130: an unparseable generated_at stays unknown while a sibling is stale",
   assert.ok(!("doctor" in payload.staleness.artifacts));
   assert.ok(!("doctor" in payload.staleness.artifact_times));
   assert.deepEqual(payload.staleness.stale_keys, ["report"]);
+  assert.deepEqual(payload.staleness.unparseable_keys, ["doctor"]);
   assert.equal(payload.staleness.stale, true);
   assert.equal(payload.staleness.computable, true);
   assert.equal(payload.clean, false);
@@ -1615,7 +1624,154 @@ test("#130: a sole artifact with no parseable generated_at is not computable", (
   assert.equal(payload.staleness.stale, false);
   assert.deepEqual(payload.staleness.artifacts, {});
   assert.deepEqual(payload.staleness.stale_keys, []);
+  assert.deepEqual(payload.staleness.unparseable_keys, ["doctor"]);
   assert.equal(payload.staleness.newest_key, null);
+  assert.equal(payload.clean, false);
+});
+
+// ---------------------------------------------------------------------------
+// Unknown age: a recorded generated_at this readback cannot parse
+//
+// The hole the per-artifact rule left open. An artifact whose recorded age does
+// not parse leaves the comparison, so with a FRESH sibling beside it the
+// aggregate found nothing stale and the projection reported clean — an artifact
+// whose currency was never established, inside a payload that says every
+// artifact is at least as new as the checkout. The parser is a port of
+// CPython's and any value CPython refuses lands here, so the rule is stated
+// over the class (recorded, did not parse) rather than over one more input
+// shape: such an artifact is named and clean is false. An artifact that
+// recorded NO generated_at at all is the other case and keeps its behaviour.
+// ---------------------------------------------------------------------------
+
+/** The reviewer's reproduction: one fresh artifact, one of unknown age. */
+function unknownAgeTarget(t, generatedAt) {
+  const root = tempRoot(t, "readback-unknown-age-");
+  writeReport(root, { generatedAt });
+  writeDoctor(root, { generatedAt: "2026-09-22T12:00:00Z" });
+  writeReflog(join(root, ".git"), Math.floor(Date.parse("2026-09-22T11:00:00Z") / 1000));
+  return root;
+}
+
+test("an unparseable generated_at beside a FRESH sibling is not clean", (t) => {
+  // Verbatim from the finding: doctor generated 12:00Z, HEAD moved 11:00Z, and
+  // the report's generated_at is "last Tuesday". Nothing here is stale — the
+  // one artifact that could be compared is newer than the movement — and that
+  // is exactly why the old rule returned clean: true for it.
+  const payload = targetPayload(unknownAgeTarget(t, "last Tuesday"));
+  assert.equal(payload.staleness.stale, false);
+  assert.deepEqual(payload.staleness.stale_keys, []);
+  assert.equal(payload.staleness.computable, true);
+  assert.deepEqual(payload.staleness.unparseable_keys, ["report"]);
+  assert.deepEqual(Object.keys(payload.staleness.artifacts), ["doctor"]);
+  assert.equal(payload.clean, false);
+});
+
+test("the unparseable artifact's row names the value's shape, not the value", (t) => {
+  const payload = targetPayload(unknownAgeTarget(t, "last Tuesday"));
+  const row = payload.artifacts.find((entry) => entry.key === "report");
+  assert.equal(row.state, "loaded");
+  assert.ok(row.detail.includes("generated_at is a 12-character string that is not an ISO-8601 instant"), row.detail);
+  assert.ok(row.detail.includes("age could not be compared"), row.detail);
+  // The row describes the value; it does not reproduce it, because a foreign or
+  // hand-edited artifact can carry an arbitrarily long string there.
+  assert.ok(!row.detail.includes("last Tuesday"), row.detail);
+  assert.equal(
+    payload.artifacts.find((entry) => entry.key === "doctor").detail,
+    "",
+    "an artifact whose age WAS compared keeps an empty detail",
+  );
+});
+
+test("the text view names the artifact of unknown age and counts loaded artifacts", (t) => {
+  const { views, staleness, packetSelection } = projectTarget(unknownAgeTarget(t, "last Tuesday"));
+  const output = projectReadback(views, staleness, packetSelection);
+  assert.ok(output.includes("*** UNKNOWN ARTIFACT AGE ***"), output);
+  const shape = "a 12-character string that is not an ISO-8601 instant";
+  assert.ok(output.includes(`    ${ARTIFACT_TITLES.report} (generated_at is ${shape})`), output);
+  // The summary sentence counts the LOADED artifacts and says how many of them
+  // the comparison examined; rendering the comparable count as the loaded one
+  // asserted something about an artifact it never looked at.
+  assert.ok(output.includes("of 2 loaded artifact(s), 1 could be compared"), output);
+  assert.ok(!output.includes("every loaded artifact (1)"), output);
+});
+
+test("a generated_at of the wrong type is unknown age too, described by type", (t) => {
+  // The rule is over the class, not over string shapes: a number, a null, an
+  // object and an array are all recorded ages that did not parse. `null` is
+  // written through the fixture directly, because the helper's `null` means
+  // "omit the key" — which is the other case entirely.
+  for (const [value, shape] of [
+    [1758542400, "a number"],
+    [null, "null"],
+    [{ iso: "2026-09-22T10:00:00Z" }, "an object"],
+    [["2026-09-22T10:00:00Z"], "an array of 1 item(s)"],
+    ["", "an empty string"],
+  ]) {
+    const root = unknownAgeTarget(t, value);
+    if (value === null) {
+      writeFileSync(
+        join(root, ".campaign-runtime", "assembly-report.json"),
+        JSON.stringify({
+          schema_version: "campaign-runtime-assembly-report/v0",
+          status: "completed",
+          stages: {},
+          generated_at: null,
+        }),
+        "utf8",
+      );
+    }
+    const payload = targetPayload(root);
+    assert.deepEqual(payload.staleness.unparseable_keys, ["report"], JSON.stringify(value));
+    assert.equal(payload.clean, false, JSON.stringify(value));
+    const row = payload.artifacts.find((entry) => entry.key === "report");
+    assert.ok(row.detail.includes(`generated_at is ${shape}`), row.detail);
+  }
+});
+
+test("an artifact with NO generated_at key at all keeps today's behaviour", (t) => {
+  // The distinction the rule turns on: this artifact recorded no age, so there
+  // is no claim about its currency the readback failed to check. It stays out
+  // of the comparison, it is not named as unknown age, and the fresh sibling
+  // carries a clean projection exactly as it did before.
+  const root = tempRoot(t);
+  writeReport(root, { generatedAt: null }); // the helper omits the key entirely
+  writeDoctor(root, { generatedAt: "2026-09-22T12:00:00Z" });
+  writeReflog(join(root, ".git"), Math.floor(Date.parse("2026-09-22T11:00:00Z") / 1000));
+  const payload = targetPayload(root);
+  assert.equal(states(payload).report, "loaded");
+  assert.deepEqual(payload.staleness.unparseable_keys, []);
+  assert.ok(!("report" in payload.staleness.artifacts));
+  assert.equal(payload.artifacts.find((entry) => entry.key === "report").detail, "");
+  assert.equal(payload.staleness.computable, true);
+  assert.equal(payload.clean, true);
+  const { views, staleness } = projectTarget(root);
+  assert.ok(!projectReadback(views, staleness).includes("UNKNOWN ARTIFACT AGE"));
+});
+
+test("a sole artifact of unknown age is not computable and is still named", (t) => {
+  const root = tempRoot(t);
+  writeReport(root, { generatedAt: "last Tuesday" });
+  writeReflog(join(root, ".git"), EPOCH_AFTER_ARTIFACTS);
+  const payload = targetPayload(root);
+  assert.equal(payload.staleness.computable, false);
+  assert.equal(payload.staleness.stale, false);
+  assert.deepEqual(payload.staleness.unparseable_keys, ["report"]);
+  assert.equal(payload.clean, false);
+  const { views, staleness } = projectTarget(root);
+  const output = projectReadback(views, staleness);
+  assert.ok(output.includes("no loaded artifact carries a parseable generated_at"), output);
+  assert.ok(output.includes("*** UNKNOWN ARTIFACT AGE ***"), output);
+});
+
+test("unparseable_keys is in render order, not discovery order", (t) => {
+  const root = tempRoot(t);
+  writeReport(root, { generatedAt: "last Tuesday" });
+  writeDoctor(root, { generatedAt: "whenever" });
+  writePacket(root, "campaign-runtime.build.json", "2026-09-22T12:00:00Z", "order-e5f6");
+  writeReflog(join(root, ".git"), Math.floor(Date.parse("2026-09-22T11:00:00Z") / 1000));
+  const payload = targetPayload(root);
+  // Render order is packet, doctor, context, report, qa_verdict, findings.
+  assert.deepEqual(payload.staleness.unparseable_keys, ["doctor", "report"]);
   assert.equal(payload.clean, false);
 });
 
@@ -1692,12 +1848,31 @@ test("--example refuses a target or an override with exit code two", () => {
     ["--example", join(FIXTURES, "blocked-verdict")],
     ["--example", "--packet", join(FIXTURES, "blocked-verdict", "campaign-runtime.build.json")],
     ["--example", "--report", join(FIXTURES, "blocked-verdict", "assembly-report.json")],
+    // A target written after --json is swallowed by that flag instead, which
+    // used to refuse with "--json is a boolean flag and takes no value" — true,
+    // but it points at the wrong flag. The --example refusal wins, and names
+    // the value it found.
+    ["--example", "--json", join(FIXTURES, "blocked-verdict")],
   ]) {
     const { code, out, err } = runMain(argv);
     assert.equal(code, 2, argv.join(" "));
     assert.equal(out, "");
     assert.ok(err.includes("takes no target or path override"), err);
   }
+});
+
+test("--example names the target --json swallowed, and still refuses a bare --json value without --example", () => {
+  const target = join(FIXTURES, "blocked-verdict");
+  const { code, err } = runMain(["--example", "--json", target]);
+  assert.equal(code, 2);
+  assert.ok(err.includes(`--json ${target}`), err);
+  assert.ok(!err.includes("--json is a boolean flag"), err);
+
+  // Without --example there is no better answer than the boolean-flag one: the
+  // value belongs to --json and nothing else in the argv explains it.
+  const plain = runMain(["--json", target]);
+  assert.equal(plain.code, 2);
+  assert.ok(plain.err.includes("--json is a boolean flag and takes no value."), plain.err);
 });
 
 test("--example writes nothing under the packaged sample", () => {
@@ -1910,6 +2085,16 @@ const ISO_REFUSED = [
   ["2026-09-2", "C: parse_digits wants two day digits; the pure-Python path fails its own length assert here"],
   ["2026091", "C: same, on the basic form — pure Python would read this as 2026-09-01"],
   [" 2026-09-22T10:00:00Z", "C: parse_digits refuses the leading space that int() would strip"],
+  [
+    "2026-09-22T10:00+05-30",
+    "READ: the offset scan picks by character and not by position — the `-` wins over the earlier " +
+      "`+`, and the `10:00+05` it leaves behind is not a time",
+  ],
+  [
+    "2026-09-22T10:00Z-05",
+    "READ: same order against a `Z`: the split is at the `-`, and `10:00Z` is not a time either",
+  ],
+  ["2026-09-22T-10:00", "READ: an offset character at index 0 leaves an empty time, which is malformed, not absent"],
 ];
 
 test("the ISO grammar accepts exactly the forms datetime.fromisoformat accepts", () => {
@@ -2155,6 +2340,59 @@ test("serializeStaleness renders every instant through formatUtc", (t) => {
     assert.match(entry.generated_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
   }
   assert.match(serialized.head_time, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+});
+
+// ---------------------------------------------------------------------------
+// The published schema is a gate, not a document
+//
+// schemas/campaigns-os-readback.v2.schema.json is hashed into the supported
+// surface, but a hash only says the FILE changed. Nothing bound the emitter to
+// it, so a field added, renamed or dropped in buildJsonPayload would have
+// shipped as a silent v2 break with the schema still passing its own checksum.
+// These cases compile the published file with the repository's own ajv and put
+// the live payloads through it, including the two the unknown-age rule added.
+// ---------------------------------------------------------------------------
+
+const validateReadbackSchema = new Ajv2020({ strict: true, allErrors: true }).compile(
+  JSON.parse(readFileSync(join(ROOT, "schemas/campaigns-os-readback.v2.schema.json"), "utf8")),
+);
+
+/** Assert one payload against the published schema, naming every error. */
+function assertMatchesSchema(payload, label) {
+  const valid = validateReadbackSchema(payload);
+  assert.ok(valid, `${label}: ${JSON.stringify(validateReadbackSchema.errors, null, 2)}`);
+}
+
+test("the --example payload validates against the published v2 schema", () => {
+  const { code, payload, err } = jsonFor(["--example", "--json"]);
+  assert.equal(code, 0, err);
+  assertMatchesSchema(payload, "--example --json");
+});
+
+test("a mixed-age payload validates against the published v2 schema", (t) => {
+  // Every staleness field populated: a computable comparison, one stale key,
+  // per-artifact verdicts and a head_time.
+  const payload = targetPayload(mixedAgeTarget(t));
+  assert.equal(payload.staleness.stale, true);
+  assertMatchesSchema(payload, "mixed-age target");
+});
+
+test("an unknown-age payload validates against the published v2 schema", (t) => {
+  // The fields this repair added: unparseable_keys populated, and a loaded
+  // artifact row carrying a detail string where v2 previously promised "".
+  const payload = targetPayload(unknownAgeTarget(t, "last Tuesday"));
+  assert.deepEqual(payload.staleness.unparseable_keys, ["report"]);
+  assertMatchesSchema(payload, "unparseable generated_at beside a fresh sibling");
+});
+
+test("the schema is a gate: a payload missing a staleness field is refused", (t) => {
+  // The negative control. Without it these cases would pass against a schema
+  // that had quietly stopped requiring anything.
+  const payload = targetPayload(mixedAgeTarget(t));
+  for (const field of ["stale_keys", "unparseable_keys", "artifacts", "head_time"]) {
+    const { [field]: _dropped, ...rest } = payload.staleness;
+    assert.equal(validateReadbackSchema({ ...payload, staleness: rest }), false, field);
+  }
 });
 
 test("partitionAssertions returns empty buckets with no verdict loaded", () => {

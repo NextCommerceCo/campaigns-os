@@ -34,7 +34,11 @@
  * `stale: false`. Here every loaded artifact with a parseable `generated_at`
  * gets its own verdict, `stale_keys` names the stale ones in render order, and
  * the aggregate `stale` is true when ANY of them is stale. That is a change of
- * meaning in a published field, so the payload is `v2`, not `v1`.
+ * meaning in a published field, so the payload is `v2`, not `v1`. An artifact
+ * that recorded a `generated_at` this readback cannot parse is the same defect
+ * one step further out — its age was never established, so it is named in
+ * `unparseable_keys` and makes `clean` false rather than leaving a fresh
+ * sibling to speak for it.
  *
  * Same-user artifact files are inside the repository's trust boundary, so this
  * module deliberately has no symlink or tamper ceremony: a caller who wants to
@@ -330,6 +334,11 @@ const MAX_OFFSET_MICROS = 24n * 3600n * MICROS_PER_SECOND - 1n;
 // (Lib/datetime.py `_FRACTION_CORRECTION`).
 const FRACTION_CORRECTION = [100000, 10000, 1000, 100, 10];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+// The characters that can start a UTC offset, in the order `_parse_isoformat_time`
+// consults them: a `-` anywhere in the time wins over a `+` or a `Z` that comes
+// earlier, and `Z` is reached only when neither sign appears. See the scan in
+// parseIsoformatTime for the measurement behind that order.
+const OFFSET_MARKERS = ["-", "+", "Z"];
 
 function isAsciiDigit(code) {
   return code >= 48 && code <= 57;
@@ -527,26 +536,52 @@ function parseHhMmSsFf(text) {
  * CPython `_parse_isoformat_time`: the time of day and its UTC offset in whole
  * microseconds, else null.
  *
- * The offset accepts `Z`, `±HH`, `±HHMM`, `±HH:MM`, `±HHMMSS`, `±HH:MM:SS` and
- * any of the last four with a fraction, and its magnitude must stay strictly
- * under 24 hours — the bound `timezone()` enforces on the far side of the
- * Python call, which is why `+25:00` is a refusal and not an offset.
+ * The offset accepts `±HH`, `±HHMM`, `±HH:MM`, `±HHMMSS`, `±HH:MM:SS` and any
+ * of the last four with a fraction, and its magnitude must stay strictly under
+ * 24 hours — the bound `timezone()` enforces on the far side of the Python
+ * call, which is why `+25:00` is a refusal and not an offset. A trailing `Z`
+ * never reaches here: `parseIsoInstant` has already rewritten it to `+00:00`.
  */
 function parseIsoformatTime(text) {
   const length = text.length;
   if (length < 2) return null;
-  // CPython's own scan: the first `-`, else the first `+`, else the first `Z`.
-  const tzPos = text.indexOf("-") + 1 || text.indexOf("+") + 1 || text.indexOf("Z") + 1;
-  const comps = parseHhMmSsFf(tzPos > 0 ? text.slice(0, tzPos - 1) : text);
+  // Where the offset starts, as CPython's
+  // `tz_pos = (tstr.find('-') + 1 or tstr.find('+') + 1 or tstr.find('Z') + 1)`
+  // actually behaves — written as an explicit scan, and with "absent" kept
+  // distinct from "at index 0" rather than riding on `+ 1` being falsy only for
+  // `-1`.
+  //
+  // Measured against the pure-Python `_parse_isoformat_time` in this machine's
+  // CPython 3.11.15: the chain picks by CHARACTER, not by position. A `-`
+  // anywhere wins over an earlier `+` or `Z` — `10:00+05-30` splits at the `-`
+  // and then refuses `10:00+05` as a time, and `10:00Z-05` refuses `10:00Z` the
+  // same way — and `Z` is consulted only when neither sign appears at all.
+  // (CPython's own comment there calls the chain equivalent to
+  // `re.search('[+-Z]', tstr)`, which would be the lowest position of the
+  // three; it is not what the chain does, and the rows in the ISO table measure
+  // the chain.) An offset character at index 0 leaves an empty time, which
+  // `_parse_hh_mm_ss_ff` refuses — the same refusal CPython gives `-10:00`.
+  let offsetAt = -1;
+  for (const marker of OFFSET_MARKERS) {
+    const at = text.indexOf(marker);
+    if (at !== -1) {
+      offsetAt = at;
+      break;
+    }
+  }
+  const comps = parseHhMmSsFf(offsetAt === -1 ? text : text.slice(0, offsetAt));
   if (comps === null) return null;
   let offsetMicros = 0n;
-  if (tzPos === length && text.endsWith("Z")) {
-    // The bare `Z` form. `_parse_iso_timestamp` rewrites a trailing `Z` to
-    // `+00:00` before this sees it, so this branch carries the grammar rather
-    // than any value Campaigns OS emits.
-    offsetMicros = 0n;
-  } else if (tzPos > 0) {
-    const tzText = text.slice(tzPos);
+  if (offsetAt !== -1) {
+    // CPython's `tz_pos == len_str and tstr[-1] == 'Z'` branch is not ported:
+    // `parseIsoInstant` rewrites a trailing `Z` to `+00:00` before this
+    // function ever sees the time, so by construction no fragment reaching here
+    // ends in `Z` and the branch could only ever have been dead code. `Z` stays
+    // in the scan above because CPython splits on an EMBEDDED one and this
+    // follows it there, sign included: `10:00Z05` reads as `10:00+05:00`,
+    // exactly as the pure-Python reference does (the C accelerator refuses it —
+    // a divergence this port has always had, unrelated to the scan).
+    const tzText = text.slice(offsetAt + 1);
     // Valid offset lengths are 2, 4, 5, 6, 7+, 8 and 10+; 0, 1 and 3 are not.
     if (tzText.length === 0 || tzText.length === 1 || tzText.length === 3) return null;
     const tzComps = parseHhMmSsFf(tzText);
@@ -562,7 +597,7 @@ function parseIsoformatTime(text) {
     if (wholeSeconds !== 0n) {
       const magnitude = wholeSeconds * MICROS_PER_SECOND + BigInt(tzComps[3]);
       if (magnitude > MAX_OFFSET_MICROS) return null;
-      offsetMicros = text[tzPos - 1] === "-" ? -magnitude : magnitude;
+      offsetMicros = text[offsetAt] === "-" ? -magnitude : magnitude;
     }
   }
   return { hour: comps[0], minute: comps[1], second: comps[2], micros: comps[3], offsetMicros };
@@ -755,9 +790,18 @@ export function readHeadMovement(root) {
  * newest loaded artifact, so one freshly regenerated artifact reported the
  * whole set fresh while its siblings predated the same HEAD movement. Each
  * artifact now carries its own verdict, and the aggregate `stale` is true when
- * any of them is stale. An artifact with no parseable `generated_at` is neither
- * fresh nor stale: it stays out of the map, and if it is the only artifact the
- * assessment is not computable.
+ * any of them is stale. An artifact whose `generated_at` this readback cannot
+ * parse is neither fresh nor stale: it stays out of the map, and if it is the
+ * only artifact the assessment is not computable.
+ *
+ * Two kinds of missing age are kept apart, because they say different things
+ * about the run. An artifact that RECORDED a `generated_at` this parser refuses
+ * has an age the readback failed to establish — `unparseable_keys` names it,
+ * `unparseable_details` describes the value's shape, and `computeClean` reads
+ * the list, because "unknown age" must never render as "not older than the
+ * checkout". An artifact with no `generated_at` key at all recorded no age to
+ * establish: it is simply absent from the comparison, as it has always been,
+ * and is not by itself unclean.
  *
  * `headMovement` overrides the Git read for a caller that already knows the
  * answer — `--example` projects a packaged fixture directory, which is not a
@@ -768,12 +812,23 @@ export function assessStaleness(root, views, { headMovement = null } = {}) {
   // Comparison and ordering run on microseconds, never on the rendered Dates:
   // two artifacts under a millisecond apart are two instants, not one.
   const artifactMicros = {};
+  const loadedKeys = [];
+  const unparseableKeys = [];
+  const unparseableDetails = {};
   for (const [key, view] of Object.entries(views)) {
     if (view.state !== "loaded") continue;
-    const parsed = parseIsoInstant((view.data || {}).generated_at);
+    loadedKeys.push(key);
+    const data = isPlainObject(view.data) ? view.data : {};
+    const parsed = parseIsoInstant(data.generated_at);
     if (parsed !== null) {
       artifactTimes[key] = parsed.date;
       artifactMicros[key] = parsed.micros;
+    } else if ("generated_at" in data) {
+      // The key is present and its value did not parse: the artifact claims an
+      // age this readback could not read. Recorded by key rather than dropped,
+      // so the projection can say so instead of quietly comparing the rest.
+      unparseableKeys.push(key);
+      unparseableDetails[key] = describeUnparseableAge(data.generated_at);
     }
   }
   const { time: headTime, detail: headDetail } = headMovement ?? readHeadMovement(root);
@@ -800,6 +855,16 @@ export function assessStaleness(root, views, { headMovement = null } = {}) {
     artifact_times: artifactTimes,
     artifacts,
     stale_keys: staleKeys,
+    // The loaded artifacts, and the ones whose recorded age did not parse, both
+    // in render order. `loaded_keys` is what the rendered counts are drawn from
+    // — a sentence about "every loaded artifact" must not count the comparable
+    // ones — and `unparseable_details` carries each refused value's shape for
+    // the artifact row that reports it. Neither is serialized: the JSON payload
+    // names the artifacts through `unparseable_keys` and their states through
+    // the artifact rows it already carries.
+    loaded_keys: loadedKeys,
+    unparseable_keys: unparseableKeys,
+    unparseable_details: unparseableDetails,
     head_time: headTime,
     head_detail: headDetail,
     computable,
@@ -808,20 +873,66 @@ export function assessStaleness(root, views, { headMovement = null } = {}) {
   };
 }
 
+/**
+ * Name the SHAPE of a `generated_at` this readback could not parse.
+ *
+ * The value itself is not rendered: a hand-edited or foreign artifact can carry
+ * an arbitrarily long string there, and the projection's line-bounded sections
+ * are not the place to reproduce it. The shape is enough for a reader to tell a
+ * mistyped timestamp from a value of the wrong type, and the artifact's own file
+ * is one read away for the rest.
+ */
+function describeUnparseableAge(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return `an array of ${value.length} item(s)`;
+  if (typeof value === "object") return "an object";
+  if (typeof value === "string") {
+    return value.length
+      ? `a ${value.length}-character string that is not an ISO-8601 instant`
+      : "an empty string";
+  }
+  return `a ${typeof value}`;
+}
+
+/**
+ * Name the loaded artifacts whose recorded age did not parse.
+ *
+ * Rendered under both the computable and the not-computable branch: an artifact
+ * whose age was never established is the same fact either way, and it is the
+ * one the reader would otherwise have to infer from an artifact's absence from
+ * the sentences above.
+ */
+function renderUnknownAges(staleness, lines) {
+  const keys = staleness.unparseable_keys;
+  if (!keys.length) return;
+  lines.push("  *** UNKNOWN ARTIFACT AGE ***");
+  lines.push(
+    `  ${keys.length} loaded artifact(s) recorded a generated_at this readback cannot read, so`,
+  );
+  lines.push("  nothing above shows whether they predate the checkout:");
+  for (const key of keys) {
+    lines.push(`    ${ARTIFACT_TITLES[key]} (generated_at is ${staleness.unparseable_details[key]})`);
+  }
+}
+
 function renderStaleness(staleness, lines) {
   if (!staleness) return;
   lines.push(
     "STALENESS  [the readback's own projection layer: EACH loaded artifact's " +
       "generated_at versus the checkout's HEAD reflog]",
   );
+  // Loaded and compared are two counts, and the sentences below say which is
+  // which. Rendering the comparable count as the loaded one asserted something
+  // about artifacts the comparison never examined.
+  const loadedCount = staleness.loaded_keys.length;
+  const comparedCount = Object.keys(staleness.artifacts).length;
   if (staleness.computable) {
-    const loaded = Object.keys(staleness.artifacts);
     const headText = formatUtc(staleness.head_time);
     if (staleness.stale) {
       lines.push("  *** STALE ARTIFACTS ***");
       lines.push(
-        `  this checkout's HEAD last moved ${headText}, after ${staleness.stale_keys.length} of ` +
-          `${loaded.length} loaded artifact(s):`,
+        `  this checkout's HEAD last moved ${headText}; of ${loadedCount} loaded artifact(s), ` +
+          `${comparedCount} could be compared and ${staleness.stale_keys.length} predate it:`,
       );
       for (const key of staleness.stale_keys) {
         lines.push(`    ${ARTIFACT_TITLES[key]} (generated ${formatUtc(staleness.artifacts[key].generated_at)})`);
@@ -831,8 +942,8 @@ function renderStaleness(staleness, lines) {
       lines.push("  them before this view is current.");
     } else {
       lines.push(
-        `  every loaded artifact (${loaded.length}) is not older than the last recorded ` +
-          `HEAD movement (${headText}).`,
+        `  of ${loadedCount} loaded artifact(s), ${comparedCount} could be compared, and none of ` +
+          `those is older than the last recorded HEAD movement (${headText}).`,
       );
       const newestKey = staleness.newest_key;
       lines.push(
@@ -850,6 +961,7 @@ function renderStaleness(staleness, lines) {
     lines.push("  Treat artifact age as unknown; check the artifacts' generated_at values");
     lines.push("  against repository history before reading this view as current.");
   }
+  renderUnknownAges(staleness, lines);
   lines.push("");
 }
 
@@ -1421,6 +1533,7 @@ export function serializeStaleness(staleness) {
     computable: staleness.computable,
     stale: staleness.stale,
     stale_keys: [...staleness.stale_keys],
+    unparseable_keys: [...staleness.unparseable_keys],
     artifacts,
     newest_key: staleness.newest_key,
     head_time: headTime === null ? null : formatUtc(headTime),
@@ -1432,12 +1545,23 @@ export function serializeStaleness(staleness) {
 /**
  * Whether this projection shows nothing the readback can call wrong.
  *
- * True only when all four conditions hold: every artifact the readback found is
+ * True only when all five conditions hold: every artifact the readback found is
  * loaded and recognized (absent artifacts are not counted against it — a run
  * that emitted no findings export is not thereby unclean, while an unreadable
  * or unrecognized one always is); the staleness comparison is computable and NO
- * loaded artifact is stale; no cross-artifact divergence was found; and the
+ * loaded artifact is stale; NO loaded artifact recorded a `generated_at` this
+ * readback could not parse; no cross-artifact divergence was found; and the
  * doctor output records zero errors.
+ *
+ * The fourth of those is the unknown-age rule: an artifact whose recorded age
+ * did not parse was never shown to be current, and `clean` states that the
+ * readback CAN show every artifact is at least as new as the checkout. Without
+ * it a fresh sibling carried the aggregate and an artifact of unestablished age
+ * shipped inside a `clean: true` payload. An artifact that recorded no
+ * `generated_at` at all is a different case and does not make the projection
+ * unclean on its own — there is no claim about its age to fail to check — though
+ * with no other artifact carrying one the comparison is not computable and
+ * condition 2 fails anyway.
  *
  * This is a readback-integrity flag, not a verdict. Campaigns OS remains the
  * verdict authority: a QA verdict of `blocked` whose artifacts all read cleanly
@@ -1448,8 +1572,26 @@ export function serializeStaleness(staleness) {
 export function computeClean(views, staleness) {
   if (Object.values(views).some((view) => !CLEAN_ARTIFACT_STATES.has(view.state))) return false;
   if (!staleness || !staleness.computable || staleness.stale) return false;
+  if (staleness.unparseable_keys.length) return false;
   if (computeDivergences(views).length) return false;
   return computeDoctorSummary(views).error_count === 0;
+}
+
+/**
+ * The `detail` an artifact row carries.
+ *
+ * A non-loaded state carries the readback's own explanation for it, as it
+ * always has. A LOADED artifact whose recorded `generated_at` did not parse
+ * carries the shape of that value: its row is the one place a consumer reading
+ * artifacts alone would otherwise see nothing at all about an age the readback
+ * failed to establish (`staleness.unparseable_keys` names it too, and `clean`
+ * is false either way). Needs the assessment, so a payload built without one
+ * leaves the row as the load left it.
+ */
+function artifactRowDetail(view, staleness) {
+  const shape = view.state === "loaded" ? staleness?.unparseable_details?.[view.key] : null;
+  if (!shape) return view.detail;
+  return `generated_at is ${shape}, so this artifact's age could not be compared against the checkout`;
 }
 
 /**
@@ -1470,7 +1612,7 @@ export function buildJsonPayload(views, staleness = null, packetSelection = null
       key: view.key,
       path: view.path,
       state: view.state,
-      detail: view.detail,
+      detail: artifactRowDetail(view, staleness),
     })),
     packet_selection: packetSelection,
     staleness: serializeStaleness(staleness),
@@ -1725,24 +1867,33 @@ function booleanFlag(args, flag, extra = "") {
  * dispatcher turns that into the exit-2 usage path.
  */
 export function readbackRequest(args) {
-  const json = booleanFlag(args, "json");
+  // `--example` is settled before anything else is validated: where both
+  // refusals apply, the one naming --example is the actionable one. In
+  // `readback --example --json <target>` the target is swallowed as --json's
+  // value by the same parser rule that swallows it after --example itself, and
+  // "--json is a boolean flag and takes no value" sends the caller to fix the
+  // wrong flag; the same goes for an override flag left without a value.
   const example = booleanFlag(args, "example", ` ${EXAMPLE_USAGE}`);
   const positionals = (args._ ?? []).slice(1);
+  if (example) {
+    const named = Object.keys(OVERRIDE_FLAGS).filter((flag) => args[flag] !== undefined);
+    // A --json carrying a value is a target the parser ate, not a misused
+    // boolean, so it is reported here with the value the caller wrote.
+    const swallowed = args.json !== undefined && args.json !== true ? [`--json ${args.json}`] : [];
+    if (positionals.length || named.length || swallowed.length) {
+      throw new ReadbackUsageError(
+        `${EXAMPLE_USAGE} Got ${[...positionals, ...named.map((flag) => `--${flag}`), ...swallowed].join(", ")}.`,
+      );
+    }
+    return { example: true, json: booleanFlag(args, "json"), target: null, overrides: {} };
+  }
+  const json = booleanFlag(args, "json");
   const overrides = {};
   for (const [flag, key] of Object.entries(OVERRIDE_FLAGS)) {
     const value = args[flag];
     if (value === undefined) continue;
     if (typeof value !== "string" || !value.trim()) throw new ReadbackUsageError(`Missing value for --${flag}.`);
     overrides[key] = value;
-  }
-  if (example) {
-    const named = Object.keys(OVERRIDE_FLAGS).filter((flag) => args[flag] !== undefined);
-    if (positionals.length || named.length) {
-      throw new ReadbackUsageError(
-        `${EXAMPLE_USAGE} Got ${[...positionals, ...named.map((flag) => `--${flag}`)].join(", ")}.`,
-      );
-    }
-    return { example: true, json, target: null, overrides: {} };
   }
   if (positionals.length > 1) {
     throw new ReadbackUsageError(

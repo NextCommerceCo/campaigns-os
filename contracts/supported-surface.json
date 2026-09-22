@@ -116,7 +116,7 @@
       "sha256": "2e440be6513fe06b351c3a72c35424a04f807792621cb01e89803441fd925e06"
     },
     "schemas/campaigns-os-readback.v2.schema.json": {
-      "sha256": "c57f9f5bf27f91b4a4109d651c1479fd24ac67755bb4273769ee7cf7572b3c19"
+      "sha256": "dfc9abed38d456969e47a21f606d308a03bdf036f3466f7d6e47a602747dacf4"
     }
   },
   "named": [
