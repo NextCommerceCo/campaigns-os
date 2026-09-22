@@ -1,0 +1,6 @@
+{
+  "schema_version": "campaign-runtime-build-packet/v99",
+  "campaign": {
+    "public_route_slug": "runtime-packet-demo"
+  }
+}

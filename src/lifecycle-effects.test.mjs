@@ -276,7 +276,8 @@ test("(h) a refused subcommand `run statuss` under an ambient session writes not
 const REFUSED_INVOCATIONS = [
   // Unknown top-level command / unknown subcommand.
   { argv: ["frobnicate"], expect: /Unknown command: frobnicate/ },
-  { argv: ["readback"], expect: /Unknown command: readback/ },
+  // `readback` exists on the merged base; with no target it refuses through its own usage path.
+  { argv: ["readback"], expect: /Use: campaigns-os readback/ },
   { argv: ["tooling", "statuss"], expect: /Unknown tooling command: statuss/ },
   { argv: ["run", "statuss"], expect: /Unknown run subcommand "statuss"/ },
   { argv: ["qa", "publishh"], expect: /Unknown qa command: publishh/ },

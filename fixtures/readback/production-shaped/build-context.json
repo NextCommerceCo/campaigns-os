@@ -1,0 +1,16 @@
+{
+  "schema_version": "campaign-runtime-build-context/v0",
+  "generated_at": "2026-03-01T09:00:01.000Z",
+  "source_adapter": "html_funnel",
+  "status": "prepared",
+  "packet_path": "./campaign-runtime.build.json",
+  "report_path": ".campaign-runtime/assembly-report.json",
+  "spec": {
+    "path": "../fixture/campaignspec.fixture.json",
+    "hash": "1f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c5b6a7988",
+    "active_pages": [
+      {"id": "landing", "type": "landing"},
+      {"id": "checkout", "type": "checkout"}
+    ]
+  }
+}

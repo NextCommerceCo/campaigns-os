@@ -22,8 +22,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import { campaignSidecarPaths, targetRepoFor } from "./campaign-workspace.mjs";
 import { SIDECAR_RELATIVE_PATH } from "./qa-sidecar.mjs";
 import { qaVerdictIdentityMatch } from "./qa-verdict-discovery.mjs";
-import { publishQaVerdict, qaPortalUrl, qaVerdictPublishBlock, QA_VERDICT_PUBLISHERS } from "./qa-verdict-publish.mjs";
+import { publishQaVerdict, qaPortalUrl, qaVerdictPublishBlock, QA_VERDICT_PUBLISH_ENDPOINT, QA_VERDICT_PUBLISHERS } from "./qa-verdict-publish.mjs";
 import { validateVerdict } from "./qa-verdict.mjs";
+import { assertFetchAvailable, assertSecureProxyBase, classifyRemitOutcome, describeRemitBaseKind } from "./remit.mjs";
 import { readRunRecordsForTarget, writeRunRecord } from "./run-record.mjs";
 import { identityMatches } from "./run-record-closeout.mjs";
 import { DEFAULT_PROXY_BASE } from "./spec-fetch.mjs";
@@ -32,6 +33,9 @@ import { singleLineFragment } from "./text-safety.mjs";
 
 export const QA_PUBLISH_STATUSES = Object.freeze({
   published: "published",
+  // --dry-run: every refusal check ran and none fired, so a real run would
+  // have posted. Nothing was sent, so this is neither published nor failed.
+  dry_run: "dry_run",
   refused: "refused",
   publish_failed: "publish_failed",
 });
@@ -55,6 +59,7 @@ export const QA_PUBLISH_REFUSALS = Object.freeze({
 
 export const QA_PUBLISH_EXIT_CODES = Object.freeze({
   [QA_PUBLISH_STATUSES.published]: 0,
+  [QA_PUBLISH_STATUSES.dry_run]: 0,
   [QA_PUBLISH_STATUSES.refused]: 2,
   [QA_PUBLISH_STATUSES.publish_failed]: 1,
 });
@@ -165,6 +170,22 @@ export function findRunRecordForVerdict({ records, packet, verdictRunId, verdict
  * the record stamping are assertable without a receiver or a filesystem.
  */
 export async function publishStoredVerdict(args, operations = {}) {
+  // `--dry-run` is a bare flag; `--dry-run true` must fail rather than quietly
+  // become a real POST.
+  if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
+    throw new Error(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
+  }
+  const dryRun = args["dry-run"] === true;
+  const result = await attemptPublish(args, operations, dryRun);
+  if (!dryRun) return result;
+  // The envelope says what the real command would have done. A refusal is a
+  // refusal either way — same code, same exit — and so is a destination the
+  // transport gate turns down before any request; `would_publish` is true only
+  // when every check passed and the post is all that is left.
+  return { ...result, dry_run: true, would_publish: result.status === QA_PUBLISH_STATUSES.dry_run };
+}
+
+async function attemptPublish(args, operations, dryRun) {
   const ops = {
     readJsonFile: readJson,
     exists: existsSync,
@@ -268,6 +289,70 @@ export async function publishStoredVerdict(args, operations = {}) {
     );
   }
 
+  // Every refusal check above has run and none fired, so a real run would post
+  // now. Under --dry-run this is where it stops: nothing is sent, and the Run
+  // Record below is left exactly as it stands.
+  if (dryRun) {
+    // First, the checks the transport itself makes before it opens a socket.
+    // `publishQaVerdict` -> `remit` demands a fetch to send with
+    // (`assertFetchAvailable`) and then puts every destination through
+    // `assertSecureProxyBase`; a runtime with no global fetch, or a base that
+    // is not https (nor a loopback host for local testing), fails there,
+    // locally, with nothing sent: the real command reports publish_failed and
+    // exits 1. A preview may not approve a send the transport refuses, so both
+    // gates run here, in the transport's own order — the same functions, with
+    // the label and the (absent) credential the publish rail passes them — and
+    // the refusal is classified by the same classifier the real outcome goes
+    // through, so the message and the exit code are the real command's.
+    // `attempted: false` is the one difference: nothing was sent.
+    let destinationRefusal = null;
+    try {
+      assertFetchAvailable(globalThis.fetch);
+      assertSecureProxyBase(proxyBase, { label: "QA verdict publish", credential: null });
+    } catch (error) {
+      destinationRefusal = classifyRemitOutcome(error);
+    }
+    if (destinationRefusal) {
+      return {
+        ok: false,
+        action: "qa-publish",
+        status: QA_PUBLISH_STATUSES.publish_failed,
+        ...identity,
+        republished: republish && priorBlock?.state === "ok",
+        publish: {
+          attempted: false,
+          ok: destinationRefusal.ok,
+          error: destinationRefusal.error,
+          endpoint: QA_VERDICT_PUBLISH_ENDPOINT,
+          result: destinationRefusal.result,
+          http_status: destinationRefusal.http_status,
+          base_kind: describeRemitBaseKind(proxyBase),
+          published_at: null,
+        },
+        dashboard_url: null,
+        run_record: recordEntry ? { ...recordSummary(recordEntry, priorBlock), written: false, preserved: false } : null,
+        orders_placed: 0,
+      };
+    }
+    return {
+      ok: true,
+      action: "qa-publish",
+      status: QA_PUBLISH_STATUSES.dry_run,
+      ...identity,
+      republished: republish && priorBlock?.state === "ok",
+      would_post: {
+        endpoint: QA_VERDICT_PUBLISH_ENDPOINT,
+        base_kind: describeRemitBaseKind(proxyBase),
+        verdict_run_id: verdictRunId,
+        payload_bytes: Buffer.byteLength(JSON.stringify(verdict), "utf8"),
+      },
+      publish: { attempted: false, ok: null, error: null, endpoint: QA_VERDICT_PUBLISH_ENDPOINT, result: null, http_status: null, base_kind: describeRemitBaseKind(proxyBase), published_at: null },
+      dashboard_url: qaPortalUrl(proxyBase, mapId, verdictRunId),
+      run_record: recordEntry ? { ...recordSummary(recordEntry, priorBlock), written: false, preserved: false } : null,
+      orders_placed: 0,
+    };
+  }
+
   const outcome = await ops.post(verdict, proxyBase);
   const publishedAt = ops.now();
   const block = qaVerdictPublishBlock(outcome, { verdictRunId, publisher: QA_VERDICT_PUBLISHERS.publish, publishedAt });
@@ -332,6 +417,21 @@ export function qaPublishTextLines(result, { cmd = (verb) => `campaigns-os ${ver
     if (result.verdict_path) lines.push(`Verdict: ${result.verdict_path}${result.source_kind ? ` (${result.source_kind})` : ""}`);
     if (result.dashboard_url) lines.push(`QA portal: ${result.dashboard_url}`);
     lines.push("No order was placed and nothing was sent.");
+    if (result.dry_run) lines.push("Dry run (--dry-run): the real command refuses this the same way.");
+    return lines;
+  }
+  if (result.status === QA_PUBLISH_STATUSES.dry_run) {
+    const post = result.would_post || {};
+    lines.push("QA publish dry run (--dry-run): every refusal check passed and nothing was sent.");
+    lines.push(`Map ID: ${result.map_id}`);
+    lines.push(`Run ID: ${result.run_id}`);
+    lines.push(`Disposition: ${result.disposition}`);
+    lines.push(`Verdict: ${result.verdict_path} (${result.source_kind})`);
+    lines.push(`Would POST: ${post.endpoint} at ${result.proxy_base} [base: ${post.base_kind}] — verdict ${post.verdict_run_id}, ${post.payload_bytes} bytes`);
+    lines.push(result.run_record
+      ? `Run Record: ${result.run_record.run_id} would take the publish outcome (${result.run_record.path}); it was not touched.`
+      : "Run Record: none references this verdict under the packet's campaign, so a real publish would not be recorded on one.");
+    lines.push("Orders placed: 0 (qa publish never places orders).");
     return lines;
   }
   lines.push(result.status === QA_PUBLISH_STATUSES.published
@@ -356,7 +456,9 @@ export function qaPublishTextLines(result, { cmd = (verb) => `campaigns-os ${ver
   }
   lines.push("Orders placed: 0 (qa publish never places orders).");
   if (result.status === QA_PUBLISH_STATUSES.publish_failed) {
-    lines.push(`Re-run ${cmd("qa")} publish with network access; the local verdict is untouched.`);
+    lines.push(result.dry_run
+      ? `Dry run (--dry-run): nothing was sent, and the real command fails here the same way — the destination is refused before any request. ${result.publish?.error || ""}`.trimEnd()
+      : `Re-run ${cmd("qa")} publish with network access; the local verdict is untouched.`);
   }
   return lines;
 }

@@ -1,0 +1,59 @@
+{
+  "schema_version": "campaign-runtime-assembly-report/v0",
+  "run_id": "asm_fixture_ready",
+  "generated_at": "2026-08-02T06:02:00.000Z",
+  "status": "qa_passed",
+  "identity": {
+    "map_id": "runtime-packet-demo-k9x2",
+    "public_route_slug": "runtime-packet-demo",
+    "campaign_directory": "runtime-packet-demo",
+    "live_url_path": "/runtime-packet-demo/",
+    "spec_hash": "09a9c8c82598da2234cb3312c9d0ff3706734338272dbe899327ba0c0aa37624"
+  },
+  "stages": {
+    "prepare_build": {
+      "stage": "prepare_build",
+      "status": "completed",
+      "blockers": [],
+      "warnings": []
+    },
+    "doctor": {
+      "stage": "doctor",
+      "status": "completed",
+      "blockers": [],
+      "warnings": []
+    },
+    "setup": {
+      "stage": "setup",
+      "status": "completed",
+      "blockers": [],
+      "warnings": []
+    },
+    "assembly": {
+      "stage": "assembly",
+      "status": "completed",
+      "blockers": [],
+      "warnings": []
+    },
+    "polish": {
+      "stage": "polish",
+      "status": "completed",
+      "blockers": [],
+      "warnings": []
+    },
+    "deploy": {
+      "stage": "deploy",
+      "status": "completed",
+      "blockers": [],
+      "warnings": []
+    },
+    "qa": {
+      "stage": "qa",
+      "status": "completed",
+      "blockers": [],
+      "warnings": []
+    }
+  },
+  "blockers": [],
+  "warnings": []
+}

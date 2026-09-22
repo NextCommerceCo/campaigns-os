@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "status": "ready_with_warnings",
+  "generated_at": "2026-03-01T09:00:03.000Z",
+  "errors": [],
+  "warnings": [
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: packages.fixture_package=1"
+    },
+    {
+      "code": "campaign.allowed_domains_confirmed",
+      "message": "Non-localhost preview/production origins are not confirmed in the fixture origin allowlist."
+    }
+  ]
+}

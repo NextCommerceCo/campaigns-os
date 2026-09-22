@@ -29,6 +29,9 @@ import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "./sdk-meta-tags
 import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
+// The same predicate stage-ledger.mjs judges a mutator's result with, imported
+// rather than re-stated so the waive preview and the commit agree by identity.
+import { isPlainObject } from "./repo-scan.mjs";
 import { anyAssemblyReportStageBlocked, applyDerivedAssemblyReportSummary, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, qaGatePassedForCurrentBuild, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePlaceholderTextGate, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
@@ -96,7 +99,7 @@ import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { writeMapSdkPin } from "./map-pin-writeback.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
-import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, describeRemitBaseKind, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
+import { assertFetchAvailable, assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, describeRemitBaseKind, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
@@ -471,12 +474,14 @@ Usage:
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
-  campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
-  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
+  campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--dry-run] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused. --dry-run validates the same way and prints the waiver it would write, without touching the report
+  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope. --dry-run runs every check (named human, bounds, registered and waivable gate) and prints the waiver it would write, without touching the report
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
   campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads through campaigns-os login gateway credentials (--store-token-source env:<VAR> explicitly selects the warned break-glass Admin path; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
+  campaigns-os readback <target-repo-root> [--json] [--packet <path>] [--doctor <path>] [--context <path>] [--report <path>] [--qa-verdict <path>] [--findings <path>]   # read-only projection of one run's emitted artifacts (packet, doctor output, build context, assembly report, QA verdict, findings export): artifact states, per-artifact freshness against the checkout's HEAD reflog, doctor warning grouping, skip cascades and cross-artifact divergences. Writes nothing, starts no process, touches no network, and records no lifecycle entry; --json emits one campaigns-os-readback/v2 object (docs/readback.md). Exit 2 for a missing target root or a Build Packet set freshness cannot single out.
+  campaigns-os readback --example [--json]                                # project the bundled synthetic sample; freshness is not computable for it by design
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os login [--store <subdomain>]
@@ -493,14 +498,15 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
-  campaigns-os qa publish --packet <json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json]   # post an already-stored verdict (the sidecar's run, or --verdict) to the QA portal without a re-run or an order; refuses a stale spec_hash or an already-published verdict
+  campaigns-os qa publish --packet <json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--dry-run] [--json]   # post an already-stored verdict (the sidecar's run, or --verdict) to the QA portal without a re-run or an order; refuses a stale spec_hash or an already-published verdict. --dry-run runs every one of those refusal checks and prints what would be posted (endpoint, verdict run id, payload bytes) without the POST
   campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]   # --order-path-depth writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
-  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--new-run] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--list] [--json]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--new-run] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--dry-run] [--list] [--json]
     run_id: --run-id > the active run session > the most recent Run Record for this packet's campaign (re-emitted in place; a remitted one is left as written) > freshly minted. --new-run always mints; --list prints the run ids on disk for this packet (id, created_at, remit state, path) and, like --no-write, writes and sends nothing.
+    --dry-run assembles the record and prints it (with --json: dry_run, would_write, would_remit), then writes no file and sends nothing — where --no-write skips the assembly's reads too. Combining them is allowed and still writes nothing. \`run end --dry-run\` hands the flag on to run-record and leaves the run session open, so the close can still be made for real afterwards.
 
   Commands other than login, logout, demo, and tooling diagnose accept [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
     --no-write suppresses that append for every command, however the journal was selected (flag, env, or the active run session); a refused invocation (unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front) and \`run status\` never append one at all.
@@ -659,8 +665,18 @@ export async function main(argv, { authentication } = {}) {
     // abandoned one: nine of them were found lingering with no Run Record and
     // nothing remitted. Closing out is best-effort and never blocks the command.
     const storageInspection = command === "sdk" && args._[1] === "storage-check";
-    const sweptStale = storageInspection ? [] : await closeOutStaleRunSessions(command, args);
-    const ambient = ambientRunSession(args);
+    // `readback` bypasses session resolution entirely, sweep included. Its
+    // `--packet` is a readback OVERRIDE naming the Build Packet to project, not a
+    // Build Packet to act on, and ambientRunSession treats that flag as a session
+    // locator: it read the named file whole through readJson, so a 40 MB packet
+    // was loaded into memory past readback's own 32 MiB bound before readback
+    // ever saw it, and a valid override exited 1 whenever some active session was
+    // bound to a different packet. Neither belongs to a command declared
+    // read-only. The lifecycle wrapper below still runs; the read-only exemption
+    // lives in persistLifecycleIfRequested, which writes no entry for readback.
+    const readOnlyProjection = command === "readback";
+    const sweptStale = storageInspection || readOnlyProjection ? [] : await closeOutStaleRunSessions(command, args);
+    const ambient = readOnlyProjection ? null : ambientRunSession(args);
 
     // Wrap every command in the lifecycle instrumentation (T6): it captures the
     // command, its argv shape, exit status, and timing. Re-throws unchanged so
@@ -804,6 +820,32 @@ function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = 
   return fallbackDir ? join(resolve(fallbackDir), LIFECYCLE_JOURNAL_REL_PATH) : null;
 }
 
+// The commands and subcommands that actually IMPLEMENT `--dry-run`. The flag
+// reaches every handler through a permissive parseArgs, so it is silently
+// accepted everywhere — and the lifecycle exemption below, scoped to the flag
+// alone, therefore fired on commands that ignore it: `qa run --dry-run` placed
+// orders while writing no journal entry, and (see runSessionEndArgs) carried
+// the flag into its own auto-end, which assembled no Run Record and left the
+// session open. Keyed by `command`, or `command <args._[1]>` where the flag
+// belongs to one subcommand. A command outside this set given `--dry-run`
+// behaves exactly as it did before: it journals if it otherwise would, and it
+// is not refused — refusing unknown flags is separate work.
+const DRY_RUN_COMMANDS = new Set([
+  "page-kit sync",
+  "spec derive",
+  "install-skills",
+  "install-agent-context",
+  "run-record",
+  "run end",
+  "qa publish",
+  "checkpoint waive",
+  "theme waive",
+]);
+
+function commandImplementsDryRun(command, args = {}) {
+  return DRY_RUN_COMMANDS.has(command) || DRY_RUN_COMMANDS.has(`${command} ${args._?.[1]}`);
+}
+
 // Append the command's lifecycle entry only when capture is active: an explicit
 // flag/env, or an ambient run session. Never throws — a lifecycle write must
 // not break a command (telemetry never blocks a build). `help` is a no-op
@@ -835,6 +877,15 @@ function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder, th
   // An inspection must not append to a delivered campaign's active run either.
   // (--no-write is handled above, so only the read-only `doctor` form is left.)
   if (command === "doctor" && args.packet && args.write !== true) return;
+  // The same rule, per-flag, for every command that takes `--dry-run`: the
+  // flag's whole promise is that the invocation writes nothing under the
+  // target, and the journal lives under the target. Only for the commands that
+  // make that promise, though — DRY_RUN_COMMANDS above.
+  if (args["dry-run"] === true && commandImplementsDryRun(command, args)) return;
+  // `readback` is declared read-only for the whole command, not per-flag: it
+  // writes nothing under the target, so a journal entry would be the one write
+  // its own contract forbids. Skipped the way doctor inspection is skipped.
+  if (command === "readback") return;
   const ambient = sessionHolder?.current || null;
   // A session auto-started DURING this command (start/prepare-build) is
   // published into sessionHolder by autoStartRunSession; this command's own
@@ -1059,9 +1110,18 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
     return;
   }
 
+  // `dry-run` is inheritable because `run end --dry-run` hands it to
+  // run-record on purpose. The invoking command here is `qa run`, which does
+  // not implement the flag, so inheriting it would turn its own auto-end into
+  // a dry run: no Run Record written, and the session left open after a
+  // terminal QA. Every other inheritable flag `qa run` may carry is one
+  // run-record reads the same way whoever passed it.
+  const extraArgs = { ...args, "qa-verdict": result.local_path };
+  if (!commandImplementsDryRun(command, args)) delete extraArgs["dry-run"];
+
   const summary = await closeRunSession(updatedFound, {
     packet,
-    extraArgs: { ...args, "qa-verdict": result.local_path },
+    extraArgs,
     silent: true,
     promptForConsent: false,
     onError: (error) => process.stderr.write(`[campaigns-os] run session auto-end skipped after QA: ${error.message}\n`),
@@ -1192,6 +1252,21 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   if (command === "polish") {
     const result = await polishCaptureCommand(args);
     writePolishCaptureResult(result, args, result.ok ? 0 : 2);
+    return;
+  }
+
+  if (command === "readback") {
+    // Read-only projection over a target's already-emitted artifacts. It owns
+    // its own exit codes (0 for any projection it could form, 2 for a request
+    // that cannot form one) rather than throwing, so a usage error reads as a
+    // one-line refusal instead of a stack-shaped CLI error.
+    const { runReadbackCommand } = await import("./readback.mjs");
+    const { exitCode, text } = runReadbackCommand(args);
+    if (exitCode === 0) process.stdout.write(text);
+    else {
+      process.stderr.write(text);
+      process.exitCode = 2;
+    }
     return;
   }
 
@@ -1334,6 +1409,16 @@ function requireArg(args, key) {
   const value = args[key];
   if (!isNonEmptyString(value)) throw refused(`Missing required --${key}`);
   return value;
+}
+
+// `--dry-run` is a bare flag on every command that takes one. The shared
+// parser would read a following token as its value, so `--dry-run true` must
+// fail rather than quietly become a real write or a real send.
+function isDryRun(args) {
+  if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
+    throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
+  }
+  return args["dry-run"] === true;
 }
 
 function isObject(value) {
@@ -3378,6 +3463,7 @@ function themeCommand(args) {
 // improvising past advisory prose.
 export function themeWaive(args) {
   const packetPath = resolve(requireArg(args, "packet"));
+  const dryRun = isDryRun(args);
   const packet = readJson(packetPath);
   const reason = optionalString(args.reason);
   if (!reason) throw new Error("theme waive requires --reason \"<why the starter palette is acceptable for this campaign>\".");
@@ -3399,7 +3485,7 @@ export function themeWaive(args) {
   });
   const { reportPath } = workspace;
   if (!existsSync(reportPath)) throw new Error(`theme waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
-  commitAssemblyReport(workspace, (report) => {
+  const recordWaiver = (report) => {
     report.theme = report.theme && isObject(report.theme)
       ? { ...report.theme, waiver }
       : { status: "skipped", css_path: null, load_order: "not-applied", commerce_pages: [], evidence: [], warnings: [], repair_loop_defect: null, waiver };
@@ -3408,12 +3494,37 @@ export function themeWaive(args) {
       `Theme gate waived by ${waiver.waived_by} at ${waiver.waived_at}: ${reason}`,
     ];
     return report;
-  }, {
+  };
+  // Every check above is the real command's; only the commit is skipped. The
+  // readiness block is not reported for a dry run because doctor reads it off
+  // the report on disk, which by construction still has no waiver on it.
+  //
+  // Both modes go through the committing path itself (see
+  // commitWaiverToAssemblyReport): the dry run used to return on the existsSync
+  // check alone, so a torn report was reported as a successful `would_write`
+  // with exit 0 while the real invocation refused with "Assembly Report ... is
+  // not valid JSON" and exit 1, and a report that is not an object was previewed
+  // as writable while the commit refused it. Validation must never be weaker
+  // under --dry-run than without it.
+  commitWaiverToAssemblyReport(workspace, recordWaiver, {
     // #171: the waiver changes what doctor would conclude; the retained doctor
     // sidecar (if any) now predates it.
     command: "theme waive",
     staleReason: `A theme-gate waiver was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
-  });
+  }, { dryRun });
+  if (dryRun) {
+    return {
+      ok: true,
+      status: "dry_run",
+      dry_run: true,
+      action: "theme-waive",
+      gate: "theme_gate",
+      waiver,
+      report_path: reportPath,
+      would_write: reportPath,
+      note: "Dry run: nothing was written and the doctor sidecar was not marked stale. Re-run without --dry-run to record this waiver.",
+    };
+  }
   return {
     ok: true,
     ...waiveReadiness(packetPath, reportPath),
@@ -3431,6 +3542,37 @@ export function themeWaive(args) {
 // "unknown" fallback. Doctor is re-run rather than patched from the pre-waive
 // result because a waiver changes what every other gate concludes about the
 // stage. Nothing is persisted here; the sidecar was already marked stale.
+/**
+ * The one route both waive commands take to the Assembly Report, real or
+ * previewed. `commitAssemblyReport` is called identically in both modes — same
+ * workspace, same mutator, same options — so every check the committing path
+ * makes runs on both: the report must exist, it must parse (a torn one fails by
+ * name), the mutator's own refusals fire, its result must be an Assembly Report
+ * object, and the derived summary is restated over that result. A dry run
+ * differs in one statement: the mutator returns `null`, which is
+ * commitAssemblyReport's own "nothing to write" answer, so the report is not
+ * rewritten and the doctor sidecar is not stamped stale. Nothing is
+ * re-implemented and nothing is skipped but the write itself.
+ *
+ * The result-shape check and the summary restatement sit here rather than being
+ * left to commitAssemblyReport alone because they must run in BOTH modes and
+ * commitAssemblyReport reaches its own copies only on the way to the write.
+ * Running them here means one message and one order, not two: the real path
+ * now fails on this line and never on the copy in stage-ledger.mjs, so the two
+ * cannot drift into different text.
+ */
+function commitWaiverToAssemblyReport(workspace, mutate, options, { dryRun = false } = {}) {
+  const previewOrCommit = (report) => {
+    const mutated = mutate(report);
+    if (mutated === null || mutated === undefined) return mutated;
+    if (!isPlainObject(mutated)) throw new TypeError("commitAssemblyReport mutate(report) must return an Assembly Report object, null, or undefined.");
+    if (!dryRun) return mutated;
+    applyDerivedAssemblyReportSummary(mutated);
+    return null;
+  };
+  return commitAssemblyReport(workspace, previewOrCommit, options);
+}
+
 function waiveReadiness(packetPath, reportPath) {
   const doctor = doctorPacket(packetPath, { reportPath });
   return { status: doctor.status, next_stage: doctor.next?.stage || null, next_stage_reason: doctor.next?.reason || null };
@@ -3607,6 +3749,7 @@ function checkpointCommand(args) {
 
 export function checkpointWaive(args) {
   const packetPath = resolve(requireArg(args, "packet"));
+  const dryRun = isDryRun(args);
   const gateId = requireArg(args, "gate").trim();
   const reason = requireArg(args, "reason");
   const waivedBy = requireArg(args, "waived-by");
@@ -3623,7 +3766,7 @@ export function checkpointWaive(args) {
 
   const doctor = doctorPacket(packetPath, { reportPath });
   let waiver = null;
-  commitAssemblyReport(workspace, (report) => {
+  const recordWaiver = (report) => {
     const gate = evaluateCheckpointRegistry(CHECKPOINT_EVALUATORS, gateId, { doctor, packet, report });
     if (!gate) throw new Error(`Checkpoint gate "${gateId}" has no current evidence; repair the packet/spec/target and re-run doctor.`);
     if (gate.status !== "blocked") {
@@ -3644,10 +3787,30 @@ export function checkpointWaive(args) {
       `Checkpoint waiver: ${gateId} waived by ${waiver.waived_by} at ${waiver.waived_at}: ${waiver.reason}`,
     ];
     return updated;
-  }, {
+  };
+  // The gate registry decides waivability from the report, so both modes go
+  // through the committing path itself (see commitWaiverToAssemblyReport): the
+  // report is read and parsed the same way and the very same mutator runs over
+  // it, so every refusal above fires exactly as it would for real. Only the
+  // write and the doctor-sidecar stale stamp are skipped, and with them the
+  // readiness block, which doctor can only read off a report on disk.
+  commitWaiverToAssemblyReport(workspace, recordWaiver, {
     command: "checkpoint waive",
     staleReason: `A checkpoint waiver was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
-  });
+  }, { dryRun });
+  if (dryRun) {
+    return {
+      ok: true,
+      status: "dry_run",
+      dry_run: true,
+      action: "checkpoint-waive",
+      gate: gateId,
+      waiver,
+      report_path: reportPath,
+      would_write: reportPath,
+      note: "Dry run: nothing was written and the doctor sidecar was not marked stale. Re-run without --dry-run to record this waiver.",
+    };
+  }
   return {
     ok: true,
     ...waiveReadiness(packetPath, reportPath),
@@ -4741,13 +4904,7 @@ export function pageKitSyncCommand(args) {
     throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit sync: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${PAGE_KIT_SYNC_FLAGS.map((key) => `--${key}`).join(", ")}.`);
   }
   const packetPath = resolve(requireArg(args, "packet"));
-  // `--dry-run` is a bare flag. The shared parser would read a following
-  // token as its value, so `--dry-run true` must fail rather than quietly
-  // become a real write.
-  if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
-    throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
-  }
-  const dryRun = args["dry-run"] === true;
+  const dryRun = isDryRun(args);
   const result = {
     ok: false,
     action: "page-kit sync",
@@ -5079,13 +5236,8 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
   const storeFlags = parseSpecDeriveStoreFlags(args);
   if (storeFlags && !storeRead) throw new Error("spec derive --from-store must be dispatched through specDeriveFromStoreCommand (no store read was supplied).");
   const packetPath = resolve(requireArg(args, "packet"));
-  // `--dry-run` is a bare flag; `--dry-run true` must fail rather than
-  // quietly become a real write.
-  if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
-    throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
-  }
+  const dryRun = isDryRun(args);
   if (args.report === true) throw refused("Missing value for --report");
-  const dryRun = args["dry-run"] === true;
   const result = {
     ok: false,
     action: "spec derive",
@@ -12051,10 +12203,14 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
 // `qa run`'s --base-url, --browser or --test-order say nothing about the
 // record — and run-record stamps the flag NAMES it was given into the Run
 // Record's argv_shape, so carrying them over would file them as run-record's.
+// `dry-run` is on the list for `run end --dry-run`, the one closer whose
+// invoking command implements the flag; a closer invoked by a command that
+// does not (the QA auto-end) drops it from extraArgs before calling — see
+// DRY_RUN_COMMANDS and autoEndRunSessionAfterTerminalQa.
 const RUN_RECORD_INHERITABLE_FLAGS = Object.freeze([
   "context", "report", "qa-verdict", "journal", "surfaces", "primary-surface", "surface-confidence",
   "agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms", "agent-model", "agent-usage-source",
-  "no-remit", "no-write", "proxy-base", "json",
+  "no-remit", "no-write", "proxy-base", "dry-run", "json",
 ]);
 
 // The run-record argv that closes `session`: its run_id and journal, the
@@ -12083,7 +12239,10 @@ async function closeRunSession(found, { packet, extraArgs = {}, silent = false, 
   const endArgs = runSessionEndArgs(found.session, packet, extraArgs);
   try {
     const summary = await runRecordCommand(endArgs, found, { silent, promptForConsent });
-    clearRunSession(found.path);
+    // Clearing the session is a write like any other, so a closer carrying
+    // --dry-run leaves it open: the operator sees the record the close would
+    // assemble and can still close for real afterwards.
+    if (endArgs["dry-run"] !== true) clearRunSession(found.path);
     return summary;
   } catch (error) {
     if (!onError) throw error;
@@ -12123,6 +12282,16 @@ async function closeOutStaleRunSessions(command, args) {
   // sweep entirely instead — the stale session stays for the next run that
   // does write.
   if (args["no-write"] === true) return [];
+  // Nor may a dry run sweep. The closeout writes a Run Record, deletes the
+  // session file and (under consent) sends a remit — every effect --dry-run
+  // promises not to have. The sweep runs BEFORE dispatch, so it was doing all
+  // three for commands that implement the flag: `run end --dry-run --json`
+  // over an aged session exited 0, wrote a record, POSTed once and removed the
+  // session. --dry-run means "show me, do nothing"; the stale session simply
+  // stays stale until a real invocation closes it. Gated on the same predicate
+  // persistLifecycleIfRequested uses, so a stray --dry-run on a command that
+  // does not implement it changes nothing here either.
+  if (args["dry-run"] === true && commandImplementsDryRun(command, args)) return [];
   const roots = [];
   if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
   if (command === "run" && (args._[1] === "start" || args._[1] === "end")) {
@@ -12287,6 +12456,10 @@ export function describeCampaignKeyRejection(rejected) {
 // docs/workflow-findings-sidecar.md.
 async function runRecordCommand(args, ambient = null, { silent = false, promptForConsent = true } = {}) {
   const packetPath = resolve(requireArg(args, "packet"));
+  // --dry-run assembles the record and shows it, then writes and sends
+  // nothing. It differs from --no-write, which skips the assembly's reads
+  // as well; combining the two is allowed and still writes nothing.
+  const dryRun = isDryRun(args);
   const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
   const explicitTargetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
@@ -12387,6 +12560,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
       run_id_source: runIdSource,
       records,
       remit: { result: null, http_status: null, base_kind: null, sent: false, preserved: false },
+      ...(dryRun ? { dry_run: true, would_write: null, would_remit: null } : {}),
     };
     if (silent) return summary;
     if (args.json) {
@@ -12453,7 +12627,11 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   }
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
-  const write = args["no-write"] !== true;
+  // What a real run of this command line would write, and what this one does:
+  // a dry run assembles and validates the record a real run would write, and
+  // stops at the write itself (persistRunRecord).
+  const wouldWrite = args["no-write"] !== true;
+  const write = wouldWrite && !dryRun;
   // The verdict publish outcome this record carries: the session's attempt
   // for the verdict being recorded (the auto-end and `run end` both close
   // through here with the session still ambient), else the newest attempt
@@ -12468,8 +12646,10 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // refuses a second send, so a record it already has is final: it is neither
   // re-sent nor rewritten here. A prior send that did not land (failed,
   // pending) is retried when this run may send, and kept as it stands when it
-  // may not. A dry run reads nothing: it writes and sends nothing.
-  const prior = write ? readPriorRunRecord(runId, baseDir) : null;
+  // may not. A pure --no-write run reads nothing: it writes and sends nothing.
+  // A --dry-run does read it, because what a real run would do here is the
+  // very thing the dry run is being asked to report.
+  const prior = write || dryRun ? readPriorRunRecord(runId, baseDir) : null;
   const priorRemit = priorRemitOutcome(prior?.record);
   const storedRemotely = priorRemit?.state === "ok";
   // A pure local-inspection run (--no-write), an explicit --no-remit, or a
@@ -12489,6 +12669,16 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (consent.default_on === true && !remitDisabled) {
     announceDefaultOnTelemetry(consent.scope || proxyBase);
   }
+
+  // Under --dry-run the remit is disabled by construction (write is false), so
+  // `remitDisabled` cannot say whether a real run would have sent. This does:
+  // the same three stoppers minus the dry run itself, against the consent this
+  // machine actually resolved.
+  const wouldRemit = dryRun
+    && args["no-remit"] !== true
+    && args["no-write"] !== true
+    && !storedRemotely
+    && consent.state === "on";
 
   // A publish the record already says landed is never downgraded by a
   // reassembly: the prior ok block wins over a session attempt that did not
@@ -12547,6 +12737,9 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
       record: prior.record,
       run_id_source: runIdSource,
       remit: { result: REMIT_RESULTS.not_contacted, http_status: null, base_kind: null, sent: false, preserved: true },
+      // A record the receiver already holds is final: a real run of this same
+      // command line would write nothing and send nothing either.
+      ...(dryRun ? { dry_run: true, would_write: null, would_remit: null } : {}),
     };
     if (silent) return summary;
     if (args.json) {
@@ -12584,7 +12777,9 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     record.remit_base_kind = carriedForward.base_kind;
   }
 
-  const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
+  // The record is validated whenever a real run of this command line would
+  // write one — under --dry-run too, where only the write is skipped.
+  const recordPath = wouldWrite ? persistRunRecord(record, { baseDir, dryRun }) : null;
 
   // Remit is consent-gated, non-fatal, bounded, and keyed on run_id — the
   // receiver holds one record per id and refuses a second POST for one it
@@ -12594,7 +12789,10 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // The key is only resolved when a send will actually be attempted: under
   // consent-off or --no-remit nothing goes out, so nothing is read and nothing
   // is said about a credential.
-  const keySource = shouldAttemptRemit ? resolveCampaignsApiKeySource(packet, packetPath, process.env) : { key: null, rejected: null };
+  // A dry run resolves it too, and only when a real run would have: the
+  // destination gate below names the credential that would travel, and the
+  // preview must name the one the real send would.
+  const keySource = shouldAttemptRemit || wouldRemit ? resolveCampaignsApiKeySource(packet, packetPath, process.env) : { key: null, rejected: null };
   const campaignKey = keySource.key;
   // A refused key is not a missing key. Say so on stderr, naming the source
   // and not the value, so the operator fixes the credential instead of reading
@@ -12604,7 +12802,30 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // send's outcome, which is only known below; the credential itself never
   // leaves the machine.
   const keyRejection = describeCampaignKeyRejection(keySource.rejected);
-  if (keyRejection) process.stderr.write(`[campaigns-os] run-record: ${keyRejection} This run's remit is attempted without a tenant scope.\n`);
+  if (keyRejection) process.stderr.write(`[campaigns-os] run-record: ${keyRejection} ${dryRun ? "A real run's remit would be attempted without a tenant scope." : "This run's remit is attempted without a tenant scope."}\n`);
+
+  // The transport's own preconditions, run for a dry run as well: `remit`
+  // demands a fetch to send with, and refuses a base that is not https (nor a
+  // loopback host), BEFORE it opens a socket — so a send the real run could
+  // never have made must not be previewed as one it would post. Same
+  // functions, in the transport's order, with the same label and the same
+  // credential wording the remit below hands them. The remit rail is non-fatal
+  // by contract — the real run classifies either refusal as a failed remit and
+  // still exits 0 — so the dry run reports it on the envelope and exits 0 too.
+  let wouldRemitEndpoint = null;
+  let wouldRemitRefusal = null;
+  if (wouldRemit) {
+    try {
+      assertFetchAvailable(globalThis.fetch);
+      const { base } = assertSecureProxyBase(proxyBase, {
+        label: "Run Telemetry remit",
+        credential: typeof campaignKey === "string" && campaignKey.trim() ? "the campaign key" : null,
+      });
+      wouldRemitEndpoint = `${base}${DEFAULT_RUNS_ENDPOINT}`;
+    } catch (error) {
+      wouldRemitRefusal = String(error?.message ?? error);
+    }
+  }
   const remitStatus = shouldAttemptRemit
     ? await remitRunRecord(record, { proxyBase, consent, campaignKey })
     : { attempted: false, ok: null, error: null, endpoint: null, result: null, http_status: null };
@@ -12623,7 +12844,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     record.remit_base_kind = remitStatus.attempted ? remitBaseKind : null;
   }
 
-  if (write) writeRunRecord(record, { baseDir });
+  if (write) persistRunRecord(record, { baseDir });
 
   const summary = {
     ok: true,
@@ -12649,6 +12870,13 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
       sent: remitStatus.attempted,
       preserved: Boolean(carriedForward),
     },
+    // What a real run of this same command line — the one without --dry-run —
+    // would have done: the record file it would write, and the endpoint it
+    // would POST to (null when --no-remit, --no-write or consent would have
+    // stopped the send anyway, and null with `would_remit_refused` set when the
+    // transport's destination gate refuses the base before any socket opens).
+    // Envelope only; never on the record.
+    ...(dryRun ? { dry_run: true, would_write: resolveRunRecordPath(runId, baseDir), would_remit: wouldRemitEndpoint, would_remit_refused: wouldRemitRefusal } : {}),
   };
   if (silent) return summary;
   if (args.json) {
@@ -12669,8 +12897,32 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     console.log(`Remit: skipped (consent ${record.consent_state}${remitDisabled ? ", disabled for this run" : ""}).`);
   }
   if (write) console.log(`Wrote: ${recordPath}`);
-  else console.log("Dry run only (--no-write). No record written, no remit.");
+  else if (dryRun) {
+    console.log("Dry run (--dry-run). Nothing written, nothing sent.");
+    console.log(`Would write: ${summary.would_write}`);
+    console.log(`Would remit: ${summary.would_remit || (summary.would_remit_refused ? `nothing — the destination is refused before any request: ${summary.would_remit_refused}` : "nothing (remit is off for this run)")}`);
+  } else console.log("Dry run only (--no-write). No record written, no remit.");
   return summary;
+}
+
+/**
+ * The Run Record's one write, real or previewed. `writeRunRecord` validates the
+ * record before it writes and refuses an invalid one; that refusal belongs to
+ * the command rather than to the write, so it runs here on both paths and the
+ * write itself is the only thing a dry run skips. Both modes therefore refuse
+ * the same record with the same message and the same exit code: the check fires
+ * on this line, never on the identical one inside run-record.mjs (which stays
+ * as the writer's own last guard). The validator is that writer's — imported,
+ * not re-stated — so the two cannot disagree about what a valid record is.
+ * Returns the written path, or null when a dry run stopped at the write.
+ */
+function persistRunRecord(record, { baseDir, dryRun = false } = {}) {
+  const validation = validateRunRecord(record);
+  if (!validation.ok) {
+    const detail = validation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
+    throw new Error(`Run Record failed validation; refusing to write: ${detail}`);
+  }
+  return dryRun ? null : writeRunRecord(record, { baseDir });
 }
 
 // The record already written under `runId` for this target, or null when there
@@ -13389,7 +13641,8 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   // A waive command's second line names what it recorded; the third is the
   // stage doctor now picks for the report the waiver was written to.
   if (WAIVE_ACTIONS.has(result.action) && result.gate) {
-    lines.push(`Waived: ${result.gate} by ${result.waiver?.waived_by || "(unattributed)"}${result.waiver?.expires_at ? ` until ${result.waiver.expires_at}` : ""}`);
+    lines.push(`${result.dry_run ? "Would waive" : "Waived"}: ${result.gate} by ${result.waiver?.waived_by || "(unattributed)"}${result.waiver?.expires_at ? ` until ${result.waiver.expires_at}` : ""}`);
+    if (result.dry_run) lines.push(`Would write: ${result.would_write} (nothing was written)`);
     if (result.next_stage) lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
   }
   if (result.targets?.length) {

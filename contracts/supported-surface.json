@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act \u2014 hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here \u2014 src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) \u2014 is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.38.0",
+  "surface_version": "1.39.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -42,7 +42,8 @@
     "run",
     "demo",
     "login",
-    "logout"
+    "logout",
+    "readback"
   ],
   "hashed": {
     "contracts/migration-sidecar-bundle.v0.json": {
@@ -113,6 +114,9 @@
     },
     "demo/apollo-v0/provenance.json": {
       "sha256": "2e440be6513fe06b351c3a72c35424a04f807792621cb01e89803441fd925e06"
+    },
+    "schemas/campaigns-os-readback.v2.schema.json": {
+      "sha256": "c57f9f5bf27f91b4a4109d651c1479fd24ac67755bb4273769ee7cf7572b3c19"
     }
   },
   "named": [
@@ -195,6 +199,7 @@
     "docs/progress-snapshots.md",
     "contracts/fixtures/progress/observation.v0.json",
     "docs/demo-preview.md",
-    "demo/apollo-v0/NOTICE.txt"
+    "demo/apollo-v0/NOTICE.txt",
+    "docs/readback.md"
   ]
 }
