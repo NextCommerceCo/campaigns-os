@@ -2,6 +2,45 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.38.0+agent.2] - 2026-09-22
+
+### Fixed
+
+- `--no-write` now writes nothing, the lifecycle journal included. A command run
+  with `--no-write` no longer appends its command-lifecycle entry, whether the
+  journal was selected by `--lifecycle-journal`, by `CAMPAIGNS_OS_LIFECYCLE_LOG`
+  or by an active run session; previously `run status --no-write` under an
+  ambient session created `.campaign-runtime/command-lifecycle.jsonl` in the
+  target (issue #459). Capture still happens in process; only the append is
+  skipped, so no command's output or exit status changes.
+- A refused invocation (unknown command, unknown subcommand, or a flag the
+  command refuses up front) writes nothing. `frobnicate`, `tooling statuss`,
+  `qa publishh` and `standardize --dryrun` are rejected with the same message
+  and exit status as before, and now record no lifecycle entry and create no
+  file under the target, with or without `--no-write`, with or without a run
+  session, and with `CAMPAIGNS_OS_LIFECYCLE_LOG` set. A typo can no longer
+  materialize a journal. A command that fails INSIDE its handler — `qa run`
+  with a missing packet — still journals, as before.
+- `run status` is read-only: it never sweeps stale sessions and never appends a
+  lifecycle entry, with or without `--no-write`. The help text says so.
+- Unchanged: a known command run without `--no-write` under an active run
+  session still journals to the session's journal, and `doctor`'s existing
+  inspection rule still applies.
+
+### Added
+
+- `docs/harness-matrix.md`: where each agent harness reads instruction files,
+  skills, plugin manifests and MCP servers. Claude Code, Codex and Cursor cells
+  cite first-party vendor documentation (verified 2026-09-22); every other cell
+  is marked `unverified`. The preamble states what "first-party" and "tested"
+  mean, names the two first-release skill placements (`.claude/skills`,
+  `.agents/skills`), and records that Codex lists a same-name skill found in two
+  directories twice.
+- `AGENTS.md` now states the Run Telemetry default in one place: remit is on by
+  default for the canonical endpoint and the CLI announces it on stderr the
+  first time a process remits; capture is always local; `campaigns-os telemetry
+  off`, `CAMPAIGNS_OS_TELEMETRY=off` or per-command `--no-remit` turn remit off.
+
 ## [1.38.0+agent.1] - 2026-09-21
 
 ### Changed

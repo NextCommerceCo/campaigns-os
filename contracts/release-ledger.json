@@ -5492,6 +5492,33 @@
         }
       ],
       "entry_sha256": "c31d5b0fe0f4bcd871897d923466d529f5399010b0bb009326789d69294e00c8"
+    },
+    {
+      "id": "RL-0134",
+      "sequence": 134,
+      "date": "2026-09-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.38.0+agent.2",
+      "changelog_sha256": "a0a505faa6ae7bb29dff006c953db9d71dcc98b117afd425aa0fef51d1166799",
+      "agent_impact": "Three facts about the lifecycle journal, however the journal was selected (--lifecycle-journal, CAMPAIGNS_OS_LIFECYCLE_LOG, or an active run session). A known command run with --no-write no longer appends an entry. A refused invocation — an unknown command, an unknown subcommand, or a flag the command refuses up front — never appends one, with or without --no-write. A command that fails inside its handler still appends. `run status` never appends one, with or without --no-write. A workflow that needs a journal entry for an inspection must therefore run a known command without --no-write; removing --no-write from a refused invocation or from `run status` will not produce one.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run",
+          "summary": "--no-write suppresses the lifecycle-journal append for every command; a refused invocation (unknown command, unknown subcommand, or a flag the command refuses up front) and `run status` never append one; help text states both."
+        },
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "State the Run Telemetry default: remit on by default for the canonical endpoint, announced on stderr, capture always local, and the three ways to turn remit off."
+        }
+      ],
+      "entry_sha256": "10c844aa13f81f394744e1e44bdb6a1554450fc7ffb11ab1c86674487cb2f2a3"
     }
   ]
 }

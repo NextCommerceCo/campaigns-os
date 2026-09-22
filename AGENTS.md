@@ -98,6 +98,16 @@ The portable `./progress` contract preserves separate saved Map, semantic spec
 and output identities, and grants no orientation or deployment trust. See
 [progress snapshots](docs/progress-snapshots.md).
 
+Run Telemetry remit is on by default for the canonical endpoint, and the CLI
+announces that on stderr the first time a process remits. Capture is always
+local: it stays on disk under the target whether or not anything is sent, and
+`--no-write` suppresses the local lifecycle-journal append as well. Turn remit
+off with `campaigns-os telemetry off`, with `CAMPAIGNS_OS_TELEMETRY=off`, or
+per command with `--no-remit`. Every remitting command is declared open-world
+with its destination named once the effect declarations ship, and the agent
+onboarding skill will require an explicit telemetry choice before the first
+remitting command.
+
 1.37.0 adds `demo --target <new-directory>`, an offline visual sample
 that copies a pinned inert Apollo bundle and prints its landing/index.html path.
 It bypasses session recovery and creates no campaign evidence or telemetry.
