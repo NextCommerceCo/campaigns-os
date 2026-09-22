@@ -46,11 +46,12 @@ export const LIFECYCLE_JOURNAL_REL_PATH = ".campaign-runtime/command-lifecycle.j
 // module calling `refused()` directly in a unit test — there is no store and
 // `refusalSeen()` is false; the error tag is added either way.
 //
-// LIMITATION, stated so it is not mistaken for a bug: the store is only active
-// for work that runs inside `runWithRefusalScope`. A `refused()` DEFERRED past
-// the end of that scope — built in a setImmediate/setTimeout/unawaited callback
-// that fires after main() returned — finds no store, so `refusalSeen()` reads
-// false while the error still carries the tag, and the two readings disagree.
+// LIMITATION, stated so it is not mistaken for a bug: AsyncLocalStorage
+// propagates the store into callbacks scheduled inside the scope (a
+// setImmediate/setTimeout/unawaited callback still sees it), so a deferred
+// `refused()` does mark the store — but it may do so AFTER the invocation's
+// persistence step has already run and read `refusalSeen()` as false, so the
+// journal entry would already be written while the error carries the tag.
 // This is not defended against, because refusals are synchronous BY CONTRACT:
 // they are raised up front, before the handler runs, on the same tick as the
 // argv check that rejects the invocation. A refusal that needs to be deferred
