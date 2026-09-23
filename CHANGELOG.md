@@ -10,20 +10,26 @@ Notable supported-surface changes are recorded here.
   executable per project. The project pin — the first exact
   `@nextcommerce/campaigns-os` spec (`x.y.z`, `=x.y.z` or `vx.y.z`) in
   `devDependencies`, then `dependencies`, of each `package.json` walking up from
-  the working directory to the workspace root — comes first; a range counts only
+  the working directory, through manifests that name nothing, to the workspace
+  root — comes first; a range counts only
   when no exact spec exists on that walk, and `peerDependencies` /
   `optionalDependencies` are never a pin. The Build Packet's recorded kernel
   version comes second (the project's `campaign-runtime.build.json`, or
   `--packet <path>`). `--json` carries `pin: { source, version, running,
-  status, range, packet_version, project_version, project_manifest,
-  project_key, forced, message }` and the text view a `Pin:` line under the
+  status, range, packet_version, packet_version_ignored, project_version,
+  project_manifest, project_key, forced, message }` and the text view a `Pin:` line under the
   skills revision line. The line names, for every status, the key and manifest
   of each project version or range it quotes (`devDependencies in
   <project>/package.json`), the nearest manifest when there is no project pin,
   and the packet file of each packet version it quotes; every action names the
-  manifest and key to change. A `package.json` under `node_modules` is never
-  the project, so a run from inside an install resolves the enclosing project;
-  a leading BOM is accepted, and an unreadable ancestor manifest is a warning. `pin.status` is `match`; `stale_pin` (the pin is not the
+  manifest and key to change; a packet value with an `=` or `v` prefix is
+  named as ignored (`packet_version_ignored`), not as absent. An installed
+  package's own manifest (`node_modules/<name>` or `node_modules/@<scope>/<name>`)
+  is never the project, so a run from inside an install resolves the enclosing
+  project, while a project whose own path passes through a `node_modules`
+  directory still resolves its own manifest; a leading BOM is accepted, and an
+  unreadable or malformed ancestor manifest ends the walk with a warning.
+  `pin.status` is `match`; `stale_pin` (the pin is not the
   running version); `conflicting_pin` (both sources present and different); or
   `unpinned` (neither present — a range or tag is not a pin and is reported
   under `range`). `stale_pin` and `conflicting_pin` exit 2 with an action
@@ -47,6 +53,10 @@ Notable supported-surface changes are recorded here.
   check as built — sources and precedence, the four statuses, exit codes,
   `--force`, and JSON and text output from real runs. The `tooling status` help
   line gains `[--packet <campaign-runtime.build.json>] [--force]`.
+- `tooling status` refuses `--no-force` up front (`--force` is bare and off by
+  default), journaling nothing, where the shared parser had let it pass as a
+  no-op; and an empty or whitespace-only project spec is absent, never a
+  `range`.
 - Skills: `bundle_revision` moves to `1.41.0+skills.1` with the package
   version, and every bundled skill's `Bundle revision:` header and its
   `--skills-revision` instruction follow (each skill version patch-bumped).

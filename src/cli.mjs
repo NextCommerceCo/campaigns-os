@@ -11183,48 +11183,63 @@ function exactPinVersion(spec) {
   return typeof spec === "string" ? EXACT_PIN_SPEC_RE.exec(spec)?.[1] ?? null : null;
 }
 
-// A manifest under a node_modules directory is an installed package, never the
-// project: run from inside node_modules, the walk resolves the enclosing
-// project as if the working directory were that project.
+// An installed package's own manifest (node_modules/<name>/package.json or
+// node_modules/@<scope>/<name>/package.json) is never the project: run from
+// inside an install, the walk resolves the enclosing project as if the working
+// directory were that project. Any other manifest is a candidate, even one with
+// a node_modules segment higher up its path.
+function isInstalledPackageDir(dir) {
+  const parent = dirname(dir);
+  if (basename(parent) === "node_modules") return true;
+  return basename(parent).startsWith("@") && basename(dirname(parent)) === "node_modules";
+}
+
 function nearestPackageJson(startDir) {
   for (let dir = resolve(startDir); ; dir = dirname(dir)) {
     const candidate = join(dir, "package.json");
-    if (!dir.split(sep).includes("node_modules") && existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+    if (!isInstalledPackageDir(dir) && existsSync(candidate) && statSync(candidate).isFile()) return candidate;
     if (dirname(dir) === dir) return null;
   }
 }
 
+// npm's array form, or the `{ packages: [...] }` object form yarn also reads.
+function declaresWorkspaces(manifest) {
+  const workspaces = manifest.workspaces;
+  return Array.isArray(workspaces) || (isObject(workspaces) && Array.isArray(workspaces.packages));
+}
+
+// An empty or whitespace-only spec pins nothing, so it counts as absent rather
+// than as a range.
 function pinSpecsIn(manifest) {
   return PIN_KEYS.flatMap((key) => {
     const spec = manifest?.[key]?.[PIN_PACKAGE_NAME];
-    return typeof spec === "string" ? [{ key, spec: spec.trim() }] : [];
+    return typeof spec === "string" && spec.trim() ? [{ key, spec: spec.trim() }] : [];
   });
 }
 
 // The project pin is the first exact spec on the walk up from the nearest
-// manifest, devDependencies before dependencies in each; a range or empty spec
-// is kept only if nothing exact turns up. The walk goes on past a manifest
-// without an exact spec, enters an ancestor only if it names the package or
-// declares `workspaces`, and ends after a workspace root.
+// manifest, devDependencies before dependencies in each; a range is kept only
+// if nothing exact turns up. A manifest that names nothing is
+// neutral and walked through: it cannot supply a pin, so stopping there would
+// only hide one higher up. The walk ends after a workspace root, at the
+// filesystem root, and at a manifest it cannot read, with a warning, since
+// that one might have held the pin.
 function resolveProjectPin(packageJsonPath, warnings) {
   let range = null;
   for (let path = packageJsonPath; path; path = nearestPackageJson(dirname(dirname(path)))) {
     const problem = {};
     const manifest = readPinJson(path, problem);
     if (!manifest) {
-      // An ancestor that cannot be read might have held the pin; one that is
-      // not JSON is no manifest npm would read either.
-      if (path === packageJsonPath) warnings.push(`Project pin unavailable: ${path} ${problem.reason}.`);
-      else if (problem.unreadable) warnings.push(`Project pin walk stopped at ${path}: it ${problem.reason}.`);
+      warnings.push(path === packageJsonPath
+        ? `Project pin unavailable: ${path} ${problem.reason}.`
+        : `Project pin walk stopped at ${path}: it ${problem.reason}.`);
       break;
     }
     const specs = pinSpecsIn(manifest);
-    const workspaceRoot = Object.hasOwn(manifest, "workspaces");
-    if (path !== packageJsonPath && specs.length === 0 && !workspaceRoot) break;
     const exact = specs.find(({ spec }) => exactPinVersion(spec));
     if (exact) return { projectSpec: exact.spec, projectManifest: path, projectKey: exact.key };
     if (!range && specs.length) range = { projectSpec: specs[0].spec, projectManifest: path, projectKey: specs[0].key };
-    if (workspaceRoot || dirname(dirname(path)) === dirname(path)) break;
+    if (declaresWorkspaces(manifest) || dirname(dirname(path)) === dirname(path)) break;
   }
   return range || { projectSpec: null, projectManifest: packageJsonPath, projectKey: null };
 }
@@ -11237,16 +11252,17 @@ function readPinJson(path, problem = {}) {
   try {
     text = readFileSync(path, "utf8");
   } catch (error) {
-    problem.unreadable = true;
     problem.reason = `could not be read (${error.code || error.message})`;
     return null;
   }
+  let value;
   try {
-    const value = JSON.parse(text.replace(/^\uFEFF/, ""));
-    if (isObject(value)) return value;
+    value = JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch {
-    // reported below
+    problem.reason = "is not valid JSON";
+    return null;
   }
+  if (isObject(value)) return value;
   problem.reason = "is not a JSON object";
   return null;
 }
@@ -11275,11 +11291,16 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
   const { projectSpec, projectManifest, projectKey } = resolveProjectPin(packageJsonPath, warnings);
 
   let packetVersion = null;
+  let packetVersionIgnored = null;
   if (packet && Object.hasOwn(packet, "campaigns_os_version")) {
-    if (typeof packet.campaigns_os_version === "string" && EXACT_VERSION_RE.test(packet.campaigns_os_version)) {
-      packetVersion = packet.campaigns_os_version;
+    const recorded = packet.campaigns_os_version;
+    if (typeof recorded === "string" && EXACT_VERSION_RE.test(recorded)) {
+      packetVersion = recorded;
     } else {
-      warnings.push(`Packet campaigns_os_version ignored: ${JSON.stringify(packet.campaigns_os_version)} in ${packetPath} is not an exact version.`);
+      // Kept verbatim (a non-string as its JSON text) so the Pin: line can say
+      // the field was there and ignored, not that it was absent.
+      packetVersionIgnored = typeof recorded === "string" ? recorded : JSON.stringify(recorded);
+      warnings.push(`Packet campaigns_os_version ignored: ${JSON.stringify(recorded)} in ${packetPath} is not an exact version.`);
     }
   } else if (existsSync(packetPath) && !packet) {
     warnings.push(`Packet pin unavailable: ${packetPath} ${packetProblem.reason}.`);
@@ -11291,6 +11312,7 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
     projectKey,
     packetPath: packet ? packetPath : null,
     packetVersion,
+    packetVersionIgnored,
     warnings,
   };
 }
@@ -11300,7 +11322,7 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
  * message names where each version it quotes was read: the key and manifest of
  * the project pin, the packet file of the recorded version.
  */
-export function evaluatePin({ projectSpec = null, projectManifest = null, projectKey = null, packetVersion = null, packetPath = null, running, force = false }) {
+export function evaluatePin({ projectSpec = null, projectManifest = null, projectKey = null, packetVersion = null, packetVersionIgnored = null, packetPath = null, running, force = false }) {
   const projectVersion = exactPinVersion(projectSpec);
   const range = projectSpec != null && !projectVersion ? projectSpec : null;
   const source = projectVersion ? "project" : packetVersion ? "packet" : null;
@@ -11308,7 +11330,9 @@ export function evaluatePin({ projectSpec = null, projectManifest = null, projec
   const manifest = projectManifest || "package.json";
   const projectFrom = `${projectKey || "devDependencies"} in ${manifest}`;
   const packetFrom = `campaigns_os_version in ${packetPath || "the Build Packet"}`;
-  const noPacket = packetPath ? `no campaigns_os_version in ${packetPath}` : "no packet version";
+  const noPacket = packetVersionIgnored != null
+    ? `campaigns_os_version ${JSON.stringify(packetVersionIgnored)} in ${packetPath || "the Build Packet"} is not a bare x.y.z version and was ignored`
+    : packetPath ? `no campaigns_os_version in ${packetPath}` : "no packet version";
   let status;
   let message;
   if (projectVersion && packetVersion && projectVersion !== packetVersion) {
@@ -11335,6 +11359,7 @@ export function evaluatePin({ projectSpec = null, projectManifest = null, projec
     status,
     range,
     packet_version: packetVersion,
+    packet_version_ignored: packetVersionIgnored,
     project_version: projectVersion,
     project_manifest: projectManifest,
     project_key: projectKey,
@@ -11380,6 +11405,11 @@ function toolingCommand(args) {
   // value, and an override must never hinge on how a token happened to parse.
   if (Object.hasOwn(args, "force") && args.force !== true) {
     throw refused(`--force takes no value (got ${JSON.stringify(args.force)}); write \`--force\` on its own.`);
+  }
+  // The parser keeps `--no-force` as its own key, so without this it would
+  // run as if unsaid and the operator would never learn it did nothing.
+  if (Object.hasOwn(args, "no-force")) {
+    throw refused("--no-force is not a flag of tooling status; --force is bare and off by default");
   }
   if (args.packet === true) throw refused("Missing value for --packet");
   const pinSources = resolvePinSources(args);
@@ -11501,6 +11531,7 @@ function toolingCommand(args) {
     projectManifest: pinSources.projectManifest,
     projectKey: pinSources.projectKey,
     packetVersion: pinSources.packetVersion,
+    packetVersionIgnored: pinSources.packetVersionIgnored,
     packetPath: pinSources.packetPath,
     running: pkg.version,
     force: args.force === true,

@@ -160,8 +160,13 @@ and `tooling status` reports it on every run, alongside the revision check.
    `devDependencies` or `dependencies`. Only an exact version is a pin:
    `1.41.0`, and the forms npm reads as the same exact version, `=1.41.0` and
    `v1.41.0` (reported as `project_version: "1.41.0"`). A range or a tag
-   (`^1.40.0`, `latest`, a git spec, an empty string) names no single
-   executable, so it is reported under `range` and counts as no project pin.
+   (`^1.40.0`, `latest`, a git spec) names no single executable, so it is
+   reported under `range` and counts as no project pin. An empty or
+   whitespace-only spec names nothing at all: it is treated as absent, never
+   as a range, so it neither sets `range` nor hides a spec in the other key.
+   A `git+https://…#v1.0.0` or `file:../x` spec is likewise `unpinned`, with
+   the spec in `range`, and an exact spec in `dependencies` beside such a
+   `devDependencies` spec still wins.
    `peerDependencies` and `optionalDependencies` are never a pin: ADR 0002 puts
    the pin in `devDependencies`, and `dependencies` is read because it installs
    the same executable.
@@ -170,23 +175,35 @@ and `tooling status` reports it on every run, alongside the revision check.
    directory (or above the packet's target repository when `--packet` is
    given) and walks up toward the filesystem root. In each manifest it reads
    `devDependencies`, then `dependencies`; the **first exact spec wins** and
-   ends the walk. A range or empty spec does not end it: it is remembered, and
+   ends the walk. A range does not end it: it is remembered, and
    reported as `range` only if no exact spec turns up anywhere on the walk. So
    a range in `devDependencies` never hides an exact pin in `dependencies`,
    and a workspace package without an exact spec resolves its workspace root's
-   pin. The walk enters an ancestor manifest only if that manifest names the
-   package or declares `workspaces`, and it ends after a workspace root, so an
-   unrelated `package.json` further up, even one with an exact pin, is never
-   read.
+   pin. A manifest that names the package in neither key and declares no
+   `workspaces` is neutral: it cannot supply a pin, so the walk goes on
+   through it, and a package nested inside a workspace package still reaches
+   the root's pin. The walk ends after a workspace root (a manifest declaring
+   `workspaces`, as an array or as `{ "packages": [...] }`), so a
+   `package.json` above a workspace root, even one with an exact pin, is never
+   read. It also ends at the filesystem root. One residual: outside a
+   workspace, a stray ancestor manifest that names the package (a
+   `package.json` in a home directory, say) is read when nothing exact turns
+   up below it, because the walk cannot tell it from the project's own root.
 
-   A `package.json` under a `node_modules` directory is an installed package,
-   never the project: run from inside `node_modules` (for example
-   `<project>/node_modules/@nextcommerce/campaigns-os`), the walk skips it and
-   resolves the enclosing project, packet home included, as if the working
-   directory were that project. A leading UTF-8 BOM is accepted, as npm
-   accepts it. A nearest manifest that cannot be read or is not a JSON object,
-   and an ancestor that cannot be read, end the walk with a warning naming the
-   file.
+   An installed package's own manifest is never the project: a `package.json`
+   whose directory sits directly in `node_modules`
+   (`node_modules/<name>/package.json`) or in a scope inside it
+   (`node_modules/@<scope>/<name>/package.json`) is skipped, so a run from
+   inside an install (for example
+   `<project>/node_modules/@nextcommerce/campaigns-os`) resolves the enclosing
+   project, packet home included, as if the working directory were that
+   project. Any other manifest is a candidate, even when a directory higher up
+   its path is named `node_modules` (`…/node_modules/work/site/package.json`
+   is its own project). A leading UTF-8 BOM is accepted, as npm accepts it. A
+   manifest on the walk that cannot be read, is not valid JSON or is not a
+   JSON object ends the walk with a warning naming the file (`Project pin
+   walk stopped at <path>: it is not valid JSON.`; for the nearest manifest,
+   `Project pin unavailable: <path> …`), since it might have held the pin.
 
    `pin.project_manifest` is the manifest the pin (or range) came from, or the
    nearest manifest when there is neither; `pin.project_key` is
@@ -202,7 +219,10 @@ and `tooling status` reports it on every run, alongside the revision check.
    top-level `campaigns_os_version`, which `prepare-build` stamps with the
    version that prepared it. The field is a bare `x.y.z` version (a
    prerelease or build suffix allowed): the packet schema admits no `=` or `v`
-   prefix, so a packet value such as `=1.41.0` is ignored with a warning. The
+   prefix, so a packet value such as `=1.41.0` or `v1.41.0` is ignored with a
+   warning, reported verbatim as `pin.packet_version_ignored` (otherwise
+   `null`; a non-string value as its JSON text), and, when there is no project
+   pin, named on the `Pin:` line as ignored rather than absent. The
    packet read is the project's `campaign-runtime.build.json` beside that
    `package.json` (its contracted home), or the file `--packet <path>` names.
    A missing packet, or one written before the field existed, is no packet
@@ -234,8 +254,9 @@ action. `forced` is `true` only when the flag overrode something; on `match` or
 `unpinned` it stays `false`. The override is recorded on the command-lifecycle
 journal entry: `--force` appears in its `argv_shape` whenever a journal is
 selected (an active run session, `--lifecycle-journal`, or
-`CAMPAIGNS_OS_LIFECYCLE_LOG`). It is a bare flag. `--force true` is refused before
-anything is inspected, and a refused invocation writes no journal entry.
+`CAMPAIGNS_OS_LIFECYCLE_LOG`). It is a bare flag and off by default. `--force true`
+and `--no-force` are refused before anything is inspected, and a refused
+invocation writes no journal entry.
 
 ```bash
 campaigns-os tooling status --json
@@ -255,6 +276,7 @@ carries the full object:
   "status": "conflicting_pin",
   "range": null,
   "packet_version": "1.40.0",
+  "packet_version_ignored": null,
   "project_version": "1.41.0",
   "project_manifest": "<project>/package.json",
   "project_key": "devDependencies",
@@ -271,6 +293,7 @@ carries the full object:
   "status": "unpinned",
   "range": "^1.40.0",
   "packet_version": null,
+  "packet_version_ignored": null,
   "project_version": null,
   "project_manifest": "<project>/package.json",
   "project_key": "devDependencies",
@@ -292,6 +315,7 @@ Pin: stale_pin — project pins 1.40.0 (devDependencies in <project>/package.jso
 Pin: conflicting_pin — project pins 1.41.0 (devDependencies in <project>/package.json), packet records 1.40.0 (campaigns_os_version in <project>/campaign-runtime.build.json)
 Pin: unpinned (no project pin in <project>/package.json; no packet version)
 Pin: unpinned (no project pin in <project>/package.json; no campaigns_os_version in <project>/campaign-runtime.build.json)
+Pin: unpinned (no project pin in <project>/package.json; campaigns_os_version "v1.41.0" in <project>/campaign-runtime.build.json is not a bare x.y.z version and was ignored)
 Pin: unpinned (project range ^1.40.0 (devDependencies in <project>/package.json) is not an exact version; no packet version)
 ```
 
