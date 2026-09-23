@@ -771,8 +771,8 @@ test("with no platform installed the action asks for an install on the harness i
     assert.deepEqual(refreshActions(run), []);
     const install = run.json.actions.filter((action) => action.startsWith("Install bundled skills for the harness you use:"));
     assert.equal(install.length, 1, JSON.stringify(run.json.actions));
-    assert.match(install[0], /install-skills --platform claude \(or --platform codex for Codex, --platform agents for shared agent skills/);
-    assert.doesNotMatch(install[0], /[<|>]/, "the action must be runnable as printed: no <a|b> template");
+    assert.match(install[0], /install-skills --platform claude\. Use --platform codex for Codex, or --platform agents for shared agent skills/);
+    assert.doesNotMatch(install[0], /[<|>()]/, "the command must be runnable as printed: no <a|b> template and no parenthesis");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

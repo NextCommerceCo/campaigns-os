@@ -1,6 +1,9 @@
 // A projection, never a scrubber: source objects and free text never enter
 // the export. Unknown producer values have fixed, non-actionable markers.
 const MODES = new Set(["checkout", "node_modules", "global", "npx_cache", "package_directory"]);
+// The export's platform allowlist. `installed` is a scope label, not a
+// platform: no --platform was given and status checked only the platforms
+// with Campaigns OS skills installed. It is never a --platform value.
 const PLATFORMS = new Set(["claude", "codex", "agents", "all", "installed"]);
 const STAGES = new Set(["prepare-build", "doctor-blocked", "setup", "build", "polish", "deploy", "qa", "done"]);
 const STATUSES = new Set(["ready", "attention_required", "ready_with_warnings", "ready_with_waivers", "blocked"]);
