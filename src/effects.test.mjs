@@ -62,6 +62,7 @@ import { promisify } from "node:util";
 import { createVerdict, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { buildRunSession, writeRunSession } from "./run-session.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
+import { stageRealPackageInstall } from "./package-install-fixture.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -128,9 +129,9 @@ async function startReceiver() {
   return { hits, base: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((done) => server.close(done)) };
 }
 
-async function runCli(argv, { cwd, home, telemetry, lifecycleLog = "", campaignKey = "", traceNetwork = false, extraEnv = {} }) {
+async function runCli(argv, { cwd, home, telemetry, lifecycleLog = "", campaignKey = "", traceNetwork = false, extraEnv = {}, cli = CLI }) {
   try {
-    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, ...argv], {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [cli, ...argv], {
       cwd,
       encoding: "utf8",
       timeout: 120_000,
@@ -338,6 +339,19 @@ const playwrightEnv = (seed) => ({
   PLAYWRIGHT_DOWNLOAD_HOST: CLOSED_LOOPBACK_PORT,
 });
 
+function seedSetupProject(seed) {
+  const installed = stageRealPackageInstall(seed.targetRepo);
+  // The effects snapshot must see real dependency files, not a symlink out of
+  // its observed tree. The setup CLI must be the selected project's own copy.
+  rmSync(join(installed, "node_modules"));
+  cpSync(join(ROOT, "node_modules"), join(installed, "node_modules"), { recursive: true, dereference: true });
+  const version = readJson(join(ROOT, "package.json")).version;
+  writeJson(join(seed.targetRepo, "package.json"), { devDependencies: { "@nextcommerce/campaigns-os": version, "next-campaign-page-kit": "0.2.0" } });
+  writeJson(join(seed.targetRepo, "package-lock.json"), { lockfileVersion: 3, packages: { "node_modules/@nextcommerce/campaigns-os": { version } } });
+  writeJson(join(seed.targetRepo, "node_modules/next-campaign-page-kit/package.json"), { name: "next-campaign-page-kit", version: "0.2.0" });
+  seed.setupCli = join(installed, "bin/campaigns-os.mjs");
+}
+
 const WAIVE = ["--reason", "Pin held for a compatibility window", "--waived-by", "Jordan Lee"];
 // The one assertion `qa waive`'s lane is scoped to, and a scenario the shipped
 // parity fixture declares. Both are spelled here so a rename is one edit.
@@ -379,6 +393,8 @@ const INVOCATIONS = {
     argv: (s) => ["sdk", "storage-check", "--target", s.targetRepo, "--target-sdk", "0.4.38", "--manifest", join(s.targetRepo, "SDK-manifest.json"), "--scope", "_data", "--json"],
   },
   "tooling diagnose": { argv: (s) => ["tooling", "diagnose", "--packet", s.packetPath, "--json"] },
+  "tooling setup": { argv: (s) => ["tooling", "setup", "--target", s.targetRepo, "--platform", "claude", "--json"], prepare: seedSetupProject, cli: (s) => s.setupCli, env: playwrightEnv },
+  "tooling setup|--dry-run": { argv: (s) => ["tooling", "setup", "--target", s.targetRepo, "--platform", "claude", "--dry-run", "--json"], prepare: seedSetupProject, cli: (s) => s.setupCli },
   "tooling status": { argv: () => ["tooling", "status", "--json"] },
   "tooling status|--force": { argv: () => ["tooling", "status", "--force", "--json"] },
   "*refused*": { argv: () => ["nosuchcommand"] },
@@ -573,6 +589,7 @@ async function runCondition(row, invocation, condition) {
       `${row.effect_test}: runs with Run Telemetry consent ON but names no --proxy-base, so its remit would go to the canonical endpoint`,
     );
     const result = await runCli(argv, {
+      ...(invocation.cli ? { cli: invocation.cli(seed) } : {}),
       cwd: seed.dir, home: seed.home, telemetry, lifecycleLog, traceNetwork: true,
       ...(invocation.env ? { extraEnv: invocation.env(seed) } : {}),
       ...(persisted ? { campaignKey: SYNTHETIC_CAMPAIGN_KEY } : {}),

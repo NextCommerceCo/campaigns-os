@@ -485,6 +485,7 @@ Usage:
   campaigns-os readback --example [--json]                                # project the bundled synthetic sample; freshness is not computable for it by design
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
+  campaigns-os tooling setup --target <campaign-directory> [--platform claude] [--dry-run] [--json]   # after installing the pinned project dependencies, install skills, connect Claude's context and install the QA browser; preserve existing pages and instructions, then restart the agent
   campaigns-os login [--store <subdomain>]
   campaigns-os logout [--store <subdomain>]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--skills-revision <bundle-revision|skill-id@version>] [--packet <campaign-runtime.build.json>] [--force] [--json]   # install-mode, git, skill freshness, and local gateway login/store/expiry/reported version. --skills-revision checks the bundle revision the skill you loaded states on its first body line (or that one skill's <skill-id>@<version>) against the bundle THIS CLI ships: revision_check is match, mismatch or unchecked, and a mismatch prints the full status and exits 2 because skill text already in context cannot be refreshed by re-running — start a fresh session. The pin check reports one executable per project: the project pin first — the first exact spec for this package (x.y.z, =x.y.z or vx.y.z) on the walk up from the nearest package.json, devDependencies then dependencies in each, entering a workspace root and stopping there, never peerDependencies or optionalDependencies — then the Build Packet's campaigns_os_version (the project's campaign-runtime.build.json, or --packet <path>); the Pin: line names the key and manifest (or packet) each version came from; pin.status is match, stale_pin (the pin is not the running version), conflicting_pin (the two sources disagree) or unpinned (neither, or only a range; exit 0). stale_pin and conflicting_pin exit 2 with the file to change; --force (bare) overrides them, is reported as pin.forced and lands on the lifecycle journal entry. See docs/skills-revision.md
@@ -651,6 +652,18 @@ export async function main(argv, { authentication } = {}) {
     if (command === "tooling" && args._[1] === "diagnose") {
       const result = toolingDiagnose(args);
       console.log(args.json ? JSON.stringify(result, null, 2) : diagnosticTextLines(result).join("\n"));
+      return;
+    }
+
+    // Project setup must not recover campaign sessions, read gateway bindings,
+    // or emit lifecycle/telemetry evidence before a campaign is selected.
+    if (command === "tooling" && args._[1] === "setup") {
+      const { setupArguments, setupTooling, setupTextLines } = await import("./tooling-setup.mjs");
+      setupArguments(args, argv);
+      const { installQaBrowser } = await import("./qa-node.mjs");
+      const result = setupTooling(args, { packageRoot: ROOT, installSkills, installAgentContext, installBrowser: installQaBrowser });
+      console.log(args.json ? JSON.stringify(result, null, 2) : setupTextLines(result).join("\n"));
+      if (!result.ok) process.exitCode = 2;
       return;
     }
 

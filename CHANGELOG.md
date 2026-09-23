@@ -2,6 +2,32 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.42.0] - 2026-09-23
+
+### Added
+
+- `tooling setup --target <campaign-directory> --platform claude` composes the
+  existing skill, project context and QA-browser installers after checking the
+  selected project's exact toolkit pin and installed page-kit dependency.
+  npm installs the dependencies first; setup runs from the project copy through
+  `npx --no-install campaigns-os`. It preserves campaign pages and existing
+  project instructions, appends the Claude context import once, and refuses
+  conflicting pins, edited context and symlink destinations before writes.
+  `--dry-run` writes nothing and downloads no browser. Browser-install failure
+  reports an incomplete setup that can be rerun. Setup bypasses campaign-session
+  recovery, gateway credential reads, lifecycle capture and telemetry.
+- Bundled local-setup guide documents the initial npm install, context import,
+  browser step and required agent restart. Setup reports `restart_required`;
+  installation is not proof that an agent loaded the matching skill revision.
+
+### Changed
+
+- Skills bundle revision `1.42.0+skills.1`; each bundled skill version advances
+  one patch so a session holding previous instructions must restart.
+- Declared effects include setup and its read-only dry run. Offline effects
+  tests cover every campaign-session/consent condition; browser archive download
+  remains preflight-proved, alongside focused preservation and recovery tests.
+
 ## [1.41.2] - 2026-09-23
 
 ### Fixed

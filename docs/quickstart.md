@@ -5,6 +5,11 @@ interpreting an installed toolkit, saved Map, demo, or preview as campaign proof
 
 This path is optimized for a developer using Claude Code or another AI coding tool with a prepared campaign design.
 
+For Claude Code, [local campaign setup](local-setup.md) combines the pinned
+dependency install, skills, connected project instructions and QA browser in
+one setup entry. It preserves authored source and project instructions. The
+detailed/manual paths below remain supported.
+
 ## Install without a clone
 
 Requirements: Node `>=20.19.0` and npm 10 or 11 (Node 22 ships npm 10). The

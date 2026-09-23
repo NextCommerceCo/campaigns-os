@@ -1,11 +1,11 @@
 ---
 name: campaign-lifecycle-orientation
-version: 1.0.3
+version: 1.0.4
 description: Orient a reader to the Campaigns OS lifecycle artifacts a run has already emitted, without advancing any stage or changing any state.
 ---
 
-Bundle revision: 1.41.2+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.2+skills.1`
+Bundle revision: 1.42.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.42.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read

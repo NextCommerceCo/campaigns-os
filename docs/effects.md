@@ -9,6 +9,13 @@ The point of the file is not the prose. It is that **every row is proved by a
 test** (`src/effects.test.mjs`), and a row without its test cannot be published:
 `npm run check:effects` refuses it.
 
+`tooling setup` composes the existing skill/context/browser installers after a
+project-pin and preservation preflight. It also appends a project `CLAUDE.md`
+import. It bypasses session recovery, gateway credential reads and lifecycle
+capture; `--dry-run` is read-only. Like `qa install-browser`, its browser download
+has preflight-only effects proof offline; setup's preservation and recovery
+behavior has focused tests.
+
 - The contract: [`contracts/effects.v1.json`](../contracts/effects.v1.json)
 - Its shape: [`schemas/campaigns-os-effects.v1.schema.json`](../schemas/campaigns-os-effects.v1.schema.json)
 - The proof: `src/effects.test.mjs`

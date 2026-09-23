@@ -1,6 +1,10 @@
 # Campaigns OS Agent Context
 
-You are helping assemble a NEXT campaign through Campaigns OS. Start from the Build Packet, not from private runtime source.
+You are helping assemble a NEXT campaign through Campaigns OS. Use the
+`next-campaigns-os` skill from this project's pinned toolkit. When a Build
+Packet exists, read it and follow `next`. Check the loaded skill's bundle
+revision and restart the session if it differs from the
+project copy. Do not use private runtime source as the campaign's starting point.
 
 Core rules:
 
