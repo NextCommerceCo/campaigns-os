@@ -11167,13 +11167,21 @@ export function skillsRevisionTextLines(result) {
 }
 
 // The pin checks (ADR 0002, campaigns-os#466): one executable per project. The
-// project pin (an exact devDependency on this package, dependencies as the
-// fallback) comes first, the kernel version the Build Packet records second.
-// Only an exact version is a pin — a range or tag names no one executable, so
-// it is reported as `range` and the project counts as unpinned.
+// project pin (an exact devDependency or dependency on this package) comes
+// first, the kernel version the Build Packet records second. Only an exact
+// version is a pin — a range or tag names no one executable, so it is reported
+// as `range` and the project counts as unpinned.
 const PIN_PACKAGE_NAME = "@nextcommerce/campaigns-os";
 const EXACT_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+// npm reads `=1.2.3` and `v1.2.3` as the exact version 1.2.3.
+const EXACT_PIN_SPEC_RE = /^=?v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/;
+// peerDependencies and optionalDependencies install nothing this project runs.
+const PIN_KEYS = ["devDependencies", "dependencies"];
 const PIN_BLOCKING_STATUSES = new Set(["conflicting_pin", "stale_pin"]);
+
+function exactPinVersion(spec) {
+  return typeof spec === "string" ? EXACT_PIN_SPEC_RE.exec(spec)?.[1] ?? null : null;
+}
 
 function nearestPackageJson(startDir) {
   for (let dir = resolve(startDir); ; dir = dirname(dir)) {
@@ -11181,6 +11189,37 @@ function nearestPackageJson(startDir) {
     if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
     if (dirname(dir) === dir) return null;
   }
+}
+
+function pinSpecsIn(manifest) {
+  return PIN_KEYS.flatMap((key) => {
+    const spec = manifest?.[key]?.[PIN_PACKAGE_NAME];
+    return typeof spec === "string" ? [{ key, spec: spec.trim() }] : [];
+  });
+}
+
+// The project pin is the first exact spec on the walk up from the nearest
+// manifest, devDependencies before dependencies in each; a range or empty spec
+// is kept only if nothing exact turns up. The walk goes on past a manifest
+// without an exact spec, enters an ancestor only if it names the package or
+// declares `workspaces`, and ends after a workspace root.
+function resolveProjectPin(packageJsonPath, warnings) {
+  let range = null;
+  for (let path = packageJsonPath; path; path = nearestPackageJson(dirname(dirname(path)))) {
+    const manifest = readPinJson(path);
+    if (!manifest) {
+      if (path === packageJsonPath) warnings.push(`Project pin unavailable: ${path} is not a JSON object.`);
+      break;
+    }
+    const specs = pinSpecsIn(manifest);
+    const workspaceRoot = Object.hasOwn(manifest, "workspaces");
+    if (path !== packageJsonPath && specs.length === 0 && !workspaceRoot) break;
+    const exact = specs.find(({ spec }) => exactPinVersion(spec));
+    if (exact) return { projectSpec: exact.spec, projectManifest: path, projectKey: exact.key };
+    if (!range && specs.length) range = { projectSpec: specs[0].spec, projectManifest: path, projectKey: specs[0].key };
+    if (workspaceRoot || dirname(dirname(path)) === dirname(path)) break;
+  }
+  return range || { projectSpec: null, projectManifest: packageJsonPath, projectKey: null };
 }
 
 // A malformed file is a missing source plus a warning, never a crash: the pin
@@ -11214,13 +11253,7 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
     if (existsSync(packetPath)) packet = readPinJson(packetPath);
   }
 
-  let projectSpec = null;
-  if (packageJsonPath) {
-    const manifest = readPinJson(packageJsonPath);
-    if (!manifest) warnings.push(`Project pin unavailable: ${packageJsonPath} is not a JSON object.`);
-    const spec = manifest?.devDependencies?.[PIN_PACKAGE_NAME] ?? manifest?.dependencies?.[PIN_PACKAGE_NAME];
-    if (typeof spec === "string" && spec.trim()) projectSpec = spec.trim();
-  }
+  const { projectSpec, projectManifest, projectKey } = resolveProjectPin(packageJsonPath, warnings);
 
   let packetVersion = null;
   if (packet && Object.hasOwn(packet, "campaigns_os_version")) {
@@ -11235,6 +11268,8 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
   return {
     packageJsonPath,
     projectSpec,
+    projectManifest,
+    projectKey,
     packetPath: packet ? packetPath : null,
     packetVersion,
     warnings,
@@ -11242,11 +11277,12 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
 }
 
 /** Pure: the pin status from the two sources and the running version. */
-export function evaluatePin({ projectSpec = null, packetVersion = null, running, force = false }) {
-  const projectVersion = projectSpec && EXACT_VERSION_RE.test(projectSpec) ? projectSpec : null;
-  const range = projectSpec && !projectVersion ? projectSpec : null;
+export function evaluatePin({ projectSpec = null, projectManifest = null, projectKey = null, packetVersion = null, running, force = false }) {
+  const projectVersion = exactPinVersion(projectSpec);
+  const range = projectSpec != null && !projectVersion ? projectSpec : null;
   const source = projectVersion ? "project" : packetVersion ? "packet" : null;
   const version = projectVersion || packetVersion || null;
+  const projectLabel = projectKey === "dependencies" ? "project dependency" : "project devDependency";
   let status;
   let message;
   if (projectVersion && packetVersion && projectVersion !== packetVersion) {
@@ -11254,13 +11290,13 @@ export function evaluatePin({ projectSpec = null, packetVersion = null, running,
     message = `conflicting_pin — project pins ${projectVersion}, packet records ${packetVersion}`;
   } else if (!version) {
     status = "unpinned";
-    message = `unpinned (${range ? `project range ${range} is not an exact version` : "no project devDependency"}, no packet version)`;
+    message = `unpinned (${range != null ? `project range ${range || '""'} is not an exact version` : "no project devDependency"}, no packet version)`;
   } else if (version !== running) {
     status = "stale_pin";
     message = `stale_pin — ${source === "project" ? "project pins" : "packet records"} ${version}, running ${running}`;
   } else {
     status = "match";
-    message = `match (${version}, ${source === "project" ? "project devDependency" : "packet campaigns_os_version"})`;
+    message = `match (${version}, ${source === "project" ? projectLabel : "packet campaigns_os_version"})`;
   }
   const forced = force && PIN_BLOCKING_STATUSES.has(status);
   return {
@@ -11271,21 +11307,29 @@ export function evaluatePin({ projectSpec = null, packetVersion = null, running,
     range,
     packet_version: packetVersion,
     project_version: projectVersion,
+    project_manifest: projectManifest,
+    project_key: projectKey,
     forced,
     message: forced ? `${message} (overridden by --force)` : message,
   };
 }
 
+// Each line names the manifest and key the pin (or range) was read from; with
+// neither, the nearest manifest and devDependencies, where the ADR puts a pin.
 function pinAction(pin, sources) {
-  const manifest = sources.packageJsonPath || "the project's package.json";
+  const manifest = pin.project_manifest || "the project's package.json";
+  const key = pin.project_key || "devDependencies";
   const packet = sources.packetPath || "the Build Packet";
   if (pin.status === "conflicting_pin") {
-    return `Align the project pin: set devDependencies["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.packet_version}, or re-run prepare-build with ${pin.project_version} so ${packet} records it. Pass --force to proceed anyway (recorded).`;
+    return `Align the project pin: set ${key}["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.packet_version}, or re-run prepare-build with ${pin.project_version} so ${packet} records it. Pass --force to proceed anyway (recorded).`;
   }
   if (pin.source === "project") {
-    return `Run the pinned executable (npx campaigns-os from the project), or move the pin: set devDependencies["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.running} and reinstall. Pass --force to proceed anyway (recorded).`;
+    return `Run the pinned executable (npx campaigns-os from the project), or move the pin: set ${key}["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.running} and reinstall. Pass --force to proceed anyway (recorded).`;
   }
-  return `Run the version ${packet} records (${pin.packet_version}), or pin the project: add "${PIN_PACKAGE_NAME}": "${pin.running}" to devDependencies in ${manifest}; the next prepare-build re-stamps ${packet}. Pass --force to proceed anyway (recorded).`;
+  const pinStep = pin.project_key
+    ? `set ${key}["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.running} (it holds the range ${JSON.stringify(pin.range)})`
+    : `add "${PIN_PACKAGE_NAME}": "${pin.running}" to ${key} in ${manifest}`;
+  return `Run the version ${packet} records (${pin.packet_version}), or pin the project: ${pinStep}; the next prepare-build re-stamps ${packet}. Pass --force to proceed anyway (recorded).`;
 }
 
 export function pinTextLines(result) {
@@ -11425,6 +11469,8 @@ function toolingCommand(args) {
   // command is, not whichever one the project would have resolved.
   const pin = evaluatePin({
     projectSpec: pinSources.projectSpec,
+    projectManifest: pinSources.projectManifest,
+    projectKey: pinSources.projectKey,
     packetVersion: pinSources.packetVersion,
     running: pkg.version,
     force: args.force === true,

@@ -156,12 +156,33 @@ and `tooling status` reports it on every run, alongside the revision check.
 
 ### Sources and precedence
 
-1. **The project pin.** The nearest `package.json` above the working directory
-   (or above the packet's target repository when `--packet` is given):
-   `devDependencies["@nextcommerce/campaigns-os"]`, then `dependencies` as the
-   fallback. Only an exact version is a pin. A range or a tag (`^1.40.0`,
-   `latest`, a git spec) names no single executable, so it is reported under
-   `range` and counts as no project pin.
+1. **The project pin.** An entry for `@nextcommerce/campaigns-os` in
+   `devDependencies` or `dependencies`. Only an exact version is a pin:
+   `1.41.0`, and the forms npm reads as the same exact version, `=1.41.0` and
+   `v1.41.0` (reported as `project_version: "1.41.0"`). A range or a tag
+   (`^1.40.0`, `latest`, a git spec, an empty string) names no single
+   executable, so it is reported under `range` and counts as no project pin.
+   `peerDependencies` and `optionalDependencies` are never a pin: ADR 0002 puts
+   the pin in `devDependencies`, and `dependencies` is read because it installs
+   the same executable.
+
+   The resolver starts at the nearest `package.json` above the working
+   directory (or above the packet's target repository when `--packet` is
+   given) and walks up toward the filesystem root. In each manifest it reads
+   `devDependencies`, then `dependencies`; the **first exact spec wins** and
+   ends the walk. A range or empty spec does not end it: it is remembered, and
+   reported as `range` only if no exact spec turns up anywhere on the walk. So
+   a range in `devDependencies` never hides an exact pin in `dependencies`,
+   and a workspace package without an exact spec resolves its workspace root's
+   pin. The walk enters an ancestor manifest only if that manifest names the
+   package or declares `workspaces`, and it ends after a workspace root, so an
+   unrelated `package.json` further up is never read.
+
+   `pin.project_manifest` is the manifest the pin (or range) came from, or the
+   nearest manifest when there is neither; `pin.project_key` is
+   `"devDependencies"`, `"dependencies"` or `null`. The text line and every
+   action name that manifest and key: a pin read from `dependencies` reads
+   `project dependency` and its action says `set dependencies[...]`.
 2. **The packet's recorded kernel version.** The Build Packet's optional
    top-level `campaigns_os_version`, which `prepare-build` stamps with the
    version that prepared it. The packet read is the project's
@@ -169,7 +190,9 @@ and `tooling status` reports it on every run, alongside the revision check.
    home), or the file `--packet <path>` names. A missing packet, or one written
    before the field existed, is no packet source.
 
-The **running** version is the `package.json` of the CLI the command runs from.
+The packet is read from beside the nearest `package.json`, whichever manifest
+the project pin came from. The **running** version is the `package.json` of the
+CLI the command runs from.
 When both sources are present and equal, `source` is `"project"`.
 
 ### The four statuses
@@ -215,6 +238,8 @@ carries the full object:
   "range": null,
   "packet_version": "1.40.0",
   "project_version": "1.41.0",
+  "project_manifest": "<project>/package.json",
+  "project_key": "devDependencies",
   "forced": false,
   "message": "conflicting_pin — project pins 1.41.0, packet records 1.40.0"
 }
@@ -229,6 +254,8 @@ carries the full object:
   "range": "^1.40.0",
   "packet_version": null,
   "project_version": null,
+  "project_manifest": "<project>/package.json",
+  "project_key": "devDependencies",
   "forced": false,
   "message": "unpinned (project range ^1.40.0 is not an exact version, no packet version)"
 }
@@ -238,6 +265,7 @@ The text view prints one named line under the skills revision line:
 
 ```
 Pin: match (1.41.0, project devDependency)
+Pin: match (1.41.0, project dependency)
 Pin: match (1.41.0, packet campaigns_os_version)
 Pin: stale_pin — project pins 1.40.0, running 1.41.0
 Pin: stale_pin — project pins 1.40.0, running 1.41.0 (overridden by --force)

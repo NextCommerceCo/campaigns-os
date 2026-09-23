@@ -7,14 +7,18 @@ Notable supported-surface changes are recorded here.
 ### Added
 
 - `tooling status` reports the pin checks (ADR 0002, campaigns-os#466): one
-  executable per project. The project pin — an exact
-  `devDependencies["@nextcommerce/campaigns-os"]` (then `dependencies`) in the
-  nearest `package.json` above the working directory — comes first; the Build
-  Packet's recorded kernel version second (the project's
-  `campaign-runtime.build.json`, or `--packet <path>`). `--json` carries
-  `pin: { source, version, running, status, range, packet_version,
-  project_version, forced, message }` and the text view a `Pin:` line under the
-  skills revision line. `pin.status` is `match`; `stale_pin` (the pin is not the
+  executable per project. The project pin — the first exact
+  `@nextcommerce/campaigns-os` spec (`x.y.z`, `=x.y.z` or `vx.y.z`) in
+  `devDependencies`, then `dependencies`, of each `package.json` walking up from
+  the working directory to the workspace root — comes first; a range counts only
+  when no exact spec exists on that walk, and `peerDependencies` /
+  `optionalDependencies` are never a pin. The Build Packet's recorded kernel
+  version comes second (the project's `campaign-runtime.build.json`, or
+  `--packet <path>`). `--json` carries `pin: { source, version, running,
+  status, range, packet_version, project_version, project_manifest,
+  project_key, forced, message }` and the text view a `Pin:` line under the
+  skills revision line; the line and every action name the manifest and key the
+  pin was read from. `pin.status` is `match`; `stale_pin` (the pin is not the
   running version); `conflicting_pin` (both sources present and different); or
   `unpinned` (neither present — a range or tag is not a pin and is reported
   under `range`). `stale_pin` and `conflicting_pin` exit 2 with an action
@@ -41,6 +45,13 @@ Notable supported-surface changes are recorded here.
 - Skills: `bundle_revision` moves to `1.41.0+skills.1` with the package
   version, and every bundled skill's `Bundle revision:` header and its
   `--skills-revision` instruction follow (each skill version patch-bumped).
+- `contracts/supported-surface.json`: `surface_version` 1.41.0, with the
+  sha256 of the hashed `contracts/effects.v1.json` and
+  `schemas/campaign-runtime-build-packet.v0.schema.json` entries recomputed. No
+  entry, command, export or bin moved.
+- `package.json` and `package-lock.json`: version 1.41.0; no dependency moved.
+- `docs/orientation-contract-reference.md` and `docs/runtime-readiness.md`:
+  regenerated for surface version 1.41.0.
 
 ## [1.40.0] - 2026-09-22
 

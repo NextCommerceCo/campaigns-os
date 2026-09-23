@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,6 +59,18 @@ function project({ devDependency, dependency, packetVersion } = {}) {
   return { dir, cli };
 }
 
+// A further manifest on the walk: a workspace package or an enclosing root.
+function writeManifest(dir, fields = {}) {
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, "package.json");
+  writeFileSync(path, `${JSON.stringify({ name: "campaign-fixture-part", private: true, ...fields }, null, 2)}\n`);
+  return path;
+}
+
+function writePacket(dir, version) {
+  writeFileSync(join(dir, "campaign-runtime.build.json"), `${JSON.stringify({ schema_version: "campaign-runtime-build-packet/v0", campaigns_os_version: version }, null, 2)}\n`);
+}
+
 function status({ dir, cli }, extra = [], { cwd = dir } = {}) {
   const run = spawnSync(process.execPath, [cli, "tooling", "status", "--target", skillsTarget, ...extra], { cwd, encoding: "utf8" });
   const stdout = run.stdout ?? "";
@@ -76,6 +88,8 @@ test("pin-checks: an exact project pin equal to the running version is a match",
     range: null,
     packet_version: null,
     project_version: RUNNING,
+    project_manifest: join(fixture.dir, "package.json"),
+    project_key: "devDependencies",
     forced: false,
     message: `match (${RUNNING}, project devDependency)`,
   }, run.stderr);
@@ -86,9 +100,23 @@ test("pin-checks: an exact project pin equal to the running version is a match",
 });
 
 test("pin-checks: dependencies is the fallback when devDependencies does not name the package", () => {
-  const run = status(project({ dependency: RUNNING }), ["--json"]);
+  const fixture = project({ dependency: RUNNING });
+  const run = status(fixture, ["--json"]);
   assert.equal(run.json.pin.status, "match", run.stderr);
   assert.equal(run.json.pin.source, "project");
+  assert.equal(run.json.pin.project_key, "dependencies");
+  assert.equal(run.json.pin.message, `match (${RUNNING}, project dependency)`);
+  assert.match(status(fixture).stdout, new RegExp(`^Pin: match \\(${RUNNING.replace(/\./g, "\\.")}, project dependency\\)$`, "m"));
+});
+
+test("pin-checks: a pin read from dependencies is labelled and remediated as dependencies", () => {
+  const fixture = project({ dependency: OLDER });
+  const run = status(fixture, ["--json"]);
+  assert.equal(run.json.pin.status, "stale_pin", run.stderr);
+  assert.equal(run.json.pin.project_key, "dependencies");
+  const action = run.json.actions.find((line) => line.includes("--force"));
+  assert.ok(action?.includes(`set dependencies["${PACKAGE}"] in ${join(fixture.dir, "package.json")}`), `the action names the key consulted: ${JSON.stringify(run.json.actions)}`);
+  assert.ok(!action.includes("devDependencies"), action);
 });
 
 test("pin-checks: a project pin behind the running version is stale_pin, exits 2 and names package.json", () => {
@@ -189,6 +217,8 @@ test("pin-checks: neither source is unpinned, exits 0 and is still reported", ()
     range: null,
     packet_version: null,
     project_version: null,
+    project_manifest: join(fixture.dir, "package.json"),
+    project_key: null,
     forced: false,
     message: "unpinned (no project devDependency, no packet version)",
   }, run.stderr);
@@ -205,6 +235,105 @@ test("pin-checks: a range is not a pin — unpinned, with the range reported", (
   assert.equal(run.json.pin.project_version, null);
   assert.equal(run.status, 0);
   assert.equal(run.json.pin.message, "unpinned (project range ^1.40.0 is not an exact version, no packet version)");
+});
+
+test("pin-checks: c1 — a range in devDependencies does not mask an exact pin in dependencies", () => {
+  const fixture = project({ devDependency: "^1.40.0", dependency: OLDER, packetVersion: RUNNING });
+  const run = status(fixture, ["--json"]);
+  assert.equal(run.json.pin.status, "conflicting_pin", run.stderr);
+  assert.equal(run.json.pin.project_version, OLDER);
+  assert.equal(run.json.pin.project_key, "dependencies");
+  assert.equal(run.json.pin.project_manifest, join(fixture.dir, "package.json"));
+  assert.equal(run.json.pin.range, null);
+  assert.ok(run.json.actions.some((action) => action.includes(`set dependencies["${PACKAGE}"] in ${join(fixture.dir, "package.json")}`)), JSON.stringify(run.json.actions));
+});
+
+test("pin-checks: c2 — an empty devDependencies spec does not mask an exact pin in dependencies", () => {
+  const run = status(project({ devDependency: "", dependency: OLDER }), ["--json"]);
+  assert.equal(run.json.pin.status, "stale_pin", run.stderr);
+  assert.equal(run.json.pin.source, "project");
+  assert.equal(run.json.pin.project_version, OLDER);
+  assert.equal(run.json.pin.project_key, "dependencies");
+  assert.equal(run.json.pin.range, null);
+});
+
+test("pin-checks: c3 — =x.y.z and vx.y.z are exact pins, as npm reads them", () => {
+  for (const spec of [`=${RUNNING}`, `v${RUNNING}`]) {
+    const run = status(project({ devDependency: spec }), ["--json"]);
+    assert.equal(run.json.pin.status, "match", `${spec}: ${run.stderr}`);
+    assert.equal(run.json.pin.project_version, RUNNING, spec);
+    assert.equal(run.json.pin.range, null, spec);
+  }
+});
+
+test("pin-checks: c4 — a workspace package without the entry resolves the workspace root's pin", () => {
+  const root = project({ devDependency: OLDER });
+  writeManifest(root.dir, { name: "campaign-fixture", private: true, workspaces: ["packages/*"], devDependencies: { [PACKAGE]: OLDER } });
+  const app = join(root.dir, "packages", "app");
+  writeManifest(app);
+  writePacket(app, RUNNING);
+  const run = status(root, ["--json"], { cwd: app });
+  assert.equal(run.json.pin.status, "conflicting_pin", run.stderr);
+  assert.equal(run.json.pin.project_version, OLDER);
+  assert.equal(run.json.pin.packet_version, RUNNING);
+  assert.equal(run.json.pin.project_manifest, join(root.dir, "package.json"));
+  assert.equal(run.json.pin.project_key, "devDependencies");
+  assert.ok(run.json.actions.some((action) => action.includes(join(root.dir, "package.json")) && action.includes(join(app, "campaign-runtime.build.json"))), JSON.stringify(run.json.actions));
+});
+
+test("pin-checks: a nested manifest that declares the entry wins over the root", () => {
+  const root = project();
+  writeManifest(root.dir, { name: "campaign-fixture", private: true, workspaces: ["packages/*"], devDependencies: { [PACKAGE]: OLDER } });
+  const app = join(root.dir, "packages", "app");
+  const appManifest = writeManifest(app, { devDependencies: { [PACKAGE]: RUNNING } });
+  const run = status(root, ["--json"], { cwd: app });
+  assert.equal(run.json.pin.status, "match", run.stderr);
+  assert.equal(run.json.pin.project_version, RUNNING);
+  assert.equal(run.json.pin.project_manifest, appManifest);
+});
+
+test("pin-checks: a range at the nearest manifest yields to an exact pin at the root", () => {
+  const root = project({ dependency: OLDER });
+  const app = join(root.dir, "packages", "app");
+  writeManifest(app, { devDependencies: { [PACKAGE]: "^1.40.0" } });
+  const run = status(root, ["--json"], { cwd: app });
+  assert.equal(run.json.pin.status, "stale_pin", run.stderr);
+  assert.equal(run.json.pin.project_version, OLDER);
+  assert.equal(run.json.pin.range, null);
+  assert.equal(run.json.pin.project_manifest, join(root.dir, "package.json"));
+  assert.equal(run.json.pin.project_key, "dependencies");
+});
+
+test("pin-checks: the walk does not enter an ancestor that names nothing and declares no workspaces", () => {
+  const root = project({ devDependency: OLDER });
+  const middle = join(root.dir, "vendor");
+  writeManifest(middle);
+  const app = join(middle, "app");
+  const appManifest = writeManifest(app);
+  const run = status(root, ["--json"], { cwd: app });
+  assert.equal(run.json.pin.status, "unpinned", run.stderr);
+  assert.equal(run.json.pin.project_manifest, appManifest);
+  assert.equal(run.json.pin.project_key, null);
+});
+
+test("pin-checks: a symlinked package.json resolves through the link", () => {
+  const fixture = project();
+  const real = writeManifest(join(scratch, `linked-manifest-${projectCount}`), { devDependencies: { [PACKAGE]: RUNNING } });
+  rmSync(join(fixture.dir, "package.json"));
+  symlinkSync(real, join(fixture.dir, "package.json"));
+  const run = status(fixture, ["--json"]);
+  assert.equal(run.json.pin.status, "match", run.stderr);
+  assert.equal(run.json.pin.project_version, RUNNING);
+  assert.equal(run.json.pin.project_manifest, join(fixture.dir, "package.json"));
+});
+
+test("pin-checks: peerDependencies and optionalDependencies are not a project pin", () => {
+  const fixture = project();
+  writeManifest(fixture.dir, { name: "campaign-fixture", private: true, peerDependencies: { [PACKAGE]: RUNNING }, optionalDependencies: { [PACKAGE]: RUNNING } });
+  const run = status(fixture, ["--json"]);
+  assert.equal(run.json.pin.status, "unpinned", run.stderr);
+  assert.equal(run.json.pin.project_key, null);
+  assert.equal(run.json.pin.range, null);
 });
 
 test("pin-checks: run from a subdirectory of the project, the same pin resolves", () => {
@@ -233,6 +362,10 @@ test("pin-checks: evaluatePin — precedence and the four statuses without a spa
   assert.equal(evaluatePin({ projectSpec: "2.0.0", packetVersion: "1.9.0", running: "2.0.0" }).status, "conflicting_pin");
   assert.equal(evaluatePin({ projectSpec: "latest", packetVersion: "1.9.0", running: "2.0.0" }).status, "stale_pin");
   assert.equal(evaluatePin({ projectSpec: "latest", running: "2.0.0" }).range, "latest");
+  assert.equal(evaluatePin({ projectSpec: "=2.0.0", running: "2.0.0" }).project_version, "2.0.0");
+  assert.equal(evaluatePin({ projectSpec: "v2.0.0", running: "2.0.0" }).project_version, "2.0.0");
+  assert.equal(evaluatePin({ projectSpec: "", running: "2.0.0" }).range, "");
+  assert.equal(evaluatePin({ projectSpec: "2.0.0", projectKey: "dependencies", running: "2.0.0" }).message, "match (2.0.0, project dependency)");
   // --force is recorded only when it overrode something.
   assert.equal(evaluatePin({ projectSpec: "2.0.0", running: "2.0.0", force: true }).forced, false);
   assert.equal(evaluatePin({ projectSpec: "1.0.0", running: "2.0.0", force: true }).forced, true);
