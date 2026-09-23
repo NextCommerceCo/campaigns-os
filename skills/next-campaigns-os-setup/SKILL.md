@@ -1,8 +1,14 @@
 ---
 name: next-campaigns-os-setup
-version: 2.0.1
+version: 2.0.3
 description: Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring. Formerly installed as next-campaigns-setup; renamed 2026-08 to stop colliding with the published NextCommerceCo/skills scaffolder of that name.
 ---
+
+Bundle revision: 1.40.0+skills.2
+Run `campaigns-os tooling status --skills-revision 1.40.0+skills.2` at the start of each
+task and start a fresh session if it reports `mismatch`, because this text is
+already in your context and is never re-read while the CLI on disk can move
+under it.
 
 # Next Campaigns OS Setup
 
@@ -11,18 +17,25 @@ description: Bootstrap or prepare a target page-kit campaign repo from a doctor-
 Run from the campaign folder with an exact project-local devDependency and
 committed lockfile. Orient on reviewed source before installation; check release
 provenance or pin the full reviewed Git SHA. Preflight with `npx campaigns-os
-tooling status --platform <claude|codex>` and refresh bundled skills for the same
-profile. Use the invocation printed by status and `next` to avoid PATH shadowing.
+tooling status --platform <claude|codex>` (tier `B`: its only write is the
+command-lifecycle journal) and refresh bundled skills for the same profile with
+`install-skills` (tier `B`: writes the shared skill directories; nothing leaves
+the machine). Use the invocation printed by status and `next` to avoid PATH shadowing.
 
 In the instructions below, bare `campaigns-os …` means `npx campaigns-os …`
 from that campaign folder. Global-only users substitute the global copy's printed invocation for
 each `npx campaigns-os` example; toolkit contributors translate to `npm run campaigns-os -- …` in
 the toolkit checkout. Browser installation is `npx campaigns-os qa
 install-browser`, not a campaign npm script. `tooling diagnose --packet <p>
---json` provides a redacted support export without changing retained evidence.
+--json` (tier `none`: read-only, and exempt from lifecycle capture) provides a
+redacted support export without changing retained evidence.
+
+The effect class in each parenthetical below is the declared row of
+`contracts/effects.v1.json` (`none` < `B` writes < `A` sends < `C` destructive).
+Read that file, not this text, when an exact path or endpoint matters.
 
 
-Use this skill when the Build Packet doctor says setup is required before assembly.
+Use this skill when the Build Packet doctor (tier `none`: read-only inspection) says setup is required before assembly. Setup follows `campaigns-os start` or `campaigns-os prepare-build` (tier `A`: they write the Build Packet, Build Context, assembly report and run session under the target and contact the Map and run endpoints).
 
 Responsibilities:
 

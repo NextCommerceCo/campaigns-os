@@ -59,8 +59,19 @@
     { "match": { "kind": "exact", "value": "contracts/agent-relevant-change-policy.v1.json" }, "class": "compatibility_policy" },
     { "match": { "kind": "exact", "value": "contracts/orientation-limits.v1.json" }, "class": "compatibility_policy" },
     { "match": { "kind": "exact", "value": "contracts/orientation-reason-codes.v1.json" }, "class": "compatibility_policy" },
+    { "match": { "kind": "exact", "value": "contracts/effects.v1.json" }, "class": "compatibility_policy" },
     { "match": { "kind": "exact", "value": "bin/campaigns-os.mjs" }, "class": "cli_surface" },
     { "match": { "kind": "exact", "value": "src/cli.mjs" }, "class": "cli_surface" },
+    {
+      "match": { "kind": "prefix", "value": "src/agent/" },
+      "class": "cli_surface",
+      "_note": "The agent-facing entry points (skill install, agent context, the tooling-status revision check) are reachable from the supported argv surface, so a change under src/agent/ is a CLI-surface change even though the rest of src/ is unsupported implementation. This rule sits ahead of the broad src/ ignore on purpose: the ignore's reason is 'implementation reachable only through declared package exports', which is exactly what this subtree is not."
+    },
+    {
+      "match": { "kind": "prefix", "value": "agents/" },
+      "class": "documentation",
+      "_note": "The per-platform agent instruction files an agent orients on (and that `install-agent-context` copies into a target repo). They were ignored as 'illustrative' while nothing consumed them; they are now named supported surface, so a change to one is a documentation change a consumer can see."
+    },
     { "match": { "kind": "exact", "value": "skills.json" }, "class": "skill" },
     { "match": { "kind": "exact", "value": "skills.sh" }, "class": "skill" },
     { "match": { "kind": "prefix", "value": "skills/" }, "class": "skill" },
@@ -92,7 +103,6 @@
     { "match": { "kind": "prefix", "value": "campaign-spec/" }, "reason": "Tests, fixtures, and packaging metadata for the generated runtime. The runtime sources a consumer must rebuild are classified by the generated_runtime rule first; only that rule's exclusions reach here." },
     { "match": { "kind": "prefix", "value": "examples/" }, "reason": "Illustrative, regenerated at will (docs/supported-surface.md)." },
     { "match": { "kind": "prefix", "value": "prompts/" }, "reason": "Illustrative, regenerated at will (docs/supported-surface.md)." },
-    { "match": { "kind": "prefix", "value": "agents/" }, "reason": "Illustrative, regenerated at will (docs/supported-surface.md)." },
     { "match": { "kind": "prefix", "value": "docs/adr/" }, "reason": "Architecture decision records: rationale, not a consumed contract." },
     { "match": { "kind": "prefix", "value": "docs/" }, "reason": "Documentation that is not on the named supported surface and not an agent document of record. Named docs are classified by the derived pass first." },
     { "match": { "kind": "exact", "value": "README.md" }, "reason": "Repository front page; the agent entry point is AGENTS.md." },

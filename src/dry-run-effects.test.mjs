@@ -331,6 +331,27 @@ test("run-record --dry-run with --no-remit or --no-write still writes nothing an
   assert.deepEqual(snapshot(dir), before);
 });
 
+test("qa publish --dry-run <value> is an up-front refusal: no post, no write, no journal entry", async (t) => {
+  const { dir } = seedTarget(t);
+  const receiver = await startReceiver();
+  t.after(() => receiver.close());
+  const before = snapshot(dir);
+  const journal = join(dir, ".campaign-runtime", "command-lifecycle.jsonl");
+
+  // The bare-flag check lives in qa-publish.mjs, not in cli.mjs's isDryRun, so
+  // it must carry the same refusal tag or the journal exemption for refused
+  // invocations silently does not apply to this one command.
+  const valued = await runCli(
+    ["qa", "publish", "--proxy-base", receiver.base, "--dry-run", "true", "--json"],
+    { cwd: dir, telemetry: "on", lifecycleLog: journal },
+  );
+  assert.notEqual(valued.code, 0);
+  assert.match(valued.stderr, /--dry-run takes no value/);
+  assert.equal(receiver.posts.length, 0);
+  assert.equal(existsSync(journal), false, "a refused invocation appends no lifecycle entry");
+  assert.deepEqual(snapshot(dir), before);
+});
+
 test("run end carries --dry-run to run-record and leaves the session open", async (t) => {
   const { dir, packetPath } = seedTarget(t);
   const receiver = await startReceiver();

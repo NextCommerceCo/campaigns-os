@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-effects.v1.schema.json",
+  "title": "Campaigns OS Declared Command Effects v1",
+  "description": "The shape of contracts/effects.v1.json: one row per supported invocation — a command, its subcommand, and the flag combination that changes what the invocation does to the world — stating what it writes, what it sends, the MCP-style annotations a tool face would carry, the effect tier, and the name of the node:test case that proves the row. The claim a row makes is two-sided and both sides are tested: nothing the row does not declare may change, and every declared effect whose `observed_in` names a condition must be seen in it. An effect the offline fixture cannot reach carries an empty `observed_in` and a `not_observed_reason`. Read this with docs/effects.md; scripts/check-effects.mjs enforces the parts a schema cannot (coverage of the supported CLI surface, and the existence of every named test case).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "contract_version", "vocabulary", "rows"],
+  "properties": {
+    "schema": {
+      "const": "campaigns-os-effects/v1",
+      "description": "A consumer should refuse a payload whose schema it does not recognize rather than reading the fields it happens to know."
+    },
+    "_note": { "type": "string" },
+    "contract_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "The contract's own version, independent of the package's surface_version: adding a row is additive, changing a row's declared effect is not."
+    },
+    "vocabulary": {
+      "type": "object",
+      "description": "The words the rows use, defined once. A reader must not have to infer what `tier: \"C\"` or `{lifecycle-journal}` means from the rows that happen to use them.",
+      "additionalProperties": false,
+      "required": ["annotations", "tiers", "locations", "conditions", "effect_changing_flags", "test_scope", "observed_in", "preflight"],
+      "properties": {
+        "annotations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["readOnlyHint", "destructiveHint", "openWorldHint", "idempotentHint"],
+          "properties": {
+            "readOnlyHint": { "type": "string" },
+            "destructiveHint": { "type": "string" },
+            "openWorldHint": { "type": "string" },
+            "idempotentHint": { "type": "string" }
+          }
+        },
+        "tiers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["none", "A", "B", "C", "_ranking"],
+          "properties": {
+            "none": { "type": "string" },
+            "A": { "type": "string" },
+            "B": { "type": "string" },
+            "C": { "type": "string" },
+            "_ranking": { "type": "string" }
+          }
+        },
+        "locations": {
+          "type": "object",
+          "description": "The location tokens a row's write paths may use. A path pattern is relative to the token it opens with.",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" }
+        },
+        "conditions": {
+          "type": "object",
+          "description": "The five conditions every row is exercised under. The fifth, persisted_consent, is not a variant of the other four: it is the one that does not take the row's word for whether telemetry consent is on.",
+          "additionalProperties": false,
+          "required": ["no_session", "ambient_session", "stale_session", "lifecycle_log", "persisted_consent"],
+          "properties": {
+            "no_session": { "type": "string" },
+            "ambient_session": { "type": "string" },
+            "stale_session": { "type": "string" },
+            "lifecycle_log": { "type": "string" },
+            "persisted_consent": { "type": "string" }
+          }
+        },
+        "effect_changing_flags": {
+          "type": "array",
+          "description": "The flags that change what an invocation does to the world. Every one of them that appears on a CLI help usage line owes a row of its own; scripts/check-effects.mjs refuses the file when one does not have it. A flag that only changes the output shape (--json, --report) is deliberately absent.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^--[a-z0-9-]+$" }
+        },
+        "test_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["full", "preflight"],
+          "properties": { "full": { "type": "string" }, "preflight": { "type": "string" } }
+        },
+        "observed_in": { "type": "string" },
+        "preflight": { "type": "string" }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/row" }
+    }
+  },
+  "$defs": {
+    "condition": {
+      "enum": ["no_session", "ambient_session", "stale_session", "lifecycle_log", "persisted_consent"]
+    },
+    "observed_in": {
+      "type": "array",
+      "description": "The conditions in which the effect test MUST see this effect. Empty declares an effect the offline fixture cannot reach, and then `not_observed_reason` is required.",
+      "items": { "$ref": "#/$defs/condition" },
+      "uniqueItems": true
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "subcommand", "flags", "annotations", "tier", "writes", "sends", "effect_test", "test_scope", "notes"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The top-level command, or the reserved `*refused*` for an invocation refused before its handler runs."
+        },
+        "subcommand": {
+          "description": "The subcommand as the help text spells it (`policy set` is one subcommand, not a subcommand and a flag), or null.",
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "flags": {
+          "type": "array",
+          "description": "The effect-changing flag combination this row is about. Empty is the base form. Flags that do not change what the invocation does to the world (--json, --report) are deliberately absent.",
+          "items": { "type": "string", "pattern": "^--[a-z0-9-]+$" },
+          "uniqueItems": true
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["readOnlyHint", "destructiveHint", "openWorldHint", "idempotentHint"],
+          "properties": {
+            "readOnlyHint": { "type": "boolean" },
+            "destructiveHint": { "type": "boolean" },
+            "openWorldHint": { "type": "boolean" },
+            "idempotentHint": { "type": "boolean" }
+          }
+        },
+        "tier": { "enum": ["none", "A", "B", "C"] },
+        "writes": { "type": "array", "items": { "$ref": "#/$defs/write" } },
+        "sends": { "type": "array", "items": { "$ref": "#/$defs/send" } },
+        "effect_test": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The exact name of the node:test case in src/effects.test.mjs that proves this row. check-effects.mjs refuses a row whose case is not there."
+        },
+        "test_scope": { "enum": ["full", "preflight"] },
+        "preflight": { "$ref": "#/$defs/preflight" },
+        "notes": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why the row says what it says, in a consumer's terms. A preflight row states what it cannot reach offline and what the case proves instead."
+        }
+      },
+      "if": { "properties": { "test_scope": { "const": "preflight" } }, "required": ["test_scope"] },
+      "then": {
+        "description": "A preflight row declares its allowances. The converse — a `full` row that carries them — is reported by scripts/check-effects.mjs, which can say which row it is.",
+        "required": ["preflight"],
+        "properties": { "preflight": { "$ref": "#/$defs/preflight" } }
+      }
+    },
+    "preflight": {
+      "type": "object",
+      "description": "What the preflight itself may do, declared independently of the effects the row declares for the invocation that gets past it. Without this, a write declared for the success path ({home}/** for a minted credential) also licensed the refusal to write anywhere under the home directory, and a destination a loopback receiver only stands in for licensed any request path at all.",
+      "additionalProperties": false,
+      "required": ["may_write", "may_contact"],
+      "properties": {
+        "may_write": {
+          "type": "array",
+          "description": "The ONLY paths the preflight may write, each a location token or a path under one. A pattern spanning segments (**) is refused by scripts/check-effects.mjs: an allowance that licenses a subtree licenses the home directory the preflight must not touch.",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "may_contact": {
+          "type": "array",
+          "description": "The exact request paths the loopback receiver may see, matched literally against the request path. Empty means the preflight contacts nothing.",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "when", "observed_in"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A glob pattern (`*` within one segment, `**` across segments) opening with a location token from vocabulary.locations."
+        },
+        "when": { "type": "string", "minLength": 1 },
+        "observed_in": { "$ref": "#/$defs/observed_in" },
+        "not_observed_reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "send": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["destination", "what", "when", "requires_consent", "observed_in"],
+      "properties": {
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The endpoint, with the same location tokens. A destination of the form `{proxy-base}/<path>` pins the request path down, so the test can assert the declared destination IS the one contacted."
+        },
+        "what": { "type": "string", "minLength": 1 },
+        "when": { "type": "string", "minLength": 1 },
+        "requires_consent": {
+          "type": "boolean",
+          "description": "True when Run Telemetry consent gates the send. The effect test runs such a row with consent ON and a loopback receiver, so 'nothing was sent' can never be an artefact of consent being off."
+        },
+        "observed_in": { "$ref": "#/$defs/observed_in" },
+        "not_observed_reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

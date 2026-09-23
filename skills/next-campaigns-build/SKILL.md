@@ -1,8 +1,14 @@
 ---
 name: next-campaigns-build
-version: 1.0.3
+version: 1.0.5
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
+
+Bundle revision: 1.40.0+skills.2
+Run `campaigns-os tooling status --skills-revision 1.40.0+skills.2` at the start of each
+task and start a fresh session if it reports `mismatch`, because this text is
+already in your context and is never re-read while the CLI on disk can move
+under it.
 
 # Next Campaigns Build
 
@@ -11,15 +17,22 @@ description: Assemble a NEXT campaign from a doctor-cleared Build Packet, Campai
 Run from the campaign folder with an exact project-local devDependency and
 committed lockfile. Orient on reviewed source before installation; check release
 provenance or pin the full reviewed Git SHA. Preflight with `npx campaigns-os
-tooling status --platform <claude|codex>` and refresh bundled skills for the same
-profile. Use the invocation printed by status and `next` to avoid PATH shadowing.
+tooling status --platform <claude|codex>` (tier `B`: its only write is the
+command-lifecycle journal) and refresh bundled skills for the same profile with
+`install-skills` (tier `B`: writes the shared skill directories; nothing leaves
+the machine). Use the invocation printed by status and `next` to avoid PATH shadowing.
 
 In the instructions below, bare `campaigns-os …` means `npx campaigns-os …`
 from that campaign folder. Global-only users substitute the global copy's printed invocation for
 each `npx campaigns-os` example; toolkit contributors translate to `npm run campaigns-os -- …` in
 the toolkit checkout. Browser installation is `npx campaigns-os qa
 install-browser`, not a campaign npm script. `tooling diagnose --packet <p>
---json` provides a redacted support export without changing retained evidence.
+--json` (tier `none`: read-only, and exempt from lifecycle capture) provides a
+redacted support export without changing retained evidence.
+
+The effect class in each parenthetical below is the declared row of
+`contracts/effects.v1.json` (`none` < `B` writes < `A` sends < `C` destructive).
+Read that file, not this text, when an exact path or endpoint matters.
 
 
 ## Recommended Build Loop
@@ -63,11 +76,11 @@ Build rules:
 - Replace values named by `frontmatter.replaceFromSpecOrApi`.
 - Remove unsupported surfaces named by `frontmatter.removeWhenUnsupported`.
 - Preserve SDK-owned checkout/cart/upsell/receipt/payment/address/totals/submit surfaces.
-- If `doctor` reports `derived.scope.mode = "partial"`, build the pages listed in `derived.scope.built_pages` from their prepared source. A page in `derived.scope.out_of_scope_pages` whose assembly-report decision `dec_page_scope_<page>` carries `template_stock: true` is template stock: materialise it from the locked family's own page for that role (`decision.template_family`; the `next build` prompt lists them), copied atomically with its dependent `_includes/`, `_layouts/`, and assets, and wired from CampaignSpec — a pre-checkout `select` step first, because it seeds the cart the runtime pages read. Do not look for prepared source HTML for it, and do not attest a screenshot of it as a design source. Once its built HTML exists at the page's route, doctor lists it among the previewable routes and lifts the runtime-QA block for it. An out-of-scope page without that marker stays unbuilt: carry its `skip_reason` into the assembly report and label the preview as route/visual-testable rather than full-funnel launch-ready.
+- If `doctor` (tier `none`: read-only inspection; `--write`/`--built` are tier `B`) reports `derived.scope.mode = "partial"`, build the pages listed in `derived.scope.built_pages` from their prepared source. A page in `derived.scope.out_of_scope_pages` whose assembly-report decision `dec_page_scope_<page>` carries `template_stock: true` is template stock: materialise it from the locked family's own page for that role (`decision.template_family`; the `next build` prompt lists them), copied atomically with its dependent `_includes/`, `_layouts/`, and assets, and wired from CampaignSpec — a pre-checkout `select` step first, because it seeds the cart the runtime pages read. Do not look for prepared source HTML for it, and do not attest a screenshot of it as a design source. Once its built HTML exists at the page's route, doctor lists it among the previewable routes and lifts the runtime-QA block for it. An out-of-scope page without that marker stays unbuilt: carry its `skip_reason` into the assembly report and label the preview as route/visual-testable rather than full-funnel launch-ready.
 - For `landing` and `presell` pages, prefer the prepared source HTML when `source_html.pages[].path` points at a real standalone page. Preserve the design/content through a passthrough page-kit layout, inject the SDK loader/config as needed, and repoint CTAs into the CampaignSpec flow. Treat `source_html.pages[].path` and `context.page_map[].source_path` as source provenance. Treat `source_html.pages[].page_kit`, `context.page_map[].page_kit`, and `context.page_map[].output_path` as the Page Kit target file, route, CPK `page_type`, and frontmatter projection.
 - Prepared source HTML means page-kit-ready markup, not a wholesale Liquid rewrite. Standalone AI/exported HTML should keep page-owned body markup, remove document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only where page-kit needs campaign-rooted links/assets/includes.
 - For `checkout`, `upsell`, `downsell`, and `receipt` pages, treat the selected starter-template commerce surface as the SDK contract reference: preserve required `data-next-*` controls, hidden fields, payment/address/totals/submit wiring, and `next_dont_touch` regions. The surrounding HTML wrapper, page composition, imagery, copy hierarchy, and brand layer are campaign/source-owned. Do not carry starter visual chrome forward when prepared source design should own that surface.
-- Read `context.theme` and `.campaign-runtime/theme/theme-report.json` when present. If a fresh `brand-theme.css` artifact exists, copy it into the campaign asset tree and load it after `next-core.css` on checkout, upsell, downsell, and receipt pages. If policy is `inspect_only`, either run `campaigns-os theme generate` or record an explicit skipped reason before applying a new brand layer.
+- Read `context.theme` and `.campaign-runtime/theme/theme-report.json` when present. If a fresh `brand-theme.css` artifact exists, copy it into the campaign asset tree and load it after `next-core.css` on checkout, upsell, downsell, and receipt pages. If policy is `inspect_only`, either run `campaigns-os theme generate` (tier `B`: writes the theme artifacts and doctor output under the target; `--force` is tier `C`) or record an explicit skipped reason before applying a new brand layer.
 - Generated brand-theme v0 is root-variable-only. It may skin commerce pages through next-core custom properties, but it is not permission to edit SDK-owned selectors, package controls, payment fields, totals, submit controls, receipt templates, route meta tags, or SDK JavaScript.
 - Payment, express checkout, bundle selectors, and order bumps must start from the selected family's canonical component DOM/classes, not from raw custom/source HTML with `data-next-*` added afterward. For payment specifically, preserve the family payment-method wrapper, hosted field classes, and iframe geometry assumptions (for example `input-flds spreedly-field` in shop-style templates). Skin these components with campaign tokens; do not rebuild Spreedly/card fields as arbitrary divs.
 - When a checkout page declares `exit_intent.enabled`, wire the popup as an offer application surface: use `offer_ref_id`/`offer_code` from CampaignSpec, apply the code through the SDK/API coupon/voucher path, and render applied-state copy with SDK conditionals such as `cart.hasCoupon("FREESHIP")`.
