@@ -7,44 +7,62 @@ Notable supported-surface changes are recorded here.
 ### Fixed
 
 - `tooling status` without `--platform` or `--target` checks skill freshness
-  only on the platform directories that already hold a Campaigns OS skill. A
-  Claude Code only install, the documented path, was read as stale for Codex
-  and the shared directory, so the revision check that the skills ask for
-  exited 2 and printed an action to install skills for every platform. A
-  `Ready:` line now names the platforms that were skipped, and the refresh
-  action names each stale installed platform (`install-skills --platform
-  claude`), never `all` for a partial install. `--platform all` still checks
-  all three platforms. When no platform holds a Campaigns OS skill, all three
-  are checked and the action installs all three. `--json` adds
-  `skills.scope` (`requested`, `installed_platforms` or
-  `no_platform_installed`) and `skills.not_installed_platforms`.
-  `tooling diagnose` forwards `--platform` only when one is given, so it
-  scopes the same way.
+  only on the platform directories where Campaigns OS skills are installed. A
+  directory counts when a skill sits under one of the bundled names or under a
+  retired name of ours. Before this, a Claude Code only install (the
+  documented path) was read as stale for Codex and the shared directory, so
+  the revision check the skills ask for exited 2 and printed an action to
+  install skills for every platform. Now:
+  - A `Ready:` line names the skipped platforms.
+  - The refresh action names each stale installed platform (`install-skills
+    --platform claude`), or `--platform all` when all three are installed and
+    stale.
+  - When no platform has Campaigns OS skills, the action asks for an install
+    on the harness in use (`install-skills --platform <claude|codex|agents>`)
+    rather than on all three.
+  - `--platform all` still checks every platform.
+  - `--json` adds `skills.scope` (`requested`, `installed_platforms` or
+    `no_platform_installed`) and `skills.not_installed_platforms`.
+  - `tooling diagnose` forwards `--platform` only when one is given, and its
+    export reports the unnamed scope as `platform: installed`.
+  - The gateway login hint uses the printed invocation prefix.
 - Every bundled skill header now tells the agent to run the check as `npx
-  campaigns-os tooling status --skills-revision <revision>` from the
-  campaign's Page Kit folder, where `npx` runs the project's pinned copy. A
-  bare `campaigns-os` resolves through PATH. On a machine with an older
-  global install, a copy from before 1.40.0 answers instead. That copy
-  ignores `--skills-revision`, prints no `Skills revision:` line, and lists an
-  `install-skills --platform all` action. Following that action replaces five
-  of the nine bundled skills with older text and leaves the other four, and
-  no later revision check can detect the mix. The header now says that
-  output with no `Skills revision:` line did not come from the pinned copy,
-  and that none of its actions should be followed. `docs/skills-revision.md`
-  describes both fixes.
+  --no-install campaigns-os tooling status --skills-revision <revision>` from
+  the campaign's Page Kit folder. There it runs the project's pinned copy, and
+  it never installs one. The header change fixes two problems:
+  - A bare `campaigns-os` resolves through PATH. On a machine with an older
+    global install, a copy from before 1.40.0 answers instead. That copy
+    ignores `--skills-revision`, prints no `Skills revision:` line, and lists
+    an `install-skills --platform all` action. Following it replaces five of
+    the nine bundled skills with older text. The revision comparison cannot
+    see that result; only the pinned copy's freshness check reports it.
+  - `campaigns-os` is only the bin name of `@nextcommerce/campaigns-os`.
+    Outside a pinned folder, a plain `npx campaigns-os` looks the bin name up
+    as a registry package, and with no terminal to ask, it would install
+    whatever it found.
+
+  The header also says that output with no `Skills revision:` line (no
+  `revision_check` under `--json`) did not come from the pinned copy, and that
+  none of its actions should be followed. `docs/skills-revision.md`, the
+  README, the quickstart and `docs/diagnostics.md` describe the new
+  behaviour.
 - Refusals that happen before a command's first effect are tagged, so they
-  write no lifecycle journal entry (campaigns-os#465). This covers `theme
-  waive` without `--reason`; `qa waive` without `--assertion`, with an
-  assertion outside the waiver lane, or without `--reason`; and `qa policy
-  set` with a removed flag, a string flag given no value, or a
-  non-boolean `--allowed-domains-confirmed`. Every other plain throw in
-  `src/cli.mjs` and `src/qa-node.mjs` was reviewed against the rule in
-  `docs/effects.md` and left as a journaled handler failure. Those throws
-  either follow a read of the target (spec, source, report, session state or
-  built site), an effect, or a request, or they are internal defect checks.
-  Each newly tagged site has a refusal-table row in
+  write no lifecycle journal entry (campaigns-os#465). This covers:
+  - `theme waive` without `--reason`, or with a waiver attribution it rejects
+    (a missing or placeholder `--waived-by`, or a bad `--expires-at`).
+  - `qa waive` without `--assertion`, with an assertion outside the waiver
+    lane, or without `--reason`.
+  - `qa policy set` with a removed flag, a string flag given no value, a
+    non-boolean `--allowed-domains-confirmed`, or an unsupported
+    `--order-path-depth`.
+
+  Every other plain throw in `src/cli.mjs` and `src/qa-node.mjs` was reviewed
+  against the rule in `docs/effects.md` and left as a journaled handler
+  failure. Those throws follow a read of the target (spec, source, report,
+  session state or built site), an effect, or a request, or they are internal
+  defect checks. Each newly tagged site has a refusal-table row in
   `src/lifecycle-effects.test.mjs`. Each touched handler has a positive
-  control: the same invocation, once it passes every refusal and then fails,
+  control: the same invocation, when it passes every refusal and then fails,
   still appends exactly one entry. No effects row changes.
 - Skills bundle revision `1.41.1+skills.1`. Every skill's version advances by
   one patch.
