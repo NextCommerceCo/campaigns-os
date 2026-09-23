@@ -745,6 +745,42 @@ test("effects: the other two refused shapes write nothing either", async () => {
   }
 });
 
+test("effects: unknown next stage leaves a seeded packet target untouched", async () => {
+  const seed = seedTarget();
+  try {
+    const sidecar = join(seed.targetRepo, ".campaign-runtime/doctor-output.json");
+    rmSync(sidecar);
+    const before = snapshot(seed.dir);
+    const result = await runCli(["next", "bogus-stage", "--packet", seed.packetPath, "--no-remit"], {
+      cwd: seed.dir,
+      home: seed.home,
+      telemetry: "off",
+      lifecycleLog: join(seed.dir, "lifecycle.jsonl"),
+    });
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /Accepted stages: setup, build, polish, deploy, qa/);
+    assert.equal(existsSync(sidecar), false, "unknown stage must not create doctor output");
+    assert.deepEqual(snapshot(seed.dir), before, "unknown stage must not change the target or journal");
+  } finally {
+    rmSync(seed.dir, { recursive: true, force: true });
+  }
+});
+
+test("effects: next help stage list matches its refusal", async () => {
+  const seed = seedTarget();
+  try {
+    const help = await runCli(["help"], { cwd: seed.dir, home: seed.home, telemetry: "off" });
+    const refused = await runCli(["next", "bogus-stage", "--packet", seed.packetPath], { cwd: seed.dir, home: seed.home, telemetry: "off" });
+    const usage = help.stdout.match(/campaigns-os next \[([^\]]+)\] --packet/);
+    const accepted = refused.stderr.match(/Accepted stages: ([^.]+)\./);
+    assert.ok(usage);
+    assert.ok(accepted);
+    assert.deepEqual(usage[1].split("|"), accepted[1].split(", "));
+  } finally {
+    rmSync(seed.dir, { recursive: true, force: true });
+  }
+});
+
 test("effects: every invocation in the test table is a row in the contract", () => {
   const keys = new Set(CONTRACT.rows.map(rowKey));
   const orphans = Object.keys(INVOCATIONS).filter((key) => !keys.has(key));

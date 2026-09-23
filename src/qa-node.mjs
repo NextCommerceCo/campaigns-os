@@ -666,18 +666,18 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
 // yields "not_applicable" rather than blocking, so browser QA still runs the
 // residue/placeholder/demo gates. Test orders are not attempted (no policy).
 export function resolveQaInputsFromSite(args) {
+  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]));
+  if (!baseUrl) {
+    throw refused("Non-packet site QA requires --base-url <served-campaign-root> so built pages have a fetchable URL.");
+  }
+  const templateFamily = stringArg(args.family);
+  if (!templateFamily) {
+    throw refused("Non-packet site QA requires --family <template-family> so residue, placeholder, and demo-asset gates can load the family brand contract.");
+  }
   const targetRepo = resolve(String(args.site || args.built));
   const scope = resolveBuiltSiteScope(targetRepo, { slug: stringArg(args.slug) });
   if (!scope.ok) {
     throw new Error(scope.error || `Could not resolve a built campaign from ${targetRepo}.`);
-  }
-  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]));
-  if (!baseUrl) {
-    throw new Error("Non-packet site QA requires --base-url <served-campaign-root> so built pages have a fetchable URL.");
-  }
-  const templateFamily = stringArg(args.family);
-  if (!templateFamily) {
-    throw new Error("Non-packet site QA requires --family <template-family> so residue, placeholder, and demo-asset gates can load the family brand contract.");
   }
   const brandContract = loadBrandContract(templateFamily);
   if (brandContract.status !== "loaded" || !brandContract.contract) {

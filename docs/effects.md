@@ -129,6 +129,14 @@ declared on the rows it belongs to: `start`, `prepare-build`, `build`,
 `run start` and `run end` close out a **stale** run session at the root they are
 about to act on *before* argv is refused.
 
+For intake, run-record, built-site QA, and `next`, argv-only checks run before
+their handler reads the target; invalid values are refused without a journal
+entry. A named `--design-manifest` that is missing or is not a file is checked
+against the filesystem after intake has begun, so that failure is journaled.
+An invalid manifest's contents are likewise a handler failure. A `next` stage
+must be one of the stages in the orchestration stage contract; an unknown name
+is refused before the packet is read or doctor output is written.
+
 ## How a row is proved
 
 `src/effects.test.mjs` runs the real CLI in a disposable target seeded from
