@@ -60,6 +60,10 @@ import {
 import { resolveConsent } from "./consent.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { commitAssemblyReport } from "./stage-ledger.mjs";
+// Tags a refusal raised before a qa handler runs, so the CLI's lifecycle
+// persist step suppresses the journal append from one place. lifecycle.mjs
+// imports nothing from this repository, so this cannot be circular.
+import { refused, refusing } from "./lifecycle.mjs";
 import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
@@ -254,7 +258,7 @@ export async function runQaCli(args, { ambient = null } = {}) {
     return result;
   }
   if (subcommand === "policy") {
-    if (args._[2] !== "set") throw new Error(`Unknown qa policy command. Use: ${cmd("qa")} policy set --packet <campaign-runtime.build.json>`);
+    if (args._[2] !== "set") throw refused(`Unknown qa policy command. Use: ${cmd("qa")} policy set --packet <campaign-runtime.build.json>`);
     const result = updateQaPolicy(args);
     output(result, args);
     return result;
@@ -285,7 +289,7 @@ export async function runQaCli(args, { ambient = null } = {}) {
     process.exitCode = result.ok ? 0 : 1;
     return result;
   }
-  throw new Error(`Unknown qa command: ${subcommand}`);
+  throw refused(`Unknown qa command: ${subcommand}`);
 }
 
 // The package-owned browser install, runnable from any install mode. It is
@@ -342,7 +346,7 @@ async function resolveQaInputs(args, {
   loadCampaignEntry = loadPageKitCampaignEntry,
 } = {}) {
   if (args.packet && args.spec) {
-    throw new Error("Packet QA does not accept --spec; it always uses packet.spec.local_path.");
+    throw refused("Packet QA does not accept --spec; it always uses packet.spec.local_path.");
   }
   // Non-packet mode (learnings L7): QA a `campaign-build`'d page-kit campaign
   // that has only a built _site/ and a served URL — no Build Packet, no Map ID,
@@ -367,7 +371,15 @@ async function resolveQaInputs(args, {
   const mapId = stringArg(args["map-id"])
     || stringArg(args._[2])
     || stringArg(packet?.spec?.map_id);
-  if (!mapId) throw new Error("QA requires a Map ID. Provide --packet or positional <map-id>.");
+  // A refusal to identify a campaign, not a failure to QA one: with no
+  // --packet, no --site/--built and no positional <map-id>, every read above
+  // was skipped and `qa run` has nothing to work on. Tagged on both paths, not
+  // just the empty one — the journal question is whether the CLI reached a
+  // handler's WORK, and a missing-identity refusal decides that before any
+  // spec is fetched, any browser launches and anything is written. (When a
+  // packet WAS named, it has been read by here; the packet read is a lookup
+  // for the same identity question, and one message cannot be two verdicts.)
+  if (!mapId) throw refused("QA requires a Map ID. Provide --packet or positional <map-id>.");
 
   const proxyBase = stringArg(args["proxy-base"]) || DEFAULT_PROXY_BASE;
   const inputBaseUrl = normalizeBaseUrl(stringArg(args["base-url"]) || packet?.deploy?.preview_url || packet?.deploy?.production_url || null);
@@ -1730,7 +1742,7 @@ const REMOVED_QA_POLICY_FLAGS = ["test-orders-allowed", "sandbox-test-card-confi
 
 function updateQaPolicy(args) {
   const packetPath = args.packet ? resolve(args.packet) : null;
-  if (!packetPath) throw new Error("qa policy set requires --packet <campaign-runtime.build.json>.");
+  if (!packetPath) throw refused("qa policy set requires --packet <campaign-runtime.build.json>.");
   const packet = readJson(packetPath);
   packet.campaign ||= {};
   packet.deploy ||= {};
@@ -1814,7 +1826,7 @@ const WAIVABLE_QA_ASSERTIONS = Object.freeze(["analytics-correctness:purchase-fi
 // report.theme.waiver: { reason, waived_by, waived_at }.
 export function qaWaive(args) {
   const packetPath = args.packet ? resolve(args.packet) : null;
-  if (!packetPath) throw new Error("qa waive requires --packet <campaign-runtime.build.json>.");
+  if (!packetPath) throw refused("qa waive requires --packet <campaign-runtime.build.json>.");
   const packet = readJson(packetPath);
   const assertionId = stringArg(args.assertion);
   if (!assertionId) {
@@ -2002,15 +2014,25 @@ function parityReplayEvidence(bundle) {
   return { order, capture, baselineCapture, orders: Array.isArray(bundle.orders) ? bundle.orders : [order] };
 }
 
+// The up-front half of the `--max-order-creations` check. The validator is
+// SHARED with the order-creation budget, which every browser path builds after
+// a browser has launched and orders may already have been created; a throw from
+// there is a handler failure and must still be journaled, so the refusal tag
+// cannot live inside the validator. It goes here via `refusing()`, at the two
+// entries that check the flag before anything is resolved or launched, where a
+// bad value has cost the operator nothing. Message and exit code are the
+// validator's own.
+const refuseBadOrderCreationLimit = (args) => refusing(() => validatedOrderCreationLimit(args));
+
 async function runParityQa(args) {
   // Checked here as well as on the budget itself: the budget is built after a
   // browser has launched, and a flag the operator typed wrong should cost them
   // nothing. The budget stays the authority — this is fail-fast, not the gate.
-  validatedOrderCreationLimit(args);
+  refuseBadOrderCreationLimit(args);
   const fixturePath = stringArg(args.fixture);
   const scenarioId = stringArg(args.scenario) || stringArg(args._[2]);
-  if (!fixturePath) throw new Error("QA parity requires --fixture <parity-fixture.json>.");
-  if (!scenarioId) throw new Error("QA parity requires --scenario <scenario-id>.");
+  if (!fixturePath) throw refused("QA parity requires --fixture <parity-fixture.json>.");
+  if (!scenarioId) throw refused("QA parity requires --scenario <scenario-id>.");
 
   const fixture = await loadParityFixture(resolve(fixturePath));
   const scenario = resolveParityScenario(fixture, scenarioId);
@@ -2076,7 +2098,7 @@ async function runParityQa(args) {
 async function runQa(args, options = {}) {
   // Fail-fast before anything resolves or launches. The authoritative check
   // lives on the creation budget itself, which every browser path builds.
-  validatedOrderCreationLimit(args);
+  refuseBadOrderCreationLimit(args);
   const resolved = await resolveQaInputs(args);
   return runResolvedQa(args, resolved, options);
 }

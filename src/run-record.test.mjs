@@ -927,10 +927,12 @@ test("CLI: prepare-build sub-phases flow through the journal into the aggregated
 test("CLI: lifecycle persists on the THROW path (failure telemetry is captured, not dropped)", () => {
   withTempDir((dir) => {
     const lcJournal = join(dir, "lc.jsonl");
-    // `doctor` with no --packet throws (Missing required --packet) and exits non-zero.
+    // `theme inspect` with a missing packet passes every argv check, then throws
+    // reading the packet — a failure INSIDE the handler, which is what this case
+    // is about. (A missing required flag is an up-front refusal and journals nothing.)
     let threw = false;
     try {
-      execFileSync("node", [CLI, "doctor", "--run-id", "run_throw", "--lifecycle-journal", lcJournal], { encoding: "utf8", stdio: "pipe" });
+      execFileSync("node", [CLI, "theme", "inspect", "--packet", join(dir, "missing.json"), "--run-id", "run_throw", "--lifecycle-journal", lcJournal], { encoding: "utf8", stdio: "pipe" });
     } catch {
       threw = true;
     }
@@ -938,7 +940,7 @@ test("CLI: lifecycle persists on the THROW path (failure telemetry is captured, 
     const { entries } = readLifecycleJournal(lcJournal);
     assert.equal(entries.length, 1);
     assert.equal(entries[0].run_id, "run_throw");
-    assert.equal(entries[0].command, "doctor");
+    assert.equal(entries[0].command, "theme");
     assert.equal(entries[0].exit_status, 1); // thrown error => status 1, still recorded
   });
 });

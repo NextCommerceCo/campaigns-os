@@ -13,11 +13,106 @@
 // so the CLI exit code is unchanged, and lifecycle persistence is opt-in and
 // non-fatal. No network, no credentials.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 export const LIFECYCLE_SCHEMA = "campaigns-os-command-lifecycle/v0";
 export const LIFECYCLE_JOURNAL_REL_PATH = ".campaign-runtime/command-lifecycle.jsonl";
+
+// A refusal raised BEFORE the command's handler ran: an unknown top-level
+// command, an unknown subcommand, or a flag the command refuses up front.
+// Every such throw site builds its error here so the lifecycle journal can
+// recognize a refusal from ONE place (the CLI's persist step) instead of
+// matching messages — a typo must not materialize a file under the target.
+// Only the tag is added: the message is passed through and the exit code is
+// untouched, because bin/campaigns-os.mjs special-cases filesystem errno codes
+// only and falls through to the same `campaigns-os: <message>` / exit 1 path.
+// One mechanism, read two ways. The tag travels on the thrown error for the
+// usual path (onFinish is handed the error), and `refusalSeen()` records the
+// same verdict for the paths that CATCH a refusal to render it — the CLI's
+// `waiveOrRefuse` prints the `{ ok: false, error }` body under --json and
+// returns, so onFinish gets no `thrown` at all.
+//
+// That caught-refusal verdict is per INVOCATION, not per module. main() runs
+// its body inside `runWithRefusalScope`, which puts a fresh `{ seen: false }`
+// in an AsyncLocalStorage store; `refused()` marks the store that is active
+// where the refusal is raised and `refusalSeen()` reads the store active where
+// persistence runs. A module-global flag was wrong: two in-process main() calls
+// interleave (the second one's reset cleared the first one's verdict before its
+// onFinish ran, and the refused invocation journaled an entry). AsyncLocalStorage
+// follows the await chain, so each invocation sees only its own verdict without
+// threading a holder through every throw site. Outside any scope — a command
+// module calling `refused()` directly in a unit test — there is no store and
+// `refusalSeen()` is false; the error tag is added either way.
+//
+// LIMITATION, stated so it is not mistaken for a bug: AsyncLocalStorage
+// propagates the store into callbacks scheduled inside the scope (a
+// setImmediate/setTimeout/unawaited callback still sees it), so a deferred
+// `refused()` does mark the store — but it may do so AFTER the invocation's
+// persistence step has already run and read `refusalSeen()` as false, so the
+// journal entry would already be written while the error carries the tag.
+// This is not defended against, because refusals are synchronous BY CONTRACT:
+// they are raised up front, before the handler runs, on the same tick as the
+// argv check that rejects the invocation. A refusal that needs to be deferred
+// is not an up-front refusal and should be a handler failure instead — which is
+// journaled, as it should be.
+//
+// This lives here, not in the CLI, because refusals are raised in command
+// modules too (`qa`'s unknown subcommand) and those modules are imported BY
+// cli.mjs: importing the factory back out of cli.mjs would be circular, and
+// re-listing the subcommands anywhere else would be a second command list.
+// lifecycle.mjs imports nothing from this repository, so it is safe to import
+// from anywhere.
+export const REFUSED_INVOCATION = "refused_invocation";
+const refusalScope = new AsyncLocalStorage();
+
+/** Run `fn` with its own refusal verdict. Returns whatever `fn` returns. */
+export function runWithRefusalScope(fn) {
+  return refusalScope.run({ seen: false }, fn);
+}
+
+/**
+ * Build a tagged refusal. INVARIANT: a refusal must be thrown or rendered —
+ * never built and swallowed. The scope is marked HERE, at construction, not at
+ * the throw, because the paths that catch a refusal to render it (waiveOrRefuse)
+ * hand onFinish no error to inspect. The cost of marking early is that a
+ * `refused()` built inside a `try` that discards it would suppress the journal
+ * entry for an invocation whose handler did run. No call site does that today
+ * (no `requireArg` sits inside a `try`), and none may: if you need to probe
+ * whether an argument is present, test for it — do not construct a refusal
+ * speculatively.
+ */
+export function refused(message) {
+  const store = refusalScope.getStore();
+  if (store) store.seen = true;
+  const error = new Error(message);
+  error.code = REFUSED_INVOCATION;
+  return error;
+}
+
+export function refusalSeen() {
+  return refusalScope.getStore()?.seen === true;
+}
+
+/**
+ * Run `fn()` and re-throw anything it throws as a tagged refusal, message
+ * byte-identical. The contract it encodes: THE TAG IS APPLIED AT THE UP-FRONT
+ * CALL SITE, NOT INSIDE THE VALIDATOR. The validators this wraps are shared —
+ * `assertSecureProxyBase` also runs mid-handler on the remit rail, and the
+ * order-creation limit is re-checked after a browser has launched — and a throw
+ * from those positions is a handler failure, the most valuable lifecycle entry
+ * there is. Only the caller knows it is checking argv before anything has been
+ * resolved, read, written, or launched, so only the caller may say "refusal".
+ * Wrap the up-front call; leave the shared validator untagged.
+ */
+export function refusing(fn) {
+  try {
+    return fn();
+  } catch (error) {
+    throw refused(error.message);
+  }
+}
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;

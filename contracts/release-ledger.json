@@ -5494,8 +5494,35 @@
       "entry_sha256": "c31d5b0fe0f4bcd871897d923466d529f5399010b0bb009326789d69294e00c8"
     },
     {
-      "id": "RL-0135",
+      "id": "RL-0134",
       "sequence": 134,
+      "date": "2026-09-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.38.0+agent.2",
+      "changelog_sha256": "0d1bfe9525ba8a6c5e94af7763683b26f2bc11b45035905ea95b48ba67e12497",
+      "agent_impact": "Facts about the lifecycle journal, however the journal was selected (--lifecycle-journal, CAMPAIGNS_OS_LIFECYCLE_LOG, or an active run session). A known command run with --no-write no longer appends an entry. A refused invocation — an unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front — never appends one and creates no file of its own, with or without --no-write. A command that fails inside its handler still appends; `next <unknown-stage>` is such a failure, because it resolves the workspace before it rejects the stage. `run status` never appends one, with or without --no-write. One effect still precedes argument refusal: `start`, `prepare-build`, `build`, `run start` and `run end` close out a stale run session at the root they are about to act on (Run Record assembled and remitted under the usual consent, session file cleared) before argv is refused — a declared effect of those commands, now suppressed by --no-write, which therefore leaves the target byte-identical. A workflow that needs a journal entry for an inspection must run a known command without --no-write; removing --no-write from a refused invocation or from `run status` will not produce one. A workflow that relied on `run end --no-write` reporting a stale closeout gets \"no active run session to end\" instead: --no-write no longer performs the closeout it could not record.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run",
+          "summary": "--no-write writes nothing: it suppresses the lifecycle-journal append for every command and the pre-dispatch stale-session closeout that start/prepare-build/build/run start/run end perform. A refused invocation (unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front) and `run status` never append an entry; help text states both and names the closeout as the one effect that precedes refusal."
+        },
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "State the Run Telemetry default: remit on by default for the canonical endpoint, announced on stderr, capture local and opt-in (a journal selected by flag, env or an active run session), the three ways to turn remit off, and what a refused invocation does and does not write."
+        }
+      ],
+      "entry_sha256": "acc83968f757fbcb96577b1232f0af280bea6d7e98b401d7b14e61aeaed144c0"
+    },
+    {
+      "id": "RL-0135",
+      "sequence": 135,
       "date": "2026-09-22",
       "kind": "release",
       "surface_version": "1.39.0",
@@ -5554,7 +5581,7 @@
           "summary": "Regenerated lockfile version fields for 1.39.0."
         }
       ],
-      "entry_sha256": "57088c726c33b26819d1734ff8ccefcb45e5b50f46b77cd170e809816488949f"
+      "entry_sha256": "ebd6da5237985b3bc5dbb4b3486818a32b97a5259d17a9d981662fc4d009658b"
     }
   ]
 }
