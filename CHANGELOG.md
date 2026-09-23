@@ -2,6 +2,46 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.41.0] - 2026-09-23
+
+### Added
+
+- `tooling status` reports the pin checks (ADR 0002, campaigns-os#466): one
+  executable per project. The project pin — an exact
+  `devDependencies["@nextcommerce/campaigns-os"]` (then `dependencies`) in the
+  nearest `package.json` above the working directory — comes first; the Build
+  Packet's recorded kernel version second (the project's
+  `campaign-runtime.build.json`, or `--packet <path>`). `--json` carries
+  `pin: { source, version, running, status, range, packet_version,
+  project_version, forced, message }` and the text view a `Pin:` line under the
+  skills revision line. `pin.status` is `match`; `stale_pin` (the pin is not the
+  running version); `conflicting_pin` (both sources present and different); or
+  `unpinned` (neither present — a range or tag is not a pin and is reported
+  under `range`). `stale_pin` and `conflicting_pin` exit 2 with an action
+  naming the file to change; `unpinned` exits 0 and is always reported.
+- `tooling status --force`: a bare flag that overrides `stale_pin` and
+  `conflicting_pin`, so the command exits as the rest of the status dictates.
+  The override is reported as `pin.forced: true` and recorded on the
+  command-lifecycle journal entry through `argv_shape`. `--force true` is
+  refused. Declared as its own row in `contracts/effects.v1.json`
+  (`effects: tooling status --force`, 92 rows): it changes the exit status only
+  and writes nothing the plain row does not.
+- Build Packet: optional top-level `campaigns_os_version` (an exact version) in
+  `schemas/campaign-runtime-build-packet.v0.schema.json`, stamped by
+  `prepare-build` with the version that prepared the packet. Additive: the
+  packet schema stays `campaign-runtime-build-packet/v0`, and packets without
+  the field stay valid (they are no packet pin source).
+
+### Changed
+
+- `docs/skills-revision.md`: the "Not yet built" section is replaced by the pin
+  check as built — sources and precedence, the four statuses, exit codes,
+  `--force`, and JSON and text output from real runs. The `tooling status` help
+  line gains `[--packet <campaign-runtime.build.json>] [--force]`.
+- Skills: `bundle_revision` moves to `1.41.0+skills.1` with the package
+  version, and every bundled skill's `Bundle revision:` header and its
+  `--skills-revision` instruction follow (each skill version patch-bumped).
+
 ## [1.40.0] - 2026-09-22
 
 ### Added

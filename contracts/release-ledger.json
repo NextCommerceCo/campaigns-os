@@ -5735,6 +5735,135 @@
         }
       ],
       "entry_sha256": "fe4665b1f7b421a367e1527369df2edb6586236d03b363bd0c8757fae836884e"
+    },
+    {
+      "id": "RL-0137",
+      "sequence": 137,
+      "date": "2026-09-23",
+      "kind": "release",
+      "surface_version": "1.41.0",
+      "changelog_section": "1.41.0",
+      "changelog_sha256": "453069abb8eca2746d472fa341eef56e4af4e1f604c7001aa185c7589e625a4e",
+      "agent_impact": "`campaigns-os tooling status` now reports which executable the project is pinned to, beside the skills revision, so an agent can tell before a run whether the CLI it is calling is the one the project and its Build Packet expect. The project pin is an exact devDependency on @nextcommerce/campaigns-os in the nearest package.json (dependencies as the fallback); the packet's recorded kernel version is the new optional Build Packet field campaigns_os_version, which prepare-build stamps. `--json` gains `pin` with status match, stale_pin, conflicting_pin or unpinned and a `Pin:` text line; stale_pin and conflicting_pin exit 2 with an action naming the file to change, and unpinned exits 0 but is always reported, so a range or tag is visible as not a pin. Branch on pin.status rather than the exit code. The bare `--force` flag overrides a blocking pin status, is reported as pin.forced, and lands on the lifecycle journal entry's argv_shape; `--force true` is refused. Packets written before this release carry no campaigns_os_version and are no pin source; re-running prepare-build stamps one. The skills bundle identity moves with this release to 1.41.0+skills.1: every bundled skill now opens with that value and instructs `tooling status --skills-revision 1.41.0+skills.1`, so an agent still holding 1.40.0+skills.2 skill text reports `mismatch` against a 1.41.0 install and must start a fresh session.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "tooling",
+          "summary": "tooling status resolves the project pin and the packet's campaigns_os_version, reports pin { source, version, running, status, range, packet_version, project_version, forced, message } and a Pin: line, exits 2 on stale_pin or conflicting_pin unless --force, and refuses --force with a value. It accepts --packet <path>. prepare-build stamps campaigns_os_version on the Build Packet. The help line gains [--packet <campaign-runtime.build.json>] [--force]."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "Add the optional top-level campaigns_os_version (an exact version), the kernel version that prepared the packet. Additive: schema_version stays campaign-runtime-build-packet/v0 and packets without it stay valid."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare tooling status --force (tier B, the lifecycle journal only, proved by effects: tooling status --force): --force is an effect-changing flag in the contract's vocabulary, and here it changes the exit status only. 91 rows -> 92."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.41.0; recompute the sha256 of the hashed contracts/effects.v1.json and schemas/campaign-runtime-build-packet.v0.schema.json entries. No entry, command, export or bin moved."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Replace the Not yet built section with the pin check as built: sources and precedence, the four statuses, exit codes, --force, and JSON and text output from real runs; restate the shipped bundle identity as 1.41.0+skills.1 in every example that quotes it."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version 1.41.0."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Version 1.41.0, regenerated with npm version; no dependency moved."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle_revision 1.40.0+skills.2 -> 1.41.0+skills.1: the prefix names the package version the skills ship with, so the package release moves it and the counter resets. Version every bundled skill up for the header line that moved with it: next-campaigns-os 1.0.20 -> 1.0.21, next-campaigns-os-setup 2.0.3 -> 2.0.4, next-campaigns-build 1.0.5 -> 1.0.6, next-campaigns-polish 1.1.4 -> 1.1.5, next-campaigns-qa 1.3.4 -> 1.3.5, campaign-lifecycle-orientation 1.0.0 -> 1.0.1, campaign-run-evidence 1.0.0 -> 1.0.1, campaign-readback-classification 1.0.0 -> 1.0.1, contribution-intake 1.0.0 -> 1.0.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote the advanced bundle revision on the first body line and in the --skills-revision instruction beside it (1.40.0+skills.2 -> 1.41.0+skills.1); version 1.0.20 -> 1.0.21. No other change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote the advanced bundle revision on the first body line and in the --skills-revision instruction beside it; version 2.0.3 -> 2.0.4. No other change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote the advanced bundle revision on the first body line and in the --skills-revision instruction beside it; version 1.0.5 -> 1.0.6. No other change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote the advanced bundle revision on the first body line and in the --skills-revision instruction beside it; version 1.1.4 -> 1.1.5. No other change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote the advanced bundle revision on the first body line and in the --skills-revision instruction beside it; version 1.3.4 -> 1.3.5. No other change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote the advanced bundle revision on the first body line and in the --skills-revision instruction beside it; version 1.0.0 -> 1.0.1. No other change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote the advanced bundle revision on the first body line and in the --skills-revision instruction beside it; version 1.0.0 -> 1.0.1. No other change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote the advanced bundle revision on the first body line and in the --skills-revision instruction beside it; version 1.0.0 -> 1.0.1. No other change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote the advanced bundle revision on the first body line and in the --skills-revision instruction beside it; version 1.0.0 -> 1.0.1. No other change."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface version 1.41.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for surface version 1.41.0."
+        }
+      ],
+      "entry_sha256": "e67d653f0948616638be54efb8ab61d9165a66a5aba45f3383aa426f81defbb5"
     }
   ]
 }

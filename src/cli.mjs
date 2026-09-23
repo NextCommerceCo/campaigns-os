@@ -486,7 +486,7 @@ Usage:
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os login [--store <subdomain>]
   campaigns-os logout [--store <subdomain>]
-  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--skills-revision <bundle-revision|skill-id@version>] [--json]   # install-mode, git, skill freshness, and local gateway login/store/expiry/reported version. --skills-revision checks the bundle revision the skill you loaded states on its first body line (or that one skill's <skill-id>@<version>) against the bundle THIS CLI ships: revision_check is match, mismatch or unchecked, and a mismatch prints the full status and exits 2 because skill text already in context cannot be refreshed by re-running — start a fresh session. See docs/skills-revision.md
+  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--skills-revision <bundle-revision|skill-id@version>] [--packet <campaign-runtime.build.json>] [--force] [--json]   # install-mode, git, skill freshness, and local gateway login/store/expiry/reported version. --skills-revision checks the bundle revision the skill you loaded states on its first body line (or that one skill's <skill-id>@<version>) against the bundle THIS CLI ships: revision_check is match, mismatch or unchecked, and a mismatch prints the full status and exits 2 because skill text already in context cannot be refreshed by re-running — start a fresh session. The pin check reports one executable per project: the nearest package.json's exact devDependency on this package first, the Build Packet's campaigns_os_version (the project's campaign-runtime.build.json, or --packet) second; pin.status is match, stale_pin (the pin is not the running version), conflicting_pin (the two sources disagree) or unpinned (neither, or only a range; exit 0). stale_pin and conflicting_pin exit 2 with the file to change; --force (bare) overrides them, is reported as pin.forced and lands on the lifecycle journal entry. See docs/skills-revision.md
   campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next --packet <json> [--no-write] [--no-remit] [--proxy-base <url>] [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
@@ -1323,7 +1323,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // The revision line is a header, so a mismatch is stated before the status
     // an operator would otherwise read as fine — and the full status still
     // prints, because the exit code is set after the render, not instead of it.
-    writeResult(result, args, result.ok ? 0 : 2, { headerLines: skillsRevisionTextLines(result) });
+    writeResult(result, args, result.ok ? 0 : 2, { headerLines: [...skillsRevisionTextLines(result), ...pinTextLines(result)] });
     return;
   }
 
@@ -2585,6 +2585,9 @@ function prepareBuild(args, options = {}) {
   const packet = {
     schema_version: PACKET_SCHEMA,
     generated_at: new Date().toISOString(),
+    // The kernel version that prepared this packet: the second pin source
+    // `tooling status` reads when the project declares no exact devDependency.
+    campaigns_os_version: packageVersion(),
     campaign: {
       public_route_slug: publicRouteSlug,
       ...(specRouteRoot ? { route_root: specRouteRoot } : {}),
@@ -11163,6 +11166,132 @@ export function skillsRevisionTextLines(result) {
   return revision ? [`Skills revision: ${revision.message}`] : [];
 }
 
+// The pin checks (ADR 0002, campaigns-os#466): one executable per project. The
+// project pin (an exact devDependency on this package, dependencies as the
+// fallback) comes first, the kernel version the Build Packet records second.
+// Only an exact version is a pin — a range or tag names no one executable, so
+// it is reported as `range` and the project counts as unpinned.
+const PIN_PACKAGE_NAME = "@nextcommerce/campaigns-os";
+const EXACT_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const PIN_BLOCKING_STATUSES = new Set(["conflicting_pin", "stale_pin"]);
+
+function nearestPackageJson(startDir) {
+  for (let dir = resolve(startDir); ; dir = dirname(dir)) {
+    const candidate = join(dir, "package.json");
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+    if (dirname(dir) === dir) return null;
+  }
+}
+
+// A malformed file is a missing source plus a warning, never a crash: the pin
+// line is one report among several and must not take the status down with it.
+function readPinJson(path) {
+  try {
+    const value = JSON.parse(readFileSync(path, "utf8"));
+    return isObject(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The project and packet sources `tooling status` compares, read from disk. */
+export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
+  const warnings = [];
+  const explicitPacket = optionalString(args.packet);
+  let packetPath = explicitPacket ? resolve(cwd, explicitPacket) : null;
+  let packet = null;
+  if (packetPath) {
+    if (!existsSync(packetPath)) throw refused(`Build Packet not found: ${packetPath}`);
+    packet = readPinJson(packetPath);
+  }
+  // An explicit packet names its project: its target repo, whatever the cwd.
+  const projectStart = packet ? targetRepoFor(packetPath, packet) : cwd;
+  const packageJsonPath = nearestPackageJson(projectStart);
+  if (!packetPath) {
+    // The contracted home of the packet is the project root beside package.json
+    // (prepare-build's default --out), the same place readback discovers it.
+    packetPath = join(packageJsonPath ? dirname(packageJsonPath) : resolve(cwd), "campaign-runtime.build.json");
+    if (existsSync(packetPath)) packet = readPinJson(packetPath);
+  }
+
+  let projectSpec = null;
+  if (packageJsonPath) {
+    const manifest = readPinJson(packageJsonPath);
+    if (!manifest) warnings.push(`Project pin unavailable: ${packageJsonPath} is not a JSON object.`);
+    const spec = manifest?.devDependencies?.[PIN_PACKAGE_NAME] ?? manifest?.dependencies?.[PIN_PACKAGE_NAME];
+    if (typeof spec === "string" && spec.trim()) projectSpec = spec.trim();
+  }
+
+  let packetVersion = null;
+  if (packet && Object.hasOwn(packet, "campaigns_os_version")) {
+    if (typeof packet.campaigns_os_version === "string" && EXACT_VERSION_RE.test(packet.campaigns_os_version)) {
+      packetVersion = packet.campaigns_os_version;
+    } else {
+      warnings.push(`Packet campaigns_os_version ignored: ${JSON.stringify(packet.campaigns_os_version)} in ${packetPath} is not an exact version.`);
+    }
+  } else if (existsSync(packetPath) && !packet) {
+    warnings.push(`Packet pin unavailable: ${packetPath} is not a JSON object.`);
+  }
+  return {
+    packageJsonPath,
+    projectSpec,
+    packetPath: packet ? packetPath : null,
+    packetVersion,
+    warnings,
+  };
+}
+
+/** Pure: the pin status from the two sources and the running version. */
+export function evaluatePin({ projectSpec = null, packetVersion = null, running, force = false }) {
+  const projectVersion = projectSpec && EXACT_VERSION_RE.test(projectSpec) ? projectSpec : null;
+  const range = projectSpec && !projectVersion ? projectSpec : null;
+  const source = projectVersion ? "project" : packetVersion ? "packet" : null;
+  const version = projectVersion || packetVersion || null;
+  let status;
+  let message;
+  if (projectVersion && packetVersion && projectVersion !== packetVersion) {
+    status = "conflicting_pin";
+    message = `conflicting_pin — project pins ${projectVersion}, packet records ${packetVersion}`;
+  } else if (!version) {
+    status = "unpinned";
+    message = `unpinned (${range ? `project range ${range} is not an exact version` : "no project devDependency"}, no packet version)`;
+  } else if (version !== running) {
+    status = "stale_pin";
+    message = `stale_pin — ${source === "project" ? "project pins" : "packet records"} ${version}, running ${running}`;
+  } else {
+    status = "match";
+    message = `match (${version}, ${source === "project" ? "project devDependency" : "packet campaigns_os_version"})`;
+  }
+  const forced = force && PIN_BLOCKING_STATUSES.has(status);
+  return {
+    source,
+    version,
+    running,
+    status,
+    range,
+    packet_version: packetVersion,
+    project_version: projectVersion,
+    forced,
+    message: forced ? `${message} (overridden by --force)` : message,
+  };
+}
+
+function pinAction(pin, sources) {
+  const manifest = sources.packageJsonPath || "the project's package.json";
+  const packet = sources.packetPath || "the Build Packet";
+  if (pin.status === "conflicting_pin") {
+    return `Align the project pin: set devDependencies["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.packet_version}, or re-run prepare-build with ${pin.project_version} so ${packet} records it. Pass --force to proceed anyway (recorded).`;
+  }
+  if (pin.source === "project") {
+    return `Run the pinned executable (npx campaigns-os from the project), or move the pin: set devDependencies["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.running} and reinstall. Pass --force to proceed anyway (recorded).`;
+  }
+  return `Run the version ${packet} records (${pin.packet_version}), or pin the project: add "${PIN_PACKAGE_NAME}": "${pin.running}" to devDependencies in ${manifest}; the next prepare-build re-stamps ${packet}. Pass --force to proceed anyway (recorded).`;
+}
+
+export function pinTextLines(result) {
+  return result?.pin ? [`Pin: ${result.pin.message}`] : [];
+}
+
 function toolingCommand(args) {
   const action = args._[1] || "status";
   if (action !== "status") throw refused(`Unknown tooling command: ${action}`);
@@ -11174,6 +11303,13 @@ function toolingCommand(args) {
     const shipped = readJson(join(ROOT, "skills.json")).bundle_revision;
     throw refused(`Missing value for --skills-revision. Pass the bundle revision the skill you loaded states on its first body line (for example --skills-revision ${shipped}), or that skill's <skill-id>@<version>.`);
   }
+  // Bare, like --dry-run: the shared parser would read `--force true` as a
+  // value, and an override must never hinge on how a token happened to parse.
+  if (Object.hasOwn(args, "force") && args.force !== true) {
+    throw refused(`--force takes no value (got ${JSON.stringify(args.force)}); write \`--force\` on its own.`);
+  }
+  if (args.packet === true) throw refused("Missing value for --packet");
+  const pinSources = resolvePinSources(args);
 
   const pkg = readJson(join(ROOT, "package.json"));
   const skillStatus = installSkills(args.target, true, args.platform || "all");
@@ -11285,8 +11421,24 @@ function toolingCommand(args) {
     actions.push(`Start a fresh session: the skills text you are reading is ${skillsRevision.requested}, and this CLI ships ${skillsRevision.on_disk || "an unknown bundle revision"}. Re-running this command cannot refresh skill text already in context.`);
   }
 
+  // The CLI's own package.json is the running version: the executable this
+  // command is, not whichever one the project would have resolved.
+  const pin = evaluatePin({
+    projectSpec: pinSources.projectSpec,
+    packetVersion: pinSources.packetVersion,
+    running: pkg.version,
+    force: args.force === true,
+  });
+  warnings.push(...pinSources.warnings);
+  const pinBlocks = PIN_BLOCKING_STATUSES.has(pin.status) && !pin.forced;
+  if (PIN_BLOCKING_STATUSES.has(pin.status)) {
+    (pin.forced ? warnings : actions).push(pin.forced
+      ? `Pin ${pin.status} overridden by --force; this run proceeds on ${pin.running}.`
+      : pinAction(pin, pinSources));
+  }
+
   const gitBlocks = git.status === "ok" && Number.isFinite(git.behind) && git.behind > 0;
-  const ok = !gitBlocks && staleSkills.length === 0 && skillsRevision.status !== "mismatch";
+  const ok = !gitBlocks && staleSkills.length === 0 && skillsRevision.status !== "mismatch" && !pinBlocks;
   return {
     ok,
     status: ok ? "ready" : "attention_required",
@@ -11294,6 +11446,7 @@ function toolingCommand(args) {
     // an object; the detail sits beside it under skills_revision.
     revision_check: skillsRevision.status,
     skills_revision: skillsRevision,
+    pin,
     install,
     package: packageStatus,
     git,

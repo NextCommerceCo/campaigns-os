@@ -16,7 +16,7 @@ that the copy on disk moved.
 `skills.json` carries one top-level field:
 
 ```json
-"bundle_revision": "1.40.0+skills.2"
+"bundle_revision": "1.41.0+skills.1"
 ```
 
 The spelling is `<package version>+skills.<n>`:
@@ -37,7 +37,7 @@ The first body line of every bundled `SKILL.md`, immediately after the
 frontmatter, is exactly:
 
 ```
-Bundle revision: 1.40.0+skills.2
+Bundle revision: 1.41.0+skills.1
 ```
 
 followed by one sentence telling the agent to run the check below at the start of
@@ -47,7 +47,7 @@ the agent is actually reading, not from a file it would have to go and open.
 ## The check
 
 ```bash
-campaigns-os tooling status --skills-revision 1.40.0+skills.2
+campaigns-os tooling status --skills-revision 1.41.0+skills.1
 ```
 
 The value is compared against the bundle revision of the **CLI the command runs
@@ -60,20 +60,20 @@ directory, which in a campaign repo has no `skills.json` at all.
 "revision_check": "match",
 "skills_revision": {
   "status": "match",
-  "requested": "1.40.0+skills.2",
+  "requested": "1.41.0+skills.1",
   "spelling": "bundle",
-  "on_disk": "1.40.0+skills.2",
+  "on_disk": "1.41.0+skills.1",
   "on_disk_skill": null,
-  "message": "match (1.40.0+skills.2)"
+  "message": "match (1.41.0+skills.1)"
 }
 ```
 
 The text view prints one named line, as a header above the rest of the status:
 
 ```
-Skills revision: match (1.40.0+skills.2)
-Skills revision: mismatch: loaded 1.39.0+skills.1, on disk 1.40.0+skills.2 — start a fresh session
-Skills revision: unchecked (on disk 1.40.0+skills.2)
+Skills revision: match (1.41.0+skills.1)
+Skills revision: mismatch: loaded 1.39.0+skills.1, on disk 1.41.0+skills.1 — start a fresh session
+Skills revision: unchecked (on disk 1.41.0+skills.1)
 ```
 
 `unchecked` is the state when the flag is absent. It is not an error — an
@@ -148,15 +148,114 @@ The failure this produces is the point of the whole mechanism: skill text moved,
 the identity an agent quotes back did not, and a stale agent would have been told
 it was current.
 
-## Not yet built
+## The pin check
+
+The skills revision says which **text** an agent is reading. The pin says which
+**executable** the project runs. ADR 0002 allows one executable per project,
+and `tooling status` reports it on every run, alongside the revision check.
+
+### Sources and precedence
+
+1. **The project pin.** The nearest `package.json` above the working directory
+   (or above the packet's target repository when `--packet` is given):
+   `devDependencies["@nextcommerce/campaigns-os"]`, then `dependencies` as the
+   fallback. Only an exact version is a pin. A range or a tag (`^1.40.0`,
+   `latest`, a git spec) names no single executable, so it is reported under
+   `range` and counts as no project pin.
+2. **The packet's recorded kernel version.** The Build Packet's optional
+   top-level `campaigns_os_version`, which `prepare-build` stamps with the
+   version that prepared it. The packet read is the project's
+   `campaign-runtime.build.json` beside that `package.json` (its contracted
+   home), or the file `--packet <path>` names. A missing packet, or one written
+   before the field existed, is no packet source.
+
+The **running** version is the `package.json` of the CLI the command runs from.
+When both sources are present and equal, `source` is `"project"`.
+
+### The four statuses
+
+| `pin.status` | When | Exit |
+| --- | --- | --- |
+| `match` | the pin (project first, packet second) is the running version | `0` (if the rest of the status is clean) |
+| `stale_pin` | the pin is not the running version | `2`, with an action naming the file to change |
+| `conflicting_pin` | the project pin and the packet version are both present and differ | `2`, with an action naming both files |
+| `unpinned` | neither source is present (a range alone is not a pin) | `0` (if the rest of the status is clean), always reported |
+
+`conflicting_pin` wins over `stale_pin`: two sources that disagree are reported
+as a disagreement even when one of them is the running version.
+
+### `--force`
+
+`--force` overrides `stale_pin` and `conflicting_pin`: the command then exits as
+the rest of the status dictates, the pin line and `pin.message` say
+`(overridden by --force)`, `pin.forced` is `true`, and a warning replaces the
+action. `forced` is `true` only when the flag overrode something; on `match` or
+`unpinned` it stays `false`. The override is recorded on the command-lifecycle
+journal entry: `--force` appears in its `argv_shape` whenever a journal is
+selected (an active run session, `--lifecycle-journal`, or
+`CAMPAIGNS_OS_LIFECYCLE_LOG`). It is a bare flag. `--force true` is refused before
+anything is inspected, and a refused invocation writes no journal entry.
+
+```bash
+campaigns-os tooling status --json
+campaigns-os tooling status --packet ./campaign-runtime.build.json --force
+```
+
+### Output
+
+Taken from real runs of a 1.41.0 install inside a fixture project. `--json`
+carries the full object:
+
+```json
+"pin": {
+  "source": "project",
+  "version": "1.41.0",
+  "running": "1.41.0",
+  "status": "conflicting_pin",
+  "range": null,
+  "packet_version": "1.40.0",
+  "project_version": "1.41.0",
+  "forced": false,
+  "message": "conflicting_pin — project pins 1.41.0, packet records 1.40.0"
+}
+```
+
+```json
+"pin": {
+  "source": null,
+  "version": null,
+  "running": "1.41.0",
+  "status": "unpinned",
+  "range": "^1.40.0",
+  "packet_version": null,
+  "project_version": null,
+  "forced": false,
+  "message": "unpinned (project range ^1.40.0 is not an exact version, no packet version)"
+}
+```
+
+The text view prints one named line under the skills revision line:
+
+```
+Pin: match (1.41.0, project devDependency)
+Pin: match (1.41.0, packet campaigns_os_version)
+Pin: stale_pin — project pins 1.40.0, running 1.41.0
+Pin: stale_pin — project pins 1.40.0, running 1.41.0 (overridden by --force)
+Pin: conflicting_pin — project pins 1.41.0, packet records 1.40.0
+Pin: unpinned (no project devDependency, no packet version)
+Pin: unpinned (project range ^1.40.0 is not an exact version, no packet version)
+```
+
+and, for a blocking status, an action such as:
+
+```
+- Align the project pin: set devDependencies["@nextcommerce/campaigns-os"] in <project>/package.json to 1.40.0, or re-run prepare-build with 1.41.0 so <project>/campaign-runtime.build.json records it. Pass --force to proceed anyway (recorded).
+```
+
+Branch on `pin.status`, not on the exit code: `tooling status` exits `2` for the
+other reasons above as well.
 
 This document is an entry in
 [`contracts/supported-surface.json`](../contracts/supported-surface.json)
 `named[]` as of 1.40.0: it ships in the npm pack, the CLI help points at it,
 and a consumer may depend on it at this path.
-
-`tooling status` resolves no project-level skills-revision pin today, so it
-cannot distinguish "this project pins no revision" (`unpinned`) from "the project
-pin and the loaded revision disagree" (`conflicting_pin`). Both would need a pin
-to read first. Until there is one, the command reports only what it can observe:
-the value it was given and the bundle on disk.

@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.40.0",
+  "surface_version": "1.41.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -65,7 +65,7 @@
       "sha256": "f310c1b7844d9b1994864d15858ff0c6f17efc1e5285ba193d181bdb2dd4be2f"
     },
     "schemas/campaign-runtime-build-packet.v0.schema.json": {
-      "sha256": "91853bbd1b14c080e2fe2ec32f1aa643f53e62df280b543093bf158ae924dd4b"
+      "sha256": "c8d6517cc7eab97a04c8485b9022c143f34bdfd0f458fbcbe5d5c05437a1a6a2"
     },
     "schemas/campaign-spec.v4.schema.json": {
       "sha256": "12b57573739357acb2b007d00a737cd86face441c47f2719fc51b041dc8ea4a5"
@@ -119,7 +119,7 @@
       "sha256": "dfc9abed38d456969e47a21f606d308a03bdf036f3466f7d6e47a602747dacf4"
     },
     "contracts/effects.v1.json": {
-      "sha256": "8b7b524c2f8c3e39f8d5abdba6f75fd4e38ffc32216e0e6943c080caf06c4f24"
+      "sha256": "37c54f75731541f763aedac7b067506b3d0aa98e1083f285de87b9b32b027664"
     },
     "schemas/campaigns-os-effects.v1.schema.json": {
       "sha256": "3eadd22169ab98bc7c2f682af2751267605170581182158d96be035b0cfe44dc"

@@ -545,6 +545,33 @@
       "notes": "Reports install mode, git state, skill freshness and the local gateway login. It reads the credential store but never writes it. Only the lifecycle journal is written."
     },
     {
+      "command": "tooling",
+      "subcommand": "status",
+      "flags": [
+        "--force"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: tooling status --force",
+      "test_scope": "full",
+      "notes": "--force overrides a stale_pin or conflicting_pin pin status and changes the exit status only: it writes nothing the plain row does not. The override is reported as pin.forced and recorded on the lifecycle journal entry through argv_shape."
+    },
+    {
       "command": "findings",
       "subcommand": "list",
       "flags": [],

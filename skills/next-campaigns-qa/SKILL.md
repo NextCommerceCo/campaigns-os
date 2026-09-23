@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.4
+version: 1.3.5
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.40.0+skills.2
-Run `campaigns-os tooling status --skills-revision 1.40.0+skills.2` at the start of each
+Bundle revision: 1.41.0+skills.1
+Run `campaigns-os tooling status --skills-revision 1.41.0+skills.1` at the start of each
 task and start a fresh session if it reports `mismatch`, because this text is
 already in your context and is never re-read while the CLI on disk can move
 under it.
