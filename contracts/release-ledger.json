@@ -5864,6 +5864,123 @@
         }
       ],
       "entry_sha256": "5f28020beb6b8f6e96aa1f3c0ff5aafa823c59e6dda0a40a8884425ece00a089"
+    },
+    {
+      "id": "RL-0138",
+      "sequence": 138,
+      "date": "2026-09-23",
+      "kind": "release",
+      "surface_version": "1.41.1",
+      "changelog_section": "1.41.1",
+      "changelog_sha256": "d10bef63ee5a87905397cd35355de1e1dd69f85fab8d266ebfdca9620b7d42f4",
+      "agent_impact": "The revision check every bundled skill asks for now works on the documented install. `campaigns-os tooling status` without --platform or --target checks skill freshness only on the platform directories that already hold a Campaigns OS skill, so a single-platform install is no longer reported stale for the other two and no longer exits 2 with an install-everywhere action; a Ready: line names the skipped platforms, the refresh action names each stale installed platform, and --json adds skills.scope (requested, installed_platforms, no_platform_installed) and skills.not_installed_platforms. `--platform all` keeps checking all three. Every skill header now runs the check as `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder and says that output with no `Skills revision:` line came from another copy on PATH, whose actions must not be followed: a pre-1.40.0 global copy ignores --skills-revision and prints an install-skills action that replaces part of the bundle with older text. An agent holding 1.41.0+skills.1 skill text reports mismatch against a 1.41.1 install and must start a fresh session. Separately, refusals ahead of the first effect in theme waive, qa waive and qa policy set are tagged and journal nothing (campaigns-os#465); failures after the target has been read stay journaled.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "tooling",
+          "summary": "tooling status scopes the skill freshness check to platforms holding a Campaigns OS skill (an unchanged, updated or retired slot of ours) when neither --platform nor --target is given, reports skills.scope and skills.not_installed_platforms, prints a Ready: line naming the skipped platforms, and names each stale installed platform in the refresh action instead of --platform all; with no platform installed every platform is checked as before. tooling diagnose forwards --platform only when given. theme waive without --reason is a tagged refusal. The qa waive and qa policy set refusals of campaigns-os#465 live in src/qa-node.mjs, dispatched from here."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.41.1; no hashed entry changed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "The check runs as `npx campaigns-os tooling status --skills-revision <revision>` from the Page Kit folder; a new paragraph explains PATH shadowing by an older global copy and the missing Skills revision: line as its sign, and another describes the platform scoping and skills.scope. The header description and the literals move to 1.41.1+skills.1."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version 1.41.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Version 1.41.1; no dependency moved."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle_revision 1.41.0+skills.1 -> 1.41.1+skills.1 with the package version, and each bundled skill's version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.1+skills.1 on the first body line, and rewrite the instruction beside it: run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder, where npx runs the project's pinned copy, and treat output with no `Skills revision:` line as another copy's, whose actions are not to be followed. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.1+skills.1 on the first body line, and rewrite the instruction beside it: run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder, where npx runs the project's pinned copy, and treat output with no `Skills revision:` line as another copy's, whose actions are not to be followed. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.1+skills.1 on the first body line, and rewrite the instruction beside it: run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder, where npx runs the project's pinned copy, and treat output with no `Skills revision:` line as another copy's, whose actions are not to be followed. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.1+skills.1 on the first body line, and rewrite the instruction beside it: run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder, where npx runs the project's pinned copy, and treat output with no `Skills revision:` line as another copy's, whose actions are not to be followed. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.1+skills.1 on the first body line, and rewrite the instruction beside it: run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder, where npx runs the project's pinned copy, and treat output with no `Skills revision:` line as another copy's, whose actions are not to be followed. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.1+skills.1 on the first body line, and rewrite the instruction beside it: run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder, where npx runs the project's pinned copy, and treat output with no `Skills revision:` line as another copy's, whose actions are not to be followed. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.1+skills.1 on the first body line, and rewrite the instruction beside it: run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder, where npx runs the project's pinned copy, and treat output with no `Skills revision:` line as another copy's, whose actions are not to be followed. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.1+skills.1 on the first body line, and rewrite the instruction beside it: run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder, where npx runs the project's pinned copy, and treat output with no `Skills revision:` line as another copy's, whose actions are not to be followed. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.1+skills.1 on the first body line, and rewrite the instruction beside it: run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the campaign's Page Kit folder, where npx runs the project's pinned copy, and treat output with no `Skills revision:` line as another copy's, whose actions are not to be followed. The skill version advances one patch."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface version 1.41.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for surface version 1.41.1."
+        }
+      ],
+      "entry_sha256": "5dca3b348c877735b80a073b2000af99692d6fa302c4cb46b9ce036ecfb5ebb6"
     }
   ]
 }

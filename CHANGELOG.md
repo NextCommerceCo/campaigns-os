@@ -2,6 +2,53 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.41.1] - 2026-09-23
+
+### Fixed
+
+- `tooling status` without `--platform` or `--target` checks skill freshness
+  only on the platform directories that already hold a Campaigns OS skill. A
+  Claude Code only install, the documented path, was read as stale for Codex
+  and the shared directory, so the revision check that the skills ask for
+  exited 2 and printed an action to install skills for every platform. A
+  `Ready:` line now names the platforms that were skipped, and the refresh
+  action names each stale installed platform (`install-skills --platform
+  claude`), never `all` for a partial install. `--platform all` still checks
+  all three platforms. When no platform holds a Campaigns OS skill, all three
+  are checked and the action installs all three. `--json` adds
+  `skills.scope` (`requested`, `installed_platforms` or
+  `no_platform_installed`) and `skills.not_installed_platforms`.
+  `tooling diagnose` forwards `--platform` only when one is given, so it
+  scopes the same way.
+- Every bundled skill header now tells the agent to run the check as `npx
+  campaigns-os tooling status --skills-revision <revision>` from the
+  campaign's Page Kit folder, where `npx` runs the project's pinned copy. A
+  bare `campaigns-os` resolves through PATH. On a machine with an older
+  global install, a copy from before 1.40.0 answers instead. That copy
+  ignores `--skills-revision`, prints no `Skills revision:` line, and lists an
+  `install-skills --platform all` action. Following that action replaces five
+  of the nine bundled skills with older text and leaves the other four, and
+  no later revision check can detect the mix. The header now says that
+  output with no `Skills revision:` line did not come from the pinned copy,
+  and that none of its actions should be followed. `docs/skills-revision.md`
+  describes both fixes.
+- Refusals that happen before a command's first effect are tagged, so they
+  write no lifecycle journal entry (campaigns-os#465). This covers `theme
+  waive` without `--reason`; `qa waive` without `--assertion`, with an
+  assertion outside the waiver lane, or without `--reason`; and `qa policy
+  set` with a removed flag, a string flag given no value, or a
+  non-boolean `--allowed-domains-confirmed`. Every other plain throw in
+  `src/cli.mjs` and `src/qa-node.mjs` was reviewed against the rule in
+  `docs/effects.md` and left as a journaled handler failure. Those throws
+  either follow a read of the target (spec, source, report, session state or
+  built site), an effect, or a request, or they are internal defect checks.
+  Each newly tagged site has a refusal-table row in
+  `src/lifecycle-effects.test.mjs`. Each touched handler has a positive
+  control: the same invocation, once it passes every refusal and then fails,
+  still appends exactly one entry. No effects row changes.
+- Skills bundle revision `1.41.1+skills.1`. Every skill's version advances by
+  one patch.
+
 ## [1.41.0] - 2026-09-23
 
 ### Added
