@@ -2,6 +2,61 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.38.0+agent.2] - 2026-09-22
+
+### Fixed
+
+- `--no-write` now writes nothing, the lifecycle journal included. A command run
+  with `--no-write` no longer appends its command-lifecycle entry, whether the
+  journal was selected by `--lifecycle-journal`, by `CAMPAIGNS_OS_LIFECYCLE_LOG`
+  or by an active run session; previously `run status --no-write` under an
+  ambient session created `.campaign-runtime/command-lifecycle.jsonl` in the
+  target (issue #459). Capture still happens in process; only the append is
+  skipped, so no command's output or exit status changes.
+- A refused invocation (unknown command, an unknown subcommand refused before
+  its handler runs, or a flag the command refuses up front) writes nothing of
+  its own. `frobnicate`, `tooling statuss`, `qa publishh` and `standardize
+  --dryrun` are rejected with the same message and exit status as before, and
+  now record no lifecycle entry and create no file of their own under the
+  target, with or without `--no-write`, with or without a run session, and with
+  `CAMPAIGNS_OS_LIFECYCLE_LOG` set. A typo can no longer materialize a journal.
+  A command that fails INSIDE its handler — `qa run` with a missing packet, or
+  `next <unknown-stage>`, which resolves the workspace before it rejects the
+  stage — still journals, as before.
+- Scope note, not a change: `start`, `prepare-build`, `build`, `run start` and
+  `run end` close out a STALE run session at the root they are about to act on
+  BEFORE argv is refused. That closeout — Run Record assembled and remitted
+  under the usual consent, session file cleared — is a declared effect of those
+  commands, so a refused invocation of one of them can still perform it. It is
+  the only effect that precedes refusal.
+- `--no-write` now also suppresses that stale-session closeout. Previously the
+  flag was inherited by the closeout (no Run Record was written) but the stale
+  session file was removed anyway, so `--no-write` did not leave the tree
+  byte-identical; it now does, and the stale session is left for the next run
+  that writes. A `run end --no-write` whose only session at the root is stale
+  therefore reports no active session to end instead of reporting a closeout it
+  did not perform.
+- `run status` is read-only: it never sweeps stale sessions and never appends a
+  lifecycle entry, with or without `--no-write`. The help text says so.
+- Unchanged: a known command run without `--no-write` under an active run
+  session still journals to the session's journal, and `doctor`'s existing
+  inspection rule still applies.
+
+### Added
+
+- `docs/harness-matrix.md`: where each agent harness reads instruction files,
+  skills, plugin manifests and MCP servers. Claude Code, Codex and Cursor cells
+  cite first-party vendor documentation (verified 2026-09-22); every other cell
+  is marked `unverified`. The preamble states what "first-party" and "tested"
+  mean, names the two first-release skill placements (`.claude/skills`,
+  `.agents/skills`), and records that Codex lists a same-name skill found in two
+  directories twice.
+- `AGENTS.md` now states the Run Telemetry default in one place: remit is on by
+  default for the canonical endpoint and the CLI announces it on stderr the
+  first time a process remits; capture is local and opt-in (a journal selected
+  by flag, by env or by an active run session); `campaigns-os telemetry off`,
+  `CAMPAIGNS_OS_TELEMETRY=off` or per-command `--no-remit` turn remit off.
+
 ## [1.38.0+agent.1] - 2026-09-21
 
 ### Changed

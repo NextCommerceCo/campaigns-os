@@ -103,6 +103,11 @@ import {
   LIFECYCLE_JOURNAL_REL_PATH,
   NOOP_RECORDER,
   readLifecycleJournal,
+  REFUSED_INVOCATION,
+  refusalSeen,
+  refused,
+  refusing,
+  runWithRefusalScope,
   withCommandLifecycle,
 } from "./lifecycle.mjs";
 import {
@@ -498,11 +503,13 @@ Usage:
     run_id: --run-id > the active run session > the most recent Run Record for this packet's campaign (re-emitted in place; a remitted one is left as written) > freshly minted. --new-run always mints; --list prints the run ids on disk for this packet (id, created_at, remit state, path) and, like --no-write, writes and sends nothing.
 
   Commands other than login, logout, demo, and tooling diagnose accept [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
+    --no-write suppresses that append for every command, however the journal was selected (flag, env, or the active run session); a refused invocation (unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front) and \`run status\` never append one at all.
+    A refused invocation writes no file of its own. One effect still precedes argument refusal: \`start\`, \`prepare-build\`, \`build\`, \`run start\` and \`run end\` close out a STALE run session at the root they are about to act on (Run Record assembled and remitted under the usual consent, session file cleared) before argv is refused — a declared effect of those commands. --no-write suppresses that closeout too, so a --no-write invocation leaves the target byte-identical.
   campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
   campaigns-os telemetry off [--json]                                  # turn remit off for every endpoint (takes no --proxy-base)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
   campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags; with --packet the session lives in the packet's target repo, whatever the cwd
-  campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
+  campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command; read-only — it never sweeps and never journals
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--proxy-base <url>] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd); --proxy-base is handed to run-record, so the session record remits to that receiver under the consent scoped to it
 
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
@@ -535,6 +542,12 @@ Examples:
 
   npm run campaigns-os -- standardize --target examples/target-page-kit --json
 `;
+
+// `refused()`, its `REFUSED_INVOCATION` tag, and the `refusalSeen()` /
+// `runWithRefusalScope()` accessors live in lifecycle.mjs — see the contract
+// there.
+// Command modules raise refusals too (`qa`'s unknown subcommand) and cli.mjs
+// imports them, so the factory has to sit below both.
 
 // Top-level commands the CLI dispatches, used to offer a did-you-mean
 // suggestion on a typo instead of a bare "Unknown command". Derived from the
@@ -604,72 +617,78 @@ export async function main(argv, { authentication } = {}) {
   if (args._[0] === "campaigns-os") args._.shift();
   const command = args._[0] || "help";
 
-  // Authentication never recovers/remits run sessions or records argv in a
-  // lifecycle journal. Credentials belong only in the user credential store.
-  if (command === "login" || command === "logout") {
-    const { runAuthentication } = await import("./login.mjs");
-    return runAuthentication(argv[0] === "campaigns-os" ? argv.slice(1) : argv, authentication);
-  }
+  // Everything below — dispatch and the onFinish that reads the verdict — runs
+  // inside ONE refusal scope, so a refusal raised by this invocation is visible
+  // only to this invocation's persistence step. Two main() calls interleaved
+  // in-process (a test, an embedding host) no longer share the verdict.
+  return runWithRefusalScope(async () => {
+    // Authentication never recovers/remits run sessions or records argv in a
+    // lifecycle journal. Credentials belong only in the user credential store.
+    if (command === "login" || command === "logout") {
+      const { runAuthentication } = await import("./login.mjs");
+      return runAuthentication(argv[0] === "campaigns-os" ? argv.slice(1) : argv, authentication);
+    }
 
-  // An offline sample must not recover sessions or emit lifecycle evidence.
-  if (command === "demo") {
-    // Validate raw tokens here: parsing loses duplicate flags. The private
-    // dispatcher then rechecks the parsed shape and extracts the target.
-    demoArguments(args, argv);
-    await dispatch(command, args);
-    return;
-  }
+    // An offline sample must not recover sessions or emit lifecycle evidence.
+    if (command === "demo") {
+      // Validate raw tokens here: parsing loses duplicate flags. The private
+      // dispatcher then rechecks the parsed shape and extracts the target.
+      demoArguments(args, argv);
+      await dispatch(command, args);
+      return;
+    }
 
-  // Diagnostic export is an inspection, including when a run is active or
-  // stale. Bypass session sweeping, ambient resolution, and lifecycle capture
-  // so no closeout/remit or journal write can occur before the projection.
-  if (command === "tooling" && args._[1] === "diagnose") {
-    const result = toolingDiagnose(args);
-    console.log(args.json ? JSON.stringify(result, null, 2) : diagnosticTextLines(result).join("\n"));
-    return;
-  }
+    // Diagnostic export is an inspection, including when a run is active or
+    // stale. Bypass session sweeping, ambient resolution, and lifecycle capture
+    // so no closeout/remit or journal write can occur before the projection.
+    if (command === "tooling" && args._[1] === "diagnose") {
+      const result = toolingDiagnose(args);
+      console.log(args.json ? JSON.stringify(result, null, 2) : diagnosticTextLines(result).join("\n"));
+      return;
+    }
 
-  // Ambient run session (Tier 3): when `run start` is active, every command
-  // shares its run_id WITHOUT --run-id. Explicit --run-id still wins. Resolved
-  // ONCE here and threaded through dispatch + persistence so the run_id a
-  // command is tagged with and the journal it writes to come from a single
-  // read (no TOCTOU skew if the session changes mid-run).
-  //
-  // Before that read, close out any STALE session at the root this command is
-  // about to open a new one in. findRunSession ignores stale sessions so a new
-  // run never inherits an old run_id — but an ignored session was also an
-  // abandoned one: nine of them were found lingering with no Run Record and
-  // nothing remitted. Closing out is best-effort and never blocks the command.
-  const storageInspection = command === "sdk" && args._[1] === "storage-check";
-  const sweptStale = storageInspection ? [] : await closeOutStaleRunSessions(command, args);
-  const ambient = ambientRunSession(args);
+    // Ambient run session (Tier 3): when `run start` is active, every command
+    // shares its run_id WITHOUT --run-id. Explicit --run-id still wins. Resolved
+    // ONCE here and threaded through dispatch + persistence so the run_id a
+    // command is tagged with and the journal it writes to come from a single
+    // read (no TOCTOU skew if the session changes mid-run).
+    //
+    // Before that read, close out any STALE session at the root this command is
+    // about to open a new one in. findRunSession ignores stale sessions so a new
+    // run never inherits an old run_id — but an ignored session was also an
+    // abandoned one: nine of them were found lingering with no Run Record and
+    // nothing remitted. Closing out is best-effort and never blocks the command.
+    const storageInspection = command === "sdk" && args._[1] === "storage-check";
+    const sweptStale = storageInspection ? [] : await closeOutStaleRunSessions(command, args);
+    const ambient = ambientRunSession(args);
 
-  // Wrap every command in the lifecycle instrumentation (T6): it captures the
-  // command, its argv shape, exit status, and timing. Re-throws unchanged so
-  // the CLI exit code is unaffected. Persistence runs via onFinish so it fires
-  // on BOTH the success and error paths — a command that THROWS (the most
-  // valuable failure telemetry) is recorded too, not just clean exits.
-  // Persistence is OPT-IN — an explicit --lifecycle-journal /
-  // CAMPAIGNS_OS_LIFECYCLE_LOG, or an active run session. With none, behavior
-  // is identical to before.
-  //
-  // `sessionHolder` is per-invocation, NOT module state: when start/
-  // prepare-build auto-open a run session mid-command, they publish it here
-  // so onFinish persists this command's own lifecycle entry into the new
-  // session — without two interleaved invocations ever sharing a session.
-  const sessionHolder = { current: ambient, autoStarted: false, adopted: false, qaResult: null, sweptStale };
-  await withCommandLifecycle(
-    {
-      command,
-      argvShape: argvShape(args),
-      runId: optionalString(args["run-id"]) || ambient?.session?.run_id || null,
-      onFinish: async (lifecycle, thrown) => {
-        persistLifecycleIfRequested(args, command, lifecycle, sessionHolder);
-        await autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown);
+    // Wrap every command in the lifecycle instrumentation (T6): it captures the
+    // command, its argv shape, exit status, and timing. Re-throws unchanged so
+    // the CLI exit code is unaffected. Persistence runs via onFinish so it fires
+    // on BOTH the success and error paths — a command that THROWS (the most
+    // valuable failure telemetry) is recorded too, not just clean exits.
+    // Persistence is OPT-IN — an explicit --lifecycle-journal /
+    // CAMPAIGNS_OS_LIFECYCLE_LOG, or an active run session. With none, behavior
+    // is identical to before.
+    //
+    // `sessionHolder` is per-invocation, NOT module state: when start/
+    // prepare-build auto-open a run session mid-command, they publish it here
+    // so onFinish persists this command's own lifecycle entry into the new
+    // session — without two interleaved invocations ever sharing a session.
+    const sessionHolder = { current: ambient, autoStarted: false, adopted: false, qaResult: null, sweptStale };
+    await withCommandLifecycle(
+      {
+        command,
+        argvShape: argvShape(args),
+        runId: optionalString(args["run-id"]) || ambient?.session?.run_id || null,
+        onFinish: async (lifecycle, thrown) => {
+          persistLifecycleIfRequested(args, command, lifecycle, sessionHolder, thrown);
+          await autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown);
+        },
       },
-    },
-    (recorder) => dispatch(command, args, recorder, ambient, sessionHolder),
-  );
+      (recorder) => dispatch(command, args, recorder, ambient, sessionHolder),
+    );
+  });
 }
 
 function ambientRunSession(args = {}) {
@@ -789,10 +808,33 @@ function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = 
 // flag/env, or an ambient run session. Never throws — a lifecycle write must
 // not break a command (telemetry never blocks a build). `help` is a no-op
 // command and is not worth recording.
-function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder) {
+function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder, thrown) {
   if (command === "help" || (command === "sdk" && args._[1] === "storage-check")) return;
+  // Three rules about what NEVER reaches the journal, whichever way the journal
+  // was selected (--lifecycle-journal, CAMPAIGNS_OS_LIFECYCLE_LOG, or an
+  // ambient run session). The in-process lifecycle object is still built; only
+  // the persistence below — the journal append and the deviation entry that
+  // follows it — is skipped, so a suppressed command still exits as before.
+  //   1. --no-write writes nothing, the journal included (issue #459: `run
+  //      status --no-write` under an ambient session still created
+  //      .campaign-runtime/command-lifecycle.jsonl).
+  //   2. A refused INVOCATION records nothing — an unknown top-level command,
+  //      an unknown subcommand (`tooling statuss`), or a flag the command
+  //      refuses up front (`standardize --dryrun`). None of them reached a
+  //      handler, so a typo must not materialize a journal under the target.
+  //      The tag the refusal carries IS the mechanism, read two ways: on the
+  //      thrown error, or via refusalSeen() when the refusal was caught and
+  //      rendered instead of thrown. There is deliberately no command-list
+  //      backstop here — knownCommands() is regex-harvested and documented as
+  //      fragile, so a second reading of it would be a second command list that
+  //      could disagree with dispatch.
+  //   3. `run status` is read-only: it never sweeps and never journals.
+  if (args["no-write"] === true) return;
+  if (refusalSeen() || thrown?.code === REFUSED_INVOCATION) return;
+  if (command === "run" && args._[1] === "status") return;
   // An inspection must not append to a delivered campaign's active run either.
-  if (command === "doctor" && args.packet && (args.write !== true || args["no-write"] === true)) return;
+  // (--no-write is handled above, so only the read-only `doctor` form is left.)
+  if (command === "doctor" && args.packet && args.write !== true) return;
   const ambient = sessionHolder?.current || null;
   // A session auto-started DURING this command (start/prepare-build) is
   // published into sessionHolder by autoStartRunSession; this command's own
@@ -1091,7 +1133,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "bundle") {
     const subcommand = args._[1] || "check";
-    if (subcommand !== "check") throw new Error('Unknown bundle subcommand. Use: campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json].');
+    if (subcommand !== "check") throw refused('Unknown bundle subcommand. Use: campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json].');
     const { inspectSidecarBundle, sidecarBundleReadinessLine } = await import("./sidecar-bundle.mjs");
     const result = inspectSidecarBundle({
       packetPath: requireArg(args, "packet"),
@@ -1105,10 +1147,10 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "sdk") {
-    if (args._[1] !== "storage-check" || args._.length !== 2) throw new Error("Use: campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json].");
+    if (args._[1] !== "storage-check" || args._.length !== 2) throw refused("Use: campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json].");
     const known = new Set(["_", "target", "target-sdk", "manifest", "scope", "exclude", "json"]);
-    if (args.json !== undefined && args.json !== true) throw new Error("--json is a boolean flag and takes no value.");
-    for (const key of Object.keys(args)) if (!known.has(key)) throw new Error(`Unknown SDK storage-check flag: --${key}`);
+    if (args.json !== undefined && args.json !== true) throw refused("--json is a boolean flag and takes no value.");
+    for (const key of Object.keys(args)) if (!known.has(key)) throw refused(`Unknown SDK storage-check flag: --${key}`);
     const { scanSdkStorageCompatibility, formatStorageCompatibilityReport } = await import("./sdk-storage-compatibility.mjs");
     const result = scanSdkStorageCompatibility({
       cwd: requireArg(args, "target"),
@@ -1168,8 +1210,8 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "install-skills") {
-    if (args.target === true) throw new Error("Missing value for --target");
-    if (args.platform === true) throw new Error("Missing value for --platform");
+    if (args.target === true) throw refused("Missing value for --target");
+    if (args.platform === true) throw refused("Missing value for --platform");
     const result = installSkills(args.target, Boolean(args["dry-run"]), args.platform);
     writeResult(result, args, 0);
     return;
@@ -1180,7 +1222,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // Spelled as inequalities: knownCommands() harvests the top-level
     // command literals from this function by an equality pattern that a
     // subcommand equality would also match.
-    if (subcommand !== "sync" && subcommand !== "parity") throw new Error("Unknown page-kit subcommand. Use: campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json], or campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json].");
+    if (subcommand !== "sync" && subcommand !== "parity") throw refused("Unknown page-kit subcommand. Use: campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json], or campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json].");
     const parity = subcommand !== "sync";
     const result = parity ? pageKitParityCommand(args) : pageKitSyncCommand(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
@@ -1193,7 +1235,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     const subcommand = args._[1] || null;
     // Inequality on purpose: knownCommands() harvests top-level command
     // literals by an equality pattern a subcommand equality would also match.
-    if (subcommand !== "derive") throw new Error("Unknown spec subcommand. Use: campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json].");
+    if (subcommand !== "derive") throw refused("Unknown spec subcommand. Use: campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json].");
     const result = await specDeriveWithMapWriteback(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
     else for (const line of specDeriveWriteMapTextLines(result)) console.log(line);
@@ -1260,7 +1302,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   const suggestion = closestCommand(command);
   const didYouMean = suggestion ? ` Did you mean "${suggestion}"?` : "";
-  throw new Error(
+  throw refused(
     `Unknown command: ${command}.${didYouMean} Run \`campaigns-os --help\` to see available commands.`,
   );
 }
@@ -1285,9 +1327,12 @@ function parseArgs(argv) {
   return args;
 }
 
+// The shared "missing required flag" refusal. Every call site resolves flags
+// at the top of its handler, before the command reads or writes anything, so
+// this is always an up-front refusal and carries the tag.
 function requireArg(args, key) {
   const value = args[key];
-  if (!isNonEmptyString(value)) throw new Error(`Missing required --${key}`);
+  if (!isNonEmptyString(value)) throw refused(`Missing required --${key}`);
   return value;
 }
 
@@ -1363,7 +1408,7 @@ async function resolveSpecPath(args, opts = {}) {
     const mapId = String(args["map-id"]).trim();
     const targetRepo = opts.targetRepo || (args.target ? resolve(args.target) : null);
     if (!targetRepo) {
-      throw new Error("--map-id requires --target (so the fetched spec can be cached under <target>/.campaign-runtime/).");
+      throw refused("--map-id requires --target (so the fetched spec can be cached under <target>/.campaign-runtime/).");
     }
     const proxyBase = optionalString(args["proxy-base"], DEFAULT_PROXY_BASE);
     const cacheDir = join(targetRepo, ".campaign-runtime", "fetched-specs");
@@ -1382,7 +1427,7 @@ async function resolveSpecPath(args, opts = {}) {
         algorithm: "map-store-v1", local_spec_material_hash: specMaterialHash(spec) },
     };
   }
-  throw new Error(
+  throw refused(
     "Either --spec <path> or --map-id <id> is required. " +
       "Pass a local CampaignSpec (--spec <path-to-campaignspec.json>) " +
       "or fetch one from Map Builder (--map-id <id> --target <page-kit-dir>).",
@@ -3226,7 +3271,7 @@ function rejectUnknownStandardizeFlags(args) {
   const valueHint = unknown.some((key) => key.includes("="))
     ? " A flag takes its value as the next argument (--flag value), not --flag=value."
     : "";
-  throw new Error(
+  throw refused(
     `Unknown flag${unknown.length > 1 ? "s" : ""} for standardize: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${STANDARDIZE_FLAGS.map((key) => `--${key}`).join(", ")}.`,
   );
 }
@@ -3235,7 +3280,7 @@ function standardizationReportCommand(args) {
   rejectUnknownStandardizeFlags(args);
   const target = optionalString(args.target);
   if (!target) {
-    throw new Error("standardize requires --target <campaign-repo> (a Page Kit root, a parent repo, or a Campaign Cart application checkout).");
+    throw refused("standardize requires --target <campaign-repo> (a Page Kit root, a parent repo, or a Campaign Cart application checkout).");
   }
   const family = optionalString(args.family) || optionalString(args["template-family"]);
   const slug = optionalString(args.slug);
@@ -3291,7 +3336,7 @@ function standardizationReportCommand(args) {
 function themeCommand(args) {
   const subcommand = args._[1] || "inspect";
   if (!["inspect", "generate", "waive"].includes(subcommand)) {
-    throw new Error(`Unknown theme subcommand "${subcommand}". Use: inspect | generate | waive.`);
+    throw refused(`Unknown theme subcommand "${subcommand}". Use: inspect | generate | waive.`);
   }
   if (subcommand === "waive") return themeWaive(args);
   const packetPath = resolve(requireArg(args, "packet"));
@@ -3408,14 +3453,14 @@ function requireValidPolishCaptureReport(report, reportPath) {
 export async function polishCaptureCommand(args, options = {}) {
   const subcommand = args?._?.[1] || "help";
   if (subcommand !== "capture") {
-    throw new Error(
+    throw refused(
       `Unknown polish subcommand. Use: ${cmd("polish")} capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json].`,
     );
   }
   const packetPath = resolve(requireArg(args, "packet"));
   const baseUrl = requireArg(args, "base-url");
-  if (args.report === true) throw new Error("Missing value for --report");
-  if (args["auth-cookie"] === true) throw new Error("Missing value for --auth-cookie");
+  if (args.report === true) throw refused("Missing value for --report");
+  if (args["auth-cookie"] === true) throw refused("Missing value for --auth-cookie");
 
   const packet = readJson(packetPath);
   const workspace = resolveCampaignWorkspace(packetPath, {
@@ -3555,7 +3600,7 @@ function waiveOrRefuse(args, run, { gate = null, registeredGates = [] } = {}) {
 function checkpointCommand(args) {
   const subcommand = args._[1] || "help";
   if (subcommand !== "waive") {
-    throw new Error(`Unknown checkpoint subcommand. Use: ${cmd("checkpoint")} waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: ${Object.keys(CHECKPOINT_EVALUATORS).join(", ")}.`);
+    throw refused(`Unknown checkpoint subcommand. Use: ${cmd("checkpoint")} waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: ${Object.keys(CHECKPOINT_EVALUATORS).join(", ")}.`);
   }
   return checkpointWaive(args);
 }
@@ -4693,14 +4738,14 @@ export function pageKitSyncCommand(args) {
   const unknown = Object.keys(args).filter((key) => key !== "_" && !PAGE_KIT_SYNC_FLAGS.includes(key));
   if (unknown.length) {
     const valueHint = unknown.some((key) => key.includes("=")) ? " A flag takes its value as the next argument (--flag value), not --flag=value." : "";
-    throw new Error(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit sync: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${PAGE_KIT_SYNC_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit sync: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${PAGE_KIT_SYNC_FLAGS.map((key) => `--${key}`).join(", ")}.`);
   }
   const packetPath = resolve(requireArg(args, "packet"));
   // `--dry-run` is a bare flag. The shared parser would read a following
   // token as its value, so `--dry-run true` must fail rather than quietly
   // become a real write.
   if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
-    throw new Error(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
+    throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
   }
   const dryRun = args["dry-run"] === true;
   const result = {
@@ -4939,17 +4984,17 @@ const SPEC_DERIVE_FLAGS = Object.freeze(["packet", "dry-run", "json", "report", 
 // mistake as an unknown flag: refused before anything is read).
 function parseSpecDeriveStoreFlags(args) {
   if (!Object.hasOwn(args, "from-store")) {
-    if (Object.hasOwn(args, "store-token-source")) throw new Error("--store-token-source only applies with --from-store <subdomain>.");
+    if (Object.hasOwn(args, "store-token-source")) throw refused("--store-token-source only applies with --from-store <subdomain>.");
     return null;
   }
   const subdomain = normalizeStoreSubdomain(args["from-store"] === true ? "" : String(args["from-store"] ?? ""));
   if (!subdomain) {
-    throw new Error(`--from-store takes the store's subdomain (the <store> of <store>.29next.store), got ${JSON.stringify(args["from-store"] === true ? "" : args["from-store"])}.`);
+    throw refused(`--from-store takes the store's subdomain (the <store> of <store>.29next.store), got ${JSON.stringify(args["from-store"] === true ? "" : args["from-store"])}.`);
   }
   let tokenEnv = null;
   if (Object.hasOwn(args, "store-token-source")) {
     const parsed = parseStoreTokenSource(args["store-token-source"] === true ? "" : String(args["store-token-source"] ?? ""));
-    if (parsed.problem) throw new Error(`--store-token-source ${parsed.problem}`);
+    if (parsed.problem) throw refused(`--store-token-source ${parsed.problem}`);
     tokenEnv = parsed.env;
   }
   return { subdomain, token_env: tokenEnv };
@@ -5026,7 +5071,7 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
   const unknown = Object.keys(args).filter((key) => key !== "_" && !SPEC_DERIVE_FLAGS.includes(key));
   if (unknown.length) {
     const valueHint = unknown.some((key) => key.includes("=")) ? " A flag takes its value as the next argument (--flag value), not --flag=value." : "";
-    throw new Error(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec derive: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${SPEC_DERIVE_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec derive: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${SPEC_DERIVE_FLAGS.map((key) => `--${key}`).join(", ")}.`);
   }
   // The store read is supplied by specDeriveFromStoreCommand; this function
   // never touches the network itself, so a --from-store call that reaches it
@@ -5037,9 +5082,9 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
   // `--dry-run` is a bare flag; `--dry-run true` must fail rather than
   // quietly become a real write.
   if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
-    throw new Error(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
+    throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
   }
-  if (args.report === true) throw new Error("Missing value for --report");
+  if (args.report === true) throw refused("Missing value for --report");
   const dryRun = args["dry-run"] === true;
   const result = {
     ok: false,
@@ -5488,9 +5533,9 @@ const PAGE_KIT_PARITY_FLAGS = Object.freeze(["packet", "json", "report"]);
 export function pageKitParityCommand(args, options = {}) {
   const unknown = Object.keys(args).filter((key) => key !== "_" && !PAGE_KIT_PARITY_FLAGS.includes(key));
   if (unknown.length) {
-    throw new Error(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit parity: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${PAGE_KIT_PARITY_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit parity: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${PAGE_KIT_PARITY_FLAGS.map((key) => `--${key}`).join(", ")}.`);
   }
-  if (args.report === true) throw new Error("Missing value for --report");
+  if (args.report === true) throw refused("Missing value for --report");
   const packetPath = resolve(requireArg(args, "packet"));
   const result = {
     ok: false,
@@ -10791,7 +10836,7 @@ function resolveSkillInstallTargets(targetArg = null, platformArg = null) {
     : SKILL_PLATFORMS.filter((platform) => platform.id === requested);
 
   if (!selected.length) {
-    throw new Error(`Unknown --platform ${requested}. Use one of: ${skillPlatformHelp()}.`);
+    throw refused(`Unknown --platform ${requested}. Use one of: ${skillPlatformHelp()}.`);
   }
 
   return selected.map((platform) => ({
@@ -10880,9 +10925,9 @@ function toolingSkillIdentity(skill) {
 
 function toolingCommand(args) {
   const action = args._[1] || "status";
-  if (action !== "status") throw new Error(`Unknown tooling command: ${action}`);
-  if (args.target === true) throw new Error("Missing value for --target");
-  if (args.platform === true) throw new Error("Missing value for --platform");
+  if (action !== "status") throw refused(`Unknown tooling command: ${action}`);
+  if (args.target === true) throw refused("Missing value for --target");
+  if (args.platform === true) throw refused("Missing value for --platform");
 
   const pkg = readJson(join(ROOT, "package.json"));
   const skillStatus = installSkills(args.target, true, args.platform || "all");
@@ -11514,7 +11559,7 @@ async function findingsCommand(args, ambient = null) {
   if (sub === "harvest") return findingsHarvest(args, ambient);
   if (sub === "list") return findingsList(args, ambient);
   if (sub === "export") return findingsExport(args, ambient);
-  throw new Error(`Unknown findings subcommand "${sub}". Use: add | harvest | list | export.`);
+  throw refused(`Unknown findings subcommand "${sub}". Use: add | harvest | list | export.`);
 }
 
 function resolveFindingsJournalPath(args, ambient = null) {
@@ -11558,7 +11603,7 @@ async function findingsAdd(args, ambient = null) {
       summary = answers.summary;
       details = answers.details;
     } else {
-      throw new Error(
+      throw refused(
         `findings add is missing required flags: ${missing.join(", ")}. `
           + `Provide them as flags (flags-first for agents/CI), e.g. `
           + `--stage ${FINDING_STAGES[0]} --kind ${FINDING_KINDS[0]} --summary "..."`,
@@ -11792,7 +11837,7 @@ export async function runSessionCommand(args, ambient = null, sessionHolder = nu
   if (sub === "start") return runSessionStart(args);
   if (sub === "status") return runSessionStatus(args, ambient);
   if (sub === "end") return runSessionEnd(args, ambient, sessionHolder);
-  throw new Error(`Unknown run subcommand "${sub}". Use: start | end | status.`);
+  throw refused(`Unknown run subcommand "${sub}". Use: start | end | status.`);
 }
 
 function writeRunSessionResult(result, args, exitCode) {
@@ -12060,11 +12105,24 @@ async function closeRunSession(found, { packet, extraArgs = {}, silent = false, 
 // forms. `run status` never sweeps — it is read-only.
 // Best-effort throughout: a closeout failure clears the file and says so on
 // stderr; it never blocks the command that triggered it.
+//
+// The sweep is an effect of the command that triggers it, and it runs BEFORE
+// dispatch — so it happens even when the argv that follows is refused. That is
+// deliberate (the stale session at the target is closed out either way), but it
+// makes the sweep the one place where `--no-write` could still write: it
+// assembles a Run Record and removes the session file. `--no-write` writes
+// nothing, the closeout included; see the guard below.
 const STALE_SWEEP_TARGET_COMMANDS = new Set(["start", "prepare-build", "build"]);
 
 async function closeOutStaleRunSessions(command, args) {
   // A command that opted out of sessions altogether must not sweep either.
   if (args["no-run-session"] === true) return [];
+  // --no-write leaves the tree byte-identical. Inheriting the flag into the
+  // closeout was not enough: it suppressed the Run Record but clearRunSession
+  // still deleted the session file, so `--no-write` moved bytes. Skip the
+  // sweep entirely instead — the stale session stays for the next run that
+  // does write.
+  if (args["no-write"] === true) return [];
   const roots = [];
   if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
   if (command === "run" && (args._[1] === "start" || args._[1] === "end")) {
@@ -12081,8 +12139,11 @@ async function closeOutStaleRunSessions(command, args) {
     }
   }
   // The closeout inherits the invoking command's remit controls: an explicit
-  // --no-remit / --no-write stays an opt-out, and a run pointed at a custom
-  // --proxy-base never remits the stale record to the canonical endpoint.
+  // --no-remit stays an opt-out, and a run pointed at a custom --proxy-base
+  // never remits the stale record to the canonical endpoint. --no-write is
+  // carried too, though the guard above means it never arrives true: if the
+  // sweep ever becomes conditional rather than skipped, the closeout must
+  // still see it.
   const inherited = {};
   for (const flag of ["no-remit", "no-write", "proxy-base"]) {
     if (args[flag] !== undefined) inherited[flag] = args[flag];
@@ -12752,7 +12813,7 @@ function parseRunRecordSurfaces(value) {
   const surfaces = parseCommaList(value);
   const unknown = surfaces.filter((surface) => !RUN_RECORD_SURFACES.includes(surface));
   if (unknown.length) {
-    throw new Error(`Unknown --surfaces value(s): ${unknown.join(", ")}. Use one of: ${RUN_RECORD_SURFACES.join(", ")}.`);
+    throw refused(`Unknown --surfaces value(s): ${unknown.join(", ")}. Use one of: ${RUN_RECORD_SURFACES.join(", ")}.`);
   }
   return surfaces;
 }
@@ -12842,6 +12903,21 @@ function toolkitProvenance({ silent = false } = {}) {
 // canonical endpoint, or against --proxy-base when given, so it reports what
 // a remit to that endpoint would do. `off` takes no --proxy-base: an OFF
 // choice is machine-wide and the record it writes carries no scope.
+// `assertSecureProxyBase` is SHARED with the remit rail, where it runs in the
+// middle of a handler: `remit()` reaches it after the Run Record has been built
+// and written, and `spec derive --write-map` after the derive produced one. A
+// throw from those positions is a handler failure — the most valuable lifecycle
+// entry there is — so the refusal tag cannot live inside the validator.
+//
+// The call sites below are the up-front ones: the base comes straight off argv
+// and is checked before any configuration read or write, before a credential is
+// attached, and before a request. The tag therefore goes HERE, where the
+// position is known — `refusing()` is the shared form of that contract. The
+// message and the exit code stay the validator's own; only the verdict the
+// lifecycle journal reads is added.
+const refuseInsecureProxyBase = (proxyBase, options) =>
+  refusing(() => assertSecureProxyBase(proxyBase, options));
+
 async function telemetryCommand(args) {
   const sub = args._[1] || "status";
   const configPath = resolveConfigPath();
@@ -12850,17 +12926,17 @@ async function telemetryCommand(args) {
   // empty variable) is not "no flag": treating it as absent would grant or
   // check the canonical endpoint under a request that named something else.
   if (Object.hasOwn(args, "proxy-base") && !requestedBase) {
-    throw new Error(`telemetry ${sub}: --proxy-base needs a URL (https, or a loopback host); nothing was written.`);
+    throw refused(`telemetry ${sub}: --proxy-base needs a URL (https, or a loopback host); nothing was written.`);
   }
   // Same transport rule as the remit rail: https, or a loopback host. A grant
   // for a base a remit would refuse to send to is not a grant, and a status
   // check against one would report on a remit that can never happen. Nothing
   // is sent here, so the in-clear warning is left to the remit.
-  const secureBase = () => assertSecureProxyBase(requestedBase, { label: `telemetry ${sub}`, warn: () => {} }).base;
+  const secureBase = () => refuseInsecureProxyBase(requestedBase, { label: `telemetry ${sub}`, warn: () => {} }).base;
 
   if (sub === "on" || sub === "off") {
     if (sub === "off" && requestedBase) {
-      throw new Error(`telemetry off: --proxy-base is not accepted; turning telemetry off applies to every endpoint. To grant one endpoint instead, run: ${scopedConsentCommand(requestedBase)}`);
+      throw refused(`telemetry off: --proxy-base is not accepted; turning telemetry off applies to every endpoint. To grant one endpoint instead, run: ${scopedConsentCommand(requestedBase)}`);
     }
     const proxyBase = requestedBase ? secureBase() : DEFAULT_PROXY_BASE;
     const { configPath: written, config } = writeConsentConfig(sub, { configPath, proxyBase, source: "telemetry-command" });
@@ -12936,7 +13012,7 @@ async function telemetryCommand(args) {
 
   if (sub === "list") return telemetryList(args);
 
-  throw new Error(`Unknown telemetry subcommand "${sub}". Use: status | on | off | list.`);
+  throw refused(`Unknown telemetry subcommand "${sub}". Use: status | on | off | list.`);
 }
 
 // `telemetry list` — the reader that never existed. Since the receiver
@@ -12954,11 +13030,13 @@ const TELEMETRY_LIST_MAX_BODY_BYTES = 4_000_000; // the receiver caps a listing 
 export async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("Global fetch is not available. Upgrade to Node 18+.");
   // Same transport gate the remit rail uses: https, or a loopback host with a
-  // loud warning that the credential is in clear. Anything else throws here,
-  // before a credential is attached to a request. The gate's own normalized
-  // base is what the consent scope and the request URL below are built from,
-  // so one string decides both.
-  const { url: proxyUrl, base: proxyBase, loopback } = assertSecureProxyBase(
+  // loud warning that the credential is in clear. Anything else is refused
+  // here, before a credential is attached to a request and before the packet
+  // below is read — the same up-front position the gate holds under
+  // `telemetry status|on`, so it is tagged the same way. The gate's own
+  // normalized base is what the consent scope and the request URL below are
+  // built from, so one string decides both.
+  const { url: proxyUrl, base: proxyBase, loopback } = refuseInsecureProxyBase(
     optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE,
     { label: "telemetry list", credential: "the listing credential (the ops admin key, or the packet's campaign key)" },
   );
@@ -13406,13 +13484,13 @@ export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, 
   // by a stray value. `--proxy-base` names a URL or is refused here, before
   // anything is read, as `telemetry` refuses a bare one.
   if (Object.hasOwn(args, "write-map") && args["write-map"] !== true) {
-    throw new Error(`--write-map takes no value (got ${JSON.stringify(args["write-map"])}); write \`--write-map\` on its own, after the other flags.`);
+    throw refused(`--write-map takes no value (got ${JSON.stringify(args["write-map"])}); write \`--write-map\` on its own, after the other flags.`);
   }
   if (Object.hasOwn(args, "proxy-base") && !optionalString(args["proxy-base"])) {
-    throw new Error("spec derive: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
+    throw refused("spec derive: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
   }
   if (optionalString(args["proxy-base"]) && args["write-map"] !== true) {
-    throw new Error("spec derive: --proxy-base only applies with --write-map; nothing was written.");
+    throw refused("spec derive: --proxy-base only applies with --write-map; nothing was written.");
   }
   const writeMap = args["write-map"] === true;
   const localArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !SPEC_DERIVE_MAP_FLAGS.includes(key)));
