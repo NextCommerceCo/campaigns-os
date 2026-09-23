@@ -1,14 +1,17 @@
 ---
 name: campaign-lifecycle-orientation
-version: 1.0.1
+version: 1.0.2
 description: Orient a reader to the Campaigns OS lifecycle artifacts a run has already emitted, without advancing any stage or changing any state.
 ---
 
-Bundle revision: 1.41.0+skills.1
-Run `campaigns-os tooling status --skills-revision 1.41.0+skills.1` at the start of each
-task and start a fresh session if it reports `mismatch`, because this text is
-already in your context and is never re-read while the CLI on disk can move
-under it.
+Bundle revision: 1.41.1+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.1+skills.1`
+from the campaign's Page Kit folder, where it runs the project's pinned copy and
+never installs one, at the start of each task. Start a fresh session if it
+reports `mismatch`: this text is already in your context and is never re-read
+while the CLI on disk can move under it. If the output has no `Skills revision:`
+line (no `revision_check` under `--json`), a campaigns-os older than this check
+answered; follow none of its actions and run the pinned copy.
 
 # Campaign lifecycle orientation
 

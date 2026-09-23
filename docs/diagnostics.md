@@ -10,8 +10,11 @@ npx campaigns-os tooling diagnose --platform codex --packet campaign-runtime.bui
 npx campaigns-os tooling diagnose --platform codex --packet campaign-runtime.build.json --json > diagnostic.json
 ```
 
-Omit `--packet` for installation and skill diagnostics only. Use `--platform
-claude` for a Claude-only profile. `--context` and `--report` may select existing
+Omit `--packet` for installation and skill diagnostics only. Without
+`--platform`, only the platforms where Campaigns OS skills are installed are
+checked and the export reports `platform: installed` (or `all` when none are
+installed, so every platform was checked); use `--platform claude` to
+check one profile, or `--platform all` for every one. `--context` and `--report` may select existing
 local sidecars; `--target` selects a local skills directory. These inputs are
 never included in the export. The text and JSON forms are suitable for review
 and copying to a support request. The command itself sends nothing.
