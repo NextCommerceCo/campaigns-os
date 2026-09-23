@@ -17,8 +17,13 @@ Notable supported-surface changes are recorded here.
   `--packet <path>`). `--json` carries `pin: { source, version, running,
   status, range, packet_version, project_version, project_manifest,
   project_key, forced, message }` and the text view a `Pin:` line under the
-  skills revision line; the line and every action name the manifest and key the
-  pin was read from. `pin.status` is `match`; `stale_pin` (the pin is not the
+  skills revision line. The line names, for every status, the key and manifest
+  of each project version or range it quotes (`devDependencies in
+  <project>/package.json`), the nearest manifest when there is no project pin,
+  and the packet file of each packet version it quotes; every action names the
+  manifest and key to change. A `package.json` under `node_modules` is never
+  the project, so a run from inside an install resolves the enclosing project;
+  a leading BOM is accepted, and an unreadable ancestor manifest is a warning. `pin.status` is `match`; `stale_pin` (the pin is not the
   running version); `conflicting_pin` (both sources present and different); or
   `unpinned` (neither present — a range or tag is not a pin and is reported
   under `range`). `stale_pin` and `conflicting_pin` exit 2 with an action
@@ -30,7 +35,7 @@ Notable supported-surface changes are recorded here.
   refused. Declared as its own row in `contracts/effects.v1.json`
   (`effects: tooling status --force`, 92 rows): it changes the exit status only
   and writes nothing the plain row does not.
-- Build Packet: optional top-level `campaigns_os_version` (an exact version) in
+- Build Packet: optional top-level `campaigns_os_version` (a bare `x.y.z` version) in
   `schemas/campaign-runtime-build-packet.v0.schema.json`, stamped by
   `prepare-build` with the version that prepared the packet. Additive: the
   packet schema stays `campaign-runtime-build-packet/v0`, and packets without

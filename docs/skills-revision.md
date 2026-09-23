@@ -176,19 +176,37 @@ and `tooling status` reports it on every run, alongside the revision check.
    and a workspace package without an exact spec resolves its workspace root's
    pin. The walk enters an ancestor manifest only if that manifest names the
    package or declares `workspaces`, and it ends after a workspace root, so an
-   unrelated `package.json` further up is never read.
+   unrelated `package.json` further up, even one with an exact pin, is never
+   read.
+
+   A `package.json` under a `node_modules` directory is an installed package,
+   never the project: run from inside `node_modules` (for example
+   `<project>/node_modules/@nextcommerce/campaigns-os`), the walk skips it and
+   resolves the enclosing project, packet home included, as if the working
+   directory were that project. A leading UTF-8 BOM is accepted, as npm
+   accepts it. A nearest manifest that cannot be read or is not a JSON object,
+   and an ancestor that cannot be read, end the walk with a warning naming the
+   file.
 
    `pin.project_manifest` is the manifest the pin (or range) came from, or the
    nearest manifest when there is neither; `pin.project_key` is
-   `"devDependencies"`, `"dependencies"` or `null`. The text line and every
-   action name that manifest and key: a pin read from `dependencies` reads
-   `project dependency` and its action says `set dependencies[...]`.
+   `"devDependencies"`, `"dependencies"` or `null`. The `Pin:` line
+   (`pin.message`) names the key and manifest of every project version or
+   range it quotes (`devDependencies in <project>/package.json`), the nearest
+   manifest when it reports no project pin, and the packet file of every packet
+   version it quotes (`campaigns_os_version in
+   <project>/campaign-runtime.build.json`). Every action names the same
+   manifest and key: a pin read from `dependencies` says `set
+   dependencies[...]`.
 2. **The packet's recorded kernel version.** The Build Packet's optional
    top-level `campaigns_os_version`, which `prepare-build` stamps with the
-   version that prepared it. The packet read is the project's
-   `campaign-runtime.build.json` beside that `package.json` (its contracted
-   home), or the file `--packet <path>` names. A missing packet, or one written
-   before the field existed, is no packet source.
+   version that prepared it. The field is a bare `x.y.z` version (a
+   prerelease or build suffix allowed): the packet schema admits no `=` or `v`
+   prefix, so a packet value such as `=1.41.0` is ignored with a warning. The
+   packet read is the project's `campaign-runtime.build.json` beside that
+   `package.json` (its contracted home), or the file `--packet <path>` names.
+   A missing packet, or one written before the field existed, is no packet
+   source.
 
 The packet is read from beside the nearest `package.json`, whichever manifest
 the project pin came from. The **running** version is the `package.json` of the
@@ -241,7 +259,7 @@ carries the full object:
   "project_manifest": "<project>/package.json",
   "project_key": "devDependencies",
   "forced": false,
-  "message": "conflicting_pin — project pins 1.41.0, packet records 1.40.0"
+  "message": "conflicting_pin — project pins 1.41.0 (devDependencies in <project>/package.json), packet records 1.40.0 (campaigns_os_version in <project>/campaign-runtime.build.json)"
 }
 ```
 
@@ -257,21 +275,24 @@ carries the full object:
   "project_manifest": "<project>/package.json",
   "project_key": "devDependencies",
   "forced": false,
-  "message": "unpinned (project range ^1.40.0 is not an exact version, no packet version)"
+  "message": "unpinned (project range ^1.40.0 (devDependencies in <project>/package.json) is not an exact version; no packet version)"
 }
 ```
 
-The text view prints one named line under the skills revision line:
+The text view prints one named line under the skills revision line, naming
+where each version it quotes was read:
 
 ```
-Pin: match (1.41.0, project devDependency)
-Pin: match (1.41.0, project dependency)
-Pin: match (1.41.0, packet campaigns_os_version)
-Pin: stale_pin — project pins 1.40.0, running 1.41.0
-Pin: stale_pin — project pins 1.40.0, running 1.41.0 (overridden by --force)
-Pin: conflicting_pin — project pins 1.41.0, packet records 1.40.0
-Pin: unpinned (no project devDependency, no packet version)
-Pin: unpinned (project range ^1.40.0 is not an exact version, no packet version)
+Pin: match (1.41.0 — devDependencies in <project>/package.json)
+Pin: match (1.41.0 — dependencies in <project>/package.json)
+Pin: match (1.41.0 — campaigns_os_version in <project>/campaign-runtime.build.json)
+Pin: stale_pin — project pins 1.40.0 (devDependencies in <project>/package.json), running 1.41.0
+Pin: stale_pin — packet records 1.40.0 (campaigns_os_version in <project>/campaign-runtime.build.json), running 1.41.0
+Pin: stale_pin — project pins 1.40.0 (devDependencies in <project>/package.json), running 1.41.0 (overridden by --force)
+Pin: conflicting_pin — project pins 1.41.0 (devDependencies in <project>/package.json), packet records 1.40.0 (campaigns_os_version in <project>/campaign-runtime.build.json)
+Pin: unpinned (no project pin in <project>/package.json; no packet version)
+Pin: unpinned (no project pin in <project>/package.json; no campaigns_os_version in <project>/campaign-runtime.build.json)
+Pin: unpinned (project range ^1.40.0 (devDependencies in <project>/package.json) is not an exact version; no packet version)
 ```
 
 and, for a blocking status, an action such as:

@@ -17,7 +17,7 @@
     "campaigns_os_version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
-      "description": "The Campaigns OS package version that prepared this packet, stamped by prepare-build. Optional for packets generated before it existed; always stamped on new packets. `tooling status` reads it as the second pin source, after the project's exact devDependency: both present and different is conflicting_pin, and this alone decides the pin when the project declares none."
+      "description": "The Campaigns OS package version that prepared this packet, stamped by prepare-build. Optional for packets generated before it existed; always stamped on new packets. A bare x.y.z version (a prerelease or build suffix allowed, no `=` or `v` prefix). `tooling status` reads it as the second pin source, after the project pin (the first exact spec for @nextcommerce/campaigns-os on the walk up from the nearest package.json, devDependencies then dependencies in each, entering a workspace root and stopping there; never peerDependencies or optionalDependencies): both present and different is conflicting_pin, and this alone decides the pin when the project declares none."
     },
     "campaign": {
       "type": "object",

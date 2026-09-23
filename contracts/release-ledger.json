@@ -5743,7 +5743,7 @@
       "kind": "release",
       "surface_version": "1.41.0",
       "changelog_section": "1.41.0",
-      "changelog_sha256": "ac4453ff006f4ebe3ba5d9a4e55031b936202bca069bd6a992ffac9ff3019681",
+      "changelog_sha256": "59485aa2a61c92cfad54d7437d178cedaf261b3dc6ed238572121337b7673bf3",
       "agent_impact": "`campaigns-os tooling status` now reports which executable the project is pinned to, beside the skills revision, so an agent can tell before a run whether the CLI it is calling is the one the project and its Build Packet expect. The project pin is the first exact spec for @nextcommerce/campaigns-os (x.y.z, =x.y.z or vx.y.z) in devDependencies, then dependencies, of each package.json walking up from the working directory through a workspace root, a range counting only when no exact spec exists on the walk and peerDependencies/optionalDependencies never counting, and pin.project_manifest and pin.project_key name where it was read; the packet's recorded kernel version is the new optional Build Packet field campaigns_os_version, which prepare-build stamps. `--json` gains `pin` with status match, stale_pin, conflicting_pin or unpinned and a `Pin:` text line; stale_pin and conflicting_pin exit 2 with an action naming the file to change, and unpinned exits 0 but is always reported, so a range or tag is visible as not a pin. Branch on pin.status rather than the exit code. The bare `--force` flag overrides a blocking pin status, is reported as pin.forced, and lands on the lifecycle journal entry's argv_shape; `--force true` is refused. Packets written before this release carry no campaigns_os_version and are no pin source; re-running prepare-build stamps one. The skills bundle identity moves with this release to 1.41.0+skills.1: every bundled skill now opens with that value and instructs `tooling status --skills-revision 1.41.0+skills.1`, so an agent still holding 1.40.0+skills.2 skill text reports `mismatch` against a 1.41.0 install and must start a fresh session.",
       "compatibility": "additive",
       "migration": "none",
@@ -5752,13 +5752,13 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "tooling",
-          "summary": "tooling status resolves the project pin and the packet's campaigns_os_version, reports pin { source, version, running, status, range, packet_version, project_version, project_manifest, project_key, forced, message } and a Pin: line naming the key the project pin was read from, exits 2 on stale_pin or conflicting_pin unless --force, and refuses --force with a value. It accepts --packet <path>. prepare-build stamps campaigns_os_version on the Build Packet. The help line gains [--packet <campaign-runtime.build.json>] [--force]."
+          "summary": "tooling status resolves the project pin and the packet's campaigns_os_version, reports pin { source, version, running, status, range, packet_version, project_version, project_manifest, project_key, forced, message } and a Pin: line naming the key the project pin was read from, exits 2 on stale_pin or conflicting_pin unless --force, and refuses --force with a value. It accepts --packet <path>. prepare-build stamps campaigns_os_version on the Build Packet. The help line gains [--packet <campaign-runtime.build.json>] [--force]. The Pin: line (pin.message) carries its provenance for every status: the key and manifest of each project version or range it quotes, the nearest manifest when there is no project pin, and the packet file of each packet version it quotes; a package.json under node_modules is never the project, a leading BOM is accepted, and an unreadable ancestor manifest is a warning."
         },
         {
           "class": "schema",
           "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
           "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
-          "summary": "Add the optional top-level campaigns_os_version (an exact version), the kernel version that prepared the packet. Additive: schema_version stays campaign-runtime-build-packet/v0 and packets without it stay valid."
+          "summary": "Add the optional top-level campaigns_os_version (an exact version), the kernel version that prepared the packet. Additive: schema_version stays campaign-runtime-build-packet/v0 and packets without it stay valid. Its description states the bare x.y.z form and the project pin it follows as built: the first exact spec on the walk up from the nearest package.json, devDependencies then dependencies, a workspace root entered and ending the walk, peer and optional dependencies never."
         },
         {
           "class": "compatibility_policy",
@@ -5863,7 +5863,7 @@
           "summary": "Regenerate the runtime reference for surface version 1.41.0."
         }
       ],
-      "entry_sha256": "92560a4f2a09d35da819de9ff72eaa06aabbfd0301c4f337d6e178d551473c51"
+      "entry_sha256": "f0078f3a87241a6f63f40b99017cda95ceec41c9d93910daaba5a200bcc3c567"
     }
   ]
 }
