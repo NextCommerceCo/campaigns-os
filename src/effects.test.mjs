@@ -380,6 +380,7 @@ const INVOCATIONS = {
   },
   "tooling diagnose": { argv: (s) => ["tooling", "diagnose", "--packet", s.packetPath, "--json"] },
   "tooling status": { argv: () => ["tooling", "status", "--json"] },
+  "tooling status|--force": { argv: () => ["tooling", "status", "--force", "--json"] },
   "*refused*": { argv: () => ["nosuchcommand"] },
   "bundle check": { argv: (s) => ["bundle", "check", "--packet", s.packetPath, "--json"] },
   "standardize": { argv: (s) => ["standardize", "--target", s.targetRepo, "--json"] },

@@ -302,6 +302,7 @@ const REFUSED_INVOCATIONS = [
   // Bad value for a flag.
   { argv: ["install-skills", "--platform", "bogus"], expect: /Unknown --platform bogus/ },
   { argv: ["page-kit", "sync", "--packet", "%DIR%/p.json", "--dry-run", "true"], expect: /--dry-run takes no value/ },
+  { argv: ["tooling", "status", "--no-force"], expect: /--no-force is not a flag of tooling status/ },
   { argv: ["run-record", "--packet", "%DIR%/p.json", "--surfaces", "bogus"], expect: /Unknown --surfaces value\(s\): bogus/ },
   // Refused by a SHARED validator — one imported from another module and
   // called on argv before the handler reads a config, a packet or the network.

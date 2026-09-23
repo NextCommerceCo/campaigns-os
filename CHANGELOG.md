@@ -2,6 +2,72 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.41.0] - 2026-09-23
+
+### Added
+
+- `tooling status` reports the pin checks (ADR 0002, campaigns-os#466): one
+  executable per project. The project pin — the first exact
+  `@nextcommerce/campaigns-os` spec (`x.y.z`, `=x.y.z` or `vx.y.z`) in
+  `devDependencies`, then `dependencies`, of each `package.json` walking up from
+  the working directory, through manifests that name nothing, to the workspace
+  root — comes first; a range counts only
+  when no exact spec exists on that walk, and `peerDependencies` /
+  `optionalDependencies` are never a pin. The Build Packet's recorded kernel
+  version comes second (the project's `campaign-runtime.build.json`, or
+  `--packet <path>`). `--json` carries `pin: { source, version, running,
+  status, range, packet_version, packet_version_ignored, project_version,
+  project_manifest, project_key, forced, message }` and the text view a `Pin:` line under the
+  skills revision line. The line names, for every status, the key and manifest
+  of each project version or range it quotes (`devDependencies in
+  <project>/package.json`), the nearest manifest when there is no project pin,
+  and the packet file of each packet version it quotes; every action names the
+  manifest and key to change; a packet value with an `=` or `v` prefix is
+  named as ignored (`packet_version_ignored`), not as absent. An installed
+  package's own manifest (`node_modules/<name>` or `node_modules/@<scope>/<name>`)
+  is never the project, so a run from inside an install resolves the enclosing
+  project, while a project whose own path passes through a `node_modules`
+  directory still resolves its own manifest; a leading BOM is accepted, and an
+  unreadable or malformed ancestor manifest ends the walk with a warning.
+  `pin.status` is `match`; `stale_pin` (the pin is not the
+  running version); `conflicting_pin` (both sources present and different); or
+  `unpinned` (neither present — a range or tag is not a pin and is reported
+  under `range`). `stale_pin` and `conflicting_pin` exit 2 with an action
+  naming the file to change; `unpinned` exits 0 and is always reported.
+- `tooling status --force`: a bare flag that overrides `stale_pin` and
+  `conflicting_pin`, so the command exits as the rest of the status dictates.
+  The override is reported as `pin.forced: true` and recorded on the
+  command-lifecycle journal entry through `argv_shape`. `--force true` is
+  refused. Declared as its own row in `contracts/effects.v1.json`
+  (`effects: tooling status --force`, 92 rows): it changes the exit status only
+  and writes nothing the plain row does not.
+- Build Packet: optional top-level `campaigns_os_version` (a bare `x.y.z` version) in
+  `schemas/campaign-runtime-build-packet.v0.schema.json`, stamped by
+  `prepare-build` with the version that prepared the packet. Additive: the
+  packet schema stays `campaign-runtime-build-packet/v0`, and packets without
+  the field stay valid (they are no packet pin source).
+
+### Changed
+
+- `docs/skills-revision.md`: the "Not yet built" section is replaced by the pin
+  check as built — sources and precedence, the four statuses, exit codes,
+  `--force`, and JSON and text output from real runs. The `tooling status` help
+  line gains `[--packet <campaign-runtime.build.json>] [--force]`.
+- `tooling status` refuses `--no-force` up front (`--force` is bare and off by
+  default), journaling nothing, where the shared parser had let it pass as a
+  no-op; and an empty or whitespace-only project spec is absent, never a
+  `range`.
+- Skills: `bundle_revision` moves to `1.41.0+skills.1` with the package
+  version, and every bundled skill's `Bundle revision:` header and its
+  `--skills-revision` instruction follow (each skill version patch-bumped).
+- `contracts/supported-surface.json`: `surface_version` 1.41.0, with the
+  sha256 of the hashed `contracts/effects.v1.json` and
+  `schemas/campaign-runtime-build-packet.v0.schema.json` entries recomputed. No
+  entry, command, export or bin moved.
+- `package.json` and `package-lock.json`: version 1.41.0; no dependency moved.
+- `docs/orientation-contract-reference.md` and `docs/runtime-readiness.md`:
+  regenerated for surface version 1.41.0.
+
 ## [1.40.0] - 2026-09-22
 
 ### Added
