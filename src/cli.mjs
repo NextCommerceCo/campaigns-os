@@ -11069,7 +11069,7 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
 }
 
 // A platform directory counts as installed when a skill already sits under one
-// of the bundled names (current or not) or under a retired name of ours. A
+// of the bundled names (current or not), or our own copy under a retired name. A
 // slot install-skills would only create says nothing about that platform, and
 // neither does a retired slot another skill occupies. A foreign skill under a
 // CURRENT bundled name reads as `updated` — install-skills would replace it —
@@ -11535,7 +11535,10 @@ function toolingCommand(args) {
   if (skillScope.scope === "no_platform_installed") {
     // Nothing to refresh: the documented install is one platform, the
     // harness in use, so name the choice rather than installing everywhere.
-    actions.push(`Install bundled skills for the harness you use: ${cli.invocation_prefix} install-skills --platform <${SKILL_PLATFORMS.map((platform) => platform.id).join("|")}>. Restart local agent sessions afterwards.`);
+    // The command is runnable as printed (Claude Code, the documented install);
+    // the other platforms are named in prose, never as a `<a|b>` template a
+    // shell would read as a redirect.
+    actions.push(`Install bundled skills for the harness you use: ${cli.invocation_prefix} install-skills --platform claude (or --platform codex for Codex, --platform agents for shared agent skills such as Cursor's). Restart local agent sessions afterwards.`);
   } else if (staleSkills.length) {
     const stalePlatforms = SKILL_PLATFORMS.map((platform) => platform.id)
       .filter((id) => staleSkills.some((skill) => skill.platform === id));
@@ -11659,7 +11662,10 @@ export function toolingDiagnose(args, { runTooling = toolingCommand, runDoctor =
       doctor = runDoctor({ packet: args.packet, "no-write": true, ...(typeof args.context === "string" ? { context: args.context } : {}), ...(typeof args.report === "string" ? { report: args.report } : {}) });
     } catch { inspectionFailed = true; }
   }
-  return diagnosticExport({ tooling, doctor, platform: args.platform || "installed", inspectionFailed });
+  // `installed` only when status actually narrowed to installed platforms; an
+  // unnamed platform that checked every one (nothing installed) stays `all`.
+  const platform = args.platform || (tooling?.skills?.scope === "installed_platforms" ? "installed" : "all");
+  return diagnosticExport({ tooling, doctor, platform, inspectionFailed });
 }
 
 function localCliStatus(pkg, install = { mode: "checkout", pinned: null }) {

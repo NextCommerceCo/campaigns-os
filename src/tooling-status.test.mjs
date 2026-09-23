@@ -708,6 +708,9 @@ test("a single-platform install is ready without --platform, and the skipped pla
     assert.deepEqual(run.json.skills.not_installed_platforms.map((target) => target.platform), ["codex", "agents"]);
     assert.deepEqual(refreshActions(run), []);
     assert.ok(run.json.ready.some((line) => line.startsWith("Skills checked for Claude Code;") && line.includes("Codex")));
+    // The login hint names the printed invocation, not a bare campaigns-os.
+    const login = run.json.warnings.find((line) => line.startsWith("Gateway login:"));
+    assert.ok(login?.includes(`Use ${run.json.cli.invocation_prefix} login --store <subdomain>.`), login);
 
     const human = runInHome(home, ["tooling", "status"]);
     assert.match(human.stdout, /Skills checked for Claude Code; Codex, Shared agent skills have no Campaigns OS skills installed and were not checked/);
@@ -768,7 +771,8 @@ test("with no platform installed the action asks for an install on the harness i
     assert.deepEqual(refreshActions(run), []);
     const install = run.json.actions.filter((action) => action.startsWith("Install bundled skills for the harness you use:"));
     assert.equal(install.length, 1, JSON.stringify(run.json.actions));
-    assert.match(install[0], /install-skills --platform <claude\|codex\|agents>\. Restart/);
+    assert.match(install[0], /install-skills --platform claude \(or --platform codex for Codex, --platform agents for shared agent skills/);
+    assert.doesNotMatch(install[0], /[<|>]/, "the action must be runnable as printed: no <a|b> template");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

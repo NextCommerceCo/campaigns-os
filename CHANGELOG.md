@@ -9,7 +9,7 @@ Notable supported-surface changes are recorded here.
 - `tooling status` without `--platform` or `--target` checks skill freshness
   only on the platform directories where Campaigns OS skills are installed. A
   directory counts when a skill sits under one of the bundled names or under a
-  retired name of ours. Before this, a Claude Code only install (the
+  retired name when it is our own copy. Before this, a Claude Code only install (the
   documented path) was read as stale for Codex and the shared directory, so
   the revision check the skills ask for exited 2 and printed an action to
   install skills for every platform. Now:
@@ -18,7 +18,8 @@ Notable supported-surface changes are recorded here.
     --platform claude`), or `--platform all` when all three are installed and
     stale.
   - When no platform has Campaigns OS skills, the action asks for an install
-    on the harness in use (`install-skills --platform <claude|codex|agents>`)
+    on the harness in use (`install-skills --platform claude`, with `codex` and
+    `agents` named as the alternatives)
     rather than on all three.
   - `--platform all` still checks every platform.
   - `--json` adds `skills.scope` (`requested`, `installed_platforms` or

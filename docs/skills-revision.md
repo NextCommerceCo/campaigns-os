@@ -75,12 +75,12 @@ be followed.
 
 Without `--platform` or `--target`, the skill freshness part of the report checks
 only the platform directories where Campaigns OS skills are installed (a skill
-under one of the bundled names, or under a retired name of ours), and a `Ready:`
+under one of the bundled names, or our own copy under a retired name), and a `Ready:`
 line names the platforms it skipped. A Claude Code only install is therefore not
 reported stale for Codex or the shared directory, and a stale install's refresh
 action names each stale platform. `--platform all` checks all three, as it always
 has. When no platform has Campaigns OS skills, the action asks for an install on
-the harness in use (`install-skills --platform <claude|codex|agents>`). `--json`
+the harness in use (`install-skills --platform claude`, or `codex` / `agents`). `--json`
 reports the choice as `skills.scope` (`requested`, `installed_platforms`, or
 `no_platform_installed`) with `skills.not_installed_platforms`.
 
