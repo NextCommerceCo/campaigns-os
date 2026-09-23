@@ -316,6 +316,11 @@ const REFUSED_INVOCATIONS = [
   { argv: ["telemetry", "status", "--proxy-base", "not-a-url"], expect: /--proxy-base is not a URL/ },
   { argv: ["telemetry", "on", "--proxy-base", "http://example.test"], expect: /--proxy-base must be https/ },
   { argv: ["telemetry", "list", "--proxy-base", "not-a-url"], expect: /--proxy-base is not a URL/ },
+  // Refused inside the handler but ahead of the request: the destination gate
+  // for the admin key, then the missing admin key itself. Neither is a handler
+  // failure — nothing has been read or sent — so neither may journal.
+  { argv: ["telemetry", "list", "--proxy-base", "https://example.invalid"], expect: /refusing to send the ops admin key to non-canonical/ },
+  { argv: ["telemetry", "list", "--proxy-base", "https://example.invalid", "--trust-proxy-base", "--admin-key-env", "CAMPAIGNS_OS_TEST_UNSET_ADMIN_KEY"], expect: /set CAMPAIGNS_OS_TEST_UNSET_ADMIN_KEY/ },
   // `validatedOrderCreationLimit` (src/qa-browser.mjs), at both browser entries.
   { argv: ["qa", "parity", "--max-order-creations", "bogus"], expect: /--max-order-creations must be a whole number/ },
   { argv: ["qa", "run", "--max-order-creations", "0"], expect: /--max-order-creations must be at least 1/ },

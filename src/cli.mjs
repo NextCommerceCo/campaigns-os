@@ -13387,7 +13387,7 @@ const TELEMETRY_LIST_TIMEOUT_MS = 15_000;
 const TELEMETRY_LIST_MAX_BODY_BYTES = 4_000_000; // the receiver caps a listing at 500 summaries
 
 export async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
-  if (typeof fetchImpl !== "function") throw new Error("Global fetch is not available. Upgrade to Node 18+.");
+  if (typeof fetchImpl !== "function") throw refused("Global fetch is not available. Upgrade to Node 18+.");
   // Same transport gate the remit rail uses: https, or a loopback host with a
   // loud warning that the credential is in clear. Anything else is refused
   // here, before a credential is attached to a request and before the packet
@@ -13407,9 +13407,11 @@ export async function telemetryList(args, { fetchImpl = globalThis.fetch } = {})
     const { key, rejected } = resolveCampaignsApiKeySource(packet, packetPath, process.env);
     const rejection = describeCampaignKeyRejection(rejected);
     // Fail fast, before a request: a refused credential names its source so
-    // the operator can fix it, and nothing is sent in the meantime.
-    if (rejection) throw new Error(`telemetry list --packet: ${rejection}`);
-    if (!key) throw new Error(`telemetry list --packet: no Campaigns API key found in ${packetPath}, its local CampaignSpec, or the declared env source; pass a packet that carries one, or list cross-tenant with the admin key instead.`);
+    // the operator can fix it, and nothing is sent in the meantime. Every
+    // refusal ahead of the request is tagged, so the lifecycle journal records
+    // nothing for it — the same rule as a flag refused up front.
+    if (rejection) throw refused(`telemetry list --packet: ${rejection}`);
+    if (!key) throw refused(`telemetry list --packet: no Campaigns API key found in ${packetPath}, its local CampaignSpec, or the declared env source; pass a packet that carries one, or list cross-tenant with the admin key instead.`);
     headers["X-Campaign-Key"] = key;
     scope = "tenant";
   } else {
@@ -13419,11 +13421,11 @@ export async function telemetryList(args, { fetchImpl = globalThis.fetch } = {})
     // posture remit takes with default-on consent.
     const canonical = normalizeConsentScope(proxyBase) === CANONICAL_REMIT_SCOPE;
     if (!canonical && !loopback && args["trust-proxy-base"] !== true) {
-      throw new Error(`telemetry list: refusing to send the ops admin key to non-canonical ${proxyUrl.origin}. Pass --trust-proxy-base if that endpoint is yours, or use --packet for a tenant-scoped listing.`);
+      throw refused(`telemetry list: refusing to send the ops admin key to non-canonical ${proxyUrl.origin}. Pass --trust-proxy-base if that endpoint is yours, or use --packet for a tenant-scoped listing.`);
     }
     const envName = optionalString(args["admin-key-env"]) || DEFAULT_ADMIN_KEY_ENV;
     const adminKey = process.env[envName];
-    if (!isNonEmptyString(adminKey)) throw new Error(`telemetry list: set ${envName} (the ops admin key) for the cross-tenant listing, or pass --packet <campaign-runtime.build.json> for a tenant-scoped one.`);
+    if (!isNonEmptyString(adminKey)) throw refused(`telemetry list: set ${envName} (the ops admin key) for the cross-tenant listing, or pass --packet <campaign-runtime.build.json> for a tenant-scoped one.`);
     console.warn("Warning: CAMPAIGN_OPS_ADMIN_KEY (or the selected admin-key env) is a break-glass /api/runs listing credential. Use campaigns-os login for supported store-profile reads; login does not grant cross-tenant run listing.");
     headers["X-Campaigns-Ops-Admin-Key"] = adminKey.trim();
     scope = "admin";
