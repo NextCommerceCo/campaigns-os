@@ -1751,9 +1751,11 @@ function updateQaPolicy(args) {
   // Test Orders have no permission flag. The two flags that once set one
   // were removed with their packet fields in supported surface 1.28.0; a
   // script still passing them gets told so instead of a silent no-op.
+  // This check and the setOptional* value checks below run after reading only
+  // the packet and before the packet write: refusals, so they journal nothing.
   const removedFlags = REMOVED_QA_POLICY_FLAGS.filter((flag) => flag in args);
   if (removedFlags.length) {
-    throw new Error(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders run from --test-order <mode> alone; there is no permission flag). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth.`);
+    throw refused(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders run from --test-order <mode> alone; there is no permission flag). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth.`);
   }
   // Validated with the other argv checks, before anything is written.
   const orderPathDepth = parseOrderPathDepthFlag(args, { command: "qa policy set" });
@@ -1828,19 +1830,22 @@ export function qaWaive(args) {
   const packetPath = args.packet ? resolve(args.packet) : null;
   if (!packetPath) throw refused("qa waive requires --packet <campaign-runtime.build.json>.");
   const packet = readJson(packetPath);
+  // The three flag checks run after reading only argv and the packet, ahead of
+  // the report lookup: refusals, so they journal nothing. The missing report
+  // below is a handler failure and is journaled.
   const assertionId = stringArg(args.assertion);
   if (!assertionId) {
-    throw new Error(`qa waive requires --assertion <id>. Waivable assertions: ${WAIVABLE_QA_ASSERTIONS.join(", ")}.`);
+    throw refused(`qa waive requires --assertion <id>. Waivable assertions: ${WAIVABLE_QA_ASSERTIONS.join(", ")}.`);
   }
   if (!WAIVABLE_QA_ASSERTIONS.includes(assertionId)) {
-    throw new Error(
+    throw refused(
       `qa waive does not accept --assertion "${assertionId}". The waiver lane is scoped to exactly: ${WAIVABLE_QA_ASSERTIONS.join(", ")}. `
       + "Extending the lane to another assertion is a design decision, not a flag.",
     );
   }
   const reason = stringArg(args.reason);
   if (!reason) {
-    throw new Error("qa waive requires --reason \"<why this failing blocker is acceptable for this campaign>\".");
+    throw refused("qa waive requires --reason \"<why this failing blocker is acceptable for this campaign>\".");
   }
   const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
@@ -3258,16 +3263,21 @@ function stringArg(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+// setOptionalBoolean and setOptionalString serve `qa policy set` only, ahead of
+// its packet write, so a bad value there is a refusal. booleanArg itself stays
+// untagged: it is shared with `qa run`'s analytics leg, which calls it mid-run,
+// where a throw is a handler failure — so the tag goes on this call site
+// (`refusing()`), not in the validator.
 function setOptionalBoolean(target, property, args, key, changed) {
   if (!(key in args)) return;
-  const value = booleanArg(args[key], key);
+  const value = refusing(() => booleanArg(args[key], key));
   setIfChanged(target, property, value, changed);
 }
 
 function setOptionalString(target, property, args, key, changed) {
   if (!(key in args)) return;
   const value = stringArg(args[key]);
-  if (!value) throw new Error(`--${key} requires a value.`);
+  if (!value) throw refused(`--${key} requires a value.`);
   setIfChanged(target, property, value, changed);
 }
 

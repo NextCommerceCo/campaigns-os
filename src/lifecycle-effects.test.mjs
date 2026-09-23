@@ -19,9 +19,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { main } from "./cli.mjs";
@@ -84,6 +84,17 @@ function startSession(dir) {
   const session = JSON.parse(started.stdout).session;
   assert.ok(session.lifecycle_journal, "run start should name a lifecycle journal");
   return session;
+}
+
+// Write `files` (relative path -> content) under `dir`. Used by the rows below
+// that must get past a packet read to reach their refusal or failure; it runs
+// before the "before" snapshot, so the seeded files are state, not effects.
+function seedFiles(dir, files = {}) {
+  for (const [path, content] of Object.entries(files)) {
+    const full = join(dir, path);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, content);
+  }
 }
 
 function readJournalEntries(path) {
@@ -269,10 +280,16 @@ test("(h) a refused subcommand `run statuss` under an ambient session writes not
 // applied only to the throw sites those two files own, and they are the reason
 // the position of a check — not the file it lives in — decides the verdict.
 //
-// `%DIR%` is the case's own temp directory. Paths that name a packet are
-// deliberately absent: a refusal that resolves a path but never reads it is
-// still a refusal, and a row that needed a real packet would be testing the
-// handler instead.
+// `%DIR%` is the case's own temp directory. Most rows name no real file: a
+// refusal that resolves a path but never reads it is still a refusal. The rows
+// that DO carry `files` are refused after the handler has read its packet and
+// nothing else. Reading its own packet is pre-work the rule allows (docs/
+// effects.md, the `*refused*` row), so those rows seed the smallest packet that
+// reaches the check — `{}` — and still test the refusal, not the handler. What
+// the handler reads after the packet (the Assembly Report, the target) is
+// where its work begins; (i'') pins that side of the line for each of them.
+const EMPTY_PACKET = Object.freeze({ "p.json": "{}" });
+
 const REFUSED_INVOCATIONS = [
   // Unknown top-level command / unknown subcommand.
   { argv: ["frobnicate"], expect: /Unknown command: frobnicate/ },
@@ -328,11 +345,23 @@ const REFUSED_INVOCATIONS = [
   // Missing identity: no --packet, no --site/--built, no positional <map-id>,
   // so `qa run` refuses with nothing read and no spec fetched.
   { argv: ["qa", "run"], expect: /QA requires a Map ID/ },
+  // #465: flag checks raised after reading nothing but argv and the packet,
+  // ahead of any report read and any write. One row per tagged site.
+  { argv: ["theme", "waive", "--packet", "%DIR%/p.json"], files: EMPTY_PACKET, expect: /theme waive requires --reason/ },
+  { argv: ["qa", "waive", "--packet", "%DIR%/p.json"], files: EMPTY_PACKET, expect: /qa waive requires --assertion <id>/ },
+  { argv: ["qa", "waive", "--packet", "%DIR%/p.json", "--assertion", "bogus"], files: EMPTY_PACKET, expect: /qa waive does not accept --assertion "bogus"/ },
+  { argv: ["qa", "waive", "--packet", "%DIR%/p.json", "--assertion", "analytics-correctness:purchase-fires"], files: EMPTY_PACKET, expect: /qa waive requires --reason/ },
+  { argv: ["qa", "policy", "set", "--packet", "%DIR%/p.json", "--test-orders-allowed"], files: EMPTY_PACKET, expect: /--test-orders-allowed was removed in supported surface 1\.28\.0/ },
+  { argv: ["qa", "policy", "set", "--packet", "%DIR%/p.json", "--preview-url"], files: EMPTY_PACKET, expect: /--preview-url requires a value/ },
+  // `booleanArg` is shared with `qa run`'s analytics leg (mid-run, a failure);
+  // this is its up-front call site, tagged there with `refusing()`.
+  { argv: ["qa", "policy", "set", "--packet", "%DIR%/p.json", "--allowed-domains-confirmed", "maybe"], files: EMPTY_PACKET, expect: /--allowed-domains-confirmed must be true or false/ },
 ];
 
-for (const { argv, expect } of REFUSED_INVOCATIONS) {
+for (const { argv, expect, files } of REFUSED_INVOCATIONS) {
   test(`(i) refused up front, nothing journaled: campaigns-os ${argv.join(" ")}`, () => {
     withTempTarget((dir) => {
+      seedFiles(dir, files);
       const journal = join(dir, "x.jsonl");
       const before = snapshotTree(dir);
 
@@ -374,6 +403,57 @@ test("(i') a handler that begins work and then fails IS still journaled", () => 
     assert.notEqual(entries[0].exit_status, 0);
   });
 });
+
+// (i'') is (i') for every handler #465 tagged a refusal in: the same
+// invocation as its refusal rows above, completed so it passes every one of
+// them, then failing on the first thing the handler reads past its packet. Each
+// must still append exactly one entry — the tag must not have moved the
+// boundary past the refusals. `theme waive` renders its failure through
+// waiveOrRefuse under --json (no throw reaches the journal step), so it proves
+// the caught path; the `qa` rows prove the thrown one. The `qa policy set` row
+// passes the value checks of both tagged call sites before it fails.
+const HANDLER_FAILURES = [
+  {
+    argv: ["theme", "waive", "--packet", "%DIR%/p.json", "--reason", "an effect-test waiver", "--waived-by", "Jordan Lee"],
+    files: EMPTY_PACKET,
+    command: "theme",
+    expect: /theme waive needs an assembly report/,
+  },
+  {
+    argv: ["qa", "waive", "--packet", "%DIR%/p.json", "--assertion", "analytics-correctness:purchase-fires", "--reason", "an effect-test waiver"],
+    files: EMPTY_PACKET,
+    command: "qa",
+    expect: /qa waive needs an assembly report/,
+  },
+  {
+    argv: ["qa", "policy", "set", "--packet", "%DIR%/p.json", "--allowed-domains-confirmed", "true", "--preview-url", "https://preview.example/", "--order-path-depth", "full"],
+    files: { ...EMPTY_PACKET, ".campaign-runtime/assembly-report.json": "{ not json" },
+    command: "qa",
+    expect: /Assembly Report at .* is not valid JSON/,
+  },
+];
+
+for (const { argv, files, command, expect } of HANDLER_FAILURES) {
+  test(`(i'') passes every refusal, then fails, and IS journaled: campaigns-os ${argv.join(" ")}`, () => {
+    withTempTarget((dir) => {
+      seedFiles(dir, files);
+      const journal = join(dir, "x.jsonl");
+
+      const failed = runCli([...argv.map((token) => token.replaceAll("%DIR%", dir)), "--json"], {
+        cwd: dir,
+        env: { CAMPAIGNS_OS_LIFECYCLE_LOG: journal },
+      });
+      assert.notEqual(failed.status, 0, "a failing handler must exit non-zero");
+      assert.match(`${failed.stderr}${failed.stdout}`, expect);
+
+      assert.equal(existsSync(journal), true, "a failure after the handler began work must be captured");
+      const entries = readJournalEntries(journal);
+      assert.equal(entries.length, 1, JSON.stringify(entries));
+      assert.equal(entries[0].command, command);
+      assert.notEqual(entries[0].exit_status, 0);
+    });
+  });
+}
 
 // (j) is the case the guard could not reach while `refused()` lived in
 // cli.mjs: `qa` refuses its unknown subcommands from qa-node.mjs, which cli.mjs

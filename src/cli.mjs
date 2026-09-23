@@ -3472,7 +3472,9 @@ export function themeWaive(args) {
   const dryRun = isDryRun(args);
   const packet = readJson(packetPath);
   const reason = optionalString(args.reason);
-  if (!reason) throw new Error("theme waive requires --reason \"<why the starter palette is acceptable for this campaign>\".");
+  // A missing flag, raised after reading nothing but argv and the packet: a
+  // refusal, so the journal records nothing for it (docs/effects.md `*refused*`).
+  if (!reason) throw refused("theme waive requires --reason \"<why the starter palette is acceptable for this campaign>\".");
   // The same attribution rule as `checkpoint waive`: a named human, no
   // placeholder, an expiry (when given) that lies in the future and is
   // recorded. A bound is not demanded here: the theme gate's waiver has always
