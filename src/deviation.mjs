@@ -30,13 +30,14 @@ const EXPECTED_COMMANDS_BY_STAGE = Object.freeze({
 });
 
 // The command word of a produced command line, whichever install prefix it
-// was spelled with (bare `campaigns-os`, `npx campaigns-os`, `npm run
+// was spelled with (bare `campaigns-os`, `npx --no-install campaigns-os`, the
+// `npx campaigns-os` that versions before 1.41.2 printed, `npm run
 // campaigns-os --`, or `npx --yes <git-spec>` from an npx cache).
 export function commandWord(command) {
   if (typeof command !== "string") return null;
   const stripped = command
     .replace(/^npx\s+--yes\s+\S+\s+/, "campaigns-os ")
-    .replace(/^npx\s+campaigns-os\s+/, "campaigns-os ")
+    .replace(/^npx\s+(?:--no-install\s+)?campaigns-os\s+/, "campaigns-os ")
     .replace(/^npm\s+run\s+campaigns-os\s+--\s+/, "campaigns-os ");
   return stripped.match(/^campaigns-os\s+([a-z-]+)/)?.[1] || null;
 }

@@ -3,7 +3,7 @@
 Run the read-only source scanner from a campaign repository before changing its SDK pin:
 
 ```sh
-npx campaigns-os sdk storage-check --target . --target-sdk 0.4.38 --manifest /path/to/campaign-cart/docs/compatibility/storage-migrations.v1.json --scope campaigns/spring,shared --json
+npx --no-install campaigns-os sdk storage-check --target . --target-sdk 0.4.38 --manifest /path/to/campaign-cart/docs/compatibility/storage-migrations.v1.json --scope campaigns/spring,shared --json
 ```
 
 Omit `--json` for the concise human report. Exit 0 means source-compatible; exit 2 means incompatible or unknown; invalid arguments or manifests exit 1. No merchant files or pins are rewritten. This is independent of doctor's built HTML markup check.

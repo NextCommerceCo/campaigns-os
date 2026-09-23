@@ -661,8 +661,8 @@ test("spec derive spells its doctor pointer with the consumer install's npx pref
     const env = { ...process.env, PATH: "/usr/bin:/bin" };
     const run = spawnSync(process.execPath, [pkgCli, "spec", "derive", "--packet", packetPath, "--dry-run"], { cwd: installRoot, encoding: "utf8", env });
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /^Next: npx campaigns-os doctor --packet /m);
-    assert.doesNotMatch(run.stdout, /(?<!npx )campaigns-os doctor/);
+    assert.match(run.stdout, /^Next: npx --no-install campaigns-os doctor --packet /m);
+    assert.doesNotMatch(run.stdout, /(?<!npx --no-install )campaigns-os doctor/);
     const checkout = spawnSync("node", [CLI, "spec", "derive", "--packet", packetPath, "--dry-run"], { encoding: "utf8" });
     assert.match(checkout.stdout, /^Next: campaigns-os doctor --packet /m);
   } finally {

@@ -6,8 +6,8 @@ npm, install a reviewed full-SHA source pin as described in the quickstart.
 From the campaign folder:
 
 ```bash
-npx campaigns-os tooling diagnose --platform codex --packet campaign-runtime.build.json
-npx campaigns-os tooling diagnose --platform codex --packet campaign-runtime.build.json --json > diagnostic.json
+npx --no-install campaigns-os tooling diagnose --platform codex --packet campaign-runtime.build.json
+npx --no-install campaigns-os tooling diagnose --platform codex --packet campaign-runtime.build.json --json > diagnostic.json
 ```
 
 Omit `--packet` for installation and skill diagnostics only. Without

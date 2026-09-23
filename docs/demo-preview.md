@@ -6,7 +6,7 @@ release at least 1.37.0 (or a reviewed full-SHA source pin).
 From the folder containing your exact project-local toolkit installation:
 
 ```bash
-npx campaigns-os demo --target ./apollo-sample
+npx --no-install campaigns-os demo --target ./apollo-sample
 ```
 
 Open the printed `landing/index.html` file directly. No server or browser

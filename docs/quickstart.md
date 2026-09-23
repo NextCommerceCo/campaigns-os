@@ -9,9 +9,13 @@ This path is optimized for a developer using Claude Code or another AI coding to
 
 Requirements: Node `>=20.19.0` and npm 10 or 11 (Node 22 ships npm 10). The
 primary way to run Campaigns OS is pinned as a devDependency of the campaign
-folder — a page-kit project — and run through `npx campaigns-os …` from that
-folder. Nothing is cloned, nothing goes on PATH, and the pin is committed in
-`package.json`, so CI and the deploy host install the same package bytes.
+folder — a page-kit project — and run through `npx --no-install campaigns-os …`
+from that folder. Nothing is cloned, nothing goes on PATH, and the pin is
+committed in `package.json`, so CI and the deploy host install the same package
+bytes. `--no-install` is part of the command: `campaigns-os` is only the bin
+name of `@nextcommerce/campaigns-os`, so in a folder without the pinned copy a
+plain `npx campaigns-os` looks that name up on the registry and, with no
+terminal to ask, installs what it finds. With the flag, npx fails instead.
 
 Do the steps in this order:
 
@@ -35,7 +39,7 @@ Existing page-kit campaign: `cd` into it (its `package.json` declares
 
 ```bash
 npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.3
-npx campaigns-os tooling status --platform claude
+npx --no-install campaigns-os tooling status --platform claude
 ```
 
 `1.37.3` is an exact published example. Select the release you reviewed and
@@ -48,7 +52,8 @@ checkout-only runtime preparation recipe and makes no claim under that recipe.
 Diagnostics and corrected global invocation rendering require 1.35.0 or later;
 `demo` requires 1.37.0 or later.
 
-For an optional visual walkthrough, `npx campaigns-os demo --target ./apollo-sample`
+For an optional visual walkthrough,
+`npx --no-install campaigns-os demo --target ./apollo-sample`
 writes an offline sample. Open the printed local
 `landing/index.html` file. This offline sample has no live commerce or campaign
 proof. Preserve sample edits and create a separate new Page Kit folder for the
@@ -67,8 +72,9 @@ can inherit global mode. Global registry installations ship without Chromium;
 run `campaigns-os qa install-browser` once. If optional Playwright was omitted,
 ordinary commands still work and browser commands explain the missing package.
 When another install shadows the global binary, status prints an explicit
-invocation of the inspected copy. In a campaign folder, `npx campaigns-os`
-selects the project-local dependency ahead of the global binary on PATH.
+invocation of the inspected copy. In a campaign folder,
+`npx --no-install campaigns-os` selects the project-local dependency ahead of
+the global binary on PATH.
 
 `tooling status` is the preflight for "am I current?". It names the install
 mode and checks package identity, CLI entrypoint, and installed Campaigns OS
@@ -81,8 +87,9 @@ out. See [gateway login](gateway-login.md).
   (node_modules), pinned at <version> @ <sha>`; git freshness is
   `not_applicable` because the pinned commit is the freshness answer, and
   there is no npm dist-tag to compare against. An npm release reports its version even when a source commit is not derivable.
-  Commands are spelled `npx campaigns-os <command>`; if a different install of the toolkit is on PATH,
-  it says so and points you back to `npx`.
+  Commands are spelled `npx --no-install campaigns-os <command>`; if a
+  different install of the toolkit is on PATH, it says so and points you back
+  to `npx`.
 - From a git checkout it reports `Install mode: git checkout at <path>` plus
   branch, upstream, ahead/behind, and whether the tree is dirty.
 
@@ -94,8 +101,10 @@ profile and stays at exit 2 until each is installed.
 
 Everything the toolkit prints for you to run (`next`, gate remediations, the
 browser-missing hints) is spelled for the install it came from: `npx
-campaigns-os …` from a campaign folder, bare `campaigns-os …` from a global installation
-whose binary matches PATH, and the documented checkout translation below.
+--no-install campaigns-os …` from a campaign folder (releases before 1.41.2
+print it without `--no-install`; add the flag when you copy one), bare
+`campaigns-os …` from a global installation whose binary matches PATH, and the
+documented checkout translation below.
 
 ## Contributor / local checkout
 
@@ -111,12 +120,12 @@ npm run campaigns-os -- tooling status
 ```
 
 Every `npm run campaigns-os -- <command>` example in this repository is the
-checkout form. From a campaign folder the same command is `npx campaigns-os
-<command>`; the arguments are identical. `npm run qa:install-browser`, a
-checkout script, is `npx campaigns-os qa install-browser` from a campaign
-folder (`npx playwright install chromium` is equivalent only when it resolves
-to the toolkit's own Playwright; prefer `qa install-browser` on pins that have
-it). A fresh `git pull`
+checkout form. From a campaign folder the same command is `npx --no-install
+campaigns-os <command>`; the arguments are identical. `npm run
+qa:install-browser`, a checkout script, is `npx --no-install campaigns-os qa
+install-browser` from a campaign folder (`npx playwright install chromium` is
+equivalent only when it resolves to the toolkit's own Playwright; prefer
+`qa install-browser` on pins that have it). A fresh `git pull`
 does not refresh copied agent skills in either mode; `tooling status` tells
 you when they are stale.
 
@@ -125,21 +134,21 @@ you when they are stale.
 After installing or updating the CLI, refresh the Campaigns OS skills in Claude Code:
 
 ```bash
-npx campaigns-os install-skills --platform claude
+npx --no-install campaigns-os install-skills --platform claude
 ```
 
 This syncs bundled `skills/*` directories from the installed package into `~/.claude/skills/<skill-name>/` (`--platform codex` writes `~/.codex/skills`), replacing same-name folders, and reports which skills were created, updated, or unchanged. Restart the agent afterwards. Preview changes without writing files:
 
 ```bash
-npx campaigns-os install-skills --dry-run
+npx --no-install campaigns-os install-skills --dry-run
 ```
 
 Use `--platform` for other local agent profiles:
 
 ```bash
-npx campaigns-os install-skills --platform codex
-npx campaigns-os install-skills --platform agents
-npx campaigns-os install-skills --platform all --dry-run
+npx --no-install campaigns-os install-skills --platform codex
+npx --no-install campaigns-os install-skills --platform agents
+npx --no-install campaigns-os install-skills --platform all --dry-run
 ```
 
 If `tooling status` reports stale skills, run the refresh command it prints —
@@ -169,7 +178,7 @@ the mapped `exit_intent.offer_ref_id` / `exit_intent.offer_code` or
 
 Campaigns API keys are public, browser-side, domain-allowlisted keys. If your exported CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
 
-The Store Profile is campaign metadata entered by the operator or derived from the store with `spec derive --from-store` (see "Create The Packet" below), not Campaigns API data. Before the target is scaffolded, `doctor` requires only `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present. Once the target's `campaigns.json` entry exists, `page_kit.store_profile` checks every one of those fields the CampaignSpec provides against the target: a field the spec carries that the target lacks, or carries with a different value, blocks (the spec is the authority; run `npx campaigns-os page-kit sync --packet <campaign-runtime.build.json>` to write the spec's values into the target entry, or fix the spec, then re-run `doctor`), a field present only in the target warns as `target_only` — unless the value is starter demo residue (a placeholder storefront URL or phone number), which blocks as `demo_residue` whatever the spec says — and a field absent from both is clean. So a spec that fills all nine fields makes all nine required after scaffold. A discrepancy the spec cannot yet resolve can be recorded with `campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <ISO timestamp>` instead of the review condition; see [docs/build-packet.md](./build-packet.md), "Page Kit Store Profile checkpoint").
+The Store Profile is campaign metadata entered by the operator or derived from the store with `spec derive --from-store` (see "Create The Packet" below), not Campaigns API data. Before the target is scaffolded, `doctor` requires only `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present. Once the target's `campaigns.json` entry exists, `page_kit.store_profile` checks every one of those fields the CampaignSpec provides against the target: a field the spec carries that the target lacks, or carries with a different value, blocks (the spec is the authority; run `npx --no-install campaigns-os page-kit sync --packet <campaign-runtime.build.json>` to write the spec's values into the target entry, or fix the spec, then re-run `doctor`), a field present only in the target warns as `target_only` — unless the value is starter demo residue (a placeholder storefront URL or phone number), which blocks as `demo_residue` whatever the spec says — and a field absent from both is clean. So a spec that fills all nine fields makes all nine required after scaffold. A discrepancy the spec cannot yet resolve can be recorded with `campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <ISO timestamp>` instead of the review condition; see [docs/build-packet.md](./build-packet.md), "Page Kit Store Profile checkpoint").
 
 Packages should identify products or variants, while Offers set the customer's final price. Do not create separate `1x` / `2x` / `3x` packages just to express tier pricing, and do not rely on package Retail Price/Quantity fields unless the campaign explicitly uses that older compatibility setup.
 
@@ -245,7 +254,7 @@ computing `source_hash`; the "Selecting the wrapper policy at intake" section of
 >
 > Three ways out, any of which is enough:
 >
-> - `npx campaigns-os telemetry off` — machine-level, sticks.
+> - `npx --no-install campaigns-os telemetry off` — machine-level, sticks.
 > - `CAMPAIGNS_OS_TELEMETRY=off` — per shell or per CI job.
 > - `--no-remit` on the remitting command (`qa run`, `run-record`, `run end`).
 >
@@ -262,7 +271,7 @@ computing `source_hash`; the "Selecting the wrapper policy at intake" section of
 
 ```bash
 mkdir -p source
-npx campaigns-os start --map-id <map-id> --target . --source ./source --template-family <family>
+npx --no-install campaigns-os start --map-id <map-id> --target . --source ./source --template-family <family>
 ```
 
 `--map-id <id>` starts from a map saved in Campaign Map Builder (add
@@ -286,13 +295,13 @@ demo values to replace, a scaffold to run. That list is the intake checklist,
 not a failed install; work through it and re-run. The demo values are the
 store profile and SDK pin `campaign-init` seeded into `_data/campaigns.json`
 after a fresh scaffold; doctor's required actions print the command that
-replaces them from the CampaignSpec — `npx campaigns-os page-kit sync --packet
-campaign-runtime.build.json` (`--dry-run` to see the diff first) — and after it
-`page_kit.store_profile` and `page_kit.sdk_version` pass without a waiver.
+replaces them from the CampaignSpec — `npx --no-install campaigns-os page-kit
+sync --packet campaign-runtime.build.json` (`--dry-run` to see the diff first)
+— and after it `page_kit.store_profile` and `page_kit.sdk_version` pass without a waiver.
 
 The other direction exists too. Once the campaign is configured, the repo is
 the authority for the SDK pin, the page routes and the analytics ids, and
-`npx campaigns-os spec derive --packet campaign-runtime.build.json` writes
+`npx --no-install campaigns-os spec derive --packet campaign-runtime.build.json` writes
 those into the local CampaignSpec with a field-by-field diff (`--dry-run`
 first). After a bump in `_data/campaigns.json`, that is the one command that
 brings the spec back in line; doctor's `page_kit.sdk_version.repo_newer`
@@ -315,8 +324,8 @@ available, the build context records `context.theme` and the target repo gets
 To inspect or generate the optional commerce-page brand bridge:
 
 ```bash
-npx campaigns-os theme inspect --packet ./campaign-runtime.build.json --json
-npx campaigns-os theme generate --packet ./campaign-runtime.build.json --json
+npx --no-install campaigns-os theme inspect --packet ./campaign-runtime.build.json --json
+npx --no-install campaigns-os theme generate --packet ./campaign-runtime.build.json --json
 ```
 
 Use `--theme-policy auto` on `start` / `prepare-build` only when you want
@@ -330,19 +339,19 @@ Run `next` after `start` and after every stage, and do what it prints — the
 commands are already spelled for this install:
 
 ```bash
-npx campaigns-os next --packet ./campaign-runtime.build.json --json
+npx --no-install campaigns-os next --packet ./campaign-runtime.build.json --json
 ```
 
 When it names the setup stage, that is:
 
 ```bash
-npx campaigns-os next setup --packet ./campaign-runtime.build.json
+npx --no-install campaigns-os next setup --packet ./campaign-runtime.build.json
 ```
 
 If doctor says setup is not required, run:
 
 ```bash
-npx campaigns-os next build --packet ./campaign-runtime.build.json
+npx --no-install campaigns-os next build --packet ./campaign-runtime.build.json
 ```
 
 Paste the generated handoff into your AI tool. From here the build is
@@ -371,13 +380,13 @@ Build is not launch readiness. A complete run still needs:
 - typed-card test-order proof via `--test-order common` (global test cards bypass the gateway; no permission/approval needed — depth is the only control)
 
 ```bash
-npx campaigns-os qa install-browser
-npx campaigns-os polish capture --packet ./campaign-runtime.build.json --base-url <served-current-build-url>
-npx campaigns-os qa resolve --packet ./campaign-runtime.build.json
-npx campaigns-os qa run --packet ./campaign-runtime.build.json --base-url https://preview.example.com/campaign/ --browser --test-order common
+npx --no-install campaigns-os qa install-browser
+npx --no-install campaigns-os polish capture --packet ./campaign-runtime.build.json --base-url <served-current-build-url>
+npx --no-install campaigns-os qa resolve --packet ./campaign-runtime.build.json
+npx --no-install campaigns-os qa run --packet ./campaign-runtime.build.json --base-url https://preview.example.com/campaign/ --browser --test-order common
 ```
 
-`npx campaigns-os qa install-browser` (`npm run qa:install-browser` from a checkout; `npx playwright install chromium` only when it resolves to the toolkit's Playwright)
+`npx --no-install campaigns-os qa install-browser` (`npm run qa:install-browser` from a checkout; `npx playwright install chromium` only when it resolves to the toolkit's Playwright)
 is a one-time local setup step after install/update. It installs the Chromium
 binary used by package-owned polish capture and QA.
 Run it before `polish capture`, `--browser`, or `--test-order`; the CLI will tell

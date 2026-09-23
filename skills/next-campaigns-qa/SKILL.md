@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.6
+version: 1.3.7
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.41.1+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.1+skills.1`
+Bundle revision: 1.41.2+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.2+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -19,21 +19,26 @@ answered; follow none of its actions and run the pinned copy.
 
 Run from the campaign folder with an exact project-local devDependency and
 committed lockfile. Orient on reviewed source before installation; check release
-provenance or pin the full reviewed Git SHA. Preflight with `npx campaigns-os
-tooling status --platform <claude|codex>` (tier `B`: its only write is the
-command-lifecycle journal) and refresh bundled skills for the same profile with
-`install-skills` (tier `B`: writes the shared skill directories; nothing leaves
-the machine). Use the invocation printed by status and `next` to avoid PATH shadowing.
+provenance or pin the full reviewed Git SHA. Preflight with `npx --no-install
+campaigns-os tooling status --platform <claude|codex>` (tier `B`: its only write
+is the command-lifecycle journal) and refresh bundled skills for the same
+profile with `install-skills` (tier `B`: writes the shared skill directories;
+nothing leaves the machine). Use the invocation printed by status and `next` to
+avoid PATH shadowing.
 
-In the instructions below, bare `campaigns-os …` means `npx campaigns-os …`
-from that campaign folder. Global-only users substitute the global copy's printed invocation for
-each `npx campaigns-os` example; toolkit contributors translate to `npm run campaigns-os -- …` in
-the toolkit checkout. Browser installation is `npx campaigns-os qa
-install-browser` (tier `A`: it downloads the Chromium build from the Playwright
-CDN and writes Playwright's browser registry on your machine; it touches no
-campaign file), not a campaign npm script. `tooling diagnose --packet <p>
---json` (tier `none`: read-only, and exempt from lifecycle capture) provides a
-redacted support export without changing retained evidence.
+In the instructions below, bare `campaigns-os …` means `npx --no-install
+campaigns-os …` from that campaign folder. Keep `--no-install`: `campaigns-os`
+is only the bin name of `@nextcommerce/campaigns-os`, so where no pinned copy is
+installed a plain `npx` looks that name up on the registry and, with no terminal
+to ask, installs what it finds. Global-only users substitute the global copy's
+printed invocation for each `npx --no-install campaigns-os` example; toolkit
+contributors translate to `npm run campaigns-os -- …` in the toolkit checkout.
+Browser installation is `npx --no-install campaigns-os qa install-browser` (tier
+`A`: it downloads the Chromium build from the Playwright CDN and writes
+Playwright's browser registry on your machine; it touches no campaign file), not
+a campaign npm script. `tooling diagnose --packet <p> --json` (tier `none`:
+read-only, and exempt from lifecycle capture) provides a redacted support export
+without changing retained evidence.
 
 The effect class in each parenthetical below is the declared row of
 `contracts/effects.v1.json` (`none` < `B` writes < `A` sends < `C` destructive).
@@ -43,20 +48,21 @@ Read that file, not this text, when an exact path or endpoint matters.
 Use this after the campaign has a preview or production URL and the assembly report records build and polish status. The public v0 runner is Node/npm-based, with an owned Playwright browser pass. `qa resolve` is tier `A` (it fetches `--base-url`; `--no-probe` is tier `B` and local); every `qa run` form is tier `C` — it overwrites the stored verdict and the assembly report, places real typed-card test orders against the campaign, and posts the verdict and the progress observation; `qa parity` is tier `A` (it drives the fixture's scenario through the candidate funnel with real typed-card orders and publishes the verdict, but takes no packet, so it writes only under `qa-output/` — never the packet, the assembly report or the verdict sidecar; `--no-post-verdict` drops the publish and stays tier `A`):
 
 ```bash
-npx campaigns-os qa install-browser
-npx campaigns-os qa resolve --packet campaign-runtime.build.json
-npx campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url>
+npx --no-install campaigns-os qa install-browser
+npx --no-install campaigns-os qa resolve --packet campaign-runtime.build.json
+npx --no-install campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url>
 # Fixture-driven migration parity proof. Publishes to the QA portal by default.
-npx campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> --base-url <preview-url>
+npx --no-install campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> --base-url <preview-url>
 # Browser QA + typed-card proof. Publishes to the QA portal by default and prints the portal link.
-npx campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common
+npx --no-install campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common
 # Offline / dev / CI only: keep the verdict local
-npx campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common --no-post-verdict
+npx --no-install campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common --no-post-verdict
 ```
 
-`npx campaigns-os qa install-browser` is part of the standard QA sequence. Run it once
-after install/update before using `--browser` or `--test-order`; do not skip it
-unless the local Playwright browser binary is already installed.
+`npx --no-install campaigns-os qa install-browser` is part of the standard QA
+sequence. Run it once after install/update before using `--browser` or
+`--test-order`; do not skip it unless the local Playwright browser binary is
+already installed.
 
 Inputs:
 

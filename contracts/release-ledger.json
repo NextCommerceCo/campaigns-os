@@ -5987,6 +5987,165 @@
         }
       ],
       "entry_sha256": "0f8cfb705bf1ced5e78894a8d6e2d6b5b25720fca58917a86699fe551cf31e36"
+    },
+    {
+      "id": "RL-0139",
+      "sequence": 139,
+      "date": "2026-09-23",
+      "kind": "release",
+      "surface_version": "1.41.2",
+      "changelog_section": "1.41.2",
+      "changelog_sha256": "ca77d81f868f9966f0f734bfbac60871b6e65506ec2f1ce7e5ac2bb1a1351017",
+      "agent_impact": "Every command Campaigns OS prints for a project-local (node_modules) install, and every command in the bundled skills and the docs, is now spelled `npx --no-install campaigns-os …`. campaigns-os is only the bin name of @nextcommerce/campaigns-os: in a folder where the package is not installed, a plain `npx campaigns-os` looks the bin name up as a registry package and, with no terminal to ask, installs and runs whatever it finds; with --no-install, npx runs the pinned copy or fails. For a node_modules install, tooling status reports cli.invocation_prefix `npx --no-install campaigns-os` and cli.invocation `npx --no-install campaigns-os <command>`, and next, doctor, gate and checkpoint remediations, the skill-refresh and login actions, the PATH warnings, the stale project-pin action and the browser-missing hints use the same spelling. A checkout, a global install and an npx cache keep their spellings. Run printed commands as printed. A command printed or documented by an earlier release lacks the flag: add --no-install after npx when reusing it. An agent holding 1.41.1+skills.1 skill text reports mismatch against a 1.41.2 install and must start a fresh session.",
+      "compatibility": "compatible",
+      "migration": "Add --no-install after npx in any saved or scripted `npx campaigns-os …` command, and accept `npx --no-install campaigns-os` wherever cli.invocation_prefix is compared with a literal.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "tooling",
+          "summary": "For a node_modules install, tooling status reports cli.invocation_prefix `npx --no-install campaigns-os` and cli.invocation `npx --no-install campaigns-os <command>`, and its skill-refresh and gateway login actions use that prefix. The PATH warnings (campaigns-os not on PATH, or a different install on PATH) say to run commands as `npx --no-install campaigns-os <command>`, and the action for a stale project pin names `npx --no-install campaigns-os` as the pinned executable."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "Commands printed for a node_modules install are spelled `npx --no-install campaigns-os …`: next text and --json (next_actions[].command, required actions, prompts), doctor required actions, gate and checkpoint remediations, spec derive's doctor pointer, and the QA and polish browser-missing hints. Run-session deviation tracking reads the command word through the new prefix and through the `npx campaigns-os` of earlier versions."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.41.2; no hashed entry changed."
+        },
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "The primary run path is `npx --no-install campaigns-os …` from the Page Kit folder, with why the flag matters, and a project-local installation prints `npx --no-install campaigns-os` (`npx campaigns-os` before 1.41.2)."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "The Page Kit folder sentence names `npx --no-install campaigns-os`; the header description and the literals move to 1.41.2+skills.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/diagnostics.md",
+          "surface_entry": "docs/diagnostics.md",
+          "summary": "The diagnose examples run as `npx --no-install campaigns-os tooling diagnose …`."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/demo-preview.md",
+          "surface_entry": "docs/demo-preview.md",
+          "summary": "The demo example runs as `npx --no-install campaigns-os demo …`."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Browser installation from a campaign project is `npx --no-install campaigns-os qa install-browser`."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "The storage-check example runs as `npx --no-install campaigns-os sdk storage-check …`."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The commerce-catalog note names `npx --no-install campaigns-os` as the package-install invocation under which the same packet resolves."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version 1.41.2."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Version 1.41.2; no dependency moved."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle_revision 1.41.1+skills.1 -> 1.41.2+skills.1 with the package version, and each bundled skill's version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.2+skills.1 in the header. Installed toolkit commands spells the preflight, the meaning of a bare `campaigns-os …` and browser installation as `npx --no-install campaigns-os …`, and says why the flag stays: campaigns-os is only the bin name, so where no pinned copy is installed a plain npx looks it up on the registry and installs what it finds. The Polish and QA steps install the browser with `npx --no-install campaigns-os qa install-browser`. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.2+skills.1 in the header. Installed toolkit commands spells the preflight, the meaning of a bare `campaigns-os …` and browser installation as `npx --no-install campaigns-os …`, and says why the flag stays: campaigns-os is only the bin name, so where no pinned copy is installed a plain npx looks it up on the registry and installs what it finds. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.2+skills.1 in the header. Installed toolkit commands spells the preflight, the meaning of a bare `campaigns-os …` and browser installation as `npx --no-install campaigns-os …`, and says why the flag stays: campaigns-os is only the bin name, so where no pinned copy is installed a plain npx looks it up on the registry and installs what it finds. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.2+skills.1 in the header. Installed toolkit commands spells the preflight, the meaning of a bare `campaigns-os …` and browser installation as `npx --no-install campaigns-os …`, and says why the flag stays: campaigns-os is only the bin name, so where no pinned copy is installed a plain npx looks it up on the registry and installs what it finds. The terminal-Polish step installs the browser with `npx --no-install campaigns-os qa install-browser`. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.2+skills.1 in the header. Installed toolkit commands spells the preflight, the meaning of a bare `campaigns-os …` and browser installation as `npx --no-install campaigns-os …`, and says why the flag stays: campaigns-os is only the bin name, so where no pinned copy is installed a plain npx looks it up on the registry and installs what it finds. The QA command block and the install-browser note run as `npx --no-install campaigns-os qa …`. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.2+skills.1 on the first body line and in the `npx --no-install campaigns-os tooling status --skills-revision` check beside it. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.2+skills.1 on the first body line and in the `npx --no-install campaigns-os tooling status --skills-revision` check beside it. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.2+skills.1 on the first body line and in the `npx --no-install campaigns-os tooling status --skills-revision` check beside it. The skill version advances one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Quote bundle revision 1.41.2+skills.1 on the first body line and in the `npx --no-install campaigns-os tooling status --skills-revision` check beside it. The skill version advances one patch."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface version 1.41.2."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for surface version 1.41.2."
+        }
+      ],
+      "entry_sha256": "434522f9100e5e73b04601d75ec2bff8821c58fdc09c8ad6866de09337d33e4f"
     }
   ]
 }

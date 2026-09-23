@@ -72,6 +72,8 @@ test("deviation journal round-trips and tolerates junk lines", () => {
 test("commandWord reads the verb through every install prefix", async () => {
   const { commandWord } = await import("./deviation.mjs");
   assert.equal(commandWord("campaigns-os next --packet p.json"), "next");
+  assert.equal(commandWord("npx --no-install campaigns-os qa run --packet p.json"), "qa");
+  // What versions before 1.41.2 printed, still read from older sessions.
   assert.equal(commandWord("npx campaigns-os qa run --packet p.json"), "qa");
   assert.equal(commandWord("npm run campaigns-os -- polish capture"), "polish");
   assert.equal(commandWord("npx --yes github:NextCommerceCo/campaigns-os#236d7fc454c8 theme generate"), "theme");

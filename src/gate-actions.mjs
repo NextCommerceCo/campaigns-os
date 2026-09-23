@@ -95,8 +95,8 @@ export function requiredActionText(action, { packetPath = null, reportPath = nul
     command = `${command} --report ${shellToken(reportPath)}`;
   }
   // Registry commands are stored bare; the printed text is spelled for the
-  // install this package runs from (bare from a checkout, `npx campaigns-os`
-  // from a campaign folder), once, here.
+  // install this package runs from (bare from a checkout,
+  // `npx --no-install campaigns-os` from a campaign folder), once, here.
   if (command && command.startsWith("campaigns-os ")) {
     return `${invocationPrefixFor(PACKAGE_ROOT)} ${command.slice("campaigns-os ".length)}`;
   }

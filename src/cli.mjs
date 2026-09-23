@@ -147,7 +147,7 @@ import {
   formatStandardizationReportMarkdown,
 } from "./standardization-report.mjs";
 import { singleLineDetail, singleLineField } from "./text-safety.mjs";
-import { derivePackagePin, invocationPrefixFor, localInstallStatus, resolveInvocation } from "./install-mode.mjs";
+import { derivePackagePin, invocationPrefixFor, LOCAL_INVOCATION_PREFIX, localInstallStatus, resolveInvocation } from "./install-mode.mjs";
 import {
   campaignRouteRoot,
   isAbsoluteHttpUrl,
@@ -323,10 +323,11 @@ export { derivePackagePin, localInstallStatus };
 
 // Every command this CLI PRODUCES for an operator or agent to copy is spelled
 // once, here, for the install it runs from (see install-mode.mjs): bare
-// `campaigns-os` from a checkout, `npx campaigns-os` from a campaign folder
-// that pins the toolkit, `npx --yes <spec>` from an npx cache. Result payloads
-// are never rewritten after the fact — a path, a quoted argument or a data
-// value that happens to contain the words is left exactly as it is.
+// `campaigns-os` from a checkout, `npx --no-install campaigns-os` from a
+// campaign folder that pins the toolkit, `npx --yes <spec>` from an npx cache.
+// Result payloads are never rewritten after the fact — a path, a quoted
+// argument or a data value that happens to contain the words is left exactly
+// as it is.
 function cmd(verb, rest = "") {
   const prefix = invocationPrefixFor(ROOT);
   return `${prefix} ${verb}${rest ? ` ${rest}` : ""}`;
@@ -11407,7 +11408,7 @@ function pinAction(pin, sources) {
     return `Align the project pin: set ${key}["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.packet_version}, or re-run prepare-build with ${pin.project_version} so ${packet} records it. Pass --force to proceed anyway (recorded).`;
   }
   if (pin.source === "project") {
-    return `Run the pinned executable (npx campaigns-os from the project), or move the pin: set ${key}["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.running} and reinstall. Pass --force to proceed anyway (recorded).`;
+    return `Run the pinned executable (${LOCAL_INVOCATION_PREFIX} from the project), or move the pin: set ${key}["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.running} and reinstall. Pass --force to proceed anyway (recorded).`;
   }
   const pinStep = pin.project_key
     ? `set ${key}["${PIN_PACKAGE_NAME}"] in ${manifest} to ${pin.running} (it holds the range ${JSON.stringify(pin.range)})`
@@ -11556,8 +11557,8 @@ function toolingCommand(args) {
   } else if (install.mode === "node_modules" && cli.global_binary.status !== "found") {
     // A consumer install runs through npm's bin resolution; no PATH ritual.
     warnings.push(cli.global_binary.status === "found_other_install"
-      ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${install.location}); run commands as \`npx campaigns-os <command>\` from the folder that pins this toolkit so this copy runs.`
-      : `campaigns-os is not on PATH; run commands as \`npx campaigns-os <command>\` from the folder that pins this toolkit (npm resolves node_modules/.bin), or call node ${cli.local_bin} directly.`);
+      ? `The campaigns-os on PATH (${cli.global_binary.path}) is a different install from the one inspected here (${install.location}); run commands as \`${LOCAL_INVOCATION_PREFIX} <command>\` from the folder that pins this toolkit so this copy runs.`
+      : `campaigns-os is not on PATH; run commands as \`${LOCAL_INVOCATION_PREFIX} <command>\` from the folder that pins this toolkit (npm resolves node_modules/.bin), or call node ${cli.local_bin} directly.`);
   } else if (install.mode !== "checkout" && install.mode !== "npx_cache" && cli.global_binary.status === "not_found") {
     warnings.push(`campaigns-os is not on PATH; call node ${cli.local_bin} directly.`);
   } else if (install.mode !== "checkout" && cli.global_binary.status === "found_other_install") {

@@ -72,8 +72,8 @@ test("one predicate says whether the packet and the report disagree", () => {
 });
 
 test("the drift text carries a pre-rendered command verbatim when one is handed in", () => {
-  const text = orderPathDepthDriftText({ packetDepth: "off", reportDepth: "common", command: "npx campaigns-os qa policy set --packet p.json --order-path-depth off" });
-  assert.match(text, /`npx campaigns-os qa policy set --packet p\.json --order-path-depth off`/);
+  const text = orderPathDepthDriftText({ packetDepth: "off", reportDepth: "common", command: "npx --no-install campaigns-os qa policy set --packet p.json --order-path-depth off" });
+  assert.match(text, /`npx --no-install campaigns-os qa policy set --packet p\.json --order-path-depth off`/);
 });
 
 test("the drift text names the reconciling command once, for doctor, next and the coverage reason alike", () => {

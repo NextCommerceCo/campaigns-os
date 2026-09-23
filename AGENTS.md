@@ -64,9 +64,13 @@ scripts, which is also what suppresses the browser download.
 The recipe describes preparing a runtime from a **checkout**. The primary
 way to *run* the toolkit is an **exact project-local devDependency** in the
 campaign's Page Kit folder: `npm install --save-dev --save-exact
-@nextcommerce/campaigns-os@<reviewed-version>`, then `npx campaigns-os …` from
-that folder. Review the release's source tag and provenance against the commit
-you oriented on; installation cannot supply its own trust decision. Commit
+@nextcommerce/campaigns-os@<reviewed-version>`, then `npx --no-install
+campaigns-os …` from that folder. `campaigns-os` is only the bin name of the
+package, so without `--no-install` a folder that lacks the pinned copy has npx
+look that name up on the registry and, with no terminal to ask, install what it
+finds; with the flag it fails instead. Review the release's source tag and
+provenance against the commit you oriented on; installation cannot supply its
+own trust decision. Commit
 `package.json` and `package-lock.json` so other hosts install the same bytes.
 For an unreleased reviewed commit use `npm install --save-dev --save-exact
 "github:NextCommerceCo/campaigns-os#<full-sha>"` instead. Both run package
@@ -77,8 +81,9 @@ An exact global registry install is also supported:
 reports whether the installation is local, global, or a checkout, its version,
 and a source commit when derivable. It does not check registry currency. Use
 its printed invocation to avoid another installation on PATH; a project-local
-installation prints `npx campaigns-os`, while a shadowed global copy prints an
-explicit invocation of that copy. Use `--platform claude` or `--platform codex`
+installation prints `npx --no-install campaigns-os` (`npx campaigns-os` before
+1.41.2), while a shadowed global copy prints an explicit invocation of that
+copy. Use `--platform claude` or `--platform codex`
 consistently for profile-only setup and preflight, and install bundled skills
 before following the stage recommendations. Browser proof uses the package's
 `qa install-browser`; optional Playwright absence does not block other commands.

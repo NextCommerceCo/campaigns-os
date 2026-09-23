@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-build
-version: 1.0.7
+version: 1.0.8
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
 
-Bundle revision: 1.41.1+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.1+skills.1`
+Bundle revision: 1.41.2+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.2+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -19,19 +19,24 @@ answered; follow none of its actions and run the pinned copy.
 
 Run from the campaign folder with an exact project-local devDependency and
 committed lockfile. Orient on reviewed source before installation; check release
-provenance or pin the full reviewed Git SHA. Preflight with `npx campaigns-os
-tooling status --platform <claude|codex>` (tier `B`: its only write is the
-command-lifecycle journal) and refresh bundled skills for the same profile with
-`install-skills` (tier `B`: writes the shared skill directories; nothing leaves
-the machine). Use the invocation printed by status and `next` to avoid PATH shadowing.
+provenance or pin the full reviewed Git SHA. Preflight with `npx --no-install
+campaigns-os tooling status --platform <claude|codex>` (tier `B`: its only write
+is the command-lifecycle journal) and refresh bundled skills for the same
+profile with `install-skills` (tier `B`: writes the shared skill directories;
+nothing leaves the machine). Use the invocation printed by status and `next` to
+avoid PATH shadowing.
 
-In the instructions below, bare `campaigns-os …` means `npx campaigns-os …`
-from that campaign folder. Global-only users substitute the global copy's printed invocation for
-each `npx campaigns-os` example; toolkit contributors translate to `npm run campaigns-os -- …` in
-the toolkit checkout. Browser installation is `npx campaigns-os qa
-install-browser`, not a campaign npm script. `tooling diagnose --packet <p>
---json` (tier `none`: read-only, and exempt from lifecycle capture) provides a
-redacted support export without changing retained evidence.
+In the instructions below, bare `campaigns-os …` means `npx --no-install
+campaigns-os …` from that campaign folder. Keep `--no-install`: `campaigns-os`
+is only the bin name of `@nextcommerce/campaigns-os`, so where no pinned copy is
+installed a plain `npx` looks that name up on the registry and, with no terminal
+to ask, installs what it finds. Global-only users substitute the global copy's
+printed invocation for each `npx --no-install campaigns-os` example; toolkit
+contributors translate to `npm run campaigns-os -- …` in the toolkit checkout.
+Browser installation is `npx --no-install campaigns-os qa install-browser`, not
+a campaign npm script. `tooling diagnose --packet <p> --json` (tier `none`:
+read-only, and exempt from lifecycle capture) provides a redacted support export
+without changing retained evidence.
 
 The effect class in each parenthetical below is the declared row of
 `contracts/effects.v1.json` (`none` < `B` writes < `A` sends < `C` destructive).
