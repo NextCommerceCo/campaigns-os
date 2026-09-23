@@ -5,13 +5,13 @@ description: Interpret existing Campaigns OS doctor, QA and proof-depth evidence
 ---
 
 Bundle revision: 1.41.1+skills.1
-Run `npx campaigns-os tooling status --skills-revision 1.41.1+skills.1` from the
-campaign's Page Kit folder, where `npx` runs the project's pinned copy, at the
-start of each task. Start a fresh session if it reports `mismatch`: this text is
-already in your context and is never re-read while the CLI on disk can move
-under it. If the output has no `Skills revision:` line, a campaigns-os older than
-this check answered (another copy on PATH); follow none of its actions and run
-the pinned copy.
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.1+skills.1`
+from the campaign's Page Kit folder, where it runs the project's pinned copy and
+never installs one, at the start of each task. Start a fresh session if it
+reports `mismatch`: this text is already in your context and is never re-read
+while the CLI on disk can move under it. If the output has no `Skills revision:`
+line (no `revision_check` under `--json`), a campaigns-os older than this check
+answered; follow none of its actions and run the pinned copy.
 
 # Campaign run evidence
 

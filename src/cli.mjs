@@ -3479,13 +3479,15 @@ export function themeWaive(args) {
   // placeholder, an expiry (when given) that lies in the future and is
   // recorded. A bound is not demanded here: the theme gate's waiver has always
   // been open-ended, and QA re-surfaces the starter palette on every run.
-  const waiver = validateWaiverAttribution({
+  // A shared validator of argv alone, still ahead of the report read: its
+  // throws are refusals at this call site (the position decides, not the file).
+  const waiver = refusing(() => validateWaiverAttribution({
     reason,
     waivedBy: args["waived-by"] == null ? null : String(args["waived-by"]),
     expiresAt: args["expires-at"] == null ? null : String(args["expires-at"]),
     requireBound: false,
     label: "theme waive",
-  });
+  }));
   const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
     reportPath: args.report ? resolve(args.report) : undefined,
@@ -11066,26 +11068,28 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
   };
 }
 
-// A platform directory "holds" Campaigns OS skills when one of our slots is
-// already occupied by our copy, current or not; a slot we would only create, or
-// one occupied by someone else's skill, says nothing about that platform.
-const SKILL_ACTIONS_THAT_HOLD_OUR_COPY = new Set(["unchanged", "updated", "retired"]);
+// A platform directory counts as installed when a skill already sits under one
+// of the bundled names (current or not) or under a retired name of ours. A
+// slot install-skills would only create says nothing about that platform, and
+// neither does a retired slot another skill occupies. A foreign skill under a
+// CURRENT bundled name reads as `updated` — install-skills would replace it —
+// so it does count; the refresh action is then what install-skills would do.
+const SKILL_ACTIONS_THAT_MARK_A_PLATFORM_INSTALLED = new Set(["unchanged", "updated", "retired"]);
 
 export function scopeSkillStatusToInstalledPlatforms(status) {
-  if (!Array.isArray(status?.targets)) return { ...status, scope: "requested", not_installed_platforms: [] };
-  const holds = (target) => (target.skills || []).some((skill) => SKILL_ACTIONS_THAT_HOLD_OUR_COPY.has(skill?.action));
-  const installed = status.targets.filter(holds);
-  if (!installed.length) return { ...status, scope: "no_platform_installed", not_installed_platforms: [] };
+  if (!Array.isArray(status?.targets)) return { status, scope: "requested", notInstalled: [] };
+  const installedOn = (target) => (target.skills || []).some((skill) => SKILL_ACTIONS_THAT_MARK_A_PLATFORM_INSTALLED.has(skill?.action));
+  const installed = status.targets.filter(installedOn);
+  const describe = (target) => ({
+    platform: target.platform,
+    platform_label: target.platform_label,
+    target_directory: target.target_directory,
+  });
+  if (!installed.length) return { status, scope: "no_platform_installed", notInstalled: status.targets.map(describe) };
   return {
-    ...status,
-    targets: installed,
-    skills: installed.flatMap((target) => target.skills),
+    status: { ...status, targets: installed, skills: installed.flatMap((target) => target.skills) },
     scope: "installed_platforms",
-    not_installed_platforms: status.targets.filter((target) => !holds(target)).map((target) => ({
-      platform: target.platform,
-      platform_label: target.platform_label,
-      target_directory: target.target_directory,
-    })),
+    notInstalled: status.targets.filter((target) => !installedOn(target)).map(describe),
   };
 }
 
@@ -11447,7 +11451,10 @@ function toolingCommand(args) {
   // everywhere and exit 2 on a correct setup.
   const explicitSkillScope = isNonEmptyString(args.target) || isNonEmptyString(args.platform);
   const allSkillStatus = installSkills(args.target, true, args.platform || "all");
-  const skillStatus = explicitSkillScope ? allSkillStatus : scopeSkillStatusToInstalledPlatforms(allSkillStatus);
+  const skillScope = explicitSkillScope
+    ? { status: allSkillStatus, scope: "requested", notInstalled: [] }
+    : scopeSkillStatusToInstalledPlatforms(allSkillStatus);
+  const skillStatus = skillScope.status;
   const skillActions = classifyToolingSkillActions(skillStatus.skills || []);
   const staleSkills = skillActions.actionable;
   const install = localInstallStatus(ROOT, pkg);
@@ -11519,17 +11526,22 @@ function toolingCommand(args) {
     warnings.push(`No pinned commit could be derived for this ${install.mode_label}; the package version is ${pkg.version || "unknown"}. Compare it against the commit you oriented on before relying on it.`);
   }
 
-  if (skillStatus.scope === "installed_platforms" && skillStatus.not_installed_platforms.length) {
+  if (skillScope.scope === "installed_platforms" && skillScope.notInstalled.length) {
     const checked = skillStatus.targets.map((target) => target.platform_label).join(", ");
-    const skipped = skillStatus.not_installed_platforms.map((target) => target.platform_label).join(", ");
-    ready.push(`Skills checked for ${checked}; ${skipped} hold no Campaigns OS skills and were not checked (pass --platform to check one).`);
+    const skipped = skillScope.notInstalled.map((target) => target.platform_label);
+    ready.push(`Skills checked for ${checked}; ${skipped.join(", ")} ${skipped.length === 1 ? "has" : "have"} no Campaigns OS skills installed and ${skipped.length === 1 ? "was" : "were"} not checked (pass --platform to check one).`);
   }
 
-  if (staleSkills.length) {
-    const stalePlatforms = [...new Set(staleSkills.map((skill) => skill.platform))];
+  if (skillScope.scope === "no_platform_installed") {
+    // Nothing to refresh: the documented install is one platform, the
+    // harness in use, so name the choice rather than installing everywhere.
+    actions.push(`Install bundled skills for the harness you use: ${cli.invocation_prefix} install-skills --platform <${SKILL_PLATFORMS.map((platform) => platform.id).join("|")}>. Restart local agent sessions afterwards.`);
+  } else if (staleSkills.length) {
+    const stalePlatforms = SKILL_PLATFORMS.map((platform) => platform.id)
+      .filter((id) => staleSkills.some((skill) => skill.platform === id));
     const invocations = args.target
       ? [["--target", args.target]]
-      : skillStatus.scope === "installed_platforms"
+      : skillScope.scope === "installed_platforms" && stalePlatforms.length < SKILL_PLATFORMS.length
         ? stalePlatforms.map((platform) => ["--platform", platform])
         : [["--platform", args.platform || "all"]];
     const commands = invocations.map((skillArgs) => `${cli.invocation_prefix} install-skills ${skillArgs.join(" ")}`);
@@ -11606,10 +11618,11 @@ function toolingCommand(args) {
       ok: staleSkills.length === 0,
       stale_count: staleSkills.length,
       // requested: --target/--platform named the scope. installed_platforms:
-      // only platforms holding a Campaigns OS skill were checked.
-      // no_platform_installed: none held one, so every platform was checked.
-      scope: skillStatus.scope || "requested",
-      not_installed_platforms: skillStatus.not_installed_platforms || [],
+      // only platforms with Campaigns OS skills installed were checked, and
+      // not_installed_platforms lists the rest. no_platform_installed: none
+      // had any, so every platform is listed there and was checked.
+      scope: skillScope.scope,
+      not_installed_platforms: skillScope.notInstalled,
       status: skillStatus,
     },
     ready,
@@ -11625,7 +11638,7 @@ export async function toolingStatusCommand(args, options = {}) {
   const auth = result.gateway_login;
   if (!auth.accounts.length) result.warnings.push(auth.state === "unavailable"
     ? "Gateway credential storage is unavailable or busy. Check user credential directory permissions and keychain access; wait for another campaigns-os process to finish. See docs/gateway-login.md for interrupted-process recovery."
-    : `Gateway login: ${auth.state}. Use campaigns-os login --store <subdomain>.`);
+    : `Gateway login: ${auth.state}. Use ${result.cli.invocation_prefix} login --store <subdomain>.`);
   for (const account of auth.accounts) (account.state === "logged_in" ? result.ready : result.warnings).push(`Gateway login: ${account.state}; store ${account.store}; access remaining ${account.remaining_seconds}s; gateway ${auth.gateway}; reported version ${account.gateway_version || "unavailable"} (local credential metadata only).`);
   return result;
 }
@@ -11634,7 +11647,6 @@ export function toolingDiagnose(args, { runTooling = toolingCommand, runDoctor =
   let tooling = null;
   let doctor = null;
   let inspectionFailed = false;
-  const platform = args.platform || "all";
   // Inputs are used only by local producers, never echoed, and mutation flags
   // are not forwarded. Even an exception's message may contain a secret path.
   // An unnamed platform is not forwarded, so status checks only the platforms
@@ -11647,7 +11659,7 @@ export function toolingDiagnose(args, { runTooling = toolingCommand, runDoctor =
       doctor = runDoctor({ packet: args.packet, "no-write": true, ...(typeof args.context === "string" ? { context: args.context } : {}), ...(typeof args.report === "string" ? { report: args.report } : {}) });
     } catch { inspectionFailed = true; }
   }
-  return diagnosticExport({ tooling, doctor, platform, inspectionFailed });
+  return diagnosticExport({ tooling, doctor, platform: args.platform || "installed", inspectionFailed });
 }
 
 function localCliStatus(pkg, install = { mode: "checkout", pinned: null }) {

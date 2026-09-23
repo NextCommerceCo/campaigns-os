@@ -356,6 +356,9 @@ const REFUSED_INVOCATIONS = [
   // `booleanArg` is shared with `qa run`'s analytics leg (mid-run, a failure);
   // this is its up-front call site, tagged there with `refusing()`.
   { argv: ["qa", "policy", "set", "--packet", "%DIR%/p.json", "--allowed-domains-confirmed", "maybe"], files: EMPTY_PACKET, expect: /--allowed-domains-confirmed must be true or false/ },
+  // Shared validators called at the same position, tagged at their call sites.
+  { argv: ["theme", "waive", "--packet", "%DIR%/p.json", "--reason", "an effect-test waiver"], files: EMPTY_PACKET, expect: /theme waive requires --waived-by/ },
+  { argv: ["qa", "policy", "set", "--packet", "%DIR%/p.json", "--order-path-depth", "bogus"], files: EMPTY_PACKET, expect: /qa policy set: unsupported --order-path-depth "bogus"/ },
 ];
 
 for (const { argv, expect, files } of REFUSED_INVOCATIONS) {
@@ -406,7 +409,8 @@ test("(i') a handler that begins work and then fails IS still journaled", () => 
 
 // (i'') is (i') for every handler #465 tagged a refusal in: the same
 // invocation as its refusal rows above, completed so it passes every one of
-// them, then failing on the first thing the handler reads past its packet. Each
+// them, then failing on the first thing the handler reads past its packet (for
+// `qa policy set`, after it has written the packet it changed). Each
 // must still append exactly one entry — the tag must not have moved the
 // boundary past the refusals. `theme waive` renders its failure through
 // waiveOrRefuse under --json (no throw reaches the journal step), so it proves

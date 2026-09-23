@@ -1757,8 +1757,9 @@ function updateQaPolicy(args) {
   if (removedFlags.length) {
     throw refused(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders run from --test-order <mode> alone; there is no permission flag). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth.`);
   }
-  // Validated with the other argv checks, before anything is written.
-  const orderPathDepth = parseOrderPathDepthFlag(args, { command: "qa policy set" });
+  // Validated with the other argv checks, before anything is written: a
+  // refusal at this call site, like the removed-flag check above.
+  const orderPathDepth = refusing(() => parseOrderPathDepthFlag(args, { command: "qa policy set" }));
 
   const changed = [];
   setOptionalBoolean(packet.campaign, "allowed_domains_confirmed", args, "allowed-domains-confirmed", changed);

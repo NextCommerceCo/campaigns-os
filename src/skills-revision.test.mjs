@@ -220,27 +220,33 @@ test("skills-revision: every header runs the check through the pinned copy and s
   const flatten = (text) => text.replace(/\s+/g, " ");
   for (const skill of MANIFEST.skills) {
     const text = flatten(readFileSync(join(ROOT, skill.path), "utf8"));
+    // `--no-install`: the package is @nextcommerce/campaigns-os and
+    // `campaigns-os` only its bin, so outside a pinned folder a plain npx looks
+    // the bin name up on the registry and, with no terminal to ask, installs it.
     assert.ok(
-      text.includes(`Run \`npx campaigns-os tooling status --skills-revision ${BUNDLE_REVISION}\` from the campaign's Page Kit folder`),
-      `${skill.path}: the header must run the check as \`npx campaigns-os …\` from the Page Kit folder`,
+      text.includes(`Run \`npx --no-install campaigns-os tooling status --skills-revision ${BUNDLE_REVISION}\` from the campaign's Page Kit folder`),
+      `${skill.path}: the header must run the check as \`npx --no-install campaigns-os …\` from the Page Kit folder`,
     );
     assert.doesNotMatch(
       text,
-      /Run `campaigns-os tooling status --skills-revision/,
-      `${skill.path}: a bare \`campaigns-os\` check can be answered by another copy on PATH`,
+      /Run `(npx )?campaigns-os tooling status --skills-revision/,
+      `${skill.path}: a bare or installing \`campaigns-os\` check can be answered by a copy other than the pin`,
     );
     assert.ok(
-      text.includes("If the output has no `Skills revision:` line") && text.includes("follow none of its actions"),
-      `${skill.path}: the header must say that output without a Skills revision line is not the pinned copy's`,
+      text.includes("If the output has no `Skills revision:` line (no `revision_check` under `--json`)")
+        && text.includes("follow none of its actions"),
+      `${skill.path}: the header must say that output without a revision line, text or JSON, is not the pinned copy's`,
     );
   }
 });
 
-test("skills-revision: the text view always prints the Skills revision line the header tells an agent to look for", () => {
+test("skills-revision: every form of status carries the revision the header tells an agent to look for", () => {
   withTarget((target) => {
     for (const extra of [[], ["--skills-revision", BUNDLE_REVISION]]) {
       const run = status(target, extra);
       assert.match(run.stdout, /^Skills revision: /m, `tooling status ${extra.join(" ")} must print the revision line`);
+      const json = status(target, [...extra, "--json"]).json;
+      assert.ok(typeof json?.revision_check === "string", `tooling status ${extra.join(" ")} --json must carry revision_check`);
     }
   });
 });

@@ -284,9 +284,10 @@ checks that the package metadata, CLI entrypoint, and installed Campaigns OS
 skills agree. For a checkout it also reports branch, upstream, and ahead/behind;
 for a package install the pinned commit is the freshness answer, and there is
 no npm dist-tag to compare against. Neither mode makes agent skills current on
-its own: when skills are stale, run `install-skills --platform all` through the
-same prefix you ran `tooling status` with (the status output prints the exact
-command) and restart local agent sessions.
+its own: when skills are stale, run the refresh command the status output
+prints (it names each stale platform, through the same prefix you ran
+`tooling status` with) and restart local agent sessions. Without `--platform`,
+status checks only the platforms where Campaigns OS skills are installed.
 
 Run `campaigns-os qa install-browser` (`npm run qa:install-browser` from a
 checkout) once after install/update and before mandatory `polish capture` or

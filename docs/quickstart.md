@@ -143,7 +143,7 @@ npx campaigns-os install-skills --platform all --dry-run
 ```
 
 If `tooling status` reports stale skills, run the refresh command it prints —
-`install-skills --platform all` through the same prefix — and restart local
+it names each stale platform, through the same prefix — and restart local
 agent sessions so the new instructions are loaded. The build after `start` is
 agent-driven — `next` names the skill for each stage — so install skills before
 the first `start`.

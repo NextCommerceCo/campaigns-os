@@ -710,7 +710,7 @@ test("a single-platform install is ready without --platform, and the skipped pla
     assert.ok(run.json.ready.some((line) => line.startsWith("Skills checked for Claude Code;") && line.includes("Codex")));
 
     const human = runInHome(home, ["tooling", "status"]);
-    assert.match(human.stdout, /Skills checked for Claude Code; Codex, Shared agent skills hold no Campaigns OS skills/);
+    assert.match(human.stdout, /Skills checked for Claude Code; Codex, Shared agent skills have no Campaigns OS skills installed and were not checked/);
     assert.doesNotMatch(human.stdout, /Refresh installed skills/);
     assert.deepEqual(snapshotTree(home), before, "tooling status must not write into the skill directories");
   } finally {
@@ -757,15 +757,55 @@ test("two stale installed platforms get one refresh command each, never --platfo
   }
 });
 
-test("with no platform installed every platform is checked and the action installs them all", () => {
+test("with no platform installed the action asks for an install on the harness in use, not everywhere", () => {
   const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-none-"));
   try {
     const run = runInHome(home, ["tooling", "status", "--json"]);
     assert.equal(run.status, 2);
     assert.equal(run.json.skills.scope, "no_platform_installed");
-    assert.deepEqual(run.json.skills.not_installed_platforms, []);
+    assert.deepEqual(run.json.skills.not_installed_platforms.map((target) => target.platform), ["claude", "codex", "agents"]);
     assert.ok(run.json.skills.stale_count > 0);
-    assert.match(refreshActions(run)[0], /install-skills --platform all\. Restart/);
+    assert.deepEqual(refreshActions(run), []);
+    const install = run.json.actions.filter((action) => action.startsWith("Install bundled skills for the harness you use:"));
+    assert.equal(install.length, 1, JSON.stringify(run.json.actions));
+    assert.match(install[0], /install-skills --platform <claude\|codex\|agents>\. Restart/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("when every platform is installed and stale the refresh action is one --platform all", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-three-"));
+  try {
+    for (const platform of ["claude", "codex", "agents"]) {
+      assert.equal(runInHome(home, ["install-skills", "--platform", platform, "--json"]).status, 0);
+      writeFileSync(join(home, `.${platform}`, "skills", "next-campaigns-qa", "SKILL.md"), "stale bundled skill\n");
+    }
+
+    const run = runInHome(home, ["tooling", "status", "--json"]);
+    assert.equal(run.status, 2);
+    assert.equal(run.json.skills.scope, "installed_platforms");
+    assert.deepEqual(run.json.skills.not_installed_platforms, []);
+    const [action, ...rest] = refreshActions(run);
+    assert.deepEqual(rest, []);
+    assert.match(action, /install-skills --platform all\. Restart/);
+    assert.doesNotMatch(action, / and /);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("one skipped platform is named in the singular", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-singular-"));
+  try {
+    for (const platform of ["claude", "codex"]) {
+      assert.equal(runInHome(home, ["install-skills", "--platform", platform, "--json"]).status, 0);
+    }
+    const run = runInHome(home, ["tooling", "status", "--json"]);
+    assert.equal(run.json.skills.ok, true, JSON.stringify(run.json.actions));
+    assert.ok(run.json.ready.includes(
+      "Skills checked for Claude Code, Codex; Shared agent skills has no Campaigns OS skills installed and was not checked (pass --platform to check one).",
+    ), JSON.stringify(run.json.ready));
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -786,7 +826,7 @@ test("an explicit --platform all still checks every platform, installed or not",
   }
 });
 
-test("a slot held only by someone else's skill does not count as an installed platform", () => {
+test("a retired slot another skill occupies does not count as an installed platform", () => {
   const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-foreign-"));
   try {
     assert.equal(runInHome(home, ["install-skills", "--platform", "claude", "--json"]).status, 0);

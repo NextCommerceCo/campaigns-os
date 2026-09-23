@@ -75,6 +75,17 @@ test("diagnose forwards only read-only inputs and suppresses sensitive producer 
   assert.ok(result.reason_ids.includes("diagnostic.inspection_unavailable"));
 });
 
+test("diagnose forwards --platform only when given, and labels the unnamed scope as installed", () => {
+  const seen = [];
+  const spy = (args) => { seen.push(args); return tooling; };
+  const scoped = toolingDiagnose({}, { runTooling: spy });
+  assert.equal(Object.hasOwn(seen[0], "platform"), false, "an unnamed platform must not reach tooling status as `all`");
+  assert.equal(scoped.platform, "installed");
+  const named = toolingDiagnose({ platform: "claude" }, { runTooling: spy });
+  assert.equal(seen[1].platform, "claude");
+  assert.equal(named.platform, "claude");
+});
+
 function snapshotTree(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => entry.isDirectory()
     ? snapshotTree(join(dir, entry.name)) : [[join(dir, entry.name), readFileSync(join(dir, entry.name)).toString("base64")]]);

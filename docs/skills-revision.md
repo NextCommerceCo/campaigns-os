@@ -48,7 +48,7 @@ text the agent is actually reading, not from a file it would have to go and open
 ## The check
 
 ```bash
-npx campaigns-os tooling status --skills-revision 1.41.1+skills.1
+npx --no-install campaigns-os tooling status --skills-revision 1.41.1+skills.1
 ```
 
 The value is compared against the bundle revision of the **CLI the command runs
@@ -56,21 +56,31 @@ from** — the `skills.json` inside the installed package, not the working
 directory, which in a campaign repo has no `skills.json` at all.
 
 Run it from the campaign's Page Kit folder, where `npx campaigns-os` resolves the
-project's exact devDependency. A bare `campaigns-os` resolves through PATH, and a
-machine that once installed the toolkit globally can answer with that older copy.
+project's exact devDependency. `--no-install` keeps it there: the published
+package is `@nextcommerce/campaigns-os` and `campaigns-os` is only its bin, so
+outside a pinned folder a plain `npx campaigns-os` looks the bin name up as a
+package on the registry and, without a terminal to ask, installs whatever it
+finds. With `--no-install` it stops instead. A bare `campaigns-os` resolves
+through PATH, and a machine that once installed the toolkit globally can answer
+with that older copy.
 A copy older than 1.40.0 does not know `--skills-revision`: it ignores the flag,
 prints no `Skills revision:` line (and no `revision_check` under `--json`), and
 may list actions of its own, such as an `install-skills` that replaces part of
-this bundle with its older text. The skill header says so: no `Skills revision:`
-line means the pinned copy did not answer, and none of that output's actions
-should be followed.
+this bundle with its older text. The revision comparison cannot see the result,
+because the header an agent quotes still names this bundle; the pinned copy's
+own freshness check does, and reports the replaced skills as stale. The skill
+header says so: no `Skills revision:` line (no `revision_check` under `--json`)
+means the pinned copy did not answer, and none of that output's actions should
+be followed.
 
 Without `--platform` or `--target`, the skill freshness part of the report checks
-only the platform directories that already hold a Campaigns OS skill, and a
-`Ready:` line names the platforms it skipped. A Claude Code only install is
-therefore not reported stale for Codex or the shared directory. `--platform all`
-checks all three, as it always has; when no platform holds a Campaigns OS skill,
-every platform is checked and the install action names all of them. `--json`
+only the platform directories where Campaigns OS skills are installed (a skill
+under one of the bundled names, or under a retired name of ours), and a `Ready:`
+line names the platforms it skipped. A Claude Code only install is therefore not
+reported stale for Codex or the shared directory, and a stale install's refresh
+action names each stale platform. `--platform all` checks all three, as it always
+has. When no platform has Campaigns OS skills, the action asks for an install on
+the harness in use (`install-skills --platform <claude|codex|agents>`). `--json`
 reports the choice as `skills.scope` (`requested`, `installed_platforms`, or
 `no_platform_installed`) with `skills.not_installed_platforms`.
 
@@ -121,7 +131,7 @@ An agent that carries only the frontmatter of the single skill it loaded can
 pass that instead:
 
 ```bash
-npx campaigns-os tooling status --skills-revision next-campaigns-qa@1.3.4
+npx --no-install campaigns-os tooling status --skills-revision next-campaigns-qa@1.3.4
 ```
 
 The version is checked against that skill's entry in the manifest, and the

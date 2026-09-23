@@ -1,7 +1,7 @@
 // A projection, never a scrubber: source objects and free text never enter
 // the export. Unknown producer values have fixed, non-actionable markers.
 const MODES = new Set(["checkout", "node_modules", "global", "npx_cache", "package_directory"]);
-const PLATFORMS = new Set(["claude", "codex", "agents", "all"]);
+const PLATFORMS = new Set(["claude", "codex", "agents", "all", "installed"]);
 const STAGES = new Set(["prepare-build", "doctor-blocked", "setup", "build", "polish", "deploy", "qa", "done"]);
 const STATUSES = new Set(["ready", "attention_required", "ready_with_warnings", "ready_with_waivers", "blocked"]);
 const REASONS = new Set([
