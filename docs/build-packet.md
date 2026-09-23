@@ -1301,7 +1301,7 @@ doctor read for the locked template family (`required`, `family`, `version`,
   running). This is what `prepare-build` records by default. The catalog
   travels with the toolkit, not with the campaign, so the packet does not
   record where one machine's checkout or package install kept it, and the
-  same packet resolves on any machine and under `npx campaigns-os`.
+  same packet resolves on any machine and under `npx --no-install campaigns-os`.
 - A string `path` is an operator-supplied `--commerce-catalog <path>`,
   recorded relative to the packet (keep it inside the campaign repo). Doctor
   resolves it against the packet's directory and blocks on

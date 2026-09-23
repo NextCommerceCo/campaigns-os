@@ -2,6 +2,38 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.41.2] - 2026-09-23
+
+### Fixed
+
+- Every command Campaigns OS prints for a project-local install is spelled
+  `npx --no-install campaigns-os …`, and so is every command in the bundled
+  skills, the README, `AGENTS.md` and the docs. 1.41.1 made this change only
+  for the revision check in the skill header. `campaigns-os` is only the bin
+  name of `@nextcommerce/campaigns-os`. In a folder where the package is not
+  installed (another folder, or one where `npm install` has not run yet), a
+  plain `npx campaigns-os …` looks the bin name up as a registry package and,
+  with no terminal to ask, installs whatever it finds and runs it. With
+  `--no-install`, npx runs the pinned copy or stops with an error.
+  - For a `node_modules` install, `tooling status` reports
+    `cli.invocation_prefix` as `npx --no-install campaigns-os` and
+    `cli.invocation` as `npx --no-install campaigns-os <command>`.
+  - Every command spelled with that prefix follows: `next` text and `--json`,
+    doctor required actions, gate and checkpoint remediations, the
+    skill-refresh and gateway login actions of `tooling status`, and the
+    browser-missing hints.
+  - The PATH warnings of `tooling status` and its action for a stale project
+    pin name the same spelling.
+  - A checkout, a global install and an npx cache keep their spellings.
+  - Run-session deviation tracking reads the command word through the new
+    prefix, and still through the old one in sessions recorded by earlier
+    versions.
+
+  Commands printed or documented by earlier releases lack the flag; add
+  `--no-install` after `npx` when you reuse one.
+- Skills bundle revision `1.41.2+skills.1`. Every skill's version advances by
+  one patch.
+
 ## [1.41.1] - 2026-09-23
 
 ### Fixed

@@ -17,6 +17,13 @@ const PACKAGE_INSTALL_MODE_LABELS = Object.freeze({
 
 const PUBLIC_GIT_SOURCE = "github:NextCommerceCo/campaigns-os";
 
+// How a consumer install is spelled. `campaigns-os` is only the bin name of
+// @nextcommerce/campaigns-os: where no installed copy is found, a plain
+// `npx campaigns-os` looks the bin name up as a registry package and, with no
+// terminal to ask, installs whatever answers. `--no-install` makes npx run the
+// project's copy or fail.
+export const LOCAL_INVOCATION_PREFIX = "npx --no-install campaigns-os";
+
 function realpathOrSelf(path) {
   try {
     return realpathSync(path);
@@ -216,13 +223,13 @@ function runCommand(command, args) {
 
 // How a command should be spelled so it runs THIS install: the checkout
 // script from a checkout; `npx --yes <spec>` from an npx cache (nothing is on
-// PATH); `npx campaigns-os` from a consumer install (the toolkit pinned as a
-// devDependency of the campaign folder) — always, because `npx` itself puts
-// node_modules/.bin on PATH for the duration of the command, so a PATH match
-// seen here says nothing about the operator's shell, and a bare command they
-// paste there would not resolve; the bare binary from a plain package
-// directory. The PATH comparison is still reported so a shadowing install is
-// visible.
+// PATH); `npx --no-install campaigns-os` from a consumer install (the toolkit
+// pinned as a devDependency of the campaign folder) — always, because `npx`
+// itself puts node_modules/.bin on PATH for the duration of the command, so a
+// PATH match seen here says nothing about the operator's shell, and a bare
+// command they paste there would not resolve; the bare binary from a plain
+// package directory. The PATH comparison is still reported so a shadowing
+// install is visible.
 export function resolveInvocation(root, pkg = {}, install = localInstallStatus(root, pkg)) {
   const binRel = pkg.bin && typeof pkg.bin === "object"
     ? pkg.bin["campaigns-os"]
@@ -237,7 +244,7 @@ export function resolveInvocation(root, pkg = {}, install = localInstallStatus(r
   let prefix;
   if (install.mode === "checkout") prefix = "npm run campaigns-os --";
   else if (install.mode === "npx_cache") prefix = install.pinned?.spec ? `npx --yes ${install.pinned.spec}` : "campaigns-os";
-  else if (install.mode === "node_modules") prefix = "npx campaigns-os";
+  else if (install.mode === "node_modules") prefix = LOCAL_INVOCATION_PREFIX;
   else if (install.mode === "global") prefix = matches ? "campaigns-os" : `node ${shellToken(localBin)}`;
   else prefix = "campaigns-os";
   return {
@@ -281,4 +288,5 @@ export function invocationPrefixFor(root, pkg = null) {
 // registries, tests) keeps the canonical spelling; only what is printed or
 // emitted for an operator or agent to copy is rewritten. Skill names such as
 // next-campaigns-os-setup, file names (campaigns-os.mjs), and already-prefixed
-// forms (`npx campaigns-os`, `npm run campaigns-os --`) are left alone.
+// forms (`npx --no-install campaigns-os`, `npm run campaigns-os --`) are left
+// alone.

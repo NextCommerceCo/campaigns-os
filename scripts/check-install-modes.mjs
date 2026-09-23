@@ -59,7 +59,7 @@ try {
       run(command, [...head, "install-skills", "--platform", platform, "--json"], project, env);
       const ready = json(command, [...head, "tooling", "status", "--platform", platform, "--json"], project, env);
       assert.equal(ready.skills.ok, true);
-      assert.equal(ready.cli.invocation_prefix, mode === "local" ? "npx campaigns-os" : "campaigns-os");
+      assert.equal(ready.cli.invocation_prefix, mode === "local" ? "npx --no-install campaigns-os" : "campaigns-os");
       assert.equal(existsSync(join(profileHome, platform === "claude" ? ".codex" : ".claude")), false);
       assert.equal(existsSync(join(profileHome, ".agents")), false);
       const diagnosis = json(command, [...head, "tooling", "diagnose", "--platform", platform, "--json"], project, env);

@@ -1,7 +1,8 @@
 // Test fixture: a REAL package install of this checkout, staged under a
 // temporary install root, so a test can run the CLI the way a consumer's
-// `npx campaigns-os …` does (install mode detected from the enclosing
-// node_modules, pinned commit read from the lockfile npm would have written).
+// `npx --no-install campaigns-os …` does (install mode detected from the
+// enclosing node_modules, pinned commit read from the lockfile npm would have
+// written).
 // Shared by the tooling-status and page-kit sync suites; not part of the
 // supported surface.
 import { cpSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";

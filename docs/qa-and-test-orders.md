@@ -1692,9 +1692,9 @@ a trusted submission attests the runner, not execution or resource identity.
 
 ### Playwright updates and consumer installs
 
-After installing or updating Campaigns OS, run `npx campaigns-os qa install-browser`
-from the campaign project (or `campaigns-os qa install-browser` for a global
-installation). This resolves the same Playwright package as QA and polish capture.
+After installing or updating Campaigns OS, run
+`npx --no-install campaigns-os qa install-browser` from the campaign project
+(or `campaigns-os qa install-browser` for a global installation). This resolves the same Playwright package as QA and polish capture.
 A project's own `npx playwright install` can resolve a different version and install
 a different Chromium build. Campaigns OS is an optional-dependency owner, not a
 Playwright peer dependency: npm may share a compatible copy or install a nested one.

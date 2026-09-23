@@ -26,10 +26,14 @@ installation, a saved Map, preview observation, and recorded QA each establish.
 
 You do not need to clone this repository to use it. The toolkit is pinned as a
 devDependency of the campaign folder (a page-kit project) and runs through
-`npx campaigns-os …` from that folder — the pin is committed in `package.json`
-and the lockfile, so CI and the deploy host install the same package bytes. Requirements: Node
-`>=20.19.0` and npm 10 or 11 (Node 22 ships npm 10). Three steps, in this
-order:
+`npx --no-install campaigns-os …` from that folder — the pin is committed in
+`package.json` and the lockfile, so CI and the deploy host install the same
+package bytes. Keep `--no-install`: `campaigns-os` is only the bin name of
+`@nextcommerce/campaigns-os`, so in a folder without the pinned copy a plain
+`npx campaigns-os` looks that name up on the registry and, with no terminal to
+ask, installs what it finds; with the flag, npx stops with an error instead.
+Requirements: Node `>=20.19.0` and npm 10 or 11 (Node 22 ships npm 10). Three
+steps, in this order:
 
 1. **Orient before you run anything.** Read
    [`AGENTS.md`](AGENTS.md), `contracts/supported-surface.json`,
@@ -44,8 +48,8 @@ mkdir "<route>" && cd "<route>"
 npm init -y && npm i next-campaign-page-kit
 npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
 npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.3
-npx campaigns-os tooling status --platform claude
-npx campaigns-os install-skills --platform claude
+npx --no-install campaigns-os tooling status --platform claude
+npx --no-install campaigns-os install-skills --platform claude
 mkdir -p source
 ```
 
@@ -76,8 +80,9 @@ dist-tag for a reproducible build. Commit `package.json` and `package-lock.json`
 A Git source pin remains supported when using an unreleased reviewed commit:
 `npm install --save-dev --save-exact "github:NextCommerceCo/campaigns-os#<full-sha>"`.
 
-For a visual sample, `npx campaigns-os demo --target ./apollo-sample`
-(1.37.0 or later) copies four inert Apollo pages; open the printed
+For a visual sample, run
+`npx --no-install campaigns-os demo --target ./apollo-sample` (1.37.0 or later).
+It copies four inert Apollo pages; open the printed
 `landing/index.html` directly. It downloads nothing and creates no campaign
 evidence. Keep sample edits and start a real campaign in a separate new Page Kit
 folder. See [offline sample preview](docs/demo-preview.md).
@@ -101,15 +106,15 @@ template stock. To update, review the new release source and install its exact v
 > The first `start` opens a run session in the target folder and, unless you
 > opt out, the session's Run Record is remitted to the Campaigns telemetry
 > endpoint with the packet's Campaigns API key. Opt out with
-> `npx campaigns-os telemetry off`, `CAMPAIGNS_OS_TELEMETRY=off`, or
+> `npx --no-install campaigns-os telemetry off`, `CAMPAIGNS_OS_TELEMETRY=off`, or
 > `--no-remit` on the remitting command; capture stays local either way. The
 > full note — endpoint, payload, what `off` changes, and `--no-run-session` —
 > is in [docs/quickstart.md](docs/quickstart.md) above the first `start`; the
 > contract is [Run Telemetry](docs/workflow-findings-sidecar.md).
 
 ```bash
-npx campaigns-os start --map-id <map-id> --target . --source ./source --template-family <family>
-npx campaigns-os next --packet ./campaign-runtime.build.json --json
+npx --no-install campaigns-os start --map-id <map-id> --target . --source ./source --template-family <family>
+npx --no-install campaigns-os next --packet ./campaign-runtime.build.json --json
 ```
 
 `--map-id <id>` starts from a map saved in Campaign Map Builder (add
@@ -127,10 +132,11 @@ normally `BLOCKED` with a list of what to supply — missing screenshot proof,
 demo values to replace, a scaffold to run. That list is the intake checklist,
 not a failed install. The demo values are the store profile and SDK pin
 `campaign-init` seeded into `_data/campaigns.json`; doctor prints the one
-command that replaces them from the CampaignSpec, `npx campaigns-os page-kit
-sync --packet campaign-runtime.build.json`, and after it both page-kit gates
-pass. The reverse write exists for a configured campaign: `npx campaigns-os
-spec derive --packet campaign-runtime.build.json` copies what the repo already
+command that replaces them from the CampaignSpec, `npx --no-install
+campaigns-os page-kit sync --packet campaign-runtime.build.json`, and after it
+both page-kit gates pass. The reverse write exists for a configured campaign:
+`npx --no-install campaigns-os spec derive --packet
+campaign-runtime.build.json` copies what the repo already
 states (the SDK pin, page routes, analytics ids) into the local CampaignSpec,
 and with `--write-map` records the pin in the saved Map's Build hints too, so
 a bump in the repo is one edit followed by a derive rather than a hand edit
@@ -145,12 +151,13 @@ fields, and resolve competing edits before the next build.
 
 Everything after `start` is agent-driven: after `start`
 and after every stage, run `next` and do what it prints — it names the skill
-and the exact commands for the next stage, already spelled `npx campaigns-os
-…` for this install, which is why `install-skills` comes first. The browser
-for polish capture and QA is a one-time `npx campaigns-os qa install-browser`,
-which installs the browser for the Playwright this toolkit bundles. A pin
-older than that command shows `npx playwright install chromium` instead; that
-is equivalent only when `npx playwright` resolves to the toolkit's Playwright
+and the exact commands for the next stage, already spelled `npx --no-install
+campaigns-os …` for this install, which is why `install-skills` comes first.
+Releases before 1.41.2 print the same commands without `--no-install`; add it
+when you copy one. The browser for polish capture and QA is a one-time
+`npx --no-install campaigns-os qa install-browser`, which installs the browser
+for the Playwright this toolkit bundles. A pin older than that command shows
+`npx playwright install chromium` instead; that is equivalent only when `npx playwright` resolves to the toolkit's Playwright
 (a campaign that depends on its own Playwright version gets that one's
 browser instead), so prefer `qa install-browser` on pins that have it.
 
@@ -159,9 +166,9 @@ browser instead), so prefer `qa install-browser` on pins that have it.
 The pinned devDependency above is the primary path. To change the toolkit, use
 a checkout ([docs/quickstart.md](docs/quickstart.md)): every `npm run
 campaigns-os -- <command> …` example in this repository is that checkout form,
-and from a campaign folder the same command is `npx campaigns-os <command> …`
-with identical arguments (`npm run qa:install-browser` is the checkout's
-`qa install-browser`).
+and from a campaign folder the same command is
+`npx --no-install campaigns-os <command> …` with identical arguments (`npm run
+qa:install-browser` is the checkout's `qa install-browser`).
 
 From a checkout, the same first run uses the bundled example inputs:
 

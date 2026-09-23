@@ -1,11 +1,11 @@
 ---
 name: campaign-run-evidence
-version: 1.0.2
+version: 1.0.3
 description: Interpret existing Campaigns OS doctor, QA and proof-depth evidence without claiming more proof than the artifacts contain.
 ---
 
-Bundle revision: 1.41.1+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.1+skills.1`
+Bundle revision: 1.41.2+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.2+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read

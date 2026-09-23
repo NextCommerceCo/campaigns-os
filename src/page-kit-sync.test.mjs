@@ -1042,7 +1042,7 @@ test("page-kit sync keeps the file's permission bits", () => {
 
 // Printed commands are spelled for the install they come from. From a
 // consumer install, doctor's Required actions and next's next_actions carry
-// `npx campaigns-os page-kit sync …`; the checkout keeps the bare form.
+// `npx --no-install campaigns-os page-kit sync …`; the checkout keeps the bare form.
 test("doctor and next spell the page-kit sync repair with the consumer install's npx prefix", () => {
   const installRoot = realpathSync(mkdtempSync(join(tmpdir(), "campaigns-os-pkg-sync-")));
   const { dir, packetPath } = fixture();
@@ -1051,9 +1051,9 @@ test("doctor and next spell the page-kit sync repair with the consumer install's
     const env = { ...process.env, PATH: "/usr/bin:/bin" };
     const doctor = spawnSync(process.execPath, [pkgCli, "doctor", "--packet", packetPath], { cwd: installRoot, encoding: "utf8", env });
     assert.equal(doctor.status, 2, doctor.stderr);
-    assert.match(doctor.stdout, /^- \[page_kit\.store_profile\] npx campaigns-os page-kit sync --packet /m);
-    assert.match(doctor.stdout, /^- \[page_kit\.sdk_version\] npx campaigns-os page-kit sync --packet /m);
-    assert.doesNotMatch(doctor.stdout, /(?<!npx )campaigns-os page-kit sync/);
+    assert.match(doctor.stdout, /^- \[page_kit\.store_profile\] npx --no-install campaigns-os page-kit sync --packet /m);
+    assert.match(doctor.stdout, /^- \[page_kit\.sdk_version\] npx --no-install campaigns-os page-kit sync --packet /m);
+    assert.doesNotMatch(doctor.stdout, /(?<!npx --no-install )campaigns-os page-kit sync/);
 
     const next = spawnSync(process.execPath, [pkgCli, "next", "--packet", packetPath, "--json", "--no-write"], { cwd: installRoot, encoding: "utf8", env });
     const parsed = JSON.parse(next.stdout);
@@ -1061,9 +1061,9 @@ test("doctor and next spell the page-kit sync repair with the consumer install's
     for (const id of ["checkpoint.page_kit.store_profile.repair_target", "checkpoint.page_kit.sdk_version.repair_target"]) {
       const action = parsed.next_actions.find((row) => row.id === id);
       assert.ok(action, id);
-      assert.equal(action.command, `npx campaigns-os page-kit sync --packet ${packetPath}`);
+      assert.equal(action.command, `npx --no-install campaigns-os page-kit sync --packet ${packetPath}`);
     }
-    assert.doesNotMatch(JSON.stringify(parsed.next_actions), /(?<!npx )campaigns-os (?:page-kit|checkpoint|doctor) /);
+    assert.doesNotMatch(JSON.stringify(parsed.next_actions), /(?<!npx --no-install )campaigns-os (?:page-kit|checkpoint|doctor) /);
 
     // The same doctor from the checkout keeps the bare, tested form.
     const checkout = spawnSync("node", [CLI, "doctor", "--packet", packetPath], { encoding: "utf8" });

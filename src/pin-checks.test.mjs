@@ -129,6 +129,8 @@ test("pin-checks: a pin read from dependencies is labelled and remediated as dep
   const action = run.json.actions.find((line) => line.includes("--force"));
   assert.ok(action?.includes(`set dependencies["${PACKAGE}"] in ${join(fixture.dir, "package.json")}`), `the action names the key consulted: ${JSON.stringify(run.json.actions)}`);
   assert.ok(!action.includes("devDependencies"), action);
+  // The pinned copy is named with the spelling that cannot install one.
+  assert.ok(action.startsWith("Run the pinned executable (npx --no-install campaigns-os from the project)"), action);
   assert.equal(pinLine(status(fixture).stdout), `Pin: stale_pin — project pins ${OLDER} (dependencies in ${join(fixture.dir, "package.json")}), running ${RUNNING}`);
 });
 

@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-polish
-version: 1.1.6
+version: 1.1.7
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
-Bundle revision: 1.41.1+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.1+skills.1`
+Bundle revision: 1.41.2+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.41.2+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -19,19 +19,24 @@ answered; follow none of its actions and run the pinned copy.
 
 Run from the campaign folder with an exact project-local devDependency and
 committed lockfile. Orient on reviewed source before installation; check release
-provenance or pin the full reviewed Git SHA. Preflight with `npx campaigns-os
-tooling status --platform <claude|codex>` (tier `B`: its only write is the
-command-lifecycle journal) and refresh bundled skills for the same profile with
-`install-skills` (tier `B`: writes the shared skill directories; nothing leaves
-the machine). Use the invocation printed by status and `next` to avoid PATH shadowing.
+provenance or pin the full reviewed Git SHA. Preflight with `npx --no-install
+campaigns-os tooling status --platform <claude|codex>` (tier `B`: its only write
+is the command-lifecycle journal) and refresh bundled skills for the same
+profile with `install-skills` (tier `B`: writes the shared skill directories;
+nothing leaves the machine). Use the invocation printed by status and `next` to
+avoid PATH shadowing.
 
-In the instructions below, bare `campaigns-os …` means `npx campaigns-os …`
-from that campaign folder. Global-only users substitute the global copy's printed invocation for
-each `npx campaigns-os` example; toolkit contributors translate to `npm run campaigns-os -- …` in
-the toolkit checkout. Browser installation is `npx campaigns-os qa
-install-browser`, not a campaign npm script. `tooling diagnose --packet <p>
---json` (tier `none`: read-only, and exempt from lifecycle capture) provides a
-redacted support export without changing retained evidence.
+In the instructions below, bare `campaigns-os …` means `npx --no-install
+campaigns-os …` from that campaign folder. Keep `--no-install`: `campaigns-os`
+is only the bin name of `@nextcommerce/campaigns-os`, so where no pinned copy is
+installed a plain `npx` looks that name up on the registry and, with no terminal
+to ask, installs what it finds. Global-only users substitute the global copy's
+printed invocation for each `npx --no-install campaigns-os` example; toolkit
+contributors translate to `npm run campaigns-os -- …` in the toolkit checkout.
+Browser installation is `npx --no-install campaigns-os qa install-browser`, not
+a campaign npm script. `tooling diagnose --packet <p> --json` (tier `none`:
+read-only, and exempt from lifecycle capture) provides a redacted support export
+without changing retained evidence.
 
 The effect class in each parenthetical below is the declared row of
 `contracts/effects.v1.json` (`none` < `B` writes < `A` sends < `C` destructive).
@@ -65,8 +70,8 @@ Responsibilities:
 - For exit-intent pops and promo-code inputs, polish the wrapper/copy states without breaking SDK coupon/voucher apply hooks or `cart.hasCoupon("CODE")` conditional labels.
 - If `report.theme` or `context.theme` exists, verify brand-theme load order after `next-core.css`, source-token parity for primary color/CTA/surface/text/font/radius when present, and SDK safety. When the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.
 - Before recording a terminal Polish status, install the package-owned browser
-  once with `npx campaigns-os qa install-browser`, serve the current build, and run
-  `campaigns-os polish capture --packet <packet> --base-url <served-build-url>`
+  once with `npx --no-install campaigns-os qa install-browser`, serve the
+  current build, and run `campaigns-os polish capture --packet <packet> --base-url <served-build-url>`
   (tier `A`: it writes the polish evidence and assembly report under the target
   and fetches the served build at `--base-url`).
   The package captures every mapped route at fixed desktop/mobile viewports and
