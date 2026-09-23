@@ -16,7 +16,7 @@ that the copy on disk moved.
 `skills.json` carries one top-level field:
 
 ```json
-"bundle_revision": "1.41.0+skills.1"
+"bundle_revision": "1.41.1+skills.1"
 ```
 
 The spelling is `<package version>+skills.<n>`:
@@ -25,7 +25,7 @@ The spelling is `<package version>+skills.<n>`:
   skills ship with (`check-skill-versions.mjs` fails if the two disagree);
 - `<n>` is a plain counter, not a semver component. It says "this is the *n*th
   skill-text revision published against that package version" and it **resets
-  with the prefix**. `1.41.0+skills.1` is therefore ahead of `1.40.0+skills.7`.
+  with the prefix**. `1.41.1+skills.1` is therefore ahead of `1.40.0+skills.7`.
 
 It is one identity for the bundle as a whole, on purpose. Per-skill versions
 still exist and still gate per-skill changes, but an agent that loaded one skill
@@ -37,22 +37,42 @@ The first body line of every bundled `SKILL.md`, immediately after the
 frontmatter, is exactly:
 
 ```
-Bundle revision: 1.41.0+skills.1
+Bundle revision: 1.41.1+skills.1
 ```
 
-followed by one sentence telling the agent to run the check below at the start of
-each task. This line is the value an agent has in hand: it comes from the text
-the agent is actually reading, not from a file it would have to go and open.
+followed by a short paragraph telling the agent to run the check below at the
+start of each task, through the project's pinned copy, and what an older copy's
+answer looks like. This line is the value an agent has in hand: it comes from the
+text the agent is actually reading, not from a file it would have to go and open.
 
 ## The check
 
 ```bash
-campaigns-os tooling status --skills-revision 1.41.0+skills.1
+npx campaigns-os tooling status --skills-revision 1.41.1+skills.1
 ```
 
 The value is compared against the bundle revision of the **CLI the command runs
 from** — the `skills.json` inside the installed package, not the working
 directory, which in a campaign repo has no `skills.json` at all.
+
+Run it from the campaign's Page Kit folder, where `npx campaigns-os` resolves the
+project's exact devDependency. A bare `campaigns-os` resolves through PATH, and a
+machine that once installed the toolkit globally can answer with that older copy.
+A copy older than 1.40.0 does not know `--skills-revision`: it ignores the flag,
+prints no `Skills revision:` line (and no `revision_check` under `--json`), and
+may list actions of its own, such as an `install-skills` that replaces part of
+this bundle with its older text. The skill header says so: no `Skills revision:`
+line means the pinned copy did not answer, and none of that output's actions
+should be followed.
+
+Without `--platform` or `--target`, the skill freshness part of the report checks
+only the platform directories that already hold a Campaigns OS skill, and a
+`Ready:` line names the platforms it skipped. A Claude Code only install is
+therefore not reported stale for Codex or the shared directory. `--platform all`
+checks all three, as it always has; when no platform holds a Campaigns OS skill,
+every platform is checked and the install action names all of them. `--json`
+reports the choice as `skills.scope` (`requested`, `installed_platforms`, or
+`no_platform_installed`) with `skills.not_installed_platforms`.
 
 `--json` reports a bare status string alongside the detail:
 
@@ -60,20 +80,20 @@ directory, which in a campaign repo has no `skills.json` at all.
 "revision_check": "match",
 "skills_revision": {
   "status": "match",
-  "requested": "1.41.0+skills.1",
+  "requested": "1.41.1+skills.1",
   "spelling": "bundle",
-  "on_disk": "1.41.0+skills.1",
+  "on_disk": "1.41.1+skills.1",
   "on_disk_skill": null,
-  "message": "match (1.41.0+skills.1)"
+  "message": "match (1.41.1+skills.1)"
 }
 ```
 
 The text view prints one named line, as a header above the rest of the status:
 
 ```
-Skills revision: match (1.41.0+skills.1)
-Skills revision: mismatch: loaded 1.39.0+skills.1, on disk 1.41.0+skills.1 — start a fresh session
-Skills revision: unchecked (on disk 1.41.0+skills.1)
+Skills revision: match (1.41.1+skills.1)
+Skills revision: mismatch: loaded 1.39.0+skills.1, on disk 1.41.1+skills.1 — start a fresh session
+Skills revision: unchecked (on disk 1.41.1+skills.1)
 ```
 
 `unchecked` is the state when the flag is absent. It is not an error — an
@@ -101,7 +121,7 @@ An agent that carries only the frontmatter of the single skill it loaded can
 pass that instead:
 
 ```bash
-campaigns-os tooling status --skills-revision next-campaigns-qa@1.3.4
+npx campaigns-os tooling status --skills-revision next-campaigns-qa@1.3.4
 ```
 
 The version is checked against that skill's entry in the manifest, and the

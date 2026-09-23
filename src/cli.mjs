@@ -11064,6 +11064,29 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
   };
 }
 
+// A platform directory "holds" Campaigns OS skills when one of our slots is
+// already occupied by our copy, current or not; a slot we would only create, or
+// one occupied by someone else's skill, says nothing about that platform.
+const SKILL_ACTIONS_THAT_HOLD_OUR_COPY = new Set(["unchanged", "updated", "retired"]);
+
+export function scopeSkillStatusToInstalledPlatforms(status) {
+  if (!Array.isArray(status?.targets)) return { ...status, scope: "requested", not_installed_platforms: [] };
+  const holds = (target) => (target.skills || []).some((skill) => SKILL_ACTIONS_THAT_HOLD_OUR_COPY.has(skill?.action));
+  const installed = status.targets.filter(holds);
+  if (!installed.length) return { ...status, scope: "no_platform_installed", not_installed_platforms: [] };
+  return {
+    ...status,
+    targets: installed,
+    skills: installed.flatMap((target) => target.skills),
+    scope: "installed_platforms",
+    not_installed_platforms: status.targets.filter((target) => !holds(target)).map((target) => ({
+      platform: target.platform,
+      platform_label: target.platform_label,
+      target_directory: target.target_directory,
+    })),
+  };
+}
+
 const TOOLING_ACTIONABLE_SKILL_ACTIONS = new Set(["created", "updated", "retired"]);
 const TOOLING_CLEAN_SKILL_ACTIONS = new Set(["unchanged"]);
 
@@ -11415,7 +11438,14 @@ function toolingCommand(args) {
   const pinSources = resolvePinSources(args);
 
   const pkg = readJson(join(ROOT, "package.json"));
-  const skillStatus = installSkills(args.target, true, args.platform || "all");
+  // An explicit --target or --platform (`all` included) is checked as asked.
+  // Without either, only the platform directories that already hold a
+  // Campaigns OS skill are held to this bundle: the documented install is one
+  // platform, and reading the other two as stale told that operator to install
+  // everywhere and exit 2 on a correct setup.
+  const explicitSkillScope = isNonEmptyString(args.target) || isNonEmptyString(args.platform);
+  const allSkillStatus = installSkills(args.target, true, args.platform || "all");
+  const skillStatus = explicitSkillScope ? allSkillStatus : scopeSkillStatusToInstalledPlatforms(allSkillStatus);
   const skillActions = classifyToolingSkillActions(skillStatus.skills || []);
   const staleSkills = skillActions.actionable;
   const install = localInstallStatus(ROOT, pkg);
@@ -11487,9 +11517,21 @@ function toolingCommand(args) {
     warnings.push(`No pinned commit could be derived for this ${install.mode_label}; the package version is ${pkg.version || "unknown"}. Compare it against the commit you oriented on before relying on it.`);
   }
 
+  if (skillStatus.scope === "installed_platforms" && skillStatus.not_installed_platforms.length) {
+    const checked = skillStatus.targets.map((target) => target.platform_label).join(", ");
+    const skipped = skillStatus.not_installed_platforms.map((target) => target.platform_label).join(", ");
+    ready.push(`Skills checked for ${checked}; ${skipped} hold no Campaigns OS skills and were not checked (pass --platform to check one).`);
+  }
+
   if (staleSkills.length) {
-    const skillArgs = args.target ? ["--target", args.target] : ["--platform", args.platform || "all"];
-    actions.push(`Refresh installed skills: ${cli.invocation_prefix} install-skills ${skillArgs.join(" ")}. Restart local agent sessions afterwards.`);
+    const stalePlatforms = [...new Set(staleSkills.map((skill) => skill.platform))];
+    const invocations = args.target
+      ? [["--target", args.target]]
+      : skillStatus.scope === "installed_platforms"
+        ? stalePlatforms.map((platform) => ["--platform", platform])
+        : [["--platform", args.platform || "all"]];
+    const commands = invocations.map((skillArgs) => `${cli.invocation_prefix} install-skills ${skillArgs.join(" ")}`);
+    actions.push(`Refresh installed skills: ${commands.join(" and ")}. Restart local agent sessions afterwards.`);
   }
 
   if (install.mode === "checkout" && cli.global_binary.status === "not_found") {
@@ -11561,6 +11603,11 @@ function toolingCommand(args) {
     skills: {
       ok: staleSkills.length === 0,
       stale_count: staleSkills.length,
+      // requested: --target/--platform named the scope. installed_platforms:
+      // only platforms holding a Campaigns OS skill were checked.
+      // no_platform_installed: none held one, so every platform was checked.
+      scope: skillStatus.scope || "requested",
+      not_installed_platforms: skillStatus.not_installed_platforms || [],
       status: skillStatus,
     },
     ready,
@@ -11588,8 +11635,10 @@ export function toolingDiagnose(args, { runTooling = toolingCommand, runDoctor =
   const platform = args.platform || "all";
   // Inputs are used only by local producers, never echoed, and mutation flags
   // are not forwarded. Even an exception's message may contain a secret path.
+  // An unnamed platform is not forwarded, so status checks only the platforms
+  // that hold Campaigns OS skills, as it does when run directly.
   try {
-    tooling = runTooling({ _: ["tooling", "status"], platform, ...(typeof args.target === "string" ? { target: args.target } : {}) });
+    tooling = runTooling({ _: ["tooling", "status"], ...(args.platform ? { platform: args.platform } : {}), ...(typeof args.target === "string" ? { target: args.target } : {}) });
   } catch { /* unavailable, no raw producer exception in a support export */ }
   if (args.packet !== undefined) {
     try {

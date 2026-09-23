@@ -210,3 +210,37 @@ test("skills-revision: docs/skills-revision.md states the bundle this tree ships
     }
   }
 });
+
+test("skills-revision: every header runs the check through the pinned copy and says what an older copy's answer looks like", () => {
+  // A bare `campaigns-os` resolves through PATH. On a machine with an older
+  // global install that copy answers: it ignores --skills-revision, prints no
+  // revision line, and lists an install-skills action that replaces part of
+  // the bundle with its older text. The header is the one instruction an agent
+  // follows before any status has printed, so it carries both halves.
+  const flatten = (text) => text.replace(/\s+/g, " ");
+  for (const skill of MANIFEST.skills) {
+    const text = flatten(readFileSync(join(ROOT, skill.path), "utf8"));
+    assert.ok(
+      text.includes(`Run \`npx campaigns-os tooling status --skills-revision ${BUNDLE_REVISION}\` from the campaign's Page Kit folder`),
+      `${skill.path}: the header must run the check as \`npx campaigns-os …\` from the Page Kit folder`,
+    );
+    assert.doesNotMatch(
+      text,
+      /Run `campaigns-os tooling status --skills-revision/,
+      `${skill.path}: a bare \`campaigns-os\` check can be answered by another copy on PATH`,
+    );
+    assert.ok(
+      text.includes("If the output has no `Skills revision:` line") && text.includes("follow none of its actions"),
+      `${skill.path}: the header must say that output without a Skills revision line is not the pinned copy's`,
+    );
+  }
+});
+
+test("skills-revision: the text view always prints the Skills revision line the header tells an agent to look for", () => {
+  withTarget((target) => {
+    for (const extra of [[], ["--skills-revision", BUNDLE_REVISION]]) {
+      const run = status(target, extra);
+      assert.match(run.stdout, /^Skills revision: /m, `tooling status ${extra.join(" ")} must print the revision line`);
+    }
+  });
+});

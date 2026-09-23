@@ -670,3 +670,132 @@ test("install diagnostics: wrapper shims resolve to the script and _npx in a pro
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Without --platform or --target, only the platform directories that already
+// hold a Campaigns OS skill are held to the bundle. The documented install is
+// one platform; reading the other two as stale exited 2 on a correct setup and
+// told the operator to install everywhere.
+function runInHome(home, args) {
+  const run = spawnSync(process.execPath, [CLI, ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+    env: {
+      PATH: process.env.PATH,
+      HOME: home,
+      XDG_CONFIG_HOME: join(home, ".config"),
+      CAMPAIGNS_OS_TELEMETRY: "off",
+      CAMPAIGNS_OS_LIFECYCLE_LOG: "",
+    },
+  });
+  const stdout = run.stdout.trim();
+  return { ...run, json: stdout.startsWith("{") ? JSON.parse(stdout) : null };
+}
+
+function refreshActions(run) {
+  return run.json.actions.filter((action) => action.startsWith("Refresh installed skills:"));
+}
+
+test("a single-platform install is ready without --platform, and the skipped platforms are named", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-one-"));
+  try {
+    assert.equal(runInHome(home, ["install-skills", "--platform", "claude", "--json"]).status, 0);
+    const before = snapshotTree(home);
+
+    const run = runInHome(home, ["tooling", "status", "--json"]);
+    assert.equal(run.json.skills.ok, true, JSON.stringify(run.json.actions));
+    assert.equal(run.json.skills.stale_count, 0);
+    assert.equal(run.json.skills.scope, "installed_platforms");
+    assert.deepEqual(run.json.skills.not_installed_platforms.map((target) => target.platform), ["codex", "agents"]);
+    assert.deepEqual(refreshActions(run), []);
+    assert.ok(run.json.ready.some((line) => line.startsWith("Skills checked for Claude Code;") && line.includes("Codex")));
+
+    const human = runInHome(home, ["tooling", "status"]);
+    assert.match(human.stdout, /Skills checked for Claude Code; Codex, Shared agent skills hold no Campaigns OS skills/);
+    assert.doesNotMatch(human.stdout, /Refresh installed skills/);
+    assert.deepEqual(snapshotTree(home), before, "tooling status must not write into the skill directories");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a stale skill on the installed platform names only that platform in the refresh action", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-stale-"));
+  try {
+    assert.equal(runInHome(home, ["install-skills", "--platform", "claude", "--json"]).status, 0);
+    writeFileSync(join(home, ".claude", "skills", "next-campaigns-build", "SKILL.md"), "stale bundled skill\n");
+
+    const run = runInHome(home, ["tooling", "status", "--json"]);
+    assert.equal(run.status, 2);
+    assert.equal(run.json.skills.stale_count, 1);
+    assert.equal(run.json.skills.scope, "installed_platforms");
+    const [action, ...rest] = refreshActions(run);
+    assert.deepEqual(rest, []);
+    assert.match(action, /install-skills --platform claude\. Restart/);
+    assert.doesNotMatch(action, /--platform (all|codex|agents)/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("two stale installed platforms get one refresh command each, never --platform all", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-two-"));
+  try {
+    for (const platform of ["claude", "codex"]) {
+      assert.equal(runInHome(home, ["install-skills", "--platform", platform, "--json"]).status, 0);
+      writeFileSync(join(home, `.${platform}`, "skills", "next-campaigns-qa", "SKILL.md"), "stale bundled skill\n");
+    }
+
+    const run = runInHome(home, ["tooling", "status", "--json"]);
+    assert.equal(run.status, 2);
+    assert.equal(run.json.skills.stale_count, 2);
+    assert.deepEqual(run.json.skills.not_installed_platforms.map((target) => target.platform), ["agents"]);
+    const [action] = refreshActions(run);
+    assert.match(action, /install-skills --platform claude and .*install-skills --platform codex\. Restart/);
+    assert.doesNotMatch(action, /--platform (all|agents)/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("with no platform installed every platform is checked and the action installs them all", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-none-"));
+  try {
+    const run = runInHome(home, ["tooling", "status", "--json"]);
+    assert.equal(run.status, 2);
+    assert.equal(run.json.skills.scope, "no_platform_installed");
+    assert.deepEqual(run.json.skills.not_installed_platforms, []);
+    assert.ok(run.json.skills.stale_count > 0);
+    assert.match(refreshActions(run)[0], /install-skills --platform all\. Restart/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("an explicit --platform all still checks every platform, installed or not", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-all-"));
+  try {
+    assert.equal(runInHome(home, ["install-skills", "--platform", "claude", "--json"]).status, 0);
+
+    const run = runInHome(home, ["tooling", "status", "--platform", "all", "--json"]);
+    assert.equal(run.status, 2);
+    assert.equal(run.json.skills.scope, "requested");
+    assert.ok(run.json.skills.status.skills.some((skill) => skill.platform === "codex" && skill.action === "created"));
+    assert.match(refreshActions(run)[0], /install-skills --platform all\. Restart/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a slot held only by someone else's skill does not count as an installed platform", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-foreign-"));
+  try {
+    assert.equal(runInHome(home, ["install-skills", "--platform", "claude", "--json"]).status, 0);
+    seedSkill(join(home, ".codex", "skills"), RETIRED_ID, FOREIGN_SKILL);
+
+    const run = runInHome(home, ["tooling", "status", "--json"]);
+    assert.equal(run.json.skills.ok, true, JSON.stringify(run.json.actions));
+    assert.deepEqual(run.json.skills.not_installed_platforms.map((target) => target.platform), ["codex", "agents"]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
