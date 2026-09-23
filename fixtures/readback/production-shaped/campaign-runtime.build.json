@@ -1,0 +1,17 @@
+{
+  "schema_version": "campaign-runtime-build-packet/v0",
+  "campaign": {
+    "public_route_slug": "prodshape-fixture",
+    "campaign_directory": "prodshape-fixture",
+    "live_url_path": "/prodshape-fixture/",
+    "campaigns_app_url": null,
+    "api_key_source": "env:CAMPAIGNS_API_KEY",
+    "allowed_domains_confirmed": false
+  },
+  "spec": {
+    "map_id": "prodshape-fixture-a1b2",
+    "spec_url": "https://spec.example.invalid/api/spec/prodshape-fixture-a1b2",
+    "local_path": "../fixture/campaignspec.fixture.json"
+  },
+  "generated_at": "2026-03-01T09:00:00.000Z"
+}

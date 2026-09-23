@@ -1,0 +1,478 @@
+{
+  "schema_version": "campaign-runtime-build-context/v0",
+  "generated_at": "2026-08-02T05:05:07.959Z",
+  "source_adapter": "html_funnel",
+  "status": "prepared",
+  "packet_path": "./campaign-runtime.build.json",
+  "report_path": ".campaign-runtime/assembly-report.json",
+  "spec": {
+    "path": "../fixture/campaignspec.v42.basic.json",
+    "hash": "09a9c8c82598da2234cb3312c9d0ff3706734338272dbe899327ba0c0aa37624",
+    "active_pages": [
+      {
+        "id": "landing",
+        "type": "landing",
+        "label": "Landing",
+        "page_url": "landing/"
+      },
+      {
+        "id": "checkout",
+        "type": "checkout",
+        "label": "Checkout",
+        "page_url": "checkout/"
+      },
+      {
+        "id": "upsell",
+        "type": "upsell",
+        "label": "Upsell",
+        "page_url": "upsell/"
+      },
+      {
+        "id": "receipt",
+        "type": "thankyou",
+        "label": "Receipt",
+        "page_url": "receipt/"
+      }
+    ]
+  },
+  "source": {
+    "root": "../fixture/source-html",
+    "html_files": [
+      {
+        "path": "checkout.html",
+        "name": "checkout.html",
+        "basename": "checkout",
+        "bytes": 208,
+        "sha256": "3f6f6fffc9a6e73409cfadc00ef6847fb7775087d065cf401069b29942cbad2a"
+      },
+      {
+        "path": "landing.html",
+        "name": "landing.html",
+        "basename": "landing",
+        "bytes": 205,
+        "sha256": "d2abb04c81dd507cd1e1065ecf11dac203fdf4546cd82516e0ffc1f5f2564c2a"
+      },
+      {
+        "path": "receipt.html",
+        "name": "receipt.html",
+        "basename": "receipt",
+        "bytes": 205,
+        "sha256": "976beb9c748428e413df003aa31028cfaf5af61e6f51a6c6bef33deecf628c1b"
+      },
+      {
+        "path": "upsell.html",
+        "name": "upsell.html",
+        "basename": "upsell",
+        "bytes": 202,
+        "sha256": "766fc129cd90db12f1550977417d5571a9f5d095de1a42c4e93ebc2b25863925"
+      }
+    ],
+    "manifest": null,
+    "manifest_warnings": [],
+    "ambiguous_candidates": [],
+    "manifest_draft": null,
+    "asset_crawl": {
+      "schema_version": "source-asset-crawl/v0",
+      "scanned_files": [
+        {
+          "path": "checkout.html",
+          "kind": "html",
+          "bytes": 208,
+          "sha256": "3f6f6fffc9a6e73409cfadc00ef6847fb7775087d065cf401069b29942cbad2a"
+        },
+        {
+          "path": "landing.html",
+          "kind": "html",
+          "bytes": 205,
+          "sha256": "d2abb04c81dd507cd1e1065ecf11dac203fdf4546cd82516e0ffc1f5f2564c2a"
+        },
+        {
+          "path": "receipt.html",
+          "kind": "html",
+          "bytes": 205,
+          "sha256": "976beb9c748428e413df003aa31028cfaf5af61e6f51a6c6bef33deecf628c1b"
+        },
+        {
+          "path": "upsell.html",
+          "kind": "html",
+          "bytes": 202,
+          "sha256": "766fc129cd90db12f1550977417d5571a9f5d095de1a42c4e93ebc2b25863925"
+        }
+      ],
+      "references": [],
+      "summary": {
+        "scanned_file_count": 4,
+        "reference_count": 0,
+        "missing_count": 0,
+        "outside_source_root_count": 0,
+        "source_root_fallback_count": 0,
+        "rewrite_required_count": 0,
+        "root_assets_path_count": 0
+      },
+      "warnings": []
+    }
+  },
+  "build_brief": {
+    "schema_version": "campaigns-os-build-brief/v1",
+    "mode": "guided_draft",
+    "status": "needs_answers",
+    "input_path": null,
+    "normalized_path": ".campaign-runtime/input/campaign-build-brief.normalized.json",
+    "question_count": 2,
+    "gate_count": 0,
+    "questions": [
+      {
+        "id": "brand_palette_cta",
+        "priority": 2,
+        "field": "brand",
+        "question": "Which palette and CTA style should commerce pages use?",
+        "reason": "Commerce pages need a business-approved brand layer instead of silent template defaults. Missing brand.commerce_palette_source or brand.cta_style.",
+        "options": [
+          "landing palette + matched CTA",
+          "shared token file",
+          "template palette"
+        ],
+        "blocking": true
+      },
+      {
+        "id": "bundle_pricing_presentation",
+        "priority": 4,
+        "field": "offer_presentation.bundle_cards",
+        "question": "How should bundle cards present pricing: simple unit price, savings-led, or full accounting?",
+        "reason": "CampaignSpec owns prices; the brief owns which shopper-facing price story is appropriate. Missing offer_presentation.bundle_cards.primary_price.",
+        "options": [
+          "discounted unit price",
+          "savings-led",
+          "full accounting"
+        ],
+        "blocking": true
+      }
+    ],
+    "gates": []
+  },
+  "page_map": [
+    {
+      "page_id": "landing",
+      "source_path": "landing.html",
+      "skip_reason": null,
+      "output_path": "./src/runtime-packet-demo/landing.html",
+      "page_kit": {
+        "target_path": "landing.html",
+        "output_path": "src/runtime-packet-demo/landing.html",
+        "public_route": "/runtime-packet-demo/landing/",
+        "spec_route": "landing/",
+        "page_type": "product",
+        "permalink_required": false,
+        "frontmatter": {
+          "page_type": "product",
+          "next_url": "/runtime-packet-demo/checkout/"
+        }
+      }
+    },
+    {
+      "page_id": "checkout",
+      "source_path": "checkout.html",
+      "skip_reason": null,
+      "output_path": "./src/runtime-packet-demo/checkout.html",
+      "page_kit": {
+        "target_path": "checkout.html",
+        "output_path": "src/runtime-packet-demo/checkout.html",
+        "public_route": "/runtime-packet-demo/checkout/",
+        "spec_route": "checkout/",
+        "page_type": "checkout",
+        "permalink_required": false,
+        "frontmatter": {
+          "page_type": "checkout",
+          "next_url": "/runtime-packet-demo/upsell/"
+        }
+      }
+    },
+    {
+      "page_id": "upsell",
+      "source_path": "upsell.html",
+      "skip_reason": null,
+      "output_path": "./src/runtime-packet-demo/upsell.html",
+      "page_kit": {
+        "target_path": "upsell.html",
+        "output_path": "src/runtime-packet-demo/upsell.html",
+        "public_route": "/runtime-packet-demo/upsell/",
+        "spec_route": "upsell/",
+        "page_type": "upsell",
+        "permalink_required": false,
+        "frontmatter": {
+          "page_type": "upsell",
+          "next_url": "/runtime-packet-demo/receipt/"
+        }
+      }
+    },
+    {
+      "page_id": "receipt",
+      "source_path": "receipt.html",
+      "skip_reason": null,
+      "output_path": "./src/runtime-packet-demo/receipt.html",
+      "page_kit": {
+        "target_path": "receipt.html",
+        "output_path": "src/runtime-packet-demo/receipt.html",
+        "public_route": "/runtime-packet-demo/receipt/",
+        "spec_route": "receipt/",
+        "page_type": "receipt",
+        "permalink_required": false,
+        "frontmatter": {
+          "page_type": "receipt"
+        }
+      }
+    }
+  ],
+  "scaffold": {
+    "mode": "starter_template_scaffold",
+    "required": true,
+    "target_repo": ".",
+    "output_dir": "./src/runtime-packet-demo",
+    "handoff_skill": "next-campaigns-build",
+    "handoff_artifact": ".campaign-runtime/setup-handoff.json",
+    "reason": "Target campaign output directory already exists.",
+    "completed": true,
+    "template": "olympus",
+    "completed_at": "2026-08-02T05:10:58.515044+00:00",
+    "notes": "campaign-init --non-interactive --template olympus --slug runtime-packet-demo --overwrite; 215 files; atomic family slice (pages,_includes,_layouts,assets/css,assets/js)"
+  },
+  "template": {
+    "family": "olympus",
+    "locked": true,
+    "lock": {
+      "locked": true,
+      "locked_by": "operator_flag",
+      "confidence": "high",
+      "evidence": [
+        "prepare-build --template-family"
+      ]
+    },
+    "candidates": []
+  },
+  "adapter_decisions": {
+    "raw_html_conversion_status": "pending",
+    "source_asset_strategy": "pagekit_campaign_asset_root",
+    "route_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "config_script_strategy": "campaign_asset",
+    "commerce_shell_adoption": "not_required",
+    "wrapper_policy": "strip_document_wrappers",
+    "frontmatter_policy": "pagekit_yaml_frontmatter",
+    "script_style_reference_policy": "frontmatter_or_campaign_asset",
+    "cta_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "layout_choice": "campaign_layout",
+    "template_files_copied": {
+      "status": "pending",
+      "required_groups": [
+        "pages",
+        "_includes",
+        "_layouts",
+        "assets/css",
+        "assets/js",
+        "frontmatter_vocabulary"
+      ],
+      "groups": [],
+      "paths": []
+    }
+  },
+  "commerce_zone_findings": [
+    {
+      "path": "checkout.html",
+      "zones": [
+        "checkout"
+      ],
+      "commerce_zones": [],
+      "sdk_owned_declared": false,
+      "requires_template_shell": false,
+      "sdk_attributes": [],
+      "action": "review_and_preserve_catalog_surfaces"
+    },
+    {
+      "path": "receipt.html",
+      "zones": [
+        "receipt"
+      ],
+      "commerce_zones": [],
+      "sdk_owned_declared": false,
+      "requires_template_shell": false,
+      "sdk_attributes": [],
+      "action": "review_and_preserve_catalog_surfaces"
+    },
+    {
+      "path": "upsell.html",
+      "zones": [
+        "upsell"
+      ],
+      "commerce_zones": [],
+      "sdk_owned_declared": false,
+      "requires_template_shell": false,
+      "sdk_attributes": [],
+      "action": "review_and_preserve_catalog_surfaces"
+    }
+  ],
+  "prompts_required": [
+    {
+      "code": "BUILD_BRIEF_BRAND_PALETTE_CTA",
+      "stage": "prepare_build",
+      "message": "Which palette and CTA style should commerce pages use?",
+      "detail": {
+        "field": "brand",
+        "reason": "Commerce pages need a business-approved brand layer instead of silent template defaults. Missing brand.commerce_palette_source or brand.cta_style.",
+        "options": [
+          "landing palette + matched CTA",
+          "shared token file",
+          "template palette"
+        ],
+        "blocking": true
+      }
+    },
+    {
+      "code": "BUILD_BRIEF_BUNDLE_PRICING_PRESENTATION",
+      "stage": "prepare_build",
+      "message": "How should bundle cards present pricing: simple unit price, savings-led, or full accounting?",
+      "detail": {
+        "field": "offer_presentation.bundle_cards",
+        "reason": "CampaignSpec owns prices; the brief owns which shopper-facing price story is appropriate. Missing offer_presentation.bundle_cards.primary_price.",
+        "options": [
+          "discounted unit price",
+          "savings-led",
+          "full accounting"
+        ],
+        "blocking": true
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "id": "dec_page_map_landing",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"landing\" to source file \"landing.html\"",
+      "confidence": "high",
+      "evidence": [
+        "matched source filename against page keys: landing, landing-1, index"
+      ]
+    },
+    {
+      "id": "dec_page_map_checkout",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"checkout\" to source file \"checkout.html\"",
+      "confidence": "high",
+      "evidence": [
+        "matched source filename against page keys: checkout, checkout-1"
+      ]
+    },
+    {
+      "id": "dec_page_map_upsell",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"upsell\" to source file \"upsell.html\"",
+      "confidence": "high",
+      "evidence": [
+        "matched source filename against page keys: upsell, upsell-1"
+      ]
+    },
+    {
+      "id": "dec_page_map_receipt",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"receipt\" to source file \"receipt.html\"",
+      "confidence": "high",
+      "evidence": [
+        "matched source filename against page keys: receipt, thankyou, thankyou-1, thank-you"
+      ]
+    },
+    {
+      "id": "dec_page_kit_target_landing",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "projected CampaignSpec page \"landing\" to Page Kit target \"landing.html\" with CPK page_type \"product\"",
+      "confidence": "high",
+      "evidence": [
+        "source path \"landing.html\" remains producer provenance",
+        "target path \"src/runtime-packet-demo/landing.html\" derives from CampaignSpec route \"landing/\" and public slug \"runtime-packet-demo\""
+      ]
+    },
+    {
+      "id": "dec_page_kit_target_checkout",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "projected CampaignSpec page \"checkout\" to Page Kit target \"checkout.html\" with CPK page_type \"checkout\"",
+      "confidence": "high",
+      "evidence": [
+        "source path \"checkout.html\" remains producer provenance",
+        "target path \"src/runtime-packet-demo/checkout.html\" derives from CampaignSpec route \"checkout/\" and public slug \"runtime-packet-demo\""
+      ]
+    },
+    {
+      "id": "dec_page_kit_target_upsell",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "projected CampaignSpec page \"upsell\" to Page Kit target \"upsell.html\" with CPK page_type \"upsell\"",
+      "confidence": "high",
+      "evidence": [
+        "source path \"upsell.html\" remains producer provenance",
+        "target path \"src/runtime-packet-demo/upsell.html\" derives from CampaignSpec route \"upsell/\" and public slug \"runtime-packet-demo\""
+      ]
+    },
+    {
+      "id": "dec_page_kit_target_receipt",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "projected CampaignSpec page \"receipt\" to Page Kit target \"receipt.html\" with CPK page_type \"receipt\"",
+      "confidence": "high",
+      "evidence": [
+        "source path \"receipt.html\" remains producer provenance",
+        "target path \"src/runtime-packet-demo/receipt.html\" derives from CampaignSpec route \"receipt/\" and public slug \"runtime-packet-demo\""
+      ]
+    }
+  ],
+  "theme": {
+    "status": "missing",
+    "policy": "inspect_only",
+    "source_kind": "html_funnel",
+    "producer": {
+      "name": "unknown",
+      "version": "unknown"
+    },
+    "source_files": [],
+    "selected_source": null,
+    "producer_defaults": {
+      "matched": false,
+      "producer": "figma-sections-export",
+      "version": "v0",
+      "matched_tokens": [],
+      "unresolved_tokens": [],
+      "present_core_tokens": []
+    },
+    "confidence": "none",
+    "generated": {
+      "css_path": ".campaign-runtime/theme/brand-theme.css",
+      "report_path": ".campaign-runtime/theme/theme-report.json",
+      "safety": {
+        "ok": false,
+        "errors": [
+          {
+            "code": "theme.css.empty",
+            "message": "No generated CSS because no source tokens were selected."
+          }
+        ],
+        "warnings": []
+      },
+      "stale": {
+        "stale": false,
+        "reasons": []
+      },
+      "can_generate": false,
+      "can_auto_generate": false,
+      "overwrite_requires_force": false
+    },
+    "mappings": [],
+    "unmapped_defaults": [],
+    "warnings": [],
+    "wrote": {
+      "report": true,
+      "css": false
+    }
+  }
+}

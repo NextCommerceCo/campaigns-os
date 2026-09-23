@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { assertSecureProxyBase, remit, remitRunRecord } from "./remit.mjs";
+import { assertFetchAvailable, assertSecureProxyBase, remit, remitRunRecord } from "./remit.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -398,6 +398,17 @@ test("remitRunRecord: a plain-http non-loopback proxy base fails non-fatally and
   assert.equal(status.ok, false);
   assert.match(status.error, /must be https/);
   assert.doesNotMatch(status.error, /pk_live_abcdefgh/); // never the credential value
+});
+
+// The precondition `remit` checks before the destination gate, exported so the
+// dry-run previews in qa-publish and run-record make it too. The message is
+// asserted whole: the dry paths refuse by this exact text.
+test("assertFetchAvailable: throws without a fetch, passes with one", () => {
+  assert.throws(
+    () => assertFetchAvailable(undefined),
+    (error) => error.message === "Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.",
+  );
+  assert.equal(assertFetchAvailable(() => {}), undefined);
 });
 
 test("remit: an https proxy base still reaches fetch", async () => {

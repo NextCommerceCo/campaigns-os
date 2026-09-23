@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-readback.v2.schema.json",
+  "title": "Campaigns OS Run-Artifact Readback v2",
+  "description": "The machine-readable projection `campaigns-os readback <target> --json` writes to stdout. It serializes exactly what the rendered text view computes over a run's already-emitted artifacts (Build Packet, doctor output, build context, assembly report, QA verdict, findings export) and adds no interpretation the text view does not also carry. The readback is read-only: it writes nothing under the target, starts no process, touches no network, and records no lifecycle entry. v2 differs from v1 in one field's meaning: staleness is assessed PER ARTIFACT, and the aggregate `stale` is true when ANY loaded artifact is stale, where v1 compared only the newest artifact and so reported a set fresh whenever its newest member was. Field semantics and the exact `clean` rule live in docs/readback.md; that document and this schema move together. A consumer that recognizes v2 accepts and preserves unknown additive properties without interpreting them.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "artifacts",
+    "packet_selection",
+    "staleness",
+    "doctor",
+    "skip_cascades",
+    "divergences",
+    "clean"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "campaigns-os-readback/v2",
+      "description": "A consumer should refuse a payload whose schema_version it does not recognize rather than reading the fields it happens to know."
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "One record per artifact the readback projected, in the fixed render order (packet, doctor, context, report, qa_verdict, findings), restricted to the keys the caller asked for. The artifact's own parsed contents are deliberately absent: a consumer that wants an artifact's payload reads that artifact, so this projection never becomes an unversioned mirror of every upstream schema.",
+      "items": { "$ref": "#/$defs/artifact_row" }
+    },
+    "packet_selection": {
+      "description": "How the projected Build Packet was chosen, or null when a programmatic caller built a payload without a selection record. The CLI always supplies one.",
+      "oneOf": [{ "$ref": "#/$defs/packet_selection" }, { "type": "null" }]
+    },
+    "staleness": {
+      "description": "The per-artifact freshness assessment, or null when a programmatic caller built a payload without one. The CLI always supplies one.",
+      "oneOf": [{ "$ref": "#/$defs/staleness" }, { "type": "null" }]
+    },
+    "doctor": { "$ref": "#/$defs/doctor_summary" },
+    "skip_cascades": {
+      "type": "array",
+      "description": "Skipped QA assertions grouped by the failure that blocked them, derived from each skipped assertion's evidence.blocked_by. One record per distinct blocker, in first-seen order. Empty when no QA verdict loaded or none of its assertions were skipped. The grouping is the readback's own projection layer.",
+      "items": { "$ref": "#/$defs/skip_cascade" }
+    },
+    "divergences": {
+      "type": "array",
+      "description": "Where two artifacts record different states for one stage: the assembly report calls a stage completed while the QA verdict fails an assertion whose id is namespaced to that stage. One record per stage, in the order the failures were seen. The readback reports the disagreement and does not adjudicate it. This too is the readback's own layer.",
+      "items": { "$ref": "#/$defs/divergence" }
+    },
+    "clean": {
+      "type": "boolean",
+      "description": "True only when every artifact the readback found is loaded or absent (never unreadable or unrecognized), staleness is computable and NO loaded artifact is stale, staleness.unparseable_keys is empty (no loaded artifact recorded an age the readback could not read), divergences is empty, and doctor.error_count is zero. A readback-integrity flag, not a verdict: a blocked QA verdict whose artifacts all read cleanly is still clean, because the readback saw exactly what Campaigns OS recorded. docs/readback.md states the rule and its limits."
+    }
+  },
+  "$defs": {
+    "artifact_key": {
+      "type": "string",
+      "enum": ["packet", "doctor", "context", "report", "qa_verdict", "findings"]
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "ISO-8601 UTC at second precision with a Z suffix, rendered by the same formatter the text view uses so both modes name the same instant identically."
+    },
+    "artifact_row": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["key", "path", "state", "detail"],
+      "properties": {
+        "key": { "$ref": "#/$defs/artifact_key" },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The path the readback read, as resolved from the target root, a --<artifact> override, or — for packet — Build Packet discovery. --example reports the bundled sample's paths relative to the package root so the sample's output is identical wherever the package is installed."
+        },
+        "state": {
+          "type": "string",
+          "enum": ["loaded", "absent", "unreadable", "unrecognized"],
+          "description": "loaded: read and recognized. absent: no file at that path. unreadable: the bytes could not be read or parsed (over the 32 MiB read bound, not UTF-8, not JSON). unrecognized: parsed, but not a shape this readback projects."
+        },
+        "detail": {
+          "type": "string",
+          "description": "The readback's explanation for a non-loaded state, or — for a loaded artifact named in staleness.unparseable_keys — the shape of the generated_at value that did not parse, so a consumer reading artifacts alone can see that this artifact's age was never established. The value itself is deliberately not reproduced here. The empty string for every other loaded artifact and for an absent one."
+        }
+      }
+    },
+    "packet_selection": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["mode", "signal", "selected", "candidates_considered", "rejected"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["explicit", "default", "discovered"],
+          "description": "explicit: the caller passed --packet. default: the chosen packet is the default-named campaign-runtime.build.json, including a target with no packet at all, where the default path is still the path reported absent. discovered: freshness selected a suffixed packet."
+        },
+        "signal": {
+          "type": "string",
+          "enum": ["explicit", "sole_candidate", "generated_at", "none"],
+          "description": "What decided it. Freshness is the packet's own recorded generated_at, never the file's modification time: an mtime is rewritten by a clone, a checkout, or a copy without any run having recorded anything, so content-only selection keeps discovery a pure function of the bytes on disk."
+        },
+        "selected": {
+          "description": "The file name discovery chose, or null when no discovery chose one (the explicit and none signals). The full path is the packet row's path in artifacts.",
+          "type": ["string", "null"]
+        },
+        "candidates_considered": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The file names of the valid candidates discovery compared, default-first then name order. Empty for explicit mode, where no discovery runs."
+        },
+        "rejected": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rejected_candidate" },
+          "description": "Candidates discovery skipped. Root-level files matching the packet naming land here when they did not parse, were not an object, or did not declare a recognized packet schema_version. When no valid root candidate exists, a packet sitting only at .campaign-runtime/campaign-runtime.build.json is recorded here too: that sidecar location is not a discovery candidate, and the reason tells the caller to pass --packet."
+        }
+      }
+    },
+    "rejected_candidate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["path", "reason"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "staleness": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "computable",
+        "stale",
+        "stale_keys",
+        "unparseable_keys",
+        "artifacts",
+        "newest_key",
+        "head_time",
+        "head_detail",
+        "artifact_times"
+      ],
+      "properties": {
+        "computable": {
+          "type": "boolean",
+          "description": "True when at least one loaded artifact carried a parseable generated_at AND the checkout's HEAD reflog was readable."
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "True when ANY loaded artifact's generated_at predates the last recorded HEAD movement. This is the v1 -> v2 change of meaning: v1 compared only the newest artifact, so one regenerated artifact reported the whole set fresh. Always false when computable is false; absence of the signal is not evidence of freshness."
+        },
+        "stale_keys": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifact_key" },
+          "description": "The stale artifact keys, in the fixed render order. Empty when nothing is stale or the comparison is not computable."
+        },
+        "unparseable_keys": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifact_key" },
+          "description": "The loaded artifacts that RECORDED a generated_at this readback could not parse, in the fixed render order. Their age was never established — they are neither fresh nor stale, they are absent from artifacts and artifact_times, and clean is false while this list is non-empty, because an unknown age must never read as a fresh one. Each one's artifact row carries the shape of the refused value in its detail. An artifact that carries NO generated_at key at all is a different case: it recorded no age to check, so it is absent from this list and is not by itself unclean (though with no other artifact carrying one, the comparison is not computable). Independent of computable and stale, which keep their meanings: a set whose only comparable artifact is fresh still reports stale false."
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/artifact_freshness" },
+          "description": "Every loaded artifact that carried a parseable generated_at, keyed by artifact key, in render order. An artifact with no parseable generated_at is neither fresh nor stale and is absent from this map; if it is the only artifact, the assessment is not computable. Where it recorded a generated_at that did not parse, unparseable_keys names it."
+        },
+        "newest_key": {
+          "description": "The artifact key holding the newest generated_at, or null when not computable. Information only in v2: it no longer decides the aggregate.",
+          "oneOf": [{ "$ref": "#/$defs/artifact_key" }, { "type": "null" }]
+        },
+        "head_time": {
+          "description": "The last recorded HEAD movement, or null when the reflog gave no usable time.",
+          "oneOf": [{ "$ref": "#/$defs/utc_timestamp" }, { "type": "null" }]
+        },
+        "head_detail": {
+          "type": "string",
+          "description": "Why head_time is null; the empty string when it is not."
+        },
+        "artifact_times": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/utc_timestamp" },
+          "description": "Every loaded artifact's parseable generated_at, keyed by artifact key. Carried unchanged from v1 for consumers that already read it; artifacts carries the same instants plus each one's verdict."
+        }
+      }
+    },
+    "artifact_freshness": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generated_at", "stale"],
+      "properties": {
+        "generated_at": { "$ref": "#/$defs/utc_timestamp" },
+        "stale": {
+          "type": "boolean",
+          "description": "True when the last recorded HEAD movement is later than this artifact's generated_at. False when there is no HEAD signal to compare against."
+        }
+      }
+    },
+    "doctor_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["present", "status", "error_count", "warning_count", "warning_groups"],
+      "properties": {
+        "present": {
+          "type": "boolean",
+          "description": "Whether a doctor output loaded. When false, status is null and both counts are 0: those zeros record an absence, not an observation."
+        },
+        "status": {
+          "type": ["string", "null"],
+          "description": "Doctor's own status string, unreinterpreted."
+        },
+        "error_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The length of doctor's errors list (0 when the field is missing or not a list)."
+        },
+        "warning_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The total number of object-shaped warnings grouped below."
+        },
+        "warning_groups": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["contract-static", "repo-observed"],
+          "description": "The readback's own two-way grouping of doctor warnings, carrying each warning as doctor wrote it. The labels are the readback's projection layer, not doctor's vocabulary.",
+          "properties": {
+            "contract-static": {
+              "type": "array",
+              "items": { "type": "object" },
+              "description": "Codes under the frontmatter.* prefixes. These restate the template family's shared frontmatter contract and repeat verbatim on every doctor pass while that contract is in force. Their persistence does not mean a flagged value is still unfixed, and their disappearance is not how a fix is confirmed. A gate must not treat these as repository state."
+            },
+            "repo-observed": {
+              "type": "array",
+              "items": { "type": "object" },
+              "description": "Every other code: not in the contract-static table, so its message reflects this repository, spec, or build as doctor saw it."
+            }
+          }
+        }
+      }
+    },
+    "skip_cascade": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["blocked_by", "families"],
+      "properties": {
+        "blocked_by": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The recorded blocking assertion, or the literal \"(no blocked_by recorded)\" when the verdict named none."
+        },
+        "families": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The skipped assertions' families, falling back to the assertion id and then to \"(unnamed)\"."
+        }
+      }
+    },
+    "divergence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["stage", "assertion_ids"],
+      "properties": {
+        "stage": { "type": "string", "minLength": 1 },
+        "assertion_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The failing QA assertion ids attributed to that stage."
+        }
+      }
+    }
+  }
+}

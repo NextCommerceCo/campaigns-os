@@ -5519,6 +5519,69 @@
         }
       ],
       "entry_sha256": "acc83968f757fbcb96577b1232f0af280bea6d7e98b401d7b14e61aeaed144c0"
+    },
+    {
+      "id": "RL-0135",
+      "sequence": 135,
+      "date": "2026-09-22",
+      "kind": "release",
+      "surface_version": "1.39.0",
+      "changelog_section": "1.39.0",
+      "changelog_sha256": "7fa7017fbcb7b6d82f2571e3179d54193f60d012e11683e0a831f692bb8deb44",
+      "agent_impact": "A new supported CLI command, `campaigns-os readback <target-repo-root> [--json]`, projects a read-only view of a run's emitted artifacts and writes nothing under the target (no lifecycle journal entry either). Its JSON payload is the new `campaigns-os-readback/v2` contract: staleness is assessed per artifact, so `staleness.stale` is true when ANY loaded artifact predates the checkout's last HEAD movement, where the previous projection compared only the newest artifact and reported such a set fresh. A consumer gating on freshness should accept `campaigns-os-readback/v2` and read `staleness.stale_keys` or `staleness.artifacts` to name the stale artifacts. An artifact that recorded a `generated_at` the readback cannot parse has an age it never established: `staleness.unparseable_keys` names those artifacts in render order, their artifact rows carry the shape of the refused value rather than the value, and `clean` is false whenever that list is non-empty, so an unknown age can no longer ride along on a fresh sibling. `computable` and `stale` keep their meanings, and an artifact carrying no `generated_at` key at all is unchanged — it recorded no age to check, so it stays out of the comparison and is not by itself unclean. Separately, the four mutating commands that lacked one gain `--dry-run`: `run-record`, `qa publish`, `checkpoint waive` and `theme waive`. Each validates and assembles exactly as the real command does, writes nothing under the target and opens no connection, and exits as the real command would — so an agent can preview a Run Record, a verdict publish or a waiver before committing to it. Validation is not weaker under the flag: every check on the route from argv to the first effect runs, by the same code, including the ones that live inside the effect — an invalid Run Record is refused with the writer's own message and exit 1, a waive over a report that is not an Assembly Report object is refused as the commit refuses it, and a `--proxy-base` the transport declines before it opens a socket fails `qa publish --dry-run` with `publish_failed` and exit 1 exactly as the real publish does. The envelopes gain `dry_run: true` plus `would_write`/`would_remit` and `would_remit_refused` (run-record), `would_publish`/`would_post` with `status: \"dry_run\"` (qa publish), and `would_write` with `status: \"dry_run\"` (both waives); `run end` carries the flag through and leaves the session open. On those commands a `--dry-run` invocation also appends no command-lifecycle entry and runs no stale-session closeout, so an idle session is left on disk for a real invocation and `run end --dry-run` at a root whose only session is stale refuses with `No active run session to end`; on a command that does not implement the flag (`qa run`, say) the shared parser still accepts it and the command behaves exactly as before, lifecycle entry included. No existing command, flag or output changed.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.39.0 and add the readback command, its v2 schema and its contract doc to the supported surface."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "readback",
+          "summary": "Dispatch the new read-only readback command, document it in help, and exempt it from lifecycle-journal capture and from run-session resolution and stale-session sweeping, so its --packet is read only by the readback's own bounded reader. Add --dry-run to run-record, qa publish, checkpoint waive and theme waive (help, envelopes and exit codes unchanged for the real invocations), carry it through run end without clearing the session, route both waive paths through commitAssemblyReport itself so a dry run makes every check the commit makes and differs only in returning no report to write, validate the Run Record on both paths before the write that would otherwise be the only caller of the validator, put the remit destination through the transport's own gate under the flag, and exempt --dry-run invocations of the commands that implement the flag (DRY_RUN_COMMANDS) from lifecycle-journal capture and from the pre-dispatch stale-session sweep, leaving every other command's behaviour under the flag unchanged."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-readback.v2.schema.json",
+          "surface_entry": "schemas/campaigns-os-readback.v2.schema.json",
+          "summary": "Publish the campaigns-os-readback/v2 payload shape, including per-artifact staleness, the any-artifact aggregate, and staleness.unparseable_keys with the clean rule that an artifact of unestablished age makes the projection unclean."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Document the readback contract: fields, the clean rule including the unknown-age condition and how it differs from an artifact that recorded no generated_at, exit codes, the bundled --example sample, and the v1 to v2 delta."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface version 1.39.0 and the readback command."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime reference for surface version 1.39.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version 1.39.0 and ship docs/readback.md in the npm pack."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Regenerated lockfile version fields for 1.39.0."
+        }
+      ],
+      "entry_sha256": "ebd6da5237985b3bc5dbb4b3486818a32b97a5259d17a9d981662fc4d009658b"
     }
   ]
 }

@@ -1,0 +1,237 @@
+{
+  "schema_version": "1.0",
+  "run_id": "MSBCJ4WIC7R6BMKJQRU4OC4K6T",
+  "campaign_slug": "runtime-packet-demo-k9x2",
+  "campaign_ref_id": 424242,
+  "spec_version": "4.2",
+  "spec_hash": "sha256:ce1d4ed5dd469870ee6ce91b000613e0b760384e3318b347d34822d3948c94bb",
+  "started_at": "2026-08-02T05:14:51.666Z",
+  "completed_at": "2026-08-02T05:14:51.667Z",
+  "runtime": "campaigns-os-node-qa@0.1.0-alpha.0",
+  "operator": "operator@local",
+  "base_url": "http://localhost:3000/runtime-packet-demo/",
+  "entry_urls": [
+    {
+      "funnel_id": "main",
+      "funnel_name": "Main",
+      "page_id": "landing",
+      "page_type": "landing",
+      "label": "Landing",
+      "url": "http://localhost:3000/runtime-packet-demo/landing/"
+    }
+  ],
+  "page_urls": [
+    {
+      "funnel_id": "main",
+      "page_id": "landing",
+      "page_type": "landing",
+      "label": "Landing",
+      "url": "http://localhost:3000/runtime-packet-demo/landing/"
+    },
+    {
+      "funnel_id": "main",
+      "page_id": "checkout",
+      "page_type": "checkout",
+      "label": "Checkout",
+      "url": "http://localhost:3000/runtime-packet-demo/checkout/"
+    },
+    {
+      "funnel_id": "main",
+      "page_id": "upsell",
+      "page_type": "upsell",
+      "label": "Upsell",
+      "url": "http://localhost:3000/runtime-packet-demo/upsell/"
+    },
+    {
+      "funnel_id": "main",
+      "page_id": "receipt",
+      "page_type": "thankyou",
+      "label": "Receipt",
+      "url": "http://localhost:3000/runtime-packet-demo/receipt/"
+    }
+  ],
+  "tested_urls": [],
+  "disposition": "blocked",
+  "assertions": [
+    {
+      "id": "polish.evidence_incomplete",
+      "family": "polish_gate",
+      "page": "campaign",
+      "status": "fail",
+      "severity": "blocker",
+      "expected": "current structured Polish evidence produced by next-campaigns-polish",
+      "actual": "Polish evidence is incomplete for the current build. Run next-campaigns-polish before QA.",
+      "evidence": {
+        "reason": "Polish evidence is incomplete for the current build. Run next-campaigns-polish before QA.",
+        "build_fingerprint": "sha256:43ed73beb0af5aa557d7ec83b4c2a91c3ad0d10f8e6c868ccdbd45f455ed33ee",
+        "source_build_fingerprint": null,
+        "performed_by": null,
+        "problems": [
+          "stages.polish.evidence.visual_review is missing or incomplete.",
+          "stages.polish.evidence.template_residue_review.starter_favicon still indicates starter-template favicon leakage.",
+          "stages.polish.evidence.checkout_review must confirm initial checkout field labels/placeholders/hints."
+        ],
+        "required_actions": [
+          {
+            "id": "run_polish",
+            "kind": "skill",
+            "command": "next-campaigns-polish",
+            "description": "Run the distinct Polish stage and record stages.polish.performed_by, source_build_fingerprint, source_package_material_fingerprint when available, completed_at, and structured evidence."
+          }
+        ],
+        "scope_source": "assembly_report"
+      }
+    },
+    {
+      "id": "theme_gate.nothing_generatable",
+      "family": "theme_gate",
+      "page": "campaign",
+      "status": "pass",
+      "expected": "theme gate pass or not applicable",
+      "actual": "No generatable brand theme was found; the gate passes without a brand layer.",
+      "evidence": {
+        "code": "theme_gate.nothing_generatable",
+        "commerce_pages": [
+          "checkout",
+          "upsell",
+          "receipt"
+        ],
+        "scope_source": "doctor_derived_scope"
+      }
+    },
+    {
+      "id": "funnel-flow.blocked_by_polish_gate",
+      "family": "funnel-flow",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "funnel-flow checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "meta-tags.blocked_by_polish_gate",
+      "family": "meta-tags",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "meta-tags checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "api-metadata.blocked_by_polish_gate",
+      "family": "api-metadata",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "api-metadata checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "browser-runtime.blocked_by_polish_gate",
+      "family": "browser-runtime",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "browser-runtime checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "template_residue.blocked_by_polish_gate",
+      "family": "template_residue",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "template_residue checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "pricing.blocked_by_polish_gate",
+      "family": "pricing",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "pricing checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "browser-test-order.blocked_by_polish_gate",
+      "family": "browser-test-order",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "browser-test-order checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "browser-receipt-rendering.blocked_by_polish_gate",
+      "family": "browser-receipt-rendering",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "browser-receipt-rendering checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "analytics-correctness.blocked_by_polish_gate",
+      "family": "analytics-correctness",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "analytics-correctness checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "analytics-parity.blocked_by_polish_gate",
+      "family": "analytics-parity",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "analytics-parity checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    },
+    {
+      "id": "parity-capture.blocked_by_polish_gate",
+      "family": "parity-capture",
+      "page": "campaign",
+      "status": "skipped",
+      "expected": "parity-capture checks executed",
+      "actual": "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      "evidence": {
+        "blocked_by": "polish.evidence_incomplete"
+      }
+    }
+  ],
+  "test_orders": [],
+  "exceptions": [
+    {
+      "id": "polish.evidence_incomplete",
+      "family": "polish_gate",
+      "page": "campaign",
+      "url": null,
+      "status": "fail",
+      "severity": "blocker",
+      "expected": "current structured Polish evidence produced by next-campaigns-polish",
+      "actual": "Polish evidence is incomplete for the current build. Run next-campaigns-polish before QA."
+    }
+  ]
+}

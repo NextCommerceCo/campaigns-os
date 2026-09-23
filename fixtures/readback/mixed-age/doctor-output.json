@@ -1,0 +1,23 @@
+{
+  "schema_version": "campaigns-os-doctor-output/v0",
+  "generated_at": "2026-09-01T12:00:00.000Z",
+  "status": "ready_with_warnings",
+  "ok": true,
+  "errors": [],
+  "warnings": [
+    {
+      "code": "frontmatter.demoOnlyValues",
+      "message": "Replace demo-only starter value before launch: packages.main_package=1"
+    },
+    {
+      "code": "copy.placeholder_headline",
+      "message": "Fixture headline still reads as placeholder copy"
+    }
+  ],
+  "derived": {
+    "map_id": "fixture-mixed-age-b7k3",
+    "public_route_slug": "fixture-mixed-age",
+    "template_family": "olympus"
+  },
+  "_fixture_note": "Synthetic. This doctor output is the FRESH half of the mixed-age case: its generated_at is newer than the HEAD movement the test writes, so it is the newest loaded artifact and the one the v1 rule looked at alone."
+}

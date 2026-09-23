@@ -103,7 +103,7 @@ Usage:
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
-  campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--json]   # post an already-stored verdict to the QA portal; no re-run, no orders
+  campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--dry-run] [--json]   # post an already-stored verdict to the QA portal; no re-run, no orders
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
   campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--browser]   # L7: QA a built _site/ with no packet/spec
@@ -150,6 +150,10 @@ Options:
                                   per the Run Record (already_published), an untrusted one, or one for another
                                   campaign. Exit 2 on a refusal, 1 on a failed post, 0 when published.
   --republish                     qa publish: post a verdict its Run Record already records as published.
+  --dry-run                       qa publish: run every refusal check and print what would be posted (endpoint,
+                                  verdict run id, payload bytes) without the POST. Nothing is sent and the Run
+                                  Record is not stamped; a refusal still exits 2, a clean dry run exits 0
+                                  (--json: dry_run, would_publish, would_post).
   --no-remit                     When an ambient run session is active, write the local Run Record but skip Run Telemetry remit.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.

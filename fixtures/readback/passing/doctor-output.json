@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "status": "ready",
+  "errors": [],
+  "warnings": [],
+  "ready": [
+    "Build Packet schema campaign-runtime-build-packet/v0",
+    "Template family \"olympus\" is certified (commerce catalog + brand contract)",
+    "Built routes match CampaignSpec page routes (4/4 verified)"
+  ],
+  "derived": {
+    "map_id": "runtime-packet-demo-k9x2",
+    "public_route_slug": "runtime-packet-demo",
+    "template_family": "olympus",
+    "theme_gate": {
+      "status": "pass",
+      "code": "theme_gate.nothing_generatable",
+      "reason": "No generatable brand theme was found; the gate passes without a brand layer."
+    },
+    "polish_gate": {
+      "status": "pass",
+      "code": "polish.evidence_complete",
+      "reason": "Structured polish evidence is current for the build fingerprint."
+    }
+  },
+  "next": {
+    "stage": "qa",
+    "status": "ready",
+    "owner": "qa",
+    "blocked_stages": []
+  }
+}

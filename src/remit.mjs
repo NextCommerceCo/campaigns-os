@@ -81,6 +81,22 @@ export function assertSecureProxyBase(proxyBase, { label = "Remit", credential =
   throw new Error(`${label}: --proxy-base must be https (or a loopback host for local testing); declining to send ${subject} over ${url.protocol}//${url.host}.`);
 }
 
+/**
+ * The transport's OTHER precondition, checked before the destination gate: a
+ * fetch to send with. Exported because a preview must make it too — `qa
+ * publish --dry-run` and `run-record --dry-run` call this exact function, so a
+ * runtime without a global fetch refuses the dry path by the same message the
+ * real send throws, instead of previewing a POST that cannot be made.
+ * Throws; returns nothing. There is no default: the caller passes the fetch it
+ * would actually send with, so `assertFetchAvailable(undefined)` is a refusal
+ * rather than a silent fallback to the global that may not be there either.
+ */
+export function assertFetchAvailable(fetchImpl) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.");
+  }
+}
+
 function byteLength(value) {
   return Buffer.byteLength(String(value), "utf8");
 }
@@ -158,9 +174,7 @@ export async function remit(path, payload, proxyBase, {
   credential = undefined,
   onResponse = null,
 } = {}) {
-  if (typeof fetchImpl !== "function") {
-    throw new Error("Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.");
-  }
+  assertFetchAvailable(fetchImpl);
   // What the gate says must match what this request actually carries. A caller
   // that names its credential wins; otherwise infer it from the headers this
   // module knows carry one (never from a bare Accept or Content-Type), so a

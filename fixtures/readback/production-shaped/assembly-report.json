@@ -1,0 +1,60 @@
+{
+  "schema_version": "campaign-runtime-assembly-report/v0",
+  "run_id": "asm_1767000000000",
+  "generated_at": "2026-03-01T09:00:02.000Z",
+  "status": "blocked_at_assembly",
+  "identity": {
+    "map_id": "prodshape-fixture-a1b2",
+    "public_route_slug": "prodshape-fixture",
+    "campaign_directory": "prodshape-fixture",
+    "live_url_path": "/prodshape-fixture/",
+    "spec_hash": "1f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c5b6a7988"
+  },
+  "inputs": {
+    "packet_path": "./campaign-runtime.build.json",
+    "context_path": ".campaign-runtime/build-context.json",
+    "spec_path": "../fixture/campaignspec.fixture.json",
+    "source": {"kind": "html_funnel", "root": "../fixture/source-html"},
+    "target_repo": "."
+  },
+  "template_family": {
+    "value": "fixture-family",
+    "locked": false,
+    "locked_by": null,
+    "commerce_catalog_version": null,
+    "candidates": []
+  },
+  "stages": {
+    "prepare_build": {
+      "stage": "prepare_build",
+      "status": "completed",
+      "inputs": [],
+      "outputs": ["./campaign-runtime.build.json"],
+      "blockers": [],
+      "warnings": []
+    },
+    "assembly": {
+      "stage": "assembly",
+      "status": "blocked",
+      "inputs": [],
+      "outputs": [],
+      "blockers": [
+        {
+          "code": "MISSING_SOURCE_PAGE",
+          "message": "No matching source page was found for the declared checkout layout",
+          "stage": "assembly",
+          "page_id": "page_fixture_01",
+          "detail": "Declared layout fixture-checkout has no source counterpart under source-html"
+        },
+        {
+          "code": "ASSET_SWEEP_INCOMPLETE",
+          "detail": "Two fixture assets referenced by landing were not copied into the build output",
+          "stage": "assembly",
+          "page_id": "page_fixture_02"
+        },
+        "assembly halted before the remaining pages were attempted"
+      ],
+      "warnings": []
+    }
+  }
+}
