@@ -11536,10 +11536,11 @@ function toolingCommand(args) {
   if (skillScope.scope === "no_platform_installed") {
     // Nothing to refresh: the documented install is one platform, the
     // harness in use, so name the choice rather than installing everywhere.
-    // The command is runnable as printed (Claude Code, the documented install);
-    // the other platforms are named in prose, never as a `<a|b>` template a
-    // shell would read as a redirect.
-    actions.push(`Install bundled skills for the harness you use: ${cli.invocation_prefix} install-skills --platform claude (or --platform codex for Codex, --platform agents for shared agent skills such as Cursor's). Restart local agent sessions afterwards.`);
+    // The command ends its own sentence and is runnable as printed (Claude
+    // Code, the documented install). The other platforms follow in a separate
+    // sentence of prose: no `<a|b>` template or parenthesis a shell would read
+    // as a redirect or a subshell if the command were copied with it.
+    actions.push(`Install bundled skills for the harness you use: ${cli.invocation_prefix} install-skills --platform claude. Use --platform codex for Codex, or --platform agents for shared agent skills such as Cursor's. Restart local agent sessions afterwards.`);
   } else if (staleSkills.length) {
     const stalePlatforms = SKILL_PLATFORMS.map((platform) => platform.id)
       .filter((id) => staleSkills.some((skill) => skill.platform === id));
