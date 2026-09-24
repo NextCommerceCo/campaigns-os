@@ -230,3 +230,26 @@ for(const disposition of ['ready','ready_with_exceptions','blocked']) test(`QA $
  const report=readFileSync(join(dir,'.campaign-runtime','assembly-report.json'),'utf8');writeFileSync(join(dir,'.campaign-runtime','custom-report.json'),report);
  const custom=nextStage(null,{packet,'no-write':true},null);assert.equal(custom[PROGRESS_OBSERVATION].workspace.reportPath,join(dir,'.campaign-runtime','custom-report.json'));
 }));
+
+test('local-spec progress binds its own report and revision without claiming saved Map alignment',scratch(async dir=>{
+ const input=setup(dir);
+ delete input.spec.map_id;
+ input.spec.spec_identity={local_spec_id:'local-progress'};
+ writeFileSync(join(dir,'spec.json'),JSON.stringify(input.spec));
+ input.workspace.packet.spec={map_id:null,local_spec_id:'local-progress',local_path:'spec.json'};
+ input.report.identity={map_id:null,local_spec_id:'local-progress',spec_material_hash:specMaterialHash(input.spec)};
+ const result=projectProgressObservation(input);
+ assert.equal(result.identity.map_id,null);
+ assert.equal(result.identity.local_spec_id,'local-progress');
+ assert.equal(result.identity.map_revision_hash,null);
+ assert.equal(result.identity.saved_revision_alignment,'unconfirmed');
+ assert.equal(result.stages[2].build_binding,'matching');
+ const saved=await snapshot({...result});
+ assert.deepEqual(await verifyProgressSnapshot(saved),{ok:true,errors:[]});
+ assert.equal(progressStorageKey(saved,H('d')),null,'no portal storage key');
+ input.report.identity.local_spec_id='other-local';
+ assert.ok(projectProgressObservation(input).stages.every(stage=>stage.status==='unknown'));
+ input.report.identity.local_spec_id='local-progress';
+ input.spec.campaign.slug='changed';writeFileSync(join(dir,'spec.json'),JSON.stringify(input.spec));
+ assert.ok(projectProgressObservation(input).stages.every(stage=>stage.status==='unknown'));
+}));

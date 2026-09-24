@@ -42,6 +42,7 @@ export const QA_VERDICT_PUBLISH_STATES = Object.freeze(["skipped", "ok", "failed
  * must not claim a credential is travelling in clear.
  */
 export async function publishQaVerdict(verdict, proxyBase, { fetchImpl = globalThis.fetch, remitImpl = remit } = {}) {
+  if (verdict?.local_spec_id != null) return { ...skippedQaVerdictPublish(), reason: "local_spec" };
   let httpStatus = null;
   let response = null;
   let failure = null;

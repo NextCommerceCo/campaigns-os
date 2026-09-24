@@ -2,6 +2,23 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.0] - 2026-09-24
+
+### Added
+
+- Agent-authored CampaignSpecs can use a stable `spec_identity.local_spec_id`
+  instead of a saved Map. Preparation preserves that identity in packets and
+  reports; doctor, polish, QA, progress, readback and run closeout distinguish it
+  from both the public route and saved Map identity. Material hashes continue
+  to bind each spec revision, including across fresh checkouts.
+- Packet-based local QA writes full verdicts and committed sidecars with the
+  local ID, refuses foreign or stale local reports, and never publishes them to
+  the Map portal. `qa publish` refuses local-spec packets. Existing saved-Map
+  workflows retain their identity and publication behavior.
+- Local setup and intake instructions let the coding agent author the spec
+  from prepared HTML, a brief and verified configured commerce. Existing
+  certification, source, runtime, polish and checkout proof gates still apply.
+
 ## [1.42.0+agent.2] - 2026-09-24
 
 ### Fixed

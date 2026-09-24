@@ -15,6 +15,50 @@ It answers:
 
 The current schema is `schemas/campaign-runtime-build-packet.v0.schema.json`.
 
+## Local-spec entry
+
+A saved Map is optional for a prepared-HTML build. The coding agent authors an
+ordinary CampaignSpec from the brief, source design and configured campaign's
+real commerce values, following `schemas/campaign-spec.v4.schema.json`. The
+operator supplies the selected store/campaign, public Campaigns API key, intended
+pages and commercial choices, plus store contact details and policy URLs. Verify
+the store/campaign binding and package/offer references; do not guess commerce
+values. No gateway or Map provisioning is required for this entry.
+
+Set `spec_identity.local_spec_id` to a new UUID once, commit it with the spec,
+and keep it unchanged through revisions and fresh checkouts. It accepts 1–64
+letters, digits, underscores or hyphens. Set `spec_identity.public_route_slug`
+to the intended route. Omit `map_id`, saved-Map URLs and saved-Map revision
+metadata; a local ID is never a Map ID. A spec declaring both kinds is refused.
+A separately authored campaign gets a new local ID even if its route matches.
+
+```sh
+npx --no-install campaigns-os start --spec campaign-spec.json --source source-html --target . --template-family <certified-family> --deploy-target local-serve
+npx --no-install campaigns-os next --packet campaign-runtime.build.json
+```
+
+The packet and report retain `map_id: null` and carry `local_spec_id`. Doctor,
+report writes, polish capture, progress, run closeout and QA compare that local
+identity. Material spec hashes still bind the current revision; a changed ID or
+content cannot reuse earlier proof. After a material revision, follow `next` to
+refresh preparation and affected evidence. Keep the spec, source, dependency
+pins and canonical sidecars in Git. Use `readback` and `next` after a fresh
+checkout; identity survives the move, but proof freshness is assessed again.
+
+Run QA through `--packet`. Local verdicts use the storage key
+`local-spec-<local_spec_id>` and carry the explicit ID in the full verdict and
+committed sidecar. A matching route alone cannot adopt a verdict. Local QA is
+never posted to the Map portal, including with `--post-verdict`; `qa publish`
+refuses it. Progress remains local with `map_id_missing`. Run Telemetry retains
+its existing consent controls. `spec derive --write-map` requires a real saved
+Map. Moving to a saved Map requires fresh preparation and evidence; this entry
+does not claim saved-Map revision alignment.
+
+Existing saved-Map specs and packets continue to work. The identity change does
+not relax template certification, source proof, store/SDK parity, polish,
+commerce checks, or typed-card checkout proof. Resolve their reported gates;
+localhost readiness is not production approval.
+
 ## Root-Served Campaigns (`campaign.route_root`)
 
 Most campaigns are served under a slug prefix (`/<public_route_slug>/...`), and
@@ -78,7 +122,7 @@ campaigns-os page-kit sync --packet campaign-runtime.build.json [--dry-run] [--j
 ```
 
 The CampaignSpec is the authority for the Store Profile: those values are
-authored in the Map, never in the repo, so `page-kit sync` writes the nine
+authored in the saved Map or the repository-owned local spec, so `page-kit sync` writes the nine
 fields the spec carries (`campaign.store_*`) unconditionally. The SDK pin is
 different. On an existing campaign the repo pin moves first and the Map/spec
 is stale until someone re-saves it, so a spec → repo write would undo a bump

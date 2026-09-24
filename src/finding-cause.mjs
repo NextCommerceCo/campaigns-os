@@ -1,3 +1,4 @@
+import { campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 // Per-finding cause class — "did the change under test cause this?"
 //
 // A run that surfaces eleven findings, none of them caused by the change being
@@ -340,12 +341,13 @@ import { readRunRecordsForTarget } from "./run-record.mjs";
  * against a non-adjacent one and report findings introduced in between as
  * pre-existing.
  */
-export function findPriorRunRecord({ baseDir, mapId = null, currentRunId = null } = {}) {
+export function findPriorRunRecord({ baseDir, mapId = null, localSpecId = null, currentRunId = null } = {}) {
   if (!text(baseDir)) return null;
   for (const entry of readRunRecordsForTarget(baseDir)) {
     const record = entry?.record;
     if (!record || typeof record !== "object" || Array.isArray(record)) continue;
     if (currentRunId && record.run_id === currentRunId) continue;
+    if (localSpecId && !campaignIdentitiesMatch(record.identity, { local_spec_id: localSpecId })) continue;
     if (text(mapId) && text(record.identity?.map_id) !== text(mapId)) continue;
     return record;
   }
@@ -376,7 +378,7 @@ function readPriorVerdictFile(path) {
 // verdicts are filed and matched under the names the record itself stores.
 function recordIdentityForDiscovery(record) {
   return {
-    spec: { map_id: text(record?.identity?.map_id) || null },
+    spec: { map_id: text(record?.identity?.map_id) || null, ...localSpecIdentityFields(record?.identity) },
     campaign: { public_route_slug: text(record?.identity?.campaign_slug) || null },
   };
 }
@@ -444,8 +446,8 @@ function locateExternalPriorVerdict({ targetRepo, record, ref }) {
  * The single-record boundary is unchanged: this still reads the final attempt
  * of exactly one earlier run, never a merged view across runs.
  */
-export function loadPriorQaVerdict({ baseDir, targetRepo = null, mapId = null, currentRunId = null } = {}) {
-  const record = findPriorRunRecord({ baseDir, mapId, currentRunId });
+export function loadPriorQaVerdict({ baseDir, targetRepo = null, mapId = null, localSpecId = null, currentRunId = null } = {}) {
+  const record = findPriorRunRecord({ baseDir, mapId, localSpecId, currentRunId });
   if (!record) return { verdict: null, record: null, path: null, reason: "no_prior_run" };
   const ref = (Array.isArray(record.artifacts) ? record.artifacts : []).findLast((artifact) => artifact?.kind === "qa_verdict");
   const refPath = text(ref?.path);
@@ -468,8 +470,8 @@ export function loadPriorQaVerdict({ baseDir, targetRepo = null, mapId = null, c
  * carries these, so doctor cause labels work against existing history with no
  * upgrade window. Returns `{ prior, record, reason }`.
  */
-function loadPriorDoctorFindings({ baseDir, mapId = null, currentRunId = null } = {}) {
-  const record = findPriorRunRecord({ baseDir, mapId, currentRunId });
+function loadPriorDoctorFindings({ baseDir, mapId = null, localSpecId = null, currentRunId = null } = {}) {
+  const record = findPriorRunRecord({ baseDir, mapId, localSpecId, currentRunId });
   if (!record) return { prior: null, record: null, reason: "no_prior_run" };
   const prior = priorSetFromRunRecordDoctor(record);
   if (!prior) return { prior: null, record, reason: "prior_run_without_doctor_observations" };
@@ -492,9 +494,9 @@ function loadPriorDoctorFindings({ baseDir, mapId = null, currentRunId = null } 
  * raw map id) have no Run Record home, so they get `unknown` / `no_prior_run`
  * throughout — which is the truth, not a silence.
  */
-export function annotateQaAssertionCauses(assertions, { baseDir = null, targetRepo = null, mapId = null, currentRunId = null, isFinding } = {}) {
+export function annotateQaAssertionCauses(assertions, { baseDir = null, targetRepo = null, mapId = null, localSpecId = null, currentRunId = null, isFinding } = {}) {
   const lookup = baseDir
-    ? loadPriorQaVerdict({ baseDir, targetRepo, mapId, currentRunId })
+    ? loadPriorQaVerdict({ baseDir, targetRepo, mapId, localSpecId, currentRunId })
     : { verdict: null, record: null, path: null, reason: "no_prior_run" };
   const prior = lookup.verdict ? priorSetFromVerdict(lookup.verdict, { isFinding }) : null;
   const noPriorReason = lookup.reason || "no_prior_run";
@@ -528,9 +530,9 @@ const CAUSE_SUMMARY_SCHEMA = "campaigns-os-finding-cause/v0";
  * The doctor twin. `errors` and `warnings` are the doctor output's own arrays;
  * both are stamped in place. Returns the same summary shape.
  */
-export function annotateDoctorIssueCauses({ errors = [], warnings = [], baseDir = null, mapId = null, currentRunId = null } = {}) {
+export function annotateDoctorIssueCauses({ errors = [], warnings = [], baseDir = null, mapId = null, localSpecId = null, currentRunId = null } = {}) {
   const lookup = baseDir
-    ? loadPriorDoctorFindings({ baseDir, mapId, currentRunId })
+    ? loadPriorDoctorFindings({ baseDir, mapId, localSpecId, currentRunId })
     : { prior: null, record: null, reason: "no_prior_run" };
   const noPriorReason = lookup.reason || "no_prior_run";
   const findings = [];

@@ -286,3 +286,8 @@ reason. What it may not be is silent.
 Change the effect, change the row, in the same PR. The effect test will tell you
 which row is wrong before review does: it names the path that moved and the row
 that failed to declare it.
+
+Local-spec QA retains its artifacts locally. It never sends a verdict or progress
+to the Map portal, even when `--post-verdict` is supplied; `qa publish` refuses
+local-spec packets. Commerce API reads, served-page probes and requested typed-card
+orders keep their existing effects. Run Telemetry still follows its consent controls.

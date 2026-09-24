@@ -1,3 +1,4 @@
+import { campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 // Run Record closeout recognition.
 //
 // `next` at stage "done" used to demand a Run Record unconditionally, because
@@ -93,13 +94,11 @@ function qaVerdictDigests(record) {
  * satisfy closeout — and `run-record` never re-emits under its id.
  */
 export function identityMatches(record, packet) {
-  const mapId = text(packet?.spec?.map_id);
   const slug = text(packet?.campaign?.public_route_slug);
   const identity = isObject(record?.identity) ? record.identity : {};
-  const recordMapId = text(identity.map_id);
   const recordSlug = text(identity.campaign_slug);
-  if (!mapId || !slug || !recordMapId || !recordSlug) return false;
-  return recordMapId === mapId && recordSlug === slug;
+  if (!slug || !recordSlug) return false;
+  return campaignIdentitiesMatch(identity, packet?.spec) && recordSlug === slug;
 }
 
 function outcome(reason_code, detail, entry = null) {

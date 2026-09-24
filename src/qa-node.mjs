@@ -1,3 +1,4 @@
+import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
@@ -13,7 +14,7 @@ import {
 import { singleLineFragment } from "./text-safety.mjs";
 import { absentOrMalformed } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
-import { specMaterialHash } from "./spec-identity.mjs";
+import { specMaterialHash, specHashesMatch } from "./spec-identity.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { PLAYWRIGHT_INSTALL_HINT } from "./browser-launch.mjs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
@@ -379,7 +380,11 @@ async function resolveQaInputs(args, {
   // spec is fetched, any browser launches and anything is written. (When a
   // packet WAS named, it has been read by here; the packet read is a lookup
   // for the same identity question, and one message cannot be two verdicts.)
-  if (!mapId) throw refused("QA requires a Map ID. Provide --packet or positional <map-id>.");
+  const localSpecId = packet?.spec?.local_spec_id ?? null;
+  if (!mapId && !localSpecId) throw refused("QA requires a Map ID or a local-spec packet. Provide --packet or positional <map-id>.");
+  if (packet && localSpecId != null && (!resolveCampaignIdentity(packet.spec) || mapId)) {
+    throw refused("Local-spec packet QA cannot use a Map ID override or an ambiguous identity.");
+  }
 
   const proxyBase = stringArg(args["proxy-base"]) || DEFAULT_PROXY_BASE;
   const inputBaseUrl = normalizeBaseUrl(stringArg(args["base-url"]) || packet?.deploy?.preview_url || packet?.deploy?.production_url || null);
@@ -404,6 +409,13 @@ async function resolveQaInputs(args, {
     specSource = `${proxyBase.replace(/\/+$/, "")}/api/spec/${encodeURIComponent(mapId)}`;
   }
 
+  if (!packet && rawSpec?.spec_identity?.local_spec_id != null) {
+    throw refused("Local-spec QA requires --packet; a local spec cannot be published under a Map ID.");
+  }
+  if (packet && (localSpecId != null || rawSpec?.spec_identity?.local_spec_id != null)
+    && !campaignIdentitiesMatch(packet.spec, campaignSpecIdentity(rawSpec))) {
+    throw refused("Packet local_spec_id does not match the local CampaignSpec identity. Re-run prepare-build from the intended spec.");
+  }
   const normalized = normalizeSpec(rawSpec);
   const publicRouteSlug = resolvePublicRouteSlug({ packet, spec: normalized, rawSpec });
   const baseUrl = normalizeQaBaseUrl(inputBaseUrl, publicRouteSlug);
@@ -449,6 +461,7 @@ async function resolveQaInputs(args, {
     packetPath,
     packet,
     mapId,
+    localSpecId,
     publicRouteSlug,
     proxyBase,
     baseUrl,
@@ -478,6 +491,10 @@ function resolvePacketCheckpointPreflight(args, {
 } = {}) {
   const packetPath = resolve(String(args.packet));
   const packet = readJsonFile(packetPath);
+  if (packet?.spec?.local_spec_id != null && (!resolveCampaignIdentity(packet.spec)
+    || stringArg(args["map-id"]) || stringArg(args._?.[2]))) {
+    throw refused("Local-spec packet QA cannot use a Map ID override or an ambiguous identity.");
+  }
   const specPath = stringArg(args.spec)
     ? resolve(String(args.spec))
     : stringArg(packet?.spec?.local_path)
@@ -512,6 +529,10 @@ function resolvePacketCheckpointPreflight(args, {
     } catch {
       report = null;
     }
+  }
+  if (packet?.spec?.local_spec_id != null && (!reportMatchesPacketIdentity(report, packet)
+    || (specStatus === "ok" && !specHashesMatch(report.identity?.spec_material_hash, computeSpecHash(rawSpec))))) {
+    throw refused("Local-spec QA requires the matching Assembly Report and current spec material hash. Re-run prepare-build after a material revision; do not reuse foreign or stale proof.");
   }
   const checkpointGates = [
     evaluatePageKitStoreProfile({
@@ -548,12 +569,9 @@ function resolvePacketCheckpointPreflight(args, {
 
 function reportMatchesPacketIdentity(report, packet) {
   if (!isPlainObject(report) || !isPlainObject(report.identity)) return false;
-  const packetMapId = stringArg(packet?.spec?.map_id);
-  const reportMapId = stringArg(report.identity.map_id);
   const packetSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const reportSlug = normalizePublicRouteSlug(report.identity.public_route_slug);
-  return !!packetMapId
-    && packetMapId === reportMapId
+  return campaignIdentitiesMatch(packet?.spec, report.identity)
     && !!packetSlug
     && packetSlug === reportSlug;
 }
@@ -640,7 +658,8 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
     brandContractStatus: "not_evaluated",
     packetPath: preflight.packetPath,
     packet: preflight.packet,
-    mapId: stringArg(preflight.packet?.spec?.map_id) || "unknown-map",
+    mapId: stringArg(preflight.packet?.spec?.map_id) || (preflight.packet?.spec?.local_spec_id ? null : "unknown-map"),
+    localSpecId: preflight.packet?.spec?.local_spec_id ?? null,
     publicRouteSlug,
     proxyBase: stringArg(args["proxy-base"]) || DEFAULT_PROXY_BASE,
     baseUrl: inputBaseUrl,
@@ -1506,6 +1525,7 @@ function resolvePayload(resolved, { routeProbe = null } = {}) {
     ok: status !== "blocked" && status !== "routes_unresolved",
     status,
     map_id: resolved.mapId,
+    ...(resolved.localSpecId ? { local_spec_id: resolved.localSpecId } : {}),
     ...(resolved.packetPath ? { packet_path: resolved.packetPath } : {}),
     ...reportPathField(resolved),
     ...(resolved.proxyBase && resolved.proxyBase !== DEFAULT_PROXY_BASE ? { proxy_base: resolved.proxyBase } : {}),
@@ -2311,12 +2331,14 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     baseDir: resolved.packetPath ? dirname(resolved.packetPath) : null,
     targetRepo: resolved.packetPath ? targetRepoFor(resolved.packetPath, resolved.packet) : null,
     mapId: resolved.mapId,
+    localSpecId: resolved.localSpecId,
     currentRunId: runId,
     isFinding: isFindingAssertion,
   });
   const verdict = createVerdict({
     runId,
     mapId: resolved.mapId,
+    localSpecId: resolved.localSpecId,
     publicRouteSlug: resolved.publicRouteSlug || null,
     campaignRefId: resolved.spec.campaign?.ref_id || null,
     specVersion: resolved.specVersion,
@@ -2370,7 +2392,9 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   // config, or scope mismatch should be visible on the QA path too, not just
   // on remit (Kilo review, PR #177).
   const consent = resolveConsent({ proxyBase: resolved.proxyBase });
-  const publishDecision = decidePublishVerdict({ args, portalManaged: resolved.portalManaged === true, consent });
+  const publishDecision = resolved.localSpecId
+    ? { publish: false, reason: "local_spec", flag_invalid: false }
+    : decidePublishVerdict({ args, portalManaged: resolved.portalManaged === true, consent });
   if (publishDecision.flag_invalid) {
     process.stderr.write(`[campaigns-os] --post-verdict "${args["post-verdict"]}" is not a recognized value (use true|1|yes|y|on or false|0|no|n|off); the flag was ignored and the default publish decision applied.\n`);
   }
@@ -2390,6 +2414,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     status: verdict.disposition,
     run_id: verdict.run_id,
     map_id: resolved.mapId,
+    ...(resolved.localSpecId ? { local_spec_id: resolved.localSpecId } : {}),
     public_route_slug: resolved.publicRouteSlug || null,
     ...reportPathField(resolved),
     base_url: resolved.baseUrl,
@@ -3015,7 +3040,7 @@ function output(value, args) {
   }
   if (value.verdict) {
     console.log(`QA run complete.`);
-    console.log(`Map ID: ${value.map_id}`);
+    console.log(`${value.local_spec_id ? "Local spec ID" : "Map ID"}: ${value.local_spec_id || value.map_id}`);
     console.log(`Base URL: ${value.base_url || "(missing)"}`);
     printEntryUrlLines(value.entry_urls);
     console.log(`Run ID: ${value.run_id}`);
@@ -3048,7 +3073,7 @@ function output(value, args) {
   }
   console.log(`QA resolve complete.`);
   console.log(`Status: ${value.status}`);
-  console.log(`Map ID: ${value.map_id}`);
+  console.log(`${value.local_spec_id ? "Local spec ID" : "Map ID"}: ${value.local_spec_id || value.map_id}`);
   console.log(`Spec: ${value.spec_source}`);
   console.log(`Base URL: ${value.base_url || "(missing)"}`);
   printEntryUrlLines(value.entry_urls);
@@ -3198,7 +3223,9 @@ export function qaResolveNextProofLines(value) {
   return [
     `Next expected proof: ${qaRunCommandFromResolve(value)}`,
     `Entry URL(s) resolved: ${formatEntryUrlsForProof(value.entry_urls)}`,
-    "Typed-card test orders use global test cards (no transactions/no permission gate); QA publishes to the portal by default.",
+    value.local_spec_id
+      ? "Typed-card test orders use global test cards (no transactions/no permission gate); local-spec QA stays in the repository."
+      : "Typed-card test orders use global test cards (no transactions/no permission gate); QA publishes to the portal by default.",
   ];
 }
 

@@ -312,7 +312,7 @@
       "sends": [],
       "effect_test": "effects: qa publish --dry-run",
       "test_scope": "full",
-      "notes": "qa publish --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+      "notes": "qa publish --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout. Local-spec packets are refused before publication because they have no saved Map destination."
     },
     {
       "command": "checkpoint",
@@ -2066,7 +2066,7 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
           "observed_in": [
             "persisted_consent"
@@ -2091,7 +2091,7 @@
         {
           "destination": "{proxy-base}/api/progress",
           "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
-          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
           "requires_consent": true,
           "observed_in": [
             "persisted_consent"
@@ -2100,7 +2100,7 @@
       ],
       "effect_test": "effects: qa run",
       "test_scope": "full",
-      "notes": "Destructive and not idempotent: each attempt overwrites the committed verdict sidecar and the report's QA stage, and a ready verdict clears the ambient run session. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request."
+      "notes": "Destructive and not idempotent: each attempt overwrites the committed verdict sidecar and the report's QA stage, and a ready verdict clears the ambient run session. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict."
     },
     {
       "command": "qa",
@@ -2191,7 +2191,7 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
           "observed_in": [
             "persisted_consent"
@@ -2216,7 +2216,7 @@
       ],
       "effect_test": "effects: qa run --no-remit",
       "test_scope": "full",
-      "notes": "The base `qa run` row's writes, without any remit: --no-remit stops the progress observation and the Run Record remit. The verdict publish is NOT a remit and is not gated by the flag — it still posts to the QA portal under the consent seam, which --no-post-verdict is the opt-out from."
+      "notes": "The base `qa run` row's writes, without any remit: --no-remit stops the progress observation and the Run Record remit. The verdict publish is NOT a remit and is not gated by the flag — it still posts to the QA portal under the consent seam, which --no-post-verdict is the opt-out from. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict."
     },
     {
       "command": "qa",
@@ -2323,7 +2323,7 @@
         {
           "destination": "{proxy-base}/api/progress",
           "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
-          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
           "requires_consent": true,
           "observed_in": [
             "persisted_consent"
@@ -2332,7 +2332,7 @@
       ],
       "effect_test": "effects: qa run --no-post-verdict",
       "test_scope": "full",
-      "notes": "The base `qa run` row's writes, without the verdict publish: --no-post-verdict is the opt-out from posting the verdict to the QA portal. The progress observation is a separate delivery and still leaves under persisted consent; --no-remit is the flag that stops that one."
+      "notes": "The base `qa run` row's writes, without the verdict publish: --no-post-verdict is the opt-out from posting the verdict to the QA portal. The progress observation is a separate delivery and still leaves under persisted consent; --no-remit is the flag that stops that one. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict."
     },
     {
       "command": "qa",
@@ -2423,7 +2423,7 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
           "observed_in": [
             "persisted_consent"
@@ -2448,7 +2448,7 @@
         {
           "destination": "{proxy-base}/api/progress",
           "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
-          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
           "requires_consent": true,
           "observed_in": [
             "persisted_consent"
@@ -2457,7 +2457,7 @@
       ],
       "effect_test": "effects: qa run --test-order",
       "test_scope": "full",
-      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request."
+      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict."
     },
     {
       "command": "qa",
@@ -2548,7 +2548,7 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
           "observed_in": [
             "persisted_consent"
@@ -2573,7 +2573,7 @@
         {
           "destination": "{proxy-base}/api/progress",
           "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
-          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
           "requires_consent": true,
           "observed_in": [
             "persisted_consent"
@@ -2582,7 +2582,7 @@
       ],
       "effect_test": "effects: qa run --browser (preflight)",
       "test_scope": "preflight",
-      "notes": "PREFLIGHT-PROVED: --browser needs an installed Chromium and a reachable campaign, neither of which exists offline. The case proves the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request.",
+      "notes": "PREFLIGHT-PROVED: --browser needs an installed Chromium and a reachable campaign, neither of which exists offline. The case proves the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict.",
       "preflight": {
         "may_write": [
           "{target}/qa-output/**",
@@ -2637,7 +2637,7 @@
       ],
       "effect_test": "effects: qa publish",
       "test_scope": "full",
-      "notes": "Posts an already-stored verdict without a re-run and without an order. It is NOT gated by Run Telemetry consent — the publish is the operator's explicit act."
+      "notes": "Posts an already-stored verdict without a re-run and without an order. It is NOT gated by Run Telemetry consent — the publish is the operator's explicit act. Local-spec packets are refused before publication because they have no saved Map destination."
     },
     {
       "command": "qa",
@@ -2679,7 +2679,7 @@
       ],
       "effect_test": "effects: qa publish --republish",
       "test_scope": "full",
-      "notes": "--republish lifts the already-published refusal: the same POST to the QA portal for a verdict that was already delivered. Not destructive locally — nothing under the target is overwritten — and not gated by Run Telemetry consent."
+      "notes": "--republish lifts the already-published refusal: the same POST to the QA portal for a verdict that was already delivered. Not destructive locally — nothing under the target is overwritten — and not gated by Run Telemetry consent. Local-spec packets are refused before publication because they have no saved Map destination."
     },
     {
       "command": "qa",

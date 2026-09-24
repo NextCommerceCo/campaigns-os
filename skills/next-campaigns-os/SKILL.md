@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-os
-version: 1.0.24
+version: 1.0.25
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
-Bundle revision: 1.42.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.42.0+skills.1`
+Bundle revision: 1.43.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.43.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -60,7 +60,20 @@ but those wrappers should not redefine the public contract.
 
 Workflow:
 
-1. Confirm the campaign was configured in Campaigns App and exported from Campaign Map Builder as current CampaignSpec JSON. Current authoring is v4.3+ while preserving the v4.2 `funnels[]` topology as the compatibility shape.
+Local-spec runs use packet-based QA and repository evidence. They never post QA
+to the Map portal or claim saved-Map revision alignment. Existing lifecycle
+gates remain in force; use `local-serve` for the first localhost proof.
+
+1. Confirm the selected campaign is configured in Campaigns App. Use its current
+saved Map export when available. For HTML-and-brief intake without a Map, author
+a normal CampaignSpec from the source design, operator's brief and verified
+Campaigns API commerce values. Follow `docs/build-packet.md` "Local-spec entry":
+create one `spec_identity.local_spec_id` (UUID), preserve it through revisions,
+set `public_route_slug`, and omit saved-Map identity/URLs. Do not ask the operator
+to author a spec or fabricate a Map ID. Verify store/campaign binding and real
+package/offer references. Store contact and policy details can come from the
+brief; gateway access is optional. Current authoring is v4.3+ while preserving
+the v4.2 `funnels[]` topology as the compatibility shape.
 2. Run `campaigns-os start` or `campaigns-os prepare-build` (tier `A`: they write the
 Build Packet, Build Context, assembly report, run session and `.gitignore` under
 the target plus a Run Record under the working directory, and they contact the

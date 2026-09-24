@@ -40,7 +40,7 @@ end-to-end campaign.
 
 Required before build:
 
-- Map ID or CampaignSpec path/URL.
+- Saved Map ID/export, or the configured store/campaign details, public key, prepared HTML/assets and brief from which the agent authors a local CampaignSpec. Do not make a saved Map a prerequisite; follow `docs/build-packet.md` "Local-spec entry".
 - Public route slug and target repo/output directory.
 - Source type and source files: Figma, exported HTML, prepared HTML, existing campaign, or other.
 - Pages in scope and any pages to preserve.

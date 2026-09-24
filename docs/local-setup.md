@@ -3,7 +3,7 @@
 For a new campaign, choose its working folder and run this from that folder:
 
 ```sh
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.42.0 next-campaign-page-kit@0.2.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.43.0 next-campaign-page-kit@0.2.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
 ```
 
 Review the release source/provenance before installation as described in
@@ -35,7 +35,9 @@ written, setup reports `context_install_failed`; fix `.gitignore` and rerun.
 `--dry-run --json` previews setup without any writes or browser download.
 
 Restart Claude Code in the campaign folder. Use the `next-campaigns-os` skill
-and provide your CampaignSpec, HTML/assets and brief. The skill checks its
+and provide the configured campaign details, HTML/assets and brief. The agent
+authors a local CampaignSpec if there is no saved Map export; follow the
+[local-spec entry](build-packet.md#local-spec-entry). The skill checks its
 loaded bundle revision against the project copy.
 `restart_required` means the files are installed; it does not prove that the
 running agent has loaded them. Check Claude's `/context` view if the project
@@ -44,7 +46,6 @@ instructions are missing.
 Setup does not scaffold template pages, create a CampaignSpec, connect the
 gateway, change a saved Map, run a campaign session, remit telemetry, or prove
 checkout. The agent performs intake and chooses the template before assembly.
-Current assembly still requires a CampaignSpec with a real saved Map identity;
-this setup command does not add a no-Map build path. Current doctor/QA gates
-still apply. This entry is Claude Code first; other agents retain their existing
+A local spec uses `spec_identity.local_spec_id` and keeps its evidence in the
+repository. Existing doctor/QA gates still apply. This entry is Claude Code first; other agents retain their existing
 manual installation path.

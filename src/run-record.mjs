@@ -1,3 +1,4 @@
+import { localSpecIdentityFields } from "./spec-source-identity.mjs";
 // Run Telemetry — per-run Run Record capture for Campaigns OS.
 // See docs/workflow-findings-sidecar.md (Run Telemetry).
 //
@@ -449,6 +450,7 @@ export function selectRunFindingIds(journal, runId) {
 function normalizeIdentity(identity = {}) {
   return {
     map_id: identity.map_id ?? null,
+    ...localSpecIdentityFields(identity),
     campaign_slug: identity.campaign_slug ?? null,
     template_family: identity.template_family ?? null,
     entry_point_shape: identity.entry_point_shape ?? null,

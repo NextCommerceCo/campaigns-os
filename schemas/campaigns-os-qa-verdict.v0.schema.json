@@ -29,6 +29,7 @@
       "minLength": 1,
       "description": "The QA run identity, also the verdict filename under qa-output/<map-id>/. The portal receiver additionally restricts it to [A-Za-z0-9_-]{1,64}."
     },
+    "local_spec_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Stable repository-owned CampaignSpec identity; never a saved Map ID. Keep unchanged across local revisions." },
     "campaign_slug": {
       "type": "string",
       "minLength": 1,

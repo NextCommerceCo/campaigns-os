@@ -71,6 +71,7 @@
         "build_fingerprint_algorithm"
       ],
       "properties": {
+        "local_spec_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
         "map_id": {
           "type": [
             "string",

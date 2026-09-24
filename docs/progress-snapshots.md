@@ -140,3 +140,9 @@ The planned immutable receiver key is
 revision. A key match identifies scope; it is not authentication or trust. The
 receiver must verify the digest and authorized Map scope and stamp its own trust.
 Unknown, incomplete or conflicted histories must never yield a ready workspace.
+
+Local-spec packets add optional `identity.local_spec_id`. Report binding compares
+that ID and the local material hash, so local stages can be observed without a
+saved Map. `map_id` and `map_revision_hash` remain null and
+`saved_revision_alignment` remains `unconfirmed`; these observations stay on disk
+with `map_id_missing` and have no portal storage key.

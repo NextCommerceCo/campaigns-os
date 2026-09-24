@@ -1,3 +1,4 @@
+import { resolveCampaignIdentity, localQaIdentifier } from "./spec-source-identity.mjs";
 // QA verdict discovery: the one walk over the local verdicts a campaign has
 // written, with the projections each reader needs.
 //
@@ -28,11 +29,20 @@ function qaVerdictSlug(packet) {
 // the slug as identity. A verdict is this campaign's when its campaign_slug
 // is one of them.
 export function qaVerdictIdentifiers(packet) {
+  if (packet?.spec?.local_spec_id != null) {
+    const identity = resolveCampaignIdentity(packet.spec);
+    return identity?.kind === "local_spec" ? [localQaIdentifier(identity.id)] : [];
+  }
   return [...new Set([optionalString(packet?.spec?.map_id), qaVerdictSlug(packet)].filter(Boolean))];
 }
 
 export function qaVerdictIdentityMatch(verdict, packet) {
   const slug = optionalString(verdict?.campaign_slug);
+  if (packet?.spec?.local_spec_id != null || verdict?.local_spec_id != null) {
+    const identity = resolveCampaignIdentity(packet?.spec);
+    return identity?.kind === "local_spec" && verdict?.local_spec_id === identity.id
+      && slug === localQaIdentifier(identity.id);
+  }
   return Boolean(slug) && qaVerdictIdentifiers(packet).includes(slug);
 }
 
@@ -174,6 +184,7 @@ export function qaVerdictCandidateScore(candidate, packet) {
   const mapId = optionalString(packet?.spec?.map_id);
   const slug = qaVerdictSlug(packet);
   let score = 0;
+  if (packet?.spec?.local_spec_id && qaVerdictIdentityMatch(verdict, packet)) score += 100;
   if (mapId && verdict.campaign_slug === mapId) score += 100;
   if (slug && verdict.campaign_slug === slug) score += 80;
   if (verdict.schema_version === "1.0" || verdict.schema_version === "campaigns-os-qa-verdict/v0") score += 10;

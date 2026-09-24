@@ -1,3 +1,4 @@
+import { resolveCampaignIdentity, localQaIdentifier } from "./spec-source-identity.mjs";
 export const QA_SCHEMA_VERSION = "1.0";
 
 export const STATUS = Object.freeze({
@@ -95,6 +96,7 @@ function dispositionWithCommercial(assertions, commercial) {
 export function createVerdict({
   runId,
   mapId,
+  localSpecId = null,
   publicRouteSlug = null,
   campaignRefId = null,
   specVersion,
@@ -126,7 +128,8 @@ export function createVerdict({
     run_id: runId,
     // campaign_slug carries the Map ID for schema back-compat; the true public
     // route slug rides alongside so consumers stop conflating the two.
-    campaign_slug: mapId,
+    campaign_slug: localSpecId ? localQaIdentifier(localSpecId) : mapId,
+    ...(localSpecId ? { local_spec_id: localSpecId } : {}),
     public_route_slug: optionalString(publicRouteSlug),
     campaign_ref_id: campaignRefId,
     spec_version: specVersion,
@@ -208,6 +211,10 @@ export function deriveExceptions(assertions = []) {
 
 export function validateVerdict(verdict) {
   const errors = [];
+  if (verdict?.local_spec_id != null && (!resolveCampaignIdentity({ local_spec_id: verdict.local_spec_id })
+    || verdict.campaign_slug !== localQaIdentifier(verdict.local_spec_id))) {
+    errors.push("Local-spec verdict requires a valid local_spec_id and its local QA identifier.");
+  }
   if (!verdict || typeof verdict !== "object" || Array.isArray(verdict)) {
     return ["verdict: must be an object"];
   }

@@ -6287,6 +6287,213 @@
         }
       ],
       "entry_sha256": "6527efc0942f6125e694fe670a85ef4c00fabc12167b35f4c206d92ccdebf5e0"
+    },
+    {
+      "id": "RL-0141",
+      "sequence": 141,
+      "date": "2026-09-24",
+      "kind": "release",
+      "surface_version": "1.43.0",
+      "changelog_section": "1.43.0",
+      "changelog_sha256": "1500b85555746a9550cb238041a55c92bf4e2357f9ad4768c5f27ea4de6b6cde",
+      "agent_impact": "For HTML-and-brief intake, author a normal CampaignSpec with a stable spec_identity.local_spec_id and no saved Map identity. Use packet-based QA and keep local evidence in Git; local verdicts cannot be published to the Map portal. Existing saved-Map specs and evidence remain supported; no readiness gate is relaxed.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/types.ts",
+          "surface_entry": null,
+          "summary": "Type the optional stable local_spec_id for agent-authored CampaignSpecs."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare that local-spec QA and progress stay local and qa publish refuses local packets."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/migration-sidecar-bundle.v0.json",
+          "surface_entry": "contracts/migration-sidecar-bundle.v0.json",
+          "summary": "Bind local bundles through local_spec_id as the explicit alternative to saved Map identity."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.43.0 and refresh changed contract hashes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document stable local IDs, revision evidence, local QA storage and saved-Map boundaries."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Introduce agent-authored local CampaignSpec intake after Claude setup."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Document local-spec report binding without saved revision alignment or portal storage."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Update release metadata for local-spec identity support."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release local-spec identity support as 1.43.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-assembly-report.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-assembly-report.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-spec.v4.schema.json",
+          "surface_entry": "schemas/campaign-spec.v4.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-progress-snapshot.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-progress-snapshot.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision and individual versions for the local-spec release."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision and local-spec HTML/brief intake guidance."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/references/session-intake.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision and local-spec HTML/brief intake guidance."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "Prepare, inspect, resume and close out local-spec campaigns with separate stable identity and material revision binding."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Document local-spec QA publication and progress suppression."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the supported orientation/runtime reference and fixtures for surface 1.43.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the supported orientation/runtime reference and fixtures for surface 1.43.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.43.0+skills.1 bundle in executable examples."
+        }
+      ],
+      "entry_sha256": "60e6542a813c6e7dadb7601270fbc0fea20fd5db18224445c245e32c72c74c4c"
     }
   ]
 }

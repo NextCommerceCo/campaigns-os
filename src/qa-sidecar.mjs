@@ -1,3 +1,4 @@
+import { localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
@@ -77,6 +78,7 @@ export function projectVerdictForSidecar(verdict, { generatedAt }) {
     schema_version: verdict.schema_version,
     run_id: verdict.run_id,
     campaign_slug: verdict.campaign_slug,
+    ...localSpecIdentityFields(verdict),
     ...(verdict.public_route_slug != null ? { public_route_slug: verdict.public_route_slug } : {}),
     ...(verdict.campaign_ref_id != null ? { campaign_ref_id: verdict.campaign_ref_id } : {}),
     spec_version: verdict.spec_version,

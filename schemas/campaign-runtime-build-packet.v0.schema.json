@@ -66,9 +66,14 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["map_id"],
+      "oneOf": [
+        { "properties": { "map_id": { "type": "string", "minLength": 1 } }, "not": { "required": ["local_spec_id"] } },
+        { "required": ["local_spec_id", "local_path"], "properties": { "map_id": { "type": "null" }, "local_path": { "type": "string", "minLength": 1 }, "spec_url": { "type": "null" } } }
+      ],
       "properties": {
+        "local_spec_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Stable repository-owned CampaignSpec identity; never a saved Map ID. Keep unchanged across local revisions." },
         "map_id": {
-          "type": "string",
+          "type": ["string", "null"],
           "minLength": 1,
           "description": "Saved Map Builder identity used for reopen, /api/spec/<map-id>, QA verdicts, and provenance."
         },

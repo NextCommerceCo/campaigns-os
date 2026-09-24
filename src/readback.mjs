@@ -1187,6 +1187,7 @@ function renderIdentity(views, lines) {
     const spec = packet.spec || {};
     const campaign = packet.campaign || {};
     if (spec.map_id) entries.push(["map_id", spec.map_id, "build packet"]);
+    if (spec.local_spec_id) entries.push(["local_spec_id", spec.local_spec_id, "build packet"]);
     if (campaign.public_route_slug) {
       entries.push(["public_route_slug", campaign.public_route_slug, "build packet"]);
     }
@@ -1194,7 +1195,7 @@ function renderIdentity(views, lines) {
     if (assembly.template_family) entries.push(["template_family", assembly.template_family, "build packet"]);
   } else if (doctor) {
     const derived = doctor.derived || {};
-    for (const field of ["map_id", "public_route_slug", "template_family"]) {
+    for (const field of ["map_id", "local_spec_id", "public_route_slug", "template_family"]) {
       if (derived[field]) entries.push([field, derived[field], "doctor output"]);
     }
   }

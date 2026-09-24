@@ -46,6 +46,8 @@ export const PROGRESS_SNAPSHOT_SCHEMA = {
       binding:enumeration(['matching','unconfirmed']),publish_state:enumeration(['skipped','ok','failed','unknown'])})]},
   }),
 };
+PROGRESS_SNAPSHOT_SCHEMA.properties.identity.properties.local_spec_id = {type:"string", pattern:"^[A-Za-z0-9_-]{1,64}$"};
+
 export function canonicalProgressJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalProgressJson).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key=>`${JSON.stringify(key)}:${canonicalProgressJson(value[key])}`).join(',')}}`;
@@ -92,6 +94,7 @@ export function validateProgressSnapshot(value) {
   }
   if (!check(value,PROGRESS_SNAPSHOT_SCHEMA)) errors.push('progress.invalid_shape');
   if (!errors.length && (new Set(value.stages.map(stage=>stage.stage)).size!==6 || value.stages.some((stage,index)=>stage.stage!==PROGRESS_STAGES[index]))) errors.push('progress.invalid_stages');
+  if (!errors.length && value.identity.local_spec_id && (value.identity.map_id || value.identity.map_revision_hash || value.identity.saved_revision_alignment !== 'unconfirmed')) errors.push('progress.invalid_local_identity');
   if (!errors.length && value.identity.saved_revision_alignment==='aligned' && (!value.identity.map_id||!value.identity.map_revision_hash||!value.identity.local_spec_material_hash)) errors.push('progress.invalid_alignment');
   if (!errors.length && value.continuation.gates.some(gate=>gate.id==='unknown'&&gate.state!=='unknown')) errors.push('progress.unsupported_authority');
   if (!errors.length && value.sequence===1 && value.previous_snapshot_id!==null) errors.push('progress.invalid_chain');

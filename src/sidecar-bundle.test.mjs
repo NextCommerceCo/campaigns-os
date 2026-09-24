@@ -599,3 +599,43 @@ test("the machine contract forbids mtime selection and requires explicit histori
     "directory_latest",
   ]);
 });
+
+test("local-spec bundle compares local identity across every artifact and refuses mixed provenance", () => withFixture((root) => {
+  const paths = {
+    packet: join(root, 'campaign-runtime.build.json'),
+    report: join(root, '.campaign-runtime/assembly-report.json'),
+    context: join(root, '.campaign-runtime/build-context.json'),
+    doctor: join(root, '.campaign-runtime/doctor-output.json'),
+    qa: join(root, '.campaign-runtime/qa-verdict.json'),
+  };
+  const packet=readJson(paths.packet), report=readJson(paths.report), context=readJson(paths.context), doctor=readJson(paths.doctor), qa=readJson(paths.qa);
+  const localId='local-bundle';
+  packet.spec={...packet.spec,map_id:null,local_spec_id:localId,spec_url:null};
+  report.identity={...report.identity,map_id:null,local_spec_id:localId,spec_material_hash:'sha256:'+'a'.repeat(64)};
+  context.spec.material_hash=report.identity.spec_material_hash;
+  doctor.derived={...doctor.derived,map_id:null,local_spec_id:localId};
+  qa.local_spec_id=localId;qa.campaign_slug='local-spec-'+localId;qa.spec_hash=report.identity.spec_material_hash;
+  for(const [key,value] of Object.entries({packet,report,context,doctor,qa}))writeJson(paths[key],value);
+  const check=()=>inspectSidecarBundle({packetPath:paths.packet,requireQa:true});
+  assert.equal(check().ok,true,JSON.stringify(check().errors));
+  qa.local_spec_id='foreign-local';writeJson(paths.qa,qa);
+  assert.ok(check().errors.some(e=>e.code==='bundle.identity.local_spec_id_mismatch'));
+  qa.local_spec_id=localId;writeJson(paths.qa,qa);
+  doctor.derived.map_id='borrowed-map';writeJson(paths.doctor,doctor);
+  assert.ok(check().errors.some(e=>e.code==='bundle.identity.map_id_mismatch'));
+}));
+
+
+test("saved-Map bundle cannot adopt a local verdict whose storage key happens to equal the Map ID", () => withFixture(root => {
+  const packetPath=join(root,'campaign-runtime.build.json');
+  const packet=readJson(packetPath);
+  packet.spec.map_id='local-spec-collision';writeJson(packetPath,packet);
+  const reportPath=join(root,'.campaign-runtime/assembly-report.json');
+  const report=readJson(reportPath);report.identity.map_id=packet.spec.map_id;writeJson(reportPath,report);
+  const doctorPath=join(root,'.campaign-runtime/doctor-output.json');
+  const doctor=readJson(doctorPath);doctor.derived.map_id=packet.spec.map_id;writeJson(doctorPath,doctor);
+  const qaPath=join(root,'.campaign-runtime/qa-verdict.json');
+  const qa=readJson(qaPath);qa.campaign_slug=packet.spec.map_id;qa.local_spec_id='collision';writeJson(qaPath,qa);
+  const result=inspectSidecarBundle({packetPath,requireQa:true});
+  assert.ok(result.errors.some(e=>e.code==='bundle.identity.local_spec_id_mismatch'));
+}));
