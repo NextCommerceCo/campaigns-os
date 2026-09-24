@@ -1,7 +1,7 @@
 {
   "schema": "campaigns-os-effects/v1",
   "_note": "The declared effect of every supported invocation: what it writes, what it sends, and the test case that proves it. One row per command, per subcommand and per effect-changing flag (vocabulary.effect_changing_flags). A row is not publishable without its effect test — scripts/check-effects.mjs refuses one, and refuses a flag from that list that a help usage line carries and no row declares. Read this with docs/effects.md.",
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "vocabulary": {
     "annotations": {
       "readOnlyHint": "The invocation changes nothing: no file under the target, the working directory or the user's machine, and no request off the machine. The command-lifecycle journal counts — a journal append is a write like any other, so every readOnlyHint: true row is an invocation the CLI exempts from lifecycle capture (the converse does not hold: some journal-exempt invocations, such as demo and the --no-write forms, still write other declared files).",
@@ -26,7 +26,7 @@
       "{proxy-base}": "The endpoint --proxy-base names, or the canonical NEXT endpoint when it does not.",
       "{base-url}": "The campaign under test, as --base-url names it or as the packet derives it.",
       "{map-id}": "The saved Map the CampaignSpec identifies.",
-      "{playwright-download-host}": "Where Playwright fetches browser builds from: PLAYWRIGHT_DOWNLOAD_HOST when set, else the Playwright CDN (cdn.playwright.dev). The one destination in this file that is not a Campaigns OS endpoint — `qa install-browser` is the one supported invocation that downloads from a third party."
+      "{playwright-download-host}": "Where Playwright fetches browser builds from: PLAYWRIGHT_DOWNLOAD_HOST when set, else the Playwright CDN (cdn.playwright.dev). The third-party browser download used by `qa install-browser` and `tooling setup`."
     },
     "conditions": {
       "no_session": "No run session at the target or the working directory.",
@@ -4789,6 +4789,99 @@
         "may_write": [],
         "may_contact": []
       }
+    },
+    {
+      "command": "tooling",
+      "subcommand": "setup",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/agent-context/*",
+          "when": "the four bundled context files are installed after preservation preflight",
+          "observed_in": [],
+          "not_observed_reason": "The offline preflight fails the browser download before shared skills or project files are changed. Existing installer effects are proved in their own rows; focused setup tests cover composition and preservation."
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the managed runtime ignore block is absent",
+          "observed_in": [],
+          "not_observed_reason": "The offline preflight fails the browser download before shared skills or project files are changed. Existing installer effects are proved in their own rows; focused setup tests cover composition and preservation."
+        },
+        {
+          "path": "{target}/CLAUDE.md",
+          "when": "the context import is absent; preserve all existing text and append the import once",
+          "observed_in": [],
+          "not_observed_reason": "The offline preflight fails the browser download before shared skills or project files are changed. Existing installer effects are proved in their own rows; focused setup tests cover composition and preservation."
+        },
+        {
+          "path": "{home}/.claude/skills/**",
+          "when": "the selected Claude skill bundle is installed with the existing installer",
+          "observed_in": [],
+          "not_observed_reason": "The offline preflight fails the browser download before shared skills or project files are changed. Existing installer effects are proved in their own rows; focused setup tests cover composition and preservation."
+        },
+        {
+          "path": "{home}/ms-playwright/.links/*",
+          "when": "always — Playwright records this package's installation in the browser registry as one link entry, named for the installing package's path, before it looks at what is already downloaded",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{home}/ms-playwright/**",
+          "when": "the download completes — the Chromium build (a ~150 MB archive) is unpacked into a revision directory of the same registry",
+          "observed_in": [],
+          "not_observed_reason": "the effect fixture pins PLAYWRIGHT_DOWNLOAD_HOST at a closed loopback port, so the archive is never fetched and no browser directory is created"
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{playwright-download-host}",
+          "what": "a GET of the Chromium build archive (~150 MB) and of the headless shell beside it",
+          "when": "the registry does not already hold the revision this package's Playwright pins",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the effect fixture pins PLAYWRIGHT_DOWNLOAD_HOST at a closed loopback port, so the fetch fails at connect; the NODE_DEBUG=net trace the case asserts on names no host but 127.0.0.1"
+        }
+      ],
+      "effect_test": "effects: tooling setup (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED: checks the selected project copy, exact pin, installed page-kit and context preservation before attempting the package-owned browser download. The closed-loopback fixture fails that download before global skills, context or project instructions change. After a successful download, setup composes the existing installers and appends the context import once. Does not read gateway credentials, resolve or close campaign run sessions, append journals, remit telemetry, scaffold pages or create campaign evidence. Focused tests prove rerun preservation, refusal-before-write and browser-failure recovery.",
+      "preflight": {
+        "may_write": [
+          "{home}/ms-playwright/.links/*"
+        ],
+        "may_contact": []
+      }
+    },
+    {
+      "command": "tooling",
+      "subcommand": "setup",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: tooling setup --dry-run",
+      "test_scope": "full",
+      "notes": "Checks the selected project and previews the existing skill/context installers and instruction import without downloading a browser, touching credentials or recovering/remitting a run session."
     }
   ]
 }

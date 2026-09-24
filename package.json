@@ -1,6 +1,6 @@
 {
   "name": "@nextcommerce/campaigns-os",
-  "version": "1.41.2",
+  "version": "1.42.0",
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
   "license": "Apache-2.0",
   "repository": {
@@ -149,6 +149,7 @@
     "docs/diagnostics.md",
     "docs/progress-snapshots.md",
     "demo",
-    "docs/demo-preview.md"
+    "docs/demo-preview.md",
+    "docs/local-setup.md"
   ]
 }

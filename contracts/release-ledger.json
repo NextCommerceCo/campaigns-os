@@ -6146,6 +6146,147 @@
         }
       ],
       "entry_sha256": "434522f9100e5e73b04601d75ec2bff8821c58fdc09c8ad6866de09337d33e4f"
+    },
+    {
+      "id": "RL-0140",
+      "sequence": 140,
+      "date": "2026-09-23",
+      "kind": "release",
+      "surface_version": "1.42.0",
+      "changelog_section": "1.42.0",
+      "changelog_sha256": "09cd488e7394e6086483c0eade0e01536812fd8eb2d5d1241a79b01f96145bc4",
+      "agent_impact": "After installing exact project dependencies, run tooling setup --target <campaign-directory> --platform claude from the project copy to compose skills, imported project context and QA-browser installation. Restart Claude Code and check the loaded bundle revision; setup cannot prove loaded context. Setup bypasses run-session recovery, credential discovery and telemetry. Existing assembly identity and doctor/QA gates are unchanged.",
+      "compatibility": "additive",
+      "migration": "Refresh bundled skills to 1.42.0+skills.1 and restart agent sessions. Existing projects keep their reviewed dependency pin until explicitly updated.",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Route to the lifecycle skill from the project toolkit, check loaded skill revision, and retain existing Build Packet continuation."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare tooling setup and its read-only dry run, including existing installer effects, context import, browser download and session/telemetry exemption."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance supported surface to 1.42.0, refresh the effects hash and register docs/local-setup.md."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Explain setup composition, preservation preflight and the scope of offline browser effects proof."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Document the exact initial npm install, project setup, preservation/recovery behavior and required Claude restart."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate orientation reference for surface 1.42.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate runtime-readiness reference for surface 1.42.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update the displayed bundle revision to 1.42.0+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Stamp package version 1.42.0; dependency resolutions are unchanged."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release 1.42.0 and ship docs/local-setup.md."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.42.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle 1.42.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle 1.42.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle 1.42.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle 1.42.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle 1.42.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle 1.42.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle 1.42.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle 1.42.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle 1.42.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "tooling",
+          "summary": "Add tooling setup under the existing tooling command; strict argument preflight, no campaign-session or credential discovery, JSON/text results and restart-required outcome."
+        }
+      ],
+      "entry_sha256": "6527efc0942f6125e694fe670a85ef4c00fabc12167b35f4c206d92ccdebf5e0"
     }
   ]
 }
