@@ -156,9 +156,15 @@ retain their bare-flag behavior. `run end` also rejects `--new-run` and
 `--run-id` because the saved session fixes its run ID. `run-record` also
 rejects bare, empty, or whitespace-only `--run-id` and valued `--new-run`.
 Internal stale-session and QA closeouts retain the previous handling of values
-inherited from their invoking commands. A blank `--proxy-base` does not prevent
-a stale Run Record, and a blank QA `--context` does not prevent terminal QA
-auto-end. The underlying run-record handler still rejects invalid agent
+inherited from their invoking commands. A bare, empty, or whitespace-only
+`--proxy-base` on a sweeping command still writes the stale Run Record.
+Terminal QA auto-end tolerates whitespace-only inherited `--context`,
+`--report`, or `--proxy-base`. A whitespace-only `--context` resolves as a
+literal relative path, so the default context file is not read. Bare or empty
+`--context` or `--report` still makes QA auto-end fail and leaves the session
+open; bare or empty `--qa-verdict` fails a Run Record closeout when inherited,
+though QA auto-end supplies its own verdict path. The underlying run-record
+handler still rejects invalid agent
 integers, unknown `--surfaces`, and any valued `--dry-run` that reaches it. QA
 auto-end drops `--dry-run` from inherited flags; if another inherited value
 fails in the handler, auto-end is skipped and the session stays open. QA's own

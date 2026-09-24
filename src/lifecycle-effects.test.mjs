@@ -777,8 +777,8 @@ test("(i') QA auto-end preserves a prior handler failure and closes on blank inh
   assert.equal(entries.at(-1).command, "qa");
   assert.equal(existsSync(join(dir, ".campaign-runtime/run-session.json")), true, "failed auto-end keeps the session");
 
-  // QA accepts blank --context and passes it to its terminal auto-end. The
-  // internal closer must keep run-record's old fallback and finish this run.
+  // QA passes whitespace-only --context to terminal auto-end. Run Record
+  // resolves the spaces as a literal path and still closes this run.
   const second = await execFileAsync(process.execPath, [CLI, "qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-post-verdict", "--no-remit", "--context", "   ", "--json"], {
     cwd: dir,
     env: childEnv(),

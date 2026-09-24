@@ -23,9 +23,14 @@ Notable supported-surface changes are recorded here.
   `--order-path-depth` before local spec reads, Map fetches, or cache writes on
   the `--spec`, `--map-id`, and `--map-id --cached-spec` paths.
 - Internal stale-session and QA closeouts retain their prior handling of
-  inherited flags. A blank `--proxy-base` on a sweeping command still writes
-  the stale session's Run Record, and a blank inherited QA `--context` still
-  allows terminal QA to auto-end its session.
+  inherited flags. A bare, empty, or whitespace-only `--proxy-base` on a
+  sweeping command still writes the stale session's Run Record. Terminal QA
+  still auto-ends with a whitespace-only inherited `--context`, `--report`, or
+  `--proxy-base`; a whitespace-only `--context` resolves as a literal relative
+  path, so the default context file is not read. Bare or empty `--context` or
+  `--report` still makes QA auto-end fail and leaves the session open. A bare
+  or empty `--qa-verdict` still fails a Run Record closeout when inherited;
+  QA auto-end supplies its own verdict path.
 - Correct the 1.42.1 note: QA with a named packet yielding no Map ID after
   checkpoint preflight changed from a refusal to a journaled handler failure
   in that release; it did not *remain* journaled. A named packet now satisfies
