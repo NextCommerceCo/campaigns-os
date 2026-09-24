@@ -46,6 +46,7 @@ export const QA_PUBLISH_STATUSES = Object.freeze({
 // thrown error, so --json readers get a code to branch on.
 export const QA_PUBLISH_REFUSALS = Object.freeze({
   packet_required: "packet_required",
+  local_spec: "local_spec",
   order_flags_refused: "order_flags_refused",
   verdict_missing: "verdict_missing",
   verdict_unreadable: "verdict_unreadable",
@@ -218,6 +219,9 @@ async function attemptPublish(args, operations, dryRun) {
     return refusal(QA_PUBLISH_REFUSALS.packet_required, `Build Packet ${packetPath} is not readable (${error.code || error.message}).`);
   }
 
+  if (packet?.spec?.local_spec_id != null) {
+    return refusal(QA_PUBLISH_REFUSALS.local_spec, "Local-spec QA has no saved Map destination; keep its verdict in the repository. Portal publication requires a saved Map and fresh evidence.");
+  }
   const source = resolveStoredVerdictSource({ args, packetPath, packet, readJsonFile: ops.readJsonFile, exists: ops.exists });
   if (source.error) return source.error;
   let verdict;

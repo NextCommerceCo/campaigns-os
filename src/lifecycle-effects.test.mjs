@@ -577,8 +577,28 @@ const HANDLER_FAILURES = [
     argv: ["qa", subcommand, "--packet", "%DIR%/p.json"],
     files: QA_PACKET_WITHOUT_MAP_ID,
     command: "qa",
-    expect: /QA requires a Map ID\. The named Build Packet has no spec\.map_id/,
+    expect: /QA requires a Map ID or a local-spec packet\. The named Build Packet has no campaign identity/,
   })),
+  ...["run", "resolve"].flatMap((subcommand) => [
+    {
+      argv: ["qa", subcommand, "--packet", "%DIR%/p.json"],
+      files: { "p.json": JSON.stringify({ spec: { map_id: "saved-map", local_spec_id: "local-campaign" } }) },
+      command: "qa",
+      expect: /Local-spec packet QA cannot use a Map ID override or an ambiguous identity/,
+    },
+    {
+      argv: ["qa", subcommand, "--packet", "%DIR%/p.json"],
+      files: { ...QA_PACKET_WITHOUT_MAP_ID, "p.json": JSON.stringify({ spec: { map_id: null, local_spec_id: "local-campaign", local_path: "spec.json" }, assembly: { target_repo: "target" } }) },
+      command: "qa",
+      expect: /Local-spec QA requires the matching Assembly Report and current spec material hash/,
+    },
+    {
+      argv: ["qa", subcommand, "saved-map", "--spec", "%DIR%/spec.json"],
+      files: { "spec.json": JSON.stringify({ spec_identity: { local_spec_id: "local-campaign" } }) },
+      command: "qa",
+      expect: /Local-spec QA requires --packet/,
+    },
+  ]),
   { argv: ["run", "end"], fixture: "session-no-packet", command: "run", expect: /run end needs a build packet/ },
   { argv: ["next", "build", "--packet", "%DIR%/p.json"], files: { "p.json": "{ invalid" }, command: "next", expect: /not valid JSON|Unexpected token|Expected property name/ },
 ];

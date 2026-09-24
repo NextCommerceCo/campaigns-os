@@ -2,6 +2,63 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.0+agent.4] - 2026-09-24
+
+### Fixed
+
+- Run Record validation and its schema treat a null `local_spec_id` as absent,
+  preserving saved-Map records and best-effort capture with partial identity.
+  Non-null malformed or conflicting local IDs still fail before persistence.
+
+## [1.43.0+agent.3] - 2026-09-24
+
+### Fixed
+
+- Invalid campaign identities cannot select prior doctor history, including
+  when a malformed local ID would otherwise leave a Map-only or unfiltered
+  lookup. Such findings retain unknown cause instead of borrowing evidence.
+- Integrate the 1.42.1 argument-refusal fixes: local-spec packet QA remains
+  supported, while identity failures discovered from packet content remain
+  journaled handler failures. Advance bundled skill versions beyond 1.42.1.
+
+## [1.43.0+agent.2] - 2026-09-24
+
+### Fixed
+
+- Evidence identity projection and Run Record writes reject malformed or
+  conflicting local IDs instead of propagating them. Doctor keeps malformed
+  input diagnosable with `spec.local_identity`; saved-Map errors retain their
+  existing code and normalization. Local IDs remain exact canonical tokens.
+- Declare the optional local progress identity inline without mutating the
+  portable schema after construction.
+
+## [1.43.0+agent.1] - 2026-09-24
+
+### Fixed
+
+- Entry-point and QA instructions distinguish saved-Map builds from local-spec
+  builds, including local verdict storage, evidence identity and publication
+  suppression. Bundled QA and evidence skills follow the same distinction.
+- Page Kit sync and spec derivation retain the saved-Map mismatch diagnostic
+  while refusing mismatched local identities before writes.
+
+## [1.43.0] - 2026-09-24
+
+### Added
+
+- Agent-authored CampaignSpecs can use a stable `spec_identity.local_spec_id`
+  instead of a saved Map. Preparation preserves that identity in packets and
+  reports; doctor, polish, QA, progress, readback and run closeout distinguish it
+  from both the public route and saved Map identity. Material hashes continue
+  to bind each spec revision, including across fresh checkouts.
+- Packet-based local QA writes full verdicts and committed sidecars with the
+  local ID, refuses foreign or stale local reports, and never publishes them to
+  the Map portal. `qa publish` refuses local-spec packets. Existing saved-Map
+  workflows retain their identity and publication behavior.
+- Local setup and intake instructions let the coding agent author the spec
+  from prepared HTML, a brief and verified configured commerce. Existing
+  certification, source, runtime, polish and checkout proof gates still apply.
+
 ## [1.42.1] - 2026-09-24
 
 ### Fixed

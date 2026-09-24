@@ -1,3 +1,4 @@
+import { campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { createHash } from "node:crypto";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 import { dirname, join, resolve } from "node:path";
@@ -330,8 +331,8 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
   const slug = captureCampaignSlug(packet, report);
   const packetMapId = nonemptyString(packet?.spec?.map_id);
   const reportMapId = nonemptyString(report?.identity?.map_id);
-  if (!packetMapId || packetMapId !== reportMapId) {
-    throw new Error("polish capture requires matching packet and Assembly Report map identities.");
+  if (!campaignIdentitiesMatch(packet?.spec, report?.identity)) {
+    throw new Error("polish capture requires matching packet and Assembly Report campaign identities.");
   }
   const buildFingerprint = currentBuildFingerprint(report);
   if (!buildFingerprint) throw new Error("polish capture requires a strict current Assembly Report build fingerprint.");
@@ -360,6 +361,7 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
       resolved_path: resolvedPacketPath,
       resolved_target_repo: resolvedTargetRepo,
       map_id: packetMapId,
+      ...localSpecIdentityFields(packet.spec),
       campaign_slug: slug,
       route_root: nonemptyString(packet?.campaign?.route_root),
       target_repo: nonemptyString(packet?.assembly?.target_repo),
@@ -368,6 +370,7 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
       run_id: runId,
       identity: {
         map_id: reportMapId,
+        ...localSpecIdentityFields(report.identity),
         public_route_slug: nonemptyString(report?.identity?.public_route_slug),
         spec_hash: nonemptyString(report?.identity?.spec_hash),
       },

@@ -171,17 +171,18 @@ sync into another skills directory for testing or a managed profile.
 You need:
 
 - Campaigns App setup with product/variant packages, Offer-based price tiers, shipping methods, payment methods, and an API key.
-- Campaign Map exported as a local CampaignSpec JSON, including `campaign.store_url` for page-kit `campaigns.json`.
+- CampaignSpec JSON exported from a saved Map or authored by the coding agent through the [local-spec entry](build-packet.md#local-spec-entry), including `campaign.store_url` for page-kit `campaigns.json`. Local-spec identity requires a reviewed 1.43.0-or-later release.
 - Prepared HTML/CSS/assets for the campaign pages.
 - A target `next-campaign-page-kit` repo or local directory.
 - A starter template family decision, usually `olympus` unless `demeter` or `shop-single-step` better matches the campaign shape.
 
 If the checkout should have an exit-intent offer or typed promo-code box,
-configure it in Campaign Map Builder before export so the checkout page carries
+configure it in Campaign Map Builder before export, or declare it in the local
+spec using verified campaign Offer values, so the checkout page carries
 the mapped `exit_intent.offer_ref_id` / `exit_intent.offer_code` or
 `promo_code_input.offer_ref_id` / `promo_code_input.offer_code`.
 
-Campaigns API keys are public, browser-side, domain-allowlisted keys. If your exported CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
+Campaigns API keys are public, browser-side, domain-allowlisted keys. If your CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
 
 The Store Profile is campaign metadata entered by the operator or derived from the store with `spec derive --from-store` (see "Create The Packet" below), not Campaigns API data. Before the target is scaffolded, `doctor` requires only `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present. Once the target's `campaigns.json` entry exists, `page_kit.store_profile` checks every one of those fields the CampaignSpec provides against the target: a field the spec carries that the target lacks, or carries with a different value, blocks (the spec is the authority; run `npx --no-install campaigns-os page-kit sync --packet <campaign-runtime.build.json>` to write the spec's values into the target entry, or fix the spec, then re-run `doctor`), a field present only in the target warns as `target_only` — unless the value is starter demo residue (a placeholder storefront URL or phone number), which blocks as `demo_residue` whatever the spec says — and a field absent from both is clean. So a spec that fills all nine fields makes all nine required after scaffold. A discrepancy the spec cannot yet resolve can be recorded with `campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <ISO timestamp>` instead of the review condition; see [docs/build-packet.md](./build-packet.md), "Page Kit Store Profile checkpoint").
 
@@ -267,10 +268,13 @@ computing `source_hash`; the "Selecting the wrapper policy at intake" section of
 > nothing locally: sessions, journals and Run Records are still written and
 > the Run Record's `remit_state` reads `skipped`. Turning consent off at the
 > machine or environment level (`telemetry off`, `CAMPAIGNS_OS_TELEMETRY=off`)
-> also makes `qa run` default to a local-only verdict unless the campaign is
+> also makes saved-Map `qa run` default to a local-only verdict unless the campaign is
 > portal-managed or `--post-verdict` is passed; `--no-remit` does not — it
 > skips this command's remit only, and the verdict still publishes. To keep
-> one verdict local, pass `--no-post-verdict` (or `--local-only`) to `qa run`.
+> one saved-Map verdict local, pass `--no-post-verdict` (or `--local-only`) to `qa run`.
+> A `local_spec_id` packet always keeps its QA verdict and progress local,
+> including with `--post-verdict`; `qa publish` refuses it. Run Record remit
+> still follows the consent controls above.
 > `--no-run-session` on `start` skips opening the session altogether. Full
 > contract: [Run Telemetry](./workflow-findings-sidecar.md).
 
@@ -281,8 +285,9 @@ npx --no-install campaigns-os start --map-id <map-id> --target . --source ./sour
 
 `--map-id <id>` starts from a map saved in Campaign Map Builder (add
 `--proxy-base <origin>` when the map was saved on a non-production map store);
-`--spec <campaignspec.json>` starts from a locally exported CampaignSpec
-instead. One of the two is required. `--target .` is the campaign folder, the
+`--spec <campaignspec.json>` starts from a local saved-Map export or an
+agent-authored local CampaignSpec instead. One of the two is required.
+`--target .` is the campaign folder, the
 page-kit project that pins the toolkit; with `--spec` it must already be a
 directory (`Target repo is not a directory` otherwise). `--source` is always
 required: the folder of prepared HTML/CSS/assets for the pages you are
@@ -381,7 +386,7 @@ Build is not launch readiness. A complete run still needs:
   `deploy.target` set to `local-serve` (`qa policy set --deploy-target local-serve
   --preview-url http://localhost:<port>/<slug>/`); localhost on any port is a
   Development domain, so no SDK origin allowlist entry is needed there
-- Node/npm QA with Map ID and preview URL
+- Node/npm QA with a saved Map ID or local-spec Build Packet, and the tested URL
 - typed-card test-order proof via `--test-order common` (global test cards bypass the gateway; no permission/approval needed — depth is the only control)
 
 ```bash

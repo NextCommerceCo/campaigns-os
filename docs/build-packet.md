@@ -4,7 +4,7 @@ The Build Packet is the campaign assembly handoff. It wraps, but does not replac
 
 It answers:
 
-- Which CampaignSpec and Map ID are we building?
+- Which CampaignSpec and saved Map ID or local-spec ID are we building?
 - Which public route slug and campaign directory are expected?
 - Where are the prepared HTML/assets?
 - Which Campaign Build Brief is the merchandising/design presentation truth?
@@ -14,6 +14,56 @@ It answers:
 - Which deploy target, SDK origin state, and QA proof depth apply?
 
 The current schema is `schemas/campaign-runtime-build-packet.v0.schema.json`.
+
+## Local-spec entry
+
+A saved Map is optional for a prepared-HTML build. The coding agent authors an
+ordinary CampaignSpec from the brief, source design and configured campaign's
+real commerce values, following `schemas/campaign-spec.v4.schema.json`. The
+operator supplies the selected store/campaign, public Campaigns API key, intended
+pages and commercial choices, plus store contact details and policy URLs. Verify
+the store/campaign binding and package/offer references; do not guess commerce
+values. No gateway or Map provisioning is required for this entry.
+
+Set `spec_identity.local_spec_id` to a new UUID once, commit it with the spec,
+and keep it unchanged through revisions and fresh checkouts. It accepts 1–64
+letters, digits, underscores or hyphens, with no surrounding whitespace. Local
+IDs are checked exactly; the legacy normalization of saved Map IDs does not
+apply. Malformed or conflicting local identities cannot be adopted into campaign
+evidence; blocked diagnostic reports may still be written. Doctor reports local
+identity failures as `spec.local_identity`, while
+saved-Map failures retain `spec.map_id`. Set `spec_identity.public_route_slug`
+to the intended route. Omit `map_id`, saved-Map URLs and saved-Map revision
+metadata; a local ID is never a Map ID. A spec declaring both kinds is refused.
+A separately authored campaign gets a new local ID even if its route matches.
+
+```sh
+npx --no-install campaigns-os start --spec campaign-spec.json --source source-html --target . --template-family <certified-family> --deploy-target local-serve
+npx --no-install campaigns-os next --packet campaign-runtime.build.json
+```
+
+The packet and report retain `map_id: null` and carry `local_spec_id`. Doctor,
+report writes, polish capture, progress, run closeout and QA compare that local
+identity. Material spec hashes still bind the current revision; a changed ID or
+content cannot reuse earlier proof. After a material revision, follow `next` to
+refresh preparation and affected evidence. Keep the spec, source, dependency
+pins and canonical sidecars in Git. Use `readback` and `next` after a fresh
+checkout; identity survives the move, but proof freshness is assessed again.
+
+Run QA through `--packet`. Local verdicts use the storage key
+`local-spec-<local_spec_id>` and carry the explicit ID in the full verdict and
+committed sidecar. A matching route alone cannot adopt a verdict. Local QA is
+never posted to the Map portal: `qa run` suppresses publication even with
+`--post-verdict`, while `qa publish` refuses with `local_spec`. Progress remains
+local with `map_id_missing`. Run Telemetry retains
+its existing consent controls. `spec derive --write-map` requires a real saved
+Map. Moving to a saved Map requires fresh preparation and evidence; this entry
+does not claim saved-Map revision alignment.
+
+Existing saved-Map specs and packets continue to work. The identity change does
+not relax template certification, source proof, store/SDK parity, polish,
+commerce checks, or typed-card checkout proof. Resolve their reported gates;
+localhost readiness is not production approval.
 
 ## Root-Served Campaigns (`campaign.route_root`)
 
@@ -78,7 +128,7 @@ campaigns-os page-kit sync --packet campaign-runtime.build.json [--dry-run] [--j
 ```
 
 The CampaignSpec is the authority for the Store Profile: those values are
-authored in the Map, never in the repo, so `page-kit sync` writes the nine
+authored in the saved Map or the repository-owned local spec, so `page-kit sync` writes the nine
 fields the spec carries (`campaign.store_*`) unconditionally. The SDK pin is
 different. On an existing campaign the repo pin moves first and the Map/spec
 is stale until someone re-saves it, so a spec → repo write would undo a bump
@@ -103,7 +153,7 @@ covers only the governed fields. `--dry-run` prints the same diff without
 writing. Exit 0 on success (including a no-op re-run); exit 2 with
 `page_kit.sync.*` error codes and nothing written when the packet cannot be
 read, the target entry or the spec is missing or not an object, the spec
-identifies another campaign (`spec_identity.public_route_slug` or `map_id`
+identifies another campaign (`spec_identity.public_route_slug`, `map_id` or `local_spec_id`
 disagreeing with the packet: `page_kit.sync.spec_identity_mismatch`), or the
 resolved `_data/campaigns.json` lies outside the target repo through a symlink
 (`page_kit.sync.target_escapes_repo`).
@@ -1114,12 +1164,12 @@ and report proof policy fields above.
 
 | Flag | Source | When to use |
 | --- | --- | --- |
-| `--spec <path>` | Local JSON file | Offline work, CI runs against a fixture, or hand-edited spec drafts |
-| `--map-id <id>` | Map Builder proxy (KV-backed) | Default agentic flow — KV is the source of truth, no file shuttling |
+| `--spec <path>` | Local JSON file | Agent-authored local specs, saved-Map exports, offline work or CI fixtures |
+| `--map-id <id>` | Map Builder proxy (KV-backed) | Saved-Map intake from the current KV revision |
 
 When `--map-id <id>` is set, the CLI fetches `GET <proxy>/api/spec/<id>` (default `<proxy>` is `https://campaign-map.nextcommerce.com`) and caches the response to `<target>/.campaign-runtime/fetched-specs/<id>.json`. The cached file is what downstream stages read, so the packet's `spec.local_path` always resolves to an on-disk artifact regardless of intake mode.
 
-Retrieval behavior:
+Saved-Map retrieval behavior (`--map-id`):
 
 - **Re-fetch by default.** Every `start` / `prepare-build` invocation re-fetches from KV. KV is the source of truth; the cache file is a debug/inspection artifact, not a performance optimization.
 - **`--cached-spec`** reuses the cache without a network call. Use for offline iteration or when the proxy is temporarily unreachable.

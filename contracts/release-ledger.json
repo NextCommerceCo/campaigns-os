@@ -6287,8 +6287,7 @@
         }
       ],
       "entry_sha256": "6527efc0942f6125e694fe670a85ef4c00fabc12167b35f4c206d92ccdebf5e0"
-    }
-    ,
+    },
     {
       "id": "RL-0141",
       "sequence": 141,
@@ -6411,6 +6410,365 @@
         }
       ],
       "entry_sha256": "e74290c495de13cc95e4f615fe6bd8aa8dbdb7a06211a206be5cd5296724b0af"
+    },
+    {
+      "id": "RL-0144",
+      "sequence": 142,
+      "date": "2026-09-24",
+      "kind": "release",
+      "surface_version": "1.43.0",
+      "changelog_section": "1.43.0",
+      "changelog_sha256": "1500b85555746a9550cb238041a55c92bf4e2357f9ad4768c5f27ea4de6b6cde",
+      "agent_impact": "For HTML-and-brief intake, author a normal CampaignSpec with a stable spec_identity.local_spec_id and no saved Map identity. Use packet-based QA and keep local evidence in Git; local verdicts cannot be published to the Map portal. Existing saved-Map specs and evidence remain supported; no readiness gate is relaxed.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/types.ts",
+          "surface_entry": null,
+          "summary": "Type the optional stable local_spec_id for agent-authored CampaignSpecs."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare that local-spec QA and progress stay local and qa publish refuses local packets."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/migration-sidecar-bundle.v0.json",
+          "surface_entry": "contracts/migration-sidecar-bundle.v0.json",
+          "summary": "Bind local bundles through local_spec_id as the explicit alternative to saved Map identity."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.43.0 and refresh changed contract hashes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document stable local IDs, revision evidence, local QA storage and saved-Map boundaries."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Introduce agent-authored local CampaignSpec intake after Claude setup."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Document local-spec report binding without saved revision alignment or portal storage."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Update release metadata for local-spec identity support."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release local-spec identity support as 1.43.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-assembly-report.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-assembly-report.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-spec.v4.schema.json",
+          "surface_entry": "schemas/campaign-spec.v4.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-progress-snapshot.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-progress-snapshot.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Accept and document local-spec identity while preserving existing saved-Map artifacts."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision and individual versions for the local-spec release."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision and local-spec HTML/brief intake guidance."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/references/session-intake.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision and local-spec HTML/brief intake guidance."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current skills bundle revision."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "Prepare, inspect, resume and close out local-spec campaigns with separate stable identity and material revision binding."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Document local-spec QA publication and progress suppression."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the supported orientation/runtime reference and fixtures for surface 1.43.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the supported orientation/runtime reference and fixtures for surface 1.43.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.43.0+skills.1 bundle in executable examples."
+        }
+      ],
+      "entry_sha256": "41aa194138fb46e0f5acf1b668139b09f21cfe210e976013ae2db9263cb0d068"
+    },
+    {
+      "id": "RL-0142",
+      "sequence": 143,
+      "date": "2026-09-24",
+      "kind": "amendment",
+      "amends": "RL-0144",
+      "amendment_reason": "Complete the entry-point and QA documentation omitted from RL-0144, clarify its skill guidance, and preserve the existing saved-Map mismatch diagnostic.",
+      "surface_version": null,
+      "changelog_section": "1.43.0+agent.1",
+      "changelog_sha256": "ec20f3ed8ca10054c47027c6cd66ce58df812a9a7bdc1ca1a314ee5ca61953d6",
+      "agent_impact": "Use the local-spec path without a saved Map ID; local verdicts and progress remain local. Saved-Map mismatch errors continue to identify both conflicting Map IDs.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Allow agent-authored local specs at entry and distinguish local QA from saved-Map publication."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "Document local_spec_id as the alternative cross-artifact identity in local bundles."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document local QA storage keys, explicit local identity and identity-aware evidence comparison."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "page-kit",
+          "summary": "Retain the saved-Map mismatch diagnostic while preserving refusal of mismatched local identities in sync and spec derivation."
+        },
+        {
+          "class": "skill",
+          "path": null,
+          "surface_entry": "skills.json",
+          "summary": "Clarify that the 1.43.0 skill updates also teach local-spec QA inputs, local-only publication behavior and separate local evidence identity."
+        }
+      ],
+      "entry_sha256": "a15386429fe754cde6d5ff9590859b463fdb371e014b0ad0c50a8e19a24e1079"
+    },
+    {
+      "id": "RL-0143",
+      "sequence": 144,
+      "date": "2026-09-24",
+      "kind": "amendment",
+      "amends": "RL-0144",
+      "amendment_reason": "Harden local identity projection and Run Record persistence after review; distinguish local doctor failures and clarify exact local-ID normalization.",
+      "surface_version": null,
+      "changelog_section": "1.43.0+agent.2",
+      "changelog_sha256": "cb40cab1b8f4e816de7f1b4e7cf318c8e773e8ed133aa2ba655c62435af399a9",
+      "agent_impact": "Malformed or conflicting local identities are refused before durable evidence writes. Doctor reports local identity failures under spec.local_identity while saved-Map diagnostics and normalization retain their existing behavior.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "Report malformed or mismatched local identities with spec.local_identity and local_spec detail without aborting diagnostics."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run-record",
+          "summary": "Refuse malformed or conflicting local identities during projection and Run Record validation before persistence."
+        },
+        {
+          "class": "named_surface",
+          "path": null,
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document exact local-ID validation, evidence-write refusal and the separate local doctor diagnostic."
+        }
+      ],
+      "entry_sha256": "0a3533b5ab6004e1f9a7d3c9e18030c9f055c11d1b596319728d7d2f1f7f443c"
+    },
+    {
+      "id": "RL-0145",
+      "sequence": 145,
+      "date": "2026-09-24",
+      "kind": "amendment",
+      "amends": "RL-0143",
+      "amendment_reason": "Keep invalid local identity diagnostics from adopting foreign doctor history and integrate the landed 1.42.1 refusal boundaries without losing local packet QA.",
+      "surface_version": null,
+      "changelog_section": "1.43.0+agent.3",
+      "changelog_sha256": "c813cdbeaea7d82816af6a6aeedf6e65df00b75dd6c0f6116ce51266a0f9ff0f",
+      "agent_impact": "Invalid identities have no usable prior-history comparison. Packet-derived QA identity errors remain journaled handler failures; missing argv selectors are refused before reads.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "Do not select prior doctor history for malformed, missing, conflicting or mismatched campaign identities."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "Preserve local-spec packet QA while integrating the argv-only refusal boundary from 1.42.1."
+        },
+        {
+          "class": "skill",
+          "path": null,
+          "surface_entry": "skills.json",
+          "summary": "Advance each bundled skill version beyond the concurrently landed 1.42.1 release."
+        },
+        {
+          "class": "named_surface",
+          "path": null,
+          "surface_entry": "docs/effects.md",
+          "summary": "Describe missing or conflicting packet-derived local identity as a journaled handler failure."
+        }
+      ],
+      "entry_sha256": "346259f1c22a80007cb949786c3b113211931bb399e8a181764548db36d397cc"
+    },
+    {
+      "id": "RL-0146",
+      "sequence": 146,
+      "date": "2026-09-24",
+      "kind": "amendment",
+      "amends": "RL-0143",
+      "amendment_reason": "Treat a null local ID as absent in Run Record validation and its schema, matching identity resolution and preserving best-effort saved-Map capture.",
+      "surface_version": null,
+      "changelog_section": "1.43.0+agent.4",
+      "changelog_sha256": "5baa9f8109edb5d00692316d69b5035779f3114d6f393010df40cfbe918af59b",
+      "agent_impact": "Run Records may carry local_spec_id: null without being rejected, including records with a saved Map or partial identity. Non-null malformed or conflicting local IDs remain invalid.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": null,
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Allow null local_spec_id as an absent local identity and align the Run Record validator with that shape."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": null,
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Refresh the Run Record schema digest within the pending 1.43.0 supported surface."
+        }
+      ],
+      "entry_sha256": "56ca91118205936c9f1c58eda8a4fb208b9c18ee6c0552dce8c3176dffad14f3"
     }
   ]
 }

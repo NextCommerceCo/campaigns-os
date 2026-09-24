@@ -1,3 +1,4 @@
+import { campaignSpecIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 // Best-effort producer adapter. Sanitized immutable bytes are durable before delivery.
 import {randomBytes,createHash} from 'node:crypto';
 import {mkdirSync,readFileSync,writeFileSync,renameSync,rmSync,readdirSync,lstatSync} from 'node:fs';
@@ -46,7 +47,7 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
   const aligned=contextBound&&mapId&&localMapId===mapId&&baseline?.map_id===mapId&&baseline?.algorithm==='map-store-v1'&&hash(baseline.hash)&&localHash&&localHash===hash(baseline.local_spec_material_hash);
   const build=hash(doctor?.derived?.build_output_fingerprint?.value);
   const recordedBuild=hash(report?.stages?.assembly?.build_fingerprint);
-  const reportBound=doctor?.derived?.prepare_build_gate?.binding_failure!==true&&contextBound&&mapId&&localMapId===mapId&&report?.identity?.map_id===mapId&&localHash&&localHash===hash(report?.identity?.spec_material_hash);
+  const reportBound=doctor?.derived?.prepare_build_gate?.binding_failure!==true&&contextBound&&campaignIdentitiesMatch(packet?.spec,campaignSpecIdentity(spec))&&campaignIdentitiesMatch(packet?.spec,report?.identity)&&localHash&&localHash===hash(report?.identity?.spec_material_hash);
   const qaSource=hash(report?.stages?.qa?.evidence?.source_build_fingerprint);
   const verdict=qaResult?.verdict;
   const qa=verdict?{
@@ -60,7 +61,7 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
   const preview=typeof packet?.deploy?.preview_url==='string'&&packet.deploy.preview_url?packet.deploy.preview_url:null;
   return {
     schema_version:PROGRESS_SCHEMA_VERSION,package_version:packageVersion,producer:qaResult?'qa':'next',
-    identity:{map_id:mapId,map_revision_hash:contextBound&&baseline?.map_id===mapId?hash(baseline?.hash):(localMapId===mapId?hash(spec?.spec_identity?.spec_hash||spec?.spec_hash):null),map_revision_algorithm:'map-store-v1',saved_revision_alignment:aligned?'aligned':'unconfirmed',local_spec_material_hash:localHash,local_spec_material_algorithm:'campaign-spec-material-v1',build_fingerprint:build,build_fingerprint_algorithm:'sha256-manifest/v1'},
+    identity:{map_id:mapId,...localSpecIdentityFields(packet?.spec),map_revision_hash:mapId?(contextBound&&baseline?.map_id===mapId?hash(baseline?.hash):(localMapId===mapId?hash(spec?.spec_identity?.spec_hash||spec?.spec_hash):null)):null,map_revision_algorithm:'map-store-v1',saved_revision_alignment:aligned?'aligned':'unconfirmed',local_spec_material_hash:localHash,local_spec_material_algorithm:'campaign-spec-material-v1',build_fingerprint:build,build_fingerprint_algorithm:'sha256-manifest/v1'},
     stages:PROGRESS_STAGES.map(stage=>{
       const status=reportBound?accepted(report?.stages?.[stage]?.status,PROGRESS_STAGE_STATUSES):'unknown';
       const source=stage==='assembly'?recordedBuild:stage==='qa'?qaSource:null;

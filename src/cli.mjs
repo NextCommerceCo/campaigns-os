@@ -1,3 +1,4 @@
+import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanText, htmlScanDigest } from "./html-scan.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { createDemo, demoArguments } from "./demo.mjs";
@@ -28,7 +29,7 @@ import { observeProgress, PROGRESS_OBSERVATION } from "./progress-node.mjs";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
-import { specMaterialHash } from "./spec-identity.mjs";
+import { specMaterialHash, specHashesMatch } from "./spec-identity.mjs";
 // The same predicate stage-ledger.mjs judges a mutator's result with, imported
 // rather than re-stated so the waive preview and the commit agree by identity.
 import { isPlainObject } from "./repo-scan.mjs";
@@ -98,7 +99,7 @@ import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from ".
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { writeMapSdkPin } from "./map-pin-writeback.mjs";
-import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
+import { qaVerdictIdentityMatch, discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
 import { assertFetchAvailable, assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, describeRemitBaseKind, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
@@ -972,31 +973,38 @@ export function recordQaStageOutcome(args, result) {
     if (!existsSync(reportPath)) return false;
 
     const verdict = result.verdict;
+    const hasLocalIdentity = packet.spec?.local_spec_id != null || verdict?.local_spec_id != null;
+    if (hasLocalIdentity && !qaVerdictIdentityMatch(verdict, packet)) return false;
     const failed = (Array.isArray(verdict.assertions) ? verdict.assertions : [])
       .filter((assertion) => assertion?.status === "fail")
       .map((assertion) => `${assertion.id}: ${assertion.actual || "assertion failed"}`);
-    const committed = commitAssemblyReport(workspace, (report) => recordProducerStageOutcome(report, {
-      stage: "qa",
-      disposition: verdict.disposition,
-      timestamp: verdict.completed_at,
-      command: `campaigns-os ${QA_RUN_PRODUCER}`,
-      outputs: [result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString),
-      blockers: verdict.disposition === "blocked" ? failed : [],
-      warnings: verdict.disposition === "ready_with_exceptions"
-        ? ["QA completed with explicitly attributed exceptions; inspect the verdict artifact."]
-        : [],
-      // The producer knows its own run id and must restate it, or the stage
-      // keeps a previous run's identity beside this run's status and outputs.
-      identity: { verdict_run_id: optionalString(verdict.run_id) },
-      // Which build this verdict judged, and the gates whose browser outcome
-      // the doctor's static scan defers to (qaGatePassedForCurrentBuild). A
-      // gate that never ran is left out, so silence never reads as a pass.
-      evidence: qaStageGateEvidence(verdict, report),
-      // Counts-only: never order ids, refs, emails or URLs (see
-      // summarizePurchaseProof). This is what lets `next` tell a real purchase
-      // path from a `--test-order off` diagnostic.
-      proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
-    }), {
+    const committed = commitAssemblyReport(workspace, (report) => {
+      if (hasLocalIdentity && !specHashesMatch(verdict.spec_hash, report.identity?.spec_material_hash)) {
+        throw new Error("Local-spec QA verdict belongs to a different material revision; report evidence was not changed.");
+      }
+      return recordProducerStageOutcome(report, {
+        stage: "qa",
+        disposition: verdict.disposition,
+        timestamp: verdict.completed_at,
+        command: `campaigns-os ${QA_RUN_PRODUCER}`,
+        outputs: [result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString),
+        blockers: verdict.disposition === "blocked" ? failed : [],
+        warnings: verdict.disposition === "ready_with_exceptions"
+          ? ["QA completed with explicitly attributed exceptions; inspect the verdict artifact."]
+          : [],
+        // The producer knows its own run id and must restate it, or the stage
+        // keeps a previous run's identity beside this run's status and outputs.
+        identity: { verdict_run_id: optionalString(verdict.run_id) },
+        // Which build this verdict judged, and the gates whose browser outcome
+        // the doctor's static scan defers to (qaGatePassedForCurrentBuild). A
+        // gate that never ran is left out, so silence never reads as a pass.
+        evidence: qaStageGateEvidence(verdict, report),
+        // Counts-only: never order ids, refs, emails or URLs (see
+        // summarizePurchaseProof). This is what lets `next` tell a real purchase
+        // path from a `--test-order off` diagnostic.
+        proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
+      });
+    }, {
       stage: "qa",
       // The sidecar names this refresh as its producer (generated_by, #312).
       // This function is the `qa run` stage record, whichever token dispatch
@@ -1701,7 +1709,7 @@ function campaignIdentity(spec, args) {
     || optionalString(spec.spec_identity?.public_route_slug)
     || optionalString(spec.campaign?.slug)
     || optionalString(spec.campaign?.id);
-  return { mapId, publicRouteSlug };
+  return { mapId, publicRouteSlug, localSpecId: spec.spec_identity?.local_spec_id ?? null };
 }
 
 function preferredTemplateFamily(spec) {
@@ -2381,9 +2389,11 @@ function prepareBuild(args, options = {}) {
   assertDistinctPrepareBuildOutputPaths(prepareBuildCollisionPaths);
   guardAssemblyReportOverwrite(reportPath, args);
   const spec = readJson(specPath);
-  const { mapId, publicRouteSlug } = campaignIdentity(spec, args);
-  if (!mapId) throw new Error("CampaignSpec has no map ID. Re-export a saved Map Builder spec with spec_identity.map_id before assembly; use --map-id only for legacy diagnostics.");
-  if (!publicRouteSlug) throw new Error("CampaignSpec has no public route slug. Re-export a saved Map Builder spec with spec_identity.public_route_slug or set campaign.slug.");
+  const { mapId, publicRouteSlug, localSpecId } = campaignIdentity(spec, args);
+  if (!resolveCampaignIdentity({ map_id: mapId, local_spec_id: localSpecId })) {
+    throw new Error("CampaignSpec requires exactly one identity: a saved spec_identity.map_id, or an agent-authored spec_identity.local_spec_id (1–64 letters, digits, underscores or hyphens). Keep the local ID stable across revisions; do not invent a Map ID.");
+  }
+  if (!publicRouteSlug) throw new Error("CampaignSpec has no public route slug. Set spec_identity.public_route_slug or campaign.slug.");
 
   // Dispatch validated the argv-only flags before spec resolution. Only the
   // manifest's filesystem check remains here, before preparation writes.
@@ -2626,7 +2636,8 @@ function prepareBuild(args, options = {}) {
     },
     spec: {
       map_id: mapId,
-      spec_url: spec.spec_identity?.spec_url || null,
+      ...(localSpecId ? { local_spec_id: localSpecId } : {}),
+      spec_url: localSpecId ? null : spec.spec_identity?.spec_url || null,
       local_path: relFromFile(packetPath, specPath),
     },
     design_source_package: designSourcePackage.referenceFor(packetPath),
@@ -2991,6 +3002,7 @@ function createAssemblyReport({
     status: "prepared",
     identity: {
       map_id: packet.spec.map_id,
+      ...localSpecIdentityFields(packet.spec),
       public_route_slug: packet.campaign.public_route_slug,
       campaign_directory: packet.campaign.campaign_directory,
       live_url_path: packet.campaign.live_url_path,
@@ -3886,11 +3898,17 @@ export function doctorPacket(packetPath, options = {}) {
   // to go by first. Code granularity, because that is the granularity the
   // record stores. baseDir is the packet directory, the same root the Run
   // Record writes under.
+  // An invalid identity cannot select history. In particular, withholding a
+  // malformed local ID from derived must not turn it into an unfiltered or
+  // Map-only lookup of another campaign's findings.
+  const comparableIdentity = resolveCampaignIdentity(result.derived)
+    && !result.errors.some(issue => issue.code === "spec.local_identity" || issue.code === "spec.map_id");
   result.cause_summary = annotateDoctorIssueCauses({
     errors: result.errors,
     warnings: result.warnings,
-    baseDir: dirname(resolve(packetPath)),
+    baseDir: comparableIdentity ? dirname(resolve(packetPath)) : null,
     mapId: result.derived?.map_id || null,
+    localSpecId: result.derived?.local_spec_id || null,
   });
   return result;
 }
@@ -3910,6 +3928,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   const errors = [];
   const warnings = [];
   const ready = [];
+  const packetIdentity = resolveCampaignIdentity(packet?.spec);
   const derived = {
     packet_path: packetPath,
     // The report this inspection read (null when the caller switched the
@@ -3917,6 +3936,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     // different file.
     assembly_report_path: typeof resolvedReportPath === "string" ? resolvedReportPath : null,
     map_id: packet?.spec?.map_id || null,
+    ...(packetIdentity?.kind === "local_spec" ? { local_spec_id: packetIdentity.id } : {}),
     public_route_slug: packet?.campaign?.public_route_slug || null,
     template_family: packet?.assembly?.template_family || null,
     source_root: null,
@@ -4350,7 +4370,10 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
 
   requireString(packet, errors, "campaign.public_route_slug");
   requireBoolean(packet, errors, "campaign.allowed_domains_confirmed");
-  requireString(packet, errors, "spec.map_id");
+  if (!resolveCampaignIdentity(packet.spec)) addIssue(errors, packet.spec?.local_spec_id != null ? "spec.local_identity" : "spec.map_id", "Packet spec requires exactly one valid map_id or local_spec_id.", { kind: packet.spec?.local_spec_id != null ? "local_spec" : "saved_map" });
+  if (packet.spec?.local_spec_id != null && (packet.spec.spec_url != null || !isNonEmptyString(packet.spec.local_path))) {
+    addIssue(errors, "spec.local_identity", "Local-spec packets require a local_path and no saved-Map spec_url.");
+  }
   if (!synthesizedBuiltSite) {
     requireString(packet, errors, "source_html.root");
     requireArray(packet, errors, "source_html.pages");
@@ -4536,8 +4559,11 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     buildState.specStatus = specStatus;
     if (specStatus === "ok") {
       const specMapId = spec.spec_identity?.map_id || spec.map_id;
-      if (specMapId && specMapId !== packet.spec.map_id) {
-        addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
+      if ((specMapId && specMapId !== packet.spec.map_id)
+        || ((spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null)
+          && !campaignIdentitiesMatch(campaignSpecIdentity(spec), packet.spec))) {
+        const localIdentity = spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null;
+        addIssue(errors, localIdentity ? "spec.local_identity" : "spec.map_id", "Packet identity does not match the CampaignSpec map_id/local_spec_id.", { kind: localIdentity ? "local_spec" : "saved_map" });
       }
       ready.push("Local CampaignSpec parsed");
       runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
@@ -5032,6 +5058,9 @@ export function pageKitSyncCommand(args) {
       addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", `CampaignSpec identifies route "${singleLineField(specSlug)}" but the packet's campaign.public_route_slug is "${publicRouteSlug}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
     } else if (specMapId && packetMapId && specMapId !== packetMapId) {
       addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", `CampaignSpec spec_identity.map_id "${singleLineField(specMapId)}" does not match the packet's spec.map_id "${singleLineField(packetMapId)}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
+    } else if ((spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null)
+      && !campaignIdentitiesMatch(campaignSpecIdentity(spec), packet.spec)) {
+      addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", "CampaignSpec identity (spec_identity.map_id/local_spec_id) does not match the packet identity. Point spec.local_path at this campaign's spec (or re-run prepare-build from it); nothing was written.");
     }
   }
 
@@ -5375,6 +5404,9 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
       addIssue(result.errors, "spec.derive.spec_identity_mismatch", `CampaignSpec identifies route "${singleLineField(specSlug)}" but the packet's campaign.public_route_slug is "${publicRouteSlug}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
     } else if (specMapId && packetMapId && specMapId !== packetMapId) {
       addIssue(result.errors, "spec.derive.spec_identity_mismatch", `CampaignSpec spec_identity.map_id "${singleLineField(specMapId)}" does not match the packet's spec.map_id "${singleLineField(packetMapId)}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
+    } else if ((spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null)
+      && !campaignIdentitiesMatch(campaignSpecIdentity(spec), packet.spec)) {
+      addIssue(result.errors, "spec.derive.spec_identity_mismatch", "CampaignSpec identity (spec_identity.map_id/local_spec_id) does not match the packet identity. Point spec.local_path at this campaign's spec (or re-run prepare-build from it); nothing was written.");
     }
   }
 
@@ -6159,15 +6191,15 @@ function validateSpecPackageAvailability(spec, warnings, ready) {
 
 function validateSpecIdentityExport(spec, warnings, ready) {
   const identity = spec?.spec_identity;
-  if (isObject(identity) && isNonEmptyString(identity.map_id) && isNonEmptyString(identity.public_route_slug)) {
-    ready.push("CampaignSpec spec_identity includes map_id and public_route_slug");
+  if (isObject(identity) && resolveCampaignIdentity(identity) && isNonEmptyString(identity.public_route_slug)) {
+    ready.push(`CampaignSpec spec_identity includes ${identity.local_spec_id ? "local_spec_id" : "map_id"} and public_route_slug`);
     return;
   }
 
   addIssue(
     warnings,
     "spec_identity.export",
-    "CampaignSpec is missing complete spec_identity.map_id/public_route_slug. Prefer re-exporting from a saved Map Builder map; CLI identity overrides should stay diagnostic-only."
+    "CampaignSpec is missing complete spec_identity: declare map_id for a saved Map or local_spec_id for a local spec, plus public_route_slug. CLI identity overrides should stay diagnostic-only."
   );
 }
 
@@ -9050,7 +9082,12 @@ function validateAssemblyReport(report, { checkSourcePackageFreshness = true } =
   if (report.schema_version !== REPORT_SCHEMA) addIssue(errors, "schema_version", `Expected ${REPORT_SCHEMA}.`);
   else ready.push(`Assembly report schema ${REPORT_SCHEMA}`);
   for (const path of ["run_id", "generated_at", "status", "identity.map_id", "identity.public_route_slug", "inputs.packet_path", "template_family.value"]) {
-    requireString(report, errors, path);
+    if (path === "identity.map_id") {
+      if (!resolveCampaignIdentity(report.identity)) addIssue(errors, "identity.map_id", "Assembly Report requires exactly one valid map_id or local_spec_id.");
+    } else requireString(report, errors, path);
+  }
+  if (report.identity?.local_spec_id != null && !/^sha256:[0-9a-f]{64}$/.test(report.identity.spec_material_hash || "")) {
+    addIssue(errors, "identity.spec_material_hash", "Local-spec reports require a current SHA-256 material spec hash.");
   }
   const stages = report.stages;
   if (!isObject(stages)) {
@@ -9300,13 +9337,14 @@ function nextPrepareBuildBindingIssues({
   const expectedSlug = optionalString(packet.campaign?.public_route_slug);
   const recordedMapId = optionalString(report.identity?.map_id);
   const recordedSlug = optionalString(report.identity?.public_route_slug);
-  if (recordedMapId !== expectedMapId || recordedSlug !== expectedSlug) {
+  if (!campaignIdentitiesMatch(packet.spec, report.identity) || recordedSlug !== expectedSlug) {
     push(
       "next.prepare_build.report_campaign_mismatch",
       "Assembly Report campaign identity does not match the current Build Packet.",
       {
-        expected: { map_id: expectedMapId, public_route_slug: expectedSlug },
-        recorded: { map_id: recordedMapId, public_route_slug: recordedSlug },
+        // Failed identity fields are diagnostic data, never adopted evidence.
+        expected: { map_id: expectedMapId, local_spec_id: packet.spec?.local_spec_id ?? null, public_route_slug: expectedSlug },
+        recorded: { map_id: recordedMapId, local_spec_id: report.identity?.local_spec_id ?? null, public_route_slug: recordedSlug },
       },
     );
   }
@@ -10629,7 +10667,7 @@ function qaPrompt(packetPath, reportPath, packet) {
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
   return `Use next-campaigns-qa for this deployed campaign.
 
-Map ID: ${packet.spec.map_id}
+${packet.spec.local_spec_id ? "Local spec ID" : "Map ID"}: ${packet.spec.local_spec_id || packet.spec.map_id}
 Base URL: ${url}
 Build Packet: ${packetPath}
 Assembly Report: ${reportPath}
@@ -12955,6 +12993,9 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     : inferQaVerdictPath({ packet, report, reportPath: reportExists ? reportPath : null, targetRepo, baseDir });
   const qaVerdictExists = qaVerdictPath != null && existsSync(qaVerdictPath);
   const qaVerdict = qaVerdictExists ? readJson(qaVerdictPath) : null;
+  if (qaVerdict && (packet.spec?.local_spec_id != null || qaVerdict.local_spec_id != null) && !qaVerdictIdentityMatch(qaVerdict, packet)) {
+    throw new Error("run-record: QA verdict does not match this packet's local_spec_id; foreign evidence cannot be recorded as this local campaign.");
+  }
 
   const journalPath = resolveJournalPath(args);
   const journal = readJournal(journalPath);
@@ -13166,6 +13207,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     consent: { state: consent.state, source: consent.source },
     identity: {
       map_id: optionalString(packet.spec?.map_id),
+      ...localSpecIdentityFields(packet.spec),
       campaign_slug: optionalString(packet.campaign?.public_route_slug),
       template_family: optionalString(packet.assembly?.template_family),
       entry_point_shape: "packet",
@@ -13499,7 +13541,8 @@ function inferQaVerdictPath({ packet, report, reportPath = null, targetRepo = nu
     report,
     reportPath: reportPath || (targetRepo ? campaignSidecarPaths(targetRepo).reportPath : null),
     roots: [targetRepo, baseDir],
-  }).filter((candidate) => candidate.verdict && candidate.trusted);
+  }).filter((candidate) => candidate.verdict && candidate.trusted
+    && ((packet?.spec?.local_spec_id == null && candidate.verdict.local_spec_id == null) || candidate.identityMatch));
   eligible.sort((a, b) => {
     const scoreDelta = qaVerdictCandidateScore(b, packet) - qaVerdictCandidateScore(a, packet);
     if (scoreDelta !== 0) return scoreDelta;

@@ -1,11 +1,11 @@
 ---
 name: campaign-run-evidence
-version: 1.0.5
+version: 1.0.6
 description: Interpret existing Campaigns OS doctor, QA and proof-depth evidence without claiming more proof than the artifacts contain.
 ---
 
-Bundle revision: 1.42.1+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.42.1+skills.1`
+Bundle revision: 1.43.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.43.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -59,9 +59,11 @@ nothing about ordering — it records a policy and an unmet one.
 
 ## Interpret the verdict exactly
 
-Only a JSON QA verdict is a verdict. The runner writes its full verdict and
-attempts to publish it to the QA portal; a publication failure does not erase
-the local one. The readback projects `.campaign-runtime/qa-verdict.json` when
+Only a JSON QA verdict is a verdict. The runner writes its full verdict locally.
+Saved-Map QA may publish it under the existing consent and flag controls; a
+publication failure does not erase the local one. Local-spec packet verdicts
+stay local even with `--post-verdict`, and `qa publish` refuses those packets.
+The readback projects `.campaign-runtime/qa-verdict.json` when
 that sidecar has been copied into the campaign repository. A markdown QA
 report, a ledger or a gate script is not a verdict and must not be scanned for
 a disposition, a run id or a blocker. Where two JSON verdicts exist, interpret

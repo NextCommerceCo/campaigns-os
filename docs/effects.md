@@ -158,8 +158,9 @@ when the saved session has no packet and argv names none. For `qa run` and `qa
 resolve`, "QA requires a Map ID" is a refusal when argv carries no non-empty
 `--packet`, `--site`, `--built`, positional Map ID, or `--map-id` value. A selector
 flag without a value is refused with "Missing value for --<flag>". If a named
-packet yields no Map ID after checkpoint preflight reads the packet, spec, and
-report, the requirement is a journaled handler failure.
+packet yields neither a Map ID nor a valid local-spec identity after checkpoint
+preflight reads the packet, spec, and report, the requirement is a journaled
+handler failure. A conflicting local/Map identity is also a handler failure.
 
 ## How a row is proved
 
@@ -311,3 +312,8 @@ reason. What it may not be is silent.
 Change the effect, change the row, in the same PR. The effect test will tell you
 which row is wrong before review does: it names the path that moved and the row
 that failed to declare it.
+
+Local-spec QA retains its artifacts locally. It never sends a verdict or progress
+to the Map portal, even when `--post-verdict` is supplied; `qa publish` refuses
+local-spec packets. Commerce API reads, served-page probes and requested typed-card
+orders keep their existing effects. Run Telemetry still follows its consent controls.

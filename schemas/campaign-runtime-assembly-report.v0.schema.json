@@ -28,8 +28,13 @@
       "type": "object",
       "additionalProperties": true,
       "required": ["map_id", "public_route_slug", "campaign_directory", "live_url_path", "spec_hash"],
+      "oneOf": [
+        { "properties": { "map_id": { "type": "string", "minLength": 1 } }, "not": { "required": ["local_spec_id"] } },
+        { "required": ["local_spec_id", "spec_material_hash"], "properties": { "map_id": { "type": "null" } } }
+      ],
       "properties": {
-        "map_id": { "type": "string", "minLength": 1 },
+        "local_spec_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Stable repository-owned CampaignSpec identity; never a saved Map ID. Keep unchanged across local revisions." },
+        "map_id": { "type": ["string", "null"], "minLength": 1 },
         "public_route_slug": { "type": "string", "minLength": 1 },
         "campaign_directory": { "type": "string", "minLength": 1 },
         "live_url_path": { "type": "string", "minLength": 1 },

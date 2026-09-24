@@ -6,6 +6,8 @@
   "type": "object",
   "additionalProperties": true,
   "required": ["schema_version", "funnels"],
+  "if": { "required": ["spec_identity"], "properties": { "spec_identity": { "required": ["local_spec_id"] } } },
+  "then": { "not": { "required": ["map_id"] } },
   "properties": {
     "schema_version": {
       "enum": ["4.2", "4.3"],
@@ -364,8 +366,10 @@
     "specIdentity": {
       "type": "object",
       "additionalProperties": true,
+      "not": { "required": ["map_id", "local_spec_id"] },
       "properties": {
         "source": { "type": "string", "description": "Observed values: campaign-map-builder, hand-authored-simulation, local-experimental." },
+        "local_spec_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Stable repository-owned CampaignSpec identity; never a saved Map ID. Keep unchanged across local revisions." },
         "map_id": { "type": "string" },
         "id": { "type": "string" },
         "map_url": { "type": "string" },

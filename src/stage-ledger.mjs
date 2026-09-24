@@ -1,3 +1,4 @@
+import { campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { STATUS as QA_STATUS } from "./qa-verdict.mjs";
@@ -377,7 +378,9 @@ export function qaGatePassedForCurrentBuild(report, gate, { buildFingerprint }) 
  */
 export function assemblyReportMatchesPacket(report, packet) {
   return isPlainObject(report)
-    && optionalString(report?.identity?.map_id) === optionalString(packet?.spec?.map_id)
+    && (report?.identity?.local_spec_id != null || packet?.spec?.local_spec_id != null
+      ? campaignIdentitiesMatch(report?.identity, packet?.spec)
+      : optionalString(report?.identity?.map_id) === optionalString(packet?.spec?.map_id))
     && optionalString(report?.identity?.public_route_slug) === optionalString(packet?.campaign?.public_route_slug);
 }
 

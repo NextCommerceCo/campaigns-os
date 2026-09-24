@@ -689,6 +689,8 @@ export interface AnalyticsContract {
  * local-experimental.
  */
 export interface SpecIdentity {
+  /** Stable agent-authored identity when there is no saved Map. */
+  local_spec_id?: string
   map_id?: string
   source?: string
   id?: string

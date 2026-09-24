@@ -133,6 +133,10 @@ test("invalid source fails closed and preserves the prior sidecar bytes", () => 
     const before = readFileSync(sidecarPathForPacket(packetPath), "utf8");
 
     assert.throws(() => writeQaSidecar({ verdict: { schema_version: "1.0" }, packetPath, now: () => NOW }), /failed validation/);
+    for (const local_spec_id of ["", " padded ", "../escape", 42]) {
+      assert.throws(() => writeQaSidecar({ verdict: { ...fullVerdict(), local_spec_id }, packetPath, now: () => NOW }), /failed validation/);
+      assert.equal(readFileSync(sidecarPathForPacket(packetPath), "utf8"), before);
+    }
 
     const invalidPath = join(dir, "invalid.json");
     writeFileSync(invalidPath, "{not json");

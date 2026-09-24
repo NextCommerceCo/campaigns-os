@@ -1,11 +1,11 @@
 ---
 name: campaign-lifecycle-orientation
-version: 1.0.5
+version: 1.0.6
 description: Orient a reader to the Campaigns OS lifecycle artifacts a run has already emitted, without advancing any stage or changing any state.
 ---
 
-Bundle revision: 1.42.1+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.42.1+skills.1`
+Bundle revision: 1.43.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.43.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -70,9 +70,13 @@ output sidecar, theme evidence and normalized inputs
 separate system, and QA then tests a deployed URL
 (`docs/qa-and-test-orders.md`).
 
-Keep the two identities apart. The **Map ID** identifies the saved campaign map
-and keys QA evidence storage; the **public route slug** is the shopper-facing
-path segment. Read both from the packet and never substitute one for the other.
+Keep stable campaign identity separate from routing. The **Map ID** identifies
+a saved campaign map and keys its QA evidence storage. A local-spec packet
+instead carries **local_spec_id**, keeps `map_id` null, and stores QA under
+`local-spec-<local_spec_id>`. The **public route slug** is the shopper-facing
+path segment. Read the packet's identity kind and route separately; a shared
+route cannot make evidence from another local spec belong to this campaign
+(`docs/build-packet.md`, "Local-spec entry").
 
 Campaign pages are typed. The page-type vocabulary is `presell`, `landing`,
 `select`, `checkout`, `upsell`, `downsell` and `thankyou`; `select` is where a
@@ -95,8 +99,9 @@ only from implementation files this skill may not cite, so do not branch on one.
 ## Read the stage record
 
 `campaigns-os next --packet <packet> --json` (tier `A`: it captures a progress
-snapshot under the target and, under Run Telemetry consent, POSTs that
-observation off the machine) reads the recorded state and names the next
+snapshot under the target and, for saved-Map packets under Run Telemetry
+consent, can POST that observation off the machine; local-spec observations
+stay local) reads the recorded state and names the next
 incomplete stage among `setup`, `build`, `polish`, `deploy` and `qa`. That is a
 writing, potentially sending command. If all you need is where the run stands,
 prefer the readback below.

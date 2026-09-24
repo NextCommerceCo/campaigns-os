@@ -59,6 +59,15 @@
   "identity_fields": [
     {
       "name": "map_id",
+      "local_spec_alternative": {
+        "name": "local_spec_id",
+        "artifact_paths": {
+          "build_packet": "spec.local_spec_id",
+          "assembly_report": "identity.local_spec_id",
+          "doctor_output": "derived.local_spec_id",
+          "qa_verdict": "local_spec_id"
+        }
+      },
       "artifact_paths": {
         "build_packet": "spec.map_id",
         "assembly_report": "identity.map_id",

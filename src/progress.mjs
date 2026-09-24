@@ -22,7 +22,7 @@ const str = pattern => ({type:'string', pattern});
 const hash = {type:['string','null'], pattern:'^sha256:[0-9a-f]{64}$'};
 const opaque = {type:['string','null'], pattern:'^[A-Za-z0-9_-]{1,64}$'};
 const enumeration = values => ({enum:values});
-const object = properties => ({type:'object', additionalProperties:false, required:Object.keys(properties), properties});
+const object = (properties, optional=[]) => ({type:'object', additionalProperties:false, required:Object.keys(properties).filter(key=>!optional.includes(key)), properties});
 export const PROGRESS_SNAPSHOT_SCHEMA = {
   $schema:'https://json-schema.org/draft/2020-12/schema',
   $id:'https://nextcommerce.com/schemas/campaigns-os-progress-snapshot.v0.schema.json',
@@ -32,10 +32,10 @@ export const PROGRESS_SNAPSHOT_SCHEMA = {
     stream_id:str('^progress_[0-9a-f]{32}$'), sequence:{type:'integer',minimum:1,maximum:2147483647},
     previous_snapshot_id:hash, observed_at:str('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$'),
     package_version:str('^\\d{1,6}\\.\\d{1,6}\\.\\d{1,6}$'), producer:enumeration(['next','qa']),
-    identity:object({map_id:opaque,map_revision_hash:hash,map_revision_algorithm:{const:'map-store-v1'},
+    identity:object({map_id:opaque,local_spec_id:str('^[A-Za-z0-9_-]{1,64}$'),map_revision_hash:hash,map_revision_algorithm:{const:'map-store-v1'},
       saved_revision_alignment:enumeration(['aligned','unconfirmed']),local_spec_material_hash:hash,
       local_spec_material_algorithm:{const:'campaign-spec-material-v1'},build_fingerprint:hash,
-      build_fingerprint_algorithm:{const:'sha256-manifest/v1'}}),
+      build_fingerprint_algorithm:{const:'sha256-manifest/v1'}},['local_spec_id']),
     stages:{type:'array',minItems:6,maxItems:6,items:object({stage:enumeration(PROGRESS_STAGES),status:enumeration(PROGRESS_STAGE_STATUSES),
       build_binding:enumeration(['matching','unconfirmed']),source_build_fingerprint:hash})},
     preview:object({present:{type:'boolean'},url_hash:hash}),
@@ -46,6 +46,7 @@ export const PROGRESS_SNAPSHOT_SCHEMA = {
       binding:enumeration(['matching','unconfirmed']),publish_state:enumeration(['skipped','ok','failed','unknown'])})]},
   }),
 };
+
 export function canonicalProgressJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalProgressJson).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key=>`${JSON.stringify(key)}:${canonicalProgressJson(value[key])}`).join(',')}}`;
@@ -92,6 +93,7 @@ export function validateProgressSnapshot(value) {
   }
   if (!check(value,PROGRESS_SNAPSHOT_SCHEMA)) errors.push('progress.invalid_shape');
   if (!errors.length && (new Set(value.stages.map(stage=>stage.stage)).size!==6 || value.stages.some((stage,index)=>stage.stage!==PROGRESS_STAGES[index]))) errors.push('progress.invalid_stages');
+  if (!errors.length && value.identity.local_spec_id && (value.identity.map_id || value.identity.map_revision_hash || value.identity.saved_revision_alignment !== 'unconfirmed')) errors.push('progress.invalid_local_identity');
   if (!errors.length && value.identity.saved_revision_alignment==='aligned' && (!value.identity.map_id||!value.identity.map_revision_hash||!value.identity.local_spec_material_hash)) errors.push('progress.invalid_alignment');
   if (!errors.length && value.continuation.gates.some(gate=>gate.id==='unknown'&&gate.state!=='unknown')) errors.push('progress.unsupported_authority');
   if (!errors.length && value.sequence===1 && value.previous_snapshot_id!==null) errors.push('progress.invalid_chain');

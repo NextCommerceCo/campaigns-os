@@ -84,6 +84,27 @@ function identityValuesAgree(identityField, left, right) {
 }
 
 function compareIdentity(errors, records, identityField) {
+  const local = identityField.local_spec_alternative;
+  if (local && records.get("build_packet")?.value?.spec?.local_spec_id != null) {
+    compareIdentity(errors, records, local);
+    // A local identity can never borrow a Map identity from another artifact.
+    for (const [kind, path] of Object.entries(identityField.artifact_paths)) {
+      if (kind === "qa_verdict") continue; // campaign_slug is the local QA storage key.
+      if (valueAt(records.get(kind)?.value, path) != null) {
+        errors.push(artifactFinding("bundle.identity.map_id_mismatch", kind,
+          "Local-spec bundle carries a saved Map identity.", "Regenerate artifacts from the same local CampaignSpec."));
+      }
+    }
+    return;
+  }
+  if (local) {
+    for (const [kind, path] of Object.entries(local.artifact_paths)) {
+      if (valueAt(records.get(kind)?.value, path) != null) {
+        errors.push(artifactFinding("bundle.identity.local_spec_id_mismatch", kind,
+          "Saved-Map bundle carries local-spec evidence.", "Regenerate artifacts from the same saved Map."));
+      }
+    }
+  }
   const label = identityField.name;
   const present = [];
   for (const [kind, path] of Object.entries(identityField.artifact_paths)) {
