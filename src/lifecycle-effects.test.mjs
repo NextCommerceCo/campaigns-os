@@ -18,18 +18,22 @@
 // other cases means "nothing was written", not "the harness sees nothing".
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer } from "node:http";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { promisify } from "node:util";
 import { main } from "./cli.mjs";
+import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { refusalSeen, refused, runWithRefusalScope } from "./lifecycle.mjs";
 import { RUN_SESSION_TTL_MS } from "./run-session.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
+const execFileAsync = promisify(execFile);
 
 // Telemetry never leaves the machine from a test: remit off in the child env,
 // and every run-session command also carries --no-remit.
@@ -290,6 +294,33 @@ test("(h) a refused subcommand `run statuss` under an ambient session writes not
 // where its work begins; (i'') pins that side of the line for each of them.
 const EMPTY_PACKET = Object.freeze({ "p.json": "{}" });
 
+function seedRefusalFixture(dir, fixture) {
+  if (fixture === "intake" || fixture === "cached-intake") {
+    cpSync(join(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "spec.json"));
+    mkdirSync(join(dir, "source"));
+    mkdirSync(join(dir, "target"));
+    if (fixture === "cached-intake") {
+      const cache = join(dir, "target/.campaign-runtime/fetched-specs/demo.json");
+      mkdirSync(dirname(cache), { recursive: true });
+      cpSync(join(dir, "spec.json"), cache);
+    }
+  }
+  if (fixture === "site") {
+    const page = join(dir, "site/_site/demo/index.html");
+    mkdirSync(dirname(page), { recursive: true });
+    writeFileSync(page, "<!doctype html><title>Demo</title>");
+    assert.equal(resolveBuiltSiteScope(join(dir, "site")).ok, true, "the old check position must be reachable after the site scan");
+  }
+  if (fixture === "packet") {
+    cpSync(join(ROOT, "examples/build-packet.basic.json"), join(dir, "p.json"));
+    cpSync(join(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+    cpSync(join(ROOT, "examples/target-page-kit"), join(dir, "target-page-kit"), { recursive: true });
+  }
+}
+
+const INTAKE_ARGV = ["--spec", "%DIR%/spec.json", "--source", "%DIR%/source", "--target", "%DIR%/target"];
+const CACHED_INTAKE_ARGV = ["--map-id", "demo", "--cached-spec", "--source", "%DIR%/source", "--target", "%DIR%/target"];
+
 const REFUSED_INVOCATIONS = [
   // Unknown top-level command / unknown subcommand.
   { argv: ["frobnicate"], expect: /Unknown command: frobnicate/ },
@@ -343,8 +374,16 @@ const REFUSED_INVOCATIONS = [
   { argv: ["qa", "parity", "--max-order-creations", "bogus"], expect: /--max-order-creations must be a whole number/ },
   { argv: ["qa", "run", "--max-order-creations", "0"], expect: /--max-order-creations must be at least 1/ },
   // Missing identity: no --packet, no --site/--built, no positional <map-id>,
-  // so `qa run` refuses with nothing read and no spec fetched.
+  // or --map-id, so both resolveQaInputs callers refuse before any read.
   { argv: ["qa", "run"], expect: /QA requires a Map ID/ },
+  { argv: ["qa", "resolve"], expect: /QA requires a Map ID/ },
+  ...["run", "resolve"].flatMap((subcommand) => [
+    ...["", "   "].map((value) => ({ argv: ["qa", subcommand, value], expect: /QA requires a Map ID/ })),
+    ...["packet", "site", "built", "map-id"].flatMap((flag) => [
+      { argv: ["qa", subcommand, `--${flag}`], expect: new RegExp(`Missing value for --${flag}`) },
+      ...["", "   "].map((value) => ({ argv: ["qa", subcommand, `--${flag}`, value], expect: new RegExp(`Missing value for --${flag}`) })),
+    ]),
+  ]),
   // #465: flag checks raised after reading nothing but argv and the packet,
   // ahead of any report read and any write. One row per tagged site.
   { argv: ["theme", "waive", "--packet", "%DIR%/p.json"], files: EMPTY_PACKET, expect: /theme waive requires --reason/ },
@@ -359,11 +398,29 @@ const REFUSED_INVOCATIONS = [
   // Shared validators called at the same position, tagged at their call sites.
   { argv: ["theme", "waive", "--packet", "%DIR%/p.json", "--reason", "an effect-test waiver"], files: EMPTY_PACKET, expect: /theme waive requires --waived-by/ },
   { argv: ["qa", "policy", "set", "--packet", "%DIR%/p.json", "--order-path-depth", "bogus"], files: EMPTY_PACKET, expect: /qa policy set: unsupported --order-path-depth "bogus"/ },
+  // Each row reached a target read at its old check position. The unchanged
+  // tree and absent journal, rather than the message alone, prove the move.
+  { argv: ["start", "--spec", "%DIR%/spec.json", "--target", "%DIR%/target"], fixture: "intake", expect: /Missing required --source/ },
+  { argv: ["build", "--spec", "%DIR%/spec.json", "--source", "%DIR%/source"], fixture: "intake", expect: /Missing required --target/ },
+  { argv: ["prepare-build", ...INTAKE_ARGV, "--source-kind", "bogus"], fixture: "intake", expect: /Unsupported source adapter "bogus"/ },
+  { argv: ["start", ...INTAKE_ARGV, "--wrapper-policy"], fixture: "intake", expect: /--wrapper-policy needs a value/ },
+  { argv: ["build", ...CACHED_INTAKE_ARGV, "--wrapper-policy", "bogus"], fixture: "cached-intake", expect: /Unsupported --wrapper-policy/ },
+  { argv: ["prepare-build", ...CACHED_INTAKE_ARGV, "--design-manifest"], fixture: "cached-intake", expect: /--design-manifest needs a value/ },
+  { argv: ["prepare-build", ...INTAKE_ARGV, "--order-path-depth", "bogus"], fixture: "intake", expect: /unsupported --order-path-depth/ },
+  { argv: ["run-record", "--packet", "%DIR%/p.json", "--new-run", "--run-id", "one"], fixture: "packet", expect: /--new-run and --run-id are exclusive/ },
+  { argv: ["run-record", "--packet", "%DIR%/p.json", "--agent-input-tokens"], fixture: "packet", expect: /--agent-input-tokens requires a non-negative integer/ },
+  { argv: ["run-record", "--packet", "%DIR%/p.json", "--agent-output-tokens", "bogus"], fixture: "packet", expect: /--agent-output-tokens must be a non-negative integer/ },
+  ...["run", "resolve"].flatMap((subcommand) => ["site", "built"].flatMap((selector) => [
+    { argv: ["qa", subcommand, `--${selector}`, "%DIR%/site"], fixture: "site", expect: /requires --base-url/ },
+    { argv: ["qa", subcommand, `--${selector}`, "%DIR%/site", "--base-url", "http://127.0.0.1:1/"], fixture: "site", expect: /requires --family/ },
+  ])),
+  { argv: ["next", "bogus-stage", "--packet", "%DIR%/p.json"], fixture: "packet", expect: /Unknown next stage: bogus-stage\. Accepted stages: setup, build, polish, deploy, qa/ },
 ];
 
-for (const { argv, expect, files } of REFUSED_INVOCATIONS) {
+for (const { argv, expect, files, fixture } of REFUSED_INVOCATIONS) {
   test(`(i) refused up front, nothing journaled: campaigns-os ${argv.join(" ")}`, () => {
     withTempTarget((dir) => {
+      seedRefusalFixture(dir, fixture);
       seedFiles(dir, files);
       const journal = join(dir, "x.jsonl");
       const before = snapshotTree(dir);
@@ -407,6 +464,80 @@ test("(i') a handler that begins work and then fails IS still journaled", () => 
   });
 });
 
+test("(i') run end journals a nested run-record argument failure", () => {
+  withTempTarget((dir) => {
+    seedFiles(dir, EMPTY_PACKET);
+    startSession(dir);
+    const journal = join(dir, "outer.jsonl");
+    const result = runCli(["run", "end", "--packet", join(dir, "p.json"), "--agent-input-tokens", "bogus", "--no-remit", "--json"], {
+      cwd: dir,
+      env: { CAMPAIGNS_OS_LIFECYCLE_LOG: journal },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /--agent-input-tokens must be a non-negative integer/);
+    assert.equal(readJournalEntries(journal).length, 1, "the outer run end failure is journaled once");
+    assert.equal(readJournalEntries(journal)[0].command, "run");
+  });
+});
+
+test("(i') QA auto-end swallows nested run-record refusal after journaling QA", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-effects-autoend-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(join(ROOT, "examples/target-page-kit"), dir, { recursive: true });
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  const packet = JSON.parse(readFileSync(join(ROOT, "examples/build-packet.basic.json"), "utf8"));
+  packet.assembly.target_repo = ".";
+  writeFileSync(packetPath, `${JSON.stringify(packet)}\n`);
+  cpSync(join(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+  const reportPath = join(dir, ".campaign-runtime/assembly-report.json");
+  mkdirSync(dirname(reportPath), { recursive: true });
+  cpSync(join(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json"), reportPath);
+
+  const server = createServer((request, response) => {
+    const path = request.url;
+    const meta = path.includes("/checkout/")
+      ? '<meta name="next-page-type" content="checkout"><meta name="next-success-url" content="/runtime-packet-demo/upsell/">'
+      : path.includes("/upsell/")
+        ? '<meta name="next-page-type" content="upsell"><meta name="next-upsell-accept-url" content="/runtime-packet-demo/receipt/"><meta name="next-upsell-decline-url" content="/runtime-packet-demo/receipt/">'
+        : "";
+    const links = path.includes("/landing/")
+      ? '<a href="/runtime-packet-demo/checkout/">Continue</a>'
+      : path.includes("/checkout/")
+        ? '<a href="/runtime-packet-demo/upsell/">Submit</a>'
+        : path.includes("/upsell/")
+          ? '<a href="/runtime-packet-demo/receipt/">Accept</a><a href="/runtime-packet-demo/receipt/">Decline</a>'
+          : "";
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end(`<!doctype html><html><head><title>Fixture</title>${meta}</head><body><main>Fixture campaign</main>${links}</body></html>`);
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => server.close(done)));
+
+  const started = runCli(["run", "start", "--packet", packetPath, "--no-remit", "--json"], { cwd: dir });
+  assert.equal(started.status, 0, started.stderr);
+  const session = JSON.parse(started.stdout).session;
+  const before = existsSync(session.lifecycle_journal) ? readJournalEntries(session.lifecycle_journal).length : 0;
+  const baseUrl = `http://127.0.0.1:${server.address().port}/runtime-packet-demo/`;
+  const { stderr } = await execFileAsync(process.execPath, [CLI, "qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-post-verdict", "--no-remit", "--agent-input-tokens", "bogus", "--json"], {
+    cwd: dir,
+    env: childEnv(),
+  });
+  assert.match(stderr, /run session auto-end skipped after QA: --agent-input-tokens must be a non-negative integer/);
+  const entries = readJournalEntries(session.lifecycle_journal);
+  assert.equal(entries.length, before + 1, "QA appends exactly one entry before its auto-end");
+  assert.equal(entries.at(-1).command, "qa");
+  assert.equal(existsSync(join(dir, ".campaign-runtime/run-session.json")), true, "failed auto-end keeps the session");
+});
+
+// A valid local spec keeps packet QA past the checkpoint preflight's blocked
+// spec path. The report is present too, so that preflight reads all three
+// files before the missing packet Map ID reaches resolveQaInputs's final check.
+const QA_PACKET_WITHOUT_MAP_ID = Object.freeze({
+  "p.json": JSON.stringify({ spec: { local_path: "spec.json" }, assembly: { target_repo: "target" } }),
+  "spec.json": "{}",
+  "target/.campaign-runtime/assembly-report.json": "{}",
+});
+
 // (i'') is (i') for every handler #465 tagged a refusal in: the same
 // invocation as its refusal rows above, completed so it passes every one of
 // them, then failing on the first thing the handler reads past its packet (for
@@ -435,13 +566,49 @@ const HANDLER_FAILURES = [
     command: "qa",
     expect: /Assembly Report at .* is not valid JSON/,
   },
+  ...["start", "prepare-build", "build"].map((command) => ({
+    argv: [command, "--spec", "%DIR%/missing.json", "--source", "%DIR%/source", "--target", "%DIR%/target", "--no-run-session"],
+    command,
+    expect: /CampaignSpec does not exist/,
+  })),
+  { argv: ["run-record", "--packet", "%DIR%/p.json", "--new-run", "--agent-input-tokens", "1"], files: { "p.json": "{ invalid" }, command: "run-record", expect: /not valid JSON|Unexpected token|Expected property name/ },
+  { argv: ["qa", "run", "--site", "%DIR%/missing-site", "--base-url", "http://127.0.0.1:1/", "--family", "demo"], command: "qa", expect: /Built campaign directory does not exist/ },
+  ...["run", "resolve"].map((subcommand) => ({
+    argv: ["qa", subcommand, "--packet", "%DIR%/p.json"],
+    files: QA_PACKET_WITHOUT_MAP_ID,
+    command: "qa",
+    expect: /QA requires a Map ID or a local-spec packet\. The named Build Packet has no campaign identity/,
+  })),
+  ...["run", "resolve"].flatMap((subcommand) => [
+    {
+      argv: ["qa", subcommand, "--packet", "%DIR%/p.json"],
+      files: { "p.json": JSON.stringify({ spec: { map_id: "saved-map", local_spec_id: "local-campaign" } }) },
+      command: "qa",
+      expect: /Local-spec packet QA cannot use a Map ID override or an ambiguous identity/,
+    },
+    {
+      argv: ["qa", subcommand, "--packet", "%DIR%/p.json"],
+      files: { ...QA_PACKET_WITHOUT_MAP_ID, "p.json": JSON.stringify({ spec: { map_id: null, local_spec_id: "local-campaign", local_path: "spec.json" }, assembly: { target_repo: "target" } }) },
+      command: "qa",
+      expect: /Local-spec QA requires the matching Assembly Report and current spec material hash/,
+    },
+    {
+      argv: ["qa", subcommand, "saved-map", "--spec", "%DIR%/spec.json"],
+      files: { "spec.json": JSON.stringify({ spec_identity: { local_spec_id: "local-campaign" } }) },
+      command: "qa",
+      expect: /Local-spec QA requires --packet/,
+    },
+  ]),
+  { argv: ["run", "end"], fixture: "session-no-packet", command: "run", expect: /run end needs a build packet/ },
+  { argv: ["next", "build", "--packet", "%DIR%/p.json"], files: { "p.json": "{ invalid" }, command: "next", expect: /not valid JSON|Unexpected token|Expected property name/ },
 ];
 
-for (const { argv, files, command, expect } of HANDLER_FAILURES) {
+for (const { argv, files, fixture, command, expect } of HANDLER_FAILURES) {
   test(`(i'') passes every refusal, then fails, and IS journaled: campaigns-os ${argv.join(" ")}`, () => {
     withTempTarget((dir) => {
       seedFiles(dir, files);
-      const journal = join(dir, "x.jsonl");
+      const session = fixture === "session-no-packet" ? startSession(dir) : null;
+      const journal = session?.lifecycle_journal || join(dir, "x.jsonl");
 
       const failed = runCli([...argv.map((token) => token.replaceAll("%DIR%", dir)), "--json"], {
         cwd: dir,

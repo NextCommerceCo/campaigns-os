@@ -13,6 +13,7 @@ import { publishStoredVerdict } from './qa-publish.mjs';
 import { publishQaVerdict } from './qa-verdict-publish.mjs';
 import { assemblyReportMatchesPacket } from './stage-ledger.mjs';
 import { identityMatches } from './run-record-closeout.mjs';
+import { assembleRunRecord, writeRunRecord } from './run-record.mjs';
 import { specMaterialHash } from './spec-identity.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -20,6 +21,11 @@ const CLI = join(ROOT, 'bin/campaigns-os.mjs');
 const LOCAL_ID = '831db9b2-9055-45e4-a9c0-3ef04b2b06f0';
 const read = path => JSON.parse(readFileSync(path, 'utf8'));
 const write = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2));
+const handlerFailure = pattern => error => {
+  assert.match(error.message, pattern);
+  assert.notEqual(error.code, 'refused_invocation', 'identity discovered from file content is a journaled handler failure');
+  return true;
+};
 function run(argv, cwd) {
   return spawnSync(process.execPath, [CLI, ...argv, '--json'], { cwd, encoding: 'utf8', env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: 'off' } });
 }
@@ -67,6 +73,11 @@ test('doctor diagnoses malformed local identities without adopting them or throw
   const f = fixture(t);
   const { packet, report } = prepare(f);
   const reportBytes = readFileSync(f.reportPath, 'utf8');
+  writeRunRecord(assembleRunRecord({
+    runId: 'run_foreign_history', packageVersion: '1.43.0', command: 'doctor',
+    identity: { map_id: 'saved-map' },
+    doctor: { status: 'blocked', errors: [{ code: 'spec.local_identity' }], warnings: [] },
+  }), { baseDir: f.target });
   for (const fields of [{ local_spec_id: ' padded ' }, { local_spec_id: '' }, { local_spec_id: 42 }, { local_spec_id: LOCAL_ID, map_id: 'saved-map' }]) {
     write(f.packetPath, { ...packet, spec: { ...packet.spec, ...fields } });
     const doctor = doctorPacket(f.packetPath);
@@ -74,6 +85,8 @@ test('doctor diagnoses malformed local identities without adopting them or throw
     assert.ok(doctor.errors.some(issue => issue.code === 'spec.local_identity' && issue.detail?.kind === 'local_spec'));
     assert.equal(doctor.errors.some(issue => issue.code === 'spec.map_id'), false);
     assert.equal(doctor.derived.local_spec_id, undefined);
+    assert.equal(doctor.cause_summary.prior_run_id, null);
+    assert.ok(doctor.errors.filter(issue => issue.code === 'spec.local_identity').every(issue => issue.cause === 'unknown'));
     const next = JSON.parse(run(['next', '--packet', f.packetPath, '--no-write'], f.dir).stdout);
     assert.equal(next.ok, false);
     assert.equal(readFileSync(f.reportPath, 'utf8'), reportBytes);
@@ -150,7 +163,7 @@ test('local packet QA resolves, finalizes a blocked verdict and never posts it, 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async input => { requests.push(String(input)); throw new Error('fixture route offline'); };
   t.after(() => { globalThis.fetch = originalFetch; });
-  await assert.rejects(__qaNodeTestHooks.resolveQaInputs({ _: ['qa','run','saved-map'], spec: f.specPath }), /requires --packet/);
+  await assert.rejects(__qaNodeTestHooks.resolveQaInputs({ _: ['qa','run','saved-map'], spec: f.specPath }), handlerFailure(/requires --packet/));
   const resolved = await __qaNodeTestHooks.resolveQaInputs(args);
   assert.equal(resolved.mapId, null);
   assert.equal(resolved.localSpecId, LOCAL_ID);
@@ -218,9 +231,9 @@ test('local packet QA resolves, finalizes a blocked verdict and never posts it, 
   await assert.rejects(__qaNodeTestHooks.resolveQaInputs(args), /current spec material hash/);
   f.spec.spec_identity.local_spec_id = 'other';
   write(f.specPath, f.spec);
-  await assert.rejects(__qaNodeTestHooks.resolveQaInputs(args), /does not match/);
+  await assert.rejects(__qaNodeTestHooks.resolveQaInputs(args), handlerFailure(/does not match/));
   assert.equal(doctorPacket(f.packetPath).errors.some(e => e.code === 'spec.local_identity' && e.detail?.kind === 'local_spec'), true);
-  await assert.rejects(__qaNodeTestHooks.resolveQaInputs({ ...args, 'map-id': 'invented' }), /Map ID override/);
+  await assert.rejects(__qaNodeTestHooks.resolveQaInputs({ ...args, 'map-id': 'invented' }), handlerFailure(/Map ID override/));
 });
 
 test('page-kit sync and spec derive accept local identity and refuse a foreign local spec before writes', t => {

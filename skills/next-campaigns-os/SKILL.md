@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-os
-version: 1.0.25
+version: 1.0.26
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 

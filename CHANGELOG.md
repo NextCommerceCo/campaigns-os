@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.0+agent.3] - 2026-09-24
+
+### Fixed
+
+- Invalid campaign identities cannot select prior doctor history, including
+  when a malformed local ID would otherwise leave a Map-only or unfiltered
+  lookup. Such findings retain unknown cause instead of borrowing evidence.
+- Integrate the 1.42.1 argument-refusal fixes: local-spec packet QA remains
+  supported, while identity failures discovered from packet content remain
+  journaled handler failures. Advance bundled skill versions beyond 1.42.1.
+
 ## [1.43.0+agent.2] - 2026-09-24
 
 ### Fixed
@@ -39,6 +50,40 @@ Notable supported-surface changes are recorded here.
 - Local setup and intake instructions let the coding agent author the spec
   from prepared HTML, a brief and verified configured commerce. Existing
   certification, source, runtime, polish and checkout proof gates still apply.
+
+## [1.42.1] - 2026-09-24
+
+### Fixed
+
+- `start`, `prepare-build`, and `build` now refuse missing or invalid argument
+  values for source, target, source kind, wrapper policy, design-manifest value,
+  and order-path depth before spec resolution or preparation. `run-record`
+  refuses conflicting `--new-run`/`--run-id` and invalid agent token counts
+  before reading its packet or journal. These argv-only refusals append no
+  lifecycle entry.
+- `qa run` and `qa resolve` refuse empty campaign selectors and selector flags
+  without values before checkpoint or site reads. Built-site QA also refuses
+  missing `--base-url` or `--family` before scanning the site. An unknown
+  `next` stage refuses before the handler reads the packet or runs doctor,
+  names the accepted stages (`setup`, `build`, `polish`, `deploy`, `qa`), and
+  appends no lifecycle entry. The `next` help line now shows those stages.
+- Three state-dependent decisions remain journaled handler failures: `polish
+  capture` when `packet.assembly.target_repo` does not resolve to a local target
+  repo; `run end` with no packet in argv or the saved session; and `qa run` or
+  `qa resolve` with a named packet that yields no Map ID after checkpoint
+  preflight. The polish check currently cannot fire through the CLI because
+  the workspace resolver supplies a local path. Separately, a named design
+  manifest that is missing, not a file, or invalid is a journaled handler
+  failure. A nested run-record refusal during `run end` or QA auto-closeout
+  stays within the closeout attempt, so it does not turn the invoking command's
+  journal verdict into a refusal. The ambient run-session lookup may still
+  read a named `--packet` before the handler runs.
+
+### Changed
+
+- Package and supported-surface version advance to 1.42.1. The bundled skills
+  carry revision `1.42.1+skills.1`, with each skill version advanced one patch
+  so an agent can detect instructions loaded from an older release.
 
 ## [1.42.0+agent.2] - 2026-09-24
 

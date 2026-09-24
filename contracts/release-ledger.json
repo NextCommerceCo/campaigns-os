@@ -6293,6 +6293,129 @@
       "sequence": 141,
       "date": "2026-09-24",
       "kind": "release",
+      "surface_version": "1.42.1",
+      "changelog_section": "1.42.1",
+      "changelog_sha256": "2945fc2d2217fb09cab82dad870b32b67dce5dd9aa38317550bcb9fdf1b5c705",
+      "agent_impact": "Argv-only errors in start, prepare-build, build, run-record, qa run, qa resolve, built-site QA and next now refuse without a lifecycle entry. An unknown next stage names the accepted stages. Three state-dependent decisions remain journaled handler failures: polish capture when packet.assembly.target_repo does not resolve to a local target repo (a check currently unreachable through the CLI because the workspace resolver supplies a local path); run end without a packet in argv or the saved session; and qa run or qa resolve with a named packet yielding no Map ID after checkpoint preflight. Separately, a named design manifest that is missing, not a file, or invalid is a journaled handler failure. Nested run-record refusals during closeout do not suppress the invoking command journal. The ambient run-session lookup may still read a named --packet before handler dispatch.",
+      "compatibility": "compatible",
+      "migration": "Update to the exact 1.42.1 package and refresh bundled skills to 1.42.1+skills.1 before starting a new agent session. Treat argv-only failures as refusals and use journal entries for handler failures.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.42.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Document argv-only refusal boundaries, the three journaled state decisions, and nested closeout scope."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Restamp the generated orientation reference for surface 1.42.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Restamp the generated runtime reference for surface 1.42.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.42.1+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Stamp package version 1.42.1 without changing dependency resolutions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release package version 1.42.1 without changing exports or dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.42.1+skills.1 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "Refuse intake, run-record and QA argv errors before target reads, name accepted next stages, and keep nested closeout refusals within their own scope."
+        }
+      ],
+      "entry_sha256": "e74290c495de13cc95e4f615fe6bd8aa8dbdb7a06211a206be5cd5296724b0af"
+    },
+    {
+      "id": "RL-0144",
+      "sequence": 142,
+      "date": "2026-09-24",
+      "kind": "release",
       "surface_version": "1.43.0",
       "changelog_section": "1.43.0",
       "changelog_sha256": "1500b85555746a9550cb238041a55c92bf4e2357f9ad4768c5f27ea4de6b6cde",
@@ -6493,15 +6616,15 @@
           "summary": "Use the current 1.43.0+skills.1 bundle in executable examples."
         }
       ],
-      "entry_sha256": "60e6542a813c6e7dadb7601270fbc0fea20fd5db18224445c245e32c72c74c4c"
+      "entry_sha256": "41aa194138fb46e0f5acf1b668139b09f21cfe210e976013ae2db9263cb0d068"
     },
     {
       "id": "RL-0142",
-      "sequence": 142,
+      "sequence": 143,
       "date": "2026-09-24",
       "kind": "amendment",
-      "amends": "RL-0141",
-      "amendment_reason": "Complete the entry-point and QA documentation omitted from RL-0141, clarify its skill guidance, and preserve the existing saved-Map mismatch diagnostic.",
+      "amends": "RL-0144",
+      "amendment_reason": "Complete the entry-point and QA documentation omitted from RL-0144, clarify its skill guidance, and preserve the existing saved-Map mismatch diagnostic.",
       "surface_version": null,
       "changelog_section": "1.43.0+agent.1",
       "changelog_sha256": "ec20f3ed8ca10054c47027c6cd66ce58df812a9a7bdc1ca1a314ee5ca61953d6",
@@ -6540,14 +6663,14 @@
           "summary": "Clarify that the 1.43.0 skill updates also teach local-spec QA inputs, local-only publication behavior and separate local evidence identity."
         }
       ],
-      "entry_sha256": "bfa939b4e7e00a5661e552ab6c24e1f4c96df45b0e2baeb8d42c4b59b22fda14"
+      "entry_sha256": "a15386429fe754cde6d5ff9590859b463fdb371e014b0ad0c50a8e19a24e1079"
     },
     {
       "id": "RL-0143",
-      "sequence": 143,
+      "sequence": 144,
       "date": "2026-09-24",
       "kind": "amendment",
-      "amends": "RL-0141",
+      "amends": "RL-0144",
       "amendment_reason": "Harden local identity projection and Run Record persistence after review; distinguish local doctor failures and clarify exact local-ID normalization.",
       "surface_version": null,
       "changelog_section": "1.43.0+agent.2",
@@ -6575,7 +6698,48 @@
           "summary": "Document exact local-ID validation, evidence-write refusal and the separate local doctor diagnostic."
         }
       ],
-      "entry_sha256": "2e4da9ceabc7bd77f4d9be463ca94fcd1185157451954ccb50e8f38016809aa2"
+      "entry_sha256": "0a3533b5ab6004e1f9a7d3c9e18030c9f055c11d1b596319728d7d2f1f7f443c"
+    },
+    {
+      "id": "RL-0145",
+      "sequence": 145,
+      "date": "2026-09-24",
+      "kind": "amendment",
+      "amends": "RL-0143",
+      "amendment_reason": "Keep invalid local identity diagnostics from adopting foreign doctor history and integrate the landed 1.42.1 refusal boundaries without losing local packet QA.",
+      "surface_version": null,
+      "changelog_section": "1.43.0+agent.3",
+      "changelog_sha256": "c813cdbeaea7d82816af6a6aeedf6e65df00b75dd6c0f6116ce51266a0f9ff0f",
+      "agent_impact": "Invalid identities have no usable prior-history comparison. Packet-derived QA identity errors remain journaled handler failures; missing argv selectors are refused before reads.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "Do not select prior doctor history for malformed, missing, conflicting or mismatched campaign identities."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "Preserve local-spec packet QA while integrating the argv-only refusal boundary from 1.42.1."
+        },
+        {
+          "class": "skill",
+          "path": null,
+          "surface_entry": "skills.json",
+          "summary": "Advance each bundled skill version beyond the concurrently landed 1.42.1 release."
+        },
+        {
+          "class": "named_surface",
+          "path": null,
+          "surface_entry": "docs/effects.md",
+          "summary": "Describe missing or conflicting packet-derived local identity as a journaled handler failure."
+        }
+      ],
+      "entry_sha256": "346259f1c22a80007cb949786c3b113211931bb399e8a181764548db36d397cc"
     }
   ]
 }

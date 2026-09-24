@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-qa
-version: 1.3.9
+version: 1.3.10
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-os-setup
-version: 2.0.8
+version: 2.0.9
 description: Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring. Formerly installed as next-campaigns-setup; renamed 2026-08 to stop colliding with the published NextCommerceCo/skills scaffolder of that name.
 ---
 

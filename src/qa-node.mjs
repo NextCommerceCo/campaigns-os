@@ -346,8 +346,19 @@ async function resolveQaInputs(args, {
   readJsonFile = readJson,
   loadCampaignEntry = loadPageKitCampaignEntry,
 } = {}) {
+  // Selector flags without a non-empty value are argv-only refusals for both
+  // qa run and qa resolve. Check them before checkpoint preflight or site reads.
+  for (const flag of ["packet", "site", "built", "map-id"]) {
+    if (Object.hasOwn(args, flag) && !stringArg(args[flag])) {
+      throw refused(`Missing value for --${flag}`);
+    }
+  }
   if (args.packet && args.spec) {
     throw refused("Packet QA does not accept --spec; it always uses packet.spec.local_path.");
+  }
+  // No non-empty campaign selector in argv is also decided before any read.
+  if (![args.packet, args.site, args.built, args._[2], args["map-id"]].some(stringArg)) {
+    throw refused("QA requires a Map ID. Provide --packet or positional <map-id>.");
   }
   // Non-packet mode (learnings L7): QA a `campaign-build`'d page-kit campaign
   // that has only a built _site/ and a served URL — no Build Packet, no Map ID,
@@ -372,18 +383,12 @@ async function resolveQaInputs(args, {
   const mapId = stringArg(args["map-id"])
     || stringArg(args._[2])
     || stringArg(packet?.spec?.map_id);
-  // A refusal to identify a campaign, not a failure to QA one: with no
-  // --packet, no --site/--built and no positional <map-id>, every read above
-  // was skipped and `qa run` has nothing to work on. Tagged on both paths, not
-  // just the empty one — the journal question is whether the CLI reached a
-  // handler's WORK, and a missing-identity refusal decides that before any
-  // spec is fetched, any browser launches and anything is written. (When a
-  // packet WAS named, it has been read by here; the packet read is a lookup
-  // for the same identity question, and one message cannot be two verdicts.)
+  // A named packet has been read by checkpoint preflight. Its missing or
+  // conflicting identity is a handler failure, not an argv-only refusal.
   const localSpecId = packet?.spec?.local_spec_id ?? null;
-  if (!mapId && !localSpecId) throw refused("QA requires a Map ID or a local-spec packet. Provide --packet or positional <map-id>.");
+  if (!mapId && !localSpecId) throw new Error("QA requires a Map ID or a local-spec packet. The named Build Packet has no campaign identity.");
   if (packet && localSpecId != null && (!resolveCampaignIdentity(packet.spec) || mapId)) {
-    throw refused("Local-spec packet QA cannot use a Map ID override or an ambiguous identity.");
+    throw new Error("Local-spec packet QA cannot use a Map ID override or an ambiguous identity.");
   }
 
   const proxyBase = stringArg(args["proxy-base"]) || DEFAULT_PROXY_BASE;
@@ -410,11 +415,11 @@ async function resolveQaInputs(args, {
   }
 
   if (!packet && rawSpec?.spec_identity?.local_spec_id != null) {
-    throw refused("Local-spec QA requires --packet; a local spec cannot be published under a Map ID.");
+    throw new Error("Local-spec QA requires --packet; a local spec cannot be published under a Map ID.");
   }
   if (packet && (localSpecId != null || rawSpec?.spec_identity?.local_spec_id != null)
     && !campaignIdentitiesMatch(packet.spec, campaignSpecIdentity(rawSpec))) {
-    throw refused("Packet local_spec_id does not match the local CampaignSpec identity. Re-run prepare-build from the intended spec.");
+    throw new Error("Packet local_spec_id does not match the local CampaignSpec identity. Re-run prepare-build from the intended spec.");
   }
   const normalized = normalizeSpec(rawSpec);
   const publicRouteSlug = resolvePublicRouteSlug({ packet, spec: normalized, rawSpec });
@@ -493,7 +498,7 @@ function resolvePacketCheckpointPreflight(args, {
   const packet = readJsonFile(packetPath);
   if (packet?.spec?.local_spec_id != null && (!resolveCampaignIdentity(packet.spec)
     || stringArg(args["map-id"]) || stringArg(args._?.[2]))) {
-    throw refused("Local-spec packet QA cannot use a Map ID override or an ambiguous identity.");
+    throw new Error("Local-spec packet QA cannot use a Map ID override or an ambiguous identity.");
   }
   const specPath = stringArg(args.spec)
     ? resolve(String(args.spec))
@@ -532,7 +537,7 @@ function resolvePacketCheckpointPreflight(args, {
   }
   if (packet?.spec?.local_spec_id != null && (!reportMatchesPacketIdentity(report, packet)
     || (specStatus === "ok" && !specHashesMatch(report.identity?.spec_material_hash, computeSpecHash(rawSpec))))) {
-    throw refused("Local-spec QA requires the matching Assembly Report and current spec material hash. Re-run prepare-build after a material revision; do not reuse foreign or stale proof.");
+    throw new Error("Local-spec QA requires the matching Assembly Report and current spec material hash. Re-run prepare-build after a material revision; do not reuse foreign or stale proof.");
   }
   const checkpointGates = [
     evaluatePageKitStoreProfile({
@@ -685,18 +690,18 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
 // yields "not_applicable" rather than blocking, so browser QA still runs the
 // residue/placeholder/demo gates. Test orders are not attempted (no policy).
 export function resolveQaInputsFromSite(args) {
+  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]));
+  if (!baseUrl) {
+    throw refused("Non-packet site QA requires --base-url <served-campaign-root> so built pages have a fetchable URL.");
+  }
+  const templateFamily = stringArg(args.family);
+  if (!templateFamily) {
+    throw refused("Non-packet site QA requires --family <template-family> so residue, placeholder, and demo-asset gates can load the family brand contract.");
+  }
   const targetRepo = resolve(String(args.site || args.built));
   const scope = resolveBuiltSiteScope(targetRepo, { slug: stringArg(args.slug) });
   if (!scope.ok) {
     throw new Error(scope.error || `Could not resolve a built campaign from ${targetRepo}.`);
-  }
-  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]));
-  if (!baseUrl) {
-    throw new Error("Non-packet site QA requires --base-url <served-campaign-root> so built pages have a fetchable URL.");
-  }
-  const templateFamily = stringArg(args.family);
-  if (!templateFamily) {
-    throw new Error("Non-packet site QA requires --family <template-family> so residue, placeholder, and demo-asset gates can load the family brand contract.");
   }
   const brandContract = loadBrandContract(templateFamily);
   if (brandContract.status !== "loaded" || !brandContract.contract) {

@@ -492,7 +492,7 @@ Usage:
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--skills-revision <bundle-revision|skill-id@version>] [--packet <campaign-runtime.build.json>] [--force] [--json]   # install-mode, git, skill freshness, and local gateway login/store/expiry/reported version. --skills-revision checks the bundle revision the skill you loaded states on its first body line (or that one skill's <skill-id>@<version>) against the bundle THIS CLI ships: revision_check is match, mismatch or unchecked, and a mismatch prints the full status and exits 2 because skill text already in context cannot be refreshed by re-running — start a fresh session. The pin check reports one executable per project: the project pin first — the first exact spec for this package (x.y.z, =x.y.z or vx.y.z) on the walk up from the nearest package.json, devDependencies then dependencies in each, entering a workspace root and stopping there, never peerDependencies or optionalDependencies — then the Build Packet's campaigns_os_version (the project's campaign-runtime.build.json, or --packet <path>); the Pin: line names the key and manifest (or packet) each version came from; pin.status is match, stale_pin (the pin is not the running version), conflicting_pin (the two sources disagree) or unpinned (neither, or only a range; exit 0). stale_pin and conflicting_pin exit 2 with the file to change; --force (bare) overrides them, is reported as pin.forced and lands on the lifecycle journal entry. See docs/skills-revision.md
   campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
-  campaigns-os next --packet <json> [--no-write] [--no-remit] [--proxy-base <url>] [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
+  campaigns-os next [${NEXT_STAGE_ORDER.join("|")}] --packet <json> [--no-write] [--no-remit] [--proxy-base <url>] [--json]   # no stage self-decides; returns gates[] + next_actions[] alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next polish --packet <json> --report <json> [--json]
@@ -1188,6 +1188,17 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // them from this function's source.
     const mode = PREPARE_MODES[command];
     if (!mode) throw new Error(`No intake mode registered for "${command}"; add it to PREPARE_MODES.`);
+    // Validate argv before --spec is inspected or --map-id fetches and caches.
+    // Preserve resolveSpecPath's missing-input and map-id/target diagnostics.
+    if (args.spec || (args["map-id"] && args.target)) requireArg(args, "source");
+    if (args.spec) requireArg(args, "target");
+    const sourceKind = optionalString(args["source-kind"], "html_funnel");
+    if (sourceKind !== "html_funnel") {
+      throw refused(`Unsupported source adapter "${sourceKind}". Use html_funnel for the current prepared-HTML flow.`);
+    }
+    const wrapperPolicyFlag = refusing(() => parseWrapperPolicyFlag(args));
+    refusing(() => requireDesignManifestValue(args));
+    const orderPathDepthFlag = refusing(() => parseOrderPathDepthFlag(args, { command: "prepare-build" }));
     // Tier 2: mark sub-phases so the lifecycle journal entry carries per-phase
     // timings (spec resolve vs the prepare+doctor+install build), which Tier 1
     // aggregates into `start:resolve-spec` / `start:prepare-build` stages.
@@ -1199,7 +1210,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     args.spec = resolved.specPath;
     // `command` rides along for the doctor sidecar's generated_by stamp when
     // the mode runs doctor (#312): threaded from here, not re-read from argv.
-    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, command, specInput }));
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, command, specInput, sourceKind, wrapperPolicyFlag, orderPathDepthFlag }));
     result.spec_source = resolved;
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
@@ -1367,7 +1378,9 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // command a QA run prints has to agree with the run_id this session will
     // later close and remit under.
     const result = await runQaCli(args, { ambient });
-    if (args._[1] === "run" && result?.verdict && recordQaStageOutcome(args, result)) {
+    // nextStage requires a packet. Guard its optional, swallowed progress
+    // probe explicitly so it cannot construct a refusal in that try block.
+    if (args._[1] === "run" && result?.verdict && isNonEmptyString(args.packet) && recordQaStageOutcome(args, result)) {
       // Observe committed QA before the existing closeout; this cannot close
       // a run or change the QA disposition. Reuse the canonical picker.
       try {
@@ -2309,16 +2322,21 @@ function parseWrapperPolicyFlag(args) {
 // directory are errors: the operator named the file, so silently falling back
 // to filesystem matching would discard the declaration they made.
 function parseDesignManifestFlag(args) {
-  const raw = args["design-manifest"];
+  const raw = requireDesignManifestValue(args);
   if (raw == null) return null;
-  if (raw === true || !isNonEmptyString(raw)) {
-    throw new Error("--design-manifest needs a value: the path of a source-html-manifest/v0 JSON file.");
-  }
   const path = resolve(raw);
   if (!existsSync(path) || !statSync(path).isFile()) {
     throw new Error(`Design manifest does not exist or is not a file: ${path}`);
   }
   return path;
+}
+
+function requireDesignManifestValue(args) {
+  const raw = args["design-manifest"];
+  if (raw != null && (raw === true || !isNonEmptyString(raw))) {
+    throw new Error("--design-manifest needs a value: the path of a source-html-manifest/v0 JSON file.");
+  }
+  return raw;
 }
 
 // Same precedence the template family uses (docs/build-packet.md
@@ -2377,17 +2395,12 @@ function prepareBuild(args, options = {}) {
   }
   if (!publicRouteSlug) throw new Error("CampaignSpec has no public route slug. Set spec_identity.public_route_slug or campaign.slug.");
 
-  const sourceKind = optionalString(args["source-kind"], "html_funnel");
-  if (sourceKind !== "html_funnel") {
-    throw new Error(`Unsupported source adapter "${sourceKind}". Use html_funnel for the current prepared-HTML flow.`);
-  }
-  // Validated here, with the other argv checks, rather than where the policy
-  // is consumed: prepare-build publishes an immutable Design Source Package
-  // partway through, so a flag that throws later would leave persistent state
-  // behind for a bad argument.
-  const wrapperPolicyFlag = parseWrapperPolicyFlag(args);
+  // Dispatch validated the argv-only flags before spec resolution. Only the
+  // manifest's filesystem check remains here, before preparation writes.
+  const sourceKind = options.sourceKind;
+  const wrapperPolicyFlag = options.wrapperPolicyFlag;
   const designManifestPath = parseDesignManifestFlag(args);
-  const orderPathDepthFlag = parseOrderPathDepthFlag(args, { command: "prepare-build" });
+  const orderPathDepthFlag = options.orderPathDepthFlag;
 
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
@@ -3885,10 +3898,15 @@ export function doctorPacket(packetPath, options = {}) {
   // to go by first. Code granularity, because that is the granularity the
   // record stores. baseDir is the packet directory, the same root the Run
   // Record writes under.
+  // An invalid identity cannot select history. In particular, withholding a
+  // malformed local ID from derived must not turn it into an unfiltered or
+  // Map-only lookup of another campaign's findings.
+  const comparableIdentity = resolveCampaignIdentity(result.derived)
+    && !result.errors.some(issue => issue.code === "spec.local_identity" || issue.code === "spec.map_id");
   result.cause_summary = annotateDoctorIssueCauses({
     errors: result.errors,
     warnings: result.warnings,
-    baseDir: dirname(resolve(packetPath)),
+    baseDir: comparableIdentity ? dirname(resolve(packetPath)) : null,
     mapId: result.derived?.map_id || null,
     localSpecId: result.derived?.local_spec_id || null,
   });
@@ -9735,6 +9753,9 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
 }
 
 export function nextStage(stage, args, ambient = null) {
+  if (stage !== null && !NEXT_STAGE_ORDER.includes(stage)) {
+    throw refused(`Unknown next stage: ${stage}. Accepted stages: ${NEXT_STAGE_ORDER.join(", ")}.`);
+  }
   const packetPath = resolve(requireArg(args, "packet"));
   // A custom prepare-build report is recorded on the Build Context relative
   // to the target repo. Packet-only `next` must follow that durable pointer;
@@ -9940,8 +9961,6 @@ export function nextStage(stage, args, ambient = null) {
     addPolishCheckpointGateErrors(errors, polishCheckpointGate, "qa");
     addThemeGateErrors(errors, themeGate, "qa");
     prompt = qaPrompt(packetPath, reportPath, packet);
-  } else {
-    throw new Error(`Unknown next stage: ${stage}`);
   }
   const status = errors.length
     ? "blocked"
@@ -12720,15 +12739,20 @@ export function runSessionEndArgs(session, packet, extraArgs = {}) {
 async function closeRunSession(found, { packet, extraArgs = {}, silent = false, promptForConsent = true, onError = null } = {}) {
   const endArgs = runSessionEndArgs(found.session, packet, extraArgs);
   try {
-    const summary = await runRecordCommand(endArgs, found, { silent, promptForConsent });
+    // Internal closeout may swallow run-record errors. Its refusals belong to
+    // that nested attempt, never to the invoking command's journal verdict.
+    const summary = await runWithRefusalScope(() => runRecordCommand(endArgs, found, { silent, promptForConsent }));
     // Clearing the session is a write like any other, so a closer carrying
     // --dry-run leaves it open: the operator sees the record the close would
     // assemble and can still close for real afterwards.
     if (endArgs["dry-run"] !== true) clearRunSession(found.path);
     return summary;
   } catch (error) {
-    if (!onError) throw error;
-    onError(error);
+    // A nested run-record refusal is a failure of the invoking closer, which
+    // has already read session state. Do not pass its tag to outer persistence.
+    const failure = error?.code === REFUSED_INVOCATION ? new Error(error.message, { cause: error }) : error;
+    if (!onError) throw failure;
+    onError(failure);
     return null;
   }
 }
@@ -12938,6 +12962,10 @@ export function describeCampaignKeyRejection(rejected) {
 // docs/workflow-findings-sidecar.md.
 async function runRecordCommand(args, ambient = null, { silent = false, promptForConsent = true } = {}) {
   const packetPath = resolve(requireArg(args, "packet"));
+  if (args["new-run"] === true && optionalString(args["run-id"])) {
+    throw refused("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
+  }
+  const agentUsage = refusing(() => parseAgentUsageArgs(args));
   // --dry-run assembles the record and shows it, then writes and sends
   // nothing. It differs from --no-write, which skips the assembly's reads
   // as well; combining the two is allowed and still writes nothing.
@@ -12971,7 +12999,6 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
 
   const journalPath = resolveJournalPath(args);
   const journal = readJournal(journalPath);
-  const agentUsage = parseAgentUsageArgs(args);
 
   // run_id: explicit flag > --new-run (mint) > active run session > the most
   // recent Run Record on disk for this packet's campaign > freshly minted.
@@ -12984,9 +13011,6 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // record for this campaign exists, or when --new-run asks for it. The
   // source travels on the stdout envelope only: the record's schema is
   // hashed surface and does not carry it.
-  if (args["new-run"] === true && optionalString(args["run-id"])) {
-    throw new Error("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
-  }
   const listOnly = args.list === true;
   // The directory is scanned only when something reads it: --list, or an id
   // that nothing else names. An explicit --run-id, --new-run or an open
