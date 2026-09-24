@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const PACKAGE = "@nextcommerce/campaigns-os";
 const CONTEXT = ".campaign-runtime/agent-context/CLAUDE.md";
@@ -50,15 +50,21 @@ function hasContextImport(text) {
 }
 
 function regularDestination(root, path) {
-  const parts = relative(root, path).split(/[\\/]/);
+  const rel = relative(root, path);
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error(`tooling setup: destination must stay inside the selected project: ${path}.`);
+  }
+  const parts = rel.split(sep);
   let current = root;
   for (let i = 0; i < parts.length; i++) {
     current = join(current, parts[i]);
-    if (!existsSync(current)) {
-      // existsSync follows symlinks, including dangling ones.
-      try { lstatSync(current); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    let stat;
+    try { stat = lstatSync(current); } catch (error) {
+      // Every existing ancestor has already been checked. Once a component is
+      // absent, its descendants cannot exist; dangling symlinks still have lstat.
+      if (error.code === "ENOENT") return;
+      throw error;
     }
-    const stat = lstatSync(current);
     if (stat.isSymbolicLink() || (i < parts.length - 1 ? !stat.isDirectory() : !stat.isFile())) {
       throw new Error(`tooling setup: preserve ${current}; expected a regular ${i < parts.length - 1 ? "directory" : "file"}, not a symlink or another file type.`);
     }
@@ -70,9 +76,11 @@ export function setupTooling(args, { packageRoot, installSkills, installAgentCon
   const pkg = json(join(packageRoot, "package.json"));
   const manifestPath = join(target, "package.json");
   const lockPath = join(target, "package-lock.json");
-  const installCommand = `npm install --save-dev --save-exact ${PACKAGE}@${pkg.version} next-campaign-page-kit@0.2.0`;
-  if (!existsSync(manifestPath) || !existsSync(lockPath)) {
-    throw new Error(`tooling setup: install the project dependencies first, from the selected folder: ${installCommand}`);
+  if (!existsSync(manifestPath)) {
+    throw new Error(`tooling setup: package.json is missing. For a new project, follow the pinned install in ${join(packageRoot, "docs/local-setup.md")}. For an existing project, restore its manifest and lockfile and run npm ci.`);
+  }
+  if (!existsSync(lockPath)) {
+    throw new Error("tooling setup: package-lock.json is missing. Restore the project's reviewed lockfile, or generate it from its existing dependency pins with npm install, then rerun setup. Do not replace the project's page-kit pin with a new-project example.");
   }
   const manifest = json(manifestPath);
   const pins = [manifest.devDependencies?.[PACKAGE], manifest.dependencies?.[PACKAGE]].filter(Boolean);

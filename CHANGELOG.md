@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.42.0+agent.1] - 2026-09-24
+
+### Fixed
+
+- Setup recovery preserves an existing project's dependency choices instead
+  of recommending a fixed page-kit version. New projects use the install
+  instructions bundled with the release.
+- Setup explicitly confines managed destinations to the selected project;
+  regression coverage proves files and dangling symlinks cannot stand in for
+  context directories.
+- Receipt-analytics deadline tests advance a controlled clock after entering
+  the phase under test, avoiding a CI scheduling race between settle and capture.
+
 ## [1.42.0] - 2026-09-23
 
 ### Added

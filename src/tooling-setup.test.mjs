@@ -113,14 +113,43 @@ test("setup refuses conflicting pins, missing page-kit and edited context before
   }
 });
 
-test("setup refuses symlink destinations and leaves the external target unchanged", (t) => {
-  for (const name of ["CLAUDE.md", ".campaign-runtime"]) {
+test("missing project files give recovery guidance without prescribing a replacement page-kit version", (t) => {
+  for (const name of ["package.json", "package-lock.json"]) {
+    const f = fixture(t);
+    const manifest = readFileSync(join(f.target, "package.json"), "utf8");
+    rmSync(join(f.target, name));
+    assert.throws(() => setupTooling(f.args, f.deps), (error) => {
+      assert.match(error.message, name === "package.json" ? /docs[/\\]local-setup\.md/ : /existing dependency pins/);
+      assert.doesNotMatch(error.message, /next-campaign-page-kit@/);
+      return true;
+    });
+    assert.deepEqual(f.calls, []);
+    if (name === "package-lock.json") assert.equal(readFileSync(join(f.target, "package.json"), "utf8"), manifest);
+  }
+});
+
+test("setup refuses a file where any context parent directory should be before installing anything", (t) => {
+  for (const name of [".campaign-runtime", ".campaign-runtime/agent-context"]) {
+    const f = fixture(t);
+    const obstruction = join(f.target, name);
+    mkdirSync(dirname(obstruction), { recursive: true });
+    writeFileSync(obstruction, "existing file");
+    assert.throws(() => setupTooling(f.args, f.deps), /expected a regular directory/);
+    assert.deepEqual(f.calls, []);
+    assert.equal(readFileSync(obstruction, "utf8"), "existing file");
+  }
+});
+
+test("setup refuses symlink destinations, including dangling links, and leaves external files unchanged", (t) => {
+  for (const name of ["CLAUDE.md", ".campaign-runtime", ".campaign-runtime/agent-context", "dangling"]) {
     const f = fixture(t);
     const outside = join(f.dir, "outside");
     if (name === "CLAUDE.md") writeFileSync(outside, "external instructions");
-    else mkdirSync(outside);
-    rmSync(join(f.target, name), { recursive: true, force: true });
-    symlinkSync(outside, join(f.target, name));
+    else if (name !== "dangling") mkdirSync(outside);
+    const destination = join(f.target, name === "dangling" ? ".campaign-runtime" : name);
+    mkdirSync(dirname(destination), { recursive: true });
+    rmSync(destination, { recursive: true, force: true });
+    symlinkSync(outside, destination);
     assert.throws(() => setupTooling(f.args, f.deps), /symlink/);
     assert.deepEqual(f.calls, []);
     if (name === "CLAUDE.md") assert.equal(readFileSync(outside, "utf8"), "external instructions");
