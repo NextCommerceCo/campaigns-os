@@ -29,8 +29,9 @@ Set `spec_identity.local_spec_id` to a new UUID once, commit it with the spec,
 and keep it unchanged through revisions and fresh checkouts. It accepts 1–64
 letters, digits, underscores or hyphens, with no surrounding whitespace. Local
 IDs are checked exactly; the legacy normalization of saved Map IDs does not
-apply. Malformed or conflicting local identities are refused before evidence
-writes. Doctor reports local identity failures as `spec.local_identity`, while
+apply. Malformed or conflicting local identities cannot be adopted into campaign
+evidence; blocked diagnostic reports may still be written. Doctor reports local
+identity failures as `spec.local_identity`, while
 saved-Map failures retain `spec.map_id`. Set `spec_identity.public_route_slug`
 to the intended route. Omit `map_id`, saved-Map URLs and saved-Map revision
 metadata; a local ID is never a Map ID. A spec declaring both kinds is refused.
