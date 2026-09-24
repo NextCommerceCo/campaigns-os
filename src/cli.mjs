@@ -1190,11 +1190,17 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     if (!mode) throw new Error(`No intake mode registered for "${command}"; add it to PREPARE_MODES.`);
     // Validate argv before --spec is inspected or --map-id fetches and caches.
     // Preserve resolveSpecPath's missing-input and map-id/target diagnostics.
+    for (const flag of ["spec", "map-id", "source", "target", "source-kind", "proxy-base"]) {
+      if (Object.hasOwn(args, flag)) requireArg(args, flag);
+    }
     if (args.spec || (args["map-id"] && args.target)) requireArg(args, "source");
     if (args.spec) requireArg(args, "target");
     const sourceKind = optionalString(args["source-kind"], "html_funnel");
     if (sourceKind !== "html_funnel") {
       throw refused(`Unsupported source adapter "${sourceKind}". Use html_funnel for the current prepared-HTML flow.`);
+    }
+    if (Object.hasOwn(args, "wrapper-policy") && !isNonEmptyString(args["wrapper-policy"])) {
+      throw refused(`--wrapper-policy needs a value. Accepted values: ${ADAPTER_WRAPPER_POLICIES.join(", ")}.`);
     }
     const wrapperPolicyFlag = refusing(() => parseWrapperPolicyFlag(args));
     refusing(() => requireDesignManifestValue(args));
@@ -12674,6 +12680,12 @@ function runSessionProgress(found) {
 }
 
 async function runSessionEnd(args, ambient = null, sessionHolder = null) {
+  // The closer reads a session, but its own argv refusals still belong to the
+  // invoking command. Check them before entering closeRunSession's nested scope.
+  validateRunRecordArgv(args);
+  if (Object.hasOwn(args, "new-run") || Object.hasOwn(args, "run-id")) {
+    throw refused("run end uses the saved session's run ID; --new-run and --run-id are not accepted.");
+  }
   // Use the session resolved once in main() (single source of truth).
   const found = ambient;
   if (!found) {
@@ -12708,10 +12720,14 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
 // invoking command implements the flag; a closer invoked by a command that
 // does not (the QA auto-end) drops it from extraArgs before calling — see
 // DRY_RUN_COMMANDS and autoEndRunSessionAfterTerminalQa.
-const RUN_RECORD_INHERITABLE_FLAGS = Object.freeze([
+export const RUN_RECORD_INHERITABLE_FLAGS = Object.freeze([
   "context", "report", "qa-verdict", "journal", "surfaces", "primary-surface", "surface-confidence",
   "agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms", "agent-model", "agent-usage-source",
   "no-remit", "no-write", "proxy-base", "dry-run", "json",
+]);
+const RUN_RECORD_BOOLEAN_INHERITABLE_FLAGS = new Set(["no-remit", "no-write", "dry-run", "json"]);
+const RUN_RECORD_INTEGER_INHERITABLE_FLAGS = new Set([
+  "agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms",
 ]);
 
 // The run-record argv that closes `session`: its run_id and journal, the
@@ -12739,8 +12755,10 @@ export function runSessionEndArgs(session, packet, extraArgs = {}) {
 async function closeRunSession(found, { packet, extraArgs = {}, silent = false, promptForConsent = true, onError = null } = {}) {
   const endArgs = runSessionEndArgs(found.session, packet, extraArgs);
   try {
-    // Internal closeout may swallow run-record errors. Its refusals belong to
-    // that nested attempt, never to the invoking command's journal verdict.
+    // A stale-session sweep can inherit --proxy-base with no value from a
+    // command such as run start that accepts it. The sweep swallows its nested
+    // run-record refusal before the invoking command journals; a separate
+    // scope keeps that refusal from suppressing the invoking entry.
     const summary = await runWithRefusalScope(() => runRecordCommand(endArgs, found, { silent, promptForConsent }));
     // Clearing the session is a write like any other, so a closer carrying
     // --dry-run leaves it open: the operator sees the record the close would
@@ -12961,16 +12979,11 @@ export function describeCampaignKeyRejection(rejected) {
 // remit it. Capture is ALWAYS local; consent gates only the remit. See
 // docs/workflow-findings-sidecar.md.
 async function runRecordCommand(args, ambient = null, { silent = false, promptForConsent = true } = {}) {
+  const { agentUsage, dryRun, parsedSurfaces } = validateRunRecordArgv(args);
   const packetPath = resolve(requireArg(args, "packet"));
-  if (args["new-run"] === true && optionalString(args["run-id"])) {
-    throw refused("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
-  }
-  const agentUsage = refusing(() => parseAgentUsageArgs(args));
   // --dry-run assembles the record and shows it, then writes and sends
   // nothing. It differs from --no-write, which skips the assembly's reads
   // as well; combining the two is allowed and still writes nothing.
-  const dryRun = isDryRun(args);
-  const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
   const explicitTargetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
   const { baseDir, targetRepo, contextPath, reportPath } = resolveCampaignWorkspace(packetPath, {
@@ -13581,6 +13594,26 @@ function parseRunRecordSurfaces(value) {
     throw refused(`Unknown --surfaces value(s): ${unknown.join(", ")}. Use one of: ${RUN_RECORD_SURFACES.join(", ")}.`);
   }
   return surfaces;
+}
+
+function validateRunRecordArgv(args) {
+  for (const flag of RUN_RECORD_INHERITABLE_FLAGS) {
+    // The integer flags are checked below by parseAgentUsageArgs, which keeps
+    // their non-negative-integer diagnostics for bare and blank values.
+    if (!RUN_RECORD_BOOLEAN_INHERITABLE_FLAGS.has(flag) && !RUN_RECORD_INTEGER_INHERITABLE_FLAGS.has(flag) && Object.hasOwn(args, flag)) requireArg(args, flag);
+  }
+  if (Object.hasOwn(args, "run-id")) requireArg(args, "run-id");
+  if (Object.hasOwn(args, "new-run") && args["new-run"] !== true) {
+    throw refused("--new-run takes no value.");
+  }
+  if (args["new-run"] === true && optionalString(args["run-id"])) {
+    throw refused("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
+  }
+  return {
+    agentUsage: refusing(() => parseAgentUsageArgs(args)),
+    dryRun: isDryRun(args),
+    parsedSurfaces: parseRunRecordSurfaces(args.surfaces),
+  };
 }
 
 function parseAgentUsageArgs(args) {

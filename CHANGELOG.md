@@ -2,6 +2,38 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1] - 2026-09-24
+
+### Fixed
+
+- In 1.42.1, `run end` journaled several inherited flag refusals that 1.41.x
+  refused without a journal entry, including unknown `--surfaces` and valued
+  `--dry-run`. `run end` and `run-record` now refuse bare, empty, or
+  whitespace-only values for every value-taking inherited run-record flag
+  before packet work. The agent token and elapsed-time flags keep their integer
+  diagnostics; unknown `--surfaces` and valued `--dry-run` are refused. `run end`
+  also refuses `--new-run` and `--run-id`, since the saved session fixes its run
+  ID. These argv-only refusals append no lifecycle entry.
+- `start`, `prepare-build`, and `build` refuse bare, empty, or whitespace-only
+  values of `--spec`, `--map-id`, `--source`, `--target`, `--source-kind`,
+  `--proxy-base`, `--wrapper-policy`, `--design-manifest`, and
+  `--order-path-depth` before local spec reads, Map fetches, or cache writes on
+  the `--spec`, `--map-id`, and `--map-id --cached-spec` paths.
+- A swallowed run-record refusal during stale-session closeout stays within
+  that closeout's scope and cannot suppress the invoking command's later
+  journal entry.
+- Correct the 1.42.1 note: QA with a named packet yielding no Map ID after
+  checkpoint preflight changed from a refusal to a journaled handler failure
+  in that release; it did not *remain* journaled. A named packet now satisfies
+  QA identity with a Map ID or a valid local-spec identity. If preflight yields
+  neither or finds conflicting local and Map identities, QA journals a handler
+  failure.
+
+### Changed
+
+- Package and supported-surface version advance to 1.43.1. Bundled skills
+  carry revision `1.43.1+skills.1`, with each skill version advanced one patch.
+
 ## [1.43.0+agent.4] - 2026-09-24
 
 ### Fixed

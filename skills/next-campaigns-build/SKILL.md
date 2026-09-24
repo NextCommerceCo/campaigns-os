@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-build
-version: 1.0.11
+version: 1.0.12
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
 
-Bundle revision: 1.43.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.43.0+skills.1`
+Bundle revision: 1.43.1+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.43.1+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read

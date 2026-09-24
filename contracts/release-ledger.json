@@ -6769,6 +6769,129 @@
         }
       ],
       "entry_sha256": "56ca91118205936c9f1c58eda8a4fb208b9c18ee6c0552dce8c3176dffad14f3"
+    },
+    {
+      "id": "RL-0147",
+      "sequence": 147,
+      "date": "2026-09-24",
+      "kind": "release",
+      "surface_version": "1.43.1",
+      "changelog_section": "1.43.1",
+      "changelog_sha256": "fb2d80f05db969915c11921a5969250840bf4ebf48f8fc71cc0427d9cc8817fc",
+      "agent_impact": "Run-record and run end refuse bare, empty, or whitespace-only value-taking inherited flags before packet work; invalid --surfaces, valued --dry-run, and invalid agent integers are also refused without a lifecycle entry. Start, prepare-build, and build reject bare, empty, or whitespace-only values of --spec, --map-id, --source, --target, --source-kind, --proxy-base, --wrapper-policy, --design-manifest, and --order-path-depth before local spec reads, Map fetches, or cache writes. A swallowed stale-closeout refusal does not suppress the invoking command journal. Packet QA accepts either a Map ID or a valid local-spec identity; missing or conflicting packet-derived identity is a journaled handler failure. The 1.42.1 note claiming no-Map packet QA remained journaled was imprecise: that release changed the case from a refusal to a journaled handler failure.",
+      "compatibility": "compatible",
+      "migration": "Update to the exact 1.43.1 package and refresh bundled skills to 1.43.1+skills.1 before starting a new agent session.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.43.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Document inherited run-record value refusals, the nine early-checked intake flags, stale-closeout scope, and the current local-or-Map packet QA identity rule."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Restamp the generated orientation reference for surface 1.43.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Restamp the generated runtime reference for surface 1.43.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.43.1+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Stamp package version 1.43.1 without changing dependency resolutions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release package version 1.43.1 without changing exports or dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.43.1+skills.1 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run",
+          "summary": "Refuse blank values for the nine early-checked intake flags before spec resolution and inherited run-record values before packet work, reject invalid run end flags without journaling, and isolate nested stale-closeout refusals."
+        }
+      ],
+      "entry_sha256": "be7a8ee9772ac86397c53ab9aad8a640d6f30d7b57ad60d82dd7194f04cb3856"
     }
   ]
 }
