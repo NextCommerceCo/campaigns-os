@@ -2,7 +2,7 @@
 
 The happy path is intentionally tight:
 
-1. Export a saved local CampaignSpec JSON from Campaign Map Builder, including Map ID and public route slug.
+1. Use a saved Map export, or have the coding agent author a CampaignSpec from the brief and verified campaign values through the [local-spec entry](build-packet.md#local-spec-entry). Preserve its Map ID or stable `local_spec_id`, plus its public route slug.
 2. Run `campaigns-os start` with the CampaignSpec, prepared source files, target page-kit repo, and template family.
 3. Treat doctor as the first gate. If its `next` block says `doctor-blocked` or `prepare-build` (the same stage names `campaigns-os next` uses), stop and resolve the named blocker.
 4. Run setup when doctor asks for setup; otherwise continue to assembly.
@@ -11,7 +11,7 @@ The happy path is intentionally tight:
 7. Install the package-owned Playwright browser with `npm run qa:install-browser`.
 8. Run polish, serve the current built output, and run `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>`. Do not mark Polish terminal or begin deploy/QA until this package-owned page-load evidence passes or has an exact finding waiver.
 9. Deploy a preview.
-10. Run `campaigns-os qa resolve`, then `campaigns-os qa run --browser --test-order common` with the tested URL. QA runs publish to the QA portal by default (the QA tab records browser QA plus typed-card proof and the run prints its portal link); pass `--no-post-verdict` only for offline / dev / CI runs.
+10. Run `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --browser --test-order common` with the tested URL. Saved-Map QA uses the existing consent and publication controls; pass `--no-post-verdict` to keep its verdict local. Local-spec QA always keeps verdicts and progress local, even with `--post-verdict`, and `qa publish` refuses local-spec packets. Run Telemetry retains its consent controls.
 11. Treat test-order depth as the control: global test cards bypass the gateway and create no transactions, so no approval is needed. Localhost on any port is a Campaigns App Development domain (SDK allowed, analytics suppressed); non-localhost preview/production origins must still be allowlisted for the campaign API key so the SDK loads.
 12. Promote, block, or iterate from the recorded build, polish, deploy, QA, and test-order evidence.
 

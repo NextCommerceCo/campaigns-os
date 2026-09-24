@@ -59,9 +59,11 @@ nothing about ordering — it records a policy and an unmet one.
 
 ## Interpret the verdict exactly
 
-Only a JSON QA verdict is a verdict. The runner writes its full verdict and
-attempts to publish it to the QA portal; a publication failure does not erase
-the local one. The readback projects `.campaign-runtime/qa-verdict.json` when
+Only a JSON QA verdict is a verdict. The runner writes its full verdict locally.
+Saved-Map QA may publish it under the existing consent and flag controls; a
+publication failure does not erase the local one. Local-spec packet verdicts
+stay local even with `--post-verdict`, and `qa publish` refuses those packets.
+The readback projects `.campaign-runtime/qa-verdict.json` when
 that sidecar has been copied into the campaign repository. A markdown QA
 report, a ledger or a gate script is not a verdict and must not be scanned for
 a disposition, a run id or a blocker. Where two JSON verdicts exist, interpret

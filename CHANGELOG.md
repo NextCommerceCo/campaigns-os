@@ -2,6 +2,16 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.0+agent.1] - 2026-09-24
+
+### Fixed
+
+- Entry-point and QA instructions distinguish saved-Map builds from local-spec
+  builds, including local verdict storage, evidence identity and publication
+  suppression. Bundled QA and evidence skills follow the same distinction.
+- Page Kit sync and spec derivation retain the saved-Map mismatch diagnostic
+  while refusing mismatched local identities before writes.
+
 ## [1.43.0] - 2026-09-24
 
 ### Added

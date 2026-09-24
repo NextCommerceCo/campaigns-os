@@ -101,10 +101,10 @@ Use when the user wants evidence on a deployed campaign and no source edit.
 
 Collect:
 
-- Map ID and deployed base URL.
-- Build Packet path if local; otherwise enough info to resolve topology.
+- Saved Map ID or local-spec Build Packet, plus the tested base URL.
+- Build Packet path; required for a local spec, otherwise enough info to resolve topology.
 - Whether browser QA should run.
-- Whether verdict should use the default QA portal publish path or stay local-only.
+- For a saved Map, whether the verdict should use the QA portal publish path or stay local-only. Local-spec packet QA always keeps verdicts and progress local, even with `--post-verdict`; `qa publish` refuses it. Run Telemetry retains its consent controls.
 - Typed-card test-order depth (`common`/explicit/`full`).
 
 Route to QA. Do not patch campaign code from the QA-only path.

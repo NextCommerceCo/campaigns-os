@@ -1,7 +1,7 @@
 ---
 name: next-campaigns-qa
 version: 1.3.9
-description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
+description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
 Bundle revision: 1.43.0+skills.1
@@ -45,7 +45,7 @@ The effect class in each parenthetical below is the declared row of
 Read that file, not this text, when an exact path or endpoint matters.
 
 
-Use this after the campaign has a preview or production URL and the assembly report records build and polish status. The public v0 runner is Node/npm-based, with an owned Playwright browser pass. `qa resolve` is tier `A` (it fetches `--base-url`; `--no-probe` is tier `B` and local); every `qa run` form is tier `C` — it overwrites the stored verdict and the assembly report, places real typed-card test orders against the campaign, and posts the verdict and the progress observation; `qa parity` is tier `A` (it drives the fixture's scenario through the candidate funnel with real typed-card orders and publishes the verdict, but takes no packet, so it writes only under `qa-output/` — never the packet, the assembly report or the verdict sidecar; `--no-post-verdict` drops the publish and stays tier `A`):
+Use this after the campaign has a tested localhost, preview or production URL and the assembly report records build and polish status. The public v0 runner is Node/npm-based, with an owned Playwright browser pass. `qa resolve` is tier `A` (it fetches `--base-url`; `--no-probe` is tier `B` and local); every `qa run` form is tier `C` — it overwrites the stored verdict and the assembly report, places requested typed-card test orders against the campaign, and can post saved-Map verdicts and progress under their existing controls. Local-spec packet verdicts and progress stay local; `qa parity` is tier `A` (it drives the fixture's scenario through the candidate funnel with real typed-card orders and publishes the verdict, but takes no packet, so it writes only under `qa-output/` — never the packet, the assembly report or the verdict sidecar; `--no-post-verdict` drops the publish and stays tier `A`):
 
 ```bash
 npx --no-install campaigns-os qa install-browser
@@ -53,9 +53,9 @@ npx --no-install campaigns-os qa resolve --packet campaign-runtime.build.json
 npx --no-install campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url>
 # Fixture-driven migration parity proof. Publishes to the QA portal by default.
 npx --no-install campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> --base-url <preview-url>
-# Browser QA + typed-card proof. Publishes to the QA portal by default and prints the portal link.
+# Browser QA + typed-card proof. Saved-Map publishing follows consent; local-spec QA stays local.
 npx --no-install campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common
-# Offline / dev / CI only: keep the verdict local
+# Keep a saved-Map verdict local (local-spec verdicts are always local).
 npx --no-install campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common --no-post-verdict
 ```
 
@@ -66,7 +66,7 @@ already installed.
 
 Inputs:
 
-- Campaign Map ID from the Build Packet
+- Build Packet with a saved Map ID or `local_spec_id`; local-spec QA requires `--packet`
 - tested base URL (localhost dev URL, preview URL, or production URL)
 - assembly report
 - Test-order coverage choice (`common` default vs explicit paths vs topology-complete `full`) and SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation so the SDK loads)
@@ -89,7 +89,8 @@ Rules:
 - A missing or topology-unrecognized receipt is `MANUAL_REVIEW`/`WARN`; a recognized receipt with no dataLayer, outbound Meta, or outbound GA4 Purchase is `FAIL`/`BLOCKER`. Capture, unreadable-page, and settle-deadline errors on a recognized receipt are explicit non-waivable blockers. The `analytics-correctness:purchase-fires` waiver applies only to a genuine recognized-receipt/no-signal failure, and is recorded with `campaigns-os qa waive --assertion analytics-correctness:purchase-fires --reason "<why>"` (tier `C`: it overwrites the assembly report and doctor output; the lane is scoped to that one assertion and every other is refused).
 - Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA plus typed-card proof with `--test-order common` by default. Test orders need no permission step. Pause only for missing inputs, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty.
 - Use `--browser` for rendered browser evidence. Browser QA must use the package-owned Playwright flow, not external agent/browser skills.
-- QA runs publish to the QA portal by default, so the QA tab/dashboard carries the full audit log and the run prints its portal link — report that link as the run reference. Pass `--no-post-verdict` (or `--local-only`) only for offline / dev / CI runs; `qa run --no-post-verdict` drops the verdict POST but stays tier `C` and still contacts `--base-url`, the run endpoint and the progress endpoint; those stay local-only under `qa-output/` and must not be reported as dashboard-visible.
+- Saved-Map QA publishes to the QA portal under the existing consent and flag controls; report the portal link only when publication succeeds. Pass `--no-post-verdict` (or `--local-only`) to keep that verdict local. This stays tier `C`: served-page probes, requested orders, Run Telemetry and progress retain their own controls. See `docs/qa-and-test-orders.md` for the saved-Map publication policy.
+- Local-spec QA always keeps verdicts and progress local. `qa run` suppresses portal publication even with `--post-verdict`; `qa publish` refuses local-spec packets with `local_spec`. Report the local verdict/sidecar as evidence, never a dashboard link. A matching route cannot replace a matching `local_spec_id`, and QA refuses a foreign or stale local Assembly Report. Run Telemetry still follows its consent controls.
 - Browser QA must include checkout commerce geometry evidence, not just mount counts: express-wallet buttons rendered in the current browser, card/CVV hosted iframe host dimensions, iframe text-path height, and center alignment. Apple Pay is browser/device eligible, so record mounted wallet kinds instead of requiring Apple Pay in Chrome-only QA.
 - `qa resolve` accepts either the deploy host or the campaign-root URL; when a Build Packet carries `campaign.public_route_slug`, the runner resolves page URLs under that slug.
 - Routing meta tags must be checked in runtime form. `next-success-url`, `next-upsell-accept-url`, and `next-upsell-decline-url` should point at campaign-root paths such as `/campaign-slug/upsell/`, not source filenames or unrooted spec literals.

@@ -55,11 +55,16 @@ contract. A packet found only at
 remedy; conformance does not silently widen discovery.
 
 The checker validates canonical paths, declared schema versions, strict UTC
-timestamps, cross-artifact Map ID, public slug, campaign directory, live URL
+timestamps, cross-artifact Map ID or local-spec ID, public slug, campaign directory, live URL
 path, template family, and spec identity, doctor freshness, and the URL/order-
 free QA projection. Safe repository-relative spellings such as
 `campaign-runtime.build.json` and `./campaign-runtime.build.json` are
 equivalent; absolute paths, URIs, backslashes, and parent traversal are not.
+
+Local-spec bundles compare `local_spec_id` across the packet, report, doctor
+output and QA sidecar. Their Map IDs remain null; the QA verdict's
+`campaign_slug` is the storage key `local-spec-<local_spec_id>`. Mixing local
+and saved-Map identities fails conformance; a shared public route is not enough.
 
 Spec identity has two deliberately separate meanings. Build Context
 `spec.hash` and Assembly Report `identity.spec_hash` retain exact raw-byte

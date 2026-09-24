@@ -5036,9 +5036,10 @@ export function pageKitSyncCommand(args) {
     const packetMapId = optionalString(packet.spec?.map_id);
     if (specSlug && specSlug !== publicRouteSlug) {
       addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", `CampaignSpec identifies route "${singleLineField(specSlug)}" but the packet's campaign.public_route_slug is "${publicRouteSlug}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
-    } else if ((specMapId && packetMapId && specMapId !== packetMapId)
-      || ((spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null)
-        && !campaignIdentitiesMatch(campaignSpecIdentity(spec), packet.spec))) {
+    } else if (specMapId && packetMapId && specMapId !== packetMapId) {
+      addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", `CampaignSpec spec_identity.map_id "${singleLineField(specMapId)}" does not match the packet's spec.map_id "${singleLineField(packetMapId)}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
+    } else if ((spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null)
+      && !campaignIdentitiesMatch(campaignSpecIdentity(spec), packet.spec)) {
       addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", "CampaignSpec identity (spec_identity.map_id/local_spec_id) does not match the packet identity. Point spec.local_path at this campaign's spec (or re-run prepare-build from it); nothing was written.");
     }
   }
@@ -5381,9 +5382,10 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     const packetMapId = optionalString(packet.spec?.map_id);
     if (specSlug && specSlug !== publicRouteSlug) {
       addIssue(result.errors, "spec.derive.spec_identity_mismatch", `CampaignSpec identifies route "${singleLineField(specSlug)}" but the packet's campaign.public_route_slug is "${publicRouteSlug}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
-    } else if ((specMapId && packetMapId && specMapId !== packetMapId)
-      || ((spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null)
-        && !campaignIdentitiesMatch(campaignSpecIdentity(spec), packet.spec))) {
+    } else if (specMapId && packetMapId && specMapId !== packetMapId) {
+      addIssue(result.errors, "spec.derive.spec_identity_mismatch", `CampaignSpec spec_identity.map_id "${singleLineField(specMapId)}" does not match the packet's spec.map_id "${singleLineField(packetMapId)}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
+    } else if ((spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null)
+      && !campaignIdentitiesMatch(campaignSpecIdentity(spec), packet.spec)) {
       addIssue(result.errors, "spec.derive.spec_identity_mismatch", "CampaignSpec identity (spec_identity.map_id/local_spec_id) does not match the packet identity. Point spec.local_path at this campaign's spec (or re-run prepare-build from it); nothing was written.");
     }
   }

@@ -6494,6 +6494,53 @@
         }
       ],
       "entry_sha256": "60e6542a813c6e7dadb7601270fbc0fea20fd5db18224445c245e32c72c74c4c"
+    },
+    {
+      "id": "RL-0142",
+      "sequence": 142,
+      "date": "2026-09-24",
+      "kind": "amendment",
+      "amends": "RL-0141",
+      "amendment_reason": "Complete the entry-point and QA documentation omitted from RL-0141, clarify its skill guidance, and preserve the existing saved-Map mismatch diagnostic.",
+      "surface_version": null,
+      "changelog_section": "1.43.0+agent.1",
+      "changelog_sha256": "ec20f3ed8ca10054c47027c6cd66ce58df812a9a7bdc1ca1a314ee5ca61953d6",
+      "agent_impact": "Use the local-spec path without a saved Map ID; local verdicts and progress remain local. Saved-Map mismatch errors continue to identify both conflicting Map IDs.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Allow agent-authored local specs at entry and distinguish local QA from saved-Map publication."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "Document local_spec_id as the alternative cross-artifact identity in local bundles."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document local QA storage keys, explicit local identity and identity-aware evidence comparison."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "page-kit",
+          "summary": "Retain the saved-Map mismatch diagnostic while preserving refusal of mismatched local identities in sync and spec derivation."
+        },
+        {
+          "class": "skill",
+          "path": null,
+          "surface_entry": "skills.json",
+          "summary": "Clarify that the 1.43.0 skill updates also teach local-spec QA inputs, local-only publication behavior and separate local evidence identity."
+        }
+      ],
+      "entry_sha256": "bfa939b4e7e00a5661e552ab6c24e1f4c96df45b0e2baeb8d42c4b59b22fda14"
     }
   ]
 }

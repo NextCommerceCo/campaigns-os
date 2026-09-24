@@ -98,6 +98,11 @@ npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 
 Resolve reads the packet, loads the local CampaignSpec when available, derives deployed page URLs from the packet deploy URL or `--base-url`, probes the entry URLs it derived, and prints the funnel topology. It does not create a verdict.
 
+Local-spec QA requires `--packet` and matching `local_spec_id` values in the
+packet, CampaignSpec and Assembly Report, with a current report material hash.
+A Map ID override is refused. See the [local-spec entry](build-packet.md#local-spec-entry)
+for preparation and identity rules.
+
 ### Route reachability
 
 A route set derived from the packet is not evidence that the deployment serves
@@ -289,7 +294,7 @@ npm run campaigns-os -- qa run \
   --base-url https://preview.example.com/campaign/
 ```
 
-The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags` (a key the Campaign Cart SDK does not read, `next-currency` or `next-predictive-address` from `src/sdk-meta-tags.mjs`, is a `warn` row at severity `warn` carrying the shared note, never `manual_review` and never a blocker, whether or not the tag rendered; doctor reports the same key as `sdk_hints.meta_tags.ignored_by_sdk`), writes a local verdict JSON under `<target-repo>/qa-output/<map-id>/<run-id>.json` (the packet's `assembly.target_repo`, else the packet's directory; `--output-dir` overrides it, and a packet-less run uses `qa-output/` under the current directory), and returns exit code `4` when the verdict is blocked. The target's managed ignore block lists `qa-output/`, because full verdicts carry live storefront URLs; the committed form is the `.campaign-runtime/qa-verdict.json` projection.
+The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags` (a key the Campaign Cart SDK does not read, `next-currency` or `next-predictive-address` from `src/sdk-meta-tags.mjs`, is a `warn` row at severity `warn` carrying the shared note, never `manual_review` and never a blocker, whether or not the tag rendered; doctor reports the same key as `sdk_hints.meta_tags.ignored_by_sdk`), writes a local verdict JSON under `<target-repo>/qa-output/<qa-storage-key>/<run-id>.json` (the packet's `assembly.target_repo`, else the packet's directory; `--output-dir` overrides it, and a packet-less run uses `qa-output/` under the current directory), and returns exit code `4` when the verdict is blocked. The storage key is the Map ID for saved-Map QA and `local-spec-<local_spec_id>` for local-spec packet QA. The target's managed ignore block lists `qa-output/`, because full verdicts carry live storefront URLs; the committed form is the `.campaign-runtime/qa-verdict.json` projection.
 
 ### Automatic commercial parity
 
@@ -353,7 +358,7 @@ nothing is ever selected by mtime or "latest":
 ```bash
 campaigns-os qa promote \
   --packet campaign-runtime.build.json \
-  --verdict qa-output/<map-id>/<run-id>.json \
+  --verdict qa-output/<qa-storage-key>/<run-id>.json \
   --json
 ```
 
@@ -381,10 +386,12 @@ Report's `identity.spec_material_hash` and the Build Context's
 raw-byte digest of the spec file (the two meanings are deliberate; see
 [docs/migration-sidecar-bundle.md](./migration-sidecar-bundle.md)).
 `campaign_ref_id` is copied from the CampaignSpec's `campaign.ref_id` and
-identifies the platform campaign the spec was exported from, not this build:
-two specs exported from one platform campaign share it by design, and it is
-`null` when the spec carries none. Use `campaign_slug` (the Map ID) and
-`public_route_slug` to tell builds apart.
+identifies the configured platform campaign, not this build: two specs for one
+platform campaign share it by design, and it is `null` when the spec carries
+none. `campaign_slug` carries the Map ID for saved-Map verdicts. Local-spec
+verdicts carry explicit `local_spec_id` and use
+`campaign_slug: "local-spec-<local_spec_id>"`; both survive sidecar projection.
+`public_route_slug` is the route, not a substitute for either stable identity.
 
 **Trust is stamped by the receiver, never by this CLI.** The QA portal
 receiver accepts verdict posts publicly (after shape/size/rate checks) and
@@ -512,7 +519,8 @@ Exactly one comparison, against exactly one earlier run:
 
 1. **Find the previous run.** The most recent Run Record under the Build
    Packet's `.campaign-runtime/run-records/` whose `identity.map_id` matches
-   this campaign. Only the first match counts — walking further back to find a
+   this saved Map, or whose `identity.local_spec_id` matches this local spec
+   with no Map ID. Only the first match counts — walking further back to find a
    record that happens to carry usable evidence would compare this run against
    a non-adjacent one and report anything introduced in between as
    pre-existing.
@@ -624,7 +632,7 @@ QA evidence redacts checkout request bodies and generated QA emails. Verdict art
 keep method, URL, response summaries, order refs, line-item summaries, and card last4,
 but they should not contain full customer address/payment payloads.
 
-QA runs **publish to the QA portal by default** — they appear in the Campaign Map
+Saved-Map QA runs **publish to the QA portal by default** — they appear in the Campaign Map
 QA tab and the run picker, and the command prints the portal link. No flag needed.
 Pass `--no-post-verdict` (or `--local-only`) for offline / dev / CI runs that should
 stay local-only; publishing never fails the QA run if the portal is unreachable.
@@ -636,7 +644,14 @@ local-only, and the output names the destination plus the opt-in
 (`--post-verdict`, or `campaigns-os telemetry on`). Portal-managed campaigns —
 spec resolved from the portal for the run — keep publish-by-default regardless
 of consent: those verdicts are the QA tab's product surface, not telemetry.
-Explicit flags always win in both directions.
+Explicit flags always win in both directions for saved-Map QA.
+
+A packet with `local_spec_id` always keeps its verdict and progress local.
+`qa run` suppresses portal publication even with `--post-verdict`; the flag
+does not turn a local ID into a Map destination. `qa publish` refuses such a
+packet with `refusal.code: local_spec`, including under `--dry-run` or
+`--republish`. Commerce reads, served-page probes and requested typed-card
+orders still run; Run Telemetry follows its existing consent controls.
 
 ```bash
 npm run campaigns-os -- qa run \
@@ -646,7 +661,7 @@ npm run campaigns-os -- qa run \
 
 ### Publish a stored verdict (`qa publish`)
 
-"Run local, publish when clean" is one command, not a rerun. A run kept local
+For saved-Map packets, "run local, publish when clean" is one command, not a rerun. A run kept local
 with `--no-post-verdict` writes the same full verdict under `qa-output/` and
 the same committed sidecar as a publishing run; `qa publish` posts that stored
 verdict to the QA portal through the rail `qa run` uses, without re-running
@@ -678,6 +693,7 @@ order placed — with a named `refusal.code`:
 
 | `refusal.code` | What it means |
 |---|---|
+| `local_spec` | The packet has `local_spec_id` and no saved Map destination. Keep the verdict local; moving to a saved Map requires fresh preparation and evidence. |
 | `spec_hash_mismatch` | The verdict's `spec_hash` is not the packet's current spec (`spec.local_path`, hashed the way every spec-identity check hashes it, so `sha256:` prefix and case do not matter). A verdict for a spec that has since changed is not evidence about the current one: re-run `qa run`, which publishes by default. The result carries both hashes. |
 | `spec_hash_absent` | The verdict carries no `spec_hash`. Re-run `qa run`. |
 | `already_published` | The run's Run Record records this verdict's `run_id` as published (by the run itself, or by an earlier `qa publish`). Pass `--republish` to post it again; the existing portal link is in the output either way. |

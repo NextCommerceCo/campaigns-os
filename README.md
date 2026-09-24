@@ -5,8 +5,8 @@ Campaigns OS is the developer toolkit for agent-assisted campaign builds on [Nex
 This toolkit gives campaign developers and AI coding tools a clear path for assembling one from prepared page files:
 
 1. Configure the campaign in the Next Commerce dashboard (Campaigns App).
-2. Create or review the Campaign Map in [Campaign Map Builder](https://campaign-map.nextcommerce.com).
-3. Export a local CampaignSpec JSON.
+2. Use the current saved Map in [Campaign Map Builder](https://campaign-map.nextcommerce.com), or have the coding agent author a [local CampaignSpec](docs/build-packet.md#local-spec-entry) from the brief and verified campaign values.
+3. Keep the CampaignSpec JSON with its saved Map ID or stable `local_spec_id`, plus its public route slug.
 4. Bring prepared HTML/CSS/assets for the campaign pages.
 5. Provide or generate a [Campaign Build Brief](./docs/campaign-build-brief.md) for merchandising/design presentation decisions.
 6. Create and doctor a Build Packet.
@@ -119,7 +119,9 @@ npx --no-install campaigns-os next --packet ./campaign-runtime.build.json --json
 
 `--map-id <id>` starts from a map saved in Campaign Map Builder (add
 `--proxy-base <origin>` when the map was saved on a non-production map store);
-`--spec <campaignspec.json>` starts from a local export instead. `--source` is
+`--spec <campaignspec.json>` starts from a local export or an agent-authored
+[local spec](docs/build-packet.md#local-spec-entry) instead. Local-spec identity
+requires a reviewed 1.43.0-or-later release. `--source` is
 always required: the folder of prepared HTML/CSS/assets for the pages you are
 building, with a source manifest that carries desktop and mobile screenshot
 proof for each designed page
@@ -228,7 +230,7 @@ Then ask your AI tool to continue from the emitted handoff. Fresh target repos u
 
 ## Source Files
 
-The current source adapter is `html_funnel`: bring prepared HTML/CSS/assets for the campaign pages, plus a local exported CampaignSpec from Campaign Map Builder.
+The current source adapter is `html_funnel`: bring prepared HTML/CSS/assets for the campaign pages, plus a CampaignSpec exported from Campaign Map Builder or authored by the coding agent through the [local-spec entry](docs/build-packet.md#local-spec-entry).
 
 For raw AI-generated or exported static HTML, "prepared" means page-kit-ready
 source, not a browser document dropped in unchanged and not a wholesale Liquid
