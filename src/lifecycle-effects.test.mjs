@@ -374,8 +374,16 @@ const REFUSED_INVOCATIONS = [
   { argv: ["qa", "parity", "--max-order-creations", "bogus"], expect: /--max-order-creations must be a whole number/ },
   { argv: ["qa", "run", "--max-order-creations", "0"], expect: /--max-order-creations must be at least 1/ },
   // Missing identity: no --packet, no --site/--built, no positional <map-id>,
-  // so `qa run` refuses with nothing read and no spec fetched.
+  // or --map-id, so both resolveQaInputs callers refuse before any read.
   { argv: ["qa", "run"], expect: /QA requires a Map ID/ },
+  { argv: ["qa", "resolve"], expect: /QA requires a Map ID/ },
+  ...["run", "resolve"].flatMap((subcommand) => [
+    ...["", "   "].map((value) => ({ argv: ["qa", subcommand, value], expect: /QA requires a Map ID/ })),
+    ...["packet", "site", "built", "map-id"].flatMap((flag) => [
+      { argv: ["qa", subcommand, `--${flag}`], expect: new RegExp(`Missing value for --${flag}`) },
+      ...["", "   "].map((value) => ({ argv: ["qa", subcommand, `--${flag}`, value], expect: new RegExp(`Missing value for --${flag}`) })),
+    ]),
+  ]),
   // #465: flag checks raised after reading nothing but argv and the packet,
   // ahead of any report read and any write. One row per tagged site.
   { argv: ["theme", "waive", "--packet", "%DIR%/p.json"], files: EMPTY_PACKET, expect: /theme waive requires --reason/ },
@@ -521,6 +529,15 @@ test("(i') QA auto-end swallows nested run-record refusal after journaling QA", 
   assert.equal(existsSync(join(dir, ".campaign-runtime/run-session.json")), true, "failed auto-end keeps the session");
 });
 
+// A valid local spec keeps packet QA past the checkpoint preflight's blocked
+// spec path. The report is present too, so that preflight reads all three
+// files before the missing packet Map ID reaches resolveQaInputs's final check.
+const QA_PACKET_WITHOUT_MAP_ID = Object.freeze({
+  "p.json": JSON.stringify({ spec: { local_path: "spec.json" }, assembly: { target_repo: "target" } }),
+  "spec.json": "{}",
+  "target/.campaign-runtime/assembly-report.json": "{}",
+});
+
 // (i'') is (i') for every handler #465 tagged a refusal in: the same
 // invocation as its refusal rows above, completed so it passes every one of
 // them, then failing on the first thing the handler reads past its packet (for
@@ -556,14 +573,22 @@ const HANDLER_FAILURES = [
   })),
   { argv: ["run-record", "--packet", "%DIR%/p.json", "--new-run", "--agent-input-tokens", "1"], files: { "p.json": "{ invalid" }, command: "run-record", expect: /not valid JSON|Unexpected token|Expected property name/ },
   { argv: ["qa", "run", "--site", "%DIR%/missing-site", "--base-url", "http://127.0.0.1:1/", "--family", "demo"], command: "qa", expect: /Built campaign directory does not exist/ },
+  ...["run", "resolve"].map((subcommand) => ({
+    argv: ["qa", subcommand, "--packet", "%DIR%/p.json"],
+    files: QA_PACKET_WITHOUT_MAP_ID,
+    command: "qa",
+    expect: /QA requires a Map ID\. The named Build Packet has no spec\.map_id/,
+  })),
+  { argv: ["run", "end"], fixture: "session-no-packet", command: "run", expect: /run end needs a build packet/ },
   { argv: ["next", "build", "--packet", "%DIR%/p.json"], files: { "p.json": "{ invalid" }, command: "next", expect: /not valid JSON|Unexpected token|Expected property name/ },
 ];
 
-for (const { argv, files, command, expect } of HANDLER_FAILURES) {
+for (const { argv, files, fixture, command, expect } of HANDLER_FAILURES) {
   test(`(i'') passes every refusal, then fails, and IS journaled: campaigns-os ${argv.join(" ")}`, () => {
     withTempTarget((dir) => {
       seedFiles(dir, files);
-      const journal = join(dir, "x.jsonl");
+      const session = fixture === "session-no-packet" ? startSession(dir) : null;
+      const journal = session?.lifecycle_journal || join(dir, "x.jsonl");
 
       const failed = runCli([...argv.map((token) => token.replaceAll("%DIR%", dir)), "--json"], {
         cwd: dir,
