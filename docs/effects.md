@@ -141,7 +141,35 @@ the outcome, the command has reached a handler failure and journals it.
 
 For intake, run-record, built-site QA, and `next`, argv-only checks run before
 their handler reads the target; invalid values are refused without a journal
-entry. A named `--design-manifest` that is missing or is not a file is checked
+entry. For `start`, `prepare-build`, and `build`, bare, empty, and whitespace-only
+values of `--spec`, `--map-id`, `--source`, `--target`, `--source-kind`,
+`--proxy-base`, `--wrapper-policy`, `--design-manifest`, and
+`--order-path-depth` are refused before local spec reads, Map fetches, or cache
+writes on the `--spec`, `--map-id`, and `--map-id --cached-spec` paths.
+The operator-facing `run-record` and `run end` commands refuse bare, empty, or
+whitespace-only values for every value-taking inherited run-record flag before
+packet work. The five agent
+token and elapsed-time flags retain their non-negative-integer diagnostics;
+`--surfaces` rejects unknown values, and `--dry-run` rejects a value. The
+inherited boolean flags (`--no-remit`, `--no-write`, `--dry-run`, and `--json`)
+retain their bare-flag behavior. `run end` also rejects `--new-run` and
+`--run-id` because the saved session fixes its run ID. `run-record` also
+rejects bare, empty, or whitespace-only `--run-id` and valued `--new-run`.
+Internal stale-session and QA closeouts retain the previous handling of values
+inherited from their invoking commands. A bare, empty, or whitespace-only
+`--proxy-base` on a sweeping command still writes the stale Run Record.
+Terminal QA auto-end tolerates whitespace-only inherited `--context`,
+`--report`, or `--proxy-base`. A whitespace-only `--context` resolves as a
+literal relative path, so the default context file is not read. Bare or empty
+`--context` or `--report` still makes QA auto-end fail and leaves the session
+open; bare or empty `--qa-verdict` fails a Run Record closeout when inherited,
+though QA auto-end supplies its own verdict path. The underlying run-record
+handler still rejects invalid agent
+integers, unknown `--surfaces`, and any valued `--dry-run` that reaches it. QA
+auto-end drops `--dry-run` from inherited flags; if another inherited value
+fails in the handler, auto-end is skipped and the session stays open. QA's own
+journal entry is unaffected because auto-end runs after QA persistence. A named
+`--design-manifest` that is missing or is not a file is checked
 against the filesystem after intake has begun, so that failure is journaled.
 An invalid manifest's contents are likewise a handler failure. A `next` stage
 must be one of the stages in the orchestration stage contract; an unknown name
@@ -161,6 +189,9 @@ flag without a value is refused with "Missing value for --<flag>". If a named
 packet yields neither a Map ID nor a valid local-spec identity after checkpoint
 preflight reads the packet, spec, and report, the requirement is a journaled
 handler failure. A conflicting local/Map identity is also a handler failure.
+The nested run-record refusal scope in session closeout guards against future
+changes. No internal closeout can currently create a refusal before its
+invoking command journals.
 
 ## How a row is proved
 

@@ -26,7 +26,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { main } from "./cli.mjs";
+import { main, RUN_RECORD_INHERITABLE_FLAGS, runSessionEndArgs } from "./cli.mjs";
 import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { refusalSeen, refused, runWithRefusalScope } from "./lifecycle.mjs";
 import { RUN_SESSION_TTL_MS } from "./run-session.mjs";
@@ -440,6 +440,85 @@ for (const { argv, expect, files, fixture } of REFUSED_INVOCATIONS) {
   });
 }
 
+test("(i) intake value forms refuse on local, fetched, and cached spec paths before effects", async (t) => {
+  let fetches = 0;
+  const server = createServer((_request, response) => {
+    fetches += 1;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(readFileSync(join(ROOT, "examples/campaignspec.v42.basic.json")));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const proxyBase = `http://127.0.0.1:${server.address().port}`;
+  const flags = ["spec", "source", "target", "map-id", "source-kind", "wrapper-policy", "design-manifest", "order-path-depth", "proxy-base"];
+  const commands = ["start", "prepare-build", "build"];
+  for (const path of ["local", "fetched", "cached"]) {
+    for (const flag of flags) {
+      for (const value of [null, "", "   "]) {
+        await t.test(`${path}: --${flag} ${JSON.stringify(value)} refuses before read/fetch/write in all intake modes`, async () => {
+          for (const command of commands) {
+            const dir = mkdtempSync(join(tmpdir(), "campaigns-os-intake-argv-"));
+            try {
+              seedRefusalFixture(dir, path === "cached" ? "cached-intake" : "intake");
+              const baseline = path === "local" ? ["--spec", join(dir, "spec.json")] : ["--map-id", "demo"];
+              const argv = [command, ...baseline, "--source", join(dir, "source"), "--target", join(dir, "target"), "--proxy-base", proxyBase];
+              if (path === "cached") argv.push("--cached-spec");
+              const old = argv.indexOf(`--${flag}`);
+              if (old >= 0) argv.splice(old, 2);
+              argv.push(`--${flag}`);
+              if (value !== null) argv.push(value);
+              argv.push("--no-run-session", "--no-remit", "--json");
+              const journal = join(dir, "x.jsonl");
+              const cache = join(dir, "target/.campaign-runtime/fetched-specs/demo.json");
+              const before = snapshotTree(dir);
+              const fetchesBefore = fetches;
+              const result = await execFileAsync(process.execPath, [CLI, ...argv], {
+                cwd: dir,
+                env: childEnv({ CAMPAIGNS_OS_LIFECYCLE_LOG: journal }),
+              }).then(() => null, (error) => error);
+              assert.ok(result, `${command} should refuse`);
+              const diagnostic = `${result.stderr}${result.stdout}`;
+              const expected = flag === "wrapper-policy" ? /--wrapper-policy needs a value/
+                : flag === "design-manifest" ? /--design-manifest needs a value/
+                  : flag === "order-path-depth" ? /--order-path-depth needs a value/
+                    : new RegExp(`Missing required --${flag}`);
+              assert.match(diagnostic, expected, `${command} ${path}`);
+              assert.deepEqual(snapshotTree(dir), before, `${command} must not change target files`);
+              assert.equal(existsSync(journal), false, `${command} must not journal`);
+              assert.equal(fetches, fetchesBefore, `${command} must not fetch`);
+              if (path === "fetched") assert.equal(existsSync(cache), false, `${command} must not create the spec cache`);
+            } finally {
+              rmSync(dir, { recursive: true, force: true });
+            }
+          }
+        });
+      }
+    }
+  }
+  await t.test("map-id without --target retains its diagnostic and fetches nothing", async () => {
+    for (const command of commands) {
+      const dir = mkdtempSync(join(tmpdir(), "campaigns-os-intake-argv-"));
+      try {
+        const journal = join(dir, "x.jsonl");
+        const before = snapshotTree(dir);
+        const fetchesBefore = fetches;
+        const result = await execFileAsync(process.execPath, [CLI, command, "--map-id", "demo", "--source", join(dir, "source"), "--proxy-base", proxyBase, "--no-run-session", "--no-remit", "--json"], {
+          cwd: dir,
+          env: childEnv({ CAMPAIGNS_OS_LIFECYCLE_LOG: journal }),
+        }).then(() => null, (error) => error);
+        assert.ok(result);
+        assert.match(`${result.stderr}${result.stdout}`, /--map-id requires --target/);
+        assert.deepEqual(snapshotTree(dir), before);
+        assert.equal(existsSync(journal), false);
+        assert.equal(fetches, fetchesBefore);
+        assert.equal(existsSync(join(dir, ".campaign-runtime/fetched-specs/demo.json")), false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+});
+
 // The other half of (i): suppression must stop at the refusal boundary. A
 // command whose flags are accepted and whose handler then FAILS is the most
 // valuable lifecycle entry there is, so it must still be journaled. `theme
@@ -464,23 +543,193 @@ test("(i') a handler that begins work and then fails IS still journaled", () => 
   });
 });
 
-test("(i') run end journals a nested run-record argument failure", () => {
+const RUN_END_ARGV_REFUSALS = [
+  ...["bogus", "", "   "].map((value) => ({ flag: "surfaces", value, expect: /Unknown --surfaces|Missing required --surfaces/ })),
+  { flag: "surfaces", value: null, expect: /Missing required --surfaces/ },
+  ...["yes", "   "].map((value) => ({ flag: "dry-run", value, expect: /--dry-run takes no value/ })),
+  ...["agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms"].flatMap((flag) => [
+    { flag, value: null, expect: /requires a non-negative integer/ },
+    { flag, value: "", expect: /requires a non-negative integer/ },
+    { flag, value: "   ", expect: /requires a non-negative integer/ },
+    { flag, value: "bogus", expect: /must be a non-negative integer/ },
+    { flag, value: "-1", expect: /must be a non-negative integer/ },
+  ]),
+  ...["agent-model", "agent-usage-source"].flatMap((flag) => [null, "", "   "].map((value) => ({ flag, value, expect: new RegExp(`Missing required --${flag}`) }))),
+];
+
+// Keep this expectation independent of the implementation's flag classes.
+// runSessionEndArgs forwards the production list; the first assertion catches
+// a new inherited flag that has not been classified here.
+const RUN_RECORD_VALUE_FLAGS = [
+  "context", "report", "qa-verdict", "journal", "surfaces", "primary-surface", "surface-confidence",
+  "agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms", "agent-model", "agent-usage-source", "proxy-base",
+];
+const RUN_RECORD_BOOLEAN_FLAGS = ["no-remit", "no-write", "dry-run", "json"];
+test("(i') inherited run-record flag classes cover every forwarded flag", () => {
+  const flags = [...RUN_RECORD_VALUE_FLAGS, ...RUN_RECORD_BOOLEAN_FLAGS];
+  assert.deepEqual([...RUN_RECORD_INHERITABLE_FLAGS].sort(), [...flags].sort());
+  const forwarded = runSessionEndArgs(
+    { run_id: "test-run", lifecycle_journal: "test-journal" },
+    "test-packet",
+    Object.fromEntries(flags.map((flag) => [flag, "sentinel"])),
+  );
+  assert.deepEqual(
+    Object.keys(forwarded).filter((flag) => !["_", "packet", "run-id", "lifecycle-journal"].includes(flag)).sort(),
+    flags.sort(),
+  );
+});
+
+for (const flag of RUN_RECORD_VALUE_FLAGS) {
+  for (const value of [null, "", "   "]) {
+    for (const command of ["run-record", "run end"]) {
+      test(`(i') ${command} --${flag} ${JSON.stringify(value)} refuses before packet work`, () => {
+        withTempTarget((dir) => {
+          seedFiles(dir, EMPTY_PACKET);
+          const session = command === "run end" ? startSession(dir) : null;
+          const before = snapshotTree(dir);
+          const journal = join(dir, "outer.jsonl");
+          const argv = command === "run end" ? ["run", "end"] : ["run-record"];
+          argv.push("--packet", join(dir, "p.json"), `--${flag}`);
+          if (value !== null) argv.push(value);
+          argv.push("--no-remit", "--json");
+          const result = runCli(argv, { cwd: dir, env: { CAMPAIGNS_OS_LIFECYCLE_LOG: journal } });
+          assert.notEqual(result.status, 0);
+          assert.match(`${result.stderr}${result.stdout}`, new RegExp(`--${flag}.*(?:Missing required|requires a non-negative integer)|Missing required --${flag}|--${flag} requires a non-negative integer`));
+          assert.deepEqual(snapshotTree(dir), before);
+          assert.equal(existsSync(journal), false);
+          if (session) assert.equal(existsSync(session.lifecycle_journal), false);
+        });
+      });
+    }
+  }
+}
+
+for (const flag of RUN_RECORD_BOOLEAN_FLAGS) {
+  for (const value of [null, "", "   "]) {
+    test(`(i') run-record --${flag} ${JSON.stringify(value)} retains boolean behavior`, () => {
+      withTempTarget((dir) => {
+        const argv = ["run-record", "--packet", join(dir, "missing.json"), `--${flag}`];
+        if (value !== null) argv.push(value);
+        const result = runCli(argv, { cwd: dir });
+        assert.notEqual(result.status, 0);
+        if (flag === "dry-run" && value === "   ") {
+          assert.match(result.stderr, /--dry-run takes no value/);
+        } else {
+          assert.match(result.stderr, /missing\.json/);
+          assert.doesNotMatch(result.stderr, /Missing required --|takes no value/);
+        }
+      });
+    });
+  }
+}
+
+for (const { flag, value, expect } of RUN_END_ARGV_REFUSALS) {
+  test(`(i') run end --${flag} ${JSON.stringify(value)} refuses without a journal entry`, () => {
+    withTempTarget((dir) => {
+      seedFiles(dir, EMPTY_PACKET);
+      const session = startSession(dir);
+      const journal = join(dir, "outer.jsonl");
+      const before = snapshotTree(dir);
+      const argv = ["run", "end", "--packet", join(dir, "p.json"), `--${flag}`];
+      if (value !== null) argv.push(value);
+      const result = runCli([...argv, "--no-remit", "--json"], {
+        cwd: dir,
+        env: { CAMPAIGNS_OS_LIFECYCLE_LOG: journal },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(`${result.stderr}${result.stdout}`, expect);
+      assert.deepEqual(snapshotTree(dir), before);
+      assert.equal(existsSync(journal), false, "env-selected journal stays absent");
+      assert.equal(existsSync(session.lifecycle_journal), false, "session journal stays absent");
+    });
+  });
+}
+
+for (const { flag, value, expect } of [
+  ...[null, "", "   "].map((value) => ({ flag: "run-id", value, expect: /Missing required --run-id/ })),
+  { flag: "new-run", value: "yes", expect: /--new-run takes no value/ },
+]) {
+  test(`(i') run-record --${flag} ${JSON.stringify(value)} refuses without a journal entry`, () => {
+    withTempTarget((dir) => {
+      seedFiles(dir, EMPTY_PACKET);
+      const journal = join(dir, "outer.jsonl");
+      const before = snapshotTree(dir);
+      const argv = ["run-record", "--packet", join(dir, "p.json"), `--${flag}`];
+      if (value !== null) argv.push(value);
+      const result = runCli([...argv, "--no-remit", "--json"], {
+        cwd: dir,
+        env: { CAMPAIGNS_OS_LIFECYCLE_LOG: journal },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(`${result.stderr}${result.stdout}`, expect);
+      assert.deepEqual(snapshotTree(dir), before);
+      assert.equal(existsSync(journal), false);
+    });
+  });
+}
+
+const RUN_END_RUN_ID_FORMS = [
+  { name: "bare", args: [] },
+  { name: "empty", args: [""] },
+  { name: "whitespace", args: ["   "] },
+  { name: "valued", args: ["other"] },
+];
+const RUN_END_SAVED_ID_CASES = [
+  ...["new-run", "run-id"].flatMap((flag) => RUN_END_RUN_ID_FORMS.map((form) => ({
+    name: `${flag} ${form.name}`,
+    args: [`--${flag}`, ...form.args],
+  }))),
+  ...RUN_END_RUN_ID_FORMS.flatMap((newRun) => RUN_END_RUN_ID_FORMS.map((runId) => ({
+    name: `new-run ${newRun.name} and run-id ${runId.name}`,
+    args: ["--new-run", ...newRun.args, "--run-id", ...runId.args],
+  }))),
+  ...["new-run", "run-id"].flatMap((flag) => RUN_END_RUN_ID_FORMS.map((form) => ({
+    name: `${flag} ${form.name} with invalid surfaces`,
+    args: [`--${flag}`, ...form.args, "--surfaces", "bogus"],
+  }))),
+  {
+    name: "both flags with invalid surfaces",
+    args: ["--new-run", "--run-id", "other", "--surfaces", "bogus"],
+  },
+];
+
+for (const { name, args } of RUN_END_SAVED_ID_CASES) {
+  test(`(i') run end ${name} reports its saved-ID rule without journaling`, () => {
+    withTempTarget((dir) => {
+      seedFiles(dir, EMPTY_PACKET);
+      const session = startSession(dir);
+      const before = snapshotTree(dir);
+      const journal = join(dir, "outer.jsonl");
+      const result = runCli(["run", "end", "--packet", join(dir, "p.json"), ...args, "--no-remit", "--json"], {
+        cwd: dir,
+        env: { CAMPAIGNS_OS_LIFECYCLE_LOG: journal },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /run end uses the saved session's run ID; --new-run and --run-id are not accepted\./);
+      assert.doesNotMatch(result.stderr, /run-record:/);
+      assert.deepEqual(snapshotTree(dir), before);
+      assert.equal(existsSync(journal), false);
+      assert.equal(existsSync(session.lifecycle_journal), false);
+    });
+  });
+}
+
+test("(i') run end journals a packet read failure once after argv passes", () => {
   withTempTarget((dir) => {
-    seedFiles(dir, EMPTY_PACKET);
+    seedFiles(dir, { "p.json": "{ invalid" });
     startSession(dir);
     const journal = join(dir, "outer.jsonl");
-    const result = runCli(["run", "end", "--packet", join(dir, "p.json"), "--agent-input-tokens", "bogus", "--no-remit", "--json"], {
+    const result = runCli(["run", "end", "--packet", join(dir, "p.json"), "--no-remit", "--json"], {
       cwd: dir,
       env: { CAMPAIGNS_OS_LIFECYCLE_LOG: journal },
     });
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /--agent-input-tokens must be a non-negative integer/);
-    assert.equal(readJournalEntries(journal).length, 1, "the outer run end failure is journaled once");
+    assert.equal(readJournalEntries(journal).length, 1);
     assert.equal(readJournalEntries(journal)[0].command, "run");
   });
 });
 
-test("(i') QA auto-end swallows nested run-record refusal after journaling QA", async (t) => {
+test("(i') QA auto-end preserves a prior handler failure and closes on blank inherited context", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-effects-autoend-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(ROOT, "examples/target-page-kit"), dir, { recursive: true });
@@ -527,6 +776,18 @@ test("(i') QA auto-end swallows nested run-record refusal after journaling QA", 
   assert.equal(entries.length, before + 1, "QA appends exactly one entry before its auto-end");
   assert.equal(entries.at(-1).command, "qa");
   assert.equal(existsSync(join(dir, ".campaign-runtime/run-session.json")), true, "failed auto-end keeps the session");
+
+  // QA passes whitespace-only --context to terminal auto-end. Run Record
+  // resolves the spaces as a literal path and still closes this run.
+  const second = await execFileAsync(process.execPath, [CLI, "qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-post-verdict", "--no-remit", "--context", "   ", "--json"], {
+    cwd: dir,
+    env: childEnv(),
+  });
+  assert.match(second.stderr, /Run session .* auto-ended after qa run/);
+  assert.doesNotMatch(second.stderr, /auto-end skipped/);
+  assert.equal(existsSync(join(dir, ".campaign-runtime/run-session.json")), false, "blank inherited context still closes the session");
+  assert.equal(existsSync(join(dir, ".campaign-runtime/run-records", `${session.run_id}.json`)), true);
+  assert.equal(readJournalEntries(session.lifecycle_journal).length, before + 2, "both QA invocations journal once");
 });
 
 // A valid local spec keeps packet QA past the checkpoint preflight's blocked
@@ -765,6 +1026,25 @@ test("(m) the same refused `start` WITHOUT --no-write performs the closeout and 
     // The refusal itself remains silent: no lifecycle entry for an invocation
     // that never reached a handler, even though the sweep ran.
     assert.equal(existsSync(session.lifecycle_journal), false, "a refused invocation must journal nothing");
+  });
+});
+
+test("(m') a stale sweep with blank inherited --proxy-base writes the old Run Record", () => {
+  withStaleSessionTarget(({ dir, sessionPath, session }) => {
+    const packet = join(dir, "build-packet.basic.json");
+    const journal = join(dir, "outer.jsonl");
+    const started = runCli(["run", "start", "--packet", packet, "--proxy-base", "   ", "--no-remit", "--json"], {
+      cwd: dir,
+      env: { CAMPAIGNS_OS_LIFECYCLE_LOG: journal },
+    });
+    assert.equal(started.status, 0, started.stderr);
+    assert.match(started.stderr, /Stale run session .* closed out: Run Record/);
+    assert.doesNotMatch(started.stderr, /cleared without a Run Record/);
+    assert.equal(existsSync(join(dir, ".campaign-runtime/run-records", `${session.run_id}.json`)), true, "the stale session's record is written");
+    assert.equal(existsSync(sessionPath), true, "the invoking command opens its new session");
+    const entries = readJournalEntries(journal);
+    assert.equal(entries.length, 1, "the invoking run start journals exactly once");
+    assert.equal(entries[0].command, "run");
   });
 });
 

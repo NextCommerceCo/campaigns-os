@@ -2,6 +2,47 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1] - 2026-09-24
+
+### Fixed
+
+- Restamp the local setup install command to the 1.43.1 package and check its
+  documented toolkit pin against `package.json` during CI.
+- In 1.42.1, `run end` journaled several inherited flag refusals that 1.41.x
+  refused without a journal entry, including unknown `--surfaces` and valued
+  `--dry-run`. `run end` and `run-record` now refuse bare, empty, or
+  whitespace-only values for every value-taking inherited run-record flag
+  before packet work. The agent token and elapsed-time flags keep their integer
+  diagnostics; unknown `--surfaces` and valued `--dry-run` are refused. `run end`
+  also refuses `--new-run` and `--run-id`, since the saved session fixes its run
+  ID. `run-record` also refuses bare, empty, or whitespace-only `--run-id` and
+  valued `--new-run`. These argv-only refusals append no lifecycle entry.
+- `start`, `prepare-build`, and `build` refuse bare, empty, or whitespace-only
+  values of `--spec`, `--map-id`, `--source`, `--target`, `--source-kind`,
+  `--proxy-base`, `--wrapper-policy`, `--design-manifest`, and
+  `--order-path-depth` before local spec reads, Map fetches, or cache writes on
+  the `--spec`, `--map-id`, and `--map-id --cached-spec` paths.
+- Internal stale-session and QA closeouts retain their prior handling of
+  inherited flags. A bare, empty, or whitespace-only `--proxy-base` on a
+  sweeping command still writes the stale session's Run Record. Terminal QA
+  still auto-ends with a whitespace-only inherited `--context`, `--report`, or
+  `--proxy-base`; a whitespace-only `--context` resolves as a literal relative
+  path, so the default context file is not read. Bare or empty `--context` or
+  `--report` still makes QA auto-end fail and leaves the session open. A bare
+  or empty `--qa-verdict` still fails a Run Record closeout when inherited;
+  QA auto-end supplies its own verdict path.
+- Correct the 1.42.1 note: QA with a named packet yielding no Map ID after
+  checkpoint preflight changed from a refusal to a journaled handler failure
+  in that release; it did not *remain* journaled. A named packet now satisfies
+  QA identity with a Map ID or a valid local-spec identity. If preflight yields
+  neither or finds conflicting local and Map identities, QA journals a handler
+  failure.
+
+### Changed
+
+- Package and supported-surface version advance to 1.43.1. Bundled skills
+  carry revision `1.43.1+skills.1`, with each skill version advanced one patch.
+
 ## [1.43.0+agent.4] - 2026-09-24
 
 ### Fixed

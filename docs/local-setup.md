@@ -3,7 +3,7 @@
 For a new campaign, choose its working folder and run this from that folder:
 
 ```sh
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.43.0 next-campaign-page-kit@0.2.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.43.1 next-campaign-page-kit@0.2.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
 ```
 
 Review the release source/provenance before installation as described in

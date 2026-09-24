@@ -6769,6 +6769,135 @@
         }
       ],
       "entry_sha256": "56ca91118205936c9f1c58eda8a4fb208b9c18ee6c0552dce8c3176dffad14f3"
+    },
+    {
+      "id": "RL-0147",
+      "sequence": 147,
+      "date": "2026-09-24",
+      "kind": "release",
+      "surface_version": "1.43.1",
+      "changelog_section": "1.43.1",
+      "changelog_sha256": "d7fde5ebbad8bb605fb1c46195ae497c95448f00f8b329378cc19798d12191a0",
+      "agent_impact": "The local setup command pins the 1.43.1 package; its documented toolkit install pin is checked against package.json. Operator-facing run-record and run end refuse bare, empty, or whitespace-only value-taking inherited flags before packet work; invalid --surfaces, valued --dry-run, and invalid agent integers are also refused without a lifecycle entry. Run end refuses --new-run and --run-id; run-record refuses blank --run-id and valued --new-run. Start, prepare-build, and build reject bare, empty, or whitespace-only values of --spec, --map-id, --source, --target, --source-kind, --proxy-base, --wrapper-policy, --design-manifest, and --order-path-depth before local spec reads, Map fetches, or cache writes. Internal stale-session closeouts still write the Run Record with bare, empty, or whitespace-only --proxy-base. QA auto-end still closes with whitespace-only --context, --report, or --proxy-base; whitespace-only --context resolves as a literal relative path, so the default context file is not read. Bare or empty --context or --report still skips QA auto-end and leaves the session open; bare or empty --qa-verdict fails a Run Record closeout when inherited, while QA auto-end supplies its own verdict path. Packet QA accepts either a Map ID or a valid local-spec identity; missing or conflicting packet-derived identity is a journaled handler failure. The 1.42.1 note claiming no-Map packet QA remained journaled was imprecise: that release changed the case from a refusal to a journaled handler failure.",
+      "compatibility": "compatible",
+      "migration": "Update to the exact 1.43.1 package and refresh bundled skills to 1.43.1+skills.1 before starting a new agent session.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.43.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Document operator-facing run-record and run end argv refusals, the nine early-checked intake flags, inherited internal-closeout behavior, and the current local-or-Map packet QA identity rule."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the copy-paste local setup install command to the 1.43.1 package release."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Restamp the generated orientation reference for surface 1.43.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Restamp the generated runtime reference for surface 1.43.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.43.1+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Stamp package version 1.43.1 without changing dependency resolutions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release package version 1.43.1 without changing exports or dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.43.1+skills.1 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run",
+          "summary": "Refuse blank values for the nine early-checked intake flags before spec resolution and operator-facing run-record values before packet work, reject invalid run end flags without journaling, and preserve internal closeout handling of inherited values."
+        }
+      ],
+      "entry_sha256": "7c851b671eb1a3d07f92dc44f66e0ff9d5001905479ad70118c7a025e677f8af"
     }
   ]
 }
