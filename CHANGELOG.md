@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.42.0+agent.2] - 2026-09-24
+
+### Fixed
+
+- The effects guide names both `qa install-browser` and `tooling setup` as
+  browser downloaders, matching the declared effects contract.
+
 ## [1.42.0+agent.1] - 2026-09-24
 
 ### Fixed

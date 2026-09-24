@@ -74,7 +74,7 @@ with one of these:
 | `{lifecycle-journal}` | The command-lifecycle journal wherever it was selected for this invocation. |
 | `{proxy-base}` | The endpoint `--proxy-base` names, or the canonical NEXT endpoint when it does not. |
 | `{base-url}` | The campaign under test, as `--base-url` names it or as the packet derives it. |
-| `{playwright-download-host}` | Where Playwright fetches browser builds from: `PLAYWRIGHT_DOWNLOAD_HOST` when set, else the Playwright CDN. The one destination in the file that is not a Campaigns OS endpoint — `qa install-browser` is the one supported invocation that downloads from a third party. |
+| `{playwright-download-host}` | Where Playwright fetches browser builds from: `PLAYWRIGHT_DOWNLOAD_HOST` when set, else the Playwright CDN. The third-party browser download used by `qa install-browser` and `tooling setup`. |
 
 The tokens matter because effects are not all under the target. `install-skills`
 writes your **home** directory, not the campaign. `telemetry on` writes your
