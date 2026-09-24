@@ -3910,6 +3910,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   const errors = [];
   const warnings = [];
   const ready = [];
+  const packetIdentity = resolveCampaignIdentity(packet?.spec);
   const derived = {
     packet_path: packetPath,
     // The report this inspection read (null when the caller switched the
@@ -3917,7 +3918,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     // different file.
     assembly_report_path: typeof resolvedReportPath === "string" ? resolvedReportPath : null,
     map_id: packet?.spec?.map_id || null,
-    ...localSpecIdentityFields(packet?.spec),
+    ...(packetIdentity?.kind === "local_spec" ? { local_spec_id: packetIdentity.id } : {}),
     public_route_slug: packet?.campaign?.public_route_slug || null,
     template_family: packet?.assembly?.template_family || null,
     source_root: null,
@@ -4351,7 +4352,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
 
   requireString(packet, errors, "campaign.public_route_slug");
   requireBoolean(packet, errors, "campaign.allowed_domains_confirmed");
-  if (!resolveCampaignIdentity(packet.spec)) addIssue(errors, "spec.map_id", "Packet spec requires exactly one valid map_id or local_spec_id.");
+  if (!resolveCampaignIdentity(packet.spec)) addIssue(errors, packet.spec?.local_spec_id != null ? "spec.local_identity" : "spec.map_id", "Packet spec requires exactly one valid map_id or local_spec_id.", { kind: packet.spec?.local_spec_id != null ? "local_spec" : "saved_map" });
   if (packet.spec?.local_spec_id != null && (packet.spec.spec_url != null || !isNonEmptyString(packet.spec.local_path))) {
     addIssue(errors, "spec.local_identity", "Local-spec packets require a local_path and no saved-Map spec_url.");
   }
@@ -4543,7 +4544,8 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
       if ((specMapId && specMapId !== packet.spec.map_id)
         || ((spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null)
           && !campaignIdentitiesMatch(campaignSpecIdentity(spec), packet.spec))) {
-        addIssue(errors, "spec.map_id", "Packet identity does not match the CampaignSpec map_id/local_spec_id.");
+        const localIdentity = spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null;
+        addIssue(errors, localIdentity ? "spec.local_identity" : "spec.map_id", "Packet identity does not match the CampaignSpec map_id/local_spec_id.", { kind: localIdentity ? "local_spec" : "saved_map" });
       }
       ready.push("Local CampaignSpec parsed");
       runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
@@ -9322,8 +9324,9 @@ function nextPrepareBuildBindingIssues({
       "next.prepare_build.report_campaign_mismatch",
       "Assembly Report campaign identity does not match the current Build Packet.",
       {
-        expected: { map_id: expectedMapId, ...localSpecIdentityFields(packet.spec), public_route_slug: expectedSlug },
-        recorded: { map_id: recordedMapId, ...localSpecIdentityFields(report.identity), public_route_slug: recordedSlug },
+        // Failed identity fields are diagnostic data, never adopted evidence.
+        expected: { map_id: expectedMapId, local_spec_id: packet.spec?.local_spec_id ?? null, public_route_slug: expectedSlug },
+        recorded: { map_id: recordedMapId, local_spec_id: report.identity?.local_spec_id ?? null, public_route_slug: recordedSlug },
       },
     );
   }

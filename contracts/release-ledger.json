@@ -6541,6 +6541,41 @@
         }
       ],
       "entry_sha256": "bfa939b4e7e00a5661e552ab6c24e1f4c96df45b0e2baeb8d42c4b59b22fda14"
+    },
+    {
+      "id": "RL-0143",
+      "sequence": 143,
+      "date": "2026-09-24",
+      "kind": "amendment",
+      "amends": "RL-0141",
+      "amendment_reason": "Harden local identity projection and Run Record persistence after review; distinguish local doctor failures and clarify exact local-ID normalization.",
+      "surface_version": null,
+      "changelog_section": "1.43.0+agent.2",
+      "changelog_sha256": "cb40cab1b8f4e816de7f1b4e7cf318c8e773e8ed133aa2ba655c62435af399a9",
+      "agent_impact": "Malformed or conflicting local identities are refused before durable evidence writes. Doctor reports local identity failures under spec.local_identity while saved-Map diagnostics and normalization retain their existing behavior.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "Report malformed or mismatched local identities with spec.local_identity and local_spec detail without aborting diagnostics."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run-record",
+          "summary": "Refuse malformed or conflicting local identities during projection and Run Record validation before persistence."
+        },
+        {
+          "class": "named_surface",
+          "path": null,
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document exact local-ID validation, evidence-write refusal and the separate local doctor diagnostic."
+        }
+      ],
+      "entry_sha256": "2e4da9ceabc7bd77f4d9be463ca94fcd1185157451954ccb50e8f38016809aa2"
     }
   ]
 }

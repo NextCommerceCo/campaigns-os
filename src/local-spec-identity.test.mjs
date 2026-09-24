@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import Ajv from 'ajv/dist/2020.js';
-import { campaignIdentitiesMatch, campaignSpecIdentity, resolveCampaignIdentity } from './spec-source-identity.mjs';
+import { campaignIdentitiesMatch, campaignSpecIdentity, localSpecIdentityFields, resolveCampaignIdentity } from './spec-source-identity.mjs';
 import { doctorPacket, recordQaStageOutcome } from './cli.mjs';
 import { __qaNodeTestHooks } from './qa-node.mjs';
 import { qaVerdictIdentityMatch, discoverQaVerdicts } from './qa-verdict-discovery.mjs';
@@ -54,6 +54,33 @@ test('local identity is distinct from Map identity and rejects ambiguous/path-sh
     assert.equal(resolveCampaignIdentity(fields), null);
   }
   assert.equal(campaignIdentitiesMatch({ map_id: null, local_spec_id: LOCAL_ID }, { local_spec_id: LOCAL_ID }), true);
+  assert.deepEqual(resolveCampaignIdentity({ map_id: '  existing-map  ' }), { kind: 'saved_map', id: 'existing-map' });
+  assert.deepEqual(localSpecIdentityFields({ map_id: 'existing-map' }), {});
+  assert.deepEqual(localSpecIdentityFields({ map_id: null, local_spec_id: LOCAL_ID }), { local_spec_id: LOCAL_ID });
+  for (const fields of [{ local_spec_id: '  existing-map  ' }, { local_spec_id: '' }, { local_spec_id: '../escape' }, { local_spec_id: 'x'.repeat(65) }, { local_spec_id: 42 }, { local_spec_id: LOCAL_ID, map_id: 'existing-map' }]) {
+    assert.equal(resolveCampaignIdentity(fields), null);
+    assert.throws(() => localSpecIdentityFields(fields), /Invalid local_spec_id/);
+  }
+});
+
+test('doctor diagnoses malformed local identities without adopting them or throwing', t => {
+  const f = fixture(t);
+  const { packet, report } = prepare(f);
+  const reportBytes = readFileSync(f.reportPath, 'utf8');
+  for (const fields of [{ local_spec_id: ' padded ' }, { local_spec_id: '' }, { local_spec_id: 42 }, { local_spec_id: LOCAL_ID, map_id: 'saved-map' }]) {
+    write(f.packetPath, { ...packet, spec: { ...packet.spec, ...fields } });
+    const doctor = doctorPacket(f.packetPath);
+    assert.equal(doctor.status, 'blocked');
+    assert.ok(doctor.errors.some(issue => issue.code === 'spec.local_identity' && issue.detail?.kind === 'local_spec'));
+    assert.equal(doctor.errors.some(issue => issue.code === 'spec.map_id'), false);
+    assert.equal(doctor.derived.local_spec_id, undefined);
+    const next = JSON.parse(run(['next', '--packet', f.packetPath, '--no-write'], f.dir).stdout);
+    assert.equal(next.ok, false);
+    assert.equal(readFileSync(f.reportPath, 'utf8'), reportBytes);
+  }
+  write(f.packetPath, packet);
+  write(f.reportPath, { ...report, identity: { ...report.identity, local_spec_id: ' bad-report ' } });
+  assert.equal(doctorPacket(f.packetPath).derived.prepare_build_gate.binding_failure, true);
 });
 
 test('prepare, doctor, next and fresh-checkout continuation retain local identity and revision binding', t => {
@@ -192,7 +219,7 @@ test('local packet QA resolves, finalizes a blocked verdict and never posts it, 
   f.spec.spec_identity.local_spec_id = 'other';
   write(f.specPath, f.spec);
   await assert.rejects(__qaNodeTestHooks.resolveQaInputs(args), /does not match/);
-  assert.equal(doctorPacket(f.packetPath).errors.some(e => e.code === 'spec.map_id'), true);
+  assert.equal(doctorPacket(f.packetPath).errors.some(e => e.code === 'spec.local_identity' && e.detail?.kind === 'local_spec'), true);
   await assert.rejects(__qaNodeTestHooks.resolveQaInputs({ ...args, 'map-id': 'invented' }), /Map ID override/);
 });
 

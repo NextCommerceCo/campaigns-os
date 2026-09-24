@@ -253,3 +253,14 @@ test('local-spec progress binds its own report and revision without claiming sav
  input.spec.campaign.slug='changed';writeFileSync(join(dir,'spec.json'),JSON.stringify(input.spec));
  assert.ok(projectProgressObservation(input).stages.every(stage=>stage.status==='unknown'));
 }));
+
+test('malformed local progress identity is refused before storage or remittance',scratch(async dir=>{
+ const input=setup(dir);
+ Object.defineProperty(input.continuation,PROGRESS_OBSERVATION,{value:input});
+ for (const fields of [{map_id:null,local_spec_id:' padded '},{map_id:null,local_spec_id:''},{map_id:'example-map',local_spec_id:'local-progress'}]) {
+  Object.assign(input.workspace.packet.spec,fields);
+  const result=await observeProgress({},input.continuation,{packageVersion:input.packageVersion,warn:()=>{},fetchImpl:()=>{throw new Error('unexpected network');}});
+  assert.deepEqual(result,{state:'failed',reason:'capture_unavailable'});
+  assert.equal(existsSync(join(dir,'.campaign-runtime','progress')),false);
+ }
+}));

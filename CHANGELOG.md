@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.0+agent.2] - 2026-09-24
+
+### Fixed
+
+- Evidence identity projection and Run Record writes reject malformed or
+  conflicting local IDs instead of propagating them. Doctor keeps malformed
+  input diagnosable with `spec.local_identity`; saved-Map errors retain their
+  existing code and normalization. Local IDs remain exact canonical tokens.
+- Declare the optional local progress identity inline without mutating the
+  portable schema after construction.
+
 ## [1.43.0+agent.1] - 2026-09-24
 
 ### Fixed

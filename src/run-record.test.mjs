@@ -64,6 +64,28 @@ test("validator accepts a minimal valid record", () => {
   assert.equal(result.ok, true, JSON.stringify(result.errors));
 });
 
+test("Run Record writers reject malformed or conflicting local identities without overwriting evidence", () => withTempDir(baseDir => {
+  const record = minimalRecord({ identity: { map_id: null, local_spec_id: "local-record" } });
+  assert.equal(validateRunRecord(record).ok, true);
+  const path = writeRunRecord(record, { baseDir });
+  const before = readFileSync(path, "utf8");
+  const identities = [
+    { local_spec_id: "" }, { local_spec_id: " local-record " },
+    { local_spec_id: "../local-record" }, { local_spec_id: "x".repeat(65) },
+    { local_spec_id: 42 }, { local_spec_id: null },
+    { local_spec_id: "local-record", map_id: "saved-map" },
+  ];
+  for (const identity of identities) {
+    const invalid = { ...record, identity };
+    assert.ok(validateRunRecord(invalid).errors.some(issue => issue.code === "record.identity.local_spec_id"));
+    assert.throws(() => writeRunRecord(invalid, { baseDir }), /record.identity.local_spec_id/);
+    assert.equal(readFileSync(path, "utf8"), before);
+    if (identity.local_spec_id != null) {
+      assert.throws(() => assembleRunRecord({ identity }), /Invalid local_spec_id/);
+    }
+  }
+}));
+
 test("validator accepts a fully-populated record", () => {
   const record = minimalRecord({
     consent_state: "on",

@@ -1,4 +1,4 @@
-import { localSpecIdentityFields } from "./spec-source-identity.mjs";
+import { localSpecIdentityFields, resolveCampaignIdentity } from "./spec-source-identity.mjs";
 // Run Telemetry — per-run Run Record capture for Campaigns OS.
 // See docs/workflow-findings-sidecar.md (Run Telemetry).
 //
@@ -156,6 +156,8 @@ export function validateRunRecord(record) {
   if (record.identity != null) {
     if (typeof record.identity !== "object" || Array.isArray(record.identity)) {
       add("record.identity", "identity must be an object when present.");
+    } else if (Object.hasOwn(record.identity, "local_spec_id") && resolveCampaignIdentity(record.identity)?.kind !== "local_spec") {
+      add("record.identity.local_spec_id", "local_spec_id must be a canonical local ID with no saved Map identity.");
     }
   }
 

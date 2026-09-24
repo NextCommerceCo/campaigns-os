@@ -1,4 +1,4 @@
-import { campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
+import { campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 // Per-finding cause class — "did the change under test cause this?"
 //
 // A run that surfaces eleven findings, none of them caused by the change being
@@ -378,7 +378,9 @@ function readPriorVerdictFile(path) {
 // verdicts are filed and matched under the names the record itself stores.
 function recordIdentityForDiscovery(record) {
   return {
-    spec: { map_id: text(record?.identity?.map_id) || null, ...localSpecIdentityFields(record?.identity) },
+    // This is a read-side comparison, not an artifact writer. Preserve even an
+    // invalid local marker so discovery rejects it instead of using its Map ID.
+    spec: { map_id: text(record?.identity?.map_id) || null, local_spec_id: record?.identity?.local_spec_id ?? null },
     campaign: { public_route_slug: text(record?.identity?.campaign_slug) || null },
   };
 }

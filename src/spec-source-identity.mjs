@@ -12,6 +12,8 @@ export function campaignSpecIdentity(spec) {
 }
 
 export function resolveCampaignIdentity(fields) {
+  // Saved Map IDs retain their existing whitespace normalization. Local IDs
+  // are canonical, repository-owned tokens: never trim one into another ID.
   const mapId = text(fields?.map_id);
   const localId = fields?.local_spec_id;
   if (localId != null) {
@@ -28,7 +30,12 @@ export function campaignIdentitiesMatch(left, right) {
 }
 
 export function localSpecIdentityFields(fields) {
-  return fields?.local_spec_id != null ? { local_spec_id: fields.local_spec_id } : {};
+  if (fields?.local_spec_id == null) return {};
+  const identity = resolveCampaignIdentity(fields);
+  // Omitting a malformed marker would let a conflicting identity fall back to
+  // its Map ID. Writers must refuse it rather than silently change its kind.
+  if (identity?.kind !== "local_spec") throw new Error("Invalid local_spec_id or conflicting saved Map identity.");
+  return { local_spec_id: identity.id };
 }
 
 export function localQaIdentifier(localSpecId) {
