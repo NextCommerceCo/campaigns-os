@@ -223,17 +223,28 @@ test("capture completion after the order deadline is discarded as an explicit co
   assert.deepEqual(result.receiptCaptureError, result.journeyCaptureError);
 });
 
-test("a never-resolving capture collection is bounded by the remaining order deadline", { timeout: 250 }, async () => {
+test("a never-resolving capture collection is bounded by the remaining order deadline", { timeout: 1_000 }, async (t) => {
   const { collectOrderAnalytics } = __qaBrowserTestHooks;
-  const startedAt = Date.now();
-  const result = await collectOrderAnalytics({
-    captureHandle: { collectScopes: async () => new Promise(() => {}) },
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1_000 });
+  let collectionStarted;
+  const started = new Promise((resolve) => { collectionStarted = resolve; });
+  let completed = false;
+  const pending = collectOrderAnalytics({
+    captureHandle: { collectScopes: async () => { collectionStarted(); return new Promise(() => {}); } },
     receiptRecognized: true,
     settleMs: 0,
     deadline: Date.now() + 20,
-  });
+    wait: async () => {},
+  }).then((result) => { completed = true; return result; });
 
-  assert.ok(Date.now() - startedAt < 200, "collection returns control to QA near the order deadline");
+  // Enter collection before advancing the clock: CPU contention must not
+  // consume the deadline in the preceding settle phase instead.
+  await started;
+  t.mock.timers.tick(19);
+  await Promise.resolve();
+  assert.equal(completed, false, "collection remains pending before the deadline");
+  t.mock.timers.tick(1);
+  const result = await pending;
   assert.deepEqual(result.journeyCaptureError, {
     code: "analytics_capture_collection_deadline_exhausted",
     message: "analytics capture collection exceeded the typed-order deadline",
@@ -241,11 +252,13 @@ test("a never-resolving capture collection is bounded by the remaining order dea
   assert.deepEqual(result.receiptCaptureError, result.journeyCaptureError);
 });
 
-test("a never-resolving settle wait is bounded by the remaining order deadline", { timeout: 250 }, async () => {
+test("a never-resolving settle wait is bounded by the remaining order deadline", { timeout: 1_000 }, async (t) => {
   const { collectOrderAnalytics } = __qaBrowserTestHooks;
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1_000 });
   let collected = false;
-  const startedAt = Date.now();
-  const result = await collectOrderAnalytics({
+  let settleStarted;
+  const started = new Promise((resolve) => { settleStarted = resolve; });
+  const pending = collectOrderAnalytics({
     captureHandle: {
       async collectScopes() {
         collected = true;
@@ -255,10 +268,12 @@ test("a never-resolving settle wait is bounded by the remaining order deadline",
     receiptRecognized: true,
     settleMs: 1,
     deadline: Date.now() + 20,
-    wait: async () => new Promise(() => {}),
+    wait: async () => { settleStarted(); return new Promise(() => {}); },
   });
 
-  assert.ok(Date.now() - startedAt < 200, "settle returns control to QA near the order deadline");
+  await started;
+  t.mock.timers.tick(20);
+  const result = await pending;
   assert.equal(collected, false, "collection never starts after settle consumes the deadline");
   assert.deepEqual(result.receiptCaptureError, {
     code: "analytics_settle_deadline_exhausted",

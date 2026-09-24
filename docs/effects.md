@@ -9,6 +9,13 @@ The point of the file is not the prose. It is that **every row is proved by a
 test** (`src/effects.test.mjs`), and a row without its test cannot be published:
 `npm run check:effects` refuses it.
 
+`tooling setup` composes the existing skill/context/browser installers after a
+project-pin and preservation preflight. It also appends a project `CLAUDE.md`
+import. It bypasses session recovery, gateway credential reads and lifecycle
+capture; `--dry-run` is read-only. Like `qa install-browser`, its browser download
+has preflight-only effects proof offline; setup's preservation and recovery
+behavior has focused tests.
+
 - The contract: [`contracts/effects.v1.json`](../contracts/effects.v1.json)
 - Its shape: [`schemas/campaigns-os-effects.v1.schema.json`](../schemas/campaigns-os-effects.v1.schema.json)
 - The proof: `src/effects.test.mjs`
@@ -67,7 +74,7 @@ with one of these:
 | `{lifecycle-journal}` | The command-lifecycle journal wherever it was selected for this invocation. |
 | `{proxy-base}` | The endpoint `--proxy-base` names, or the canonical NEXT endpoint when it does not. |
 | `{base-url}` | The campaign under test, as `--base-url` names it or as the packet derives it. |
-| `{playwright-download-host}` | Where Playwright fetches browser builds from: `PLAYWRIGHT_DOWNLOAD_HOST` when set, else the Playwright CDN. The one destination in the file that is not a Campaigns OS endpoint — `qa install-browser` is the one supported invocation that downloads from a third party. |
+| `{playwright-download-host}` | Where Playwright fetches browser builds from: `PLAYWRIGHT_DOWNLOAD_HOST` when set, else the Playwright CDN. The third-party browser download used by `qa install-browser` and `tooling setup`. |
 
 The tokens matter because effects are not all under the target. `install-skills`
 writes your **home** directory, not the campaign. `telemetry on` writes your
