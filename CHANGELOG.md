@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.0+agent.4] - 2026-09-24
+
+### Fixed
+
+- Run Record validation and its schema treat a null `local_spec_id` as absent,
+  preserving saved-Map records and best-effort capture with partial identity.
+  Non-null malformed or conflicting local IDs still fail before persistence.
+
 ## [1.43.0+agent.3] - 2026-09-24
 
 ### Fixed

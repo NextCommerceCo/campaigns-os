@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import Ajv2020 from "ajv/dist/2020.js";
 
 import {
   ADAPTER_DECISION_STRATEGY_FIELDS,
@@ -64,6 +65,28 @@ test("validator accepts a minimal valid record", () => {
   assert.equal(result.ok, true, JSON.stringify(result.errors));
 });
 
+test("Run Records treat a null local ID as absent for saved Maps and partial identities", () => withTempDir(baseDir => {
+  const schema = JSON.parse(readFileSync(resolve(ROOT, "schemas/campaigns-os-run-record.v0.schema.json"), "utf8"));
+  const validateSchema = new Ajv2020({ strict: true, validateFormats: false }).compile(schema);
+  for (const identity of [
+    { map_id: "saved-map" },
+    { map_id: "saved-map", local_spec_id: null },
+    { local_spec_id: null },
+    { map_id: null, local_spec_id: null },
+  ]) {
+    const record = minimalRecord({ identity });
+    assert.equal(validateRunRecord(record).ok, true, JSON.stringify(identity));
+    assert.equal(validateSchema(record), true, JSON.stringify(validateSchema.errors));
+    const path = writeRunRecord(record, { baseDir });
+    assert.deepEqual(JSON.parse(readFileSync(path, "utf8")).identity, identity);
+    const assembled = assembleRunRecord(assembleArgs({ identity }));
+    assert.equal(assembled.identity.map_id, identity.map_id ?? null);
+    assert.equal(Object.hasOwn(assembled.identity, "local_spec_id"), false);
+    assert.equal(validateRunRecord(assembled).ok, true);
+    assert.equal(validateSchema(assembled), true, JSON.stringify(validateSchema.errors));
+  }
+}));
+
 test("Run Record writers reject malformed or conflicting local identities without overwriting evidence", () => withTempDir(baseDir => {
   const record = minimalRecord({ identity: { map_id: null, local_spec_id: "local-record" } });
   assert.equal(validateRunRecord(record).ok, true);
@@ -72,7 +95,7 @@ test("Run Record writers reject malformed or conflicting local identities withou
   const identities = [
     { local_spec_id: "" }, { local_spec_id: " local-record " },
     { local_spec_id: "../local-record" }, { local_spec_id: "x".repeat(65) },
-    { local_spec_id: 42 }, { local_spec_id: null },
+    { local_spec_id: 42 },
     { local_spec_id: "local-record", map_id: "saved-map" },
   ];
   for (const identity of identities) {
@@ -80,9 +103,7 @@ test("Run Record writers reject malformed or conflicting local identities withou
     assert.ok(validateRunRecord(invalid).errors.some(issue => issue.code === "record.identity.local_spec_id"));
     assert.throws(() => writeRunRecord(invalid, { baseDir }), /record.identity.local_spec_id/);
     assert.equal(readFileSync(path, "utf8"), before);
-    if (identity.local_spec_id != null) {
-      assert.throws(() => assembleRunRecord({ identity }), /Invalid local_spec_id/);
-    }
+    assert.throws(() => assembleRunRecord({ identity }), /Invalid local_spec_id/);
   }
 }));
 

@@ -155,7 +155,7 @@
       "additionalProperties": false,
       "description": "Best-effort run identity — the join keys that make telemetry useful. Missing identity never blocks capture.",
       "properties": {
-        "local_spec_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Stable repository-owned CampaignSpec identity; never a saved Map ID. Keep unchanged across local revisions." },
+        "local_spec_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Stable repository-owned CampaignSpec identity; never a saved Map ID. Keep unchanged across local revisions. Null or omitted means no local identity." },
         "map_id": { "type": ["string", "null"] },
         "campaign_slug": { "type": ["string", "null"] },
         "template_family": { "type": ["string", "null"] },

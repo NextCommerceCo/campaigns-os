@@ -6740,6 +6740,35 @@
         }
       ],
       "entry_sha256": "346259f1c22a80007cb949786c3b113211931bb399e8a181764548db36d397cc"
+    },
+    {
+      "id": "RL-0146",
+      "sequence": 146,
+      "date": "2026-09-24",
+      "kind": "amendment",
+      "amends": "RL-0143",
+      "amendment_reason": "Treat a null local ID as absent in Run Record validation and its schema, matching identity resolution and preserving best-effort saved-Map capture.",
+      "surface_version": null,
+      "changelog_section": "1.43.0+agent.4",
+      "changelog_sha256": "5baa9f8109edb5d00692316d69b5035779f3114d6f393010df40cfbe918af59b",
+      "agent_impact": "Run Records may carry local_spec_id: null without being rejected, including records with a saved Map or partial identity. Non-null malformed or conflicting local IDs remain invalid.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": null,
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Allow null local_spec_id as an absent local identity and align the Run Record validator with that shape."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": null,
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Refresh the Run Record schema digest within the pending 1.43.0 supported surface."
+        }
+      ],
+      "entry_sha256": "56ca91118205936c9f1c58eda8a4fb208b9c18ee6c0552dce8c3176dffad14f3"
     }
   ]
 }

@@ -95,7 +95,7 @@
       "sha256": "08ca132134b9e4610370e88082a5e888d09ddec0d5ee4512d84cc57181da722e"
     },
     "schemas/campaigns-os-run-record.v0.schema.json": {
-      "sha256": "b62c72cf1def4b284720f53d67455ed58943b54a114f1893b8ae79639def11c1"
+      "sha256": "00dc9bcec79c12ea22a27f636188bcc33c6811df2d646ac7b49d4cc076e97355"
     },
     "schemas/campaigns-os-runtime-recipe.v1.schema.json": {
       "sha256": "f8a2ab5eadbb71fb6d5653b670ee71e4471c3df74dd04000d3dbd3d9ae9e71fc"

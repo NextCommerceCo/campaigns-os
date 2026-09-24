@@ -156,7 +156,7 @@ export function validateRunRecord(record) {
   if (record.identity != null) {
     if (typeof record.identity !== "object" || Array.isArray(record.identity)) {
       add("record.identity", "identity must be an object when present.");
-    } else if (Object.hasOwn(record.identity, "local_spec_id") && resolveCampaignIdentity(record.identity)?.kind !== "local_spec") {
+    } else if (record.identity.local_spec_id != null && resolveCampaignIdentity(record.identity)?.kind !== "local_spec") {
       add("record.identity.local_spec_id", "local_spec_id must be a canonical local ID with no saved Map identity.");
     }
   }
