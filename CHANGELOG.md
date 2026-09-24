@@ -6,6 +6,8 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
+- Restamp the local setup install command to the 1.43.1 package and check its
+  documented toolkit pin against `package.json` during CI.
 - In 1.42.1, `run end` journaled several inherited flag refusals that 1.41.x
   refused without a journal entry, including unknown `--surfaces` and valued
   `--dry-run`. `run end` and `run-record` now refuse bare, empty, or
@@ -13,15 +15,17 @@ Notable supported-surface changes are recorded here.
   before packet work. The agent token and elapsed-time flags keep their integer
   diagnostics; unknown `--surfaces` and valued `--dry-run` are refused. `run end`
   also refuses `--new-run` and `--run-id`, since the saved session fixes its run
-  ID. These argv-only refusals append no lifecycle entry.
+  ID. `run-record` also refuses bare, empty, or whitespace-only `--run-id` and
+  valued `--new-run`. These argv-only refusals append no lifecycle entry.
 - `start`, `prepare-build`, and `build` refuse bare, empty, or whitespace-only
   values of `--spec`, `--map-id`, `--source`, `--target`, `--source-kind`,
   `--proxy-base`, `--wrapper-policy`, `--design-manifest`, and
   `--order-path-depth` before local spec reads, Map fetches, or cache writes on
   the `--spec`, `--map-id`, and `--map-id --cached-spec` paths.
-- A swallowed run-record refusal during stale-session closeout stays within
-  that closeout's scope and cannot suppress the invoking command's later
-  journal entry.
+- Internal stale-session and QA closeouts retain their prior handling of
+  inherited flags. A blank `--proxy-base` on a sweeping command still writes
+  the stale session's Run Record, and a blank inherited QA `--context` still
+  allows terminal QA to auto-end its session.
 - Correct the 1.42.1 note: QA with a named packet yielding no Map ID after
   checkpoint preflight changed from a refusal to a journaled handler failure
   in that release; it did not *remain* journaled. A named packet now satisfies

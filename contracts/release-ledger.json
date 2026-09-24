@@ -6777,8 +6777,8 @@
       "kind": "release",
       "surface_version": "1.43.1",
       "changelog_section": "1.43.1",
-      "changelog_sha256": "fb2d80f05db969915c11921a5969250840bf4ebf48f8fc71cc0427d9cc8817fc",
-      "agent_impact": "Run-record and run end refuse bare, empty, or whitespace-only value-taking inherited flags before packet work; invalid --surfaces, valued --dry-run, and invalid agent integers are also refused without a lifecycle entry. Start, prepare-build, and build reject bare, empty, or whitespace-only values of --spec, --map-id, --source, --target, --source-kind, --proxy-base, --wrapper-policy, --design-manifest, and --order-path-depth before local spec reads, Map fetches, or cache writes. A swallowed stale-closeout refusal does not suppress the invoking command journal. Packet QA accepts either a Map ID or a valid local-spec identity; missing or conflicting packet-derived identity is a journaled handler failure. The 1.42.1 note claiming no-Map packet QA remained journaled was imprecise: that release changed the case from a refusal to a journaled handler failure.",
+      "changelog_sha256": "00e434f9241a4afb503bb91c98ea88b0ae188290436076596f0375a9e508602d",
+      "agent_impact": "The local setup command pins the 1.43.1 package; its documented toolkit install pin is checked against package.json. Operator-facing run-record and run end refuse bare, empty, or whitespace-only value-taking inherited flags before packet work; invalid --surfaces, valued --dry-run, and invalid agent integers are also refused without a lifecycle entry. Run end refuses --new-run and --run-id; run-record refuses blank --run-id and valued --new-run. Start, prepare-build, and build reject bare, empty, or whitespace-only values of --spec, --map-id, --source, --target, --source-kind, --proxy-base, --wrapper-policy, --design-manifest, and --order-path-depth before local spec reads, Map fetches, or cache writes. Internal stale-session and QA closeouts retain their prior handling of inherited values, including blank --proxy-base and --context respectively. Packet QA accepts either a Map ID or a valid local-spec identity; missing or conflicting packet-derived identity is a journaled handler failure. The 1.42.1 note claiming no-Map packet QA remained journaled was imprecise: that release changed the case from a refusal to a journaled handler failure.",
       "compatibility": "compatible",
       "migration": "Update to the exact 1.43.1 package and refresh bundled skills to 1.43.1+skills.1 before starting a new agent session.",
       "changes": [
@@ -6792,7 +6792,13 @@
           "class": "named_surface",
           "path": "docs/effects.md",
           "surface_entry": "docs/effects.md",
-          "summary": "Document inherited run-record value refusals, the nine early-checked intake flags, stale-closeout scope, and the current local-or-Map packet QA identity rule."
+          "summary": "Document operator-facing run-record and run end argv refusals, the nine early-checked intake flags, inherited internal-closeout behavior, and the current local-or-Map packet QA identity rule."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the copy-paste local setup install command to the 1.43.1 package release."
         },
         {
           "class": "documentation",
@@ -6888,10 +6894,10 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "run",
-          "summary": "Refuse blank values for the nine early-checked intake flags before spec resolution and inherited run-record values before packet work, reject invalid run end flags without journaling, and isolate nested stale-closeout refusals."
+          "summary": "Refuse blank values for the nine early-checked intake flags before spec resolution and operator-facing run-record values before packet work, reject invalid run end flags without journaling, and preserve internal closeout handling of inherited values."
         }
       ],
-      "entry_sha256": "be7a8ee9772ac86397c53ab9aad8a640d6f30d7b57ad60d82dd7194f04cb3856"
+      "entry_sha256": "f2fb82400d7736abd16c389025886ecc62a9d8e78a146c919382d48777ca8158"
     }
   ]
 }

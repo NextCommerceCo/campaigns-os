@@ -1404,6 +1404,9 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "run-record") {
+    // These are the operator's own argv. Internal closeouts call
+    // runRecordCommand directly and retain their pre-1.43.1 flag handling.
+    validateRunRecordArgv(args);
     await runRecordCommand(args, ambient);
     return;
   }
@@ -12682,10 +12685,10 @@ function runSessionProgress(found) {
 async function runSessionEnd(args, ambient = null, sessionHolder = null) {
   // The closer reads a session, but its own argv refusals still belong to the
   // invoking command. Check them before entering closeRunSession's nested scope.
-  validateRunRecordArgv(args);
   if (Object.hasOwn(args, "new-run") || Object.hasOwn(args, "run-id")) {
     throw refused("run end uses the saved session's run ID; --new-run and --run-id are not accepted.");
   }
+  validateRunRecordArgv(args);
   // Use the session resolved once in main() (single source of truth).
   const found = ambient;
   if (!found) {
@@ -12755,10 +12758,11 @@ export function runSessionEndArgs(session, packet, extraArgs = {}) {
 async function closeRunSession(found, { packet, extraArgs = {}, silent = false, promptForConsent = true, onError = null } = {}) {
   const endArgs = runSessionEndArgs(found.session, packet, extraArgs);
   try {
-    // A stale-session sweep can inherit --proxy-base with no value from a
-    // command such as run start that accepts it. The sweep swallows its nested
-    // run-record refusal before the invoking command journals; a separate
-    // scope keeps that refusal from suppressing the invoking entry.
+    // No internal closeout currently constructs a refusal before its invoking
+    // command journals: the sweep forwards only remit controls tolerated by
+    // run-record, run end validates its own argv first, and QA auto-end runs
+    // after QA persistence. Keep the scope at this boundary so a future
+    // closeout refusal swallowed by onError cannot mark the outer invocation.
     const summary = await runWithRefusalScope(() => runRecordCommand(endArgs, found, { silent, promptForConsent }));
     // Clearing the session is a write like any other, so a closer carrying
     // --dry-run leaves it open: the operator sees the record the close would
@@ -12979,11 +12983,16 @@ export function describeCampaignKeyRejection(rejected) {
 // remit it. Capture is ALWAYS local; consent gates only the remit. See
 // docs/workflow-findings-sidecar.md.
 async function runRecordCommand(args, ambient = null, { silent = false, promptForConsent = true } = {}) {
-  const { agentUsage, dryRun, parsedSurfaces } = validateRunRecordArgv(args);
   const packetPath = resolve(requireArg(args, "packet"));
+  if (args["new-run"] === true && optionalString(args["run-id"])) {
+    throw refused("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
+  }
+  const agentUsage = refusing(() => parseAgentUsageArgs(args));
   // --dry-run assembles the record and shows it, then writes and sends
   // nothing. It differs from --no-write, which skips the assembly's reads
   // as well; combining the two is allowed and still writes nothing.
+  const dryRun = isDryRun(args);
+  const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
   const explicitTargetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
   const { baseDir, targetRepo, contextPath, reportPath } = resolveCampaignWorkspace(packetPath, {

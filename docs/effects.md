@@ -146,13 +146,23 @@ values of `--spec`, `--map-id`, `--source`, `--target`, `--source-kind`,
 `--proxy-base`, `--wrapper-policy`, `--design-manifest`, and
 `--order-path-depth` are refused before local spec reads, Map fetches, or cache
 writes on the `--spec`, `--map-id`, and `--map-id --cached-spec` paths.
-`run-record` and `run end` refuse bare, empty, or whitespace-only values for
-every value-taking inherited run-record flag before packet work. The five agent
+The operator-facing `run-record` and `run end` commands refuse bare, empty, or
+whitespace-only values for every value-taking inherited run-record flag before
+packet work. The five agent
 token and elapsed-time flags retain their non-negative-integer diagnostics;
 `--surfaces` rejects unknown values, and `--dry-run` rejects a value. The
 inherited boolean flags (`--no-remit`, `--no-write`, `--dry-run`, and `--json`)
 retain their bare-flag behavior. `run end` also rejects `--new-run` and
-`--run-id` because the saved session fixes its run ID. A named
+`--run-id` because the saved session fixes its run ID. `run-record` also
+rejects bare, empty, or whitespace-only `--run-id` and valued `--new-run`.
+Internal stale-session and QA closeouts retain the previous handling of values
+inherited from their invoking commands. A blank `--proxy-base` does not prevent
+a stale Run Record, and a blank QA `--context` does not prevent terminal QA
+auto-end. The underlying run-record handler still rejects invalid agent
+integers, unknown `--surfaces`, and any valued `--dry-run` that reaches it. QA
+auto-end drops `--dry-run` from inherited flags; if another inherited value
+fails in the handler, auto-end is skipped and the session stays open. QA's own
+journal entry is unaffected because auto-end runs after QA persistence. A named
 `--design-manifest` that is missing or is not a file is checked
 against the filesystem after intake has begun, so that failure is journaled.
 An invalid manifest's contents are likewise a handler failure. A `next` stage
@@ -173,9 +183,9 @@ flag without a value is refused with "Missing value for --<flag>". If a named
 packet yields neither a Map ID nor a valid local-spec identity after checkpoint
 preflight reads the packet, spec, and report, the requirement is a journaled
 handler failure. A conflicting local/Map identity is also a handler failure.
-A stale-session closeout keeps its nested run-record refusal within the closeout
-attempt, so a swallowed refusal cannot suppress the invoking command's later
-journal entry.
+The nested run-record refusal scope in session closeout guards against future
+changes. No internal closeout can currently create a refusal before its
+invoking command journals.
 
 ## How a row is proved
 

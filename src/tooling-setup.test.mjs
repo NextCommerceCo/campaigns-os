@@ -13,6 +13,13 @@ const PKG = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 const SOURCES = { "CLAUDE.md": "claude/CLAUDE.md", "AGENTS.md": "codex/AGENTS.md", "campaigns-os.mdc": "cursor/campaigns-os.mdc", "copilot-instructions.md": "copilot/copilot-instructions.md" };
 const writeJson = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(value)); };
 
+test("local setup install pins match the package version", () => {
+  const doc = readFileSync(join(ROOT, "docs/local-setup.md"), "utf8");
+  const pins = [...doc.matchAll(/@nextcommerce\/campaigns-os@(\d+\.\d+\.\d+)/g)];
+  assert.ok(pins.length > 0, "local setup must document an exact toolkit install pin");
+  for (const [, version] of pins) assert.equal(version, PKG.version, "docs/local-setup.md toolkit install pin must match package.json");
+});
+
 function fixture(t, real = false) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-setup-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
