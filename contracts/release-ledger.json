@@ -6288,5 +6288,129 @@
       ],
       "entry_sha256": "6527efc0942f6125e694fe670a85ef4c00fabc12167b35f4c206d92ccdebf5e0"
     }
+    ,
+    {
+      "id": "RL-0141",
+      "sequence": 141,
+      "date": "2026-09-24",
+      "kind": "release",
+      "surface_version": "1.42.1",
+      "changelog_section": "1.42.1",
+      "changelog_sha256": "2945fc2d2217fb09cab82dad870b32b67dce5dd9aa38317550bcb9fdf1b5c705",
+      "agent_impact": "Argv-only errors in start, prepare-build, build, run-record, qa run, qa resolve, built-site QA and next now refuse without a lifecycle entry. An unknown next stage names the accepted stages. Three state-dependent decisions remain journaled handler failures: polish capture when packet.assembly.target_repo does not resolve to a local target repo (a check currently unreachable through the CLI because the workspace resolver supplies a local path); run end without a packet in argv or the saved session; and qa run or qa resolve with a named packet yielding no Map ID after checkpoint preflight. Separately, a named design manifest that is missing, not a file, or invalid is a journaled handler failure. Nested run-record refusals during closeout do not suppress the invoking command journal. The ambient run-session lookup may still read a named --packet before handler dispatch.",
+      "compatibility": "compatible",
+      "migration": "Update to the exact 1.42.1 package and refresh bundled skills to 1.42.1+skills.1 before starting a new agent session. Treat argv-only failures as refusals and use journal entries for handler failures.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.42.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Document argv-only refusal boundaries, the three journaled state decisions, and nested closeout scope."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Restamp the generated orientation reference for surface 1.42.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Restamp the generated runtime reference for surface 1.42.1."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.42.1+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Stamp package version 1.42.1 without changing dependency resolutions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release package version 1.42.1 without changing exports or dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.42.1+skills.1 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.42.1+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "Refuse intake, run-record and QA argv errors before target reads, name accepted next stages, and keep nested closeout refusals within their own scope."
+        }
+      ],
+      "entry_sha256": "e74290c495de13cc95e4f615fe6bd8aa8dbdb7a06211a206be5cd5296724b0af"
+    }
   ]
 }

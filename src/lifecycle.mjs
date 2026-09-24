@@ -78,10 +78,11 @@ export function runWithRefusalScope(fn) {
  * the throw, because the paths that catch a refusal to render it (waiveOrRefuse)
  * hand onFinish no error to inspect. The cost of marking early is that a
  * `refused()` built inside a `try` that discards it would suppress the journal
- * entry for an invocation whose handler did run. No call site does that today
- * (no `requireArg` sits inside a `try`), and none may: if you need to probe
- * whether an argument is present, test for it — do not construct a refusal
- * speculatively.
+ * entry for an invocation whose handler did run. The optional QA progress
+ * probe checks for a packet before its swallowing `try`; closeRunSession runs
+ * its nested run-record attempt in a separate refusal scope. Keep those
+ * boundaries: if you need to probe an argument, test for it rather than
+ * constructing a refusal speculatively.
  */
 export function refused(message) {
   const store = refusalScope.getStore();

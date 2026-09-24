@@ -345,8 +345,19 @@ async function resolveQaInputs(args, {
   readJsonFile = readJson,
   loadCampaignEntry = loadPageKitCampaignEntry,
 } = {}) {
+  // Selector flags without a non-empty value are argv-only refusals for both
+  // qa run and qa resolve. Check them before checkpoint preflight or site reads.
+  for (const flag of ["packet", "site", "built", "map-id"]) {
+    if (Object.hasOwn(args, flag) && !stringArg(args[flag])) {
+      throw refused(`Missing value for --${flag}`);
+    }
+  }
   if (args.packet && args.spec) {
     throw refused("Packet QA does not accept --spec; it always uses packet.spec.local_path.");
+  }
+  // No non-empty campaign selector in argv is also decided before any read.
+  if (![args.packet, args.site, args.built, args._[2], args["map-id"]].some(stringArg)) {
+    throw refused("QA requires a Map ID. Provide --packet or positional <map-id>.");
   }
   // Non-packet mode (learnings L7): QA a `campaign-build`'d page-kit campaign
   // that has only a built _site/ and a served URL — no Build Packet, no Map ID,
@@ -371,15 +382,9 @@ async function resolveQaInputs(args, {
   const mapId = stringArg(args["map-id"])
     || stringArg(args._[2])
     || stringArg(packet?.spec?.map_id);
-  // A refusal to identify a campaign, not a failure to QA one: with no
-  // --packet, no --site/--built and no positional <map-id>, every read above
-  // was skipped and `qa run` has nothing to work on. Tagged on both paths, not
-  // just the empty one — the journal question is whether the CLI reached a
-  // handler's WORK, and a missing-identity refusal decides that before any
-  // spec is fetched, any browser launches and anything is written. (When a
-  // packet WAS named, it has been read by here; the packet read is a lookup
-  // for the same identity question, and one message cannot be two verdicts.)
-  if (!mapId) throw refused("QA requires a Map ID. Provide --packet or positional <map-id>.");
+  // A named packet has been read by checkpoint preflight. Its missing Map ID
+  // is a handler failure, not the argv-only refusal above.
+  if (!mapId) throw new Error("QA requires a Map ID. The named Build Packet has no spec.map_id; provide --map-id or positional <map-id>.");
 
   const proxyBase = stringArg(args["proxy-base"]) || DEFAULT_PROXY_BASE;
   const inputBaseUrl = normalizeBaseUrl(stringArg(args["base-url"]) || packet?.deploy?.preview_url || packet?.deploy?.production_url || null);
@@ -666,18 +671,18 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
 // yields "not_applicable" rather than blocking, so browser QA still runs the
 // residue/placeholder/demo gates. Test orders are not attempted (no policy).
 export function resolveQaInputsFromSite(args) {
+  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]));
+  if (!baseUrl) {
+    throw refused("Non-packet site QA requires --base-url <served-campaign-root> so built pages have a fetchable URL.");
+  }
+  const templateFamily = stringArg(args.family);
+  if (!templateFamily) {
+    throw refused("Non-packet site QA requires --family <template-family> so residue, placeholder, and demo-asset gates can load the family brand contract.");
+  }
   const targetRepo = resolve(String(args.site || args.built));
   const scope = resolveBuiltSiteScope(targetRepo, { slug: stringArg(args.slug) });
   if (!scope.ok) {
     throw new Error(scope.error || `Could not resolve a built campaign from ${targetRepo}.`);
-  }
-  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]));
-  if (!baseUrl) {
-    throw new Error("Non-packet site QA requires --base-url <served-campaign-root> so built pages have a fetchable URL.");
-  }
-  const templateFamily = stringArg(args.family);
-  if (!templateFamily) {
-    throw new Error("Non-packet site QA requires --family <template-family> so residue, placeholder, and demo-asset gates can load the family brand contract.");
   }
   const brandContract = loadBrandContract(templateFamily);
   if (brandContract.status !== "loaded" || !brandContract.contract) {

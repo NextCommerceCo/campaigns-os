@@ -136,6 +136,31 @@ declared on the rows it belongs to: `start`, `prepare-build`, `build`,
 `run start` and `run end` close out a **stale** run session at the root they are
 about to act on *before* argv is refused.
 
+A refusal is decided by argv alone. When file content or state on disk decides
+the outcome, the command has reached a handler failure and journals it.
+
+For intake, run-record, built-site QA, and `next`, argv-only checks run before
+their handler reads the target; invalid values are refused without a journal
+entry. A named `--design-manifest` that is missing or is not a file is checked
+against the filesystem after intake has begun, so that failure is journaled.
+An invalid manifest's contents are likewise a handler failure. A `next` stage
+must be one of the stages in the orchestration stage contract; an unknown name
+is refused before the `next` handler reads the packet, runs doctor, or writes
+doctor output. The ambient run-session lookup in `main()` may read a named
+`--packet` before the handler runs.
+
+`polish capture --packet` would report "polish capture requires
+packet.assembly.target_repo to resolve to a local target repo" as a journaled
+handler failure because packet content would decide it. Today the workspace
+resolver always yields a local path, so this check does not fire through the
+CLI. `run end` reports "run end needs a build packet" as a journaled handler failure
+when the saved session has no packet and argv names none. For `qa run` and `qa
+resolve`, "QA requires a Map ID" is a refusal when argv carries no non-empty
+`--packet`, `--site`, `--built`, positional Map ID, or `--map-id` value. A selector
+flag without a value is refused with "Missing value for --<flag>". If a named
+packet yields no Map ID after checkpoint preflight reads the packet, spec, and
+report, the requirement is a journaled handler failure.
+
 ## How a row is proved
 
 `src/effects.test.mjs` runs the real CLI in a disposable target seeded from
