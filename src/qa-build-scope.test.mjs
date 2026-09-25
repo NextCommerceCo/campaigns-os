@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
+import { computeDisposition } from "./qa-verdict.mjs";
 
 const topologies = [{ funnel_id: "main", pages: ["presell", "landing", "checkout", "receipt"].map((id, order) => ({
   page_id: id, page_type: id === "receipt" ? "thankyou" : id,
@@ -31,6 +32,13 @@ test("materialized stock rejoins QA but missing in-scope checkout never disappea
     mkdirSync(join(dir, "_site/demo/landing"), { recursive: true });
     writeFileSync(join(dir, "_site/demo/landing/index.html"), "<main>Opted in</main>");
     assert.deepEqual(scope({ targetRepo: dir }).topologies[0].pages.map(p => p.page_id), ["landing", "checkout", "receipt"]);
+    for (const url of [null, "not-a-url"]) {
+      const unresolved = topologies.map(t => ({ ...t, pages: t.pages.map(p => p.page_id === "landing" ? { ...p, url } : p) }));
+      const selected = applyQaBuildScope(unresolved, { packet, report, targetRepo: dir, publicRouteSlug: "demo" });
+      assert.ok(selected.topologies[0].pages.some(p => p.page_id === "landing"), "unresolved materialized page must remain visible");
+    }
+    const rooted = topologies.map(t => ({ ...t, pages: t.pages.map(p => ({ ...p, url: p.url.replace("/demo/", "/") })) }));
+    assert.ok(applyQaBuildScope(rooted, { packet, report, targetRepo: dir, publicRouteSlug: "demo" }).topologies[0].pages.some(p => p.page_id === "landing"), "root-served URL matches the built relative route");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -60,6 +68,8 @@ test("partial fixture emits skipped evidence without requesting absent routes; u
     const excluded = verdict.assertions.filter(a => ["presell", "landing"].includes(a.page));
     assert.equal(excluded.length, 2);
     assert.ok(excluded.every(a => a.status === "skipped" && a.evidence.reason === "out_of_build_scope"));
+    assert.equal(computeDisposition(excluded), "ready");
+    assert.equal(computeDisposition(verdict.assertions), computeDisposition(verdict.assertions.filter(a => !excluded.includes(a))), "scope skips are neutral to disposition");
     assert.ok(requests.length > 0 && requests.every(url => !/\/(presell|landing)\//.test(url)));
     assert.equal(result.entry_urls[0].page_id, "checkout");
     // Negative control executes the same runner with only the scope filter
@@ -73,4 +83,12 @@ test("partial fixture emits skipped evidence without requesting absent routes; u
     globalThis.fetch = originalFetch;
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("partial entry is the first in-scope select even if a later landing remains", () => {
+  const entries = __qaNodeTestHooks.deriveEntryUrls([{ partial_build_scope: true, pages: [
+    { page_id: "select", page_type: "select", url: "https://preview.example.test/select/" },
+    { page_id: "landing", page_type: "landing", url: "https://preview.example.test/landing/" },
+  ] }]);
+  assert.equal(entries[0].page_id, "select");
 });

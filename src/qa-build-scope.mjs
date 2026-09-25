@@ -20,10 +20,15 @@ export function applyQaBuildScope(topologies, { packet, report, targetRepo, publ
     partial_build_scope: topology.pages.some(page => skippedIds.has(page.page_id)),
     pages: topology.pages.filter(page => {
       if (!skippedIds.has(page.page_id)) return true;
+      // Without a resolved URL we cannot prove which output file represents
+      // this page. Keep it in QA so unresolved/materialized pages are not
+      // silently hidden as unbuilt declarations.
+      if (!page.url) return true;
       // An explicitly materialized stock page rejoins QA. A declaration alone
       // is not an instruction to build it, nor proof that it exists.
-      const route = page.url ? new URL(page.url).pathname : null;
-      if (route !== null && builtRoutes.has(normalizeRoute(route))) return true;
+      let route;
+      try { route = new URL(page.url).pathname; } catch { return true; }
+      if (builtRoutes.has(normalizeRoute(route))) return true;
       excludedPages.push(page);
       return false;
     }),

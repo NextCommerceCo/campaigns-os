@@ -2477,6 +2477,8 @@ function deriveEntryUrls(topologies) {
   for (const topology of topologyList(topologies)) {
     const pages = Array.isArray(topology?.pages) ? topology.pages.filter((page) => page?.url) : [];
     if (!pages.length) continue;
+    // #482: a partial build enters at its first in-scope page, which can be
+    // an opted-in select or checkout rather than a later landing/presell.
     const page = topology.partial_build_scope ? pages[0] : pages.find(isEntryLikePage) || pages[0];
     entries.push({
       funnel_id: topology.funnel_id || "default",
