@@ -7042,9 +7042,15 @@
           "path": "skills/contribution-intake/SKILL.md",
           "surface_entry": null,
           "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update current bundle revision examples to 1.43.1+skills.2."
         }
       ],
-      "entry_sha256": "da79d4f6934dfdb78e7778e793d1da056fe375745613b9133f1d1a31a8f5c12b"
+      "entry_sha256": "96326a2c370c965c78e93881f66e039482b460cf2203b3b10039b770e4a830b6"
     }
   ]
 }
