@@ -23,6 +23,37 @@ function writePage(repo, slug, route, html) {
 
 const codes = (issues) => issues.map((issue) => issue.code);
 
+test("doctor accepts numeric Olympus package refs in built upsells and still rejects undeclared refs", () => {
+  withTempDir((repo) => {
+    const spec = JSON.parse(readFileSync(new URL("../contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json", import.meta.url), "utf8"));
+    // The fixture's offer normally masks the defect by declaring package 30
+    // again via package_id. Retain only its page declaration and keep a
+    // different offer package, reproducing a partially populated declared set.
+    spec.offers[0].packages = [{ package_id: 10 }];
+    writeFileSync(join(repo, "spec.json"), JSON.stringify(spec));
+    const packet = {
+      schema_version: "campaign-runtime-build-packet/v0",
+      campaign: { public_route_slug: "fixture-olympus", allowed_domains_confirmed: true },
+      spec: { map_id: spec.spec_identity.map_id, local_path: "spec.json" },
+      source_html: { root: ".", pages: [] },
+      assembly: { target_repo: ".", output_dir: "src/fixture-olympus", template_family: "olympus" },
+    };
+    const packetPath = join(repo, "packet.json");
+    const reportPath = join(repo, "report.json");
+    writeFileSync(packetPath, JSON.stringify(packet));
+    writeFileSync(reportPath, JSON.stringify({ stages: { assembly: { status: "completed" } } }));
+    const run = (ref) => {
+      writePage(repo, "fixture-olympus", "upsell-stepper", `<html><head></head><body><button data-next-package-id="${ref}">Add</button></body></html>`);
+      return doctorPacket(packetPath, { contextPath: null, reportPath });
+    };
+    const declared = run(30);
+    assert.ok(declared.ready.some((note) => note.includes("Built HTML structure and commerce refs checked")));
+    assert.equal(codes([...declared.errors, ...declared.warnings]).includes("built_output.package_ref"), false);
+    const undeclared = run(999);
+    assert.ok(codes(undeclared.errors).includes("built_output.package_ref"), "unknown refs still block completed assembly");
+  });
+});
+
 test("H3.3 doctor --built: runs residue/text/demo gates against a built _site/ with no packet", () => {
   withTempDir((repo) => {
     writePage(repo, "acme", "", "<h1>Lorem ipsum dolor</h1><img src=\"/c/images/1x1_1.svg\">");

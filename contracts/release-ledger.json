@@ -6898,6 +6898,27 @@
         }
       ],
       "entry_sha256": "7c851b671eb1a3d07f92dc44f66e0ff9d5001905479ad70118c7a025e677f8af"
+    },
+    {
+      "id": "RL-0148",
+      "sequence": 148,
+      "date": "2026-09-25",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.1",
+      "changelog_sha256": "508031c2c67ae1d53e0db2f3c33c91d1b962e2312cdf387a05b80c7ea0f3c4b0",
+      "agent_impact": "Doctor recognizes finite numeric commerce references in Map exports. Declared package, shipping and offer IDs no longer produce false undeclared-reference or demo-placeholder findings.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Normalize commerce references as non-empty strings or finite numbers without widening general text-field handling."
+        }
+      ],
+      "entry_sha256": "0f5c0722685446c1d94d6a35a902244eae00df28dc7c04ce8467e9c23e66583c"
     }
   ]
 }
