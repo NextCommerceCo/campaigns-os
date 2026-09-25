@@ -6919,6 +6919,39 @@
         }
       ],
       "entry_sha256": "39c0c107c2fe1a8faad0dd61b1a5d04f17f4f29ad31ed794f74bd97ebe24693a"
+    },
+    {
+      "id": "RL-0149",
+      "sequence": 149,
+      "date": "2026-09-26",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.2",
+      "changelog_sha256": "4fe10d6b45c14c6bf2b0683955a42a52cd77e8518452852e64575c4035116739",
+      "agent_impact": "A refused valued --dry-run on run end leaves stale sessions intact and performs no closeout writes or remit.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run",
+          "summary": "Skip the stale-session sweep when a supporting command receives any dry-run flag, including a value its handler refuses."
+        },
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "Document the dry-run exception to pre-refusal stale-session closeout."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Clarify that a valued dry-run flag suppresses stale closeout before refusal."
+        }
+      ],
+      "entry_sha256": "1e2836aecf0e9ee37473bf77d20427d7e57a632ba1adb67774e4a4498d3a7927"
     }
   ]
 }

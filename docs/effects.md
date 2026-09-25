@@ -134,7 +134,9 @@ a flag the command rejects up front. It writes nothing, journals nothing, and is
 the row to read when you want to know what a typo costs. The one exception is
 declared on the rows it belongs to: `start`, `prepare-build`, `build`,
 `run start` and `run end` close out a **stale** run session at the root they are
-about to act on *before* argv is refused.
+about to act on *before* argv is refused. Commands that implement `--dry-run`
+skip this closeout whenever that flag is present, including a valued flag that
+will be refused: `run end --dry-run yes` writes, sends, and deletes nothing.
 
 A refusal is decided by argv alone. When file content or state on disk decides
 the outcome, the command has reached a handler failure and journals it.

@@ -583,6 +583,19 @@ test("run end --dry-run leaves a STALE session at cwd closed-out-free: no record
   assert.equal(readJson(sessionPath).run_id, stale.run_id, "and it is still the same session");
   assert.equal(receiver.posts.length, 0, "the dry run sent nothing");
 
+  // A value is refused by the handler, but must not let the earlier sweep
+  // close the session before that refusal. Include blank and false-like values.
+  for (const value of ["yes", "false", " "]) {
+    const invalid = await runCli(
+      ["run", "end", "--proxy-base", receiver.base, "--dry-run", value, "--json"],
+      { cwd: dir, telemetry: "on", lifecycleLog: join(dir, "refused-lifecycle.jsonl") },
+    );
+    assert.equal(invalid.code, 1, invalid.stderr);
+    assert.match(invalid.stderr, /--dry-run takes no value/);
+    assert.deepEqual(snapshot(dir), before, "a refused dry run wrote no record or journal and deleted nothing");
+    assert.equal(receiver.posts.length, 0, "a refused dry run sent nothing");
+  }
+
   // Positive control: without --dry-run the sweep closes the stale session out
   // for real — record written, session gone, one remit — so the snapshot, the
   // session file and the receiver are all able to see the effects asserted

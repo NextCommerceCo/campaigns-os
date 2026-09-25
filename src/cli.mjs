@@ -12828,7 +12828,9 @@ async function closeOutStaleRunSessions(command, args) {
   // stays stale until a real invocation closes it. Gated on the same predicate
   // persistLifecycleIfRequested uses, so a stray --dry-run on a command that
   // does not implement it changes nothing here either.
-  if (args["dry-run"] === true && commandImplementsDryRun(command, args)) return [];
+  // A valued flag will be refused by the handler. Preserve its do-nothing
+  // intent here too, before that refusal can run.
+  if (Object.hasOwn(args, "dry-run") && commandImplementsDryRun(command, args)) return [];
   const roots = [];
   if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
   if (command === "run" && (args._[1] === "start" || args._[1] === "end")) {

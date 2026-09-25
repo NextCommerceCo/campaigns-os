@@ -117,8 +117,10 @@ appends no lifecycle entry and creates no file of its own. One effect does
 precede argument refusal: `start`, `prepare-build`, `build`, `run start` and
 `run end` close out a stale run session at the root they are about to act on
 before argv is refused, which is a declared effect of those commands and is
-suppressed by `--no-write`. Every remitting command's effect declaration, when
-published, names its destination as open-world, and the agent onboarding skill
+suppressed by `--no-write`. Commands implementing `--dry-run` also suppress
+that closeout whenever the flag is present, including a value that will be
+refused (such as `run end --dry-run yes`). Every remitting command's effect
+declaration, when published, names its destination as open-world, and the agent onboarding skill
 records an explicit telemetry choice before the first remitting command.
 
 1.37.0 adds `demo --target <new-directory>`, an offline visual sample
