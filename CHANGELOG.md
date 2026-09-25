@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.2] - 2026-09-26
+
+### Fixed
+
+- `run end --dry-run yes` now refuses the valued flag without closing a stale
+  session first. No Run Record, lifecycle entry, remit, or session deletion
+  occurs. Bare `--dry-run` and ordinary run closeout keep their existing behavior.
+
 ## [1.43.1+agent.1] - 2026-09-25
 
 ### Fixed
