@@ -106,7 +106,7 @@ function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifest
       id: `dec_page_scope_${page.id}`,
       stage: "prepare_build",
       decision_type: "deterministic_derivation",
-      decision: `recorded CampaignSpec page "${page.id}" as template stock, declared out of source scope (${skipEntry ? "explicit source-html manifest skip entry" : 'CampaignSpec build_scope mode "partial"'}); the build stage materialises the page from ${familyLabel}'s stock page, and intake demands no design source for it`,
+      decision: `recorded CampaignSpec page "${page.id}" as template stock, declared out of source scope (${skipEntry ? "explicit source-html manifest skip entry" : 'CampaignSpec build_scope mode "partial"'}); keep the route unbuilt unless the operator opts in to materialising it from ${familyLabel}'s stock page; intake demands no design source for it`,
       confidence: "high",
       template_stock: true,
       template_family: family,

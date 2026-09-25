@@ -1,6 +1,7 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
+import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
 import { parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import {
@@ -455,6 +456,10 @@ async function resolveQaInputs(args, {
     hiddenEagerMediaGate,
   });
   const qaWaivers = resolveQaWaivers({ packetPath, report: checkpointPreflight?.runtimeReport });
+  const qaScope = applyQaBuildScope(topologies, {
+    packet, report: checkpointPreflight?.runtimeReport,
+    targetRepo: checkpointPreflight?.targetRepo, publicRouteSlug,
+  });
   const brandContract = loadBrandContract(templateFamily);
   return {
     themeGate,
@@ -481,7 +486,8 @@ async function resolveQaInputs(args, {
     specHash,
     templateFamily,
     commerceStructureContract,
-    topologies,
+    topologies: qaScope.topologies,
+    excludedPages: qaScope.excludedPages,
     checkpointGates: checkpointPreflight?.checkpointGates || nonPacketCheckpointGates(),
     // The report the checkpoint gates were evaluated on, and the target repo
     // whose default it may or may not be: what the printed remediation names.
@@ -2207,12 +2213,19 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
 
   const assertions = [
     ...checkpointAssertions,
+    ...(resolved.excludedPages || []).map(page => assertion({
+      id: `build-scope:${page.page_id}`, family: "funnel-flow", page,
+      status: STATUS.SKIPPED,
+      expected: "Only built routes are preview-QA targets",
+      actual: "out_of_build_scope",
+      evidence: { reason: "out_of_build_scope" },
+    })),
     ...(polishGate?.owned_checkpoint_only ? [] : [polishGateAssertion(polishGate)]),
     themeGateAssertion(gate),
   ];
   const contractAssertion = templateBrandContractAssertion(resolved);
   if (contractAssertion) assertions.push(contractAssertion);
-  const commercialPlanning = planCommercialParity(resolved.rawSpec || resolved.spec);
+  const commercialPlanning = planCommercialParity(specForQaScope(resolved.rawSpec || resolved.spec, resolved.excludedPages));
   const sourceLoader = createPageSourceLoader({ authCookie: args["auth-cookie"] });
   const commercialIds = new Set(commercialPlanning.pages
     .filter((page) => page?.id !== undefined && page?.id !== null)
@@ -2464,7 +2477,7 @@ function deriveEntryUrls(topologies) {
   for (const topology of topologyList(topologies)) {
     const pages = Array.isArray(topology?.pages) ? topology.pages.filter((page) => page?.url) : [];
     if (!pages.length) continue;
-    const page = pages.find(isEntryLikePage) || pages[0];
+    const page = topology.partial_build_scope ? pages[0] : pages.find(isEntryLikePage) || pages[0];
     entries.push({
       funnel_id: topology.funnel_id || "default",
       funnel_name: topology.funnel_name || topology.funnel_id || "default",

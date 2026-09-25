@@ -612,7 +612,7 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
         kind: "coverage_absence",
         scope: "primary_design_coverage",
         applies_to: [surface.id],
-        reason: `Page surface "${surface.id}" is template stock from the ${template.family} family: it has no design source of its own, and the build stage materialises it from that family's stock page.`,
+        reason: `Page surface "${surface.id}" is template stock from the ${template.family} family: it has no design source of its own; keep it unbuilt unless the operator opts in to materialising that family's stock page.`,
         status: "accepted",
         attributed_by: "prepare-build",
         attributed_at: null,
