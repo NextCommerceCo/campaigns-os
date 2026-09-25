@@ -322,6 +322,12 @@ const INTAKE_ARGV = ["--spec", "%DIR%/spec.json", "--source", "%DIR%/source", "-
 const CACHED_INTAKE_ARGV = ["--map-id", "demo", "--cached-spec", "--source", "%DIR%/source", "--target", "%DIR%/target"];
 
 const REFUSED_INVOCATIONS = [
+  // Legacy API argv must refuse before QA resolves the named missing packet.
+  ...[[], ["--cart"], ["--cart", ""], ["--cart", "   "], ["--cart", ":2,,"]].map((cart) => ({
+    argv: ["qa", "run", "--packet", "%DIR%/missing.json", "--legacy-api-test-order", "accept", ...cart],
+    expect: /--test-order requires --cart package_id:quantity pairs/,
+  })),
+  { argv: ["qa", "run", "--packet", "%DIR%/missing.json", "--legacy-api-test-order", "bogus", "--cart", "123:1"], expect: /Unknown --test-order mode: bogus/ },
   // Unknown top-level command / unknown subcommand.
   { argv: ["frobnicate"], expect: /Unknown command: frobnicate/ },
   // `readback` exists on the merged base; with no target it refuses through its own usage path.
@@ -809,6 +815,15 @@ const QA_PACKET_WITHOUT_MAP_ID = Object.freeze({
 // the caught path; the `qa` rows prove the thrown one. The `qa policy set` row
 // passes the value checks of both tagged call sites before it fails.
 const HANDLER_FAILURES = [
+  ...["accept", "decline", "both", "ACCEPT"].map((mode) => ({
+    argv: ["qa", "run", "--packet", "%DIR%/p.json", "--legacy-api-test-order", mode, "--cart", "123:1"],
+    files: { "p.json": "{ invalid" }, command: "qa", expect: /not valid JSON|Unexpected token|Expected property name/,
+  })),
+  // Inactive legacy flags must not constrain browser QA or ordinary QA.
+  ...[["--legacy-api-test-order", "off"], ["--legacy-api-test-order", "bogus", "--test-order", "accept"]].map((flags) => ({
+    argv: ["qa", "run", "--packet", "%DIR%/p.json", ...flags],
+    files: { "p.json": "{ invalid" }, command: "qa", expect: /not valid JSON|Unexpected token|Expected property name/,
+  })),
   {
     argv: ["theme", "waive", "--packet", "%DIR%/p.json", "--reason", "an effect-test waiver", "--waived-by", "Jordan Lee"],
     files: EMPTY_PACKET,

@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.3] - 2026-09-26
+
+### Fixed
+
+- Legacy direct-API QA rejects missing or unusable carts and unknown test-order
+  modes before resolving campaign inputs, without appending a lifecycle entry.
+  Browser QA precedence and legacy API credential checks are unchanged.
+
 ## [1.43.1+agent.2] - 2026-09-26
 
 ### Fixed
