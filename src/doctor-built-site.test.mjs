@@ -26,6 +26,8 @@ const codes = (issues) => issues.map((issue) => issue.code);
 test("doctor accepts numeric Olympus package refs in built upsells and still rejects undeclared refs", () => {
   withTempDir((repo) => {
     const spec = JSON.parse(readFileSync(new URL("../contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json", import.meta.url), "utf8"));
+    const upsell = spec.funnels[0].pages.find((page) => page.id === "upsell-stepper");
+    assert.ok(upsell.packages.some((pkg) => pkg.ref_id === 30), "fixture must declare numeric package 30 on the upsell page");
     // The fixture's offer normally masks the defect by declaring package 30
     // again via package_id. Retain only its page declaration and keep a
     // different offer package, reproducing a partially populated declared set.

@@ -78,6 +78,6 @@ test("commerce refs accept zero and trimmed strings, skip invalid values and pre
     const value = String(invalid);
     const hits = collectDemoRefHits({ packages: [{ ref_id: invalid }], campaign: { selection: { ref_id: value } } },
       { commerce: { demoOnlyValues: [value] } });
-    assert.ok(hits.some((hit) => hit.path === "campaign.selection.ref_id"), `must not declare ${value}`);
+    assert.ok(hits.some((hit) => hit.path === "campaign.selection.ref_id"), `must not declare ${Object.prototype.toString.call(invalid)} (${value})`);
   }
 });
