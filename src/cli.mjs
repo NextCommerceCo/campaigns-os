@@ -6111,11 +6111,20 @@ function validateSpecShippingCountries(spec, warnings, ready) {
   addIssue(warnings, "spec.available_shipping_countries", 'CampaignSpec campaign.available_shipping_countries should be "all" or an array of country codes.');
 }
 
+// Commerce refs may be numeric in Map exports; general text fields may not.
+function firstCommerceRef(...values) {
+  for (const value of values) {
+    if (isNonEmptyString(value)) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
 function specPackageRecords(spec) {
   const records = [];
   const add = (pkg, source) => {
     if (!isObject(pkg)) return;
-    const ref = firstNonEmptyString(pkg.ref_id, pkg.package_id != null ? String(pkg.package_id) : null, pkg.id != null ? String(pkg.id) : null);
+    const ref = firstCommerceRef(pkg.ref_id, pkg.package_id, pkg.id);
     if (!ref) return;
     records.push({ ref, source, package: pkg });
   };
@@ -6144,7 +6153,7 @@ function specPackageRefs(spec) {
 function specShippingRefs(spec) {
   const refs = new Set();
   const add = (method) => {
-    const ref = firstNonEmptyString(method?.ref_id, method?.id != null ? String(method.id) : null, method?.shipping_method_id != null ? String(method.shipping_method_id) : null);
+    const ref = firstCommerceRef(method?.ref_id, method?.id, method?.shipping_method_id);
     if (ref) refs.add(String(ref));
   };
 
@@ -6165,7 +6174,7 @@ function specShippingRefs(spec) {
 function specDeclaredCommerceRefs(spec) {
   const refs = new Set([...specPackageRefs(spec), ...specShippingRefs(spec)]);
   for (const offer of Array.isArray(spec?.offers) ? spec.offers : []) {
-    const ref = firstNonEmptyString(offer?.ref_id, offer?.id != null ? String(offer.id) : null);
+    const ref = firstCommerceRef(offer?.ref_id, offer?.id);
     if (ref) refs.add(String(ref));
   }
   return refs;

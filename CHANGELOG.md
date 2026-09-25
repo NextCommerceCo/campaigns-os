@@ -2,6 +2,15 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.1] - 2026-09-25
+
+### Fixed
+
+- Doctor recognizes numeric package, shipping and offer references exported by
+  the Map, so declared commerce IDs no longer trigger false undeclared-package
+  blockers or starter-demo warnings. Reference fallback fields now use the same
+  string-or-finite-number rule; other types are ignored instead of stringified.
+
 ## [1.43.1] - 2026-09-24
 
 ### Fixed
