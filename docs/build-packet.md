@@ -1221,7 +1221,7 @@ The fetched spec is treated identically to a `--spec`-supplied local file from t
 
 ## Source HTML Manifest Auto-Population
 
-When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`, published at `schemas/source-html-manifest.v0.schema.json`) — or `--design-manifest <path>` names a manifest of that schema anywhere else, for a source root nobody can write to — `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching. Wherever the manifest lives, its `pages[].path` entries stay relative to `--source`. A `pages[]` entry with `skip_reason` and no `path` declares a template-stock page: its assembly decision carries `template_stock: true` and the locked family, and intake demands no design source for it ([Template-stock pages](design-source-package.md#template-stock-pages-the-family-decides)).
+When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`, published at `schemas/source-html-manifest.v0.schema.json`) — or `--design-manifest <path>` names a manifest of that schema anywhere else, for a source root nobody can write to — `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching. Wherever the manifest lives, its `pages[].path` entries stay relative to `--source`. Each `pages[]` entry carries exactly one of `path` or `skip_reason`: an entry with both is invalid, and an invalid entry makes prepare-build ignore the whole manifest and fall back to filesystem matching. A `pages[]` entry with `skip_reason` and no `path` declares a template-stock page: its assembly decision carries `template_stock: true` and the locked family, and intake demands no design source for it ([Template-stock pages](design-source-package.md#template-stock-pages-the-family-decides)).
 
 The source-html manifest remains a producer/source-HTML adapter input. It is not
 renamed into the Design Source Package. In the normalized source workflow,
@@ -1231,7 +1231,10 @@ contributions, coverage, gaps/TODOs, Surface Identity, references, and readback.
 When source-html data is the available input and the default package path is
 missing, current v0 `prepare-build` synthesizes the package. If a package already
 exists, it is validated against the current material inputs and reused byte for
-byte or refused; it is never silently regenerated. Downstream Build and Polish
+byte or refused; it is never silently regenerated. The one exception is a stale
+package an earlier `prepare-build` synthesized and nobody has changed since:
+`--force` regenerates it from the current inputs
+([Design Source Package: stale packages](design-source-package.md#prepare-build-emit-validate-or-refuse)). Downstream Build and Polish
 consume the package concept rather than branching back to
 `packet.source_html` as a second source model. The emitted package lives at
 `.campaign-runtime/input/design-source-package.json` by default and is referenced

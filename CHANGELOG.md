@@ -24,6 +24,41 @@ Notable supported-surface changes are recorded here.
   `script-parse:<page_id>` blocker naming the script, line and column. Both
   report a fixed diagnostic category, never text from the script. QA
   classifies script types the same way doctor does.
+## [1.43.1+agent.8] - 2026-09-26
+
+### Fixed
+
+- `prepare-build --force` (and `start --force` and `build --force`) now
+  regenerates a stale Design Source Package that an earlier `prepare-build`
+  synthesized, instead of refusing it. Previously, editing the source manifest
+  after a first run left `.campaign-runtime/input/design-source-package.json`
+  stale, and every rerun failed until the file was deleted by hand, with nothing
+  in the output saying so. The Assembly Report now records the package's
+  `origin` (`synthesized` or `adopted`), and a package counts as the producer's
+  own only when that report says `synthesized` and the bytes on disk still match
+  its hash. A package placed by an operator, edited by hand, or recorded by an
+  older report is still refused, `--force` or not. Every refusal now names the
+  file and the recovery: rerun with `--force` for the producer's own package,
+  otherwise reconcile it or delete it and rerun.
+- The manifest docs now say up front that a source-html manifest `pages[]`
+  entry with both `path` and `skip_reason` is invalid.
+## [1.43.1+agent.7] - 2026-09-26
+
+### Fixed
+
+- QA's analytics tracking check works on partial builds. It used to capture the
+  campaign root (`/<slug>/`) even when the build starts deeper, such as at
+  `checkout/`, so it read an empty page and failed every declared pixel as
+  absent. On a partial build the root now counts as in scope only when a
+  built, in-scope page is served there, so a host's directory index or
+  generic fallback at the root is never measured. When the root is out of
+  scope, answers with a non-2xx status, or fails to load (a navigation timeout
+  or network error), the check captures the first built in-scope page, the same entry partial-scope QA starts from, and records the
+  page it used and why on the `analytics-correctness:capture` evidence. If the
+  build has no capturable page at all, the check is skipped with the reason
+  `no_in_scope_page_captured`. If pages existed but none answered 2xx or
+  loaded at all, the check fails as a blocker with the reason `no_capture_page_answered` and
+  lists each attempt, because the declared vendors went unmeasured.
 
 ## [1.43.1+agent.6] - 2026-09-26
 
