@@ -5,6 +5,7 @@ import { __qaNodeTestHooks } from "./qa-node.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { normalizeCapture } from "./qa-analytics-parity.mjs";
 import { STATUS } from "./qa-verdict.mjs";
+import { applyQaBuildScope } from "./qa-build-scope.mjs";
 
 const { maybeRunTestOrders, runAnalyticsOrderSequence } = __qaNodeTestHooks;
 
@@ -179,7 +180,11 @@ test("#493: a partial build whose root is an unbuilt out-of-scope page hands the
   }).rootInScope, false);
 
   // A full build keeps the root; the entry is still offered for a non-2xx root.
-  const full = analyticsCaptureScope({ ...partial, excludedPages: [] });
+  const full = analyticsCaptureScope({
+    ...partial,
+    excludedPages: [],
+    topologies: partial.topologies.map(({ partial_build_scope, ...topology }) => topology),
+  });
   assert.equal(full.rootInScope, true);
   assert.equal(full.fallbackTargets[0].page_id, "checkout");
 
@@ -192,4 +197,55 @@ test("#493: a partial build whose root is an unbuilt out-of-scope page hands the
   assert.equal(received.target, target);
   assert.equal(received.rootInScope, false);
   assert.equal(received.fallbackTargets[0].page_id, "checkout");
+});
+
+// #495 review: root membership comes from the built scope, not from whether an
+// excluded page happens to sit at the root URL.
+test("#493: a partial build with no built page at the root keeps the root out of scope even when no excluded page sits there", () => {
+  const { analyticsCaptureScope } = __qaNodeTestHooks;
+  const root = "https://preview.example.test/demo/";
+  const pageUrl = (id) => `${root}${id}/`;
+  const declared = ["presell", "landing"].map((page_id) => ({ page_id, skip_reason: "Remains on another host" }));
+  const topologies = [{
+    funnel_id: "main",
+    pages: ["presell", "landing", "checkout", "receipt"].map((id, order) => ({
+      page_id: id, page_type: id === "receipt" ? "thankyou" : id, order, label: id, url: pageUrl(id),
+    })),
+  }];
+  const qaScope = applyQaBuildScope(topologies, {
+    packet: { source_html: { pages: declared } },
+    report: { stages: { prepare_build: { declared_out_of_scope: declared } } },
+    publicRouteSlug: "demo",
+  });
+  assert.deepEqual(qaScope.excludedPages.map((page) => page.page_id), ["presell", "landing"]);
+  const scope = analyticsCaptureScope({
+    analyticsCaptureTarget: { url: root, source: "resolved_identity:public_route_slug" },
+    topologies: qaScope.topologies,
+    excludedPages: qaScope.excludedPages,
+  });
+  assert.equal(scope.rootInScope, false, "no built in-scope page lives at the campaign root");
+  assert.equal(scope.fallbackTargets[0].url, pageUrl("checkout"));
+
+  // A partial build whose built in-scope page is served at the root keeps it.
+  const rootServed = analyticsCaptureScope({
+    analyticsCaptureTarget: { url: root },
+    topologies: [{ funnel_id: "main", partial_build_scope: true, pages: [
+      { page_id: "landing", page_type: "landing", url: `${root}index.html` },
+      { page_id: "checkout", page_type: "checkout", url: pageUrl("checkout") },
+    ] }],
+    excludedPages: [{ page_id: "presell", url: pageUrl("presell") }],
+  });
+  assert.equal(rootServed.rootInScope, true);
+
+  // A full build whose landing page is the root still captures the root.
+  const full = analyticsCaptureScope({
+    analyticsCaptureTarget: { url: root },
+    topologies: [{ funnel_id: "main", pages: [
+      { page_id: "landing", page_type: "landing", url: root },
+      { page_id: "checkout", page_type: "checkout", url: pageUrl("checkout") },
+    ] }],
+    excludedPages: [],
+  });
+  assert.equal(full.rootInScope, true);
+  assert.equal(full.fallbackTargets[0].page_id, "landing");
 });
