@@ -195,6 +195,20 @@ test("a late mutation body without the upsell line is still a definitive failure
   assert.match(failures.join("; "), /no new upsell line appeared after accept/);
 });
 
+test("a post-click order read-back without the upsell line is a definitive failure, not manual review", { timeout: 15000 }, async () => {
+  const fixture = acceptFixture();
+  const before = await checkoutEvidence(fixture);
+  fixture.respond(fixture.upsellsUrl, 201, undefined);
+  fixture.respond(fixture.detailUrl, 200, fixture.orderBody([BASE_LINE]), 200);
+
+  const { proof, lateUpsellEvidence, failures } = await judgeAccept({ ...fixture, ...before, lateWaitMs: 800 });
+
+  assert.equal(lateUpsellEvidence.source, "order_read_back_missing_line");
+  assert.equal(proof.ok, false);
+  assert.notEqual(proof.unverified, true, "a read-back confirming the line is missing is not manual review");
+  assert.match(failures.join("; "), /no new upsell line appeared after accept/);
+});
+
 test("a body read that ended without timing out keeps the definitive verdict and does not wait", () => {
   const upsell = { api_response_status: 201, api_response_body_read: { timed_out: false, waited_ms: 0, bound_ms: 3000 } };
   const proof = { ok: false, reason: "no new upsell line appeared after accept", expected_items: [], matched_lines: [] };

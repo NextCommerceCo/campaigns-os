@@ -19,7 +19,8 @@ Notable supported-surface changes are recorded here.
   step waits up to 15 seconds, inside its own time budget, for the late body
   or an order read-back that shows the accepted line. If neither arrives, the
   upsell is reported as unverified and the test order goes to manual review,
-  not to a blocker. A late body or read-back that lacks the line still fails.
+  not to a blocker. A late body, or an order read-back captured after the
+  click, that lacks the line still fails.
 
 ## [1.43.1+agent.6] - 2026-09-26
 

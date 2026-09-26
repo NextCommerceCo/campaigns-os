@@ -6432,9 +6432,30 @@ function upsellBodyReadTimedOut(upsell) {
 // click: its own body landing late in the event log (the unbounded listener
 // keeps reading it), or an order read-back whose lines carry the accepted
 // upsell. Returns the body to judge from, or source "none" when neither came.
+//
+// A read-back captured after this step's click (at or past responseIndexBefore)
+// that shows the persisted order without the accepted line is a definitive
+// negative, not an absence of evidence. It does not end the wait early (a
+// later read-back may still carry the line), but when the wait ends with no
+// positive evidence the latest such read-back is returned as
+// "order_read_back_missing_line", and the step fails instead of going to
+// manual review. Read-backs from before the click never count.
 async function waitForLateUpsellEvidence(events, { responseIndexBefore, initialLineItems, expectedItems, timeoutMs, intervalMs = 250 }) {
   const started = Date.now();
   const deadline = started + Math.max(0, Number(timeoutMs) || 0);
+  const latestMissingLineReadBack = () => {
+    const fresh = events.responses.slice(responseIndexBefore);
+    for (let index = fresh.length - 1; index >= 0; index -= 1) {
+      const response = fresh[index];
+      if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
+      if (!(response.status >= 200 && response.status < 300)) continue;
+      if (!ORDER_DETAIL_RESPONSE_PATTERN.test(response.url)) continue;
+      const lines = extractReceiptLines(response.body);
+      if (!Array.isArray(lines) || lines.length === 0) continue;
+      return response.body;
+    }
+    return null;
+  };
   const find = () => {
     const fresh = events.responses.slice(responseIndexBefore);
     for (let index = fresh.length - 1; index >= 0; index -= 1) {
@@ -6456,7 +6477,11 @@ async function waitForLateUpsellEvidence(events, { responseIndexBefore, initialL
   for (;;) {
     const found = find();
     if (found) return { ...found, waited_ms: Date.now() - started };
-    if (Date.now() >= deadline) return { source: "none", body: null, waited_ms: Date.now() - started };
+    if (Date.now() >= deadline) {
+      const missing = latestMissingLineReadBack();
+      if (missing) return { source: "order_read_back_missing_line", body: missing, waited_ms: Date.now() - started };
+      return { source: "none", body: null, waited_ms: Date.now() - started };
+    }
     await new Promise((resolve) => setTimeout(resolve, Math.min(intervalMs, Math.max(1, deadline - Date.now()))));
   }
 }
@@ -6485,7 +6510,9 @@ async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPa
 // The accepted-upsell proof for one step, given how its evidence arrived. A
 // failed proof stands as a failure unless the mutation answered 2xx, its body
 // read timed out, and no later evidence of it arrived: then the lines judged
-// are stale, and the step is unverified rather than missing its upsell.
+// are stale, and the step is unverified rather than missing its upsell. A
+// post-click read-back without the line ("order_read_back_missing_line") is
+// such evidence, so the failure stands.
 function acceptedUpsellStepProof(upsell, lateEvidence, proof) {
   if (proof.ok || !upsellBodyReadTimedOut(upsell)) return proof;
   if (lateEvidence && lateEvidence.source !== "none") return proof;
