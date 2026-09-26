@@ -3469,10 +3469,8 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   // The index is the control's position among what its own locator matches,
   // so it replays with nth(); no selector is rebuilt from an attribute value.
   const target = page.locator(control.kind === "add_to_cart" ? CART_ENTRY_CONTROL_SELECTOR : "a[href]").nth(control.index);
-  await target.scrollIntoViewIfNeeded().catch(() => {});
-  await target.click({ timeout: 8000 }).catch(async () => {
-    await target.click({ force: true, timeout: 8000 });
-  });
+  await scrollControlIntoView(target);
+  await clickControl(target, { timeout: 8000 });
 
   // The SDK owns the navigation (data-next-url, or the link the SDK reads
   // forcePackageId from on arrival). Waiting for the URL is what proves the
@@ -3766,8 +3764,8 @@ async function selectRequestedCart(page, args) {
   for (const item of cart) {
     const target = page.locator(packageCardClickSelector({ package_id: item.packageId })).first();
     if (await target.count().catch(() => 0)) {
-      await target.scrollIntoViewIfNeeded().catch(() => {});
-      await target.click({ timeout: 5000 }).catch(() => {});
+      await scrollControlIntoView(target);
+      await clickControl(target, { timeout: 5000, forceFallback: false }).catch(() => {});
     }
   }
 }
@@ -3792,10 +3790,8 @@ async function selectPackageCard(page, item) {
   const candidate = resolvePackageCardCandidate(await renderedPackageCardCandidates(page), item);
   const selector = packageCardClickSelector(candidate);
   const target = page.locator(selector).first();
-  await target.scrollIntoViewIfNeeded().catch(() => {});
-  await target.click({ timeout: 5000 }).catch(async () => {
-    await target.click({ force: true, timeout: 5000 });
-  });
+  await scrollControlIntoView(target);
+  await clickControl(target, { timeout: 5000 });
   const state = await packageCardSelectionState(page, selector);
   if (state === "unselected") {
     throw new Error(`--select-package ${item.packageId}: card matched ${selector} but did not enter a selected state after click`);
@@ -4393,8 +4389,8 @@ async function submitCheckout(page) {
   await closeAddressAutocomplete(page);
   const submit = page.locator('button.submit-button[os-checkout-payment="combo"], button[os-checkout-payment="combo"], button[type="submit"]').first();
   await submit.waitFor({ state: "visible" });
-  await submit.scrollIntoViewIfNeeded();
-  await submit.click();
+  await scrollControlIntoView(submit);
+  await clickControl(submit, { forceFallback: false });
 }
 
 // When events are supplied (the post-submit wait), a platform-rejected order
@@ -4539,6 +4535,69 @@ async function waitForLateOrderEvidence(page, events, { timeoutMs = 4000, interv
   }
 }
 
+// Playwright waits for an element to be "stable" (the same box on two
+// consecutive animation frames) before scrollIntoViewIfNeeded() and click().
+// A control under an infinite geometry animation never is: stock upsell accept
+// buttons carry pb-animate="pulse-upsell", which the shared next-core.css
+// scales forever with !important and no reduced-motion override. An unbounded
+// scroll then burned the whole 30s default action timeout and a normal click
+// another 10s before the forced fallback fired (#481). Scrolling through the
+// DOM has no stability wait, and a perpetually animated control is clicked with
+// force once visible, because waiting for it to settle can only time out.
+const CONTROL_SCROLL_TIMEOUT_MS = 2000;
+const UPSELL_CLICK_TIMEOUT_MS = 10000;
+const UPSELL_MUTATION_TIMEOUT_MS = 20000;
+
+async function scrollControlIntoView(locator, { timeout = CONTROL_SCROLL_TIMEOUT_MS } = {}) {
+  try {
+    await locator.evaluate((element) => {
+      element.scrollIntoView({ block: "center", inline: "nearest" });
+    }, undefined, { timeout });
+  } catch {
+    // Best effort, as the scroll always was: the click still scrolls itself.
+  }
+}
+
+// True when the control or an ancestor runs an infinite animation over a
+// property that moves or resizes its box. Paint-only loops (opacity, color,
+// shadow) leave the box stable, so those still take the normal click.
+async function isPerpetuallyAnimated(locator, { timeout = CONTROL_SCROLL_TIMEOUT_MS } = {}) {
+  try {
+    return await locator.evaluate((element) => {
+      const geometry = /^(transform|translate|scale|rotate|top|left|right|bottom|inset|width|height|min|max|margin|padding|font|lineHeight|letterSpacing|border(Top|Right|Bottom|Left)?Width)/;
+      const movesBox = (animation) => {
+        const timing = animation.effect?.getComputedTiming?.();
+        if (animation.playState !== "running" || timing?.iterations !== Infinity) return false;
+        const keyframes = animation.effect?.getKeyframes?.() || [];
+        return keyframes.some((frame) => Object.keys(frame).some((property) => geometry.test(property)));
+      };
+      for (let node = element; node; node = node.parentElement) {
+        if (typeof node.getAnimations === "function" && node.getAnimations().some(movesBox)) return true;
+      }
+      return false;
+    }, undefined, { timeout }) === true;
+  } catch {
+    return false;
+  }
+}
+
+// `perpetual` lets a caller that already probed (to size a response watch)
+// skip the second probe. forceFallback: false keeps a caller's strict click.
+async function clickControl(locator, { timeout, forceFallback = true, perpetual } = {}) {
+  const animated = perpetual ?? await isPerpetuallyAnimated(locator);
+  if (animated) {
+    await locator.waitFor({ state: "visible", timeout }).catch(() => {});
+    await locator.click({ force: true, timeout });
+    return;
+  }
+  try {
+    await locator.click({ timeout });
+  } catch (error) {
+    if (!forceFallback) throw error;
+    await locator.click({ force: true, timeout });
+  }
+}
+
 async function clickUpsellPath(page, path, { trace = null } = {}) {
   const offerUrl = safePageUrl(page);
   const action = path === "accept" ? "add" : "skip";
@@ -4548,23 +4607,20 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     return { path, clicked: false, error: `Missing upsell control ${selector}` };
   }
   const expectedItems = path === "accept" ? await selectedUpsellItems(page) : [];
+  await scrollControlIntoView(control);
+  const perpetual = await isPerpetuallyAnimated(control);
+  // Armed at the click, not before the scroll, and budgeted to outlast a
+  // normal attempt that times out into its forced fallback: the watch must
+  // still be listening when the click that actually fires posts (#481).
   const mutationPromise = path === "accept"
     ? page.waitForResponse((response) => (
         response.request().method() === "POST"
         && isOrderUpsellsUrl(response.url())
-      ), { timeout: 20000 }).catch(() => null)
+      ), { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
     : Promise.resolve(null);
-  await control.scrollIntoViewIfNeeded().catch(() => {});
   trace?.markClickAttempted();
-  let clickCompleted = false;
-  try {
-    await control.click({ timeout: 10000 });
-    clickCompleted = true;
-  } catch {
-    await control.click({ force: true });
-    clickCompleted = true;
-  }
-  if (clickCompleted) trace?.markClickCompleted();
+  await clickControl(control, { timeout: UPSELL_CLICK_TIMEOUT_MS, perpetual });
+  trace?.markClickCompleted();
   const mutationResponse = await mutationPromise;
   const mutationBody = mutationResponse ? await readJsonResponseBody(mutationResponse) : null;
   await waitForCheckoutResult(page);
@@ -5624,8 +5680,8 @@ async function clickVisibleControlByText(page, pattern, { within = null } = {}) 
     const control = controls.nth(index);
     const text = trim((await control.innerText().catch(() => "")) || (await control.getAttribute("value").catch(() => "")));
     if (!pattern.test(text)) continue;
-    await control.scrollIntoViewIfNeeded().catch(() => {});
-    await control.click({ timeout: 8000 });
+    await scrollControlIntoView(control);
+    await clickControl(control, { timeout: 8000, forceFallback: false });
     return true;
   }
   throw new Error(`No visible control matched ${pattern}`);
@@ -6503,6 +6559,8 @@ export const __qaBrowserTestHooks = Object.freeze({
   primaryCtaInspectionScript,
   clickCouponApplyControl,
   isOrderUpsellsUrl,
+  clickUpsellPath,
+  isPerpetuallyAnimated,
   testEmail,
   testOrderPaths,
   testOrderPlans,
