@@ -79,11 +79,13 @@ async function runSequence({ url, localServeAnalytics }) {
 const FIRE_DEPENDENT = [
   "analytics-correctness:tag:meta",
   "analytics-correctness:oob:tiktok",
-  "analytics-correctness:data-layer-purchase:accept",
   "analytics-correctness:purchase-fires",
 ];
+// The SDK pushes dl_purchase on the development render too, so a miss there
+// still blocks on localhost.
+const DATA_LAYER_PURCHASE = "analytics-correctness:data-layer-purchase:accept";
 
-test("a local-serve run with a declared pixel that did not fire produces no analytics blocker", async () => {
+test("a local-serve run with a declared pixel that did not fire leaves only the data-layer Purchase check blocking", async () => {
   const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
   assert.ok(localServeAnalytics);
   const assertions = await runSequence({ url: LOCAL_URL, localServeAnalytics });
@@ -101,8 +103,12 @@ test("a local-serve run with a declared pixel that did not fire produces no anal
     assert.equal(item.evidence.production_parity.status, "pass");
     assert.deepEqual(item.evidence.production_parity.gated_hosts, ["analytics.tiktok.com", "connect.facebook.net"]);
   }
-  assert.equal(assertions.some((item) => item.status === STATUS.FAIL && item.severity === SEVERITY.BLOCKER), false);
-  assert.equal(computeDisposition(assertions), "ready_with_exceptions");
+  const dataLayer = assertions.find((entry) => entry.id === DATA_LAYER_PURCHASE);
+  assert.equal(dataLayer.status, STATUS.FAIL);
+  assert.equal(dataLayer.severity, SEVERITY.BLOCKER);
+  assert.equal(dataLayer.evidence?.reason, undefined);
+  const blockers = assertions.filter((item) => item.status === STATUS.FAIL && item.severity === SEVERITY.BLOCKER);
+  assert.deepEqual(blockers.map((item) => item.id), [DATA_LAYER_PURCHASE]);
 });
 
 test("the same campaign served as a production render still blocks when the pixel does not fire", async () => {
@@ -112,7 +118,7 @@ test("the same campaign served as a production render still blocks when the pixe
   ]) {
     assert.equal(localServeAnalytics, null, label);
     const assertions = await runSequence({ url: PREVIEW_URL, localServeAnalytics });
-    for (const id of FIRE_DEPENDENT) {
+    for (const id of [...FIRE_DEPENDENT, DATA_LAYER_PURCHASE]) {
       const item = assertions.find((entry) => entry.id === id);
       assert.equal(item.status, STATUS.FAIL, `${label}: ${id}`);
       assert.equal(item.evidence?.reason, undefined, `${label}: ${id}`);

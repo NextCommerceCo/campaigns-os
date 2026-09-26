@@ -2357,8 +2357,11 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
 // served from loopback qualifies: the same packet QA'd against the PR preview
 // (--base-url <preview>) is a production render and keeps its blockers, which
 // is the follow-up every downgraded assertion names.
+// data-layer-purchase is deliberately not downgraded: it counts the SDK's own
+// dl_purchase, which the development render still pushes, so a miss on
+// localhost can be a real defect and keeps blocking.
 const LOCAL_SERVE_ANALYTICS_REASON = "local_serve_development_render";
-const FIRE_DEPENDENT_ANALYTICS_ID = /^analytics-correctness:(?:tag:|oob:|purchase-fires$|data-layer-purchase:)/;
+const FIRE_DEPENDENT_ANALYTICS_ID = /^analytics-correctness:(?:tag:|oob:|purchase-fires$)/;
 
 function resolveLocalServeAnalytics({ packet, report, captureUrl }) {
   if (!isLocalServePacket(packet)) return null;
