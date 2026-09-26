@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.8] - 2026-09-26
+
+### Fixed
+
+- Browser QA no longer hangs on an upsell accept when the page moves on before
+  the upsell response body has loaded. The runner read that body with no time
+  limit, and a page that redirected as soon as the response headers arrived
+  could leave the read waiting forever. The read now gives up after a few
+  seconds: the step still reports the response and its status, with no order
+  body. Checkout event capture uses the same bounded read.
+
 ## [1.43.1+agent.6] - 2026-09-26
 
 ### Fixed

@@ -5622,9 +5622,27 @@ function captureCheckoutEvents(page) {
   return events;
 }
 
-async function readJsonResponseBody(response) {
-  const text = await response.text().catch(() => null);
-  return parseMaybeJson(redactSensitive(text));
+// Playwright's response.text() waits for the body to finish loading. A page
+// that navigates away as soon as the headers land (an SDK that reads only the
+// status before redirecting) can leave that wait pending forever, and every
+// caller here is on a live-navigation path: the upsell mutation read in
+// clickUpsellPath and the checkout event listener. The body is evidence, not
+// the proof of the response, so an unread body is reported as null after a
+// short bound instead of hanging the order run.
+const RESPONSE_BODY_READ_TIMEOUT_MS = 3000;
+
+async function readJsonResponseBody(response, { timeoutMs = RESPONSE_BODY_READ_TIMEOUT_MS } = {}) {
+  let timer = null;
+  const bounded = new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); });
+  const read = Promise.resolve()
+    .then(() => response.text())
+    .catch(() => null);
+  try {
+    const text = await Promise.race([read, bounded]);
+    return parseMaybeJson(redactSensitive(text));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function lastJsonResponse(events, pattern) {
@@ -6572,6 +6590,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   isOrderUpsellsUrl,
   clickUpsellPath,
   isPerpetuallyAnimated,
+  readJsonResponseBody,
   testEmail,
   testOrderPaths,
   testOrderPlans,
