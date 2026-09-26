@@ -198,3 +198,13 @@ test('QA reports an unparsable page script as a blocker naming the script and po
   });
   assert.equal(clean.assertions.some(a => a.id.startsWith('script-parse:')), false);
 });
+
+test('a parse failure in a script from another origin keeps its host, never the full URL', async () => {
+  const parseFailures = [];
+  await observe('<script src="https://cdn.fixture.test/lib/config.js?v=2#x"></script>', {
+    parseFailures,
+    scriptLoader: async () => ({ ok: true, html: 'window.nextConfig = {apiKey: "x"};\n}' }),
+  });
+  assert.equal(parseFailures.length, 1);
+  assert.equal(parseFailures[0].script, 'cdn.fixture.test/lib/config.js');
+});

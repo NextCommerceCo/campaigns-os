@@ -109,6 +109,13 @@ test("script references: data blocks, template content and noscript are dropped;
   ]);
 });
 
+test("script references: a commented-out script tag is not a reference", () => {
+  const refs = pageScriptReferences(
+    '<!-- <script src="old.js"></script> --><script src="live.js"></script><!--<script src="x.js">-->',
+  );
+  assert.deepEqual(refs, [{ src: "live.js", module: false }]);
+});
+
 test("a referenced local script missing from disk is listed, not judged", () => {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-script-syntax-"));
   try {

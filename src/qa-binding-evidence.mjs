@@ -86,9 +86,16 @@ function declarations(text, { module = false } = {}) {
   return { values, dynamic };
 }
 
-// A local path for a script, for findings: never a full URL, query or fragment.
+// A path for a script, for findings: never a full URL, query or fragment. A
+// script served from another origin keeps its host, so same-named files on two
+// CDNs stay distinguishable.
 function scriptPath(src, pageUrl) {
-  try { return new URL(src, pageUrl).pathname; } catch { return null; }
+  try {
+    const url = new URL(src, pageUrl);
+    let pageOrigin = null;
+    try { pageOrigin = new URL(pageUrl).origin; } catch {}
+    return pageOrigin && url.origin !== pageOrigin ? `${url.host}${url.pathname}` : url.pathname;
+  } catch { return null; }
 }
 
 // `parseFailures`, when given, receives one record per page script that does
