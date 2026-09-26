@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -308,7 +308,11 @@ test("prepare-build emits a schema-valid DSP and carries one exact-byte referenc
     });
     assert.equal(context.design_source_package.path, "input/design-source-package.json");
     assert.equal(report.design_source_package.path, "input/design-source-package.json");
-    for (const ref of [context.design_source_package, report.design_source_package]) {
+    // The report alone also records who produced the bytes (#485); the packet
+    // and context references stay the strict four fields.
+    assert.equal(report.design_source_package.origin, "synthesized");
+    const { origin: _origin, ...reportRef } = report.design_source_package;
+    for (const ref of [context.design_source_package, reportRef]) {
       assert.deepEqual({ ...ref, path: packet.design_source_package.path }, packet.design_source_package);
     }
 
@@ -517,12 +521,18 @@ test("prepare-build contextualizes unreadable existing DSP artifacts and leaves 
   }));
 });
 
-test("concurrent prepare-build publishes one complete DSP and every process binds to the winning exact bytes", () => withFixture(async (fixture) => {
-  // Preload a process-local fs shim that snapshots the old existsSync result,
-  // then releases every CLI only after all eight have observed the DSP absent.
-  // This synchronizes the real multi-process publication seam without adding
-  // any test hook to production code.
-  const processCount = 8;
+// Preload a process-local fs shim that holds each CLI at its first call of
+// `barrierFn` on `barrierPath`, and releases them only after all have reached
+// that point. The default, creating the directory that holds the per-target
+// prepare-build lock, is the last step before the lock, so every run is
+// released into the same instant and they contend for it together. (A barrier
+// inside the lock would deadlock: only the holder could ever reach it.) This
+// synchronizes the real multi-process seam without adding any test hook to
+// production code.
+function publicationBarrierEnv(fixture, processCount, {
+  barrierFn = "mkdirSync",
+  barrierPath = dirname(join(fixture.target, DSP_REL_PATH)),
+} = {}) {
   const barrierDir = join(fixture.dir, "dsp-publication-barrier");
   const preloadPath = join(fixture.dir, "dsp-publication-barrier.cjs");
   mkdirSync(barrierDir, { recursive: true });
@@ -530,10 +540,11 @@ test("concurrent prepare-build publishes one complete DSP and every process bind
 const fs = require("node:fs");
 const path = require("node:path");
 const { syncBuiltinESMExports } = require("node:module");
-const originalExistsSync = fs.existsSync;
+const barrierFn = process.env.DSP_BARRIER_FN;
+const original = fs[barrierFn];
 let observed = false;
-fs.existsSync = function guardedExistsSync(candidate) {
-  const result = originalExistsSync(candidate);
+fs[barrierFn] = function guardedAtBarrier(candidate, ...rest) {
+  const result = original.call(fs, candidate, ...rest);
   if (!observed && path.resolve(String(candidate)) === path.resolve(process.env.DSP_BARRIER_PATH)) {
     observed = true;
     fs.writeFileSync(path.join(process.env.DSP_BARRIER_DIR, String(process.pid)), "ready");
@@ -549,10 +560,17 @@ syncBuiltinESMExports();
 `);
   const env = {
     NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
-    DSP_BARRIER_PATH: join(fixture.target, DSP_REL_PATH),
+    DSP_BARRIER_PATH: barrierPath,
     DSP_BARRIER_DIR: barrierDir,
     DSP_BARRIER_COUNT: String(processCount),
+    DSP_BARRIER_FN: barrierFn,
   };
+  return env;
+}
+
+test("concurrent prepare-build publishes one complete DSP and every process binds to the winning exact bytes", () => withFixture(async (fixture) => {
+  const processCount = 8;
+  const env = publicationBarrierEnv(fixture, processCount);
   const results = await Promise.all(Array.from({ length: processCount }, () => runPrepareAsync(fixture, { env })));
   for (const result of results) assert.equal(result.status, 0, result.stderr);
   assert.equal(results.filter((result) => result.json.designSourcePackageMode === "emitted").length, 1);
@@ -798,6 +816,699 @@ test("prepare-build refuses current material-input drift without rewriting the D
     assert.notEqual(rerun.status, 0);
     assert.match(rerun.stderr, /current_template_material_stale/);
     assertArtifactsUnchanged(snapshot);
+  }));
+});
+
+// #485: a package prepare-build itself synthesized, unchanged since, is the
+// producer's own stale output once its inputs move. --force regenerates it;
+// an operator-supplied or hand-edited package is still refused, and every
+// refusal names the file and the recovery.
+function editManifest(fixture, edit) {
+  const manifestPath = join(fixture.source, ".campaigns-os/source-html-manifest.json");
+  const manifest = readJson(manifestPath);
+  edit(manifest);
+  writeJson(manifestPath, manifest);
+  return manifestPath;
+}
+
+function assertFreshPackageBoundEverywhere(fixture, result, manifestPath) {
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const rawBytes = readFileSync(dspPath);
+  const dsp = JSON.parse(rawBytes.toString("utf8"));
+  assertSchema(validateDsp, dsp, "regenerated Design Source Package");
+  const html = dsp.contributions.find((contribution) => contribution.id === "html-funnel");
+  assert.equal(html.provenance.manifest_sha256, `sha256:${sha256(readFileSync(manifestPath))}`);
+  const report = readJson(join(fixture.target, ".campaign-runtime/assembly-report.json"));
+  const context = readJson(join(fixture.target, ".campaign-runtime/build-context.json"));
+  for (const ref of [result.json.packet.design_source_package, context.design_source_package, report.design_source_package]) {
+    assert.equal(ref.sha256, `sha256:${sha256(rawBytes)}`);
+    assert.equal(ref.material_fingerprint, dsp.material_fingerprint);
+  }
+  assert.equal(report.design_source_package.origin, "synthesized");
+  assertSchema(validateReport, report, "Assembly Report");
+  return rawBytes;
+}
+
+test("prepare-build --force regenerates its own stale synthesized DSP after the source manifest changes", async (t) => {
+  await t.test("a manifest edit after a first run", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(first.json.designSourcePackageMode, "emitted");
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const firstBytes = readFileSync(dspPath);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    assert.equal(readJson(reportPath).design_source_package.origin, "synthesized");
+
+    const manifestPath = editManifest(fixture, (manifest) => {
+      manifest.generated_at = "2026-08-22T11:00:00.000Z";
+    });
+
+    // Without --force the stale package is refused, untouched, and the error
+    // names the file and the flag that recovers it.
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+    const plain = runPrepare(fixture);
+    assert.notEqual(plain.status, 0);
+    assert.match(plain.stderr, /current_html_funnel_material_stale/);
+    assert.ok(plain.stderr.includes(dspPath), plain.stderr);
+    assert.match(plain.stderr, /synthesized by an earlier prepare-build .*rerun with --force/);
+    assertArtifactsUnchanged(snapshot);
+
+    const forced = runPrepare(fixture, { extraArgs: ["--force"] });
+    assert.equal(forced.status, 0, forced.stderr);
+    assert.equal(forced.json.designSourcePackageMode, "regenerated");
+    assert.match(forced.stderr, /regenerated the stale Design Source Package/);
+    const freshBytes = assertFreshPackageBoundEverywhere(fixture, forced, manifestPath);
+    assert.equal(freshBytes.equals(firstBytes), false, "--force must emit a fresh package");
+
+    // The regenerated package is again the producer's own: a plain rerun reuses it.
+    const rerun = runPrepare(fixture);
+    assert.equal(rerun.status, 0, rerun.stderr);
+    assert.equal(rerun.json.designSourcePackageMode, "reused");
+    assert.equal(readJson(reportPath).design_source_package.origin, "synthesized");
+    assert.ok(readFileSync(dspPath).equals(freshBytes));
+  }));
+
+  await t.test("an invalid path-plus-skip_reason manifest corrected after a first run", () => withFixture((fixture) => {
+    const manifestPath = editManifest(fixture, (manifest) => {
+      manifest.pages.find((page) => page.page_id === "checkout").skip_reason = "Template stock page.";
+    });
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(first.json.designSourcePackageMode, "emitted");
+
+    editManifest(fixture, (manifest) => {
+      delete manifest.pages.find((page) => page.page_id === "checkout").skip_reason;
+    });
+    const plain = runPrepare(fixture);
+    assert.notEqual(plain.status, 0);
+    assert.match(plain.stderr, /rerun with --force/);
+
+    const forced = runPrepare(fixture, { extraArgs: ["--force"] });
+    assert.equal(forced.status, 0, forced.stderr);
+    assert.equal(forced.json.designSourcePackageMode, "regenerated");
+    assertFreshPackageBoundEverywhere(fixture, forced, manifestPath);
+  }));
+});
+
+test("concurrent prepare-build --force runs regenerate the stale DSP once and the rest reuse it as synthesized", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const staleBytes = readFileSync(dspPath);
+  editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T11:00:00.000Z";
+  });
+
+  // Released together just before the per-target lock: the first run through
+  // regenerates, and each later run judges the package against the report the
+  // previous run wrote, so it reuses the fresh bytes as prepare-build's own.
+  const processCount = 6;
+  const env = publicationBarrierEnv(fixture, processCount);
+  const results = await Promise.all(Array.from({ length: processCount }, () => runPrepareAsync(fixture, { env, extraArgs: ["--force"] })));
+  for (const result of results) assert.equal(result.status, 0, result.stderr);
+  assert.equal(results.filter((result) => result.json.designSourcePackageMode === "regenerated").length, 1);
+  assert.equal(results.filter((result) => result.json.designSourcePackageMode === "reused").length, processCount - 1);
+  for (const result of results) assert.equal(result.json.report.design_source_package.origin, "synthesized");
+
+  assert.equal(readFileSync(dspPath).equals(staleBytes), false, "the stale package was replaced");
+  assertEveryRunBoundToThePackageOnDisk(fixture, results);
+  assertStillRegeneratesAfterAnotherEdit(fixture);
+}));
+
+// Deterministic interleavings for concurrent --force runs. A preloaded fs shim
+// gives one run a role: it signals when it reaches a point in the DSP decision
+// and then holds there until the state it waits for appears on disk, or until
+// `DSP_CHOREO_WAIT_MS` passes.
+//
+// With the per-target lock these interleavings cannot happen: a held run is
+// the lock holder, so no sibling can produce the state it waits for. The shim
+// sees that (it owns the lock directory) and does not wait, and the tests then
+// assert the serialized outcome. Without the lock nothing is held, the waits
+// reproduce the races, and the same assertions fail. That is what these tests
+// guard: removing or narrowing the lock turns them red.
+function choreographyEnv(fixture, role, staleBytes, { waitMs = 3000 } = {}) {
+  const signalDir = join(fixture.dir, "dsp-choreography");
+  const preloadPath = join(fixture.dir, "dsp-choreography.cjs");
+  mkdirSync(signalDir, { recursive: true });
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const { syncBuiltinESMExports } = require("node:module");
+const role = process.env.DSP_CHOREO_ROLE;
+const dsp = path.resolve(process.env.DSP_CHOREO_DSP);
+const report = path.resolve(process.env.DSP_CHOREO_REPORT);
+const stale = process.env.DSP_CHOREO_STALE;
+const waitMs = Number(process.env.DSP_CHOREO_WAIT_MS);
+const readFile = fs.readFileSync, rename = fs.renameSync;
+const signal = (name) => fs.writeFileSync(path.join(process.env.DSP_CHOREO_SIGNALS, name), String(process.pid));
+// The lock directory prepare-build holds around the DSP decision.
+const lockOwner = path.join(path.dirname(dsp), "." + path.basename(dsp) + ".lock", "owner.json");
+const holdsLock = () => {
+  try { return JSON.parse(readFile.call(fs, lockOwner, "utf8")).pid === process.pid; } catch { return false; }
+};
+const until = (ready) => {
+  // A lock holder waits for nothing: no other run can act until it is done.
+  if (holdsLock()) return;
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    try { if (ready()) return; } catch {}
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+};
+const hashAt = (file) => crypto.createHash("sha256").update(readFile.call(fs, file)).digest("hex");
+const dspReplaced = () => fs.existsSync(dsp) && hashAt(dsp) !== stale;
+let readSeen = false;
+fs.readFileSync = function choreographedRead(file, ...rest) {
+  const result = readFile.call(fs, file, ...rest);
+  if (role === "late-reuser" && !readSeen && path.resolve(String(file)) === dsp) {
+    // Has judged the package stale against the report it read; waits for
+    // another run to regenerate before going on.
+    readSeen = true;
+    signal("late-reuser-read");
+    until(dspReplaced);
+  }
+  return result;
+};
+fs.renameSync = function choreographedRename(from, to, ...rest) {
+  if (role === "late-reuser" && path.resolve(String(to)) === report) {
+    // Writes its report only after the regenerating run has written its own.
+    until(() => JSON.parse(readFile.call(fs, report, "utf8")).design_source_package.sha256 !== "sha256:" + stale);
+  }
+  if (role === "claimer" && path.resolve(String(from)) === dsp) {
+    // About to claim the stale bytes: first let another run replace them,
+    // then, once claimed, let a third run publish at the vacant path.
+    signal("claimer-at-claim");
+    until(dspReplaced);
+    const result = rename.call(fs, from, to, ...rest);
+    signal("claimer-claimed");
+    until(() => fs.existsSync(dsp));
+    return result;
+  }
+  return rename.call(fs, from, to, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  return {
+    signalDir,
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      DSP_CHOREO_ROLE: role,
+      DSP_CHOREO_DSP: join(fixture.target, DSP_REL_PATH),
+      DSP_CHOREO_REPORT: join(fixture.target, ".campaign-runtime/assembly-report.json"),
+      DSP_CHOREO_STALE: sha256(staleBytes),
+      DSP_CHOREO_WAIT_MS: String(waitMs),
+      DSP_CHOREO_SIGNALS: signalDir,
+    },
+  };
+}
+
+async function waitForSignal(signalDir, name, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!existsSync(join(signalDir, name)) && Date.now() < deadline) {
+    await new Promise((done) => setTimeout(done, 10));
+  }
+}
+
+function assertEveryRunBoundToThePackageOnDisk(fixture, results) {
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const onDisk = `sha256:${sha256(readFileSync(dspPath))}`;
+  for (const result of results) {
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.json.packet.design_source_package.sha256, onDisk, "a run bound to a package that is no longer on disk");
+    assert.equal(result.json.report.design_source_package.sha256, onDisk);
+  }
+  const report = readJson(join(fixture.target, ".campaign-runtime/assembly-report.json"));
+  assert.equal(report.design_source_package.sha256, onDisk);
+  assert.deepEqual(
+    readdirSync(dirname(dspPath)).filter((name) => name.includes(".tmp") || name.includes(".stale") || name.includes(".lock")),
+    [],
+  );
+}
+
+function assertStillRegeneratesAfterAnotherEdit(fixture) {
+  const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+  assert.equal(readJson(reportPath).design_source_package.origin, "synthesized",
+    "a package prepare-build produced itself must stay recorded as synthesized");
+  const manifestPath = editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T12:00:00.000Z";
+  });
+  const again = runPrepare(fixture, { extraArgs: ["--force"] });
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(again.json.designSourcePackageMode, "regenerated");
+  assertFreshPackageBoundEverywhere(fixture, again, manifestPath);
+}
+
+test("a --force run that reuses a concurrently regenerated DSP keeps it recorded as synthesized", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const staleBytes = readFileSync(join(fixture.target, DSP_REL_PATH));
+  editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T11:00:00.000Z";
+  });
+
+  // The late reuser reads the prior report and judges the package stale, then
+  // another run regenerates it; the late reuser's report is written last.
+  const late = choreographyEnv(fixture, "late-reuser", staleBytes);
+  const lateRun = runPrepareAsync(fixture, { env: late.env, extraArgs: ["--force"] });
+  await waitForSignal(late.signalDir, "late-reuser-read");
+  const regenerator = runPrepareAsync(fixture, { extraArgs: ["--force"] });
+  const results = await Promise.all([lateRun, regenerator]);
+  assertEveryRunBoundToThePackageOnDisk(fixture, results);
+  assertStillRegeneratesAfterAnotherEdit(fixture);
+}));
+
+test("a late stale-DSP claim never deletes a package another --force run already published", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const staleBytes = readFileSync(join(fixture.target, DSP_REL_PATH));
+  editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T11:00:00.000Z";
+  });
+
+  // The claimer judges the bytes stale and pauses before claiming them; a
+  // second run replaces them; the claimer moves the fresh package aside; a
+  // third run publishes at the vacant path. Every run must still end bound to
+  // the package on disk.
+  const claimer = choreographyEnv(fixture, "claimer", staleBytes);
+  const claimerRun = runPrepareAsync(fixture, { env: claimer.env, extraArgs: ["--force"] });
+  await waitForSignal(claimer.signalDir, "claimer-at-claim");
+  const replacer = runPrepareAsync(fixture, { extraArgs: ["--force"] });
+  await waitForSignal(claimer.signalDir, "claimer-claimed");
+  const publisher = runPrepareAsync(fixture, { extraArgs: ["--force"] });
+  const results = await Promise.all([claimerRun, replacer, publisher]);
+  assertEveryRunBoundToThePackageOnDisk(fixture, results);
+  assertStillRegeneratesAfterAnotherEdit(fixture);
+}));
+
+test("a DSP momentarily absent while another run replaces it is not mistaken for an output alias", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  // Before taking the lock, this run canonicalizes the DSP path. The first
+  // realpath fails as if the locked run had just moved the stale package aside.
+  const preloadPath = join(fixture.dir, "dsp-vanishing-realpath.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRealpathSync = fs.realpathSync;
+let vanished = false;
+fs.realpathSync = function vanishOnce(candidate, ...rest) {
+  if (!vanished && path.resolve(String(candidate)) === path.resolve(process.env.DSP_PATH)) {
+    vanished = true;
+    const error = new Error("ENOENT: no such file or directory, realpath");
+    error.code = "ENOENT";
+    throw error;
+  }
+  return originalRealpathSync.call(fs, candidate, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  const result = await runPrepareAsync(fixture, {
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      DSP_PATH: join(fixture.target, DSP_REL_PATH),
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.json.designSourcePackageMode, "reused");
+}));
+
+// Holds the per-target prepare-build lock from the test process (a live pid,
+// so no waiter recovers it) and preloads a shim that signals when a run finds
+// the lock taken. Whatever the test changes between that signal and release()
+// happened while the run was waiting for the lock, after it started.
+function holdPrepareBuildLock(fixture) {
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const lockPath = join(dirname(dspPath), `.${basename(dspPath)}.lock`);
+  mkdirSync(lockPath, { recursive: true });
+  writeFileSync(join(lockPath, "owner.json"), `${JSON.stringify({ pid: process.pid, token: "test-held" })}\n`);
+  const signalPath = join(fixture.dir, "prepare-build-lock-wait.signal");
+  const preloadPath = join(fixture.dir, "prepare-build-lock-wait.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalMkdirSync = fs.mkdirSync;
+fs.mkdirSync = function signalLockWait(candidate, ...rest) {
+  try {
+    return originalMkdirSync.call(fs, candidate, ...rest);
+  } catch (error) {
+    if (error?.code === "EEXIST" && path.resolve(String(candidate)) === path.resolve(process.env.PB_LOCK_PATH)) {
+      fs.writeFileSync(process.env.PB_LOCK_WAIT_SIGNAL, String(process.pid));
+    }
+    throw error;
+  }
+};
+syncBuiltinESMExports();
+`);
+  return {
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      PB_LOCK_PATH: lockPath,
+      PB_LOCK_WAIT_SIGNAL: signalPath,
+    },
+    waiting: async (timeoutMs = 20000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (!existsSync(signalPath)) {
+        if (Date.now() > deadline) throw new Error("prepare-build never reached the held lock");
+        await new Promise((done) => setTimeout(done, 10));
+      }
+    },
+    release: () => rmSync(lockPath, { recursive: true, force: true }),
+  };
+}
+
+// Records completed work on a report stage the way a stage producer commits it.
+function recordStageEvidence(reportPath) {
+  const report = readJson(reportPath);
+  report.stages.assembly.status = "completed";
+  report.stages.assembly.outputs = ["_site/checkout/index.html"];
+  report.stages.assembly.commands = ["page-kit build"];
+  report.stages.assembly.evidence = ["page-kit build log: 4 pages built"];
+  writeJson(reportPath, report);
+  return readFileSync(reportPath);
+}
+
+test("a run that waited for the lock publishes the inputs it read under the lock, not the ones it saw first", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const staleBytes = readFileSync(join(fixture.target, DSP_REL_PATH));
+  const revisedLanding = "<main><h1>Landing v2</h1><img src=\"assets/product.png\"></main>\n";
+  writeFileSync(join(fixture.source, "landing-v2.html"), revisedLanding);
+
+  // The run starts with the manifest mapping landing to landing.html, then
+  // waits on the lock while the mapping moves to landing-v2.html (both files
+  // stay on disk).
+  const lock = holdPrepareBuildLock(fixture);
+  const run = runPrepareAsync(fixture, { env: lock.env, extraArgs: ["--force"] });
+  let result;
+  let manifestPath;
+  try {
+    await lock.waiting();
+    manifestPath = editManifest(fixture, (manifest) => {
+      manifest.files = manifest.files.map((file) => file.path === "landing.html"
+        ? { ...file, path: "landing-v2.html", sha256: sha256(revisedLanding) }
+        : file);
+      const landing = manifest.pages.find((page) => page.page_id === "landing");
+      landing.path = "landing-v2.html";
+      landing.source_hash = sha256(revisedLanding);
+    });
+  } finally {
+    lock.release();
+    result = await run;
+  }
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.json.designSourcePackageMode, "regenerated");
+  assert.equal(
+    result.json.packet.source_html.pages.find((page) => page.page_id === "landing").path,
+    "landing-v2.html",
+    "the packet must carry the mapping read under the lock",
+  );
+  const freshBytes = assertFreshPackageBoundEverywhere(fixture, result, manifestPath);
+  assert.equal(freshBytes.equals(staleBytes), false);
+  const html = JSON.parse(freshBytes.toString("utf8")).contributions.find((contribution) => contribution.id === "html-funnel");
+  assert.ok(JSON.stringify(html).includes("landing-v2.html"), "the package must be built from the new mapping");
+
+  // Self-consistent: the package validates against the inputs on disk, so a
+  // plain rerun reuses it instead of calling it stale.
+  const rerun = runPrepare(fixture);
+  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.equal(rerun.json.designSourcePackageMode, "reused");
+  assert.ok(readFileSync(join(fixture.target, DSP_REL_PATH)).equals(freshBytes));
+}));
+
+test("stage evidence committed while a run waits for the lock still stops it without --force", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+
+  const lock = holdPrepareBuildLock(fixture);
+  const run = runPrepareAsync(fixture, { env: lock.env });
+  let result;
+  let evidenceBytes;
+  try {
+    await lock.waiting();
+    evidenceBytes = recordStageEvidence(reportPath);
+  } finally {
+    lock.release();
+    result = await run;
+  }
+  assert.notEqual(result.status, 0, "a run must not reset stage evidence recorded before it held the lock");
+  assert.match(result.stderr, /already carries stage evidence \(assembly\)/);
+  assert.ok(readFileSync(reportPath).equals(evidenceBytes), "the report keeps its stage evidence");
+}));
+
+test("stage evidence committed while a run holds the lock is caught before the report is replaced", async (t) => {
+  // Stage producers do not take the prepare-build lock. This shim commits
+  // evidence the moment the run writes its theme report: after the theme
+  // artifacts are replaced but before the JSON outputs are published. That is
+  // the one window the re-checks cannot close (the theme files are already
+  // written); closing it needs stage writers to take the lock (#501).
+  function evidenceMidRunEnv(fixture) {
+    const preloadPath = join(fixture.dir, "stage-evidence-mid-run.cjs");
+    writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRenameSync = fs.renameSync;
+let committed = false;
+fs.renameSync = function commitEvidenceMidRun(from, to, ...rest) {
+  const result = originalRenameSync.call(fs, from, to, ...rest);
+  if (!committed && path.resolve(String(to)) === path.resolve(process.env.PB_THEME_REPORT)) {
+    committed = true;
+    const report = JSON.parse(fs.readFileSync(process.env.PB_REPORT, "utf8"));
+    report.stages.assembly.status = "completed";
+    report.stages.assembly.outputs = ["_site/checkout/index.html"];
+    fs.writeFileSync(process.env.PB_REPORT, JSON.stringify(report, null, 2) + "\\n");
+  }
+  return result;
+};
+syncBuiltinESMExports();
+`);
+    return {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      PB_THEME_REPORT: join(fixture.target, ".campaign-runtime/theme/theme-report.json"),
+      PB_REPORT: join(fixture.target, ".campaign-runtime/assembly-report.json"),
+    };
+  }
+
+  await t.test("without --force the run refuses and publishes no JSON output", () => withFixture(async (fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const packetBytes = readFileSync(packetPath);
+
+    const result = await runPrepareAsync(fixture, { env: evidenceMidRunEnv(fixture) });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /gained stage evidence while prepare-build was running \(assembly\)/);
+    const report = readJson(reportPath);
+    assert.equal(report.stages.assembly.status, "completed", "the report keeps its stage evidence");
+    assert.ok(readFileSync(packetPath).equals(packetBytes), "no JSON output is published after the refusal");
+    assert.deepEqual(readdirSync(dirname(reportPath)).filter((name) => name.includes(".tmp")), []);
+  }));
+
+  await t.test("evidence that lands before the theme write refuses the run with nothing written", () => withFixture(async (fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const themeReportPath = join(fixture.target, ".campaign-runtime/theme/theme-report.json");
+    const packetBytes = readFileSync(packetPath);
+    const themeBytes = readFileSync(themeReportPath);
+    // Commits evidence when the run reads its Design Source Package: after
+    // the first guard, before any theme or JSON output is written.
+    const preloadPath = join(fixture.dir, "stage-evidence-before-theme.cjs");
+    writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalReadFileSync = fs.readFileSync;
+let committed = false;
+fs.readFileSync = function commitEvidenceBeforeTheme(file, ...rest) {
+  const result = originalReadFileSync.call(fs, file, ...rest);
+  if (!committed && path.resolve(String(file)) === path.resolve(process.env.PB_DSP)) {
+    committed = true;
+    const report = JSON.parse(originalReadFileSync.call(fs, process.env.PB_REPORT, "utf8"));
+    report.stages.assembly.status = "completed";
+    report.stages.assembly.outputs = ["_site/checkout/index.html"];
+    fs.writeFileSync(process.env.PB_REPORT, JSON.stringify(report, null, 2) + "\\n");
+  }
+  return result;
+};
+syncBuiltinESMExports();
+`);
+    const result = await runPrepareAsync(fixture, {
+      env: {
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+        PB_DSP: join(fixture.target, DSP_REL_PATH),
+        PB_REPORT: reportPath,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /gained stage evidence while prepare-build was running \(assembly\)/);
+    assert.equal(readJson(reportPath).stages.assembly.status, "completed", "the report keeps its stage evidence");
+    assert.ok(readFileSync(themeReportPath).equals(themeBytes), "the theme report is not rewritten");
+    assert.ok(readFileSync(packetPath).equals(packetBytes), "no JSON output is published");
+  }));
+
+  await t.test("with --force the run overwrites and names the stage it clears", () => withFixture(async (fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const result = await runPrepareAsync(fixture, { env: evidenceMidRunEnv(fixture), extraArgs: ["--force"] });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /clearing stage evidence for: assembly/);
+    const report = readJson(join(fixture.target, ".campaign-runtime/assembly-report.json"));
+    assert.equal(report.stages.assembly.status, "pending");
+  }));
+});
+
+test("a --force regeneration whose publication fails puts the stale DSP back instead of deleting it", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const staleBytes = readFileSync(dspPath);
+  editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T11:00:00.000Z";
+  });
+
+  // Only publication of the staged replacement fails; putting the claimed
+  // bytes back is an ordinary link and still works.
+  const preloadPath = join(fixture.dir, "dsp-staged-link-fails.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalLinkSync = fs.linkSync;
+fs.linkSync = function failStagedPublication(source, destination) {
+  if (path.resolve(String(destination)) === path.resolve(process.env.DSP_PATH) && String(source).endsWith(".tmp")) {
+    const error = new Error("simulated publication failure");
+    error.code = "EIO";
+    throw error;
+  }
+  return originalLinkSync(source, destination);
+};
+syncBuiltinESMExports();
+`);
+  const result = await runPrepareAsync(fixture, {
+    extraArgs: ["--force"],
+    env: { NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(), DSP_PATH: dspPath },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /simulated publication failure/);
+  assert.ok(readFileSync(dspPath).equals(staleBytes), "the stale package is back in place, byte for byte");
+  assert.deepEqual(
+    readdirSync(dirname(dspPath)).filter((name) => name.includes(".tmp") || name.includes(".stale")),
+    [],
+  );
+}));
+
+test("a --force regeneration that loses to a concurrent stale package keeps its claimed bytes and names them", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const staleBytes = readFileSync(dspPath);
+  editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T11:00:00.000Z";
+  });
+  // Another publisher lands a package this run cannot accept (stale against
+  // its inputs) in the instant between the claim and this run's link.
+  const winnerBytes = Buffer.concat([staleBytes, Buffer.from("\n")]);
+  const winnerPath = join(fixture.dir, "concurrent-stale-winner.json");
+  writeFileSync(winnerPath, winnerBytes);
+  const preloadPath = join(fixture.dir, "dsp-concurrent-stale-winner.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalLinkSync = fs.linkSync;
+fs.linkSync = function concurrentStaleWinner(source, destination) {
+  if (path.resolve(String(destination)) === path.resolve(process.env.DSP_PATH) && String(source).endsWith(".tmp")) {
+    fs.writeFileSync(destination, fs.readFileSync(process.env.DSP_WINNER_PATH), { flag: "wx" });
+    const error = new Error("EEXIST: file already exists");
+    error.code = "EEXIST";
+    throw error;
+  }
+  return originalLinkSync(source, destination);
+};
+syncBuiltinESMExports();
+`);
+  const result = await runPrepareAsync(fixture, {
+    extraArgs: ["--force"],
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      DSP_PATH: dspPath,
+      DSP_WINNER_PATH: winnerPath,
+    },
+  });
+  assert.notEqual(result.status, 0);
+  assert.ok(readFileSync(dspPath).equals(winnerBytes), "the other publisher's package is left alone");
+  const kept = readdirSync(dirname(dspPath)).filter((name) => name.endsWith(".stale"));
+  assert.equal(kept.length, 1, "the claimed stale bytes are kept, not deleted");
+  assert.ok(readFileSync(join(dirname(dspPath), kept[0])).equals(staleBytes));
+  assert.ok(result.stderr.includes(join(dirname(dspPath), kept[0])), "the error names where they are kept");
+}));
+
+test("prepare-build --force still refuses a stale DSP it cannot show it synthesized", async (t) => {
+  const assertRefusedWithDeleteRecovery = (fixture) => {
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+    const forced = runPrepare(fixture, { extraArgs: ["--force"] });
+    assert.notEqual(forced.status, 0);
+    assert.match(forced.stderr, /invalid, stale, or contradictory/);
+    assert.ok(forced.stderr.includes(`delete ${dspPath} and rerun prepare-build`), forced.stderr);
+    assert.doesNotMatch(forced.stderr, /regenerated/);
+    assertArtifactsUnchanged(snapshot);
+  };
+
+  await t.test("a hand-edited package", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const packageValue = readJson(dspPath);
+    packageValue.notes.push("Operator note; the bytes are no longer the producer's.");
+    writeFileSync(dspPath, `${JSON.stringify(packageValue, null, 2)}\n`);
+    editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+    assertRefusedWithDeleteRecovery(fixture);
+  }));
+
+  await t.test("an operator-supplied package with no report of its own", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const supplied = readFileSync(dspPath);
+    for (const path of targetArtifactPaths(fixture.target)) rmSync(path, { force: true });
+    writeFileSync(dspPath, supplied);
+    editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+    assertRefusedWithDeleteRecovery(fixture);
+  }));
+
+  await t.test("an operator-supplied package adopted by a run, then left stale", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const packageValue = readJson(dspPath);
+    // Reformatted by hand: same material, different bytes, so the run that
+    // validates it adopts it rather than claiming it.
+    writeFileSync(dspPath, `${JSON.stringify(reverseKeys(packageValue), null, 4)}\n`);
+    const adopted = runPrepare(fixture);
+    assert.equal(adopted.status, 0, adopted.stderr);
+    assert.equal(adopted.json.designSourcePackageMode, "reused");
+    assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.origin, "adopted");
+    editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+    assertRefusedWithDeleteRecovery(fixture);
+  }));
+
+  await t.test("a report written before origin was recorded", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const report = readJson(reportPath);
+    delete report.design_source_package.origin;
+    writeJson(reportPath, report);
+    editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+    assertRefusedWithDeleteRecovery(fixture);
   }));
 });
 

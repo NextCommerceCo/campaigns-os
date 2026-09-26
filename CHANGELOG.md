@@ -2,6 +2,24 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.8] - 2026-09-26
+
+### Fixed
+
+- `prepare-build --force` (and `start --force` and `build --force`) now
+  regenerates a stale Design Source Package that an earlier `prepare-build`
+  synthesized, instead of refusing it. Previously, editing the source manifest
+  after a first run left `.campaign-runtime/input/design-source-package.json`
+  stale, and every rerun failed until the file was deleted by hand, with nothing
+  in the output saying so. The Assembly Report now records the package's
+  `origin` (`synthesized` or `adopted`), and a package counts as the producer's
+  own only when that report says `synthesized` and the bytes on disk still match
+  its hash. A package placed by an operator, edited by hand, or recorded by an
+  older report is still refused, `--force` or not. Every refusal now names the
+  file and the recovery: rerun with `--force` for the producer's own package,
+  otherwise reconcile it or delete it and rerun.
+- The manifest docs now say up front that a source-html manifest `pages[]`
+  entry with both `path` and `skip_reason` is invalid.
 ## [1.43.1+agent.7] - 2026-09-26
 
 ### Fixed
