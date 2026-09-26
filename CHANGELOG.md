@@ -11,8 +11,15 @@ Notable supported-surface changes are recorded here.
   limit, and a page that redirected as soon as the response headers arrived
   could leave the read waiting forever. The read now gives up after a few
   seconds: the step still reports the response and its status, with no order
-  body. Checkout event capture keeps its unbounded read, since nothing waits
-  on it: an order body that loads late still counts as order evidence.
+  body, and records that the read timed out. Checkout event capture keeps its
+  unbounded read, since nothing waits on it: an order body that loads late
+  still counts as order evidence.
+- A slow but successful upsell accept is no longer failed as "no new upsell
+  line". When the upsell body read times out on a successful response, the
+  step waits up to 15 seconds, inside its own time budget, for the late body
+  or an order read-back that shows the accepted line. If neither arrives, the
+  upsell is reported as unverified and the test order goes to manual review,
+  not to a blocker. A late body or read-back that lacks the line still fails.
 
 ## [1.43.1+agent.6] - 2026-09-26
 

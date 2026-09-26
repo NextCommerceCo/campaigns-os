@@ -3263,19 +3263,29 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     }
     const step = upsellSteps[stepIndex];
     const actionTrace = createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path: step });
+    const stepBudgetMs = budget();
+    const stepStartedMs = Date.now();
     await ladder.run("upsell_action", async () => {
       const initialLineItems = order.receipt_line_items.slice();
       const initialUpsellMutationCount = upsellMutationCount(events);
       await actionTrace.inspect();
       await waitForUpsellPageReady(page, args);
       await actionTrace.inspect();
+      const responseIndexBefore = events.responses.length;
       const upsell = await clickUpsellPath(page, step, { events, stepIndex, trace: actionTrace });
       const preferredOrderBody = upsell.api_response_order_body || null;
       delete upsell.api_response_order_body;
       order.upsell = upsell;
       order.upsell_steps.push(upsell);
       order.final_url = safePageUrl(page);
-      const refreshed = await buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody });
+      const { refreshed, lateUpsellEvidence } = await refreshUpsellStepEvidence({
+        page, events, path, email, checkoutPage, args, step, upsell, preferredOrderBody, initialLineItems, responseIndexBefore,
+        // Keep the rest of the step's budget for the read-back after the wait.
+        lateWaitMs: Math.min(
+          LATE_UPSELL_EVIDENCE_TIMEOUT_MS,
+          stepBudgetMs - (Date.now() - stepStartedMs) - LATE_UPSELL_EVIDENCE_RESERVE_MS,
+        ),
+      });
       order.final_receipt_line_items = refreshed.receipt_line_items;
       if (refreshed.receipt_line_items.length) {
         order.cart_state = refreshed.cart_state;
@@ -3287,9 +3297,9 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
         order.verification.currency = refreshed.verification.currency;
       }
       if (step === "accept") {
-        const proof = acceptedUpsellProof(order.receipt_line_items, initialLineItems, upsell.expected_items, events);
+        const proof = acceptedUpsellStepProof(upsell, lateUpsellEvidence, acceptedUpsellProof(order.receipt_line_items, initialLineItems, upsell.expected_items, events));
         upsell.verification = {
-          accepted_upsell_line_present: proof.ok,
+          accepted_upsell_line_present: proof.unverified ? null : proof.ok,
           accepted_upsell_match: proof,
           upsell_api_response_seen: upsell.api_response_seen,
           upsell_api_response_status: upsell.api_response_status,
@@ -3307,7 +3317,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       actionTrace.markStepCompleted();
       return `step ${stepIndex + 1}: ${step}`;
     }, {
-      timeoutMs: budget(),
+      timeoutMs: stepBudgetMs,
       evidence: actionTrace.summary,
       formatError: actionTrace.formatError,
     });
@@ -3339,7 +3349,16 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
 
   const acceptedSteps = (order.upsell_steps || []).filter((step) => step.path === "accept");
   if (acceptedSteps.length) {
-    order.verification.accepted_upsell_line_present = acceptedSteps.every((step) => step.verification?.accepted_upsell_line_present === true);
+    const unverifiedSteps = acceptedSteps.filter((step) => step.verification?.accepted_upsell_match?.unverified === true);
+    const confirmedMissing = acceptedSteps.some((step) => step.verification?.accepted_upsell_line_present === false);
+    // Unknown, not false, when every step that is not proven is only
+    // unverified: false would read as a confirmed missing line.
+    order.verification.accepted_upsell_line_present = unverifiedSteps.length && !confirmedMissing
+      ? null
+      : acceptedSteps.every((step) => step.verification?.accepted_upsell_line_present === true);
+    if (unverifiedSteps.length) {
+      order.verification.upsell_unverified = unverifiedSteps.map((step) => step.verification.accepted_upsell_match.reason);
+    }
     order.verification.upsell_api_response_seen = acceptedSteps.every((step) => step.verification?.upsell_api_response_seen === true);
     order.verification.accepted_upsell_matches = acceptedSteps.map((step) => step.verification?.accepted_upsell_match).filter(Boolean);
   }
@@ -4633,7 +4652,9 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
   await clickControl(control, { timeout: UPSELL_CLICK_TIMEOUT_MS, perpetual });
   trace?.markClickCompleted();
   const mutationResponse = await mutationPromise;
-  const mutationBody = mutationResponse ? await readJsonResponseBody(mutationResponse) : null;
+  const bodyRead = mutationResponse
+    ? await readJsonResponseBodyBounded(mutationResponse, RESPONSE_BODY_READ_TIMEOUT_MS)
+    : null;
   await waitForCheckoutResult(page);
   return {
     path,
@@ -4644,7 +4665,11 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     api_response_seen: Boolean(mutationResponse),
     api_response_status: mutationResponse?.status() || null,
     api_response_url: mutationResponse?.url() || null,
-    api_response_order_body: mutationBody,
+    api_response_order_body: bodyRead?.body ?? null,
+    // How the bounded body read ended. A timed-out read means the mutation's
+    // own evidence is missing, not that the upsell failed; the runner then
+    // waits for a later read-back before it judges the step.
+    ...(bodyRead ? { api_response_body_read: { timed_out: bodyRead.timed_out, waited_ms: bodyRead.waited_ms, bound_ms: bodyRead.bound_ms } } : {}),
   };
 }
 
@@ -5539,15 +5564,21 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
   // runner deliberately refused to re-run, and the operator needs to know that
   // before they run the path again by hand.
   const stoppedForAmbiguity = creationRecord?.action === "stopped";
+  // The order was created and nothing failed, but an accepted upsell could
+  // not be checked: its mutation body never loaded and no read-back arrived.
+  // Neither proved nor disproved, so a human decides, as for a hosted checkout.
+  const upsellUnverified = result.ok ? result.order?.verification?.upsell_unverified || null : null;
   return assertion({
     id: `browser-test-order:${id}`,
     family: "browser-test-order",
     page,
-    status: result.ok ? STATUS.PASS : STATUS.FAIL,
-    severity: result.ok ? undefined : SEVERITY.BLOCKER,
+    status: result.ok ? (upsellUnverified ? STATUS.MANUAL_REVIEW : STATUS.PASS) : STATUS.FAIL,
+    severity: result.ok ? (upsellUnverified ? SEVERITY.WARN : undefined) : SEVERITY.BLOCKER,
     expected: "test order created through deployed checkout page",
     actual: result.ok
-      ? result.order.next_order_id || result.order.ref_id
+      ? upsellUnverified
+        ? `${result.order.next_order_id || result.order.ref_id}; ${upsellUnverified.join("; ")}`
+        : result.order.next_order_id || result.order.ref_id
       : stoppedForAmbiguity
         ? `${failureText} — not re-run: ${creationRecord.classification.reason}. Check for an existing order against this run's QA email before running this path again.`
         : failureText,
@@ -5564,6 +5595,7 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
           line_count: result.order.receipt_line_items.length,
           ...(receiptProofEvidence(result.order) ? { receipt_proof: receiptProofEvidence(result.order) } : {}),
           ...(path === "accept" ? { accepted_upsell_line_present: result.order.verification?.accepted_upsell_line_present } : {}),
+          ...(upsellUnverified ? { upsell_unverified: upsellUnverified } : {}),
           ...(result.order.upsell ? { upsell_clicked: result.order.upsell.clicked, upsell_final_url: result.order.upsell.final_url } : {}),
           ...(result.order.upsell_steps ? { upsell_steps: result.order.upsell_steps.map(summarizeUpsellStep) } : {}),
           ...(result.order.verification?.accepted_upsell_matches ? { accepted_upsell_matches: result.order.verification.accepted_upsell_matches } : {}),
@@ -5651,16 +5683,33 @@ async function readJsonResponseBody(response) {
 }
 
 async function readJsonResponseBodyWithin(response, timeoutMs) {
+  return (await readJsonResponseBodyBounded(response, timeoutMs)).body;
+}
+
+// The bounded read, with a record of how it ended. `timed_out` is true only
+// when the bound fired while the read was still pending, never when the read
+// failed or returned nothing: a caller must be able to tell "the body was not
+// read in time" (the mutation may still have succeeded) from "the body was
+// read". `waited_ms` covers the read alone.
+async function readJsonResponseBodyBounded(response, timeoutMs) {
   // A missing, zero or unbounded value would reintroduce the hang.
   if (!(Number.isFinite(timeoutMs) && timeoutMs > 0)) timeoutMs = RESPONSE_BODY_READ_TIMEOUT_MS;
+  const started = Date.now();
+  const TIMED_OUT = Symbol("timed out");
   let timer = null;
-  const bounded = new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); });
+  const bounded = new Promise((resolve) => { timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs); });
   const read = Promise.resolve()
     .then(() => response.text())
     .catch(() => null);
   try {
     const text = await Promise.race([read, bounded]);
-    return parseMaybeJson(redactSensitive(text));
+    const timedOut = text === TIMED_OUT;
+    return {
+      body: timedOut ? null : parseMaybeJson(redactSensitive(text)),
+      timed_out: timedOut,
+      waited_ms: Date.now() - started,
+      bound_ms: timeoutMs,
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -6337,9 +6386,13 @@ async function selectedUpsellItems(page) {
 // order-upsell API added it. The live network observation (apiResponseSeen) is a
 // best-effort signal that can miss the request on fast stepper-accept client nav, so
 // it must not block on its own. Block only when the read-back proof also fails.
+//
+// An unverified proof (the mutation answered 2xx but its body never loaded, and
+// no later read-back arrived) is not a failure: nothing showed the line
+// missing. It is reported for manual review instead (upsell_unverified).
 function upsellAcceptStepFailures(stepIndex, proof, apiResponseSeen) {
   const failures = [];
-  if (!proof.ok) {
+  if (!proof.ok && !proof.unverified) {
     failures.push(`step ${stepIndex + 1}: ${proof.reason}`);
     if (!apiResponseSeen) {
       failures.push(`step ${stepIndex + 1}: upsell accept did not call order upsell API`);
@@ -6359,6 +6412,91 @@ function upsellActionStepFailures(stepIndex, action, upsell, proof) {
     failures.push(`step ${stepIndex + 1}: ${proof?.reason || "upsell decline could not be verified"}`);
   }
   return failures;
+}
+
+// How long an accept whose mutation body timed out waits for other evidence
+// of that mutation, and the slice of the step budget kept for the read-back
+// after it. The whole step stays inside its budget (45s by default).
+const LATE_UPSELL_EVIDENCE_TIMEOUT_MS = 15000;
+const LATE_UPSELL_EVIDENCE_RESERVE_MS = 3000;
+
+function upsellBodyReadTimedOut(upsell) {
+  const status = Number(upsell?.api_response_status);
+  return upsell?.api_response_body_read?.timed_out === true && status >= 200 && status < 300;
+}
+
+// After the bounded read gave up on a 2xx upsell mutation body, the lines the
+// runner already holds are the checkout's, from before the accept. Judging
+// the upsell against them would call a slow success "no new upsell line".
+// Wait, within a bound, for evidence of this mutation captured after the
+// click: its own body landing late in the event log (the unbounded listener
+// keeps reading it), or an order read-back whose lines carry the accepted
+// upsell. Returns the body to judge from, or source "none" when neither came.
+async function waitForLateUpsellEvidence(events, { responseIndexBefore, initialLineItems, expectedItems, timeoutMs, intervalMs = 250 }) {
+  const started = Date.now();
+  const deadline = started + Math.max(0, Number(timeoutMs) || 0);
+  const find = () => {
+    const fresh = events.responses.slice(responseIndexBefore);
+    for (let index = fresh.length - 1; index >= 0; index -= 1) {
+      const response = fresh[index];
+      if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
+      if (!(response.status >= 200 && response.status < 300)) continue;
+      if (ORDER_UPSELLS_RESPONSE_PATTERN.test(response.url)) return { source: "late_upsell_body", body: response.body };
+    }
+    for (let index = fresh.length - 1; index >= 0; index -= 1) {
+      const response = fresh[index];
+      if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
+      if (!(response.status >= 200 && response.status < 300)) continue;
+      if (!ORDER_DETAIL_RESPONSE_PATTERN.test(response.url)) continue;
+      const proof = acceptedUpsellProof(extractReceiptLines(response.body), initialLineItems, expectedItems, events);
+      if (proof.ok) return { source: "order_read_back", body: response.body };
+    }
+    return null;
+  };
+  for (;;) {
+    const found = find();
+    if (found) return { ...found, waited_ms: Date.now() - started };
+    if (Date.now() >= deadline) return { source: "none", body: null, waited_ms: Date.now() - started };
+    await new Promise((resolve) => setTimeout(resolve, Math.min(intervalMs, Math.max(1, deadline - Date.now()))));
+  }
+}
+
+// The order evidence an upsell step is judged against. An accept whose
+// mutation body read timed out first waits for later evidence of that
+// mutation (waitForLateUpsellEvidence), and judges from that body when one
+// arrives: the runner's last order body is the checkout's otherwise.
+async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPage, args, step, upsell, preferredOrderBody = null, initialLineItems, responseIndexBefore, lateWaitMs = LATE_UPSELL_EVIDENCE_TIMEOUT_MS }) {
+  let lateUpsellEvidence = null;
+  let judgedBody = preferredOrderBody;
+  if (step === "accept" && upsellBodyReadTimedOut(upsell)) {
+    lateUpsellEvidence = await waitForLateUpsellEvidence(events, {
+      responseIndexBefore,
+      initialLineItems,
+      expectedItems: upsell.expected_items,
+      timeoutMs: lateWaitMs,
+    });
+    upsell.late_evidence = { source: lateUpsellEvidence.source, waited_ms: lateUpsellEvidence.waited_ms };
+    if (lateUpsellEvidence.body) judgedBody = lateUpsellEvidence.body;
+  }
+  const refreshed = await buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody: judgedBody });
+  return { refreshed, lateUpsellEvidence };
+}
+
+// The accepted-upsell proof for one step, given how its evidence arrived. A
+// failed proof stands as a failure unless the mutation answered 2xx, its body
+// read timed out, and no later evidence of it arrived: then the lines judged
+// are stale, and the step is unverified rather than missing its upsell.
+function acceptedUpsellStepProof(upsell, lateEvidence, proof) {
+  if (proof.ok || !upsellBodyReadTimedOut(upsell)) return proof;
+  if (lateEvidence && lateEvidence.source !== "none") return proof;
+  const read = upsell.api_response_body_read;
+  return {
+    ...proof,
+    ok: false,
+    unverified: true,
+    reason: `accepted upsell unverified: the order upsell API answered HTTP ${upsell.api_response_status} but its body did not load within ${read.bound_ms}ms, and no later order read-back showed the accepted line within ${lateEvidence?.waited_ms ?? 0}ms`,
+    stale_reason: proof.reason,
+  };
 }
 
 function acceptedUpsellProof(lines, initialLines, expectedItems, events) {
@@ -6461,6 +6599,8 @@ function summarizeUpsellStep(step) {
     expected_items: step.expected_items,
     api_response_seen: step.api_response_seen,
     api_response_status: step.api_response_status,
+    ...(step.api_response_body_read ? { api_response_body_read: step.api_response_body_read } : {}),
+    ...(step.late_evidence ? { late_evidence: step.late_evidence } : {}),
     accepted_upsell_line_present: step.verification?.accepted_upsell_line_present,
   };
 }
@@ -6613,7 +6753,11 @@ export const __qaBrowserTestHooks = Object.freeze({
   isPerpetuallyAnimated,
   readJsonResponseBody,
   readJsonResponseBodyWithin,
+  readJsonResponseBodyBounded,
   RESPONSE_BODY_READ_TIMEOUT_MS,
+  waitForLateUpsellEvidence,
+  refreshUpsellStepEvidence,
+  acceptedUpsellStepProof,
   captureCheckoutEvents,
   buildOrderEvidence,
   testEmail,
