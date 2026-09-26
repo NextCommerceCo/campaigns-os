@@ -105,6 +105,12 @@ browserTest("an accept that navigates before the mutation body loads completes a
     assert.equal(step.api_response_status, 201);
     assert.equal(step.api_response_order_body, null, "an unread body is reported as absent, not waited for");
     assert.match(step.final_url, /\/thank-you\/\?ref_id=/);
+    // The floor proves the body read really stayed pending until the bound
+    // fired. Without it, a navigation that aborted the request and made
+    // response.text() reject at once would also produce a null body quickly,
+    // and the old unbounded read already handled that case.
+    const bound = hooks.RESPONSE_BODY_READ_TIMEOUT_MS;
+    assert.ok(elapsed >= bound - 100, `accept path took ${elapsed}ms; the body read gave up before the ${bound}ms bound, so the pending read was not exercised`);
     assert.ok(elapsed < 15000, `accept path took ${elapsed}ms; expected well under 15s`);
   } finally {
     await context.close();

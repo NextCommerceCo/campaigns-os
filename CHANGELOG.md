@@ -11,7 +11,8 @@ Notable supported-surface changes are recorded here.
   limit, and a page that redirected as soon as the response headers arrived
   could leave the read waiting forever. The read now gives up after a few
   seconds: the step still reports the response and its status, with no order
-  body. Checkout event capture uses the same bounded read.
+  body. Checkout event capture keeps its unbounded read, since nothing waits
+  on it: an order body that loads late still counts as order evidence.
 
 ## [1.43.1+agent.6] - 2026-09-26
 

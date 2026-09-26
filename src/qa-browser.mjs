@@ -5595,12 +5595,16 @@ function captureCheckoutEvents(page) {
       postData: summarizeRequestPostData(request.postData()),
     });
   });
+  // Nothing awaits this listener, so its body read stays unbounded: an entry
+  // lands whenever its body finishes loading, and waitForLateOrderEvidence
+  // polls for it. A bound here would record a slow but successful order body
+  // as null for good, and the order would read as not created.
   page.on("response", async (response) => {
     if (!interesting.test(response.url())) return;
     events.responses.push({
       status: response.status(),
       url: response.url(),
-      body: await readJsonResponseBody(response),
+      body: await readJsonResponseBodyWhenLoaded(response),
     });
   });
   page.on("requestfailed", (request) => {
@@ -5624,17 +5628,24 @@ function captureCheckoutEvents(page) {
 
 // Playwright's response.text() waits for the body to finish loading. A page
 // that navigates away as soon as the headers land (an SDK that reads only the
-// status before redirecting) can leave that wait pending forever, and every
-// caller here is on a live-navigation path: the upsell mutation read in
-// clickUpsellPath and the checkout event listener. The body is evidence, not
-// the proof of the response, so an unread body is reported as null after a
-// short bound instead of hanging the order run. Playwright has no way to
-// cancel a pending body read; the abandoned read is a protocol callback, not
-// a socket this process owns, and it is released when the run closes the
-// browser context.
+// status before redirecting) can leave that wait pending forever. Only a
+// caller that blocks the run on the body needs a bound: the upsell mutation
+// read in clickUpsellPath. There the body is evidence, not the proof of the
+// response, so an unread body is reported as null after a short bound instead
+// of hanging the order run. Playwright has no way to cancel a pending body
+// read; the abandoned read is a protocol callback, not a socket this process
+// owns, and it is released when the run closes the browser context.
 const RESPONSE_BODY_READ_TIMEOUT_MS = 3000;
 
-// Callers always get the fixed bound; only the test hook picks a shorter one.
+// For callers that nothing awaits (the checkout event listener): a late body
+// still arrives, and a body that never loads just never records an entry.
+async function readJsonResponseBodyWhenLoaded(response) {
+  const text = await Promise.resolve().then(() => response.text()).catch(() => null);
+  return parseMaybeJson(redactSensitive(text));
+}
+
+// Callers that block on the read always get the fixed bound; only the test
+// hook picks a shorter one.
 async function readJsonResponseBody(response) {
   return readJsonResponseBodyWithin(response, RESPONSE_BODY_READ_TIMEOUT_MS);
 }
@@ -6602,6 +6613,9 @@ export const __qaBrowserTestHooks = Object.freeze({
   isPerpetuallyAnimated,
   readJsonResponseBody,
   readJsonResponseBodyWithin,
+  RESPONSE_BODY_READ_TIMEOUT_MS,
+  captureCheckoutEvents,
+  buildOrderEvidence,
   testEmail,
   testOrderPaths,
   testOrderPlans,
