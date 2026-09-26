@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Upsell accept under a perpetual pulse</title>
+  <style>
+    /* The accept-button rule as the shared next-core.css ships it: an
+       infinite transform with !important and no reduced-motion override. */
+    @keyframes pageblock-pulse-upsell {
+      0% { transform: scale(0.9); }
+      50% { transform: scale(1.0); }
+      100% { transform: scale(0.9); }
+    }
+    [pb-animate="pulse-upsell"] {
+      animation: pageblock-pulse-upsell 1.5s ease infinite!important;
+    }
+    @keyframes glow { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+    .glow { animation: glow 1.5s ease infinite; }
+    .spacer { height: 2400px; }
+    button { font-size: 20px; padding: 16px 32px; }
+  </style>
+</head>
+<body>
+  <div data-next-upsell>
+    <h1>One more thing</h1>
+    <!-- Below the fold, so the runner has to scroll before it clicks. -->
+    <div class="spacer"></div>
+    <button type="button" data-next-upsell-action="add" pb-animate="pulse-upsell">Yes, add it to my order</button>
+    <button type="button" data-next-upsell-action="skip" class="glow">No thanks</button>
+  </div>
+  <script>
+    // Stands in for the SDK: accept posts the order upsell mutation, reads the
+    // updated order, then hands off to the next page with the ref in the URL.
+    const ref = new URLSearchParams(location.search).get("ref_id");
+    document.querySelector('[data-next-upsell-action="add"]').addEventListener("click", async () => {
+      const response = await fetch(`/api/v1/orders/${ref}/upsells/`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lines: [{ package_id: 1, quantity: 1 }] }),
+      });
+      const order = await response.json();
+      if (response.ok && order) location.href = `/thank-you/?ref_id=${ref}`;
+    });
+  </script>
+</body>
+</html>

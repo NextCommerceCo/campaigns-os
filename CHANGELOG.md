@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.6] - 2026-09-26
+
+### Fixed
+
+- Browser QA no longer misses the upsell accept on a control that pulses
+  forever, such as a stock `pb-animate="pulse-upsell"` button. The runner used
+  to wait about 30 seconds for the control to settle before scrolling to it and
+  another 10 before forcing the click, so the upsell POST landed after its
+  20-second watch had expired. That reported `api_response_seen: false` for an
+  accept that had worked, and could time out deep accept paths. Controls are now
+  scrolled into view without a settle wait, a control that animates forever is
+  clicked straight away, and the watch starts at the click. Cart-entry,
+  package-card, checkout-submit and text-matched clicks use the same bounded
+  scroll.
+
 ## [1.43.1+agent.5] - 2026-09-26
 
 ### Fixed
