@@ -20,6 +20,23 @@ Notable supported-surface changes are recorded here.
   otherwise reconcile it or delete it and rerun.
 - The manifest docs now say up front that a source-html manifest `pages[]`
   entry with both `path` and `skip_reason` is invalid.
+## [1.43.1+agent.7] - 2026-09-26
+
+### Fixed
+
+- QA's analytics tracking check works on partial builds. It used to capture the
+  campaign root (`/<slug>/`) even when the build starts deeper, such as at
+  `checkout/`, so it read an empty page and failed every declared pixel as
+  absent. On a partial build the root now counts as in scope only when a
+  built, in-scope page is served there, so a host's directory index or
+  generic fallback at the root is never measured. When the root is out of
+  scope, answers with a non-2xx status, or fails to load (a navigation timeout
+  or network error), the check captures the first built in-scope page, the same entry partial-scope QA starts from, and records the
+  page it used and why on the `analytics-correctness:capture` evidence. If the
+  build has no capturable page at all, the check is skipped with the reason
+  `no_in_scope_page_captured`. If pages existed but none answered 2xx or
+  loaded at all, the check fails as a blocker with the reason `no_capture_page_answered` and
+  lists each attempt, because the declared vendors went unmeasured.
 
 ## [1.43.1+agent.6] - 2026-09-26
 

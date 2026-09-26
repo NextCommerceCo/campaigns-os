@@ -2317,6 +2317,7 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
   } else if (analyticsLeg === "run") {
     assertions.push(...await operations.runInventory(args, analyticsContract || {}, {
       target: resolved.analyticsCaptureTarget,
+      ...analyticsCaptureScope(resolved),
     }));
   }
 
@@ -2465,6 +2466,35 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath, runSessionActive, disposition: verdict.disposition }),
     verdict,
   };
+}
+
+// #493: a full build captures the campaign root. A partial build captures it
+// only when a built, in-scope page is served there; otherwise the root is
+// whatever the host answers (a directory index, a generic fallback) and must
+// not be measured. Either way the built entry pages (the same first in-scope
+// entry #482 selects) are the fallback when the root cannot be captured.
+function analyticsCaptureScope(resolved) {
+  const rootPath = urlPathKey(resolved?.analyticsCaptureTarget?.url);
+  const topologies = topologyList(resolved?.topologies);
+  const partial = topologies.some((topology) => topology?.partial_build_scope)
+    || (Array.isArray(resolved?.excludedPages) && resolved.excludedPages.length > 0);
+  const rootInScope = !rootPath || !partial || topologies.some((topology) =>
+    (Array.isArray(topology?.pages) ? topology.pages : []).some((page) => urlPathKey(page?.url) === rootPath));
+  return {
+    rootInScope,
+    fallbackTargets: deriveEntryUrls(resolved?.topologies),
+  };
+}
+
+function urlPathKey(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/(?:^|\/)index\.html$/, "/").replace(/\/+$/, "");
+    return `${url.origin}${path}/`;
+  } catch {
+    return null;
+  }
 }
 
 const ENTRY_PAGE_TYPES = new Set([
@@ -3676,6 +3706,7 @@ export const __qaNodeTestHooks = Object.freeze({
   resolveQaInputs,
   runResolvedQa,
   runPageChecks,
+  analyticsCaptureScope,
   analyticsCorrectnessLegDecision,
   analyticsCorrectnessDisabledAssertion,
   runAnalyticsOrderSequence,
