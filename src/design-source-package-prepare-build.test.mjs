@@ -936,8 +936,14 @@ test("concurrent prepare-build --force runs regenerate the stale DSP once and th
 // Deterministic interleavings for concurrent --force runs. A preloaded fs shim
 // gives one run a role: it signals when it reaches a point in the DSP decision
 // and then holds there until the state it waits for appears on disk, or until
-// `DSP_CHOREO_WAIT_MS` passes. The bounded wait matters: runs that are
-// serialized cannot reach the state a held run waits for, and must still finish.
+// `DSP_CHOREO_WAIT_MS` passes.
+//
+// With the per-target lock these interleavings cannot happen: a held run is
+// the lock holder, so no sibling can produce the state it waits for. The shim
+// sees that (it owns the lock directory) and does not wait, and the tests then
+// assert the serialized outcome. Without the lock nothing is held, the waits
+// reproduce the races, and the same assertions fail. That is what these tests
+// guard: removing or narrowing the lock turns them red.
 function choreographyEnv(fixture, role, staleBytes, { waitMs = 3000 } = {}) {
   const signalDir = join(fixture.dir, "dsp-choreography");
   const preloadPath = join(fixture.dir, "dsp-choreography.cjs");
@@ -954,7 +960,14 @@ const stale = process.env.DSP_CHOREO_STALE;
 const waitMs = Number(process.env.DSP_CHOREO_WAIT_MS);
 const readFile = fs.readFileSync, rename = fs.renameSync;
 const signal = (name) => fs.writeFileSync(path.join(process.env.DSP_CHOREO_SIGNALS, name), String(process.pid));
+// The lock directory prepare-build holds around the DSP decision.
+const lockOwner = path.join(path.dirname(dsp), "." + path.basename(dsp) + ".lock", "owner.json");
+const holdsLock = () => {
+  try { return JSON.parse(readFile.call(fs, lockOwner, "utf8")).pid === process.pid; } catch { return false; }
+};
 const until = (ready) => {
+  // A lock holder waits for nothing: no other run can act until it is done.
+  if (holdsLock()) return;
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
     try { if (ready()) return; } catch {}
