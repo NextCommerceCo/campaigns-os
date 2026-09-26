@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.5] - 2026-09-26
+
+### Fixed
+
+- Payment-logo residue checks ignore starter `payment-logos.html` logos that
+  are still `hidden`. The template hides each method's logo until the campaign
+  offers it, so doctor and browser QA no longer flag PayPal or Klarna on pages
+  built from the new templates. A logo left visible is still checked; when a
+  page forces one on, doctor's warning points at the `payment_flags.show_<method>`
+  frontmatter flag.
+
 ## [1.43.1+agent.4] - 2026-09-26
 
 ### Fixed

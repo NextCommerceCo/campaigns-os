@@ -327,6 +327,22 @@ export function paymentChromeAssetHashes(chrome, { label = "template brand contr
   return byBasename;
 }
 
+// The starter templates' payment-logos.html partial renders one
+// <img data-payment-logo="<method>"> per method and keeps it `hidden` until the
+// campaign offers that method (server render, then payment-logos.js on
+// next:initialized; payment_flags.show_<method>: true forces it visible). A
+// hidden logo is the template gating the method, not residue, so both the
+// static scan and browser QA drop those tags before matching. A visible one
+// (forced on, or revealed at runtime) stays in and is judged like any chrome.
+const PAYMENT_LOGO_IMG_TAG = /<img\b[^>]*\sdata-payment-logo\s*=[^>]*>/gi;
+// Boolean attribute: present with any value (hidden, hidden="", hidden="true", …) means hidden.
+const HIDDEN_ATTRIBUTE = /\shidden(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?(?=[\s/>])/i;
+
+export function withoutHiddenPaymentLogos(html) {
+  const text = typeof html === "string" ? html : "";
+  return text.replace(PAYMENT_LOGO_IMG_TAG, (tag) => (HIDDEN_ATTRIBUTE.test(tag) ? "" : tag));
+}
+
 // Pure, static: the markers in rendered checkout HTML that say a payment method
 // shipped. Three sources, in order of authority: the SDK-owned
 // data-next-payment-method attribute every starter-template payment-methods
@@ -338,7 +354,7 @@ export function paymentChromeAssetHashes(chrome, { label = "template brand contr
 // browser QA, which fetches them to attribute the mark; a static scan cannot
 // tell a paypal strip from a card-only one by its filename.
 export function paymentMethodMarkupMatches(html, method, chrome = null) {
-  const text = typeof html === "string" ? html : "";
+  const text = withoutHiddenPaymentLogos(html);
   const canonical = String(method || "").toLowerCase().replace(/[\s-]+/g, "_");
   if (!canonical) return [];
   const matches = [];

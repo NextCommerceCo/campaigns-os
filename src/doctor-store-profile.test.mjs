@@ -116,6 +116,36 @@ test("a built checkout that still renders an unsupported method warns from the b
   );
 });
 
+test("a built checkout whose payment-logos.html row keeps paypal/klarna hidden is not flagged", () => {
+  withBuiltCheckout(
+    '<div class="payment-logos" data-payment-logos>'
+      + '<img src="/c/images/cc-visa.svg" alt="Visa" data-payment-logo="bankcard" data-card-brand="visa" data-card-default="true">'
+      + '<img src="/c/images/paypal-logo.svg" alt="PayPal" data-payment-logo="paypal" hidden>'
+      + '<img src="/c/images/klarna-logo.svg" alt="Klarna" data-payment-logo="klarna" hidden>'
+      + '</div>',
+    ({ warnings, ready }) => {
+      assert.equal(codes(warnings).includes("spec.store_profile.payment_methods_default_on"), false);
+      assert.ok(ready.some((entry) => entry.includes("Built checkout carries no paypal, klarna payment-method markup")));
+    },
+  );
+});
+
+test("a payment-logos.html logo forced on for an unsupported method warns and points at the frontmatter flag", () => {
+  withBuiltCheckout(
+    '<div class="payment-logos" data-payment-logos>'
+      + '<img src="/c/images/paypal-logo.svg" alt="PayPal" data-payment-logo="paypal" data-payment-force="show">'
+      + '<img src="/c/images/klarna-logo.svg" alt="Klarna" data-payment-logo="klarna" hidden>'
+      + '</div>',
+    ({ warnings }) => {
+      const warning = warnings.find((issue) => issue.code === "spec.store_profile.payment_methods_default_on");
+      assert.ok(warning);
+      assert.deepEqual(warning.detail.methods, ["paypal"]);
+      assert.equal(warning.detail.pages[0].forced_logo, true);
+      assert.match(warning.message, /forces paypal on: remove payment_flags\.show_paypal: true from the page frontmatter/);
+    },
+  );
+});
+
 test("does not false-fire on object-form payment methods ({ code, label })", () => {
   const { warnings } = run({
     store_url: "https://shop.acmevitamins.com/",

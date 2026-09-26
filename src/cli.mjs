@@ -184,6 +184,7 @@ import {
   findForbiddenPriceHides,
   paymentMethodMarkupMatches,
   paymentMethodStaticScanGaps,
+  withoutHiddenPaymentLogos,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   templateBrandContractPath,
@@ -4851,7 +4852,7 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready, { packet
     const html = readFileSync(built.path, "utf8");
     for (const method of unsupportedDefaults) {
       const markers = paymentMethodMarkupMatches(html, method, chrome);
-      if (markers.length) shipped.push({ page_id: built.page_id, file: built.file, method, markers });
+      if (markers.length) shipped.push({ page_id: built.page_id, file: built.file, method, markers, forced_logo: paymentLogoForcedOn(html, method) });
     }
   }
   const builtFiles = [...new Set(builtCheckouts.map((built) => built.file))].join(", ");
@@ -4875,12 +4876,14 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready, { packet
     return;
   }
   const shippedMethods = [...new Set(shipped.map((hit) => hit.method))];
+  const forcedLogoMethods = [...new Set(shipped.filter((hit) => hit.forced_logo).map((hit) => hit.method))];
   const evidence = shipped.map((hit) => `${hit.file}: ${hit.method} (${hit.markers.join(", ")})`).join("; ");
   addIssue(
     warnings,
     "spec.store_profile.payment_methods_default_on",
     `Built checkout still renders ${shippedMethods.join(", ")}, which the CampaignSpec does not list in available_payment_methods/available_express_payment_methods: ${evidence}. `
-      + `Pass ${shippedMethods.map((method) => `show_${method}=false`).join(" ")} on the checkout page's payment-methods.html include call and rebuild (or add the method to the spec); browser QA's template-residue gate fails on this markup.`,
+      + `Pass ${shippedMethods.map((method) => `show_${method}=false`).join(" ")} on the checkout page's payment-methods.html include call and rebuild (or add the method to the spec); browser QA's template-residue gate fails on this markup.`
+      + (forcedLogoMethods.length ? ` The payment-logos.html row forces ${forcedLogoMethods.join(", ")} on: remove payment_flags.${forcedLogoMethods.map((method) => `show_${method}`).join("/")}: true from the page frontmatter (the row otherwise shows only what the campaign offers).` : ""),
     {
       methods: shippedMethods,
       template_family: isNonEmptyString(family) ? family : null,
@@ -4894,6 +4897,13 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready, { packet
       },
     }
   );
+}
+
+// A visible payment-logos.html <img> for this method: the template only leaves
+// one visible when the page forces it with payment_flags.show_<method>: true.
+function paymentLogoForcedOn(html, method) {
+  const code = String(method || "").toLowerCase().replace(/[\s-]+/g, "_");
+  return new RegExp(`<img\\b[^>]*\\sdata-payment-logo\\s*=\\s*["']${code}["']`, "i").test(withoutHiddenPaymentLogos(html));
 }
 
 // The four methods every starter-template payment-methods include renders

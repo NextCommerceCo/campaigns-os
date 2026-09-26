@@ -11,6 +11,7 @@ import {
   paymentChromeArtifacts,
   paymentMethodMarkupMatches,
   paymentMethodStaticScanGaps,
+  withoutHiddenPaymentLogos,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
@@ -265,6 +266,41 @@ test("referencedDemoAssetBasenames reports only basenames present in the HTML", 
   const html = '<img src="/c/images/1x1_1.svg"><img src="/c/images/hero.jpg">';
   assert.deepEqual(referencedDemoAssetBasenames(html, ["1x1_1.svg", "1x1_2.svg"]), ["1x1_1.svg"]);
   assert.deepEqual(referencedDemoAssetBasenames("", ["1x1_1.svg"]), []);
+});
+
+test("payment-logos.html logos the template keeps hidden are not payment-method markup", () => {
+  const chrome = {
+    methods: ["paypal", "klarna"],
+    selectors: [".payment-method__icon--paypal-logo"],
+    assets: ["images/paypal-logo.svg", "images/klarna-logo.svg", "images/upsell-payment-logos.svg"],
+  };
+  // Server render of the starter partial: cards visible, every other method hidden until the campaign offers it.
+  const row = '<div class="payment-logos" data-payment-logos>'
+    + '<img loading="lazy" src="/c/images/cc-visa.svg" alt="Visa" class="payment-logos__item" data-payment-logo="bankcard" data-card-brand="visa" data-card-default="true">'
+    + '<img loading="lazy" src="/c/images/paypal-logo.svg" alt="PayPal" class="payment-logos__item" data-payment-logo="paypal" hidden>'
+    + '<img loading="lazy" src="/c/images/klarna-logo.svg" alt="Klarna" class="payment-logos__item" data-payment-logo="klarna" data-payment-force="hide" hidden>'
+    + '</div>';
+  assert.deepEqual(paymentMethodMarkupMatches(row, "paypal", chrome), []);
+  assert.deepEqual(paymentMethodMarkupMatches(row, "klarna", chrome), []);
+  assert.match(withoutHiddenPaymentLogos(row), /cc-visa\.svg/);
+  // Live DOM serialises the attribute as hidden="": still gated.
+  assert.deepEqual(paymentMethodMarkupMatches('<img src="/c/images/paypal-logo.svg" data-payment-logo="paypal" hidden="">', "paypal", chrome), []);
+  // Any value keeps a boolean attribute on: hidden="true", hidden=1, hidden='until-found'.
+  for (const attr of ['hidden="true"', "hidden=1", "hidden='until-found'"]) {
+    assert.deepEqual(paymentMethodMarkupMatches(`<img src="/c/images/paypal-logo.svg" data-payment-logo="paypal" ${attr}>`, "paypal", chrome), [], attr);
+  }
+  // Forced on (payment_flags.show_paypal: true) or revealed at runtime: no hidden attribute, so it is judged as chrome.
+  assert.deepEqual(
+    paymentMethodMarkupMatches('<img src="/c/images/paypal-logo.svg" data-payment-logo="paypal" data-payment-force="show">', "paypal", chrome),
+    ["paypal-logo.svg"],
+  );
+  // `hidden` must be the attribute, not part of another name or value.
+  assert.deepEqual(
+    paymentMethodMarkupMatches('<img src="/c/images/paypal-logo.svg" data-payment-logo="paypal" data-hidden="1" alt="hidden">', "paypal", chrome),
+    ["paypal-logo.svg"],
+  );
+  // The same basename outside the logo row is still residue.
+  assert.deepEqual(paymentMethodMarkupMatches(row + '<img src="/c/images/paypal-logo.svg">', "paypal", chrome), ["paypal-logo.svg"]);
 });
 
 test("paymentMethodMarkupMatches reads the SDK attribute, contract class selectors and method-named assets from static HTML", () => {
