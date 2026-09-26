@@ -246,6 +246,42 @@ test("a nomodule script never runs in a module-capable browser and cannot block 
   assert.deepEqual(pageScriptReferences('<script nomodule src="a.js"></script><script src="b.js"></script>'), [{ src: "b.js", module: false }]);
 });
 
+test("a module script ignores nomodule, so doctor still parses it and blocks on its syntax error", () => {
+  const { dir, run } = builtSite(`<script type="module" nomodule src="/${SLUG}/js/app.js"></script>`, {
+    [`_site/${SLUG}/js/app.js`]: BAD,
+  });
+  try {
+    const result = run();
+    assert.equal(syntaxErrors(result).length, 1);
+    assert.equal(gateOf(result).status, "blocked");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(pageScriptReferences('<script type="module" nomodule src="a.js"></script>'), [{ src: "a.js", module: true }]);
+});
+
+test("script types are ASCII-whitespace-trimmed and case-insensitive, as the browser reads them", () => {
+  assert.deepEqual(
+    pageScriptReferences([
+      '<script type=" text/javascript " src="a.js"></script>',
+      '<script type="\tTEXT/JavaScript\n" src="b.js"></script>',
+      '<script type=" Module " src="c.js"></script>',
+      '<script type=" MODULE " nomodule src="d.js"></script>',
+      '<script type=" text/javascript " nomodule src="e.js"></script>',
+      '<script type="\u00a0module" src="f.js"></script>',
+      '<script type=" " src="g.js"></script>',
+      '<script type="" src="h.js"></script>',
+    ].join("")),
+    [
+      { src: "a.js", module: false },
+      { src: "b.js", module: false },
+      { src: "c.js", module: true },
+      { src: "d.js", module: true },
+      { src: "h.js", module: false },
+    ],
+  );
+});
+
 test("source text at the error site never reaches the doctor output", () => {
   const canary = "synthetic_canary_Zq81xT";
   const sources = {

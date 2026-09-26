@@ -31,6 +31,34 @@ export const SCRIPT_SYNTAX_PARSE_FAILURE = `${SCRIPT_SYNTAX}.parse_failure`;
 // attribute (JSON-LD, text/template, importmap) is a data block, not script.
 const CLASSIC_SCRIPT_TYPE = /^(?:text|application)\/(?:x-)?(?:java|ecma)script$|^text\/(?:javascript1\.[0-5]|jscript|livescript)$/i;
 
+/**
+ * How a module-capable browser treats a `<script>` element, from its
+ * attributes: "classic", "module", or null when it never runs it. Follows the
+ * HTML "prepare the script element" steps: an absent or empty type (or, with
+ * no type, an absent or empty language) is classic; otherwise the type has
+ * leading and trailing ASCII whitespace stripped and is compared
+ * ASCII-case-insensitively. `nomodule` stops only classic scripts; a module
+ * script ignores it.
+ *
+ * @param {Record<string, string>} attrs
+ * @returns {"classic" | "module" | null}
+ */
+export function scriptKind(attrs) {
+  let type;
+  if (typeof attrs.type === "string") type = attrs.type;
+  else if (typeof attrs.language === "string") type = attrs.language === "" ? "" : `text/${attrs.language}`;
+  else type = "";
+  let kind = null;
+  if (type === "") kind = "classic";
+  else {
+    const essence = type.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+    if (essence.toLowerCase() === "module") kind = "module";
+    else if (CLASSIC_SCRIPT_TYPE.test(essence)) kind = "classic";
+  }
+  if (kind === "classic" && "nomodule" in attrs) return null;
+  return kind;
+}
+
 // Acorn messages that are fixed text. Anything else interpolates source text
 // (an identifier, a regex body, a character) and is reduced to its category,
 // so a token at the error site never reaches doctor or QA output.
@@ -114,9 +142,9 @@ export function parseScriptSyntax(source, { module = false } = {}) {
 /**
  * `<script src>` references on a page, in document order, with whether each
  * is a module, and the document's first `<base href>` (null when none).
- * Data-block types are dropped. `nomodule` scripts are dropped: a
+ * Data-block types are dropped. Classic `nomodule` scripts are dropped: a
  * module-capable browser never fetches or runs them, so they cannot fail on
- * load there. Template content and noscript are inert and not walked.
+ * load there. A module script ignores `nomodule` and is kept (see scriptKind). Template content and noscript are inert and not walked.
  *
  * @param {string} html
  * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean }> }}
@@ -133,11 +161,10 @@ export function pageScriptDocument(html) {
   const walk = (node) => {
     const attrs = node.tagName ? Object.fromEntries((node.attrs || []).map((attr) => [attr.name, attr.value])) : {};
     if (node.tagName === "base" && base === null && typeof attrs.href === "string") base = attrs.href.trim();
-    if (node.tagName === "script" && !("nomodule" in attrs)) {
-      const type = typeof attrs.type === "string" ? attrs.type.trim() : "";
-      const module = type.toLowerCase() === "module";
-      if (typeof attrs.src === "string" && attrs.src.trim() && (!type || module || CLASSIC_SCRIPT_TYPE.test(type))) {
-        refs.push({ src: attrs.src.trim(), module });
+    if (node.tagName === "script") {
+      const kind = scriptKind(attrs);
+      if (kind && typeof attrs.src === "string" && attrs.src.trim()) {
+        refs.push({ src: attrs.src.trim(), module: kind === "module" });
       }
     }
     if (node.tagName === "noscript") return;

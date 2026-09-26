@@ -1705,8 +1705,10 @@ separate `script-parse:<page_id>` blocker in the same `api-metadata` family.
 Its `actual` names each script by path (inline scripts as `inline script`)
 with the line and column, and its evidence lists a fixed diagnostic category
 per script, never text from the script. Classic scripts are parsed as scripts
-and `type="module"` scripts as modules; `nomodule` scripts are not fetched or
-parsed, and script srcs resolve against the page's first `<base href>`. Doctor runs the same parse over the built output before deploy; see
+and `type="module"` scripts as modules, with the type stripped of surrounding
+ASCII whitespace and compared case-insensitively as the browser does; classic
+`nomodule` scripts are not fetched or parsed (a module script ignores
+`nomodule` and is parsed), and script srcs resolve against the page's first `<base href>`. Doctor runs the same parse over the built output before deploy; see
 `built_output.script_syntax` in [the Build Packet doc](build-packet.md).
 
 External executable scripts other than the recognized jsDelivr Campaign Cart

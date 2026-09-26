@@ -1,7 +1,7 @@
 import { parse as parseHtml } from 'parse5';
 import { parse as parseJs } from 'acorn';
 import { createPageSourceLoader, resolveCommercialApiKey } from './qa-commercial-parity.mjs';
-import { parseFailureDiagnostic } from './built-script-syntax.mjs';
+import { parseFailureDiagnostic, scriptKind } from './built-script-syntax.mjs';
 
 export const BINDING_SCHEMA = 'campaigns-os-page-binding/v0';
 export const BINDING_LIMITS = Object.freeze({ scripts_per_page: 6, scripts_per_run: 24, script_bytes: 262144, timeout_ms: 5000 });
@@ -136,12 +136,17 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
   let count = 0, unavailable = false;
   for (const script of scripts) {
     const { attrs } = script;
+    // Classified as the browser does (type trimmed of ASCII whitespace,
+    // case-insensitive). A module script ignores nomodule; a classic nomodule
+    // script is never fetched or run by a module-capable browser, so it cannot
+    // fail on load there: not fetched, not parsed, still not static.
+    const scriptType = scriptKind(attrs);
+    const { nomodule: _nomodule, ...withoutNomodule } = attrs;
+    const classicNomodule = scriptType === null && 'nomodule' in attrs && scriptKind(withoutNomodule) === 'classic';
     // Data-block types (e.g. JSON-LD) are not fetched and consume no config-request budget.
-    if (attrs.type && !['text/javascript', 'application/javascript', 'module'].includes(attrs.type.toLowerCase())) continue;
+    if (scriptType === null && !classicNomodule) continue;
     if (attrs.src && SDK.test(attrs.src)) continue;
-    // A module-capable browser never fetches or runs a nomodule script, so it
-    // cannot fail on load there. Not fetched, not parsed; still not static.
-    if ('nomodule' in attrs) { dynamic = true; continue; }
+    if (classicNomodule) { dynamic = true; continue; }
     let text = script.text;
     let kind = 'inline';
     if (attrs.src) {
@@ -152,7 +157,7 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
       if (!loaded.ok) { unavailable = true; continue; }
       text = loaded.html;
     }
-    const found = declarations(text, { module: attrs.type?.toLowerCase() === 'module' });
+    const found = declarations(text, { module: scriptType === 'module' });
     if (found.unparsable) {
       // The declarations in an unparsable script are unavailable, not dynamic.
       unavailable = true;
@@ -160,7 +165,7 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
       continue;
     }
     if (found.values.length) { kinds.add(kind); values.push(...found.values); }
-    if (found.dynamic || 'async' in attrs || 'nomodule' in attrs || attrs.type === 'module') dynamic = true;
+    if (found.dynamic || 'async' in attrs || scriptType === 'module') dynamic = true;
   }
   if (new Set(values).size > 1) return result('unknown', 'conflicting_declarations');
   if (expected?.conflict) return result('unknown', 'conflicting_expected');

@@ -796,8 +796,10 @@ Parsing uses Acorn at the latest `ecmaVersion`: `sourceType: 'script'` for
 classic scripts and `'module'` for `type="module"`, which is how the browser
 reads each. Remote scripts (an `http(s):` URL, a protocol-relative `//` URL,
 `data:`) are not campaign-owned and are not read, and neither are data blocks
-such as JSON-LD. A `nomodule` script is skipped: a module-capable browser never
-fetches or runs it. Each src resolves the way the browser resolves it, against
+such as JSON-LD. The type is compared as the browser compares it, with
+surrounding ASCII whitespace stripped and case ignored. A classic `nomodule`
+script is skipped: a module-capable browser never fetches or runs it. A
+`type="module"` script ignores `nomodule` and is still parsed. Each src resolves the way the browser resolves it, against
 the document's first `<base href>` or else the page, and the percent-decoded
 path maps under the site root first, then the campaign directory, never outside
 either. A base on another origin makes relative srcs remote. Imports inside a

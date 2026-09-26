@@ -240,6 +240,26 @@ test('a nomodule script is never parsed or reported: module-capable browsers ski
   assert.equal(evidence.reason, 'dynamic_unresolved');
 });
 
+test('a module script ignores nomodule, so QA still loads, parses and reports it', async () => {
+  const parseFailures = [];
+  let loads = 0;
+  await observe(`${inline(key)}<script type="module" nomodule src="/js/app.js"></script><script type=" MODULE " nomodule>}</script>`, {
+    parseFailures,
+    scriptLoader: async () => { loads += 1; return { ok: true, html: checkoutScript + '});\n' }; },
+  });
+  assert.equal(loads, 1);
+  assert.deepEqual(parseFailures.map(f => f.source_kind), ['config_script', 'inline']);
+});
+
+test('script types are ASCII-whitespace-trimmed and case-insensitive before QA classifies them', async () => {
+  const parseFailures = [];
+  await observe(`${inline(key)}<script type=" text/javascript ">}</script><script type="\tApplication/JavaScript\n">}</script><script type=" Module ">}</script>`, { parseFailures });
+  assert.equal(parseFailures.length, 3);
+  const skipped = [];
+  await observe(`${inline(key)}<script type="\u00a0text/javascript">}</script><script type=" ">}</script><script type="application/ld+json">}</script>`, { parseFailures: skipped });
+  assert.deepEqual(skipped, []);
+});
+
 test('parser messages never carry source text into QA evidence', async () => {
   for (const html of [
     `<script>var pattern = /${canary}(/;</script>`,
