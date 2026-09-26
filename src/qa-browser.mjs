@@ -4648,7 +4648,6 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
         && isOrderUpsellsUrl(response.url())
       ), { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
     : Promise.resolve(null);
-  const clickStartedAt = Date.now();
   trace?.markClickAttempted();
   await clickControl(control, { timeout: UPSELL_CLICK_TIMEOUT_MS, perpetual });
   trace?.markClickCompleted();
@@ -4667,7 +4666,9 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     api_response_status: mutationResponse?.status() || null,
     api_response_url: mutationResponse?.url() || null,
     api_response_order_body: bodyRead?.body ?? null,
-    click_started_at: clickStartedAt,
+    // When the mutation's response arrived (epoch ms, the browser's clock as
+    // Date.now()). Only a read-back requested after this reflects the upsell.
+    mutation_responded_at: mutationRespondedAt(mutationResponse),
     // How the bounded body read ended. A timed-out read means the mutation's
     // own evidence is missing, not that the upsell failed; the runner then
     // waits for a later read-back before it judges the step.
@@ -5618,6 +5619,17 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
   });
 }
 
+// When a response's headers arrived, in epoch milliseconds, or null.
+function mutationRespondedAt(response) {
+  try {
+    const timing = response.request().timing();
+    const at = timing.startTime + timing.responseStart;
+    return Number.isFinite(at) && timing.startTime > 0 && timing.responseStart >= 0 ? at : null;
+  } catch {
+    return null;
+  }
+}
+
 // When the browser started a response's request, in epoch milliseconds (the
 // same clock as Date.now()), or null when Playwright does not report it.
 function responseRequestStartedAt(response) {
@@ -6450,16 +6462,18 @@ function upsellBodyReadTimedOut(upsell) {
 // keeps reading it), or an order read-back whose lines carry the accepted
 // upsell. Returns the body to judge from, or source "none" when neither came.
 //
-// A read-back whose request started after this step's click (by the
-// browser's request start time, not its position in the log, which reflects
-// when its body finished) that shows the persisted order without the accepted
-// line is a definitive negative, not an absence of evidence. It does not end the wait early (a
+// A read-back whose request started after the upsell mutation's response
+// arrived (by the browser's request start time, not its position in the log,
+// which reflects when its body finished) that shows the persisted order
+// without the accepted line is a definitive negative, not an absence of
+// evidence. Anchoring on the mutation, not the click attempt, also excludes a
+// read-back started while the click was still waiting to fire. It does not end the wait early (a
 // later read-back may still carry the line), but when the wait ends with no
 // positive evidence the latest such read-back is returned as
 // "order_read_back_missing_line", and the step fails instead of going to
-// manual review. A read-back requested before the click, or with no known
-// start time, never counts as a negative.
-async function waitForLateUpsellEvidence(events, { responseIndexBefore, clickStartedAt = null, initialLineItems, expectedItems, timeoutMs, intervalMs = 250 }) {
+// manual review. A read-back requested before that, or with no known start
+// time, never counts as a negative.
+async function waitForLateUpsellEvidence(events, { responseIndexBefore, mutationRespondedAt = null, initialLineItems, expectedItems, timeoutMs, intervalMs = 250 }) {
   const started = Date.now();
   const deadline = started + Math.max(0, Number(timeoutMs) || 0);
   const latestMissingLineReadBack = () => {
@@ -6469,7 +6483,7 @@ async function waitForLateUpsellEvidence(events, { responseIndexBefore, clickSta
       if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
       if (!(response.status >= 200 && response.status < 300)) continue;
       if (!ORDER_DETAIL_RESPONSE_PATTERN.test(response.url)) continue;
-      if (!(Number.isFinite(clickStartedAt) && Number.isFinite(response.request_started_at) && response.request_started_at >= clickStartedAt)) continue;
+      if (!(Number.isFinite(mutationRespondedAt) && Number.isFinite(response.request_started_at) && response.request_started_at >= mutationRespondedAt)) continue;
       const lines = extractReceiptLines(response.body);
       if (!Array.isArray(lines) || lines.length === 0) continue;
       return response.body;
@@ -6516,7 +6530,7 @@ async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPa
   if (step === "accept" && upsellBodyReadTimedOut(upsell)) {
     lateUpsellEvidence = await waitForLateUpsellEvidence(events, {
       responseIndexBefore,
-      clickStartedAt: upsell.click_started_at,
+      mutationRespondedAt: upsell.mutation_responded_at,
       initialLineItems,
       expectedItems: upsell.expected_items,
       timeoutMs: lateWaitMs,

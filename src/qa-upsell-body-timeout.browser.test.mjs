@@ -118,6 +118,10 @@ browserTest("an accept that navigates before the mutation body loads completes a
     assert.ok(read.waited_ms >= bound - 50, `the body read waited ${read.waited_ms}ms; expected the ${bound}ms bound`);
     assert.ok(read.waited_ms < bound + 2000, `the body read waited ${read.waited_ms}ms; the bound did not cut it off`);
     assert.ok(elapsed < 15000, `accept path took ${elapsed}ms; expected well under 15s`);
+    // The anchor for post-mutation read-backs comes from the browser's own
+    // timing; without it no read-back could ever count as a negative.
+    assert.ok(Number.isFinite(step.mutation_responded_at), "the step records when the mutation answered");
+    assert.ok(step.mutation_responded_at >= started && step.mutation_responded_at <= Date.now(), "the anchor is on the Date.now() clock");
   } finally {
     await context.close();
     await server.close();
