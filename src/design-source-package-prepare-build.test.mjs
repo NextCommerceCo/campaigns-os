@@ -308,7 +308,11 @@ test("prepare-build emits a schema-valid DSP and carries one exact-byte referenc
     });
     assert.equal(context.design_source_package.path, "input/design-source-package.json");
     assert.equal(report.design_source_package.path, "input/design-source-package.json");
-    for (const ref of [context.design_source_package, report.design_source_package]) {
+    // The report alone also records who produced the bytes (#485); the packet
+    // and context references stay the strict four fields.
+    assert.equal(report.design_source_package.origin, "synthesized");
+    const { origin: _origin, ...reportRef } = report.design_source_package;
+    for (const ref of [context.design_source_package, reportRef]) {
       assert.deepEqual({ ...ref, path: packet.design_source_package.path }, packet.design_source_package);
     }
 
@@ -798,6 +802,159 @@ test("prepare-build refuses current material-input drift without rewriting the D
     assert.notEqual(rerun.status, 0);
     assert.match(rerun.stderr, /current_template_material_stale/);
     assertArtifactsUnchanged(snapshot);
+  }));
+});
+
+// #485: a package prepare-build itself synthesized, unchanged since, is the
+// producer's own stale output once its inputs move. --force regenerates it;
+// an operator-supplied or hand-edited package is still refused, and every
+// refusal names the file and the recovery.
+function editManifest(fixture, edit) {
+  const manifestPath = join(fixture.source, ".campaigns-os/source-html-manifest.json");
+  const manifest = readJson(manifestPath);
+  edit(manifest);
+  writeJson(manifestPath, manifest);
+  return manifestPath;
+}
+
+function assertFreshPackageBoundEverywhere(fixture, result, manifestPath) {
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const rawBytes = readFileSync(dspPath);
+  const dsp = JSON.parse(rawBytes.toString("utf8"));
+  assertSchema(validateDsp, dsp, "regenerated Design Source Package");
+  const html = dsp.contributions.find((contribution) => contribution.id === "html-funnel");
+  assert.equal(html.provenance.manifest_sha256, `sha256:${sha256(readFileSync(manifestPath))}`);
+  const report = readJson(join(fixture.target, ".campaign-runtime/assembly-report.json"));
+  const context = readJson(join(fixture.target, ".campaign-runtime/build-context.json"));
+  for (const ref of [result.json.packet.design_source_package, context.design_source_package, report.design_source_package]) {
+    assert.equal(ref.sha256, `sha256:${sha256(rawBytes)}`);
+    assert.equal(ref.material_fingerprint, dsp.material_fingerprint);
+  }
+  assert.equal(report.design_source_package.origin, "synthesized");
+  assertSchema(validateReport, report, "Assembly Report");
+  return rawBytes;
+}
+
+test("prepare-build --force regenerates its own stale synthesized DSP after the source manifest changes", async (t) => {
+  await t.test("a manifest edit after a first run", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(first.json.designSourcePackageMode, "emitted");
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const firstBytes = readFileSync(dspPath);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    assert.equal(readJson(reportPath).design_source_package.origin, "synthesized");
+
+    const manifestPath = editManifest(fixture, (manifest) => {
+      manifest.generated_at = "2026-08-22T11:00:00.000Z";
+    });
+
+    // Without --force the stale package is refused, untouched, and the error
+    // names the file and the flag that recovers it.
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+    const plain = runPrepare(fixture);
+    assert.notEqual(plain.status, 0);
+    assert.match(plain.stderr, /current_html_funnel_material_stale/);
+    assert.ok(plain.stderr.includes(dspPath), plain.stderr);
+    assert.match(plain.stderr, /synthesized by an earlier prepare-build .*rerun with --force/);
+    assertArtifactsUnchanged(snapshot);
+
+    const forced = runPrepare(fixture, { extraArgs: ["--force"] });
+    assert.equal(forced.status, 0, forced.stderr);
+    assert.equal(forced.json.designSourcePackageMode, "regenerated");
+    assert.match(forced.stderr, /regenerated the stale Design Source Package/);
+    const freshBytes = assertFreshPackageBoundEverywhere(fixture, forced, manifestPath);
+    assert.equal(freshBytes.equals(firstBytes), false, "--force must emit a fresh package");
+
+    // The regenerated package is again the producer's own: a plain rerun reuses it.
+    const rerun = runPrepare(fixture);
+    assert.equal(rerun.status, 0, rerun.stderr);
+    assert.equal(rerun.json.designSourcePackageMode, "reused");
+    assert.equal(readJson(reportPath).design_source_package.origin, "synthesized");
+    assert.ok(readFileSync(dspPath).equals(freshBytes));
+  }));
+
+  await t.test("an invalid path-plus-skip_reason manifest corrected after a first run", () => withFixture((fixture) => {
+    const manifestPath = editManifest(fixture, (manifest) => {
+      manifest.pages.find((page) => page.page_id === "checkout").skip_reason = "Template stock page.";
+    });
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(first.json.designSourcePackageMode, "emitted");
+
+    editManifest(fixture, (manifest) => {
+      delete manifest.pages.find((page) => page.page_id === "checkout").skip_reason;
+    });
+    const plain = runPrepare(fixture);
+    assert.notEqual(plain.status, 0);
+    assert.match(plain.stderr, /rerun with --force/);
+
+    const forced = runPrepare(fixture, { extraArgs: ["--force"] });
+    assert.equal(forced.status, 0, forced.stderr);
+    assert.equal(forced.json.designSourcePackageMode, "regenerated");
+    assertFreshPackageBoundEverywhere(fixture, forced, manifestPath);
+  }));
+});
+
+test("prepare-build --force still refuses a stale DSP it cannot show it synthesized", async (t) => {
+  const assertRefusedWithDeleteRecovery = (fixture) => {
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+    const forced = runPrepare(fixture, { extraArgs: ["--force"] });
+    assert.notEqual(forced.status, 0);
+    assert.match(forced.stderr, /invalid, stale, or contradictory/);
+    assert.ok(forced.stderr.includes(`delete ${dspPath} and rerun prepare-build`), forced.stderr);
+    assert.doesNotMatch(forced.stderr, /regenerated/);
+    assertArtifactsUnchanged(snapshot);
+  };
+
+  await t.test("a hand-edited package", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const packageValue = readJson(dspPath);
+    packageValue.notes.push("Operator note; the bytes are no longer the producer's.");
+    writeFileSync(dspPath, `${JSON.stringify(packageValue, null, 2)}\n`);
+    editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+    assertRefusedWithDeleteRecovery(fixture);
+  }));
+
+  await t.test("an operator-supplied package with no report of its own", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const supplied = readFileSync(dspPath);
+    for (const path of targetArtifactPaths(fixture.target)) rmSync(path, { force: true });
+    writeFileSync(dspPath, supplied);
+    editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+    assertRefusedWithDeleteRecovery(fixture);
+  }));
+
+  await t.test("an operator-supplied package adopted by a run, then left stale", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const packageValue = readJson(dspPath);
+    // Reformatted by hand: same material, different bytes, so the run that
+    // validates it adopts it rather than claiming it.
+    writeFileSync(dspPath, `${JSON.stringify(reverseKeys(packageValue), null, 4)}\n`);
+    const adopted = runPrepare(fixture);
+    assert.equal(adopted.status, 0, adopted.stderr);
+    assert.equal(adopted.json.designSourcePackageMode, "reused");
+    assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.origin, "adopted");
+    editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+    assertRefusedWithDeleteRecovery(fixture);
+  }));
+
+  await t.test("a report written before origin was recorded", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const report = readJson(reportPath);
+    delete report.design_source_package.origin;
+    writeJson(reportPath, report);
+    editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+    assertRefusedWithDeleteRecovery(fixture);
   }));
 });
 

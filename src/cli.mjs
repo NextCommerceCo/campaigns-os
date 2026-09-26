@@ -228,6 +228,7 @@ import {
 import {
   DESIGN_SOURCE_PACKAGE_REL_PATH,
   createDesignSourcePackageArtifactReference,
+  hashSerializedDesignSourcePackage,
   serializeDesignSourcePackage,
   synthesizeHtmlFunnelDesignSourcePackage,
   validateDesignSourcePackage,
@@ -461,7 +462,7 @@ Usage:
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
-                     [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
+                     [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys) and regenerates a stale Design Source Package an earlier intake synthesized and nobody changed
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                              [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
@@ -2003,17 +2004,49 @@ function publishPrepareBuildJsonOutputs(outputs, collisionOutputs) {
   }
 }
 
-function assertValidPreparedDesignSourcePackage(value, path, currentPageScope, currentHtmlFunnelScope) {
+function preparedDesignSourcePackageProblem(value, currentPageScope, currentHtmlFunnelScope) {
   const validation = validateDesignSourcePackage(value, {
     currentPageScope,
     currentHtmlFunnelScope,
   });
-  if (validation.ok) return;
-  const detail = validation.errors
+  if (validation.ok) return null;
+  return validation.errors
     .map((error) => `[${error.code}] ${error.path}: ${error.message}`)
     .join("; ");
+}
+
+function assertValidPreparedDesignSourcePackage(value, path, currentPageScope, currentHtmlFunnelScope) {
+  const detail = preparedDesignSourcePackageProblem(value, currentPageScope, currentHtmlFunnelScope);
+  if (detail == null) return;
   throw new Error(`Design Source Package at ${path} is invalid, stale, or contradictory: ${detail}`);
 }
+
+// Which prepare-build lineage produced the Design Source Package now on disk.
+// The previous Assembly Report at this run's report path is the only record of
+// it: its design_source_package reference carries the exact-byte sha256 of the
+// package that run bound to, and `origin: "synthesized"` when prepare-build
+// wrote those bytes itself (or reused bytes it had itself written). A package
+// counts as producer-synthesized only when that report says so AND the bytes on
+// disk still hash to what it recorded, so a hand edit, a package dropped in by
+// an operator, a report from another path, and a report written before `origin`
+// existed all fall to "not provably ours" and are never overwritten.
+function readPriorDesignSourceProvenance(reportPath, packagePath) {
+  let report;
+  try {
+    report = readJson(reportPath);
+  } catch {
+    return null;
+  }
+  const ref = report?.design_source_package;
+  if (!isObject(ref) || ref.origin !== DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED) return null;
+  if (!isNonEmptyString(ref.sha256)) return null;
+  const recordedPath = resolveFromFile(reportPath, ref.path);
+  if (!recordedPath || !filesystemPathsMatch(recordedPath, packagePath)) return null;
+  return { origin: ref.origin, sha256: ref.sha256 };
+}
+
+const DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED = "synthesized";
+const DESIGN_SOURCE_PACKAGE_ORIGIN_ADOPTED = "adopted";
 
 function sourceMaterialFile(sourceRoot, path) {
   if (typeof path !== "string" || !path.trim()) return null;
@@ -2155,6 +2188,8 @@ function prepareDesignSourcePackage({
   sourceRoot,
   mapId,
   publicRouteSlug,
+  priorProvenance = null,
+  force = false,
 }) {
   const currentPageScope = {
     activePages,
@@ -2203,20 +2238,60 @@ function prepareDesignSourcePackage({
     } catch (error) {
       throw new Error(`Design Source Package at ${path} is not valid JSON: ${error.message}`, { cause: error });
     }
-    assertValidPreparedDesignSourcePackage(existingValue, path, currentPageScope, currentHtmlFunnelScope);
-    if (existingValue.source_kind !== "html_funnel") {
-      throw new Error(`Design Source Package at ${path} declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`);
+    const synthesizedHere = isNonEmptyString(priorProvenance?.sha256)
+      && hashSerializedDesignSourcePackage(existingBytes) === priorProvenance.sha256;
+    let problem = preparedDesignSourcePackageProblem(existingValue, currentPageScope, currentHtmlFunnelScope);
+    if (problem == null && existingValue.source_kind !== "html_funnel") {
+      problem = `declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`;
     }
-    return { value: existingValue, rawBytes: existingBytes };
+    if (problem != null) {
+      // A package an earlier prepare-build synthesized, unchanged since, is
+      // this producer's own stale output: --force regenerates it from the
+      // current inputs. Anything else is left for the operator to reconcile.
+      if (synthesizedHere && force) return { stale: true };
+      const recovery = synthesizedHere
+        ? "It was synthesized by an earlier prepare-build and is unchanged since, so rerun with --force to regenerate it from the current inputs "
+          + "(--force also resets any stage evidence the Assembly Report carries)."
+        : "prepare-build cannot show it synthesized these bytes (no Assembly Report records them as its own output, or the package changed since), so it will not overwrite it. "
+          + `Reconcile the package with the current inputs, or, if no downstream stage has consumed it, delete ${path} and rerun prepare-build to synthesize a fresh one.`;
+      throw new Error(`Design Source Package at ${path} is invalid, stale, or contradictory: ${problem} ${recovery}`);
+    }
+    return {
+      value: existingValue,
+      rawBytes: existingBytes,
+      origin: synthesizedHere ? DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED : DESIGN_SOURCE_PACKAGE_ORIGIN_ADOPTED,
+    };
   };
 
-  if (existsSync(path)) {
-    ({ value, rawBytes } = readExisting());
+  const synthesizeCurrent = () => {
+    const synthesized = synthesizeHtmlFunnelDesignSourcePackage(currentHtmlFunnelScope);
+    assertValidPreparedDesignSourcePackage(synthesized, path, currentPageScope, currentHtmlFunnelScope);
+    return { value: synthesized, rawBytes: Buffer.from(serializeDesignSourcePackage(synthesized), "utf8") };
+  };
+
+  let origin = DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED;
+  const existing = existsSync(path) ? readExisting() : null;
+  if (existing && !existing.stale) {
+    ({ value, rawBytes, origin } = existing);
     mode = "reused";
+  } else if (existing?.stale) {
+    // Replace, not no-replace: the stale bytes are provably this producer's,
+    // so an atomic rename over them is the intended publication.
+    ({ value, rawBytes } = synthesizeCurrent());
+    mkdirSync(dirname(path), { recursive: true });
+    const stagedPath = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+    try {
+      writeFileSync(stagedPath, rawBytes, { flag: "wx" });
+      renameSync(stagedPath, path);
+    } finally {
+      rmSync(stagedPath, { force: true });
+    }
+    mode = "regenerated";
+    console.warn(
+      `[campaigns-os prepare-build] --force: regenerated the stale Design Source Package at ${path} that an earlier prepare-build synthesized.`,
+    );
   } else {
-    value = synthesizeHtmlFunnelDesignSourcePackage(currentHtmlFunnelScope);
-    assertValidPreparedDesignSourcePackage(value, path, currentPageScope, currentHtmlFunnelScope);
-    rawBytes = Buffer.from(serializeDesignSourcePackage(value), "utf8");
+    ({ value, rawBytes } = synthesizeCurrent());
     mkdirSync(dirname(path), { recursive: true });
     const stagedPath = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
     try {
@@ -2242,7 +2317,11 @@ function prepareDesignSourcePackage({
         // Another publisher won (or completed while this link failed). Its
         // exact bytes are authoritative; validate and reuse them rather than
         // overwriting.
-        ({ value, rawBytes } = readExisting());
+        const winner = readExisting();
+        if (winner.stale) {
+          throw new Error(`Design Source Package at ${path} was published concurrently and does not match this run's inputs; rerun prepare-build.`);
+        }
+        ({ value, rawBytes, origin } = winner);
         mode = "reused";
       }
     } finally {
@@ -2260,6 +2339,7 @@ function prepareDesignSourcePackage({
     value,
     rawBytes,
     mode,
+    origin,
     referenceFor(artifactPath) {
       return {
         ...referenceIdentity,
@@ -2623,6 +2703,8 @@ function prepareBuild(args, options = {}) {
     sourceRoot,
     mapId,
     publicRouteSlug,
+    priorProvenance: readPriorDesignSourceProvenance(reportPath, designSourcePackagePath),
+    force: args.force === true,
   });
   const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
   const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
@@ -3048,7 +3130,12 @@ function createAssemblyReport({
     }),
     decisions: context.decisions,
     build_brief: cloneJson(context.build_brief || {}),
-    design_source_package: designSourcePackage.referenceFor(reportPath),
+    // origin is the report's own provenance record: the next prepare-build
+    // reads it back to tell its own stale output from an operator's package.
+    design_source_package: {
+      ...designSourcePackage.referenceFor(reportPath),
+      origin: designSourcePackage.origin,
+    },
     adapter_decisions: cloneJson(context.adapter_decisions || createAdapterDecisions()),
     proof_policy: cloneJson(packet.qa?.proof_policy || createProofPolicy()),
     theme: assemblyThemeFromContext(context.theme),
