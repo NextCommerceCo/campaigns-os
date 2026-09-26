@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.4] - 2026-09-26
+
+### Fixed
+
+- Partial-build QA skips recorded, unbuilt out-of-scope pages with explicit
+  `out_of_build_scope` evidence and starts at the first in-scope page. Built
+  stock pages rejoin QA; missing in-scope pages still fail. Commercial checks
+  share the same scope as HTTP and browser checks.
+- Build handoffs keep skipped routes unbuilt by default. Materializing a stock
+  stand-in requires explicit per-page operator opt-in, so upstream pages on
+  another host are not replaced with placeholder copy.
 ## [1.43.1+agent.3] - 2026-09-26
 
 ### Fixed

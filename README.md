@@ -198,8 +198,8 @@ are template stock instead — no bespoke design, the starter family *is* the
 design — there is no screenshot to honestly supply. Declare those pages out of
 source scope (a manifest `skip_reason` entry, or CampaignSpec
 `build_scope.mode: "partial"`): intake records them as template stock, demands
-no design source for them, and the build stage materialises each from the
-locked family's own page. A family that publishes Template Reference proof
+no design source for them, and leaves them unbuilt unless the operator opts in
+per page to materializing the locked family's stock. A family that publishes Template Reference proof
 (today `apollo`) covers them with `template_baseline`; every other family
 records an accepted Source Gap and intake lands at `ready_with_gaps`. See
 [Template-stock pages: the family decides](docs/design-source-package.md#template-stock-pages-the-family-decides).

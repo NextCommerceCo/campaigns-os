@@ -1,5 +1,13 @@
 # QA And Test Orders
 
+For packet-based partial builds, QA honors the Assembly Report's recorded
+`stages.prepare_build.declared_out_of_scope` declarations together with the
+packet's skip mappings. Unbuilt declared pages emit `skipped` evidence with
+reason `out_of_build_scope`; HTTP, browser and commercial checks do not request
+those routes, and entry URLs come from the remaining pages. A materialized
+stock page rejoins QA. Missing in-scope pages still fail normally. A raw skip
+mapping without a recorded declaration does not suppress checks.
+
 The public v0 QA runner is Node/npm-based and does not require access to a private runtime repo.
 
 > **Commerce QA requires network; it cannot run in a no-outbound sandbox.** The SDK, product images, fonts, the Netlify preview, and the Playwright typed-card test order all need outbound network. A build environment without it can only validate markup/build/CSS — the commerce runtime and the typed-card test order (the Campaigns OS control) must be deferred to a deployed preview. Always run the QA runner against a `--base-url` preview/production origin (e.g. `npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url https://deploy-preview-7--your-site.netlify.app/ --browser --test-order common`); never report commerce-runtime QA as passed from an offline build.

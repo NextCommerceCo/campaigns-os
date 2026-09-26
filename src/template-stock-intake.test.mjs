@@ -305,6 +305,15 @@ test("a materialised template-stock page becomes a built, previewable route and 
   const next = runCli(["next", "build", "--packet", packetPath], fixture.dir);
   assert.ok(next.json, next.stderr);
   assert.match(next.json.prompt, /Template-stock pages \(declared out of source scope; no design source exists for them\): select, receipt\./);
+  assert.match(next.json.prompt, /Keep these routes unbuilt by default/);
+  assert.match(next.json.prompt, /explicit operator opt-in for that page/);
+  assert.match(next.json.prompt, /never publish stock placeholder copy/);
+
+  const resolveQa = () => runCli(["qa", "resolve", "--packet", packetPath,
+    "--base-url", "https://preview.example.test/", "--no-probe"], fixture.dir);
+  const qaBefore = resolveQa();
+  assert.ok(qaBefore.json, qaBefore.stderr);
+  assert.ok(!qaBefore.json.page_urls.some(page => ["select", "receipt"].includes(page.page_id)), JSON.stringify(qaBefore.json));
 
   // The build stage materialises both stock pages; nothing else about the
   // packet or the report changes.
@@ -330,6 +339,9 @@ test("a materialised template-stock page becomes a built, previewable route and 
     JSON.stringify(after.json.ready.filter((line) => /Template-stock/.test(line))),
   );
   assert.equal(after.json.derived.scope.mode, "full");
+  const qaAfter = resolveQa();
+  assert.ok(qaAfter.json.page_urls.some(page => page.page_id === "select"), JSON.stringify(qaAfter.json));
+  assert.ok(qaAfter.json.page_urls.some(page => page.page_id === "receipt"), JSON.stringify(qaAfter.json));
 }, { stockPageIds: ["select", "receipt"], selectLast: true }));
 
 // The same lifecycle when the CampaignSpec build_scope declares the stock

@@ -504,10 +504,12 @@ Either declaration records the page on the assembly report's
 `template_family` set to the family the packet locks, lists it under
 `stages.prepare_build.declared_out_of_scope`, and reaches
 `stages.prepare_build.status: "completed_partial"`. Intake demands no design
-source for the page: no `capture-*` TODO, no `link-*` TODO. The build stage
-materialises it from the locked family's own page of that role — the `next
-build` prompt names every template-stock page and the family to copy it from —
-and the family decides only *how* the package records its coverage:
+source for the page: no `capture-*` TODO, no `link-*` TODO. This source-scope
+classification does **not** authorize publishing a stock page. `next build`
+keeps these routes unbuilt by default and requires explicit operator opt-in
+per page before materializing a stand-in from the locked family. In particular,
+presell and landing pages staying on another host must not be replaced with
+placeholder copy. The family decides only *how* intake records coverage:
 
 - **A family that publishes complete Template Reference proof — today `apollo`
   alone** — covers the page with synthesized `template_baseline` coverage from
@@ -533,10 +535,10 @@ not built yet`, and keeps checkout launch and test-order proof blocked while a
 runtime page (`select`, `checkout`, `upsell`, `receipt`) is among them. You get
 a terminal, honest intake — not a fully proven campaign.
 
-The build stage lifts those limits page by page. `next-campaigns-build`
-materialises each template-stock page from the locked family's own page of
-that role (the pre-checkout `select` step first, because it seeds the cart the
-runtime pages read). Once the page's built HTML exists at its route under
+The build stage lifts those limits page by page for opted-in pages. It uses
+the locked family's own page of that role (an opted-in pre-checkout `select`
+stand-in first, because it seeds the cart the runtime pages read).
+Once the page's built HTML exists at its route under
 `_site/<slug>/`, doctor reads the `template_stock` marker on the scope decision
 and counts the page as built: it moves into `derived.scope.built_pages` (with
 `template_stock: true`, `template_family`, and no `source_path`), joins the

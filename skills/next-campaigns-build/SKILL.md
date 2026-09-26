@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-build
-version: 1.0.12
+version: 1.0.13
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
 
-Bundle revision: 1.43.1+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.43.1+skills.1`
+Bundle revision: 1.43.1+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.43.1+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -84,7 +84,7 @@ Build rules:
 - Replace values named by `frontmatter.replaceFromSpecOrApi`.
 - Remove unsupported surfaces named by `frontmatter.removeWhenUnsupported`.
 - Preserve SDK-owned checkout/cart/upsell/receipt/payment/address/totals/submit surfaces.
-- If `doctor` (tier `none`: read-only inspection; `--write`/`--built` are tier `B`) reports `derived.scope.mode = "partial"`, build the pages listed in `derived.scope.built_pages` from their prepared source. A page in `derived.scope.out_of_scope_pages` whose assembly-report decision `dec_page_scope_<page>` carries `template_stock: true` is template stock: materialise it from the locked family's own page for that role (`decision.template_family`; the `next build` prompt lists them), copied atomically with its dependent `_includes/`, `_layouts/`, and assets, and wired from CampaignSpec — a pre-checkout `select` step first, because it seeds the cart the runtime pages read. Do not look for prepared source HTML for it, and do not attest a screenshot of it as a design source. Once its built HTML exists at the page's route, doctor lists it among the previewable routes and lifts the runtime-QA block for it. An out-of-scope page without that marker stays unbuilt: carry its `skip_reason` into the assembly report and label the preview as route/visual-testable rather than full-funnel launch-ready.
+- If `doctor` (tier `none`: read-only inspection; `--write`/`--built` are tier `B`) reports `derived.scope.mode = "partial"`, build the pages listed in `derived.scope.built_pages` from their prepared source. Keep every out-of-scope route unbuilt by default, including pages marked `template_stock: true`; never publish placeholder presell/landing pages that remain on another host. Materialize a stock page only with explicit per-page operator opt-in (including a required pre-checkout `select` stand-in). For opted-in pages use the locked family's own page for that role with its dependent `_includes/`, `_layouts/`, and assets, wire it from CampaignSpec, and build a required select step first. Do not attest stock screenshots as design source. Built stock pages rejoin preview QA once their HTML exists. Carry remaining `skip_reason` declarations into the report and label the preview route/visual-testable rather than full-funnel launch-ready.
 - For `landing` and `presell` pages, prefer the prepared source HTML when `source_html.pages[].path` points at a real standalone page. Preserve the design/content through a passthrough page-kit layout, inject the SDK loader/config as needed, and repoint CTAs into the CampaignSpec flow. Treat `source_html.pages[].path` and `context.page_map[].source_path` as source provenance. Treat `source_html.pages[].page_kit`, `context.page_map[].page_kit`, and `context.page_map[].output_path` as the Page Kit target file, route, CPK `page_type`, and frontmatter projection.
 - Prepared source HTML means page-kit-ready markup, not a wholesale Liquid rewrite. Standalone AI/exported HTML should keep page-owned body markup, remove document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only where page-kit needs campaign-rooted links/assets/includes.
 - For `checkout`, `upsell`, `downsell`, and `receipt` pages, treat the selected starter-template commerce surface as the SDK contract reference: preserve required `data-next-*` controls, hidden fields, payment/address/totals/submit wiring, and `next_dont_touch` regions. The surrounding HTML wrapper, page composition, imagery, copy hierarchy, and brand layer are campaign/source-owned. Do not carry starter visual chrome forward when prepared source design should own that surface.
