@@ -37,6 +37,8 @@ import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.m
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { publishQaVerdict, qaPortalUrl, qaVerdictPublishBlock, QA_VERDICT_PUBLISHERS, skippedQaVerdictPublish } from "./qa-verdict-publish.mjs";
+import { isLocalServePacket, LOCAL_PROOF_PARITY_FIELD, recordedProductionParity } from "./local-proof.mjs";
+import { isLoopbackHostname } from "./remit.mjs";
 import { publishStoredVerdict, qaPublishTextLines, QA_PUBLISH_EXIT_CODES } from "./qa-publish.mjs";
 // Shared outgoing-edge resolver, so QA expectations and build-time wiring
 // cannot drift on which declared routing field wins.
@@ -461,11 +463,17 @@ async function resolveQaInputs(args, {
     targetRepo: checkpointPreflight?.targetRepo, publicRouteSlug,
   });
   const brandContract = loadBrandContract(templateFamily);
+  const localServeAnalytics = resolveLocalServeAnalytics({
+    packet,
+    report: checkpointPreflight?.runtimeReport,
+    captureUrl: analyticsCaptureTarget.url || baseUrl,
+  });
   return {
     themeGate,
     polishGate,
     qaWaivers,
     analyticsCaptureTarget,
+    localServeAnalytics,
     brandContract: brandContract.contract,
     brandContractStatus: brandContract.status,
     packetPath,
@@ -2337,7 +2345,63 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
   if (analyticsLeg === "run") {
     assertions.push(operations.assessReceipt(result.receiptAnalytics, { waivers: resolved.qaWaivers }));
   }
+  applyLocalServeAnalyticsReview(assertions, resolved.localServeAnalytics);
   return result.orders;
+}
+
+// #483: local proof mode (deploy.target local-serve) renders the DEVELOPMENT
+// environment on purpose, and the starter templates gate every vendor loader
+// on it. A pixel that did not fire on that render is the render's design, not
+// the campaign's defect, so fire-dependent analytics checks become manual
+// review there instead of blockers. Only a run whose capture is actually
+// served from loopback qualifies: the same packet QA'd against the PR preview
+// (--base-url <preview>) is a production render and keeps its blockers, which
+// is the follow-up every downgraded assertion names.
+const LOCAL_SERVE_ANALYTICS_REASON = "local_serve_development_render";
+const FIRE_DEPENDENT_ANALYTICS_ID = /^analytics-correctness:(?:tag:|oob:|purchase-fires$|data-layer-purchase:)/;
+
+function resolveLocalServeAnalytics({ packet, report, captureUrl }) {
+  if (!isLocalServePacket(packet)) return null;
+  let hostname = null;
+  try { hostname = new URL(String(captureUrl)).hostname; } catch { hostname = null; }
+  if (!hostname || !isLoopbackHostname(hostname)) return null;
+  const parity = recordedProductionParity(report);
+  return {
+    deploy_target: "local-serve",
+    production_parity: parity
+      ? {
+          field: LOCAL_PROOF_PARITY_FIELD,
+          status: typeof parity.status === "string" ? parity.status : null,
+          checked_at: typeof parity.checked_at === "string" ? parity.checked_at : null,
+          page_count: Number.isFinite(parity.page_count) ? parity.page_count : null,
+          gated_hosts: [...new Set((Array.isArray(parity.pages) ? parity.pages : [])
+            .flatMap((page) => (Array.isArray(page?.gated_hosts) ? page.gated_hosts : []))
+            .filter((host) => typeof host === "string"))].sort(),
+        }
+      : { field: LOCAL_PROOF_PARITY_FIELD, status: "not_recorded" },
+  };
+}
+
+function applyLocalServeAnalyticsReview(assertions, localServe) {
+  if (!localServe) return;
+  const parityPassed = localServe.production_parity?.status === "pass";
+  for (const [index, item] of assertions.entries()) {
+    if (item?.status !== STATUS.FAIL || !FIRE_DEPENDENT_ANALYTICS_ID.test(String(item.id || ""))) continue;
+    assertions[index] = {
+      ...item,
+      status: STATUS.MANUAL_REVIEW,
+      severity: SEVERITY.WARN,
+      actual: `${item.actual ?? "did not fire"}; local-serve development render gates vendor loaders out, so re-run against the PR preview with --base-url <preview-url>`,
+      evidence: {
+        ...(item.evidence || {}),
+        reason: LOCAL_SERVE_ANALYTICS_REASON,
+        local_serve_status: STATUS.FAIL,
+        follow_up: "Re-run qa run against the PR preview (a production render) with --base-url <preview-url>; that run gates these checks.",
+        production_parity: localServe.production_parity,
+        ...(parityPassed ? {} : { production_parity_note: "No passing page-kit parity is recorded, so nothing yet shows the production render carries these loaders." }),
+      },
+    };
+  }
 }
 
 async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null, runSessionActive = false, browser = null }) {
@@ -3703,6 +3767,8 @@ export const __qaNodeTestHooks = Object.freeze({
   runResolvedQa,
   runPageChecks,
   analyticsCaptureScope,
+  resolveLocalServeAnalytics,
+  applyLocalServeAnalyticsReview,
   analyticsCorrectnessLegDecision,
   analyticsCorrectnessDisabledAssertion,
   runAnalyticsOrderSequence,
