@@ -10,10 +10,17 @@ import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { normalizeCapture } from "./qa-analytics-parity.mjs";
+import { resolveTestOrderTopology } from "./qa-test-order-topology.mjs";
 import { computeDisposition, SEVERITY, STATUS } from "./qa-verdict.mjs";
 
 const { runAnalyticsOrderSequence, resolveLocalServeAnalytics } = __qaNodeTestHooks;
-const { analyticsCorrectnessCaptureAssertions } = __qaBrowserTestHooks;
+const {
+  analyticsCorrectnessCaptureAssertions,
+  analyticsCorrectnessRunnerFailureAssertion,
+  captureAnalyticsCorrectnessInContext,
+  collectOrderAnalytics,
+  receiptAnalyticsAttempt,
+} = __qaBrowserTestHooks;
 
 const PIXEL_ID = "1000000000000001";
 const CONTRACT = {
@@ -52,7 +59,7 @@ function inventoryAssertions(capture, { url, finalUrl = url, source = "campaign_
   });
 }
 
-async function runSequence({ url, localServeAnalytics, receiptAttempt = null, inventory = null }) {
+async function runSequence({ url, localServeAnalytics, receiptAttempt = null, inventory = null, runInventory = null }) {
   const assertions = [];
   await runAnalyticsOrderSequence({
     args: {},
@@ -66,6 +73,7 @@ async function runSequence({ url, localServeAnalytics, receiptAttempt = null, in
     assertions,
   }, {
     async runInventory() {
+      if (runInventory) return runInventory();
       return inventoryAssertions(normalizeCapture({ events: [], tagFires: [] }), { url, ...(inventory || {}) });
     },
     async runOrders({ assertions: sink }) {
@@ -82,7 +90,7 @@ async function runSequence({ url, localServeAnalytics, receiptAttempt = null, in
         orders: [{ plan_id: "accept" }],
         receiptAnalytics: {
           plannedPlanIds: ["accept"],
-          attempts: [receiptAttempt || { planId: "accept", receiptRecognized: true, receiptUrl: `${url}receipt/`, capture: normalizeCapture({ events: [] }) }],
+          attempts: [receiptAttempt || { planId: "accept", receiptRecognized: true, receiptUrl: `${url}receipt/`, receiptDocumentUrl: `${url}receipt/`, capture: normalizeCapture({ events: [] }) }],
         },
       };
     },
@@ -237,7 +245,7 @@ test("a remote built-entry capture under an eligible local-serve run keeps its p
     url: REMOTE_ENTRY,
     localServeAnalytics,
     inventory: { source: "built_entry" },
-    receiptAttempt: { planId: "accept", receiptRecognized: true, receiptUrl: `${LOCAL_URL}receipt/`, capture: normalizeCapture({ events: [] }) },
+    receiptAttempt: { planId: "accept", receiptRecognized: true, receiptUrl: `${LOCAL_URL}receipt/`, receiptDocumentUrl: `${LOCAL_URL}receipt/`, capture: normalizeCapture({ events: [] }) },
   });
   for (const id of ["analytics-correctness:tag:meta", "analytics-correctness:oob:tiktok"]) {
     const item = assertions.find((entry) => entry.id === id);
@@ -305,4 +313,116 @@ test("a loopback built-entry capture is still downgraded", async () => {
   }
   const blockers = assertions.filter((item) => item.status === STATUS.FAIL && item.severity === SEVERITY.BLOCKER);
   assert.deepEqual(blockers.map((item) => item.id), [DATA_LAYER_PURCHASE]);
+});
+
+// #500 review: a correctness capture whose collection failed is not a clean
+// empty capture. A local page that reloads while the capture reads it destroys
+// the execution context; that error must surface as the runner blocker, not as
+// a passing capture whose "missing" pixels local-serve review then downgrades.
+function contextDestroyedDuringCollection(finalUrl) {
+  const page = {
+    on() {}, off() {},
+    async addInitScript() {},
+    async goto() { return { status: () => 200 }; },
+    async waitForLoadState() {},
+    async waitForTimeout() {},
+    async evaluate() { throw new Error("page.evaluate: Execution context was destroyed, most likely because of a navigation"); },
+    url: () => finalUrl,
+    isClosed: () => false,
+    async close() {},
+  };
+  return { async newPage() { return page; }, browser: () => ({ isConnected: () => true }) };
+}
+
+test("a local-serve inventory capture whose collection lost its execution context keeps the analytics blockers", async () => {
+  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
+  assert.ok(localServeAnalytics);
+  const context = contextDestroyedDuringCollection(LOCAL_URL);
+  const assertions = await runSequence({
+    url: LOCAL_URL,
+    localServeAnalytics,
+    // What runAnalyticsCorrectnessChecks does around the capture.
+    async runInventory() {
+      try {
+        return await captureAnalyticsCorrectnessInContext(context, LOCAL_URL, CONTRACT, { "analytics-settle": "0" }, [], {});
+      } catch (error) {
+        return [analyticsCorrectnessRunnerFailureAssertion({ url: LOCAL_URL, error })];
+      }
+    },
+  });
+  const capture = assertions.find((entry) => entry.id === "analytics-correctness:capture");
+  assert.ok(!capture || capture.status !== STATUS.PASS, "a failed collection never reports a passing capture");
+  const runner = assertions.find((entry) => entry.id === "analytics-correctness:runner");
+  assert.ok(runner, "the collection error is the runner blocker");
+  assert.equal(runner.status, STATUS.FAIL);
+  assert.equal(runner.severity, SEVERITY.BLOCKER);
+  assert.ok(runner.evidence.error_code);
+  assert.equal(runner.evidence.reason, undefined);
+  for (const id of ["analytics-correctness:tag:meta", "analytics-correctness:oob:tiktok"]) {
+    const item = assertions.find((entry) => entry.id === id);
+    assert.ok(!item || item.status !== STATUS.MANUAL_REVIEW, `${id} is not downgraded from an unmeasured page`);
+  }
+  assert.equal(computeDisposition(assertions), "blocked");
+});
+
+// #500 review: order.final_url is recorded before collectOrderAnalytics waits
+// out the settle window. The loopback check reads where the receipt document
+// was once its analytics settled and were collected.
+test("a localhost receipt that settled on a remote host keeps the Purchase blocker", async () => {
+  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
+  assert.ok(localServeAnalytics);
+  const receiptUrl = `${LOCAL_URL}receipt/`;
+  const plan = {
+    path: "accept",
+    topology_plan: resolveTestOrderTopology({
+      funnel_id: "fixture",
+      pages: [
+        { page_id: "checkout", page_type: "checkout", url: `${LOCAL_URL}checkout/`, expected_next_url: receiptUrl },
+        { page_id: "receipt", page_type: "receipt", url: receiptUrl },
+      ],
+    }),
+  };
+  const receiptAttemptSettledOn = async (settledUrl) => {
+    let location = `${receiptUrl}?ref_id=fixture`;
+    const empty = normalizeCapture({ events: [] });
+    const captures = await collectOrderAnalytics({
+      captureHandle: { async collectScopes() { return { journey: empty, currentDocument: empty }; } },
+      receiptRecognized: true,
+      settleMs: 10,
+      deadline: 1_000_000,
+      now: () => 0,
+      // The receipt redirects while analytics settle.
+      wait: async () => { location = settledUrl; },
+      readDocumentUrl: () => location,
+    });
+    return receiptAnalyticsAttempt(plan, {
+      order: { final_url: `${receiptUrl}?ref_id=fixture` },
+      receipt_analytics_capture: captures.receiptCapture,
+      ...(captures.receiptDocumentUrl ? { receipt_document_url: captures.receiptDocumentUrl } : {}),
+    });
+  };
+
+  const remote = await receiptAttemptSettledOn(`${PREVIEW_URL}receipt/?ref_id=fixture`);
+  assert.equal(remote.receiptUrl, receiptUrl, "the pre-settle URL was loopback");
+  assert.equal(remote.receiptDocumentUrl, `${PREVIEW_URL}receipt/`);
+  const assertions = await runSequence({ url: LOCAL_URL, localServeAnalytics, receiptAttempt: remote });
+  const purchase = assertions.find((entry) => entry.id === "analytics-correctness:purchase-fires");
+  assert.equal(purchase.evidence.receipts[0].receipt_url, receiptUrl);
+  assert.equal(purchase.evidence.receipts[0].receipt_document_url, `${PREVIEW_URL}receipt/`);
+  assert.equal(purchase.status, STATUS.FAIL);
+  assert.equal(purchase.severity, SEVERITY.BLOCKER);
+  assert.equal(purchase.evidence.reason, undefined);
+
+  // Unknown settled location: the blocker stays.
+  const unknown = await runSequence({
+    url: LOCAL_URL,
+    localServeAnalytics,
+    receiptAttempt: { planId: "accept", receiptRecognized: true, receiptUrl, capture: normalizeCapture({ events: [] }) },
+  });
+  assert.equal(unknown.find((entry) => entry.id === "analytics-correctness:purchase-fires").status, STATUS.FAIL);
+
+  // Control: a receipt that settled on loopback is still reviewed.
+  const local = await receiptAttemptSettledOn(`${receiptUrl}?ref_id=fixture`);
+  const reviewed = await runSequence({ url: LOCAL_URL, localServeAnalytics, receiptAttempt: local });
+  assert.equal(reviewed.find((entry) => entry.id === "analytics-correctness:purchase-fires").status, STATUS.MANUAL_REVIEW);
 });

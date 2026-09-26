@@ -23,9 +23,15 @@ Notable supported-surface changes are recorded here.
   landed on another host, such as a built entry page whose URL is a production
   preview or a localhost root that redirects to production, keeps its
   blockers. So does a receipt Purchase check whose receipt page is not on
-  localhost, and any check whose measured page was not recorded. So does a
-  capture that failed: a `purchase-fires` failure that lists unmeasured
-  receipts in `capture_error_plan_ids` still blocks. The data-layer Purchase
+  localhost, judged both by the order's final URL and by the page URL read
+  after the receipt's analytics settled (`receipt_document_url`), so a
+  localhost receipt that redirects to a hosted page while analytics settle
+  keeps its blocker, as does any check whose measured page was not recorded.
+  So does a capture that failed: a `purchase-fires` failure that lists
+  unmeasured receipts in `capture_error_plan_ids` still blocks, and a tracking
+  capture whose page could not be read (for example, a page that reloaded
+  while the capture read it) now fails as the analytics runner blocker instead
+  of reading as a page where nothing fired. The data-layer Purchase
   check (`data-layer-purchase`) still blocks too: the SDK pushes `dl_purchase`
   in the development render as well.
 

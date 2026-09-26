@@ -2409,14 +2409,18 @@ function isLoopbackUrl(value) {
 //   capture_page.url (both the URL requested) AND the capture's final_url
 //   (page.url() after redirects and settling) must all be loopback;
 // - purchase-fires — every judged receipt's receipt_url (the order's final
-//   page URL after navigation) must be loopback, and there must be one.
+//   page URL, recorded before analytics settle) AND its receipt_document_url
+//   (page.url() read after the receipt analytics settled and were collected)
+//   must be loopback, and there must be one. A receipt that redirects to a
+//   hosted page during the settle window measured that host, not loopback.
 // A measured location that is missing or unparseable keeps the blocker.
 function localServeMeasuredOnLoopback(item, assertions) {
   const id = String(item?.id || "");
   if (/^analytics-correctness:purchase-fires(?::|$)/.test(id)) {
     const receipts = item?.evidence?.receipts;
     return Array.isArray(receipts) && receipts.length > 0
-      && receipts.every((receipt) => isLoopbackUrl(receipt?.receipt_url));
+      && receipts.every((receipt) => isLoopbackUrl(receipt?.receipt_url)
+        && isLoopbackUrl(receipt?.receipt_document_url));
   }
   const ownUrl = item?.evidence?.url ?? item?.url;
   if (!isLoopbackUrl(ownUrl)) return false;

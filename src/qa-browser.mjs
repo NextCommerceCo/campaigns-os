@@ -644,8 +644,13 @@ async function captureAnalyticsCorrectnessInContext(context, url, contract, args
   if (!rootInScope) attempts.push({ url: rootKey, source: "campaign_root", outcome: "out_of_built_scope", http_status: null });
   let rootFallback = rootInScope ? null : { url: rootKey, reason: "out_of_built_scope", http_status: null };
   for (const candidate of candidates) {
+    // strictCollect: a page.evaluate() that fails during collection (the
+    // execution context destroyed by a reload, a crashed page) must not read
+    // as a clean empty capture. It propagates and becomes the
+    // analytics-correctness:runner blocker, so no tag check is emitted from an
+    // unmeasured page and local-serve review has nothing to downgrade (#500).
     const { capture, httpStatus, navigationError } = await captureAnalyticsPage(
-      context, candidate.url, args, extraHosts, { perPageNavigationErrors: true },
+      context, candidate.url, args, extraHosts, { perPageNavigationErrors: true, strictCollect: true },
     );
     if (navigationError) {
       // One page failing to load (a timeout, a refused connection) moves on to
@@ -766,7 +771,9 @@ async function captureAnalyticsPage(context, url, args, extraHosts = [], options
     await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});
     // Let async GTM/pixel tags and deferred dataLayer pushes fire before reading.
     await page.waitForTimeout(settleMs);
-    const collected = await capture.collect();
+    // Parity keeps the historical best-effort read; the correctness leg
+    // collects strictly (see captureAnalyticsCorrectnessInContext).
+    const collected = await capture.collect({ strict: options.strictCollect === true });
     let finalUrl = null;
     try { finalUrl = page.url() || null; } catch { finalUrl = null; }
     if (collected && typeof collected === "object" && finalUrl) ANALYTICS_CAPTURE_DOCUMENT_URL.set(collected, finalUrl);
@@ -2961,6 +2968,11 @@ async function collectOrderAnalytics({
   deadline,
   now = () => Date.now(),
   wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  // The page's document location, read right after the settled collection
+  // (#500). The order's final_url is recorded before this settle window, so a
+  // receipt that redirects while analytics settle would otherwise be judged
+  // by where it started, not where Purchase was measured.
+  readDocumentUrl = null,
 }) {
   const result = {};
   if (!captureHandle) return result;
@@ -2991,14 +3003,17 @@ async function collectOrderAnalytics({
 
   const collection = deadlineConsumed
     ? { timedOut: true }
-    : await runWithinAnalyticsDeadline(async () => (
-      typeof captureHandle.collectScopes === "function"
-        ? captureHandle.collectScopes({ strict: true })
+    : await runWithinAnalyticsDeadline(async () => {
+      const scopes = typeof captureHandle.collectScopes === "function"
+        ? await captureHandle.collectScopes({ strict: true })
         : {
             journey: await captureHandle.collect({ strict: true }),
             currentDocument: await captureHandle.collect({ strict: true, scope: "current-document" }),
-          }
-    ), { deadline, now });
+          };
+      let documentUrl = null;
+      try { documentUrl = typeof readDocumentUrl === "function" ? (readDocumentUrl() || null) : null; } catch { documentUrl = null; }
+      return { ...scopes, documentUrl };
+    }, { deadline, now });
   if (collection.timedOut || now() > deadline) {
     result.journeyCaptureError = analyticsCaptureError("collectionDeadline");
     if (receiptRecognized && !settleError) {
@@ -3009,7 +3024,10 @@ async function collectOrderAnalytics({
     if (receiptRecognized && !settleError) result.receiptCaptureError = analyticsCaptureError("unreadable");
   } else {
     result.journeyCapture = collection.value.journey;
-    if (receiptRecognized && !settleError) result.receiptCapture = collection.value.currentDocument;
+    if (receiptRecognized && !settleError) {
+      result.receiptCapture = collection.value.currentDocument;
+      if (collection.value.documentUrl) result.receiptDocumentUrl = collection.value.documentUrl;
+    }
   }
   if (receiptRecognized && settleError) result.receiptCaptureError = settleError;
   return result;
@@ -3137,11 +3155,13 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
         receiptRecognized,
         settleMs: numberArg(planArgs["analytics-settle"], DEFAULT_SETTLE_TIMEOUT_MS),
         deadline: orderDeadline ?? Date.now(),
+        readDocumentUrl: () => (page ? safePageUrl(page) : null),
       });
       if (captures.journeyCapture) result.analytics_journey_capture = captures.journeyCapture;
       if (captures.journeyCaptureError) result.analytics_journey_capture_error = captures.journeyCaptureError;
       if (captures.receiptCapture) result.receipt_analytics_capture = captures.receiptCapture;
       if (captures.receiptCaptureError) result.receipt_analytics_capture_error = captures.receiptCaptureError;
+      if (captures.receiptDocumentUrl) result.receipt_document_url = captures.receiptDocumentUrl;
     } else if (analyticsAttachError) {
       result.analytics_journey_capture_error = analyticsAttachError;
       if (receiptRecognized) result.receipt_analytics_capture_error = analyticsAttachError;
@@ -3274,6 +3294,11 @@ function receiptAnalyticsAttempt(plan, result) {
     planId: id,
     receiptRecognized,
     receiptUrl: redactUrlQuery(finalUrl),
+    // Where the receipt page actually was once its analytics settled and were
+    // collected; absent when that reading was not taken.
+    ...(receiptRecognized && result?.receipt_document_url
+      ? { receiptDocumentUrl: redactUrlQuery(result.receipt_document_url) }
+      : {}),
     ...(receiptRecognized && result?.receipt_analytics_capture
       ? { capture: result.receipt_analytics_capture }
       : {}),

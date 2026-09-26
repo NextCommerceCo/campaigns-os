@@ -228,6 +228,9 @@ export function assessReceiptPurchase(receiptAnalytics = {}, options = {}) {
     receipts.push({
       plan_id: planId,
       receipt_url: redactUrlQuery(attempt.receiptUrl),
+      // The settled document location the receipt capture was read from
+      // (#500); null when it was not recorded.
+      receipt_document_url: redactUrlQuery(attempt.receiptDocumentUrl) || null,
       measured,
       scope: measured ? scope : null,
       purchase_fired: measured && !!effective.fired,
