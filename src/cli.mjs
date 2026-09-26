@@ -2628,7 +2628,14 @@ function prepareBuildUnderLock({
   prepareBuildThemeOutputPaths,
   prepareBuildCollisionPaths,
 }) {
-  const announcedStageEvidence = guardAssemblyReportOverwrite(reportPath, args);
+  let announcedStageEvidence = guardAssemblyReportOverwrite(reportPath, args);
+  // Stage producers commit the report without this lock, so evidence can land
+  // while the run works. Re-check before each write that is not rolled back:
+  // the theme artifacts, then the JSON outputs. --force names a stage once.
+  const recheckStageEvidence = () => {
+    const found = guardAssemblyReportOverwrite(reportPath, args, { announced: announcedStageEvidence });
+    announcedStageEvidence = [...new Set([...announcedStageEvidence, ...found])];
+  };
   const spec = readJson(specPath);
   const { mapId, publicRouteSlug, localSpecId } = campaignIdentity(spec, args);
   if (!resolveCampaignIdentity({ map_id: mapId, local_spec_id: localSpecId })) {
@@ -3055,6 +3062,9 @@ function prepareBuildUnderLock({
     prepareBuildThemeOutputPaths,
     prepareBuildCollisionPaths,
   );
+  // The theme files are replaced in place, not staged with the JSON outputs,
+  // so evidence that has landed by now refuses the run before any is written.
+  recheckStageEvidence();
   const writtenTheme = writeThemeArtifacts(themeInspection, {
     writeReport: true,
     writeCss: shouldWriteThemeCss,
@@ -3098,7 +3108,7 @@ function prepareBuildUnderLock({
     { label: "Build Context", path: contextPath, value: context },
     { label: "Assembly Report", path: reportPath, value: report },
   ], prepareBuildCollisionPaths, {
-    beforePublish: () => guardAssemblyReportOverwrite(reportPath, args, { announced: announcedStageEvidence }),
+    beforePublish: recheckStageEvidence,
   });
 
   let doctor = null;

@@ -1261,8 +1261,10 @@ test("stage evidence committed while a run waits for the lock still stops it wit
 
 test("stage evidence committed while a run holds the lock is caught before the report is replaced", async (t) => {
   // Stage producers do not take the prepare-build lock. This shim commits
-  // evidence the moment the run writes its theme report, well after the first
-  // guard and before the JSON outputs are published.
+  // evidence the moment the run writes its theme report: after the theme
+  // artifacts are replaced but before the JSON outputs are published. That is
+  // the one window the re-checks cannot close (the theme files are already
+  // written); closing it needs stage writers to take the lock (#501).
   function evidenceMidRunEnv(fixture) {
     const preloadPath = join(fixture.dir, "stage-evidence-mid-run.cjs");
     writeFileSync(preloadPath, `
@@ -1305,6 +1307,50 @@ syncBuiltinESMExports();
     assert.equal(report.stages.assembly.status, "completed", "the report keeps its stage evidence");
     assert.ok(readFileSync(packetPath).equals(packetBytes), "no JSON output is published after the refusal");
     assert.deepEqual(readdirSync(dirname(reportPath)).filter((name) => name.includes(".tmp")), []);
+  }));
+
+  await t.test("evidence that lands before the theme write refuses the run with nothing written", () => withFixture(async (fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const themeReportPath = join(fixture.target, ".campaign-runtime/theme/theme-report.json");
+    const packetBytes = readFileSync(packetPath);
+    const themeBytes = readFileSync(themeReportPath);
+    // Commits evidence when the run reads its Design Source Package: after
+    // the first guard, before any theme or JSON output is written.
+    const preloadPath = join(fixture.dir, "stage-evidence-before-theme.cjs");
+    writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalReadFileSync = fs.readFileSync;
+let committed = false;
+fs.readFileSync = function commitEvidenceBeforeTheme(file, ...rest) {
+  const result = originalReadFileSync.call(fs, file, ...rest);
+  if (!committed && path.resolve(String(file)) === path.resolve(process.env.PB_DSP)) {
+    committed = true;
+    const report = JSON.parse(originalReadFileSync.call(fs, process.env.PB_REPORT, "utf8"));
+    report.stages.assembly.status = "completed";
+    report.stages.assembly.outputs = ["_site/checkout/index.html"];
+    fs.writeFileSync(process.env.PB_REPORT, JSON.stringify(report, null, 2) + "\\n");
+  }
+  return result;
+};
+syncBuiltinESMExports();
+`);
+    const result = await runPrepareAsync(fixture, {
+      env: {
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+        PB_DSP: join(fixture.target, DSP_REL_PATH),
+        PB_REPORT: reportPath,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /gained stage evidence while prepare-build was running \(assembly\)/);
+    assert.equal(readJson(reportPath).stages.assembly.status, "completed", "the report keeps its stage evidence");
+    assert.ok(readFileSync(themeReportPath).equals(themeBytes), "the theme report is not rewritten");
+    assert.ok(readFileSync(packetPath).equals(packetBytes), "no JSON output is published");
   }));
 
   await t.test("with --force the run overwrites and names the stage it clears", () => withFixture(async (fixture) => {
