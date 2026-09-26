@@ -285,6 +285,10 @@ test("payment-logos.html logos the template keeps hidden are not payment-method 
   assert.match(withoutHiddenPaymentLogos(row), /cc-visa\.svg/);
   // Live DOM serialises the attribute as hidden="": still gated.
   assert.deepEqual(paymentMethodMarkupMatches('<img src="/c/images/paypal-logo.svg" data-payment-logo="paypal" hidden="">', "paypal", chrome), []);
+  // Any value keeps a boolean attribute on: hidden="true", hidden=1, hidden='until-found'.
+  for (const attr of ['hidden="true"', "hidden=1", "hidden='until-found'"]) {
+    assert.deepEqual(paymentMethodMarkupMatches(`<img src="/c/images/paypal-logo.svg" data-payment-logo="paypal" ${attr}>`, "paypal", chrome), [], attr);
+  }
   // Forced on (payment_flags.show_paypal: true) or revealed at runtime: no hidden attribute, so it is judged as chrome.
   assert.deepEqual(
     paymentMethodMarkupMatches('<img src="/c/images/paypal-logo.svg" data-payment-logo="paypal" data-payment-force="show">', "paypal", chrome),

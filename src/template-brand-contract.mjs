@@ -335,7 +335,8 @@ export function paymentChromeAssetHashes(chrome, { label = "template brand contr
 // static scan and browser QA drop those tags before matching. A visible one
 // (forced on, or revealed at runtime) stays in and is judged like any chrome.
 const PAYMENT_LOGO_IMG_TAG = /<img\b[^>]*\sdata-payment-logo\s*=[^>]*>/gi;
-const HIDDEN_ATTRIBUTE = /\shidden(?:\s*=\s*(?:""|''|"hidden"|'hidden'|hidden))?(?=[\s/>])/i;
+// Boolean attribute: present with any value (hidden, hidden="", hidden="true", …) means hidden.
+const HIDDEN_ATTRIBUTE = /\shidden(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?(?=[\s/>])/i;
 
 export function withoutHiddenPaymentLogos(html) {
   const text = typeof html === "string" ? html : "";
