@@ -2270,45 +2270,111 @@ function prepareDesignSourcePackage({
   };
 
   let origin = DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED;
-  // No-replace publication: an exclusive hard link of a fully written
-  // staging file. A concurrent winner is validated and reused.
-  const publishSynthesized = () => {
+
+  // Synthesize the current package and fully write it to a same-directory
+  // staging file. Nothing at `path` is touched yet, so a failure here (inputs
+  // that no longer validate, a read-only target, a full disk) leaves any
+  // existing package exactly as it was.
+  const stageSynthesized = () => {
     ({ value, rawBytes } = synthesizeCurrent());
     mkdirSync(dirname(path), { recursive: true });
     const stagedPath = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
     try {
       writeFileSync(stagedPath, rawBytes, { flag: "wx" });
-      try {
-        // Linking a fully written same-directory staging file is the Node
-        // primitive that combines atomic visibility with no-replace
-        // publication. A plain rename fallback is intentionally unsafe here:
-        // it could replace a concurrent winner after the absence check.
-        linkSync(stagedPath, path);
-        mode = "emitted";
-      } catch (error) {
-        // EEXIST is the ordinary loser path. For any other link failure, a
-        // package may still have appeared concurrently at the publication
-        // seam; prefer validating that winner before failing closed.
-        if (error?.code !== "EEXIST" && !existsSync(path)) {
-          throw new Error(
-            `Could not atomically publish Design Source Package artifact at ${path}${error?.code ? ` (${error.code})` : ""}: `
-            + `exclusive hard-link publication failed; refusing an unsafe rename fallback that could overwrite a concurrent winner: ${error.message}`,
-            { cause: error },
-          );
-        }
-        // Another publisher won (or completed while this link failed). Its
-        // exact bytes are authoritative; validate and reuse them rather than
-        // overwriting.
-        const winner = readExisting();
-        if (winner.stale) {
-          throw new Error(`Design Source Package at ${path} was published concurrently and does not match this run's inputs; if it is a stale package an earlier prepare-build synthesized, rerun prepare-build with --force.`);
-        }
-        ({ value, rawBytes, origin } = winner);
-        mode = "reused";
-      }
-    } finally {
+    } catch (error) {
       rmSync(stagedPath, { force: true });
+      throw error;
     }
+    return stagedPath;
+  };
+
+  // A package another run published at `path` is authoritative: validate
+  // and reuse its exact bytes rather than overwriting them.
+  const reuseWinner = () => {
+    const winner = readExisting();
+    if (winner.stale) {
+      throw new Error(`Design Source Package at ${path} was published concurrently and does not match this run's inputs; if it is a stale package an earlier prepare-build synthesized, rerun prepare-build with --force.`);
+    }
+    ({ value, rawBytes, origin } = winner);
+    mode = "reused";
+  };
+
+  const publishStaged = (stagedPath) => {
+    try {
+      // Linking a fully written same-directory staging file is the Node
+      // primitive that combines atomic visibility with no-replace
+      // publication. A plain rename fallback is intentionally unsafe here:
+      // it could replace a concurrent winner after the absence check.
+      linkSync(stagedPath, path);
+      mode = "emitted";
+    } catch (error) {
+      // EEXIST is the ordinary loser path. For any other link failure, a
+      // package may still have appeared concurrently at the publication
+      // seam; prefer validating that winner before failing closed.
+      if (error?.code !== "EEXIST" && !existsSync(path)) {
+        throw new Error(
+          `Could not atomically publish Design Source Package artifact at ${path}${error?.code ? ` (${error.code})` : ""}: `
+          + `exclusive hard-link publication failed; refusing an unsafe rename fallback that could overwrite a concurrent winner: ${error.message}`,
+          { cause: error },
+        );
+      }
+      reuseWinner();
+    }
+  };
+
+  // --force over this producer's own stale package. The replacement is
+  // already staged; the stale bytes are claimed by moving them aside (rename
+  // is atomic, so of several concurrent --force runs exactly one claims
+  // them), and the replacement goes out through the same no-replace link as
+  // a fresh emit. Every failure puts the claimed bytes back.
+  const replaceStale = (stagedPath, staleSha256) => {
+    // Most concurrent runs arrive after a winner has already replaced the
+    // stale bytes; they reuse it without claiming anything. The claim below
+    // only runs while `path` still holds the bytes judged stale.
+    let currentBytes = null;
+    try {
+      currentBytes = readFileSync(path);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    if (currentBytes == null) return publishStaged(stagedPath);
+    if (hashSerializedDesignSourcePackage(currentBytes) !== staleSha256) return reuseWinner();
+    const retiredPath = join(dirname(path), `.${basename(path)}.${randomUUID()}.stale`);
+    try {
+      renameSync(path, retiredPath);
+    } catch (error) {
+      // Another run claimed it first: publish, or reuse what that run published.
+      if (error?.code === "ENOENT") return publishStaged(stagedPath);
+      throw new Error(`Could not claim the stale Design Source Package at ${path} for regeneration${error?.code ? ` (${error.code})` : ""}: ${error.message}`, { cause: error });
+    }
+    // Put the claimed bytes back without replacing anything that has appeared
+    // at `path` since. True when `path` holds a package afterwards.
+    const putBack = () => {
+      try {
+        linkSync(retiredPath, path);
+        return true;
+      } catch (error) {
+        return error?.code === "EEXIST";
+      }
+    };
+    try {
+      if (hashSerializedDesignSourcePackage(readFileSync(retiredPath)) !== staleSha256) {
+        // Not the bytes this run judged stale: another run has already
+        // regenerated the package. Its bytes go back and are validated as the
+        // winner, like any concurrent publication.
+        putBack();
+        reuseWinner();
+      } else {
+        publishStaged(stagedPath);
+      }
+    } catch (error) {
+      if (existsSync(path) || putBack()) {
+        rmSync(retiredPath, { force: true });
+        throw error;
+      }
+      throw new Error(`${error.message} The Design Source Package moved aside for regeneration could not be restored and is kept at ${retiredPath}.`, { cause: error });
+    }
+    rmSync(retiredPath, { force: true });
   };
 
   let existing = null;
@@ -2325,49 +2391,20 @@ function prepareDesignSourcePackage({
   if (existing && !existing.stale) {
     ({ value, rawBytes, origin } = existing);
     mode = "reused";
-  } else if (existing?.stale) {
-    // Claim the stale bytes by moving them aside, then publish through the
-    // same no-replace link as a fresh emit. rename is atomic, so of several
-    // concurrent --force runs exactly one claims the stale package; the rest
-    // find it gone and fall through to the link, where the claimant's (or any
-    // other publisher's) winner is validated and reused, never overwritten.
-    const retiredPath = join(dirname(path), `.${basename(path)}.${randomUUID()}.stale`);
-    let claimed = false;
+  } else {
+    const stagedPath = stageSynthesized();
     try {
-      renameSync(path, retiredPath);
-      claimed = true;
-    } catch (error) {
-      if (error?.code !== "ENOENT") {
-        throw new Error(`Could not claim the stale Design Source Package at ${path} for regeneration${error?.code ? ` (${error.code})` : ""}: ${error.message}`, { cause: error });
-      }
-    }
-    let keepRetired = false;
-    try {
-      if (claimed && hashSerializedDesignSourcePackage(readFileSync(retiredPath)) !== existing.sha256) {
-        // The package changed between the provenance check and the claim, so
-        // these are not provably this producer's bytes. Put them back without
-        // replacing anything that has since appeared, and refuse.
-        try {
-          linkSync(retiredPath, path);
-        } catch (error) {
-          if (error?.code !== "EEXIST") throw error;
-          keepRetired = true;
-          throw new Error(`Design Source Package at ${path} changed while prepare-build --force was regenerating it, and another package has since been published there; the bytes that were moved aside are kept at ${retiredPath}. Reconcile them, then rerun prepare-build.`);
-        }
-        throw new Error(`Design Source Package at ${path} changed while prepare-build --force was regenerating it; it was left in place. Rerun prepare-build --force if it is still the producer's own stale output.`);
-      }
-      publishSynthesized();
+      if (existing?.stale) replaceStale(stagedPath, existing.sha256);
+      else publishStaged(stagedPath);
     } finally {
-      if (claimed && !keepRetired) rmSync(retiredPath, { force: true });
+      rmSync(stagedPath, { force: true });
     }
-    if (mode === "emitted") {
+    if (existing?.stale && mode === "emitted") {
       mode = "regenerated";
       console.warn(
         `[campaigns-os prepare-build] --force: regenerated the stale Design Source Package at ${path} that an earlier prepare-build synthesized.`,
       );
     }
-  } else {
-    publishSynthesized();
   }
 
   const referenceIdentity = createDesignSourcePackageArtifactReference(value, {

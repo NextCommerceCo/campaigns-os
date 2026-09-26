@@ -521,11 +521,12 @@ test("prepare-build contextualizes unreadable existing DSP artifacts and leaves 
   }));
 });
 
-// Preload a process-local fs shim that snapshots the old existsSync result,
-// then releases every CLI only after all of them have observed the DSP path.
+// Preload a process-local fs shim that holds each CLI at its first call of
+// `barrierFn` on the DSP path (existsSync by default: every run has seen the
+// path absent), and releases them only after all have reached that point.
 // This synchronizes the real multi-process publication seam without adding
 // any test hook to production code.
-function publicationBarrierEnv(fixture, processCount) {
+function publicationBarrierEnv(fixture, processCount, { barrierFn = "existsSync" } = {}) {
   const barrierDir = join(fixture.dir, "dsp-publication-barrier");
   const preloadPath = join(fixture.dir, "dsp-publication-barrier.cjs");
   mkdirSync(barrierDir, { recursive: true });
@@ -533,10 +534,11 @@ function publicationBarrierEnv(fixture, processCount) {
 const fs = require("node:fs");
 const path = require("node:path");
 const { syncBuiltinESMExports } = require("node:module");
-const originalExistsSync = fs.existsSync;
+const barrierFn = process.env.DSP_BARRIER_FN;
+const original = fs[barrierFn];
 let observed = false;
-fs.existsSync = function guardedExistsSync(candidate) {
-  const result = originalExistsSync(candidate);
+fs[barrierFn] = function guardedAtBarrier(candidate, ...rest) {
+  const result = original.call(fs, candidate, ...rest);
   if (!observed && path.resolve(String(candidate)) === path.resolve(process.env.DSP_BARRIER_PATH)) {
     observed = true;
     fs.writeFileSync(path.join(process.env.DSP_BARRIER_DIR, String(process.pid)), "ready");
@@ -555,6 +557,7 @@ syncBuiltinESMExports();
     DSP_BARRIER_PATH: join(fixture.target, DSP_REL_PATH),
     DSP_BARRIER_DIR: barrierDir,
     DSP_BARRIER_COUNT: String(processCount),
+    DSP_BARRIER_FN: barrierFn,
   };
   return env;
 }
@@ -910,15 +913,19 @@ test("concurrent prepare-build --force runs claim the stale DSP once and never o
     manifest.generated_at = "2026-08-22T11:00:00.000Z";
   });
 
+  // Held just after each run has read the stale bytes, so every run has
+  // judged the package stale before any of them publishes.
   const processCount = 6;
-  const env = publicationBarrierEnv(fixture, processCount);
+  const env = publicationBarrierEnv(fixture, processCount, { barrierFn: "readFileSync" });
   const results = await Promise.all(Array.from({ length: processCount }, () => runPrepareAsync(fixture, { env, extraArgs: ["--force"] })));
   for (const result of results) assert.equal(result.status, 0, result.stderr);
-  // Exactly one run publishes; every other run reuses that winner instead of
-  // renaming its own bytes over it. A run that finds the stale package already
-  // claimed publishes as a fresh emit, so the one publisher may report either.
-  assert.equal(results.filter((result) => ["regenerated", "emitted"].includes(result.json.designSourcePackageMode)).length, 1);
-  assert.equal(results.filter((result) => result.json.designSourcePackageMode === "reused").length, processCount - 1);
+  // Runs reuse the winner instead of renaming their own bytes over it. A late
+  // run that claims an already-fresh package puts it straight back, and a run
+  // arriving in that instant can publish the same bytes through the no-replace
+  // link, so at most two runs report publishing; every other run reuses.
+  const publishers = results.filter((result) => ["regenerated", "emitted"].includes(result.json.designSourcePackageMode)).length;
+  assert.ok(publishers >= 1 && publishers <= 2, `${publishers} runs published`);
+  assert.equal(results.filter((result) => result.json.designSourcePackageMode === "reused").length, processCount - publishers);
 
   const rawBytes = readFileSync(dspPath);
   assert.equal(rawBytes.equals(staleBytes), false, "the stale package was replaced");
@@ -928,6 +935,46 @@ test("concurrent prepare-build --force runs claim the stale DSP once and never o
     readdirSync(dirname(dspPath)).filter((name) => name.includes(".tmp") || name.includes(".stale")),
     [],
     "claimed stale bytes and staging names are cleaned up",
+  );
+}));
+
+test("a --force regeneration whose publication fails puts the stale DSP back instead of deleting it", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const staleBytes = readFileSync(dspPath);
+  editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T11:00:00.000Z";
+  });
+
+  // Only publication of the staged replacement fails; putting the claimed
+  // bytes back is an ordinary link and still works.
+  const preloadPath = join(fixture.dir, "dsp-staged-link-fails.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalLinkSync = fs.linkSync;
+fs.linkSync = function failStagedPublication(source, destination) {
+  if (path.resolve(String(destination)) === path.resolve(process.env.DSP_PATH) && String(source).endsWith(".tmp")) {
+    const error = new Error("simulated publication failure");
+    error.code = "EIO";
+    throw error;
+  }
+  return originalLinkSync(source, destination);
+};
+syncBuiltinESMExports();
+`);
+  const result = await runPrepareAsync(fixture, {
+    extraArgs: ["--force"],
+    env: { NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(), DSP_PATH: dspPath },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /simulated publication failure/);
+  assert.ok(readFileSync(dspPath).equals(staleBytes), "the stale package is back in place, byte for byte");
+  assert.deepEqual(
+    readdirSync(dirname(dspPath)).filter((name) => name.includes(".tmp") || name.includes(".stale")),
+    [],
   );
 }));
 
