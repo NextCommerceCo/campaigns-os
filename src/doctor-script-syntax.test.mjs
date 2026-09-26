@@ -319,6 +319,11 @@ test("scriptKind follows the HTML type-string steps, including whitespace-only t
     [{ language: "JavaScript" }, "classic"],
     [{ language: "javascript1.5" }, "classic"],
     [{ language: "vbscript" }, null],
+    // language is concatenated unstripped, so trailing whitespace runs nothing.
+    [{ language: "JavaScript " }, null],
+    [{ language: " javascript" }, null],
+    // A whitespace-only type is still a type: language is not consulted.
+    [{ type: " ", language: "" }, null],
     // A type attribute wins over language.
     [{ type: "", language: "vbscript" }, "classic"],
     [{ type: "module", language: "vbscript" }, "module"],

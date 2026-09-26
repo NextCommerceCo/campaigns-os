@@ -44,17 +44,19 @@ const CLASSIC_SCRIPT_TYPE = /^(?:text|application)\/(?:x-)?(?:java|ecma)script$|
  * @returns {"classic" | "module" | null}
  */
 export function scriptKind(attrs) {
+  // The script block's type string, as the HTML steps build it: an empty
+  // type, or no type with an empty or absent language, is text/javascript; a
+  // type attribute is stripped of ASCII whitespace; otherwise "text/" plus the
+  // language attribute, unstripped.
+  const hasType = typeof attrs.type === "string";
+  const hasLanguage = typeof attrs.language === "string";
   let type;
-  if (typeof attrs.type === "string") type = attrs.type;
-  else if (typeof attrs.language === "string") type = attrs.language === "" ? "" : `text/${attrs.language}`;
-  else type = "";
+  if (hasType ? attrs.type === "" : !hasLanguage || attrs.language === "") type = "text/javascript";
+  else if (hasType) type = attrs.type.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+  else type = `text/${attrs.language}`;
   let kind = null;
-  if (type === "") kind = "classic";
-  else {
-    const essence = type.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
-    if (essence.toLowerCase() === "module") kind = "module";
-    else if (CLASSIC_SCRIPT_TYPE.test(essence)) kind = "classic";
-  }
+  if (type.toLowerCase() === "module") kind = "module";
+  else if (CLASSIC_SCRIPT_TYPE.test(type)) kind = "classic";
   if (kind === "classic" && "nomodule" in attrs) return null;
   return kind;
 }

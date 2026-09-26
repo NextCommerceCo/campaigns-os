@@ -282,3 +282,8 @@ test('a data block carrying nomodule stays a data block; only a classic nomodule
   assert.equal(classic.outcome, 'unknown');
   assert.equal(classic.reason, 'dynamic_unresolved');
 });
+
+test('a language attribute with trailing whitespace is not run by the browser, so it cannot bind', async () => {
+  const evidence = await observe(`<script language="JavaScript ">window.nextConfig = {apiKey: ${JSON.stringify(key)}};</script>`);
+  assert.notEqual(evidence.outcome, 'match');
+});
