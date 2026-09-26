@@ -783,6 +783,47 @@ advisories, `unknown_attributes[]`, `pages_scanned`,
 It passes, with no advisory, on the canonical rendered output of every
 certified starter family (`fixtures/certified-families/`).
 
+### Built-output script syntax gate (`built_output.script_syntax`)
+
+Every doctor run that sees built output (the packet path and `doctor --built`
+alike) parses each campaign-owned `.js` file a built page loads by a local
+`<script src>`. A script that does not parse throws a `SyntaxError` on every
+load of every page that references it, and nothing it defines runs; every
+HTML-reading gate passes over it. The shape that shipped was a template-family
+checkout script, copied and hand-edited, left with one closing `});` too many.
+
+Parsing uses Acorn at the latest `ecmaVersion`: `sourceType: 'script'` for
+classic scripts and `'module'` for `type="module"`, which is how the browser
+reads each. Remote scripts (an `http(s):` URL, a protocol-relative `//` URL,
+`data:`) are not campaign-owned and are not read, and neither are data blocks
+such as JSON-LD. The type is compared as the browser compares it, with
+surrounding ASCII whitespace stripped and case ignored. A classic `nomodule`
+script is skipped: a module-capable browser never fetches or runs it. A
+`type="module"` script ignores `nomodule` and is still parsed. Each src resolves the way the browser resolves it, against
+the document's first `<base href>` or else the page, and the percent-decoded
+path maps under the site root first, then the campaign directory, never outside
+either. A base on another origin makes relative srcs remote. Imports inside a
+module are not followed.
+
+A parse failure blocks (not waivable — a script that cannot be parsed cannot be
+intended to ship) under `built_output.script_syntax.parse_failure`, one error
+per file. The message leads with `<file>:<line>:<column>` and a fixed
+diagnostic category (for example `Unexpected token` or `Invalid regular
+expression`), never text from the script, and names the pages that load the
+file. A referenced local script
+that is not on disk is listed on the gate as `scripts_unresolved[]`, not
+judged here.
+
+The gate's evidence lands beside the other checkpoint gates at
+`derived.checkpoint_gates[]` (`id: built_output.script_syntax`, status `pass` |
+`blocked` | `not_applicable`, `findings[]` with `file`, `line`, `column`,
+`source_type` and `pages`, `scripts_scanned`, `scripts_unresolved[]`,
+`pages_scanned`). Fixtures: `fixtures/script-syntax/{good,bad}`. It passes on
+the canonical rendered output of every certified starter family
+(`fixtures/certified-families/`). QA applies the same rule to the page scripts
+it reads for credential declarations (`script-parse:<page_id>`; see
+[QA and test orders](qa-and-test-orders.md)).
+
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
 ## Artifact Locations

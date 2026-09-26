@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.9] - 2026-09-26
+
+### Fixed
+
+- Doctor no longer reports a build ready when a campaign script has a syntax
+  error. Every doctor run that sees built output, `doctor --built` and the
+  packet path alike, now parses each campaign-owned `.js` file a built page
+  loads by a local `<script src>`, and blocks under
+  `built_output.script_syntax.parse_failure` when one does not parse. The error
+  names the file, line and column, for example a hand-edited checkout script
+  left with one closing `});` too many. Remote scripts such as CDN URLs are not
+  read, `type="module"` scripts are parsed as modules, and classic `nomodule`
+  scripts are skipped. Script types are read as the browser reads them, trimmed
+  of surrounding whitespace and case-insensitive, and a module script is parsed
+  even when it carries `nomodule`, since the browser still runs it. Script paths resolve against the page's `<base href>` and are
+  percent-decoded, as the browser loads them. The gate is not waivable and
+  passes on every certified starter family.
+- QA no longer reads a page script that does not parse as "dynamic". The
+  credential binding treats its declarations as unavailable, and QA adds a
+  `script-parse:<page_id>` blocker naming the script, line and column. Both
+  report a fixed diagnostic category, never text from the script. QA
+  classifies script types the same way doctor does.
 ## [1.43.1+agent.8] - 2026-09-26
 
 ### Fixed
