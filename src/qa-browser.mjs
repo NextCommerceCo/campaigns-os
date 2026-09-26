@@ -55,6 +55,7 @@ import {
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
   summarizePlaceholderTerms,
+  withoutHiddenPaymentLogos,
 } from "./template-brand-contract.mjs";
 
 const DEFAULT_BROWSER_TIMEOUT_MS = 30000;
@@ -1732,7 +1733,9 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
   if (chrome && Array.isArray(supported) && supported.length) {
     const unsupported = (chrome.methods || []).filter((method) => !supported.includes(method));
     if (unsupported.length) {
-      const html = await browserPage.content().catch(() => "");
+      // Logos the template still keeps hidden (payment-logos.html) are gated,
+      // not residue; a revealed one stays in the HTML and is judged below.
+      const html = withoutHiddenPaymentLogos(await browserPage.content().catch(() => ""));
       // One evaluate for ALL unsupported methods' selectors; partition the
       // visibility results per method in JS to keep browser round-trips flat.
       const artifactsByMethod = new Map(unsupported.map((method) => [method, methodPaymentArtifacts(chrome, method)]));

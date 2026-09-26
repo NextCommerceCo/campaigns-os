@@ -7072,6 +7072,27 @@
         }
       ],
       "entry_sha256": "27d696ec2cfae34a6ecb95432d8e15971c7234668d7430b87b5dade3e092836a"
+    },
+    {
+      "id": "RL-0152",
+      "sequence": 152,
+      "date": "2026-09-26",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.5",
+      "changelog_sha256": "2abbb4fca524e64ac46bccf1f11044fdd921db5af73eb4c194e73be0d2bdfafa",
+      "agent_impact": "Doctor and browser QA no longer report hidden starter payment-logos.html logos as payment-method residue; a forced-on logo warning now names the payment_flags.show_<method> frontmatter flag.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "Skip hidden payment-logos.html logos in the built-checkout payment scan and name the frontmatter flag when a logo is forced on."
+        }
+      ],
+      "entry_sha256": "9c7500519109ff5b96d1131f3b3589c6cf291ca47ce7a6f720fb46d8ff96b795"
     }
   ]
 }
