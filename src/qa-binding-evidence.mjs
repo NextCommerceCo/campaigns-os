@@ -1,6 +1,7 @@
 import { parse as parseHtml } from 'parse5';
 import { parse as parseJs } from 'acorn';
 import { createPageSourceLoader, resolveCommercialApiKey } from './qa-commercial-parity.mjs';
+import { parseFailureDiagnostic, scriptKind } from './built-script-syntax.mjs';
 
 export const BINDING_SCHEMA = 'campaigns-os-page-binding/v0';
 export const BINDING_LIMITS = Object.freeze({ scripts_per_page: 6, scripts_per_run: 24, script_bytes: 262144, timeout_ms: 5000 });
@@ -55,12 +56,15 @@ function literalObject(node) {
   if (node?.type === 'ObjectExpression') return node.properties.every(p => p.type === 'Property' && !p.computed && p.kind === 'init' && !p.method && !p.shorthand && literalObject(p.value));
   return false;
 }
-function declarations(text) {
+function declarations(text, { module = false } = {}) {
   // Only whole, unconditional literal assignments are accepted. No evaluation,
   // constant propagation, getters, spreads, callbacks, aliases, or branch guesses.
+  // A script that does not parse is not dynamic: the browser throws on it and
+  // nothing in it runs. It is its own state, reported with its position (#480).
   let ast;
-  try { ast = parseJs(text, { ecmaVersion: 2022, sourceType: 'script' }); }
-  catch { return { values: [], dynamic: true }; }
+  try { ast = parseJs(text, { ecmaVersion: 'latest', sourceType: module ? 'module' : 'script', locations: true }); }
+  // The message is a fixed category: acorn echoes source text into some.
+  catch (error) { return { values: [], dynamic: false, unparsable: parseFailureDiagnostic(error) }; }
   const values = [];
   let dynamic = false;
   for (const statement of ast.body) {
@@ -78,7 +82,23 @@ function declarations(text) {
   return { values, dynamic };
 }
 
-export async function observeBinding({ source, page, expected, scriptLoader }) {
+// A path for a script, for findings: never a full URL, query or fragment. A
+// script served from another origin keeps its host, so same-named files on two
+// CDNs stay distinguishable.
+function scriptPath(src, pageUrl) {
+  try {
+    const url = new URL(src, pageUrl);
+    let pageOrigin = null;
+    try { pageOrigin = new URL(pageUrl).origin; } catch {}
+    return pageOrigin && url.origin !== pageOrigin ? `${url.host}${url.pathname}` : url.pathname;
+  } catch { return null; }
+}
+
+// `parseFailures`, when given, receives one record per page script that does
+// not parse ({ source_kind, script, line, column, message }). It is kept off
+// the page-binding evidence, whose shape is a closed contract; the caller
+// reports it as its own assertion.
+export async function observeBinding({ source, page, expected, scriptLoader, parseFailures = null }) {
   const kinds = new Set();
   const result = (outcome, reason) => ({ schema_version: BINDING_SCHEMA, observation: 'static_declaration',
     outcome, reason, source_kinds: [...kinds].sort(), identity: 'not_verified' });
@@ -94,8 +114,10 @@ export async function observeBinding({ source, page, expected, scriptLoader }) {
   const values = [];
   const scripts = [];
   let dynamic = false;
+  let baseHref = null;
   const walk = node => {
     const attrs = Object.fromEntries((node.attrs || []).map(a => [a.name, a.value]));
+    if (node.tagName === 'base' && baseHref === null && typeof attrs.href === 'string') baseHref = attrs.href.trim();
     if (node.tagName === 'base' || Object.entries(attrs).some(([name, value]) => /^on/i.test(name) || /^\s*javascript:/i.test(value))) dynamic = true;
     if (node.tagName === 'meta' && attrs.name === 'next-api-key') { values.push(attrs.content ?? ''); kinds.add('meta'); }
     if (node.tagName === 'script') scripts.push({ attrs, text: (node.childNodes || []).map(n => n.value || '').join('') });
@@ -103,24 +125,47 @@ export async function observeBinding({ source, page, expected, scriptLoader }) {
     if (node.tagName !== 'noscript') for (const child of node.childNodes || []) walk(child);
   };
   try { walk(parseHtml(source.html)); } catch { return result('unknown', 'dynamic_unresolved'); }
+  // Script srcs resolve against the document's effective base: its first
+  // <base href>, else the page URL. The loader still scopes the result to
+  // the page origin, so a cross-origin base leaves those scripts unavailable.
+  let scriptBase = pageUrl;
+  if (baseHref !== null) {
+    try { scriptBase = new URL(baseHref, pageUrl).href; } catch { scriptBase = pageUrl; }
+  }
+  const scriptRef = src => { try { return new URL(src, scriptBase).href; } catch { return null; } };
   let count = 0, unavailable = false;
   for (const script of scripts) {
     const { attrs } = script;
+    // Classified as the browser does (type trimmed of ASCII whitespace,
+    // case-insensitive). A module script ignores nomodule; a classic nomodule
+    // script is never fetched or run by a module-capable browser, so it cannot
+    // fail on load there: not fetched, not parsed, still not static.
+    const scriptType = scriptKind(attrs);
+    const { nomodule: _nomodule, ...withoutNomodule } = attrs;
+    const classicNomodule = scriptType === null && 'nomodule' in attrs && scriptKind(withoutNomodule) === 'classic';
     // Data-block types (e.g. JSON-LD) are not fetched and consume no config-request budget.
-    if (attrs.type && !['text/javascript', 'application/javascript', 'module'].includes(attrs.type.toLowerCase())) continue;
+    if (scriptType === null && !classicNomodule) continue;
     if (attrs.src && SDK.test(attrs.src)) continue;
+    if (classicNomodule) { dynamic = true; continue; }
     let text = script.text;
     let kind = 'inline';
     if (attrs.src) {
       kind = 'config_script';
       if (++count > BINDING_LIMITS.scripts_per_page) { unavailable = true; continue; }
-      const loaded = await scriptLoader(attrs.src, pageUrl);
+      const ref = baseHref === null ? attrs.src : scriptRef(attrs.src);
+      const loaded = ref ? await scriptLoader(ref, pageUrl) : { ok: false };
       if (!loaded.ok) { unavailable = true; continue; }
       text = loaded.html;
     }
-    const found = declarations(text);
+    const found = declarations(text, { module: scriptType === 'module' });
+    if (found.unparsable) {
+      // The declarations in an unparsable script are unavailable, not dynamic.
+      unavailable = true;
+      if (Array.isArray(parseFailures)) parseFailures.push({ source_kind: kind, script: attrs.src ? scriptPath(scriptRef(attrs.src) ?? attrs.src, pageUrl) : null, ...found.unparsable });
+      continue;
+    }
     if (found.values.length) { kinds.add(kind); values.push(...found.values); }
-    if (found.dynamic || 'async' in attrs || 'nomodule' in attrs || attrs.type === 'module') dynamic = true;
+    if (found.dynamic || 'async' in attrs || scriptType === 'module') dynamic = true;
   }
   if (new Set(values).size > 1) return result('unknown', 'conflicting_declarations');
   if (expected?.conflict) return result('unknown', 'conflicting_expected');
@@ -137,4 +182,14 @@ export function bindingAssertion(page, evidence) {
     status: evidence.outcome === 'match' ? 'pass' : evidence.outcome === 'mismatch' ? 'fail' : 'manual_review',
     ...(evidence.outcome === 'match' ? {} : { severity: evidence.outcome === 'mismatch' ? 'blocker' : 'warn' }),
     expected: 'expected credential declaration', actual: evidence.outcome, evidence };
+}
+
+// A page script that does not parse throws a SyntaxError on every load (#480).
+// One blocker per page, naming each script and the parse position.
+export function scriptParseAssertion(page, failures) {
+  if (!Array.isArray(failures) || failures.length === 0) return null;
+  const where = failures.map(f => `${f.script || 'inline script'}:${f.line}:${f.column}`).join(', ');
+  return { id: `script-parse:${page.page_id}`, family: 'api-metadata', page: page.page_id, status: 'fail', severity: 'blocker',
+    expected: 'every page script parses', actual: `unparsable: ${where}`,
+    evidence: { observation: 'static_parse', scripts: failures.map(f => ({ source_kind: f.source_kind, script: f.script, line: f.line, column: f.column, message: f.message })) } };
 }

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Upsell accept that navigates before the mutation body is read</title>
+</head>
+<body>
+  <div data-next-upsell>
+    <h1>One more thing</h1>
+    <button type="button" data-next-upsell-action="add">Yes, add it to my order</button>
+    <button type="button" data-next-upsell-action="skip">No thanks</button>
+  </div>
+  <script>
+    // Accept posts the order upsell mutation and moves on as soon as the
+    // response headers arrive, without reading the body. The page is gone
+    // before the body finishes loading.
+    const ref = new URLSearchParams(location.search).get("ref_id");
+    document.querySelector('[data-next-upsell-action="add"]').addEventListener("click", async () => {
+      const response = await fetch(`/api/v1/orders/${ref}/upsells/`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lines: [{ package_id: 1, quantity: 1 }] }),
+      });
+      if (response.ok) location.href = `/thank-you/?ref_id=${ref}`;
+    });
+  </script>
+</body>
+</html>

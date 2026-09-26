@@ -19,7 +19,7 @@ const REASONS = new Set([
   "theme_gate.starter_palette_only", "built_output.campaign_identity",
   "built_output.upsell_selector_scope", "built_output.sdk_markup.swap_with_add_to_cart",
   "built_output.sdk_markup.checkout_not_form", "built_output.sdk_markup.wrong_field_name",
-  "built_output.sdk_markup.missing_selector_id_match",
+  "built_output.sdk_markup.missing_selector_id_match", "built_output.script_syntax.parse_failure",
 ]);
 const ACTIONS = new Set([
   "repair_target", "align_store_profile", "align_sdk_version", "repair_waiver", "waive_checkpoint",

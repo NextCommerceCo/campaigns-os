@@ -1698,6 +1698,19 @@ review. Nested Google Maps/payment keys and inert HTML do not count as campaign
 credentials. This small static grammar deliberately leaves many real pages
 unknown; a literal inside arbitrary code is not proof of effective configuration.
 
+A page script that does not parse is not treated as dynamic. The browser throws
+a `SyntaxError` on it and nothing in it runs, so the binding reads its
+declarations as unavailable (`script_unavailable_or_limit`) and QA adds a
+separate `script-parse:<page_id>` blocker in the same `api-metadata` family.
+Its `actual` names each script by path (inline scripts as `inline script`)
+with the line and column, and its evidence lists a fixed diagnostic category
+per script, never text from the script. Classic scripts are parsed as scripts
+and `type="module"` scripts as modules, with the type stripped of surrounding
+ASCII whitespace and compared case-insensitively as the browser does; classic
+`nomodule` scripts are not fetched or parsed (a module script ignores
+`nomodule` and is parsed), and script srcs resolve against the page's first `<base href>`. Doctor runs the same parse over the built output before deploy; see
+`built_output.script_syntax` in [the Build Packet doc](build-packet.md).
+
 External executable scripts other than the recognized jsDelivr Campaign Cart
 loader/index are inspected only on the page's origin. Each page admits at most
 6 such references; each run fetches at most 24 distinct URLs (deduplicated),

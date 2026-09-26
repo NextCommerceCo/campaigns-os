@@ -486,15 +486,25 @@ export async function runAnalyticsParityChecks(args = {}, options = {}) {
   }
 }
 
-// Analytics CORRECTNESS inventory leg: capture ONE campaign-root page and
-// assess only declared tags/pixels. Purchase is finalized later from the
-// canonical typed-card order's recognized receipt; this root visit is never
-// treated as Purchase authority.
+// Analytics CORRECTNESS inventory leg: capture ONE page and assess only
+// declared tags/pixels. Purchase is finalized later from the canonical
+// typed-card order's recognized receipt; this inventory visit is never treated
+// as Purchase authority.
 // `options.target` is the capture target resolved from the campaign's
 // identity (public_route_slug + route_root) in qa-node — packet 01 / INV-2:
 // this leg no longer reads --analytics-candidate or --base-url; the URL it
 // visits is a function of resolved identity, recorded on every assertion.
-function analyticsCorrectnessCaptureAssertions({ capture, contract, url }) {
+//
+// #493: a partial build can have no page at that campaign root (the built
+// entry is deeper, e.g. checkout/). When qa-node reports the root out of the
+// built scope (`options.rootInScope === false`), or the root answers non-2xx,
+// the leg captures the first built in-scope entry instead
+// (`options.fallbackTargets`, the same entry the partial-scope planner
+// selects) and records which page it used. When nothing in scope can be
+// captured, the leg is skipped when the build has no capturable page, and
+// fails as a blocker when candidates existed but none answered 2xx; neither
+// case fails every declared vendor against an empty page.
+function analyticsCorrectnessCaptureAssertions({ capture, contract, url, capturePage = null, rootFallback = null }) {
   const publicUrl = redactUrlQuery(url);
   const analyticsPage = { page_id: "analytics", url: publicUrl || undefined };
   const assertions = assessAnalyticsInventory(capture, contract || {}, { url: publicUrl });
@@ -504,16 +514,57 @@ function analyticsCorrectnessCaptureAssertions({ capture, contract, url }) {
     page: analyticsPage,
     status: STATUS.PASS,
     expected: "live dataLayer + tag-fire capture on the candidate page",
-    actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`,
+    actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`
+      + (rootFallback ? ` (captured built entry ${publicUrl}; campaign root ${rootFallback.reason === "non_2xx" ? `answered HTTP ${rootFallback.http_status}` : "is out of the built scope"})` : ""),
     // Counts only. Root capture is provider/tag inventory, never Purchase
     // authority, even if a stray Purchase happens to appear there.
     evidence: {
       url: publicUrl,
       event_count: capture.eventNames.length,
       inventory: Object.fromEntries(Object.entries(capture.inventory).map(([k, v]) => [k, v.length])),
+      ...(capturePage ? { capture_page: capturePage } : {}),
+      ...(rootFallback ? { root_fallback: rootFallback } : {}),
     },
   }));
   return assertions;
+}
+
+// No page was captured. Two cases, kept apart so a failed capture never
+// silently removes analytics gating:
+// - nothing built was capturable (the root is out of the built scope and no
+//   built entry exists): SKIPPED, disposition-neutral, since there is no page
+//   whose tags could be measured;
+// - candidates existed but none answered 2xx (e.g. transient 503s): the
+//   declared vendors went unmeasured, which is a blocker naming each attempt,
+//   so a later successful order cannot report the run ready.
+function analyticsCorrectnessNoCapturePageAssertion({ rootUrl, attempts }) {
+  const publicUrl = redactUrlQuery(rootUrl);
+  const page = { page_id: "analytics", url: publicUrl || undefined };
+  const expected = "live dataLayer + tag-fire capture on the campaign root or the first built in-scope page";
+  const loaded = attempts.filter((attempt) => attempt.outcome === "non_2xx" || attempt.outcome === "navigation_error");
+  if (!loaded.length) {
+    return assertion({
+      id: "analytics-correctness:capture",
+      family: "analytics-correctness",
+      page,
+      status: STATUS.SKIPPED,
+      expected,
+      actual: "no_in_scope_page_captured: the campaign root is out of the built scope and the build has no in-scope entry page to capture",
+      evidence: { url: publicUrl, reason: "no_in_scope_page_captured", attempts },
+    });
+  }
+  return assertion({
+    id: "analytics-correctness:capture",
+    family: "analytics-correctness",
+    page,
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+    expected,
+    actual: `no_capture_page_answered: declared analytics went unmeasured; ${loaded.map((attempt) => (attempt.outcome === "navigation_error"
+      ? `${attempt.url} failed to load (${attempt.error_code})`
+      : `${attempt.url} answered HTTP ${attempt.http_status}`)).join(", ")}`,
+    evidence: { url: publicUrl, reason: "no_capture_page_answered", attempts },
+  });
 }
 
 function analyticsCorrectnessRunnerFailureAssertion({ url, error }) {
@@ -531,6 +582,94 @@ function analyticsCorrectnessRunnerFailureAssertion({ url, error }) {
   });
 }
 
+function isHttpOk(status) {
+  // A null status (same-document or non-HTTP navigation) is not evidence of
+  // a missing page, so it keeps the capture.
+  return status == null || (status >= 200 && status < 300);
+}
+
+// One page per path: `/campaign`, `/campaign/` and `/campaign/index.html` are
+// the same capture, so a topology URL written differently from the root is
+// not loaded twice. Mirrors qa-node's urlPathKey.
+function analyticsCapturePageKey(value) {
+  try {
+    const parsed = new URL(value);
+    const path = parsed.pathname.replace(/(?:^|\/)index\.html$/, "/").replace(/\/+$/, "");
+    return `${parsed.origin}${path}/`;
+  } catch {
+    return redactUrlQuery(value);
+  }
+}
+
+function analyticsCaptureCandidates(url, options = {}) {
+  const candidates = [];
+  const seen = new Set();
+  const add = (candidate) => {
+    const key = analyticsCapturePageKey(candidate.url);
+    if (!candidate.url || seen.has(key)) return;
+    seen.add(key);
+    candidates.push(candidate);
+  };
+  const rootInScope = options.rootInScope !== false;
+  if (rootInScope) add({ url, source: "campaign_root" });
+  // An out-of-scope root stays unvisited even if a fallback names it.
+  else if (url) seen.add(analyticsCapturePageKey(url));
+  for (const entry of Array.isArray(options.fallbackTargets) ? options.fallbackTargets : []) {
+    if (!entry || !trim(entry.url)) continue;
+    add({
+      url: trim(entry.url),
+      source: "built_entry",
+      page_id: entry.page_id || null,
+      funnel_id: entry.funnel_id || null,
+    });
+  }
+  return { candidates, rootInScope, rootKey: redactUrlQuery(url) };
+}
+
+// Browser-owning half split out so a real-browser test can drive the fallback
+// against a route-fulfilled context without a second Chromium launch policy.
+async function captureAnalyticsCorrectnessInContext(context, url, contract, args, extraHosts, options = {}) {
+  const { candidates, rootInScope, rootKey } = analyticsCaptureCandidates(url, options);
+  const attempts = [];
+  if (!rootInScope) attempts.push({ url: rootKey, source: "campaign_root", outcome: "out_of_built_scope", http_status: null });
+  let rootFallback = rootInScope ? null : { url: rootKey, reason: "out_of_built_scope", http_status: null };
+  for (const candidate of candidates) {
+    const { capture, httpStatus, navigationError } = await captureAnalyticsPage(
+      context, candidate.url, args, extraHosts, { perPageNavigationErrors: true },
+    );
+    if (navigationError) {
+      // One page failing to load (a timeout, a refused connection) moves on to
+      // the next candidate; the blocker below lists it if none answers.
+      attempts.push({ url: redactUrlQuery(candidate.url), source: candidate.source, outcome: "navigation_error", http_status: null, error_code: navigationError });
+      if (candidate.source === "campaign_root") {
+        rootFallback = { url: rootKey, reason: "navigation_error", http_status: null, error_code: navigationError };
+      }
+      continue;
+    }
+    if (isHttpOk(httpStatus)) {
+      const usedFallback = candidate.source !== "campaign_root";
+      return analyticsCorrectnessCaptureAssertions({
+        capture,
+        contract,
+        url: candidate.url,
+        capturePage: {
+          url: redactUrlQuery(candidate.url),
+          source: candidate.source,
+          ...(candidate.page_id ? { page_id: candidate.page_id } : {}),
+          ...(candidate.funnel_id ? { funnel_id: candidate.funnel_id } : {}),
+          http_status: httpStatus ?? null,
+        },
+        rootFallback: usedFallback ? rootFallback : null,
+      });
+    }
+    attempts.push({ url: redactUrlQuery(candidate.url), source: candidate.source, outcome: "non_2xx", http_status: httpStatus });
+    if (candidate.source === "campaign_root") {
+      rootFallback = { url: rootKey, reason: "non_2xx", http_status: httpStatus };
+    }
+  }
+  return [analyticsCorrectnessNoCapturePageAssertion({ rootUrl: url, attempts })];
+}
+
 export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, options = {}) {
   const url = trim(options.target?.url) || null;
   const correctnessPage = { page_id: "analytics", url: redactUrlQuery(url) || undefined };
@@ -546,12 +685,7 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, op
     })];
   }
 
-  // Seed the host filter with declared out-of-band vendor names so vendors whose
-  // host contains their name (everflow, northbeam, …) get captured.
-  const vendorHosts = ((contract && contract.out_of_band_pixels) || [])
-    .map((p) => (p && p.vendor ? String(p.vendor) : null))
-    .filter(Boolean);
-  const extraHosts = [...analyticsExtraHosts(args), ...vendorHosts];
+  const extraHosts = analyticsCorrectnessExtraHosts(args, contract);
 
   const browser = await launchChromium(args);
   const context = await browser.newContext({
@@ -559,14 +693,22 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, op
     extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
   });
   try {
-    const capture = await captureAnalyticsForUrl(context, url, args, extraHosts);
-    return analyticsCorrectnessCaptureAssertions({ capture, contract, url });
+    return await captureAnalyticsCorrectnessInContext(context, url, contract, args, extraHosts, options);
   } catch (error) {
     return [analyticsCorrectnessRunnerFailureAssertion({ url, error })];
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
   }
+}
+
+// Seed the host filter with declared out-of-band vendor names so vendors whose
+// host contains their name (everflow, northbeam, …) get captured.
+function analyticsCorrectnessExtraHosts(args, contract) {
+  const vendorHosts = ((contract && contract.out_of_band_pixels) || [])
+    .map((p) => (p && p.vendor ? String(p.vendor) : null))
+    .filter(Boolean);
+  return [...analyticsExtraHosts(args), ...vendorHosts];
 }
 
 function analyticsExtraHosts(args) {
@@ -576,6 +718,22 @@ function analyticsExtraHosts(args) {
 }
 
 export async function captureAnalyticsForUrl(context, url, args, extraHosts = []) {
+  return (await captureAnalyticsPage(context, url, args, extraHosts)).capture;
+}
+
+// Same capture, plus the main-document HTTP status, which the correctness leg
+// uses to tell an empty page from a missing one (#493). Kept off the capture
+// object so parity comparisons never see it.
+// A stable code for a failed navigation: Playwright's TimeoutError, or the
+// net::ERR_* token Chromium reports. The raw message is dropped because it
+// echoes the URL (query included) and a call log.
+function analyticsNavigationErrorCode(error) {
+  if (error?.name === "TimeoutError") return "navigation_timeout";
+  const netError = String(error?.message || "").match(/net::ERR_[A-Z0-9_]+/);
+  return netError ? netError[0] : "navigation_failed";
+}
+
+async function captureAnalyticsPage(context, url, args, extraHosts = [], options = {}) {
   const page = await context.newPage();
   const capture = await attachAnalyticsCapture(page, { extraHosts });
   const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
@@ -584,11 +742,21 @@ export async function captureAnalyticsForUrl(context, url, args, extraHosts = []
     // domcontentloaded (not "load") so a single stuck analytics beacon — exactly
     // the kind of subresource we're capturing — can't starve the goto timeout.
     // Mirrors runPageBrowserChecks; the settle wait below lets async tags fire.
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    let response;
+    try {
+      response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    } catch (error) {
+      // Only the navigation is per-page. A closed page or a disconnected
+      // browser is the runner failing, not this URL, so it stays an error.
+      if (!options.perPageNavigationErrors || page.isClosed() || context.browser()?.isConnected() === false) throw error;
+      return { capture: null, httpStatus: null, navigationError: analyticsNavigationErrorCode(error) };
+    }
+    let httpStatus = null;
+    try { httpStatus = typeof response?.status === "function" ? response.status() : null; } catch { httpStatus = null; }
     await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});
     // Let async GTM/pixel tags and deferred dataLayer pushes fire before reading.
     await page.waitForTimeout(settleMs);
-    return await capture.collect();
+    return { capture: await capture.collect(), httpStatus };
   } finally {
     capture.detach();
     await page.close().catch(() => {});
@@ -3263,19 +3431,29 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     }
     const step = upsellSteps[stepIndex];
     const actionTrace = createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path: step });
+    const stepBudgetMs = budget();
+    const stepStartedMs = Date.now();
     await ladder.run("upsell_action", async () => {
       const initialLineItems = order.receipt_line_items.slice();
       const initialUpsellMutationCount = upsellMutationCount(events);
       await actionTrace.inspect();
       await waitForUpsellPageReady(page, args);
       await actionTrace.inspect();
+      const responseIndexBefore = events.responses.length;
       const upsell = await clickUpsellPath(page, step, { events, stepIndex, trace: actionTrace });
       const preferredOrderBody = upsell.api_response_order_body || null;
       delete upsell.api_response_order_body;
       order.upsell = upsell;
       order.upsell_steps.push(upsell);
       order.final_url = safePageUrl(page);
-      const refreshed = await buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody });
+      const { refreshed, lateUpsellEvidence } = await refreshUpsellStepEvidence({
+        page, events, path, email, checkoutPage, args, step, upsell, preferredOrderBody, initialLineItems, responseIndexBefore,
+        // Keep the rest of the step's budget for the read-back after the wait.
+        lateWaitMs: Math.min(
+          LATE_UPSELL_EVIDENCE_TIMEOUT_MS,
+          stepBudgetMs - (Date.now() - stepStartedMs) - LATE_UPSELL_EVIDENCE_RESERVE_MS,
+        ),
+      });
       order.final_receipt_line_items = refreshed.receipt_line_items;
       if (refreshed.receipt_line_items.length) {
         order.cart_state = refreshed.cart_state;
@@ -3287,9 +3465,9 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
         order.verification.currency = refreshed.verification.currency;
       }
       if (step === "accept") {
-        const proof = acceptedUpsellProof(order.receipt_line_items, initialLineItems, upsell.expected_items, events);
+        const proof = acceptedUpsellStepProof(upsell, lateUpsellEvidence, acceptedUpsellProof(order.receipt_line_items, initialLineItems, upsell.expected_items, events));
         upsell.verification = {
-          accepted_upsell_line_present: proof.ok,
+          accepted_upsell_line_present: proof.unverified ? null : proof.ok,
           accepted_upsell_match: proof,
           upsell_api_response_seen: upsell.api_response_seen,
           upsell_api_response_status: upsell.api_response_status,
@@ -3307,7 +3485,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       actionTrace.markStepCompleted();
       return `step ${stepIndex + 1}: ${step}`;
     }, {
-      timeoutMs: budget(),
+      timeoutMs: stepBudgetMs,
       evidence: actionTrace.summary,
       formatError: actionTrace.formatError,
     });
@@ -3339,7 +3517,16 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
 
   const acceptedSteps = (order.upsell_steps || []).filter((step) => step.path === "accept");
   if (acceptedSteps.length) {
-    order.verification.accepted_upsell_line_present = acceptedSteps.every((step) => step.verification?.accepted_upsell_line_present === true);
+    const unverifiedSteps = acceptedSteps.filter((step) => step.verification?.accepted_upsell_match?.unverified === true);
+    const confirmedMissing = acceptedSteps.some((step) => step.verification?.accepted_upsell_line_present === false);
+    // Unknown, not false, when every step that is not proven is only
+    // unverified: false would read as a confirmed missing line.
+    order.verification.accepted_upsell_line_present = unverifiedSteps.length && !confirmedMissing
+      ? null
+      : acceptedSteps.every((step) => step.verification?.accepted_upsell_line_present === true);
+    if (unverifiedSteps.length) {
+      order.verification.upsell_unverified = unverifiedSteps.map((step) => step.verification.accepted_upsell_match.reason);
+    }
     order.verification.upsell_api_response_seen = acceptedSteps.every((step) => step.verification?.upsell_api_response_seen === true);
     order.verification.accepted_upsell_matches = acceptedSteps.map((step) => step.verification?.accepted_upsell_match).filter(Boolean);
   }
@@ -4633,7 +4820,9 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
   await clickControl(control, { timeout: UPSELL_CLICK_TIMEOUT_MS, perpetual });
   trace?.markClickCompleted();
   const mutationResponse = await mutationPromise;
-  const mutationBody = mutationResponse ? await readJsonResponseBody(mutationResponse) : null;
+  const bodyRead = mutationResponse
+    ? await readJsonResponseBodyBounded(mutationResponse, RESPONSE_BODY_READ_TIMEOUT_MS)
+    : null;
   await waitForCheckoutResult(page);
   return {
     path,
@@ -4644,7 +4833,14 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     api_response_seen: Boolean(mutationResponse),
     api_response_status: mutationResponse?.status() || null,
     api_response_url: mutationResponse?.url() || null,
-    api_response_order_body: mutationBody,
+    api_response_order_body: bodyRead?.body ?? null,
+    // When the mutation's response arrived (epoch ms, the browser's clock as
+    // Date.now()). Only a read-back requested after this reflects the upsell.
+    mutation_responded_at: mutationRespondedAt(mutationResponse),
+    // How the bounded body read ended. A timed-out read means the mutation's
+    // own evidence is missing, not that the upsell failed; the runner then
+    // waits for a later read-back before it judges the step.
+    ...(bodyRead ? { api_response_body_read: { timed_out: bodyRead.timed_out, waited_ms: bodyRead.waited_ms, bound_ms: bodyRead.bound_ms } } : {}),
   };
 }
 
@@ -5539,15 +5735,21 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
   // runner deliberately refused to re-run, and the operator needs to know that
   // before they run the path again by hand.
   const stoppedForAmbiguity = creationRecord?.action === "stopped";
+  // The order was created and nothing failed, but an accepted upsell could
+  // not be checked: its mutation body never loaded and no read-back arrived.
+  // Neither proved nor disproved, so a human decides, as for a hosted checkout.
+  const upsellUnverified = result.ok ? result.order?.verification?.upsell_unverified || null : null;
   return assertion({
     id: `browser-test-order:${id}`,
     family: "browser-test-order",
     page,
-    status: result.ok ? STATUS.PASS : STATUS.FAIL,
-    severity: result.ok ? undefined : SEVERITY.BLOCKER,
+    status: result.ok ? (upsellUnverified ? STATUS.MANUAL_REVIEW : STATUS.PASS) : STATUS.FAIL,
+    severity: result.ok ? (upsellUnverified ? SEVERITY.WARN : undefined) : SEVERITY.BLOCKER,
     expected: "test order created through deployed checkout page",
     actual: result.ok
-      ? result.order.next_order_id || result.order.ref_id
+      ? upsellUnverified
+        ? `${result.order.next_order_id || result.order.ref_id}; ${upsellUnverified.join("; ")}`
+        : result.order.next_order_id || result.order.ref_id
       : stoppedForAmbiguity
         ? `${failureText} — not re-run: ${creationRecord.classification.reason}. Check for an existing order against this run's QA email before running this path again.`
         : failureText,
@@ -5564,6 +5766,7 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
           line_count: result.order.receipt_line_items.length,
           ...(receiptProofEvidence(result.order) ? { receipt_proof: receiptProofEvidence(result.order) } : {}),
           ...(path === "accept" ? { accepted_upsell_line_present: result.order.verification?.accepted_upsell_line_present } : {}),
+          ...(upsellUnverified ? { upsell_unverified: upsellUnverified } : {}),
           ...(result.order.upsell ? { upsell_clicked: result.order.upsell.clicked, upsell_final_url: result.order.upsell.final_url } : {}),
           ...(result.order.upsell_steps ? { upsell_steps: result.order.upsell_steps.map(summarizeUpsellStep) } : {}),
           ...(result.order.verification?.accepted_upsell_matches ? { accepted_upsell_matches: result.order.verification.accepted_upsell_matches } : {}),
@@ -5584,6 +5787,28 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
   });
 }
 
+// When a response's headers arrived, in epoch milliseconds, or null.
+function mutationRespondedAt(response) {
+  try {
+    const timing = response.request().timing();
+    const at = timing.startTime + timing.responseStart;
+    return Number.isFinite(at) && timing.startTime > 0 && timing.responseStart >= 0 ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+// When the browser started a response's request, in epoch milliseconds (the
+// same clock as Date.now()), or null when Playwright does not report it.
+function responseRequestStartedAt(response) {
+  try {
+    const startTime = response.request().timing().startTime;
+    return Number.isFinite(startTime) && startTime > 0 ? startTime : null;
+  } catch {
+    return null;
+  }
+}
+
 function captureCheckoutEvents(page) {
   const events = { requests: [], responses: [], failed: [], console: [], pageErrors: [], navigations: [] };
   const interesting = /\/api\/v1\/(?:orders|upsells|carts)\/?|\/transactions|spreedly|campaigns\.apps/i;
@@ -5595,12 +5820,20 @@ function captureCheckoutEvents(page) {
       postData: summarizeRequestPostData(request.postData()),
     });
   });
+  // Nothing awaits this listener, so its body read stays unbounded: an entry
+  // lands whenever its body finishes loading, and waitForLateOrderEvidence
+  // polls for it. A bound here would record a slow but successful order body
+  // as null for good, and the order would read as not created.
   page.on("response", async (response) => {
     if (!interesting.test(response.url())) return;
+    // Taken before the body read: an entry lands in the log when its body
+    // finishes, so its position says nothing about when it was requested.
+    const requestStartedAt = responseRequestStartedAt(response);
     events.responses.push({
       status: response.status(),
       url: response.url(),
-      body: await readJsonResponseBody(response),
+      request_started_at: requestStartedAt,
+      body: await readJsonResponseBodyWhenLoaded(response),
     });
   });
   page.on("requestfailed", (request) => {
@@ -5622,9 +5855,61 @@ function captureCheckoutEvents(page) {
   return events;
 }
 
-async function readJsonResponseBody(response) {
-  const text = await response.text().catch(() => null);
+// Playwright's response.text() waits for the body to finish loading. A page
+// that navigates away as soon as the headers land (an SDK that reads only the
+// status before redirecting) can leave that wait pending forever. Only a
+// caller that blocks the run on the body needs a bound: the upsell mutation
+// read in clickUpsellPath. There the body is evidence, not the proof of the
+// response, so an unread body is reported as null after a short bound instead
+// of hanging the order run. Playwright has no way to cancel a pending body
+// read; the abandoned read is a protocol callback, not a socket this process
+// owns, and it is released when the run closes the browser context.
+const RESPONSE_BODY_READ_TIMEOUT_MS = 3000;
+
+// For callers that nothing awaits (the checkout event listener): a late body
+// still arrives, and a body that never loads just never records an entry.
+async function readJsonResponseBodyWhenLoaded(response) {
+  const text = await Promise.resolve().then(() => response.text()).catch(() => null);
   return parseMaybeJson(redactSensitive(text));
+}
+
+// Callers that block on the read always get the fixed bound; only the test
+// hook picks a shorter one.
+async function readJsonResponseBody(response) {
+  return readJsonResponseBodyWithin(response, RESPONSE_BODY_READ_TIMEOUT_MS);
+}
+
+async function readJsonResponseBodyWithin(response, timeoutMs) {
+  return (await readJsonResponseBodyBounded(response, timeoutMs)).body;
+}
+
+// The bounded read, with a record of how it ended. `timed_out` is true only
+// when the bound fired while the read was still pending, never when the read
+// failed or returned nothing: a caller must be able to tell "the body was not
+// read in time" (the mutation may still have succeeded) from "the body was
+// read". `waited_ms` covers the read alone.
+async function readJsonResponseBodyBounded(response, timeoutMs) {
+  // A missing, zero or unbounded value would reintroduce the hang.
+  if (!(Number.isFinite(timeoutMs) && timeoutMs > 0)) timeoutMs = RESPONSE_BODY_READ_TIMEOUT_MS;
+  const started = Date.now();
+  const TIMED_OUT = Symbol("timed out");
+  let timer = null;
+  const bounded = new Promise((resolve) => { timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs); });
+  const read = Promise.resolve()
+    .then(() => response.text())
+    .catch(() => null);
+  try {
+    const text = await Promise.race([read, bounded]);
+    const timedOut = text === TIMED_OUT;
+    return {
+      body: timedOut ? null : parseMaybeJson(redactSensitive(text)),
+      timed_out: timedOut,
+      waited_ms: Date.now() - started,
+      bound_ms: timeoutMs,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function lastJsonResponse(events, pattern) {
@@ -6298,9 +6583,13 @@ async function selectedUpsellItems(page) {
 // order-upsell API added it. The live network observation (apiResponseSeen) is a
 // best-effort signal that can miss the request on fast stepper-accept client nav, so
 // it must not block on its own. Block only when the read-back proof also fails.
+//
+// An unverified proof (the mutation answered 2xx but its body never loaded, and
+// no later read-back arrived) is not a failure: nothing showed the line
+// missing. It is reported for manual review instead (upsell_unverified).
 function upsellAcceptStepFailures(stepIndex, proof, apiResponseSeen) {
   const failures = [];
-  if (!proof.ok) {
+  if (!proof.ok && !proof.unverified) {
     failures.push(`step ${stepIndex + 1}: ${proof.reason}`);
     if (!apiResponseSeen) {
       failures.push(`step ${stepIndex + 1}: upsell accept did not call order upsell API`);
@@ -6320,6 +6609,124 @@ function upsellActionStepFailures(stepIndex, action, upsell, proof) {
     failures.push(`step ${stepIndex + 1}: ${proof?.reason || "upsell decline could not be verified"}`);
   }
   return failures;
+}
+
+// How long an accept whose mutation body timed out waits for other evidence
+// of that mutation, and the slice of the step budget kept for the read-back
+// after it. The whole step stays inside its budget (45s by default).
+const LATE_UPSELL_EVIDENCE_TIMEOUT_MS = 15000;
+const LATE_UPSELL_EVIDENCE_RESERVE_MS = 3000;
+
+function upsellBodyReadTimedOut(upsell) {
+  const status = Number(upsell?.api_response_status);
+  return upsell?.api_response_body_read?.timed_out === true && status >= 200 && status < 300;
+}
+
+// After the bounded read gave up on a 2xx upsell mutation body, the lines the
+// runner already holds are the checkout's, from before the accept. Judging
+// the upsell against them would call a slow success "no new upsell line".
+// Wait, within a bound, for evidence of this mutation captured after the
+// click: its own body landing late in the event log (the unbounded listener
+// keeps reading it), or an order read-back whose lines carry the accepted
+// upsell. Returns the body to judge from, or source "none" when neither came.
+//
+// A read-back whose request started after the upsell mutation's response
+// arrived (by the browser's request start time, not its position in the log,
+// which reflects when its body finished) that shows the persisted order
+// without the accepted line is a definitive negative, not an absence of
+// evidence. Anchoring on the mutation, not the click attempt, also excludes a
+// read-back started while the click was still waiting to fire. It does not end the wait early (a
+// later read-back may still carry the line), but when the wait ends with no
+// positive evidence the latest such read-back is returned as
+// "order_read_back_missing_line", and the step fails instead of going to
+// manual review. A read-back requested before that, or with no known start
+// time, never counts as a negative.
+async function waitForLateUpsellEvidence(events, { responseIndexBefore, mutationRespondedAt = null, initialLineItems, expectedItems, timeoutMs, intervalMs = 250 }) {
+  const started = Date.now();
+  const deadline = started + Math.max(0, Number(timeoutMs) || 0);
+  const latestMissingLineReadBack = () => {
+    const fresh = events.responses.slice(responseIndexBefore);
+    for (let index = fresh.length - 1; index >= 0; index -= 1) {
+      const response = fresh[index];
+      if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
+      if (!(response.status >= 200 && response.status < 300)) continue;
+      if (!ORDER_DETAIL_RESPONSE_PATTERN.test(response.url)) continue;
+      if (!(Number.isFinite(mutationRespondedAt) && Number.isFinite(response.request_started_at) && response.request_started_at >= mutationRespondedAt)) continue;
+      const lines = extractReceiptLines(response.body);
+      if (!Array.isArray(lines) || lines.length === 0) continue;
+      return response.body;
+    }
+    return null;
+  };
+  const find = () => {
+    const fresh = events.responses.slice(responseIndexBefore);
+    for (let index = fresh.length - 1; index >= 0; index -= 1) {
+      const response = fresh[index];
+      if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
+      if (!(response.status >= 200 && response.status < 300)) continue;
+      if (ORDER_UPSELLS_RESPONSE_PATTERN.test(response.url)) return { source: "late_upsell_body", body: response.body };
+    }
+    for (let index = fresh.length - 1; index >= 0; index -= 1) {
+      const response = fresh[index];
+      if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
+      if (!(response.status >= 200 && response.status < 300)) continue;
+      if (!ORDER_DETAIL_RESPONSE_PATTERN.test(response.url)) continue;
+      const proof = acceptedUpsellProof(extractReceiptLines(response.body), initialLineItems, expectedItems, events);
+      if (proof.ok) return { source: "order_read_back", body: response.body };
+    }
+    return null;
+  };
+  for (;;) {
+    const found = find();
+    if (found) return { ...found, waited_ms: Date.now() - started };
+    if (Date.now() >= deadline) {
+      const missing = latestMissingLineReadBack();
+      if (missing) return { source: "order_read_back_missing_line", body: missing, waited_ms: Date.now() - started };
+      return { source: "none", body: null, waited_ms: Date.now() - started };
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(intervalMs, Math.max(1, deadline - Date.now()))));
+  }
+}
+
+// The order evidence an upsell step is judged against. An accept whose
+// mutation body read timed out first waits for later evidence of that
+// mutation (waitForLateUpsellEvidence), and judges from that body when one
+// arrives: the runner's last order body is the checkout's otherwise.
+async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPage, args, step, upsell, preferredOrderBody = null, initialLineItems, responseIndexBefore, lateWaitMs = LATE_UPSELL_EVIDENCE_TIMEOUT_MS }) {
+  let lateUpsellEvidence = null;
+  let judgedBody = preferredOrderBody;
+  if (step === "accept" && upsellBodyReadTimedOut(upsell)) {
+    lateUpsellEvidence = await waitForLateUpsellEvidence(events, {
+      responseIndexBefore,
+      mutationRespondedAt: upsell.mutation_responded_at,
+      initialLineItems,
+      expectedItems: upsell.expected_items,
+      timeoutMs: lateWaitMs,
+    });
+    upsell.late_evidence = { source: lateUpsellEvidence.source, waited_ms: lateUpsellEvidence.waited_ms };
+    if (lateUpsellEvidence.body) judgedBody = lateUpsellEvidence.body;
+  }
+  const refreshed = await buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody: judgedBody });
+  return { refreshed, lateUpsellEvidence };
+}
+
+// The accepted-upsell proof for one step, given how its evidence arrived. A
+// failed proof stands as a failure unless the mutation answered 2xx, its body
+// read timed out, and no later evidence of it arrived: then the lines judged
+// are stale, and the step is unverified rather than missing its upsell. A
+// post-click read-back without the line ("order_read_back_missing_line") is
+// such evidence, so the failure stands.
+function acceptedUpsellStepProof(upsell, lateEvidence, proof) {
+  if (proof.ok || !upsellBodyReadTimedOut(upsell)) return proof;
+  if (lateEvidence && lateEvidence.source !== "none") return proof;
+  const read = upsell.api_response_body_read;
+  return {
+    ...proof,
+    ok: false,
+    unverified: true,
+    reason: `accepted upsell unverified: the order upsell API answered HTTP ${upsell.api_response_status} but its body did not load within ${read.bound_ms}ms, and no later order read-back showed the accepted line within ${lateEvidence?.waited_ms ?? 0}ms`,
+    stale_reason: proof.reason,
+  };
 }
 
 function acceptedUpsellProof(lines, initialLines, expectedItems, events) {
@@ -6422,6 +6829,8 @@ function summarizeUpsellStep(step) {
     expected_items: step.expected_items,
     api_response_seen: step.api_response_seen,
     api_response_status: step.api_response_status,
+    ...(step.api_response_body_read ? { api_response_body_read: step.api_response_body_read } : {}),
+    ...(step.late_evidence ? { late_evidence: step.late_evidence } : {}),
     accepted_upsell_line_present: step.verification?.accepted_upsell_line_present,
   };
 }
@@ -6559,6 +6968,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   COUPON_APPLY_CONTROL_SELECTOR,
   analyticsCorrectnessCaptureAssertions,
   analyticsCorrectnessRunnerFailureAssertion,
+  captureAnalyticsCorrectnessInContext,
   analyticsParityCaptureAssertions,
   analyticsParityRunnerFailureAssertion,
   acceptedUpsellProof,
@@ -6572,6 +6982,15 @@ export const __qaBrowserTestHooks = Object.freeze({
   isOrderUpsellsUrl,
   clickUpsellPath,
   isPerpetuallyAnimated,
+  readJsonResponseBody,
+  readJsonResponseBodyWithin,
+  readJsonResponseBodyBounded,
+  RESPONSE_BODY_READ_TIMEOUT_MS,
+  waitForLateUpsellEvidence,
+  refreshUpsellStepEvidence,
+  acceptedUpsellStepProof,
+  captureCheckoutEvents,
+  buildOrderEvidence,
   testEmail,
   testOrderPaths,
   testOrderPlans,

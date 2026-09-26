@@ -363,6 +363,7 @@ test("a valid packet-local spec runs the full doctor registry and each checkpoin
       { id: "built_output.upsell_selector_scope", status: "not_applicable" },
       { id: "built_output.campaign_identity", status: "not_applicable" },
       { id: "built_output.sdk_markup", status: "not_applicable" },
+      { id: "built_output.script_syntax", status: "not_applicable" },
     ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
