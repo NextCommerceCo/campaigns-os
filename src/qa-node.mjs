@@ -2392,11 +2392,42 @@ function isCaptureErrorFailure(item) {
   return false;
 }
 
+function isLoopbackUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  let hostname = null;
+  try { hostname = new URL(value).hostname; } catch { hostname = null; }
+  return !!hostname && isLoopbackHostname(hostname);
+}
+
+// #500: run-level eligibility is computed from the campaign-root URL, but the
+// page a failing check measured is not always that root. The #493 inventory
+// fallback can capture a built entry whose page.url is a remote production
+// preview, and a localhost root can redirect to a production host. So each
+// failing check is downgraded only when the page it measured is on record as
+// loopback:
+// - tag:* / oob:* — the check's own url and the inventory capture's
+//   capture_page.url (both the URL requested) AND the capture's final_url
+//   (page.url() after redirects and settling) must all be loopback;
+// - purchase-fires — every judged receipt's receipt_url (the order's final
+//   page URL after navigation) must be loopback, and there must be one.
+// A measured location that is missing or unparseable keeps the blocker.
+function localServeMeasuredOnLoopback(item, assertions) {
+  const id = String(item?.id || "");
+  if (/^analytics-correctness:purchase-fires(?::|$)/.test(id)) {
+    const receipts = item?.evidence?.receipts;
+    return Array.isArray(receipts) && receipts.length > 0
+      && receipts.every((receipt) => isLoopbackUrl(receipt?.receipt_url));
+  }
+  const ownUrl = item?.evidence?.url ?? item?.url;
+  if (!isLoopbackUrl(ownUrl)) return false;
+  const capture = assertions.find((entry) => entry?.id === "analytics-correctness:capture" && entry.status === STATUS.PASS);
+  const capturePage = capture?.evidence?.capture_page;
+  return isLoopbackUrl(capturePage?.url) && isLoopbackUrl(capture?.evidence?.final_url);
+}
+
 function resolveLocalServeAnalytics({ packet, report, captureUrl }) {
   if (!isLocalServePacket(packet)) return null;
-  let hostname = null;
-  try { hostname = new URL(String(captureUrl)).hostname; } catch { hostname = null; }
-  if (!hostname || !isLoopbackHostname(hostname)) return null;
+  if (!isLoopbackUrl(String(captureUrl ?? ""))) return null;
   if (recordedBuildEnvironment(report) !== LOCAL_PROOF_BUILD_ENVIRONMENT) return null;
   const parity = recordedProductionParity(report);
   return {
@@ -2422,6 +2453,7 @@ function applyLocalServeAnalyticsReview(assertions, localServe) {
   for (const [index, item] of assertions.entries()) {
     if (item?.status !== STATUS.FAIL || !FIRE_DEPENDENT_ANALYTICS_ID.test(String(item.id || ""))) continue;
     if (isCaptureErrorFailure(item)) continue;
+    if (!localServeMeasuredOnLoopback(item, assertions)) continue;
     assertions[index] = {
       ...item,
       status: STATUS.MANUAL_REVIEW,

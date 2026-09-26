@@ -6,12 +6,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
-import { assessAnalyticsInventory, assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
+import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { normalizeCapture } from "./qa-analytics-parity.mjs";
 import { computeDisposition, SEVERITY, STATUS } from "./qa-verdict.mjs";
 
 const { runAnalyticsOrderSequence, resolveLocalServeAnalytics } = __qaNodeTestHooks;
+const { analyticsCorrectnessCaptureAssertions } = __qaBrowserTestHooks;
 
 const PIXEL_ID = "1000000000000001";
 const CONTRACT = {
@@ -37,7 +39,20 @@ const parityReport = {
 // development render produces), a data-layer check that failed on the order,
 // and the real receipt Purchase assessment of a recognized receipt with no
 // Purchase fire.
-async function runSequence({ url, localServeAnalytics, receiptAttempt = null }) {
+// The real inventory leg output: the capture assertion (which records the
+// page it measured, requested and final URL) followed by the declared-tag
+// checks. `finalUrl` defaults to the requested URL (no redirect).
+function inventoryAssertions(capture, { url, finalUrl = url, source = "campaign_root" }) {
+  return analyticsCorrectnessCaptureAssertions({
+    capture,
+    contract: CONTRACT,
+    url,
+    capturePage: { url, source, http_status: 200 },
+    finalUrl,
+  });
+}
+
+async function runSequence({ url, localServeAnalytics, receiptAttempt = null, inventory = null }) {
   const assertions = [];
   await runAnalyticsOrderSequence({
     args: {},
@@ -51,7 +66,7 @@ async function runSequence({ url, localServeAnalytics, receiptAttempt = null }) 
     assertions,
   }, {
     async runInventory() {
-      return assessAnalyticsInventory(normalizeCapture({ events: [], tagFires: [] }), CONTRACT, { url });
+      return inventoryAssertions(normalizeCapture({ events: [], tagFires: [] }), { url, ...(inventory || {}) });
     },
     async runOrders({ assertions: sink }) {
       sink.push({
@@ -143,9 +158,9 @@ test("local-serve review leaves passing checks alone and names a missing parity 
     assertions,
   }, {
     async runInventory() {
-      return assessAnalyticsInventory(normalizeCapture({
+      return inventoryAssertions(normalizeCapture({
         tagFires: [{ kind: "meta", id: PIXEL_ID, host: "facebook.com", params: {} }],
-      }), CONTRACT, { url: LOCAL_URL });
+      }), { url: LOCAL_URL });
     },
     async runOrders() { return { orders: [], receiptAnalytics: { plannedPlanIds: [], attempts: [] } }; },
     assessReceipt: assessReceiptPurchase,
@@ -206,4 +221,88 @@ test("a local-serve packet whose recorded build is not a development render keep
     }
     assert.equal(computeDisposition(assertions), "blocked", label);
   }
+});
+
+// #500: eligibility is computed from the campaign root, but the page a check
+// measured can be elsewhere. Each downgrade is scoped to a page on record as
+// loopback.
+const REMOTE_ENTRY = "https://preview.example/campaign/checkout/";
+
+test("a remote built-entry capture under an eligible local-serve run keeps its pixel blockers", async () => {
+  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
+  assert.ok(localServeAnalytics);
+  // The localhost root answered 404, so the #493 fallback captured the built
+  // entry whose explicit page.url is a production preview.
+  const assertions = await runSequence({
+    url: REMOTE_ENTRY,
+    localServeAnalytics,
+    inventory: { source: "built_entry" },
+    receiptAttempt: { planId: "accept", receiptRecognized: true, receiptUrl: `${LOCAL_URL}receipt/`, capture: normalizeCapture({ events: [] }) },
+  });
+  for (const id of ["analytics-correctness:tag:meta", "analytics-correctness:oob:tiktok"]) {
+    const item = assertions.find((entry) => entry.id === id);
+    assert.equal(item.status, STATUS.FAIL, id);
+    assert.equal(item.severity, SEVERITY.BLOCKER, id);
+    assert.equal(item.evidence.reason, undefined, id);
+  }
+  // The receipt was measured on localhost, so its silent Purchase is still reviewed.
+  assert.equal(assertions.find((entry) => entry.id === "analytics-correctness:purchase-fires").status, STATUS.MANUAL_REVIEW);
+  assert.equal(computeDisposition(assertions), "blocked");
+});
+
+test("a localhost capture that redirected to a production host keeps its pixel blockers", async () => {
+  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
+  assert.ok(localServeAnalytics);
+  const assertions = await runSequence({ url: LOCAL_URL, localServeAnalytics, inventory: { finalUrl: PREVIEW_URL } });
+  const capture = assertions.find((entry) => entry.id === "analytics-correctness:capture");
+  assert.equal(capture.evidence.final_url, PREVIEW_URL);
+  for (const id of ["analytics-correctness:tag:meta", "analytics-correctness:oob:tiktok"]) {
+    const item = assertions.find((entry) => entry.id === id);
+    assert.equal(item.status, STATUS.FAIL, id);
+    assert.equal(item.severity, SEVERITY.BLOCKER, id);
+    assert.equal(item.evidence.reason, undefined, id);
+  }
+  assert.equal(computeDisposition(assertions), "blocked");
+});
+
+test("a local-serve capture whose final page URL was not recorded keeps its pixel blockers", async () => {
+  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
+  const assertions = await runSequence({ url: LOCAL_URL, localServeAnalytics, inventory: { finalUrl: null } });
+  for (const id of ["analytics-correctness:tag:meta", "analytics-correctness:oob:tiktok"]) {
+    assert.equal(assertions.find((entry) => entry.id === id).status, STATUS.FAIL, id);
+  }
+});
+
+test("a receipt that landed on a production host keeps the Purchase blocker under an eligible local-serve run", async () => {
+  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
+  assert.ok(localServeAnalytics);
+  const assertions = await runSequence({
+    url: LOCAL_URL,
+    localServeAnalytics,
+    receiptAttempt: { planId: "accept", receiptRecognized: true, receiptUrl: `${PREVIEW_URL}receipt/`, capture: normalizeCapture({ events: [] }) },
+  });
+  const purchase = assertions.find((entry) => entry.id === "analytics-correctness:purchase-fires");
+  assert.equal(purchase.status, STATUS.FAIL);
+  assert.equal(purchase.severity, SEVERITY.BLOCKER);
+  assert.equal(purchase.evidence.reason, undefined);
+  // The inventory page was measured on localhost and is still reviewed.
+  assert.equal(assertions.find((entry) => entry.id === "analytics-correctness:tag:meta").status, STATUS.MANUAL_REVIEW);
+});
+
+test("a loopback built-entry capture is still downgraded", async () => {
+  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
+  const assertions = await runSequence({
+    url: `${LOCAL_URL}checkout/`,
+    localServeAnalytics,
+    inventory: { source: "built_entry", finalUrl: "http://127.0.0.1:8080/campaign/checkout/" },
+  });
+  const capture = assertions.find((entry) => entry.id === "analytics-correctness:capture");
+  assert.equal(capture.evidence.final_url, "http://127.0.0.1:8080/campaign/checkout/");
+  for (const id of FIRE_DEPENDENT) {
+    const item = assertions.find((entry) => entry.id === id);
+    assert.equal(item.status, STATUS.MANUAL_REVIEW, id);
+    assert.equal(item.evidence.reason, "local_serve_development_render", id);
+  }
+  const blockers = assertions.filter((item) => item.status === STATUS.FAIL && item.severity === SEVERITY.BLOCKER);
+  assert.deepEqual(blockers.map((item) => item.id), [DATA_LAYER_PURCHASE]);
 });

@@ -504,8 +504,15 @@ export async function runAnalyticsParityChecks(args = {}, options = {}) {
 // captured, the leg is skipped when the build has no capturable page, and
 // fails as a blocker when candidates existed but none answered 2xx; neither
 // case fails every declared vendor against an empty page.
-function analyticsCorrectnessCaptureAssertions({ capture, contract, url, capturePage = null, rootFallback = null }) {
+// #500: the URL the capture page actually settled on, after redirects, keyed by
+// the capture object so the parity capture shape stays unchanged. Local-serve
+// review (qa-node) downgrades a silent pixel only when this is loopback: a
+// localhost root that redirects to a production host measured production.
+const ANALYTICS_CAPTURE_DOCUMENT_URL = new WeakMap();
+
+function analyticsCorrectnessCaptureAssertions({ capture, contract, url, capturePage = null, rootFallback = null, finalUrl = ANALYTICS_CAPTURE_DOCUMENT_URL.get(capture) ?? null }) {
   const publicUrl = redactUrlQuery(url);
+  const publicFinalUrl = redactUrlQuery(finalUrl) || null;
   const analyticsPage = { page_id: "analytics", url: publicUrl || undefined };
   const assertions = assessAnalyticsInventory(capture, contract || {}, { url: publicUrl });
   assertions.unshift(assertion({
@@ -522,6 +529,9 @@ function analyticsCorrectnessCaptureAssertions({ capture, contract, url, capture
       url: publicUrl,
       event_count: capture.eventNames.length,
       inventory: Object.fromEntries(Object.entries(capture.inventory).map(([k, v]) => [k, v.length])),
+      // The page URL after redirects and settling; `capture_page.url` and
+      // `url` are the URL requested.
+      final_url: publicFinalUrl,
       ...(capturePage ? { capture_page: capturePage } : {}),
       ...(rootFallback ? { root_fallback: rootFallback } : {}),
     },
@@ -726,7 +736,11 @@ async function captureAnalyticsPage(context, url, args, extraHosts = []) {
     await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});
     // Let async GTM/pixel tags and deferred dataLayer pushes fire before reading.
     await page.waitForTimeout(settleMs);
-    return { capture: await capture.collect(), httpStatus };
+    const collected = await capture.collect();
+    let finalUrl = null;
+    try { finalUrl = page.url() || null; } catch { finalUrl = null; }
+    if (collected && typeof collected === "object" && finalUrl) ANALYTICS_CAPTURE_DOCUMENT_URL.set(collected, finalUrl);
+    return { capture: collected, httpStatus };
   } finally {
     capture.detach();
     await page.close().catch(() => {});
