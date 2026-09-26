@@ -320,6 +320,10 @@ function seedRefusalFixture(dir, fixture) {
 
 const INTAKE_ARGV = ["--spec", "%DIR%/spec.json", "--source", "%DIR%/source", "--target", "%DIR%/target"];
 const CACHED_INTAKE_ARGV = ["--map-id", "demo", "--cached-spec", "--source", "%DIR%/source", "--target", "%DIR%/target"];
+// A map fetch aimed at a closed loopback port: a refusal that let the fetch
+// start would fail with a connection error instead of the expected message,
+// and a spec cache written after it would change the snapshotted tree.
+const FETCH_INTAKE_ARGV = ["--map-id", "demo", "--proxy-base", "http://127.0.0.1:1", "--source", "%DIR%/source", "--target", "%DIR%/target"];
 
 const REFUSED_INVOCATIONS = [
   // Legacy API argv must refuse before QA resolves the named missing packet.
@@ -413,6 +417,14 @@ const REFUSED_INVOCATIONS = [
   { argv: ["build", ...CACHED_INTAKE_ARGV, "--wrapper-policy", "bogus"], fixture: "cached-intake", expect: /Unsupported --wrapper-policy/ },
   { argv: ["prepare-build", ...CACHED_INTAKE_ARGV, "--design-manifest"], fixture: "cached-intake", expect: /--design-manifest needs a value/ },
   { argv: ["prepare-build", ...INTAKE_ARGV, "--order-path-depth", "bogus"], fixture: "intake", expect: /unsupported --order-path-depth/ },
+  // #477: the four flags prepareBuild reads after spec resolution. One row per
+  // tagged site in the intake dispatch, spread over the local, fetched and
+  // cached spec paths; the matrix below covers every value form on every path.
+  { argv: ["start", ...INTAKE_ARGV, "--template-family"], fixture: "intake", expect: /--template-family needs a value/ },
+  { argv: ["prepare-build", ...FETCH_INTAKE_ARGV, "--allow-uncertified-template", ""], fixture: "intake", expect: /--allow-uncertified-template needs a value/ },
+  { argv: ["build", ...CACHED_INTAKE_ARGV, "--theme-policy", "   "], fixture: "cached-intake", expect: /--theme-policy needs a value/ },
+  { argv: ["prepare-build", ...FETCH_INTAKE_ARGV, "--theme-policy", "bogus"], fixture: "intake", expect: /Unsupported --theme-policy "bogus"\. Accepted values: inspect_only, auto, off\./ },
+  { argv: ["start", ...CACHED_INTAKE_ARGV, "--brief"], fixture: "cached-intake", expect: /--brief needs a value/ },
   { argv: ["run-record", "--packet", "%DIR%/p.json", "--new-run", "--run-id", "one"], fixture: "packet", expect: /--new-run and --run-id are exclusive/ },
   { argv: ["run-record", "--packet", "%DIR%/p.json", "--agent-input-tokens"], fixture: "packet", expect: /--agent-input-tokens requires a non-negative integer/ },
   { argv: ["run-record", "--packet", "%DIR%/p.json", "--agent-output-tokens", "bogus"], fixture: "packet", expect: /--agent-output-tokens must be a non-negative integer/ },
@@ -456,7 +468,12 @@ test("(i) intake value forms refuse on local, fetched, and cached spec paths bef
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
   t.after(() => new Promise((done) => server.close(done)));
   const proxyBase = `http://127.0.0.1:${server.address().port}`;
-  const flags = ["spec", "source", "target", "map-id", "source-kind", "wrapper-policy", "design-manifest", "order-path-depth", "proxy-base"];
+  const flags = [
+    "spec", "source", "target", "map-id", "source-kind", "wrapper-policy", "design-manifest", "order-path-depth", "proxy-base",
+    // #477
+    "template-family", "allow-uncertified-template", "theme-policy", "brief",
+  ];
+  const needsValue = new Set(["wrapper-policy", "design-manifest", "order-path-depth", "template-family", "allow-uncertified-template", "theme-policy", "brief"]);
   const commands = ["start", "prepare-build", "build"];
   for (const path of ["local", "fetched", "cached"]) {
     for (const flag of flags) {
@@ -484,10 +501,9 @@ test("(i) intake value forms refuse on local, fetched, and cached spec paths bef
               }).then(() => null, (error) => error);
               assert.ok(result, `${command} should refuse`);
               const diagnostic = `${result.stderr}${result.stdout}`;
-              const expected = flag === "wrapper-policy" ? /--wrapper-policy needs a value/
-                : flag === "design-manifest" ? /--design-manifest needs a value/
-                  : flag === "order-path-depth" ? /--order-path-depth needs a value/
-                    : new RegExp(`Missing required --${flag}`);
+              const expected = needsValue.has(flag)
+                ? new RegExp(`--${flag} needs a value`)
+                : new RegExp(`Missing required --${flag}`);
               assert.match(diagnostic, expected, `${command} ${path}`);
               assert.deepEqual(snapshotTree(dir), before, `${command} must not change target files`);
               assert.equal(existsSync(journal), false, `${command} must not journal`);
@@ -500,6 +516,37 @@ test("(i) intake value forms refuse on local, fetched, and cached spec paths bef
         });
       }
     }
+  }
+  // #477: the one vocabulary check among the late flags, on every path.
+  for (const path of ["local", "fetched", "cached"]) {
+    await t.test(`${path}: --theme-policy "bogus" refuses before read/fetch/write in all intake modes`, async () => {
+      for (const command of commands) {
+        const dir = mkdtempSync(join(tmpdir(), "campaigns-os-intake-argv-"));
+        try {
+          seedRefusalFixture(dir, path === "cached" ? "cached-intake" : "intake");
+          const baseline = path === "local" ? ["--spec", join(dir, "spec.json")] : ["--map-id", "demo"];
+          const argv = [command, ...baseline, "--source", join(dir, "source"), "--target", join(dir, "target"), "--proxy-base", proxyBase];
+          if (path === "cached") argv.push("--cached-spec");
+          argv.push("--theme-policy", "bogus", "--no-run-session", "--no-remit", "--json");
+          const journal = join(dir, "x.jsonl");
+          const cache = join(dir, "target/.campaign-runtime/fetched-specs/demo.json");
+          const before = snapshotTree(dir);
+          const fetchesBefore = fetches;
+          const result = await execFileAsync(process.execPath, [CLI, ...argv], {
+            cwd: dir,
+            env: childEnv({ CAMPAIGNS_OS_LIFECYCLE_LOG: journal }),
+          }).then(() => null, (error) => error);
+          assert.ok(result, `${command} should refuse`);
+          assert.match(`${result.stderr}${result.stdout}`, /Unsupported --theme-policy "bogus"/, `${command} ${path}`);
+          assert.deepEqual(snapshotTree(dir), before, `${command} must not change target files`);
+          assert.equal(existsSync(journal), false, `${command} must not journal`);
+          assert.equal(fetches, fetchesBefore, `${command} must not fetch`);
+          if (path === "fetched") assert.equal(existsSync(cache), false, `${command} must not create the spec cache`);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      }
+    });
   }
   await t.test("map-id without --target retains its diagnostic and fetches nothing", async () => {
     for (const command of commands) {
@@ -814,6 +861,12 @@ const QA_PACKET_WITHOUT_MAP_ID = Object.freeze({
 // waiveOrRefuse under --json (no throw reaches the journal step), so it proves
 // the caught path; the `qa` rows prove the thrown one. The `qa policy set` row
 // passes the value checks of both tagged call sites before it fails.
+const INTAKE_FILES = Object.freeze({
+  "spec.json": readFileSync(join(ROOT, "examples/campaignspec.v42.basic.json"), "utf8"),
+  "source/index.html": "<!doctype html><title>Source</title>",
+  "target/package.json": "{}",
+});
+
 const HANDLER_FAILURES = [
   ...["accept", "decline", "both", "ACCEPT"].map((mode) => ({
     argv: ["qa", "run", "--packet", "%DIR%/p.json", "--legacy-api-test-order", mode, "--cart", "123:1"],
@@ -847,6 +900,21 @@ const HANDLER_FAILURES = [
     command,
     expect: /CampaignSpec does not exist/,
   })),
+  // #477: valued late intake flags pass the up-front checks; the checks that
+  // need file content (family certification, the brief file) stay in the
+  // handler and stay journaled.
+  ...["start", "prepare-build", "build"].map((command) => ({
+    argv: [command, "--spec", "%DIR%/spec.json", "--source", "%DIR%/source", "--target", "%DIR%/target", "--template-family", "not-a-family", "--theme-policy", "off", "--no-run-session"],
+    files: INTAKE_FILES,
+    command,
+    expect: /Template family "not-a-family" is not certified/,
+  })),
+  {
+    argv: ["prepare-build", "--spec", "%DIR%/spec.json", "--source", "%DIR%/source", "--target", "%DIR%/target", "--template-family", "not-a-family", "--allow-uncertified-template", "an effect-test waiver", "--brief", "%DIR%/missing-brief.yaml", "--no-run-session"],
+    files: INTAKE_FILES,
+    command: "prepare-build",
+    expect: /missing-brief\.yaml/,
+  },
   { argv: ["run-record", "--packet", "%DIR%/p.json", "--new-run", "--agent-input-tokens", "1"], files: { "p.json": "{ invalid" }, command: "run-record", expect: /not valid JSON|Unexpected token|Expected property name/ },
   { argv: ["qa", "run", "--site", "%DIR%/missing-site", "--base-url", "http://127.0.0.1:1/", "--family", "demo"], command: "qa", expect: /Built campaign directory does not exist/ },
   ...["run", "resolve"].map((subcommand) => ({

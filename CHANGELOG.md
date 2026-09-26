@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.11] - 2026-09-26
+
+### Fixed
+
+- `start`, `prepare-build` and `build` now refuse a bare, empty or
+  whitespace-only `--template-family`, `--allow-uncertified-template`,
+  `--theme-policy` or `--brief`, and a `--theme-policy` other than
+  `inspect_only`, `auto` or `off`, before reading the spec, fetching the Map or
+  writing the spec cache. Before, these four were read only after the spec was
+  resolved: a blank value was quietly ignored (or, for `--theme-policy`, fell
+  back to `inspect_only`), and an unknown theme policy failed partway through
+  intake and was journaled as a handler failure. A refused invocation writes
+  no journal entry. Whether a named family is certified, and whether a named
+  brief can be read, still depend on file content, so those failures are still
+  journaled.
 ## [1.43.1+agent.10] - 2026-09-26
 
 ### Fixed
