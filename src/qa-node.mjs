@@ -2361,7 +2361,7 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
 // dl_purchase, which the development render still pushes, so a miss on
 // localhost can be a real defect and keeps blocking.
 const LOCAL_SERVE_ANALYTICS_REASON = "local_serve_development_render";
-const FIRE_DEPENDENT_ANALYTICS_ID = /^analytics-correctness:(?:tag:|oob:|purchase-fires$)/;
+const FIRE_DEPENDENT_ANALYTICS_ID = /^analytics-correctness:(?:tag:|oob:|purchase-fires(?::|$))/;
 
 function resolveLocalServeAnalytics({ packet, report, captureUrl }) {
   if (!isLocalServePacket(packet)) return null;

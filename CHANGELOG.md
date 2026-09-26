@@ -9,14 +9,14 @@ Notable supported-surface changes are recorded here.
 - QA no longer blocks every local proof run on analytics. Under
   `deploy.target: local-serve` the build renders the development environment,
   which leaves out the vendor loaders on purpose, so a declared pixel could
-  never fire on localhost. When the run is served from localhost, tag,
-  out-of-band vendor and Purchase checks that did not pass are now
-  `manual_review` with the reason `local_serve_development_render` instead of
-  blockers. Each one says to re-run QA against the PR preview with
+  never fire on localhost. When the run is served from localhost, the tag,
+  out-of-band vendor and receipt Purchase (`purchase-fires`) checks that did
+  not pass are now `manual_review` with the reason
+  `local_serve_development_render` instead of blockers. Each one says to re-run QA against the PR preview with
   `--base-url <preview-url>`, which is a production render and still gates
   them, and cites the recorded `page-kit parity` result when there is one.
-  The data-layer Purchase check still blocks: the SDK pushes `dl_purchase` in
-  the development render too.
+  The data-layer Purchase check (`data-layer-purchase`) still blocks: the SDK
+  pushes `dl_purchase` in the development render too.
 
 ## [1.43.1+agent.7] - 2026-09-26
 
