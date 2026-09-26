@@ -357,6 +357,15 @@ package file and says which recovery applies:
 Only the Assembly Report carries `origin`; the packet and context references
 keep their four strict fields.
 
+Runs against the same target take turns. From the package decision through the
+packet, context and report that record it, `prepare-build` holds a lock
+directory beside the package
+(`.campaign-runtime/input/.design-source-package.json.lock`), so each run judges
+provenance against the report and package the previous run left. Of several
+concurrent `--force` runs, the first regenerates the package and the rest reuse
+it as `"synthesized"`. A run that finds the lock held waits up to a minute; a
+lock left by a process that died is recovered automatically.
+
 Before writing any output, `prepare-build` also requires distinct paths for the
 Build Packet, Build Context, Assembly Report, Doctor output, normalized Build
 Brief, and fixed Design Source Package. Equal paths and filesystem aliases are

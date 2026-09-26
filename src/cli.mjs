@@ -1,6 +1,7 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanText, htmlScanDigest } from "./html-scan.mjs";
 import { createHash, randomUUID } from "node:crypto";
+import { withDirectoryLock } from "./directory-lock.mjs";
 import { createDemo, demoArguments } from "./demo.mjs";
 import { execFileSync } from "node:child_process";
 import {
@@ -1850,6 +1851,7 @@ function canonicalPrepareBuildOutputPath(path, label) {
   const absolute = resolve(path);
   const missingSegments = [];
   let cursor = absolute;
+  let realpathRetries = 0;
   while (true) {
     let stats;
     try {
@@ -1873,6 +1875,16 @@ function canonicalPrepareBuildOutputPath(path, label) {
     try {
       return resolve(realpathSync(cursor), ...missingSegments);
     } catch {
+      // The entry can be replaced between lstat and realpath: a prepare-build
+      // holding the target lock moves a stale DSP aside and links its
+      // replacement while this run is still before the lock. Look again from
+      // the top a few times; an entry that never resolves, such as a dangling
+      // symlink, is an alias.
+      if (realpathRetries++ < 3) {
+        missingSegments.length = 0;
+        cursor = absolute;
+        continue;
+      }
       throw new Error(`Prepare-build output path collision: ${label} at ${absolute} traverses an unresolved filesystem alias. Choose a regular, distinct output path; the Design Source Package path is fixed.`);
     }
   }
@@ -2176,6 +2188,16 @@ function createCurrentHtmlFunnelScope({
   };
 }
 
+// prepare-build serializes per target on a lock directory beside the Design
+// Source Package, inside the input directory its writes already cover. The
+// budget is generous: a live holder is doing ordinary local work, and a
+// holder that died is recovered by pid.
+const PREPARE_BUILD_LOCK_BUDGET_MS = 60000;
+
+function prepareBuildLockPath(designSourcePackagePath) {
+  return join(dirname(designSourcePackagePath), `.${basename(designSourcePackagePath)}.lock`);
+}
+
 function prepareDesignSourcePackage({
   path,
   activePages,
@@ -2288,12 +2310,14 @@ function prepareDesignSourcePackage({
     return stagedPath;
   };
 
-  // A package another run published at `path` is authoritative: validate
-  // and reuse its exact bytes rather than overwriting them.
+  // prepareBuild holds the target lock around this whole decision, so no other
+  // prepare-build publishes here meanwhile. A package that still appears at
+  // `path` (an operator, or a tool that does not take the lock) is
+  // authoritative: validate and reuse its exact bytes rather than overwrite.
   const reuseWinner = () => {
     const winner = readExisting();
     if (winner.stale) {
-      throw new Error(`Design Source Package at ${path} was published concurrently and does not match this run's inputs; if it is a stale package an earlier prepare-build synthesized, rerun prepare-build with --force.`);
+      throw new Error(`Design Source Package at ${path} appeared while prepare-build was publishing and does not match this run's inputs; if it is a stale package an earlier prepare-build synthesized, rerun prepare-build with --force.`);
     }
     ({ value, rawBytes, origin } = winner);
     mode = "reused";
@@ -2304,13 +2328,13 @@ function prepareDesignSourcePackage({
       // Linking a fully written same-directory staging file is the Node
       // primitive that combines atomic visibility with no-replace
       // publication. A plain rename fallback is intentionally unsafe here:
-      // it could replace a concurrent winner after the absence check.
+      // it could replace a package that appeared after the absence check.
       linkSync(stagedPath, path);
       mode = "emitted";
     } catch (error) {
-      // EEXIST is the ordinary loser path. For any other link failure, a
-      // package may still have appeared concurrently at the publication
-      // seam; prefer validating that winner before failing closed.
+      // EEXIST means a package appeared at the publication seam; for any
+      // other link failure, prefer validating such a package before failing
+      // closed.
       if (error?.code !== "EEXIST" && !existsSync(path)) {
         throw new Error(
           `Could not atomically publish Design Source Package artifact at ${path}${error?.code ? ` (${error.code})` : ""}: `
@@ -2323,33 +2347,25 @@ function prepareDesignSourcePackage({
   };
 
   // --force over this producer's own stale package. The replacement is
-  // already staged; the stale bytes are claimed by moving them aside (rename
-  // is atomic, so of several concurrent --force runs exactly one claims
-  // them), and the replacement goes out through the same no-replace link as
-  // a fresh emit. Every failure puts the claimed bytes back.
+  // already staged. The stale bytes are claimed by moving them aside and
+  // re-hashed there, so an edit that landed after they were judged stale is
+  // caught instead of discarded; the replacement then goes out through the
+  // same no-replace link as a fresh emit. The claimed bytes are deleted only
+  // once they are proven to be the stale bytes and the replacement is out, or
+  // once they are back in place after a failure; otherwise they are kept and
+  // named.
   const replaceStale = (stagedPath, staleSha256) => {
-    // Most concurrent runs arrive after a winner has already replaced the
-    // stale bytes; they reuse it without claiming anything. The claim below
-    // only runs while `path` still holds the bytes judged stale.
-    let currentBytes = null;
-    try {
-      currentBytes = readFileSync(path);
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-    }
-    if (currentBytes == null) return publishStaged(stagedPath);
-    if (hashSerializedDesignSourcePackage(currentBytes) !== staleSha256) return reuseWinner();
     const retiredPath = join(dirname(path), `.${basename(path)}.${randomUUID()}.stale`);
     try {
       renameSync(path, retiredPath);
     } catch (error) {
-      // Another run claimed it first: publish, or reuse what that run published.
+      // Removed since it was read: there is nothing left to replace.
       if (error?.code === "ENOENT") return publishStaged(stagedPath);
       throw new Error(`Could not claim the stale Design Source Package at ${path} for regeneration${error?.code ? ` (${error.code})` : ""}: ${error.message}`, { cause: error });
     }
     // Put the claimed bytes back without replacing anything that has appeared
     // at `path` since. True only when `path` is now those very bytes (the
-    // same file), not merely occupied by another run's package.
+    // same file), not merely occupied by another package.
     const putBack = () => {
       try {
         linkSync(retiredPath, path);
@@ -2366,17 +2382,10 @@ function prepareDesignSourcePackage({
     };
     try {
       if (hashSerializedDesignSourcePackage(readFileSync(retiredPath)) !== staleSha256) {
-        // Not the bytes this run judged stale: another run has already
-        // regenerated the package. Its bytes go back and are validated as the
-        // winner, like any concurrent publication.
-        putBack();
-        reuseWinner();
-      } else {
-        publishStaged(stagedPath);
+        throw new Error(`Design Source Package at ${path} changed after prepare-build judged it stale, so it was not replaced. Rerun prepare-build to judge the current package.`);
       }
+      publishStaged(stagedPath);
     } catch (error) {
-      // The claimed bytes are only removed once they are back at `path`. If
-      // another package now occupies it, they are kept and named instead.
       if (putBack()) {
         rmSync(retiredPath, { force: true });
         throw error;
@@ -2386,17 +2395,7 @@ function prepareDesignSourcePackage({
     rmSync(retiredPath, { force: true });
   };
 
-  let existing = null;
-  if (existsSync(path)) {
-    try {
-      existing = readExisting();
-    } catch (error) {
-      // A concurrent --force run can claim the stale package between the
-      // existence check and the read; the path is then simply absent, and the
-      // no-replace publication below reuses whatever that run publishes.
-      if (error?.cause?.code !== "ENOENT") throw error;
-    }
-  }
+  const existing = existsSync(path) ? readExisting() : null;
   if (existing && !existing.stale) {
     ({ value, rawBytes, origin } = existing);
     mode = "reused";
@@ -2532,7 +2531,7 @@ function resolveWrapperPolicy({ flag, manifest }) {
   return { value: DEFAULT_WRAPPER_POLICY, source: "default" };
 }
 
-function prepareBuild(args, options = {}) {
+async function prepareBuild(args, options = {}) {
   const specPath = resolve(requireArg(args, "spec"));
   const sourceRoot = resolve(requireArg(args, "source"));
   const targetRepo = resolve(requireArg(args, "target"));
@@ -2778,293 +2777,310 @@ function prepareBuild(args, options = {}) {
     [...prepareBuildOutputPaths, ...prepareBuildThemeOutputPaths],
     prepareBuildCollisionPaths,
   );
-  const designSourcePackage = prepareDesignSourcePackage({
-    path: designSourcePackagePath,
-    activePages,
-    mappings: matched.mappings,
-    manifestResult,
-    sourceAssetCrawl,
-    templateFamily: designSourceTemplateFamily,
-    templateStockPageIds,
-    commerceCatalog,
-    sourceRoot,
-    mapId,
-    publicRouteSlug,
-    priorProvenance: readPriorDesignSourceProvenance(reportPath, designSourcePackagePath),
-    force: args.force === true,
-  });
-  const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
-  const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
-  const adapterDecisions = createAdapterDecisions({ commerceZoneFindings, wrapperPolicy: wrapperPolicy.value });
-  const proofPolicy = createProofPolicy({ orderPathDepth: orderPathDepthFlag });
+  // One prepare-build at a time per target, from the Design Source Package
+  // decision through the packet, context and report that record it. Under the
+  // lock, the prior Assembly Report and the package on disk are exactly what
+  // the last completed run left, so provenance is judged against them and no
+  // other run can publish, replace or remove the package mid-decision.
+  const lockPath = prepareBuildLockPath(designSourcePackagePath);
+  mkdirSync(dirname(lockPath), { recursive: true });
+  return withDirectoryLock(lockPath, () => {
+    const designSourcePackage = prepareDesignSourcePackage({
+      path: designSourcePackagePath,
+      activePages,
+      mappings: matched.mappings,
+      manifestResult,
+      sourceAssetCrawl,
+      templateFamily: designSourceTemplateFamily,
+      templateStockPageIds,
+      commerceCatalog,
+      sourceRoot,
+      mapId,
+      publicRouteSlug,
+      priorProvenance: readPriorDesignSourceProvenance(reportPath, designSourcePackagePath),
+      force: args.force === true,
+    });
+    const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
+    const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
+    const adapterDecisions = createAdapterDecisions({ commerceZoneFindings, wrapperPolicy: wrapperPolicy.value });
+    const proofPolicy = createProofPolicy({ orderPathDepth: orderPathDepthFlag });
 
-  const packet = {
-    schema_version: PACKET_SCHEMA,
-    generated_at: new Date().toISOString(),
-    // The kernel version that prepared this packet: the second pin source
-    // `tooling status` reads when the project declares no exact devDependency.
-    campaigns_os_version: packageVersion(),
-    campaign: {
-      public_route_slug: publicRouteSlug,
-      ...(specRouteRoot ? { route_root: specRouteRoot } : {}),
-      campaign_directory: optionalString(args["campaign-directory"], basename(outputDir)),
-      live_url_path: liveUrlPath,
-      campaigns_app_url: optionalString(args["campaigns-app-url"]),
-      api_key_source: optionalString(args["api-key-source"], "env:CAMPAIGNS_API_KEY"),
-      allowed_domains_confirmed: args["allowed-domains-confirmed"] === true,
-    },
-    spec: {
-      map_id: mapId,
-      ...(localSpecId ? { local_spec_id: localSpecId } : {}),
-      spec_url: localSpecId ? null : spec.spec_identity?.spec_url || null,
-      local_path: relFromFile(packetPath, specPath),
-    },
-    design_source_package: designSourcePackage.referenceFor(packetPath),
-    source_html: {
-      root: relFromFile(packetPath, sourceRoot),
-      pages: matched.mappings,
-      adapter_contract: cloneJson(adapterDecisions),
-    },
-    build_brief: {
-      schema_version: BUILD_BRIEF_SCHEMA,
-      mode: buildBrief.mode,
-      status: buildBrief.artifact.status,
-      input_path: buildBrief.inputPath ? relFromFile(packetPath, buildBrief.inputPath) : null,
-      normalized_path: relFromFile(packetPath, briefPath),
-      question_count: buildBrief.questions.length,
-      gate_count: buildBrief.gates.length,
-    },
-    assembly: {
-      implementation: "next-campaigns-build",
-      target_repo: relFromFile(packetPath, targetRepo),
-      output_dir: outputDir,
-      template_family: isUnresolvedTemplateFamily(templateFamily) ? "undecided" : templateFamily,
-      template_decision_notes: templateLocked
-        ? `Template family locked by prepare-build --template-family ${templateFamily}.`
-        : hintedTemplateFamily
-          ? `CampaignSpec hints ${hintedTemplateFamily}; operator must still lock the template family before commerce wiring.`
-          : "Template family must be locked before commerce wiring.",
-      template_lock: {
-        locked: templateLocked,
-        locked_by: templateLocked ? "operator_flag" : null,
-        confidence: templateLocked ? "high" : "none",
-        evidence: templateLocked ? ["prepare-build --template-family"] : [],
+    const packet = {
+      schema_version: PACKET_SCHEMA,
+      generated_at: new Date().toISOString(),
+      // The kernel version that prepared this packet: the second pin source
+      // `tooling status` reads when the project declares no exact devDependency.
+      campaigns_os_version: packageVersion(),
+      campaign: {
+        public_route_slug: publicRouteSlug,
+        ...(specRouteRoot ? { route_root: specRouteRoot } : {}),
+        campaign_directory: optionalString(args["campaign-directory"], basename(outputDir)),
+        live_url_path: liveUrlPath,
+        campaigns_app_url: optionalString(args["campaigns-app-url"]),
+        api_key_source: optionalString(args["api-key-source"], "env:CAMPAIGNS_API_KEY"),
+        allowed_domains_confirmed: args["allowed-domains-confirmed"] === true,
       },
-      template_certification: templateCertification,
-      commerce_catalog: {
-        required: true,
-        family: templateLocked ? templateFamily : null,
-        version: null,
-        path: commerceCatalogIsToolkitDefault ? null : relFromFile(packetPath, commerceCatalogPath),
+      spec: {
+        map_id: mapId,
+        ...(localSpecId ? { local_spec_id: localSpecId } : {}),
+        spec_url: localSpecId ? null : spec.spec_identity?.spec_url || null,
+        local_path: relFromFile(packetPath, specPath),
       },
-      compatible_outputs: ["static-html", "campaign-cart-sdk"],
-    },
-    deploy: {
-      target: optionalString(args["deploy-target"], "unknown"),
-      preview_url: optionalString(args["preview-url"]),
-      production_url: optionalString(args["production-url"]),
-      live_url_path: liveUrlPath,
-    },
-    qa: {
-      proof_policy: proofPolicy,
-      test_order_policy_notes: "Test Orders use global test cards that bypass the gateway and create no transactions. Run them any time with `qa run --test-order common` for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when needed (at most four orders). Use `--test-order full` for every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. Use `--test-order tiers` (or `tiers:common` / `tiers:full`) to drive one strict-selection order per selector tier the CampaignSpec declares on the checkout page, crossed with those path shapes; order-bump rows marked `is_upsell` are add-ons, not tiers, so a three-tier checkout with one bump plans 3 tiers, and `--select-package <ref[:qty],...>` narrows a tiers run to the listed tiers. The default accidental-flood cap is 6, and an overflow names the exact explicit `--max-test-orders` raise and lists the planned paths (up to 40 ids, the remainder counted). That cap bounds planned paths; `--max-order-creations` bounds actual order creations, defaults to the planned path count, and is reserved before each submit. Localhost on any port is a globally allowed Development domain; non-localhost preview/production origins still need SDK origin allowlist confirmation. There is no permission flag: depth is the only control.",
-    },
-    notes: "Generated by campaigns-os prepare-build. Replace demo refs from CampaignSpec/API before launch.",
-  };
+      design_source_package: designSourcePackage.referenceFor(packetPath),
+      source_html: {
+        root: relFromFile(packetPath, sourceRoot),
+        pages: matched.mappings,
+        adapter_contract: cloneJson(adapterDecisions),
+      },
+      build_brief: {
+        schema_version: BUILD_BRIEF_SCHEMA,
+        mode: buildBrief.mode,
+        status: buildBrief.artifact.status,
+        input_path: buildBrief.inputPath ? relFromFile(packetPath, buildBrief.inputPath) : null,
+        normalized_path: relFromFile(packetPath, briefPath),
+        question_count: buildBrief.questions.length,
+        gate_count: buildBrief.gates.length,
+      },
+      assembly: {
+        implementation: "next-campaigns-build",
+        target_repo: relFromFile(packetPath, targetRepo),
+        output_dir: outputDir,
+        template_family: isUnresolvedTemplateFamily(templateFamily) ? "undecided" : templateFamily,
+        template_decision_notes: templateLocked
+          ? `Template family locked by prepare-build --template-family ${templateFamily}.`
+          : hintedTemplateFamily
+            ? `CampaignSpec hints ${hintedTemplateFamily}; operator must still lock the template family before commerce wiring.`
+            : "Template family must be locked before commerce wiring.",
+        template_lock: {
+          locked: templateLocked,
+          locked_by: templateLocked ? "operator_flag" : null,
+          confidence: templateLocked ? "high" : "none",
+          evidence: templateLocked ? ["prepare-build --template-family"] : [],
+        },
+        template_certification: templateCertification,
+        commerce_catalog: {
+          required: true,
+          family: templateLocked ? templateFamily : null,
+          version: null,
+          path: commerceCatalogIsToolkitDefault ? null : relFromFile(packetPath, commerceCatalogPath),
+        },
+        compatible_outputs: ["static-html", "campaign-cart-sdk"],
+      },
+      deploy: {
+        target: optionalString(args["deploy-target"], "unknown"),
+        preview_url: optionalString(args["preview-url"]),
+        production_url: optionalString(args["production-url"]),
+        live_url_path: liveUrlPath,
+      },
+      qa: {
+        proof_policy: proofPolicy,
+        test_order_policy_notes: "Test Orders use global test cards that bypass the gateway and create no transactions. Run them any time with `qa run --test-order common` for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when needed (at most four orders). Use `--test-order full` for every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. Use `--test-order tiers` (or `tiers:common` / `tiers:full`) to drive one strict-selection order per selector tier the CampaignSpec declares on the checkout page, crossed with those path shapes; order-bump rows marked `is_upsell` are add-ons, not tiers, so a three-tier checkout with one bump plans 3 tiers, and `--select-package <ref[:qty],...>` narrows a tiers run to the listed tiers. The default accidental-flood cap is 6, and an overflow names the exact explicit `--max-test-orders` raise and lists the planned paths (up to 40 ids, the remainder counted). That cap bounds planned paths; `--max-order-creations` bounds actual order creations, defaults to the planned path count, and is reserved before each submit. Localhost on any port is a globally allowed Development domain; non-localhost preview/production origins still need SDK origin allowlist confirmation. There is no permission flag: depth is the only control.",
+      },
+      notes: "Generated by campaigns-os prepare-build. Replace demo refs from CampaignSpec/API before launch.",
+    };
 
-  // Everything a rerun of this command needs, as the operator passed it
-  // (provenance, not derived state): `next` replays it verbatim when the
-  // prepare-build stage blocks. Paths are portable (target-relative) like
-  // the rest of the context; a consumer resolves them against the target.
-  const specInput = options.specInput || null;
-  const intake = {
-    spec_source: specInput?.source || "local",
-    spec_path: specInput?.source === "local" || !specInput
-      ? portable(specPath)
-      : null,
-    map_id: specInput?.mapId || null,
-    proxy_base: specInput?.proxyBase || null,
-    saved_map_revision: specInput?.savedMapRevision || null,
-    source_root: portable(sourceRoot),
-    target_repo: portable(targetRepo),
-    template_family: explicitTemplateFamily || null,
-    brief_path: optionalString(args.brief) ? portable(resolve(args.brief)) : null,
-    design_manifest_path: designManifestPath ? portable(designManifestPath) : null,
-    allow_uncertified_template: uncertifiedReason || null,
-    wrapper_policy: wrapperPolicyFlag || null,
-    packet_path: portable(packetPath),
-  };
-  const context = {
-    schema_version: CONTEXT_SCHEMA,
-    generated_at: new Date().toISOString(),
-    source_adapter: sourceKind,
-    intake,
-    status: blockers.length ? "blocked" : "prepared",
-    packet_path: portable(packetPath),
-    report_path: portable(reportPath),
-    design_source_package: designSourcePackage.referenceFor(contextPath),
-    spec: {
-      path: portable(specPath),
-      hash: sha256File(specPath),
-      material_hash: specMaterialHash(spec),
-      active_pages: activePages.map((page) => ({
-        id: page.id,
-        type: page.type || null,
-        label: page.label || null,
-        page_url: publicRouteForPage(page),
-      })),
-    },
-    source: {
-      root: portable(sourceRoot),
-      html_files: htmlFiles,
-      manifest: manifestResult.manifest
-        ? {
-            path: portable(manifestResult.path),
-            schema_version: manifestResult.manifest.schema_version,
-            generator: manifestResult.manifest.generator || null,
-            generated_at: manifestResult.manifest.generated_at || null,
-            campaign_slug: manifestResult.manifest.campaign_slug || null,
-            page_count: Array.isArray(manifestResult.manifest.pages) ? manifestResult.manifest.pages.length : 0,
-            file_count: Array.isArray(manifestResult.manifest.files) ? manifestResult.manifest.files.length : 0,
-            producer_provenance: manifestResult.manifest.producer_provenance || null,
-          }
+    // Everything a rerun of this command needs, as the operator passed it
+    // (provenance, not derived state): `next` replays it verbatim when the
+    // prepare-build stage blocks. Paths are portable (target-relative) like
+    // the rest of the context; a consumer resolves them against the target.
+    const specInput = options.specInput || null;
+    const intake = {
+      spec_source: specInput?.source || "local",
+      spec_path: specInput?.source === "local" || !specInput
+        ? portable(specPath)
         : null,
-      manifest_warnings: manifestWarnings,
-      ambiguous_candidates: sourceIntake.ambiguousCandidates,
-      manifest_draft: sourceIntake.manifestDraft,
-      asset_crawl: sourceAssetCrawl,
-    },
-    build_brief: {
-      schema_version: BUILD_BRIEF_SCHEMA,
-      mode: buildBrief.mode,
-      status: buildBrief.artifact.status,
-      input_path: buildBrief.inputPath ? portable(buildBrief.inputPath) : null,
-      normalized_path: portable(briefPath),
-      question_count: buildBrief.questions.length,
-      gate_count: buildBrief.gates.length,
-      questions: buildBrief.questions,
-      gates: buildBrief.gates,
-    },
-    page_map: matched.mappings.map((mapping) => ({
-      page_id: mapping.page_id,
-      source_path: mapping.path || null,
-      skip_reason: mapping.skip_reason || null,
-      output_path: mapping.page_kit?.output_path ? portable(resolve(targetRepo, mapping.page_kit.output_path)) : null,
-      page_kit: mapping.page_kit || null,
-    })),
-    scaffold: {
-      mode: existsSync(resolve(targetRepo, outputDir)) ? "existing" : "fresh",
-      required: !existsSync(resolve(targetRepo, outputDir)),
-      target_repo: ".",
-      output_dir: portable(resolve(targetRepo, outputDir)),
-      handoff_skill: existsSync(resolve(targetRepo, outputDir)) ? "next-campaigns-build" : "next-campaigns-os-setup",
-      handoff_artifact: ".campaign-runtime/setup-handoff.json",
-      reason: existsSync(resolve(targetRepo, outputDir))
-        ? "Target campaign output directory already exists."
-        : "Target campaign output directory is missing; scaffold before build.",
-    },
-    template: {
-      family: packet.assembly.template_family,
-      locked: templateLocked,
-      lock: packet.assembly.template_lock,
-      candidates: templateCandidates,
-    },
-    adapter_decisions: cloneJson(adapterDecisions),
-    commerce_zone_findings: commerceZoneFindings,
-    prompts_required: [...matched.prompts, ...buildBriefPrompts],
-    decisions: matched.decisions,
-  };
+      map_id: specInput?.mapId || null,
+      proxy_base: specInput?.proxyBase || null,
+      saved_map_revision: specInput?.savedMapRevision || null,
+      source_root: portable(sourceRoot),
+      target_repo: portable(targetRepo),
+      template_family: explicitTemplateFamily || null,
+      brief_path: optionalString(args.brief) ? portable(resolve(args.brief)) : null,
+      design_manifest_path: designManifestPath ? portable(designManifestPath) : null,
+      allow_uncertified_template: uncertifiedReason || null,
+      wrapper_policy: wrapperPolicyFlag || null,
+      packet_path: portable(packetPath),
+    };
+    const context = {
+      schema_version: CONTEXT_SCHEMA,
+      generated_at: new Date().toISOString(),
+      source_adapter: sourceKind,
+      intake,
+      status: blockers.length ? "blocked" : "prepared",
+      packet_path: portable(packetPath),
+      report_path: portable(reportPath),
+      design_source_package: designSourcePackage.referenceFor(contextPath),
+      spec: {
+        path: portable(specPath),
+        hash: sha256File(specPath),
+        material_hash: specMaterialHash(spec),
+        active_pages: activePages.map((page) => ({
+          id: page.id,
+          type: page.type || null,
+          label: page.label || null,
+          page_url: publicRouteForPage(page),
+        })),
+      },
+      source: {
+        root: portable(sourceRoot),
+        html_files: htmlFiles,
+        manifest: manifestResult.manifest
+          ? {
+              path: portable(manifestResult.path),
+              schema_version: manifestResult.manifest.schema_version,
+              generator: manifestResult.manifest.generator || null,
+              generated_at: manifestResult.manifest.generated_at || null,
+              campaign_slug: manifestResult.manifest.campaign_slug || null,
+              page_count: Array.isArray(manifestResult.manifest.pages) ? manifestResult.manifest.pages.length : 0,
+              file_count: Array.isArray(manifestResult.manifest.files) ? manifestResult.manifest.files.length : 0,
+              producer_provenance: manifestResult.manifest.producer_provenance || null,
+            }
+          : null,
+        manifest_warnings: manifestWarnings,
+        ambiguous_candidates: sourceIntake.ambiguousCandidates,
+        manifest_draft: sourceIntake.manifestDraft,
+        asset_crawl: sourceAssetCrawl,
+      },
+      build_brief: {
+        schema_version: BUILD_BRIEF_SCHEMA,
+        mode: buildBrief.mode,
+        status: buildBrief.artifact.status,
+        input_path: buildBrief.inputPath ? portable(buildBrief.inputPath) : null,
+        normalized_path: portable(briefPath),
+        question_count: buildBrief.questions.length,
+        gate_count: buildBrief.gates.length,
+        questions: buildBrief.questions,
+        gates: buildBrief.gates,
+      },
+      page_map: matched.mappings.map((mapping) => ({
+        page_id: mapping.page_id,
+        source_path: mapping.path || null,
+        skip_reason: mapping.skip_reason || null,
+        output_path: mapping.page_kit?.output_path ? portable(resolve(targetRepo, mapping.page_kit.output_path)) : null,
+        page_kit: mapping.page_kit || null,
+      })),
+      scaffold: {
+        mode: existsSync(resolve(targetRepo, outputDir)) ? "existing" : "fresh",
+        required: !existsSync(resolve(targetRepo, outputDir)),
+        target_repo: ".",
+        output_dir: portable(resolve(targetRepo, outputDir)),
+        handoff_skill: existsSync(resolve(targetRepo, outputDir)) ? "next-campaigns-build" : "next-campaigns-os-setup",
+        handoff_artifact: ".campaign-runtime/setup-handoff.json",
+        reason: existsSync(resolve(targetRepo, outputDir))
+          ? "Target campaign output directory already exists."
+          : "Target campaign output directory is missing; scaffold before build.",
+      },
+      template: {
+        family: packet.assembly.template_family,
+        locked: templateLocked,
+        lock: packet.assembly.template_lock,
+        candidates: templateCandidates,
+      },
+      adapter_decisions: cloneJson(adapterDecisions),
+      commerce_zone_findings: commerceZoneFindings,
+      prompts_required: [...matched.prompts, ...buildBriefPrompts],
+      decisions: matched.decisions,
+    };
 
-  const themeInspection = inspectBrandTheme({
-    packet,
-    packetPath,
-    context,
-    policy: themePolicy,
-    force: args.force === true,
-  });
-  const shouldWriteThemeCss = themeInspection.context_theme?.generated?.can_auto_generate === true;
-  // Inspection can take time, so reject aliases or invalid target types again
-  // before publication. The shared theme writer then stages each artifact in
-  // its destination directory and atomically replaces the final entry, making
-  // a post-preflight symlink or hard-link swap safe without rolling back DSP.
-  preflightPrepareBuildOutputTargets(
-    prepareBuildThemeOutputPaths,
-    prepareBuildCollisionPaths,
-  );
-  const writtenTheme = writeThemeArtifacts(themeInspection, {
-    writeReport: true,
-    writeCss: shouldWriteThemeCss,
-    force: args.force === true,
-    packetPath,
-  });
-  context.theme = {
-    ...themeInspection.context_theme,
-    wrote: writtenTheme.wrote,
-  };
-  if (!writtenTheme.ok && Array.isArray(writtenTheme.errors) && writtenTheme.errors.length > 0) {
-    context.theme.warnings = [
-      ...(context.theme.warnings || []),
-      ...writtenTheme.errors.map((error) => ({ code: error.code, message: error.message, detail: error.detail || null })),
-    ];
-  }
+    const themeInspection = inspectBrandTheme({
+      packet,
+      packetPath,
+      context,
+      policy: themePolicy,
+      force: args.force === true,
+    });
+    const shouldWriteThemeCss = themeInspection.context_theme?.generated?.can_auto_generate === true;
+    // Inspection can take time, so reject aliases or invalid target types again
+    // before publication. The shared theme writer then stages each artifact in
+    // its destination directory and atomically replaces the final entry, making
+    // a post-preflight symlink or hard-link swap safe without rolling back DSP.
+    preflightPrepareBuildOutputTargets(
+      prepareBuildThemeOutputPaths,
+      prepareBuildCollisionPaths,
+    );
+    const writtenTheme = writeThemeArtifacts(themeInspection, {
+      writeReport: true,
+      writeCss: shouldWriteThemeCss,
+      force: args.force === true,
+      packetPath,
+    });
+    context.theme = {
+      ...themeInspection.context_theme,
+      wrote: writtenTheme.wrote,
+    };
+    if (!writtenTheme.ok && Array.isArray(writtenTheme.errors) && writtenTheme.errors.length > 0) {
+      context.theme.warnings = [
+        ...(context.theme.warnings || []),
+        ...writtenTheme.errors.map((error) => ({ code: error.code, message: error.message, detail: error.detail || null })),
+      ];
+    }
 
-  // The top-level status/next/blockers are derived from the stages by the same
-  // function every later commit of the report runs (stage-ledger.mjs), so
-  // prepare-build's first write and a producer's last write spell them alike.
-  const report = applyDerivedAssemblyReportSummary(createAssemblyReport({
-    packetPath,
-    contextPath,
-    reportPath,
-    specPath,
-    sourceRoot,
-    sourceKind,
-    targetRepo,
-    packet,
-    context,
-    blockers,
-    designSourcePackage,
-    declaredScopeSkips,
-    buildScopeReasonsInvalid,
-    templateSelection,
-  }));
+    // The top-level status/next/blockers are derived from the stages by the same
+    // function every later commit of the report runs (stage-ledger.mjs), so
+    // prepare-build's first write and a producer's last write spell them alike.
+    const report = applyDerivedAssemblyReportSummary(createAssemblyReport({
+      packetPath,
+      contextPath,
+      reportPath,
+      specPath,
+      sourceRoot,
+      sourceKind,
+      targetRepo,
+      packet,
+      context,
+      blockers,
+      designSourcePackage,
+      declaredScopeSkips,
+      buildScopeReasonsInvalid,
+      templateSelection,
+    }));
 
-  publishPrepareBuildJsonOutputs([
-    { label: "Build Packet", path: packetPath, value: packet },
-    { label: "Campaign Build Brief", path: briefPath, value: buildBrief.artifact },
-    { label: "Build Context", path: contextPath, value: context },
-    { label: "Assembly Report", path: reportPath, value: report },
-  ], prepareBuildCollisionPaths);
-
-  let doctor = null;
-  // Housekeeping for the target's git history: the machine-local half of
-  // .campaign-runtime/ (sessions, journals, Run Records, caches, evidence)
-  // gets an ignore rule the first time a build touches this repo. The
-  // readback bundle and handoff inputs stay committable. Best-effort.
-  ensureRuntimeStateIgnored(targetRepo);
-  if (options.installContext) installAgentContext(targetRepo, false);
-  if (options.runDoctor) {
-    doctor = doctorPacket(packetPath, { contextPath, reportPath, outputBaseDir: targetRepo });
-    // Through the intake's own collision-checked writer, so the sidecar is
-    // stamped with the intake command that ran doctor (`start` or `build`,
-    // #312) without a second write path for it.
     publishPrepareBuildJsonOutputs([
-      { label: "Doctor Output", path: doctorOutPath, value: stampDoctorProducer(doctor, options.command) },
+      { label: "Build Packet", path: packetPath, value: packet },
+      { label: "Campaign Build Brief", path: briefPath, value: buildBrief.artifact },
+      { label: "Build Context", path: contextPath, value: context },
+      { label: "Assembly Report", path: reportPath, value: report },
     ], prepareBuildCollisionPaths);
-  }
 
-  return {
-    packetPath,
-    contextPath,
-    reportPath,
-    doctorOutPath,
-    briefPath,
-    designSourcePackagePath,
-    designSourcePackageMode: designSourcePackage.mode,
-    packet,
-    context,
-    report,
-    doctor,
-  };
+    let doctor = null;
+    // Housekeeping for the target's git history: the machine-local half of
+    // .campaign-runtime/ (sessions, journals, Run Records, caches, evidence)
+    // gets an ignore rule the first time a build touches this repo. The
+    // readback bundle and handoff inputs stay committable. Best-effort.
+    ensureRuntimeStateIgnored(targetRepo);
+    if (options.installContext) installAgentContext(targetRepo, false);
+    if (options.runDoctor) {
+      doctor = doctorPacket(packetPath, { contextPath, reportPath, outputBaseDir: targetRepo });
+      // Through the intake's own collision-checked writer, so the sidecar is
+      // stamped with the intake command that ran doctor (`start` or `build`,
+      // #312) without a second write path for it.
+      publishPrepareBuildJsonOutputs([
+        { label: "Doctor Output", path: doctorOutPath, value: stampDoctorProducer(doctor, options.command) },
+      ], prepareBuildCollisionPaths);
+    }
+
+    return {
+      packetPath,
+      contextPath,
+      reportPath,
+      doctorOutPath,
+      briefPath,
+      designSourcePackagePath,
+      designSourcePackageMode: designSourcePackage.mode,
+      packet,
+      context,
+      report,
+      doctor,
+    };
+  }, {
+    budgetMs: PREPARE_BUILD_LOCK_BUDGET_MS,
+    unavailable: (error) => error?.code === "EEXIST"
+      ? new Error(
+        `Another prepare-build is writing ${targetRepo} (lock ${lockPath}). `
+        + "Retry after it finishes. If a run was interrupted, confirm no campaigns-os process is working on this target before removing that lock directory.",
+      )
+      : new Error(`Could not take the prepare-build lock at ${lockPath}${error?.code ? ` (${error.code})` : ""}: ${error?.message}`, { cause: error }),
+  });
 }
 
 export function inspectCommerceZones(sourceRoot, htmlFiles) {

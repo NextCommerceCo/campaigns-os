@@ -522,11 +522,15 @@ test("prepare-build contextualizes unreadable existing DSP artifacts and leaves 
 });
 
 // Preload a process-local fs shim that holds each CLI at its first call of
-// `barrierFn` on the DSP path (existsSync by default: every run has seen the
-// path absent), and releases them only after all have reached that point.
-// This synchronizes the real multi-process publication seam without adding
-// any test hook to production code.
-function publicationBarrierEnv(fixture, processCount, { barrierFn = "existsSync" } = {}) {
+// `barrierFn` on `barrierPath`, and releases them only after all have reached
+// that point. The default, the first look at the Assembly Report, comes before
+// the per-target prepare-build lock, so every run is released into the same
+// instant and they contend for the DSP decision together. This synchronizes
+// the real multi-process seam without adding any test hook to production code.
+function publicationBarrierEnv(fixture, processCount, {
+  barrierFn = "existsSync",
+  barrierPath = join(fixture.target, ".campaign-runtime/assembly-report.json"),
+} = {}) {
   const barrierDir = join(fixture.dir, "dsp-publication-barrier");
   const preloadPath = join(fixture.dir, "dsp-publication-barrier.cjs");
   mkdirSync(barrierDir, { recursive: true });
@@ -554,7 +558,7 @@ syncBuiltinESMExports();
 `);
   const env = {
     NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
-    DSP_BARRIER_PATH: join(fixture.target, DSP_REL_PATH),
+    DSP_BARRIER_PATH: barrierPath,
     DSP_BARRIER_DIR: barrierDir,
     DSP_BARRIER_COUNT: String(processCount),
     DSP_BARRIER_FN: barrierFn,
@@ -904,7 +908,7 @@ test("prepare-build --force regenerates its own stale synthesized DSP after the 
   }));
 });
 
-test("concurrent prepare-build --force runs claim the stale DSP once and never overwrite each other", () => withFixture(async (fixture) => {
+test("concurrent prepare-build --force runs regenerate the stale DSP once and the rest reuse it as synthesized", () => withFixture(async (fixture) => {
   const first = runPrepare(fixture);
   assert.equal(first.status, 0, first.stderr);
   const dspPath = join(fixture.target, DSP_REL_PATH);
@@ -913,29 +917,206 @@ test("concurrent prepare-build --force runs claim the stale DSP once and never o
     manifest.generated_at = "2026-08-22T11:00:00.000Z";
   });
 
-  // Held just after each run has read the stale bytes, so every run has
-  // judged the package stale before any of them publishes.
+  // Released together just before the per-target lock: the first run through
+  // regenerates, and each later run judges the package against the report the
+  // previous run wrote, so it reuses the fresh bytes as prepare-build's own.
   const processCount = 6;
-  const env = publicationBarrierEnv(fixture, processCount, { barrierFn: "readFileSync" });
+  const env = publicationBarrierEnv(fixture, processCount);
   const results = await Promise.all(Array.from({ length: processCount }, () => runPrepareAsync(fixture, { env, extraArgs: ["--force"] })));
   for (const result of results) assert.equal(result.status, 0, result.stderr);
-  // Runs reuse the winner instead of renaming their own bytes over it. A late
-  // run that claims an already-fresh package puts it straight back, and a run
-  // arriving in that instant can publish the same bytes through the no-replace
-  // link, so at most two runs report publishing; every other run reuses.
-  const publishers = results.filter((result) => ["regenerated", "emitted"].includes(result.json.designSourcePackageMode)).length;
-  assert.ok(publishers >= 1 && publishers <= 2, `${publishers} runs published`);
-  assert.equal(results.filter((result) => result.json.designSourcePackageMode === "reused").length, processCount - publishers);
+  assert.equal(results.filter((result) => result.json.designSourcePackageMode === "regenerated").length, 1);
+  assert.equal(results.filter((result) => result.json.designSourcePackageMode === "reused").length, processCount - 1);
+  for (const result of results) assert.equal(result.json.report.design_source_package.origin, "synthesized");
 
-  const rawBytes = readFileSync(dspPath);
-  assert.equal(rawBytes.equals(staleBytes), false, "the stale package was replaced");
-  const expectedHash = `sha256:${sha256(rawBytes)}`;
-  for (const result of results) assert.equal(result.json.packet.design_source_package.sha256, expectedHash);
+  assert.equal(readFileSync(dspPath).equals(staleBytes), false, "the stale package was replaced");
+  assertEveryRunBoundToThePackageOnDisk(fixture, results);
+  assertStillRegeneratesAfterAnotherEdit(fixture);
+}));
+
+// Deterministic interleavings for concurrent --force runs. A preloaded fs shim
+// gives one run a role: it signals when it reaches a point in the DSP decision
+// and then holds there until the state it waits for appears on disk, or until
+// `DSP_CHOREO_WAIT_MS` passes. The bounded wait matters: runs that are
+// serialized cannot reach the state a held run waits for, and must still finish.
+function choreographyEnv(fixture, role, staleBytes, { waitMs = 3000 } = {}) {
+  const signalDir = join(fixture.dir, "dsp-choreography");
+  const preloadPath = join(fixture.dir, "dsp-choreography.cjs");
+  mkdirSync(signalDir, { recursive: true });
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const { syncBuiltinESMExports } = require("node:module");
+const role = process.env.DSP_CHOREO_ROLE;
+const dsp = path.resolve(process.env.DSP_CHOREO_DSP);
+const report = path.resolve(process.env.DSP_CHOREO_REPORT);
+const stale = process.env.DSP_CHOREO_STALE;
+const waitMs = Number(process.env.DSP_CHOREO_WAIT_MS);
+const readFile = fs.readFileSync, rename = fs.renameSync;
+const signal = (name) => fs.writeFileSync(path.join(process.env.DSP_CHOREO_SIGNALS, name), String(process.pid));
+const until = (ready) => {
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    try { if (ready()) return; } catch {}
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+};
+const hashAt = (file) => crypto.createHash("sha256").update(readFile.call(fs, file)).digest("hex");
+const dspReplaced = () => fs.existsSync(dsp) && hashAt(dsp) !== stale;
+let readSeen = false;
+fs.readFileSync = function choreographedRead(file, ...rest) {
+  const result = readFile.call(fs, file, ...rest);
+  if (role === "late-reuser" && !readSeen && path.resolve(String(file)) === dsp) {
+    // Has judged the package stale against the report it read; waits for
+    // another run to regenerate before going on.
+    readSeen = true;
+    signal("late-reuser-read");
+    until(dspReplaced);
+  }
+  return result;
+};
+fs.renameSync = function choreographedRename(from, to, ...rest) {
+  if (role === "late-reuser" && path.resolve(String(to)) === report) {
+    // Writes its report only after the regenerating run has written its own.
+    until(() => JSON.parse(readFile.call(fs, report, "utf8")).design_source_package.sha256 !== "sha256:" + stale);
+  }
+  if (role === "claimer" && path.resolve(String(from)) === dsp) {
+    // About to claim the stale bytes: first let another run replace them,
+    // then, once claimed, let a third run publish at the vacant path.
+    signal("claimer-at-claim");
+    until(dspReplaced);
+    const result = rename.call(fs, from, to, ...rest);
+    signal("claimer-claimed");
+    until(() => fs.existsSync(dsp));
+    return result;
+  }
+  return rename.call(fs, from, to, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  return {
+    signalDir,
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      DSP_CHOREO_ROLE: role,
+      DSP_CHOREO_DSP: join(fixture.target, DSP_REL_PATH),
+      DSP_CHOREO_REPORT: join(fixture.target, ".campaign-runtime/assembly-report.json"),
+      DSP_CHOREO_STALE: sha256(staleBytes),
+      DSP_CHOREO_WAIT_MS: String(waitMs),
+      DSP_CHOREO_SIGNALS: signalDir,
+    },
+  };
+}
+
+async function waitForSignal(signalDir, name, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!existsSync(join(signalDir, name)) && Date.now() < deadline) {
+    await new Promise((done) => setTimeout(done, 10));
+  }
+}
+
+function assertEveryRunBoundToThePackageOnDisk(fixture, results) {
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const onDisk = `sha256:${sha256(readFileSync(dspPath))}`;
+  for (const result of results) {
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.json.packet.design_source_package.sha256, onDisk, "a run bound to a package that is no longer on disk");
+    assert.equal(result.json.report.design_source_package.sha256, onDisk);
+  }
+  const report = readJson(join(fixture.target, ".campaign-runtime/assembly-report.json"));
+  assert.equal(report.design_source_package.sha256, onDisk);
   assert.deepEqual(
-    readdirSync(dirname(dspPath)).filter((name) => name.includes(".tmp") || name.includes(".stale")),
+    readdirSync(dirname(dspPath)).filter((name) => name.includes(".tmp") || name.includes(".stale") || name.includes(".lock")),
     [],
-    "claimed stale bytes and staging names are cleaned up",
   );
+}
+
+function assertStillRegeneratesAfterAnotherEdit(fixture) {
+  const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+  assert.equal(readJson(reportPath).design_source_package.origin, "synthesized",
+    "a package prepare-build produced itself must stay recorded as synthesized");
+  const manifestPath = editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T12:00:00.000Z";
+  });
+  const again = runPrepare(fixture, { extraArgs: ["--force"] });
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(again.json.designSourcePackageMode, "regenerated");
+  assertFreshPackageBoundEverywhere(fixture, again, manifestPath);
+}
+
+test("a --force run that reuses a concurrently regenerated DSP keeps it recorded as synthesized", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const staleBytes = readFileSync(join(fixture.target, DSP_REL_PATH));
+  editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T11:00:00.000Z";
+  });
+
+  // The late reuser reads the prior report and judges the package stale, then
+  // another run regenerates it; the late reuser's report is written last.
+  const late = choreographyEnv(fixture, "late-reuser", staleBytes);
+  const lateRun = runPrepareAsync(fixture, { env: late.env, extraArgs: ["--force"] });
+  await waitForSignal(late.signalDir, "late-reuser-read");
+  const regenerator = runPrepareAsync(fixture, { extraArgs: ["--force"] });
+  const results = await Promise.all([lateRun, regenerator]);
+  assertEveryRunBoundToThePackageOnDisk(fixture, results);
+  assertStillRegeneratesAfterAnotherEdit(fixture);
+}));
+
+test("a late stale-DSP claim never deletes a package another --force run already published", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const staleBytes = readFileSync(join(fixture.target, DSP_REL_PATH));
+  editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T11:00:00.000Z";
+  });
+
+  // The claimer judges the bytes stale and pauses before claiming them; a
+  // second run replaces them; the claimer moves the fresh package aside; a
+  // third run publishes at the vacant path. Every run must still end bound to
+  // the package on disk.
+  const claimer = choreographyEnv(fixture, "claimer", staleBytes);
+  const claimerRun = runPrepareAsync(fixture, { env: claimer.env, extraArgs: ["--force"] });
+  await waitForSignal(claimer.signalDir, "claimer-at-claim");
+  const replacer = runPrepareAsync(fixture, { extraArgs: ["--force"] });
+  await waitForSignal(claimer.signalDir, "claimer-claimed");
+  const publisher = runPrepareAsync(fixture, { extraArgs: ["--force"] });
+  const results = await Promise.all([claimerRun, replacer, publisher]);
+  assertEveryRunBoundToThePackageOnDisk(fixture, results);
+  assertStillRegeneratesAfterAnotherEdit(fixture);
+}));
+
+test("a DSP momentarily absent while another run replaces it is not mistaken for an output alias", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  // Before taking the lock, this run canonicalizes the DSP path. The first
+  // realpath fails as if the locked run had just moved the stale package aside.
+  const preloadPath = join(fixture.dir, "dsp-vanishing-realpath.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRealpathSync = fs.realpathSync;
+let vanished = false;
+fs.realpathSync = function vanishOnce(candidate, ...rest) {
+  if (!vanished && path.resolve(String(candidate)) === path.resolve(process.env.DSP_PATH)) {
+    vanished = true;
+    const error = new Error("ENOENT: no such file or directory, realpath");
+    error.code = "ENOENT";
+    throw error;
+  }
+  return originalRealpathSync.call(fs, candidate, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  const result = await runPrepareAsync(fixture, {
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      DSP_PATH: join(fixture.target, DSP_REL_PATH),
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.json.designSourcePackageMode, "reused");
 }));
 
 test("a --force regeneration whose publication fails puts the stale DSP back instead of deleting it", () => withFixture(async (fixture) => {
