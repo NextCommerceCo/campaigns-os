@@ -551,7 +551,7 @@ function analyticsCorrectnessNoCapturePageAssertion({ rootUrl, attempts }) {
   const publicUrl = redactUrlQuery(rootUrl);
   const page = { page_id: "analytics", url: publicUrl || undefined };
   const expected = "live dataLayer + tag-fire capture on the campaign root or the first built in-scope page";
-  const loaded = attempts.filter((attempt) => attempt.outcome === "non_2xx");
+  const loaded = attempts.filter((attempt) => attempt.outcome === "non_2xx" || attempt.outcome === "navigation_error");
   if (!loaded.length) {
     return assertion({
       id: "analytics-correctness:capture",
@@ -570,7 +570,9 @@ function analyticsCorrectnessNoCapturePageAssertion({ rootUrl, attempts }) {
     status: STATUS.FAIL,
     severity: SEVERITY.BLOCKER,
     expected,
-    actual: `no_capture_page_answered: declared analytics went unmeasured; ${loaded.map((attempt) => `${attempt.url} answered HTTP ${attempt.http_status}`).join(", ")}`,
+    actual: `no_capture_page_answered: declared analytics went unmeasured; ${loaded.map((attempt) => (attempt.outcome === "navigation_error"
+      ? `${attempt.url} failed to load (${attempt.error_code})`
+      : `${attempt.url} answered HTTP ${attempt.http_status}`)).join(", ")}`,
     evidence: { url: publicUrl, reason: "no_capture_page_answered", attempts },
   });
 }
@@ -642,7 +644,18 @@ async function captureAnalyticsCorrectnessInContext(context, url, contract, args
   if (!rootInScope) attempts.push({ url: rootKey, source: "campaign_root", outcome: "out_of_built_scope", http_status: null });
   let rootFallback = rootInScope ? null : { url: rootKey, reason: "out_of_built_scope", http_status: null };
   for (const candidate of candidates) {
-    const { capture, httpStatus } = await captureAnalyticsPage(context, candidate.url, args, extraHosts);
+    const { capture, httpStatus, navigationError } = await captureAnalyticsPage(
+      context, candidate.url, args, extraHosts, { perPageNavigationErrors: true },
+    );
+    if (navigationError) {
+      // One page failing to load (a timeout, a refused connection) moves on to
+      // the next candidate; the blocker below lists it if none answers.
+      attempts.push({ url: redactUrlQuery(candidate.url), source: candidate.source, outcome: "navigation_error", http_status: null, error_code: navigationError });
+      if (candidate.source === "campaign_root") {
+        rootFallback = { url: rootKey, reason: "navigation_error", http_status: null, error_code: navigationError };
+      }
+      continue;
+    }
     if (isHttpOk(httpStatus)) {
       const usedFallback = candidate.source !== "campaign_root";
       return analyticsCorrectnessCaptureAssertions({
@@ -721,7 +734,16 @@ export async function captureAnalyticsForUrl(context, url, args, extraHosts = []
 // Same capture, plus the main-document HTTP status, which the correctness leg
 // uses to tell an empty page from a missing one (#493). Kept off the capture
 // object so parity comparisons never see it.
-async function captureAnalyticsPage(context, url, args, extraHosts = []) {
+// A stable code for a failed navigation: Playwright's TimeoutError, or the
+// net::ERR_* token Chromium reports. The raw message is dropped because it
+// echoes the URL (query included) and a call log.
+function analyticsNavigationErrorCode(error) {
+  if (error?.name === "TimeoutError") return "navigation_timeout";
+  const netError = String(error?.message || "").match(/net::ERR_[A-Z0-9_]+/);
+  return netError ? netError[0] : "navigation_failed";
+}
+
+async function captureAnalyticsPage(context, url, args, extraHosts = [], options = {}) {
   const page = await context.newPage();
   const capture = await attachAnalyticsCapture(page, { extraHosts });
   const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
@@ -730,7 +752,15 @@ async function captureAnalyticsPage(context, url, args, extraHosts = []) {
     // domcontentloaded (not "load") so a single stuck analytics beacon — exactly
     // the kind of subresource we're capturing — can't starve the goto timeout.
     // Mirrors runPageBrowserChecks; the settle wait below lets async tags fire.
-    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    let response;
+    try {
+      response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    } catch (error) {
+      // Only the navigation is per-page. A closed page or a disconnected
+      // browser is the runner failing, not this URL, so it stays an error.
+      if (!options.perPageNavigationErrors || page.isClosed() || context.browser()?.isConnected() === false) throw error;
+      return { capture: null, httpStatus: null, navigationError: analyticsNavigationErrorCode(error) };
+    }
     let httpStatus = null;
     try { httpStatus = typeof response?.status === "function" ? response.status() : null; } catch { httpStatus = null; }
     await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});

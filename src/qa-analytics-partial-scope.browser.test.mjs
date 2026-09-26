@@ -55,33 +55,44 @@ async function chromiumAvailable() {
 // The campaign root has no page; checkout/ is the built entry; the pixel
 // endpoint answers a 1x1 so nothing leaves the process. `pages` overrides a
 // path's status/body (e.g. a host that answers 200 with a generic fallback at
-// the root, or 503 everywhere).
+// the root, or 503 everywhere). An override with `abort` fails the navigation
+// with that network error. `/stall.js` never answers until the leg ends, so a
+// page that loads it as a parser-blocking script never reaches
+// domcontentloaded.
 async function partialBuildContext(pages = {}) {
   const context = await (await sharedBrowser()).newContext();
   const html = await readFile(FIXTURE, "utf8");
   const visited = [];
+  const stalled = [];
+  const release = () => { for (const resolve of stalled.splice(0)) resolve(); };
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
+    if (url.origin === ORIGIN && url.pathname === "/stall.js") {
+      await new Promise((resolve) => stalled.push(resolve));
+      return route.fulfill({ status: 200, contentType: "text/javascript", body: "" }).catch(() => {});
+    }
     if (url.hostname.endsWith("facebook.com")) {
       return route.fulfill({ status: 200, contentType: "image/gif", body: Buffer.from("R0lGODlhAQABAAAAACw=", "base64") });
     }
     if (route.request().resourceType() === "document") visited.push(url.pathname);
     const override = url.origin === ORIGIN ? pages[url.pathname] : null;
+    if (override?.abort) return route.abort(override.abort);
     if (override) return route.fulfill({ status: override.status, contentType: "text/html", body: override.body ?? html });
     if (url.origin === ORIGIN && url.pathname === "/campaign/checkout/") {
       return route.fulfill({ status: 200, contentType: "text/html", body: html });
     }
     return route.fulfill({ status: 404, contentType: "text/html", body: "<!doctype html><title>Not found</title>" });
   });
-  return { context, visited };
+  return { context, visited, release };
 }
 
-async function runLeg(options, pages) {
-  const { context, visited } = await partialBuildContext(pages);
+async function runLeg(options, pages, args = ARGS) {
+  const { context, visited, release } = await partialBuildContext(pages);
   try {
-    const assertions = await hooks.captureAnalyticsCorrectnessInContext(context, ROOT, CONTRACT, ARGS, [], options);
+    const assertions = await hooks.captureAnalyticsCorrectnessInContext(context, ROOT, CONTRACT, args, [], options);
     return { assertions, visited };
   } finally {
+    release();
     await context.close();
   }
 }
@@ -113,6 +124,11 @@ function scopeFor(pageIds, { skipped = [], partial = true, rootPage = null } = {
 
 const GENERIC_FALLBACK = { status: 200, body: "<!doctype html><title>Index of /campaign/</title><h1>Index</h1>" };
 const UNAVAILABLE = { status: 503, body: "<!doctype html><title>Service unavailable</title>" };
+// A 503 error document whose parser-blocking script never loads: the
+// domcontentloaded navigation times out before goto returns a response.
+const STALLED_ERROR_PAGE = { status: 503, body: '<!doctype html><title>Service unavailable</title><script src="/stall.js"></script><p>down</p>' };
+const REFUSED = { abort: "connectionrefused" };
+const SHORT_TIMEOUT_ARGS = { ...ARGS, "browser-timeout": "1500" };
 
 const byId = (assertions, id) => assertions.find((item) => item.id === id);
 
@@ -226,4 +242,54 @@ browserTest("a full build whose landing page is the root still captures the root
   assert.equal(capture.evidence.capture_page.source, "campaign_root");
   assert.equal(capture.evidence.root_fallback, undefined);
   assert.equal(byId(assertions, "analytics-correctness:tag:meta").status, STATUS.PASS);
+});
+
+browserTest("a root whose navigation times out does not abort fallback selection: the built checkout entry is captured", async () => {
+  const { assertions, visited } = await runLeg(
+    { rootInScope: true, fallbackTargets: [ENTRY] },
+    { "/campaign/": STALLED_ERROR_PAGE },
+    SHORT_TIMEOUT_ARGS,
+  );
+
+  assert.equal(byId(assertions, "analytics-correctness:runner"), undefined, "one page's navigation failure is not a runner failure");
+  assert.deepEqual(visited, ["/campaign/", "/campaign/checkout/"]);
+  const meta = byId(assertions, "analytics-correctness:tag:meta");
+  assert.equal(meta.status, STATUS.PASS, `tag:meta ${meta.status}: ${meta.actual}`);
+  assert.equal(meta.url, CHECKOUT);
+  const capture = byId(assertions, "analytics-correctness:capture");
+  assert.equal(capture.status, STATUS.PASS);
+  assert.equal(capture.evidence.capture_page.source, "built_entry");
+  assert.deepEqual(capture.evidence.root_fallback, {
+    url: ROOT, reason: "navigation_error", http_status: null, error_code: "navigation_timeout",
+  });
+});
+
+browserTest("every candidate failing to navigate is an unmeasured blocker that lists each attempt", async () => {
+  const { assertions } = await runLeg(
+    { rootInScope: true, fallbackTargets: [ENTRY] },
+    { "/campaign/": REFUSED, "/campaign/checkout/": STALLED_ERROR_PAGE },
+    SHORT_TIMEOUT_ARGS,
+  );
+
+  assert.equal(assertions.length, 1);
+  const [capture] = assertions;
+  assert.equal(capture.id, "analytics-correctness:capture");
+  assert.equal(capture.status, STATUS.FAIL);
+  assert.equal(capture.severity, SEVERITY.BLOCKER);
+  assert.equal(capture.evidence.reason, "no_capture_page_answered");
+  assert.deepEqual(capture.evidence.attempts, [
+    { url: ROOT, source: "campaign_root", outcome: "navigation_error", http_status: null, error_code: "net::ERR_CONNECTION_REFUSED" },
+    { url: CHECKOUT, source: "built_entry", outcome: "navigation_error", http_status: null, error_code: "navigation_timeout" },
+  ]);
+  assert.match(capture.actual, /ERR_CONNECTION_REFUSED/);
+  assert.match(capture.actual, /navigation_timeout/);
+});
+
+browserTest("a broken browser context is not a per-page failure: the leg still throws for the runner blocker", async () => {
+  const { context, release } = await partialBuildContext();
+  release();
+  await context.close();
+  await assert.rejects(
+    hooks.captureAnalyticsCorrectnessInContext(context, ROOT, CONTRACT, ARGS, [], { rootInScope: true, fallbackTargets: [ENTRY] }),
+  );
 });
