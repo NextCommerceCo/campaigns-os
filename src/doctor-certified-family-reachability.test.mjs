@@ -15,6 +15,7 @@ import { test } from "node:test";
 import { CAMPAIGN_IDENTITY } from "./campaign-identity.mjs";
 import { doctorBuiltOutput } from "./cli.mjs";
 import { SDK_MARKUP } from "./sdk-markup.mjs";
+import { SCRIPT_SYNTAX } from "./built-script-syntax.mjs";
 import { UPSELL_SELECTOR_SCOPE } from "./upsell-selector-scope.mjs";
 
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -31,7 +32,7 @@ const certified = Object.keys(catalog.families || {})
 // The gates this file vouches for. Every id here must come back pass or
 // not_applicable on every family; `blocked` on canonical output is the #5
 // failure mode by definition.
-const STATIC_BUILT_OUTPUT_GATES = [UPSELL_SELECTOR_SCOPE, CAMPAIGN_IDENTITY, SDK_MARKUP];
+const STATIC_BUILT_OUTPUT_GATES = [UPSELL_SELECTOR_SCOPE, CAMPAIGN_IDENTITY, SDK_MARKUP, SCRIPT_SYNTAX];
 
 const gateOf = (result, id) => (result.derived?.checkpoint_gates || []).find((gate) => gate.id === id) || null;
 
@@ -83,6 +84,15 @@ for (const family of certified) {
     // (data-next-catalog-component and friends) that the SDK never reads.
     // They are information on the gate; a change here is a templates change.
     assert.ok(Array.isArray(gate.unknown_attributes));
+  });
+
+  test(`${family}: script syntax parses the shared config.js the pages load`, () => {
+    // The fixture tree carries HTML and config.js only; the family's js/*.js
+    // files are listed as unresolved, not judged. config.js is the proof the
+    // gate reads a real local script and passes it.
+    const gate = gateOf(doctorBuiltOutput({ built: FIXTURE_ROOT, slug: family }), SCRIPT_SYNTAX);
+    assert.equal(gate.status, "pass", gate.reason);
+    assert.ok(gate.scripts_scanned >= 1, `${family}: no local script parsed`);
   });
 
   test(`${family}: campaign identity resolves the key from the shared config.js and one funnel`, () => {

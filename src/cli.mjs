@@ -218,6 +218,7 @@ import {
 } from "./upsell-selector-scope.mjs";
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "./campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "./sdk-markup.mjs";
+import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "./built-script-syntax.mjs";
 import {
   BUILD_BRIEF_NORMALIZED_REL_PATH,
   BUILD_BRIEF_SCHEMA,
@@ -3329,6 +3330,20 @@ export function doctorBuiltOutput(args) {
   });
   derived.doctor_checks.push(SDK_MARKUP);
 
+  // Campaign-owned script syntax (#480). Same placement, same reasons: a
+  // hand-edited script that no longer parses is invisible to every HTML gate.
+  recordScriptSyntaxGate({
+    subject: {
+      public_route_slug: scope.slug || null,
+      site_root: relFromDir(targetRepo, scope.campaign_dir),
+    },
+    inputs: collectBuiltScriptSyntaxInputs(scope, targetRepo),
+    errors,
+    ready,
+    derived,
+  });
+  derived.doctor_checks.push(SCRIPT_SYNTAX);
+
   const synthesized = synthesizeMinimalBuildPacket({
     schemaVersion: PACKET_SCHEMA,
     targetRepo,
@@ -4291,6 +4306,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: SDK_MARKUP,
     phase: "built-output",
     run: ({ packet, errors, warnings, ready, derived }) => validateSdkMarkup(packet, errors, warnings, ready, derived),
+  },
+  {
+    id: SCRIPT_SYNTAX,
+    phase: "built-output",
+    run: ({ packet, errors, ready, derived }) => validateBuiltScriptSyntax(packet, errors, ready, derived),
   },
   {
     id: "built_output.sdk_meta_tags",
@@ -6793,6 +6813,45 @@ function validateSdkMarkup(packet, errors, warnings, ready, derived) {
     ready,
     derived,
   });
+}
+
+// Campaign-owned script syntax (#480). Every doctor invocation, both entry
+// points, filesystem enumeration, blocking regardless of stage status — the
+// same contract as the gates above: a script that throws a SyntaxError on
+// load is not a work-in-progress state that becomes true later.
+function validateBuiltScriptSyntax(packet, errors, ready, derived) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  const scope = siteRoot && existsSync(siteRoot) ? resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug }) : null;
+  recordScriptSyntaxGate({
+    subject: {
+      public_route_slug: publicRouteSlug || null,
+      site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
+    },
+    inputs: scope?.ok ? collectBuiltScriptSyntaxInputs(scope, targetRepo) : {},
+    errors,
+    ready,
+    derived,
+  });
+}
+
+function recordScriptSyntaxGate({ subject, inputs, errors, ready, derived }) {
+  const gate = evaluateBuiltScriptSyntax({ subject, ...inputs });
+  if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(gate);
+  if (gate.status === "blocked") {
+    // One error per file, each naming the file, line and column.
+    for (const finding of gate.findings) {
+      addIssue(errors, finding.code, finding.message, { finding, checkpoint_gate: gate });
+    }
+    return gate;
+  }
+  if (gate.status === "not_applicable") {
+    ready.push(`Script syntax checkpoint not applicable: ${gate.reason}`);
+    return gate;
+  }
+  ready.push(`All ${gate.scripts_scanned} campaign-owned script(s) loaded by built pages parse`);
+  return gate;
 }
 
 function recordSdkMarkupGate({ subject, pages, errors, warnings, ready, derived }) {

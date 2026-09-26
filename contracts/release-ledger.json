@@ -7093,6 +7093,45 @@
         }
       ],
       "entry_sha256": "9c7500519109ff5b96d1131f3b3589c6cf291ca47ce7a6f720fb46d8ff96b795"
+    },
+    {
+      "id": "RL-0153",
+      "sequence": 153,
+      "date": "2026-09-26",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.8",
+      "changelog_sha256": "3c16bcc37c56f72464b2d2e95c0cf86a0c15bd5b0805485669cc93c561edee57",
+      "agent_impact": "Doctor now blocks under built_output.script_syntax.parse_failure when a campaign-owned script a built page loads by a local <script src> does not parse, naming the file, line and column; QA adds a script-parse:<page_id> blocker instead of reading an unparsable page script as dynamic.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Add the unwaivable built_output.script_syntax gate to doctor --built and the packet doctor registry."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document the built-output script syntax gate, its scope and its evidence."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "State that campaign scripts must parse and that doctor blocks when one does not."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document that QA reports an unparsable page script as a script-parse blocker, not as dynamic."
+        }
+      ],
+      "entry_sha256": "853c000d1d380ab24fdb246c82aa359948786e292d633604b04971471665aa4b"
     }
   ]
 }

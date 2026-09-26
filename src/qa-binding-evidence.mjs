@@ -55,12 +55,20 @@ function literalObject(node) {
   if (node?.type === 'ObjectExpression') return node.properties.every(p => p.type === 'Property' && !p.computed && p.kind === 'init' && !p.method && !p.shorthand && literalObject(p.value));
   return false;
 }
-function declarations(text) {
+function declarations(text, { module = false } = {}) {
   // Only whole, unconditional literal assignments are accepted. No evaluation,
   // constant propagation, getters, spreads, callbacks, aliases, or branch guesses.
+  // A script that does not parse is not dynamic: the browser throws on it and
+  // nothing in it runs. It is its own state, reported with its position (#480).
   let ast;
-  try { ast = parseJs(text, { ecmaVersion: 2022, sourceType: 'script' }); }
-  catch { return { values: [], dynamic: true }; }
+  try { ast = parseJs(text, { ecmaVersion: 'latest', sourceType: module ? 'module' : 'script', locations: true }); }
+  catch (error) {
+    return { values: [], dynamic: false, unparsable: {
+      line: Number.isInteger(error?.loc?.line) ? error.loc.line : 1,
+      column: Number.isInteger(error?.loc?.column) ? error.loc.column + 1 : 1,
+      message: String(error?.message || 'Unparsable script').replace(/\s*\(\d+:\d+\)$/, ''),
+    } };
+  }
   const values = [];
   let dynamic = false;
   for (const statement of ast.body) {
@@ -78,7 +86,16 @@ function declarations(text) {
   return { values, dynamic };
 }
 
-export async function observeBinding({ source, page, expected, scriptLoader }) {
+// A local path for a script, for findings: never a full URL, query or fragment.
+function scriptPath(src, pageUrl) {
+  try { return new URL(src, pageUrl).pathname; } catch { return null; }
+}
+
+// `parseFailures`, when given, receives one record per page script that does
+// not parse ({ source_kind, script, line, column, message }). It is kept off
+// the page-binding evidence, whose shape is a closed contract; the caller
+// reports it as its own assertion.
+export async function observeBinding({ source, page, expected, scriptLoader, parseFailures = null }) {
   const kinds = new Set();
   const result = (outcome, reason) => ({ schema_version: BINDING_SCHEMA, observation: 'static_declaration',
     outcome, reason, source_kinds: [...kinds].sort(), identity: 'not_verified' });
@@ -118,7 +135,13 @@ export async function observeBinding({ source, page, expected, scriptLoader }) {
       if (!loaded.ok) { unavailable = true; continue; }
       text = loaded.html;
     }
-    const found = declarations(text);
+    const found = declarations(text, { module: attrs.type?.toLowerCase() === 'module' });
+    if (found.unparsable) {
+      // The declarations in an unparsable script are unavailable, not dynamic.
+      unavailable = true;
+      if (Array.isArray(parseFailures)) parseFailures.push({ source_kind: kind, script: attrs.src ? scriptPath(attrs.src, pageUrl) : null, ...found.unparsable });
+      continue;
+    }
     if (found.values.length) { kinds.add(kind); values.push(...found.values); }
     if (found.dynamic || 'async' in attrs || 'nomodule' in attrs || attrs.type === 'module') dynamic = true;
   }
@@ -137,4 +160,14 @@ export function bindingAssertion(page, evidence) {
     status: evidence.outcome === 'match' ? 'pass' : evidence.outcome === 'mismatch' ? 'fail' : 'manual_review',
     ...(evidence.outcome === 'match' ? {} : { severity: evidence.outcome === 'mismatch' ? 'blocker' : 'warn' }),
     expected: 'expected credential declaration', actual: evidence.outcome, evidence };
+}
+
+// A page script that does not parse throws a SyntaxError on every load (#480).
+// One blocker per page, naming each script and the parse position.
+export function scriptParseAssertion(page, failures) {
+  if (!Array.isArray(failures) || failures.length === 0) return null;
+  const where = failures.map(f => `${f.script || 'inline script'}:${f.line}:${f.column}`).join(', ');
+  return { id: `script-parse:${page.page_id}`, family: 'api-metadata', page: page.page_id, status: 'fail', severity: 'blocker',
+    expected: 'every page script parses', actual: `unparsable: ${where}`,
+    evidence: { observation: 'static_parse', scripts: failures.map(f => ({ source_kind: f.source_kind, script: f.script, line: f.line, column: f.column, message: f.message })) } };
 }

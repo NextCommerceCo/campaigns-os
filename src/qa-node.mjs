@@ -1,5 +1,5 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
-import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
+import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion, scriptParseAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
 import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
@@ -2580,7 +2580,10 @@ async function runPageChecks(page, args, {
   }
 
   const source = await sourceLoader(page);
-  assertions.push(bindingAssertion(page, await observeBinding({ source, page, expected: bindingExpected, scriptLoader: bindingScriptLoader })));
+  const scriptParseFailures = [];
+  assertions.push(bindingAssertion(page, await observeBinding({ source, page, expected: bindingExpected, scriptLoader: bindingScriptLoader, parseFailures: scriptParseFailures })));
+  const scriptParse = scriptParseAssertion(page, scriptParseFailures);
+  if (scriptParse) assertions.push(assertion({ ...scriptParse, page }));
   if (!source.ok) {
     const isHttpStatus = source.error_code === "http_status";
     assertions.push(assertion({

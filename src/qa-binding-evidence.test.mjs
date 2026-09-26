@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { observeBinding, bindingAssertion, expectedBinding, createBindingScriptLoader, BINDING_LIMITS } from './qa-binding-evidence.mjs';
+import { observeBinding, bindingAssertion, scriptParseAssertion, expectedBinding, createBindingScriptLoader, BINDING_LIMITS } from './qa-binding-evidence.mjs';
 import { __qaNodeTestHooks } from './qa-node.mjs';
 const key = 'binding-canary-7V4m9Q2z8P5';
 const page = { page_id: 'checkout', page_type: 'checkout', url: 'https://fixture.example.test/checkout' };
@@ -148,4 +148,53 @@ test('event handlers and redirected pages cannot silently certify the wrong sour
   let base;
   const result = await observe('', {source:{ok:true,html:'<script src="config.js"></script>',final_url:'https://fixture.example.test/new/checkout'},scriptLoader:async (_src,url)=>{base=url;return {ok:true,html:`window.nextConfig={apiKey:'${key}'}`};}});
   assert.equal(result.outcome,'match'); assert.equal(base,'https://fixture.example.test/new/checkout');
+});
+
+// #480: a script that does not parse is its own state, not "dynamic".
+const checkoutScript = 'document.addEventListener("DOMContentLoaded", () => {\n  init();\n});\n';
+test('an unparsable page script is recorded with its position, never as dynamic', async () => {
+  const parseFailures = [];
+  const evidence = await observe(inline(key) + '<script defer src="/js/checkout.js?v=2#x"></script>', {
+    parseFailures,
+    scriptLoader: async () => ({ ok: true, html: checkoutScript + '});\n' }),
+  });
+  assert.equal(evidence.outcome, 'unknown');
+  assert.notEqual(evidence.reason, 'dynamic_unresolved');
+  assert.equal(evidence.reason, 'script_unavailable_or_limit');
+  assert.deepEqual(parseFailures, [{ source_kind: 'config_script', script: '/js/checkout.js', line: 4, column: 1, message: 'Unexpected token' }]);
+  const inlineFailures = [];
+  await observe('<script>window.nextConfig = {apiKey: "x"};\n}</script>', { parseFailures: inlineFailures });
+  assert.deepEqual(inlineFailures.map(f => [f.source_kind, f.script, f.line, f.column]), [['inline', null, 2, 1]]);
+  // The same script without the stray bracket parses and records nothing.
+  const clean = [];
+  const ok = await observe(inline(key) + '<script src="/js/checkout.js"></script>', { parseFailures: clean, scriptLoader: async () => ({ ok: true, html: checkoutScript }) });
+  assert.deepEqual(clean, []);
+  assert.equal(ok.reason, 'dynamic_unresolved', 'a parsable non-declaration script is still dynamic');
+  // A module script parses as a module: import is not a syntax error there.
+  const modules = [];
+  await observe('<script type="module" src="/js/app.js"></script>', { parseFailures: modules, scriptLoader: async () => ({ ok: true, html: 'import x from "./x.js"; export default x;' }) });
+  assert.deepEqual(modules, []);
+});
+
+test('QA reports an unparsable page script as a blocker naming the script and position', async () => {
+  const { assertions } = await __qaNodeTestHooks.runPageChecks(page, {}, {
+    sourceLoader: async () => ({ ok: true, status: 200, status_text: 'OK', html: inline(key) + '<script src="/js/checkout.js"></script>' }),
+    bindingExpected: { value: key },
+    bindingScriptLoader: async () => ({ ok: true, html: checkoutScript + '});\n' }),
+  });
+  const parse = assertions.find(a => a.id === 'script-parse:checkout');
+  assert.ok(parse, 'no script-parse assertion');
+  assert.equal(parse.family, 'api-metadata');
+  assert.equal(parse.status, 'fail');
+  assert.equal(parse.severity, 'blocker');
+  assert.equal(parse.actual, 'unparsable: /js/checkout.js:4:1');
+  assert.equal(JSON.stringify(parse).includes(key), false);
+  assert.equal(assertions.find(a => a.id === 'page-binding:checkout').evidence.reason, 'script_unavailable_or_limit');
+  assert.equal(scriptParseAssertion(page, []), null);
+  const clean = await __qaNodeTestHooks.runPageChecks(page, {}, {
+    sourceLoader: async () => ({ ok: true, status: 200, status_text: 'OK', html: inline(key) + '<script src="/js/checkout.js"></script>' }),
+    bindingExpected: { value: key },
+    bindingScriptLoader: async () => ({ ok: true, html: checkoutScript }),
+  });
+  assert.equal(clean.assertions.some(a => a.id.startsWith('script-parse:')), false);
 });
