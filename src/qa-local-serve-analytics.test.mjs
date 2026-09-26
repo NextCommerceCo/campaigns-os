@@ -22,7 +22,7 @@ const LOCAL_URL = "http://localhost:8080/campaign/";
 const PREVIEW_URL = "https://preview.example/campaign/";
 const localServePacket = { deploy: { target: "local-serve", preview_url: "http://localhost:8080/" } };
 const parityReport = {
-  stages: { assembly: { evidence: { local_proof: { production_parity: {
+  stages: { assembly: { evidence: { build_environment: "development", local_proof: { production_parity: {
     status: "pass",
     checked_at: "2026-09-26T00:00:00.000Z",
     page_count: 2,
@@ -37,7 +37,7 @@ const parityReport = {
 // development render produces), a data-layer check that failed on the order,
 // and the real receipt Purchase assessment of a recognized receipt with no
 // Purchase fire.
-async function runSequence({ url, localServeAnalytics }) {
+async function runSequence({ url, localServeAnalytics, receiptAttempt = null }) {
   const assertions = [];
   await runAnalyticsOrderSequence({
     args: {},
@@ -67,7 +67,7 @@ async function runSequence({ url, localServeAnalytics }) {
         orders: [{ plan_id: "accept" }],
         receiptAnalytics: {
           plannedPlanIds: ["accept"],
-          attempts: [{ planId: "accept", receiptRecognized: true, receiptUrl: `${url}receipt/`, capture: normalizeCapture({ events: [] }) }],
+          attempts: [receiptAttempt || { planId: "accept", receiptRecognized: true, receiptUrl: `${url}receipt/`, capture: normalizeCapture({ events: [] }) }],
         },
       };
     },
@@ -97,6 +97,7 @@ test("a local-serve run with a declared pixel that did not fire leaves only the 
     assert.equal(item.severity, SEVERITY.WARN, id);
     assert.equal(item.evidence.reason, "local_serve_development_render", id);
     assert.equal(item.evidence.local_serve_status, STATUS.FAIL, id);
+    assert.deepEqual(item.evidence.build_environment, { field: "stages.assembly.evidence.build_environment", value: "development" }, id);
     assert.match(item.evidence.follow_up, /PR preview.*--base-url/, id);
     assert.match(item.actual, /--base-url/, id);
     assert.equal(item.evidence.production_parity.field, "stages.assembly.evidence.local_proof.production_parity");
@@ -128,7 +129,8 @@ test("the same campaign served as a production render still blocks when the pixe
 });
 
 test("local-serve review leaves passing checks alone and names a missing parity record", async () => {
-  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: null, captureUrl: "http://127.0.0.1:4173/campaign/" });
+  const developmentOnly = { stages: { assembly: { evidence: { build_environment: "development" } } } };
+  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: developmentOnly, captureUrl: "http://127.0.0.1:4173/campaign/" });
   assert.deepEqual(localServeAnalytics.production_parity, {
     field: "stages.assembly.evidence.local_proof.production_parity",
     status: "not_recorded",
@@ -152,4 +154,56 @@ test("local-serve review leaves passing checks alone and names a missing parity 
   const tiktok = assertions.find((item) => item.id === "analytics-correctness:oob:tiktok");
   assert.equal(tiktok.status, STATUS.MANUAL_REVIEW);
   assert.match(tiktok.evidence.production_parity_note, /No passing page-kit parity/);
+});
+
+test("a local-serve Purchase capture that failed keeps blocking: an unmeasured receipt is not a gated pixel", async () => {
+  const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
+  assert.ok(localServeAnalytics);
+  const assertions = await runSequence({
+    url: LOCAL_URL,
+    localServeAnalytics,
+    // Analytics settling timed out at the receipt: the receipt was recognized
+    // but its capture errored, so Purchase was never measured.
+    receiptAttempt: {
+      planId: "accept",
+      receiptRecognized: true,
+      receiptUrl: `${LOCAL_URL}receipt/`,
+      capture: normalizeCapture({ events: [] }),
+      captureError: { kind: "settle_timeout", message: "analytics did not settle" },
+    },
+  });
+  const purchase = assertions.find((item) => item.id === "analytics-correctness:purchase-fires");
+  assert.deepEqual(purchase.evidence.capture_error_plan_ids, ["accept"]);
+  assert.equal(purchase.status, STATUS.FAIL);
+  assert.equal(purchase.severity, SEVERITY.BLOCKER);
+  assert.equal(purchase.evidence.reason, undefined);
+  // The inventory checks that genuinely did not fire are still reviewed.
+  for (const id of ["analytics-correctness:tag:meta", "analytics-correctness:oob:tiktok"]) {
+    assert.equal(assertions.find((item) => item.id === id).status, STATUS.MANUAL_REVIEW, id);
+  }
+  assert.equal(computeDisposition(assertions), "blocked");
+});
+
+test("a local-serve packet whose recorded build is not a development render keeps its blockers", async () => {
+  const withEnvironment = (environment) => ({
+    stages: { assembly: { evidence: {
+      ...(environment === undefined ? {} : { build_environment: environment }),
+      local_proof: parityReport.stages.assembly.evidence.local_proof,
+    } } },
+  });
+  for (const [label, report] of [
+    ["build_environment is production", withEnvironment("production")],
+    ["build_environment is not recorded", withEnvironment(undefined)],
+    ["no runtime report", null],
+  ]) {
+    const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report, captureUrl: LOCAL_URL });
+    assert.equal(localServeAnalytics, null, label);
+    const assertions = await runSequence({ url: LOCAL_URL, localServeAnalytics });
+    for (const id of FIRE_DEPENDENT) {
+      const item = assertions.find((entry) => entry.id === id);
+      assert.equal(item.status, STATUS.FAIL, `${label}: ${id}`);
+      assert.equal(item.severity, SEVERITY.BLOCKER, `${label}: ${id}`);
+    }
+    assert.equal(computeDisposition(assertions), "blocked", label);
+  }
 });

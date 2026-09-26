@@ -37,7 +37,14 @@ import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.m
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { publishQaVerdict, qaPortalUrl, qaVerdictPublishBlock, QA_VERDICT_PUBLISHERS, skippedQaVerdictPublish } from "./qa-verdict-publish.mjs";
-import { isLocalServePacket, LOCAL_PROOF_PARITY_FIELD, recordedProductionParity } from "./local-proof.mjs";
+import {
+  isLocalServePacket,
+  LOCAL_PROOF_BUILD_ENVIRONMENT,
+  LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD,
+  LOCAL_PROOF_PARITY_FIELD,
+  recordedBuildEnvironment,
+  recordedProductionParity,
+} from "./local-proof.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 import { publishStoredVerdict, qaPublishTextLines, QA_PUBLISH_EXIT_CODES } from "./qa-publish.mjs";
 // Shared outgoing-edge resolver, so QA expectations and build-time wiring
@@ -2357,20 +2364,44 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
 // served from loopback qualifies: the same packet QA'd against the PR preview
 // (--base-url <preview>) is a production render and keeps its blockers, which
 // is the follow-up every downgraded assertion names.
+// The render itself must be on record, too: the exception applies only when
+// stages.assembly.evidence.build_environment says "development". A production
+// build served on localhost, or a build whose environment was never recorded,
+// keeps its blockers; the build-environment preflight only warns about those
+// states, so this gate cannot lean on it.
 // data-layer-purchase is deliberately not downgraded: it counts the SDK's own
 // dl_purchase, which the development render still pushes, so a miss on
 // localhost can be a real defect and keeps blocking.
+// A failure that is a capture or runner error, not "did not fire", is never
+// downgraded either: the environment gate explains a silent pixel, not an
+// unmeasured one. tag:* and oob:* are only emitted from a completed capture (a
+// failed capture is analytics-correctness:runner, which is outside this set);
+// purchase-fires names its unmeasured receipts in capture_error_plan_ids.
 const LOCAL_SERVE_ANALYTICS_REASON = "local_serve_development_render";
 const FIRE_DEPENDENT_ANALYTICS_ID = /^analytics-correctness:(?:tag:|oob:|purchase-fires(?::|$))/;
+
+function isCaptureErrorFailure(item) {
+  const evidence = item?.evidence;
+  if (evidence && typeof evidence === "object" && evidence.error_code) return true;
+  if (/^analytics-correctness:purchase-fires(?::|$)/.test(String(item?.id || ""))) {
+    // Downgrade only a Purchase reading that positively records no capture
+    // error; a missing list is an unknown, not a clean measurement.
+    const errors = evidence?.capture_error_plan_ids;
+    return !Array.isArray(errors) || errors.length > 0;
+  }
+  return false;
+}
 
 function resolveLocalServeAnalytics({ packet, report, captureUrl }) {
   if (!isLocalServePacket(packet)) return null;
   let hostname = null;
   try { hostname = new URL(String(captureUrl)).hostname; } catch { hostname = null; }
   if (!hostname || !isLoopbackHostname(hostname)) return null;
+  if (recordedBuildEnvironment(report) !== LOCAL_PROOF_BUILD_ENVIRONMENT) return null;
   const parity = recordedProductionParity(report);
   return {
     deploy_target: "local-serve",
+    build_environment: { field: LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD, value: LOCAL_PROOF_BUILD_ENVIRONMENT },
     production_parity: parity
       ? {
           field: LOCAL_PROOF_PARITY_FIELD,
@@ -2390,6 +2421,7 @@ function applyLocalServeAnalyticsReview(assertions, localServe) {
   const parityPassed = localServe.production_parity?.status === "pass";
   for (const [index, item] of assertions.entries()) {
     if (item?.status !== STATUS.FAIL || !FIRE_DEPENDENT_ANALYTICS_ID.test(String(item.id || ""))) continue;
+    if (isCaptureErrorFailure(item)) continue;
     assertions[index] = {
       ...item,
       status: STATUS.MANUAL_REVIEW,
@@ -2399,6 +2431,7 @@ function applyLocalServeAnalyticsReview(assertions, localServe) {
         ...(item.evidence || {}),
         reason: LOCAL_SERVE_ANALYTICS_REASON,
         local_serve_status: STATUS.FAIL,
+        build_environment: localServe.build_environment,
         follow_up: "Re-run qa run against the PR preview (a production render) with --base-url <preview-url>; that run gates these checks.",
         production_parity: localServe.production_parity,
         ...(parityPassed ? {} : { production_parity_note: "No passing page-kit parity is recorded, so nothing yet shows the production render carries these loaders." }),
