@@ -78,9 +78,12 @@ function acceptFixture() {
     locator: () => ({ evaluateAll: async () => [] }),
   };
   const events = hooks.captureCheckoutEvents(page);
-  const respond = (url, status, body, delayMs = 0) => handlers.get("response")({
+  // requestStartedAt is when the browser started the request (the runner reads
+  // it from request().timing()); it defaults to now, i.e. after the click.
+  const respond = (url, status, body, delayMs = 0, requestStartedAt = Date.now()) => handlers.get("response")({
     url: () => url,
     status: () => status,
+    request: () => ({ timing: () => ({ startTime: requestStartedAt }) }),
     text: () => (body === undefined
       ? new Promise(() => {})
       : new Promise((resolve) => setTimeout(() => resolve(JSON.stringify(body)), delayMs))),
@@ -97,6 +100,7 @@ function acceptFixture() {
     api_response_status: 201,
     api_response_url: upsellsUrl,
     api_response_body_read: { timed_out: true, waited_ms: hooks.RESPONSE_BODY_READ_TIMEOUT_MS, bound_ms: hooks.RESPONSE_BODY_READ_TIMEOUT_MS },
+    click_started_at: null,
   };
   return { page, events, respond, orderBody, detailUrl, upsellsUrl, upsell };
 }
@@ -122,6 +126,8 @@ async function checkoutEvidence(fixture) {
     page: fixture.page, events: fixture.events, path: "accept", email: null, checkoutPage: { url: "http://127.0.0.1/checkout/" }, args: {},
   });
   assert.equal(checkout.receipt_line_items.length, 1, "the checkout left base-line evidence");
+  // The accept click happens here, after the checkout's own read-back.
+  fixture.upsell.click_started_at = Date.now();
   return { initialLineItems: checkout.receipt_line_items.slice(), responseIndexBefore: fixture.events.responses.length };
 }
 
@@ -207,6 +213,21 @@ test("a post-click order read-back without the upsell line is a definitive failu
   assert.equal(proof.ok, false);
   assert.notEqual(proof.unverified, true, "a read-back confirming the line is missing is not manual review");
   assert.match(failures.join("; "), /no new upsell line appeared after accept/);
+});
+
+test("an order read-back requested before the click whose body lands after it is not a definitive negative", { timeout: 15000 }, async () => {
+  const fixture = acceptFixture();
+  const before = await checkoutEvidence(fixture);
+  fixture.respond(fixture.upsellsUrl, 201, undefined);
+  // Requested before the accept (a checkout-page read still in flight); its
+  // body finishes loading after the click, so it lands past the log offset.
+  fixture.respond(fixture.detailUrl, 200, fixture.orderBody([BASE_LINE]), 200, fixture.upsell.click_started_at - 50);
+
+  const { proof, lateUpsellEvidence, failures } = await judgeAccept({ ...fixture, ...before, lateWaitMs: 800 });
+
+  assert.equal(lateUpsellEvidence.source, "none", "a pre-click read-back is not evidence about this mutation");
+  assert.equal(proof.unverified, true);
+  assert.deepEqual(failures, [], "stale evidence must not fail a possibly successful accept");
 });
 
 test("a body read that ended without timing out keeps the definitive verdict and does not wait", () => {

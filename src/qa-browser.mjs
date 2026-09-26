@@ -4648,6 +4648,7 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
         && isOrderUpsellsUrl(response.url())
       ), { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
     : Promise.resolve(null);
+  const clickStartedAt = Date.now();
   trace?.markClickAttempted();
   await clickControl(control, { timeout: UPSELL_CLICK_TIMEOUT_MS, perpetual });
   trace?.markClickCompleted();
@@ -4666,6 +4667,7 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     api_response_status: mutationResponse?.status() || null,
     api_response_url: mutationResponse?.url() || null,
     api_response_order_body: bodyRead?.body ?? null,
+    click_started_at: clickStartedAt,
     // How the bounded body read ended. A timed-out read means the mutation's
     // own evidence is missing, not that the upsell failed; the runner then
     // waits for a later read-back before it judges the step.
@@ -5616,6 +5618,17 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
   });
 }
 
+// When the browser started a response's request, in epoch milliseconds (the
+// same clock as Date.now()), or null when Playwright does not report it.
+function responseRequestStartedAt(response) {
+  try {
+    const startTime = response.request().timing().startTime;
+    return Number.isFinite(startTime) && startTime > 0 ? startTime : null;
+  } catch {
+    return null;
+  }
+}
+
 function captureCheckoutEvents(page) {
   const events = { requests: [], responses: [], failed: [], console: [], pageErrors: [], navigations: [] };
   const interesting = /\/api\/v1\/(?:orders|upsells|carts)\/?|\/transactions|spreedly|campaigns\.apps/i;
@@ -5633,9 +5646,13 @@ function captureCheckoutEvents(page) {
   // as null for good, and the order would read as not created.
   page.on("response", async (response) => {
     if (!interesting.test(response.url())) return;
+    // Taken before the body read: an entry lands in the log when its body
+    // finishes, so its position says nothing about when it was requested.
+    const requestStartedAt = responseRequestStartedAt(response);
     events.responses.push({
       status: response.status(),
       url: response.url(),
+      request_started_at: requestStartedAt,
       body: await readJsonResponseBodyWhenLoaded(response),
     });
   });
@@ -6433,14 +6450,16 @@ function upsellBodyReadTimedOut(upsell) {
 // keeps reading it), or an order read-back whose lines carry the accepted
 // upsell. Returns the body to judge from, or source "none" when neither came.
 //
-// A read-back captured after this step's click (at or past responseIndexBefore)
-// that shows the persisted order without the accepted line is a definitive
-// negative, not an absence of evidence. It does not end the wait early (a
+// A read-back whose request started after this step's click (by the
+// browser's request start time, not its position in the log, which reflects
+// when its body finished) that shows the persisted order without the accepted
+// line is a definitive negative, not an absence of evidence. It does not end the wait early (a
 // later read-back may still carry the line), but when the wait ends with no
 // positive evidence the latest such read-back is returned as
 // "order_read_back_missing_line", and the step fails instead of going to
-// manual review. Read-backs from before the click never count.
-async function waitForLateUpsellEvidence(events, { responseIndexBefore, initialLineItems, expectedItems, timeoutMs, intervalMs = 250 }) {
+// manual review. A read-back requested before the click, or with no known
+// start time, never counts as a negative.
+async function waitForLateUpsellEvidence(events, { responseIndexBefore, clickStartedAt = null, initialLineItems, expectedItems, timeoutMs, intervalMs = 250 }) {
   const started = Date.now();
   const deadline = started + Math.max(0, Number(timeoutMs) || 0);
   const latestMissingLineReadBack = () => {
@@ -6450,6 +6469,7 @@ async function waitForLateUpsellEvidence(events, { responseIndexBefore, initialL
       if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
       if (!(response.status >= 200 && response.status < 300)) continue;
       if (!ORDER_DETAIL_RESPONSE_PATTERN.test(response.url)) continue;
+      if (!(Number.isFinite(clickStartedAt) && Number.isFinite(response.request_started_at) && response.request_started_at >= clickStartedAt)) continue;
       const lines = extractReceiptLines(response.body);
       if (!Array.isArray(lines) || lines.length === 0) continue;
       return response.body;
@@ -6496,6 +6516,7 @@ async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPa
   if (step === "accept" && upsellBodyReadTimedOut(upsell)) {
     lateUpsellEvidence = await waitForLateUpsellEvidence(events, {
       responseIndexBefore,
+      clickStartedAt: upsell.click_started_at,
       initialLineItems,
       expectedItems: upsell.expected_items,
       timeoutMs: lateWaitMs,
