@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -523,13 +523,15 @@ test("prepare-build contextualizes unreadable existing DSP artifacts and leaves 
 
 // Preload a process-local fs shim that holds each CLI at its first call of
 // `barrierFn` on `barrierPath`, and releases them only after all have reached
-// that point. The default, the first look at the Assembly Report, comes before
-// the per-target prepare-build lock, so every run is released into the same
-// instant and they contend for the DSP decision together. This synchronizes
-// the real multi-process seam without adding any test hook to production code.
+// that point. The default, creating the directory that holds the per-target
+// prepare-build lock, is the last step before the lock, so every run is
+// released into the same instant and they contend for it together. (A barrier
+// inside the lock would deadlock: only the holder could ever reach it.) This
+// synchronizes the real multi-process seam without adding any test hook to
+// production code.
 function publicationBarrierEnv(fixture, processCount, {
-  barrierFn = "existsSync",
-  barrierPath = join(fixture.target, ".campaign-runtime/assembly-report.json"),
+  barrierFn = "mkdirSync",
+  barrierPath = dirname(join(fixture.target, DSP_REL_PATH)),
 } = {}) {
   const barrierDir = join(fixture.dir, "dsp-publication-barrier");
   const preloadPath = join(fixture.dir, "dsp-publication-barrier.cjs");
@@ -1131,6 +1133,190 @@ syncBuiltinESMExports();
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.json.designSourcePackageMode, "reused");
 }));
+
+// Holds the per-target prepare-build lock from the test process (a live pid,
+// so no waiter recovers it) and preloads a shim that signals when a run finds
+// the lock taken. Whatever the test changes between that signal and release()
+// happened while the run was waiting for the lock, after it started.
+function holdPrepareBuildLock(fixture) {
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const lockPath = join(dirname(dspPath), `.${basename(dspPath)}.lock`);
+  mkdirSync(lockPath, { recursive: true });
+  writeFileSync(join(lockPath, "owner.json"), `${JSON.stringify({ pid: process.pid, token: "test-held" })}\n`);
+  const signalPath = join(fixture.dir, "prepare-build-lock-wait.signal");
+  const preloadPath = join(fixture.dir, "prepare-build-lock-wait.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalMkdirSync = fs.mkdirSync;
+fs.mkdirSync = function signalLockWait(candidate, ...rest) {
+  try {
+    return originalMkdirSync.call(fs, candidate, ...rest);
+  } catch (error) {
+    if (error?.code === "EEXIST" && path.resolve(String(candidate)) === path.resolve(process.env.PB_LOCK_PATH)) {
+      fs.writeFileSync(process.env.PB_LOCK_WAIT_SIGNAL, String(process.pid));
+    }
+    throw error;
+  }
+};
+syncBuiltinESMExports();
+`);
+  return {
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      PB_LOCK_PATH: lockPath,
+      PB_LOCK_WAIT_SIGNAL: signalPath,
+    },
+    waiting: async (timeoutMs = 20000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (!existsSync(signalPath)) {
+        if (Date.now() > deadline) throw new Error("prepare-build never reached the held lock");
+        await new Promise((done) => setTimeout(done, 10));
+      }
+    },
+    release: () => rmSync(lockPath, { recursive: true, force: true }),
+  };
+}
+
+// Records completed work on a report stage the way a stage producer commits it.
+function recordStageEvidence(reportPath) {
+  const report = readJson(reportPath);
+  report.stages.assembly.status = "completed";
+  report.stages.assembly.outputs = ["_site/checkout/index.html"];
+  report.stages.assembly.commands = ["page-kit build"];
+  report.stages.assembly.evidence = ["page-kit build log: 4 pages built"];
+  writeJson(reportPath, report);
+  return readFileSync(reportPath);
+}
+
+test("a run that waited for the lock publishes the inputs it read under the lock, not the ones it saw first", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const staleBytes = readFileSync(join(fixture.target, DSP_REL_PATH));
+  const revisedLanding = "<main><h1>Landing v2</h1><img src=\"assets/product.png\"></main>\n";
+  writeFileSync(join(fixture.source, "landing-v2.html"), revisedLanding);
+
+  // The run starts with the manifest mapping landing to landing.html, then
+  // waits on the lock while the mapping moves to landing-v2.html (both files
+  // stay on disk).
+  const lock = holdPrepareBuildLock(fixture);
+  const run = runPrepareAsync(fixture, { env: lock.env, extraArgs: ["--force"] });
+  let result;
+  let manifestPath;
+  try {
+    await lock.waiting();
+    manifestPath = editManifest(fixture, (manifest) => {
+      manifest.files = manifest.files.map((file) => file.path === "landing.html"
+        ? { ...file, path: "landing-v2.html", sha256: sha256(revisedLanding) }
+        : file);
+      const landing = manifest.pages.find((page) => page.page_id === "landing");
+      landing.path = "landing-v2.html";
+      landing.source_hash = sha256(revisedLanding);
+    });
+  } finally {
+    lock.release();
+    result = await run;
+  }
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.json.designSourcePackageMode, "regenerated");
+  assert.equal(
+    result.json.packet.source_html.pages.find((page) => page.page_id === "landing").path,
+    "landing-v2.html",
+    "the packet must carry the mapping read under the lock",
+  );
+  const freshBytes = assertFreshPackageBoundEverywhere(fixture, result, manifestPath);
+  assert.equal(freshBytes.equals(staleBytes), false);
+  const html = JSON.parse(freshBytes.toString("utf8")).contributions.find((contribution) => contribution.id === "html-funnel");
+  assert.ok(JSON.stringify(html).includes("landing-v2.html"), "the package must be built from the new mapping");
+
+  // Self-consistent: the package validates against the inputs on disk, so a
+  // plain rerun reuses it instead of calling it stale.
+  const rerun = runPrepare(fixture);
+  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.equal(rerun.json.designSourcePackageMode, "reused");
+  assert.ok(readFileSync(join(fixture.target, DSP_REL_PATH)).equals(freshBytes));
+}));
+
+test("stage evidence committed while a run waits for the lock still stops it without --force", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+
+  const lock = holdPrepareBuildLock(fixture);
+  const run = runPrepareAsync(fixture, { env: lock.env });
+  let result;
+  let evidenceBytes;
+  try {
+    await lock.waiting();
+    evidenceBytes = recordStageEvidence(reportPath);
+  } finally {
+    lock.release();
+    result = await run;
+  }
+  assert.notEqual(result.status, 0, "a run must not reset stage evidence recorded before it held the lock");
+  assert.match(result.stderr, /already carries stage evidence \(assembly\)/);
+  assert.ok(readFileSync(reportPath).equals(evidenceBytes), "the report keeps its stage evidence");
+}));
+
+test("stage evidence committed while a run holds the lock is caught before the report is replaced", async (t) => {
+  // Stage producers do not take the prepare-build lock. This shim commits
+  // evidence the moment the run writes its theme report, well after the first
+  // guard and before the JSON outputs are published.
+  function evidenceMidRunEnv(fixture) {
+    const preloadPath = join(fixture.dir, "stage-evidence-mid-run.cjs");
+    writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRenameSync = fs.renameSync;
+let committed = false;
+fs.renameSync = function commitEvidenceMidRun(from, to, ...rest) {
+  const result = originalRenameSync.call(fs, from, to, ...rest);
+  if (!committed && path.resolve(String(to)) === path.resolve(process.env.PB_THEME_REPORT)) {
+    committed = true;
+    const report = JSON.parse(fs.readFileSync(process.env.PB_REPORT, "utf8"));
+    report.stages.assembly.status = "completed";
+    report.stages.assembly.outputs = ["_site/checkout/index.html"];
+    fs.writeFileSync(process.env.PB_REPORT, JSON.stringify(report, null, 2) + "\\n");
+  }
+  return result;
+};
+syncBuiltinESMExports();
+`);
+    return {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      PB_THEME_REPORT: join(fixture.target, ".campaign-runtime/theme/theme-report.json"),
+      PB_REPORT: join(fixture.target, ".campaign-runtime/assembly-report.json"),
+    };
+  }
+
+  await t.test("without --force the run refuses and publishes no JSON output", () => withFixture(async (fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const packetBytes = readFileSync(packetPath);
+
+    const result = await runPrepareAsync(fixture, { env: evidenceMidRunEnv(fixture) });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /gained stage evidence while prepare-build was running \(assembly\)/);
+    const report = readJson(reportPath);
+    assert.equal(report.stages.assembly.status, "completed", "the report keeps its stage evidence");
+    assert.ok(readFileSync(packetPath).equals(packetBytes), "no JSON output is published after the refusal");
+    assert.deepEqual(readdirSync(dirname(reportPath)).filter((name) => name.includes(".tmp")), []);
+  }));
+
+  await t.test("with --force the run overwrites and names the stage it clears", () => withFixture(async (fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const result = await runPrepareAsync(fixture, { env: evidenceMidRunEnv(fixture), extraArgs: ["--force"] });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /clearing stage evidence for: assembly/);
+    const report = readJson(join(fixture.target, ".campaign-runtime/assembly-report.json"));
+    assert.equal(report.stages.assembly.status, "pending");
+  }));
+});
 
 test("a --force regeneration whose publication fails puts the stale DSP back instead of deleting it", () => withFixture(async (fixture) => {
   const first = runPrepare(fixture);
