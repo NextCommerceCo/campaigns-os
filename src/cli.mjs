@@ -1,6 +1,7 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanText, htmlScanDigest } from "./html-scan.mjs";
 import { createHash, randomUUID } from "node:crypto";
+import { withDirectoryLock } from "./directory-lock.mjs";
 import { createDemo, demoArguments } from "./demo.mjs";
 import { execFileSync } from "node:child_process";
 import {
@@ -137,6 +138,7 @@ import {
 } from "./source-html-manifest.mjs";
 import { crawlSourceAssetPaths } from "./source-asset-crawl.mjs";
 import {
+  THEME_POLICIES,
   inspectBrandTheme,
   validateAssemblyReportThemeBlock,
   validateThemeContextBlock,
@@ -218,6 +220,7 @@ import {
 } from "./upsell-selector-scope.mjs";
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "./campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "./sdk-markup.mjs";
+import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "./built-script-syntax.mjs";
 import {
   BUILD_BRIEF_NORMALIZED_REL_PATH,
   BUILD_BRIEF_SCHEMA,
@@ -228,6 +231,7 @@ import {
 import {
   DESIGN_SOURCE_PACKAGE_REL_PATH,
   createDesignSourcePackageArtifactReference,
+  hashSerializedDesignSourcePackage,
   serializeDesignSourcePackage,
   synthesizeHtmlFunnelDesignSourcePackage,
   validateDesignSourcePackage,
@@ -461,7 +465,7 @@ Usage:
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
-                     [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
+                     [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys) and regenerates a stale Design Source Package an earlier intake synthesized and nobody changed
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                              [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
@@ -1206,6 +1210,16 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     const wrapperPolicyFlag = refusing(() => parseWrapperPolicyFlag(args));
     refusing(() => requireDesignManifestValue(args));
     const orderPathDepthFlag = refusing(() => parseOrderPathDepthFlag(args, { command: "prepare-build" }));
+    // #477: the argv-only halves of the four flags prepareBuild reads after the
+    // spec is resolved. A bare, empty or whitespace value (and an
+    // out-of-vocabulary --theme-policy) is refused here, before any spec read,
+    // map fetch or cache write, instead of being dropped or failing
+    // mid-intake. What needs file content (whether the family is certified,
+    // whether the brief parses) stays in prepareBuild and stays journaled.
+    refusing(() => requireIntakeFlagValue(args, "template-family", "a starter template family name"));
+    refusing(() => requireIntakeFlagValue(args, "allow-uncertified-template", "the reason for building on an uncertified family"));
+    refusing(() => parseIntakeThemePolicyFlag(args));
+    refusing(() => requireIntakeFlagValue(args, "brief", "the path of a Campaign Build Brief (YAML or JSON)"));
     // Tier 2: mark sub-phases so the lifecycle journal entry carries per-phase
     // timings (spec resolve vs the prepare+doctor+install build), which Tier 1
     // aggregates into `start:resolve-spec` / `start:prepare-build` stages.
@@ -1818,26 +1832,37 @@ function assemblyReportStagesWithEvidence(existingReport) {
 // exactly which stage keys are cleared. The guard keys on evidence, not file
 // existence — a report whose stages are all still at their seed states (a real
 // re-prepare before any work) regenerates freely with no flag.
-function guardAssemblyReportOverwrite(reportPath, args) {
-  if (!existsSync(reportPath)) return;
+//
+// prepare-build runs it twice under its target lock: once before reading its
+// inputs, and again (with `announced`, the keys the first call returned) right
+// before the report is renamed into place. Stage producers commit the report
+// without that lock, so evidence can land while the run is working; the second
+// call refuses it without --force and, with --force, names any stage it had
+// not already announced.
+function guardAssemblyReportOverwrite(reportPath, args, { announced = null } = {}) {
+  if (!existsSync(reportPath)) return [];
   let existingReport = null;
   try {
     existingReport = readJson(reportPath);
   } catch {
-    return; // An unreadable report carries no provable evidence; keep today's regeneration path.
+    return []; // An unreadable report carries no provable evidence; keep today's regeneration path.
   }
   const stageKeys = assemblyReportStagesWithEvidence(existingReport);
-  if (stageKeys.length === 0) return;
+  if (stageKeys.length === 0) return [];
   if (args.force !== true) {
     throw new Error(
-      `Assembly report at ${reportPath} already carries stage evidence (${stageKeys.join(", ")}). `
+      `Assembly report at ${reportPath} ${announced ? "gained stage evidence while prepare-build was running" : "already carries stage evidence"} (${stageKeys.join(", ")}). `
       + `Rerunning prepare-build/start/build would reset ${stageKeys.length === 1 ? "this stage" : "these stages"} to pending and destroy that evidence. `
       + `Pass --force to overwrite (destructive).`,
     );
   }
-  console.warn(
-    `[campaigns-os prepare-build] --force: overwriting assembly report at ${reportPath}; clearing stage evidence for: ${stageKeys.join(", ")}.`,
-  );
+  const unannounced = announced ? stageKeys.filter((key) => !announced.includes(key)) : stageKeys;
+  if (unannounced.length > 0) {
+    console.warn(
+      `[campaigns-os prepare-build] --force: overwriting assembly report at ${reportPath}; clearing stage evidence for: ${unannounced.join(", ")}.`,
+    );
+  }
+  return stageKeys;
 }
 
 function artifactRelativePath(artifactPath, targetPath) {
@@ -1849,6 +1874,7 @@ function canonicalPrepareBuildOutputPath(path, label) {
   const absolute = resolve(path);
   const missingSegments = [];
   let cursor = absolute;
+  let realpathRetries = 0;
   while (true) {
     let stats;
     try {
@@ -1872,6 +1898,16 @@ function canonicalPrepareBuildOutputPath(path, label) {
     try {
       return resolve(realpathSync(cursor), ...missingSegments);
     } catch {
+      // The entry can be replaced between lstat and realpath: a prepare-build
+      // holding the target lock moves a stale DSP aside and links its
+      // replacement while this run is still before the lock. Look again from
+      // the top a few times; an entry that never resolves, such as a dangling
+      // symlink, is an alias.
+      if (realpathRetries++ < 3) {
+        missingSegments.length = 0;
+        cursor = absolute;
+        continue;
+      }
       throw new Error(`Prepare-build output path collision: ${label} at ${absolute} traverses an unresolved filesystem alias. Choose a regular, distinct output path; the Design Source Package path is fixed.`);
     }
   }
@@ -1975,7 +2011,7 @@ function preflightPrepareBuildOutputTargets(outputs, collisionOutputs) {
   }
 }
 
-function publishPrepareBuildJsonOutputs(outputs, collisionOutputs) {
+function publishPrepareBuildJsonOutputs(outputs, collisionOutputs, { beforePublish = null } = {}) {
   preflightPrepareBuildOutputTargets(
     outputs.map(({ label, path }) => [label, path]),
     collisionOutputs,
@@ -1997,23 +2033,58 @@ function publishPrepareBuildJsonOutputs(outputs, collisionOutputs) {
       outputs.map(({ label, path }) => [label, path]),
       collisionOutputs,
     );
+    // Last check before anything is renamed into place; a refusal here leaves
+    // every destination as it was.
+    beforePublish?.();
     for (const output of staged) renameSync(output.tmp, output.path);
   } finally {
     for (const output of staged) rmSync(output.tmp, { force: true });
   }
 }
 
-function assertValidPreparedDesignSourcePackage(value, path, currentPageScope, currentHtmlFunnelScope) {
+function preparedDesignSourcePackageProblem(value, currentPageScope, currentHtmlFunnelScope) {
   const validation = validateDesignSourcePackage(value, {
     currentPageScope,
     currentHtmlFunnelScope,
   });
-  if (validation.ok) return;
-  const detail = validation.errors
+  if (validation.ok) return null;
+  return validation.errors
     .map((error) => `[${error.code}] ${error.path}: ${error.message}`)
     .join("; ");
+}
+
+function assertValidPreparedDesignSourcePackage(value, path, currentPageScope, currentHtmlFunnelScope) {
+  const detail = preparedDesignSourcePackageProblem(value, currentPageScope, currentHtmlFunnelScope);
+  if (detail == null) return;
   throw new Error(`Design Source Package at ${path} is invalid, stale, or contradictory: ${detail}`);
 }
+
+// Which prepare-build lineage produced the Design Source Package now on disk.
+// The previous Assembly Report at this run's report path is the only record of
+// it: its design_source_package reference carries the exact-byte sha256 of the
+// package that run bound to, and `origin: "synthesized"` when prepare-build
+// wrote those bytes itself (or reused bytes it had itself written). A package
+// counts as producer-synthesized only when that report says so AND the bytes on
+// disk still hash to what it recorded, so a hand edit, a package dropped in by
+// an operator, a report from another path, and a report written before `origin`
+// existed all fall to "not provably ours" and are never overwritten.
+function readPriorDesignSourceProvenance(reportPath, packagePath) {
+  let report;
+  try {
+    report = readJson(reportPath);
+  } catch {
+    return null;
+  }
+  const ref = report?.design_source_package;
+  if (!isObject(ref) || ref.origin !== DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED) return null;
+  if (!isNonEmptyString(ref.sha256)) return null;
+  const recordedPath = resolveFromFile(reportPath, ref.path);
+  if (!recordedPath || !filesystemPathsMatch(recordedPath, packagePath)) return null;
+  return { origin: ref.origin, sha256: ref.sha256 };
+}
+
+const DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED = "synthesized";
+const DESIGN_SOURCE_PACKAGE_ORIGIN_ADOPTED = "adopted";
 
 function sourceMaterialFile(sourceRoot, path) {
   if (typeof path !== "string" || !path.trim()) return null;
@@ -2143,6 +2214,16 @@ function createCurrentHtmlFunnelScope({
   };
 }
 
+// prepare-build serializes per target on a lock directory beside the Design
+// Source Package, inside the input directory its writes already cover. The
+// budget is generous: a live holder is doing ordinary local work, and a
+// holder that died is recovered by pid.
+const PREPARE_BUILD_LOCK_BUDGET_MS = 60000;
+
+function prepareBuildLockPath(designSourcePackagePath) {
+  return join(dirname(designSourcePackagePath), `.${basename(designSourcePackagePath)}.lock`);
+}
+
 function prepareDesignSourcePackage({
   path,
   activePages,
@@ -2155,6 +2236,8 @@ function prepareDesignSourcePackage({
   sourceRoot,
   mapId,
   publicRouteSlug,
+  priorProvenance = null,
+  force = false,
 }) {
   const currentPageScope = {
     activePages,
@@ -2203,50 +2286,158 @@ function prepareDesignSourcePackage({
     } catch (error) {
       throw new Error(`Design Source Package at ${path} is not valid JSON: ${error.message}`, { cause: error });
     }
-    assertValidPreparedDesignSourcePackage(existingValue, path, currentPageScope, currentHtmlFunnelScope);
-    if (existingValue.source_kind !== "html_funnel") {
-      throw new Error(`Design Source Package at ${path} declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`);
+    const synthesizedHere = isNonEmptyString(priorProvenance?.sha256)
+      && hashSerializedDesignSourcePackage(existingBytes) === priorProvenance.sha256;
+    let problem = preparedDesignSourcePackageProblem(existingValue, currentPageScope, currentHtmlFunnelScope);
+    if (problem == null && existingValue.source_kind !== "html_funnel") {
+      problem = `declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`;
     }
-    return { value: existingValue, rawBytes: existingBytes };
+    if (problem != null) {
+      // A package an earlier prepare-build synthesized, unchanged since, is
+      // this producer's own stale output: --force regenerates it from the
+      // current inputs. Anything else is left for the operator to reconcile.
+      if (synthesizedHere && force) return { stale: true, sha256: priorProvenance.sha256 };
+      const recovery = synthesizedHere
+        ? "It was synthesized by an earlier prepare-build and is unchanged since, so rerun with --force to regenerate it from the current inputs "
+          + "(--force also resets any stage evidence the Assembly Report carries)."
+        : "prepare-build cannot show it synthesized these bytes (no Assembly Report records them as its own output, or the package changed since), so it will not overwrite it. "
+          + `Reconcile the package with the current inputs, or, if no downstream stage has consumed it, delete ${path} and rerun prepare-build to synthesize a fresh one.`;
+      throw new Error(`Design Source Package at ${path} is invalid, stale, or contradictory: ${problem} ${recovery}`);
+    }
+    return {
+      value: existingValue,
+      rawBytes: existingBytes,
+      origin: synthesizedHere ? DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED : DESIGN_SOURCE_PACKAGE_ORIGIN_ADOPTED,
+    };
   };
 
-  if (existsSync(path)) {
-    ({ value, rawBytes } = readExisting());
-    mode = "reused";
-  } else {
-    value = synthesizeHtmlFunnelDesignSourcePackage(currentHtmlFunnelScope);
-    assertValidPreparedDesignSourcePackage(value, path, currentPageScope, currentHtmlFunnelScope);
-    rawBytes = Buffer.from(serializeDesignSourcePackage(value), "utf8");
+  const synthesizeCurrent = () => {
+    const synthesized = synthesizeHtmlFunnelDesignSourcePackage(currentHtmlFunnelScope);
+    assertValidPreparedDesignSourcePackage(synthesized, path, currentPageScope, currentHtmlFunnelScope);
+    return { value: synthesized, rawBytes: Buffer.from(serializeDesignSourcePackage(synthesized), "utf8") };
+  };
+
+  let origin = DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED;
+
+  // Synthesize the current package and fully write it to a same-directory
+  // staging file. Nothing at `path` is touched yet, so a failure here (inputs
+  // that no longer validate, a read-only target, a full disk) leaves any
+  // existing package exactly as it was.
+  const stageSynthesized = () => {
+    ({ value, rawBytes } = synthesizeCurrent());
     mkdirSync(dirname(path), { recursive: true });
     const stagedPath = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
     try {
       writeFileSync(stagedPath, rawBytes, { flag: "wx" });
-      try {
-        // Linking a fully written same-directory staging file is the Node
-        // primitive that combines atomic visibility with no-replace
-        // publication. A plain rename fallback is intentionally unsafe here:
-        // it could replace a concurrent winner after the absence check.
-        linkSync(stagedPath, path);
-        mode = "emitted";
-      } catch (error) {
-        // EEXIST is the ordinary loser path. For any other link failure, a
-        // package may still have appeared concurrently at the publication
-        // seam; prefer validating that winner before failing closed.
-        if (error?.code !== "EEXIST" && !existsSync(path)) {
-          throw new Error(
-            `Could not atomically publish Design Source Package artifact at ${path}${error?.code ? ` (${error.code})` : ""}: `
-            + `exclusive hard-link publication failed; refusing an unsafe rename fallback that could overwrite a concurrent winner: ${error.message}`,
-            { cause: error },
-          );
-        }
-        // Another publisher won (or completed while this link failed). Its
-        // exact bytes are authoritative; validate and reuse them rather than
-        // overwriting.
-        ({ value, rawBytes } = readExisting());
-        mode = "reused";
+    } catch (error) {
+      rmSync(stagedPath, { force: true });
+      throw error;
+    }
+    return stagedPath;
+  };
+
+  // prepareBuild holds the target lock around this whole decision, so no other
+  // prepare-build publishes here meanwhile. A package that still appears at
+  // `path` (an operator, or a tool that does not take the lock) is
+  // authoritative: validate and reuse its exact bytes rather than overwrite.
+  const reuseWinner = () => {
+    const winner = readExisting();
+    if (winner.stale) {
+      throw new Error(`Design Source Package at ${path} appeared while prepare-build was publishing and does not match this run's inputs; if it is a stale package an earlier prepare-build synthesized, rerun prepare-build with --force.`);
+    }
+    ({ value, rawBytes, origin } = winner);
+    mode = "reused";
+  };
+
+  const publishStaged = (stagedPath) => {
+    try {
+      // Linking a fully written same-directory staging file is the Node
+      // primitive that combines atomic visibility with no-replace
+      // publication. A plain rename fallback is intentionally unsafe here:
+      // it could replace a package that appeared after the absence check.
+      linkSync(stagedPath, path);
+      mode = "emitted";
+    } catch (error) {
+      // EEXIST means a package appeared at the publication seam; for any
+      // other link failure, prefer validating such a package before failing
+      // closed.
+      if (error?.code !== "EEXIST" && !existsSync(path)) {
+        throw new Error(
+          `Could not atomically publish Design Source Package artifact at ${path}${error?.code ? ` (${error.code})` : ""}: `
+          + `exclusive hard-link publication failed; refusing an unsafe rename fallback that could overwrite a concurrent winner: ${error.message}`,
+          { cause: error },
+        );
       }
+      reuseWinner();
+    }
+  };
+
+  // --force over this producer's own stale package. The replacement is
+  // already staged. The stale bytes are claimed by moving them aside and
+  // re-hashed there, so an edit that landed after they were judged stale is
+  // caught instead of discarded; the replacement then goes out through the
+  // same no-replace link as a fresh emit. The claimed bytes are deleted only
+  // once they are proven to be the stale bytes and the replacement is out, or
+  // once they are back in place after a failure; otherwise they are kept and
+  // named.
+  const replaceStale = (stagedPath, staleSha256) => {
+    const retiredPath = join(dirname(path), `.${basename(path)}.${randomUUID()}.stale`);
+    try {
+      renameSync(path, retiredPath);
+    } catch (error) {
+      // Removed since it was read: there is nothing left to replace.
+      if (error?.code === "ENOENT") return publishStaged(stagedPath);
+      throw new Error(`Could not claim the stale Design Source Package at ${path} for regeneration${error?.code ? ` (${error.code})` : ""}: ${error.message}`, { cause: error });
+    }
+    // Put the claimed bytes back without replacing anything that has appeared
+    // at `path` since. True only when `path` is now those very bytes (the
+    // same file), not merely occupied by another package.
+    const putBack = () => {
+      try {
+        linkSync(retiredPath, path);
+      } catch (error) {
+        if (error?.code !== "EEXIST") return false;
+      }
+      try {
+        const atPath = statSync(path);
+        const retired = statSync(retiredPath);
+        return atPath.ino === retired.ino && atPath.dev === retired.dev;
+      } catch {
+        return false;
+      }
+    };
+    try {
+      if (hashSerializedDesignSourcePackage(readFileSync(retiredPath)) !== staleSha256) {
+        throw new Error(`Design Source Package at ${path} changed after prepare-build judged it stale, so it was not replaced. Rerun prepare-build to judge the current package.`);
+      }
+      publishStaged(stagedPath);
+    } catch (error) {
+      if (putBack()) {
+        rmSync(retiredPath, { force: true });
+        throw error;
+      }
+      throw new Error(`${error.message} The Design Source Package moved aside for regeneration could not be put back and is kept at ${retiredPath}.`, { cause: error });
+    }
+    rmSync(retiredPath, { force: true });
+  };
+
+  const existing = existsSync(path) ? readExisting() : null;
+  if (existing && !existing.stale) {
+    ({ value, rawBytes, origin } = existing);
+    mode = "reused";
+  } else {
+    const stagedPath = stageSynthesized();
+    try {
+      if (existing?.stale) replaceStale(stagedPath, existing.sha256);
+      else publishStaged(stagedPath);
     } finally {
       rmSync(stagedPath, { force: true });
+    }
+    if (existing?.stale && mode === "emitted") {
+      mode = "regenerated";
+      console.warn(
+        `[campaigns-os prepare-build] --force: regenerated the stale Design Source Package at ${path} that an earlier prepare-build synthesized.`,
+      );
     }
   }
 
@@ -2260,6 +2451,7 @@ function prepareDesignSourcePackage({
     value,
     rawBytes,
     mode,
+    origin,
     referenceFor(artifactPath) {
       return {
         ...referenceIdentity,
@@ -2341,6 +2533,26 @@ function parseDesignManifestFlag(args) {
   return path;
 }
 
+// An optional intake flag that, when given, must carry a value. Returns the
+// trimmed value, or null when the flag is absent.
+function requireIntakeFlagValue(args, flag, what) {
+  if (!Object.hasOwn(args, flag)) return null;
+  const raw = args[flag];
+  if (!isNonEmptyString(raw)) throw new Error(`--${flag} needs a value: ${what}.`);
+  return raw.trim();
+}
+
+// The same vocabulary inspectBrandTheme enforces, checked on argv alone.
+function parseIntakeThemePolicyFlag(args) {
+  const accepted = `Accepted values: ${[...THEME_POLICIES].join(", ")}.`;
+  if (!Object.hasOwn(args, "theme-policy")) return null;
+  const raw = args["theme-policy"];
+  if (!isNonEmptyString(raw)) throw new Error(`--theme-policy needs a value. ${accepted}`);
+  const value = raw.trim();
+  if (!THEME_POLICIES.has(value)) throw new Error(`Unsupported --theme-policy ${JSON.stringify(value)}. ${accepted}`);
+  return value;
+}
+
 function requireDesignManifestValue(args) {
   const raw = args["design-manifest"];
   if (raw != null && (raw === true || !isNonEmptyString(raw))) {
@@ -2365,7 +2577,7 @@ function resolveWrapperPolicy({ flag, manifest }) {
   return { value: DEFAULT_WRAPPER_POLICY, source: "default" };
 }
 
-function prepareBuild(args, options = {}) {
+async function prepareBuild(args, options = {}) {
   const specPath = resolve(requireArg(args, "spec"));
   const sourceRoot = resolve(requireArg(args, "source"));
   const targetRepo = resolve(requireArg(args, "target"));
@@ -2397,7 +2609,65 @@ function prepareBuild(args, options = {}) {
     ["Design Source Package", designSourcePackagePath],
   ];
   assertDistinctPrepareBuildOutputPaths(prepareBuildCollisionPaths);
-  guardAssemblyReportOverwrite(reportPath, args);
+  // One prepare-build at a time per target, from reading its inputs through
+  // the packet, context and report that record them. The lock is taken before
+  // the stage-evidence guard and before the CampaignSpec, manifest, mappings
+  // and asset crawl are read, so the evidence check, the input snapshot whose
+  // hashes the Design Source Package records, and the publication are one
+  // critical section: a run that waited here sees exactly what the last
+  // completed run left, not what was on disk when it started waiting.
+  const lockPath = prepareBuildLockPath(designSourcePackagePath);
+  mkdirSync(dirname(lockPath), { recursive: true });
+  return withDirectoryLock(lockPath, () => prepareBuildUnderLock({
+    args,
+    options,
+    specPath,
+    sourceRoot,
+    targetRepo,
+    packetPath,
+    contextPath,
+    reportPath,
+    doctorOutPath,
+    briefPath,
+    designSourcePackagePath,
+    prepareBuildOutputPaths,
+    prepareBuildThemeOutputPaths,
+    prepareBuildCollisionPaths,
+  }), {
+    budgetMs: PREPARE_BUILD_LOCK_BUDGET_MS,
+    unavailable: (error) => error?.code === "EEXIST"
+      ? new Error(
+        `Another prepare-build is writing ${targetRepo} (lock ${lockPath}). `
+        + "Retry after it finishes. If a run was interrupted, confirm no campaigns-os process is working on this target before removing that lock directory.",
+      )
+      : new Error(`Could not take the prepare-build lock at ${lockPath}${error?.code ? ` (${error.code})` : ""}: ${error?.message}`, { cause: error }),
+  });
+}
+
+function prepareBuildUnderLock({
+  args,
+  options,
+  specPath,
+  sourceRoot,
+  targetRepo,
+  packetPath,
+  contextPath,
+  reportPath,
+  doctorOutPath,
+  briefPath,
+  designSourcePackagePath,
+  prepareBuildOutputPaths,
+  prepareBuildThemeOutputPaths,
+  prepareBuildCollisionPaths,
+}) {
+  let announcedStageEvidence = guardAssemblyReportOverwrite(reportPath, args);
+  // Stage producers commit the report without this lock, so evidence can land
+  // while the run works. Re-check before each write that is not rolled back:
+  // the theme artifacts, then the JSON outputs. --force names a stage once.
+  const recheckStageEvidence = () => {
+    const found = guardAssemblyReportOverwrite(reportPath, args, { announced: announcedStageEvidence });
+    announcedStageEvidence = [...new Set([...announcedStageEvidence, ...found])];
+  };
   const spec = readJson(specPath);
   const { mapId, publicRouteSlug, localSpecId } = campaignIdentity(spec, args);
   if (!resolveCampaignIdentity({ map_id: mapId, local_spec_id: localSpecId })) {
@@ -2405,8 +2675,10 @@ function prepareBuild(args, options = {}) {
   }
   if (!publicRouteSlug) throw new Error("CampaignSpec has no public route slug. Set spec_identity.public_route_slug or campaign.slug.");
 
-  // Dispatch validated the argv-only flags before spec resolution. Only the
-  // manifest's filesystem check remains here, before preparation writes.
+  // Dispatch validated the argv-only flags before spec resolution, including
+  // the value forms of --template-family, --allow-uncertified-template,
+  // --theme-policy and --brief (#477). Only the manifest's filesystem check
+  // remains here, before preparation writes.
   const sourceKind = options.sourceKind;
   const wrapperPolicyFlag = options.wrapperPolicyFlag;
   const designManifestPath = parseDesignManifestFlag(args);
@@ -2623,6 +2895,8 @@ function prepareBuild(args, options = {}) {
     sourceRoot,
     mapId,
     publicRouteSlug,
+    priorProvenance: readPriorDesignSourceProvenance(reportPath, designSourcePackagePath),
+    force: args.force === true,
   });
   const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
   const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
@@ -2822,6 +3096,9 @@ function prepareBuild(args, options = {}) {
     prepareBuildThemeOutputPaths,
     prepareBuildCollisionPaths,
   );
+  // The theme files are replaced in place, not staged with the JSON outputs,
+  // so evidence that has landed by now refuses the run before any is written.
+  recheckStageEvidence();
   const writtenTheme = writeThemeArtifacts(themeInspection, {
     writeReport: true,
     writeCss: shouldWriteThemeCss,
@@ -2864,7 +3141,9 @@ function prepareBuild(args, options = {}) {
     { label: "Campaign Build Brief", path: briefPath, value: buildBrief.artifact },
     { label: "Build Context", path: contextPath, value: context },
     { label: "Assembly Report", path: reportPath, value: report },
-  ], prepareBuildCollisionPaths);
+  ], prepareBuildCollisionPaths, {
+    beforePublish: recheckStageEvidence,
+  });
 
   let doctor = null;
   // Housekeeping for the target's git history: the machine-local half of
@@ -3048,7 +3327,12 @@ function createAssemblyReport({
     }),
     decisions: context.decisions,
     build_brief: cloneJson(context.build_brief || {}),
-    design_source_package: designSourcePackage.referenceFor(reportPath),
+    // origin is the report's own provenance record: the next prepare-build
+    // reads it back to tell its own stale output from an operator's package.
+    design_source_package: {
+      ...designSourcePackage.referenceFor(reportPath),
+      origin: designSourcePackage.origin,
+    },
     adapter_decisions: cloneJson(context.adapter_decisions || createAdapterDecisions()),
     proof_policy: cloneJson(packet.qa?.proof_policy || createProofPolicy()),
     theme: assemblyThemeFromContext(context.theme),
@@ -3328,6 +3612,20 @@ export function doctorBuiltOutput(args) {
     derived,
   });
   derived.doctor_checks.push(SDK_MARKUP);
+
+  // Campaign-owned script syntax (#480). Same placement, same reasons: a
+  // hand-edited script that no longer parses is invisible to every HTML gate.
+  recordScriptSyntaxGate({
+    subject: {
+      public_route_slug: scope.slug || null,
+      site_root: relFromDir(targetRepo, scope.campaign_dir),
+    },
+    inputs: collectBuiltScriptSyntaxInputs(scope, targetRepo),
+    errors,
+    ready,
+    derived,
+  });
+  derived.doctor_checks.push(SCRIPT_SYNTAX);
 
   const synthesized = synthesizeMinimalBuildPacket({
     schemaVersion: PACKET_SCHEMA,
@@ -4291,6 +4589,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: SDK_MARKUP,
     phase: "built-output",
     run: ({ packet, errors, warnings, ready, derived }) => validateSdkMarkup(packet, errors, warnings, ready, derived),
+  },
+  {
+    id: SCRIPT_SYNTAX,
+    phase: "built-output",
+    run: ({ packet, errors, ready, derived }) => validateBuiltScriptSyntax(packet, errors, ready, derived),
   },
   {
     id: "built_output.sdk_meta_tags",
@@ -6793,6 +7096,45 @@ function validateSdkMarkup(packet, errors, warnings, ready, derived) {
     ready,
     derived,
   });
+}
+
+// Campaign-owned script syntax (#480). Every doctor invocation, both entry
+// points, filesystem enumeration, blocking regardless of stage status — the
+// same contract as the gates above: a script that throws a SyntaxError on
+// load is not a work-in-progress state that becomes true later.
+function validateBuiltScriptSyntax(packet, errors, ready, derived) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  const scope = siteRoot && existsSync(siteRoot) ? resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug }) : null;
+  recordScriptSyntaxGate({
+    subject: {
+      public_route_slug: publicRouteSlug || null,
+      site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
+    },
+    inputs: scope?.ok ? collectBuiltScriptSyntaxInputs(scope, targetRepo) : {},
+    errors,
+    ready,
+    derived,
+  });
+}
+
+function recordScriptSyntaxGate({ subject, inputs, errors, ready, derived }) {
+  const gate = evaluateBuiltScriptSyntax({ subject, ...inputs });
+  if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(gate);
+  if (gate.status === "blocked") {
+    // One error per file, each naming the file, line and column.
+    for (const finding of gate.findings) {
+      addIssue(errors, finding.code, finding.message, { finding, checkpoint_gate: gate });
+    }
+    return gate;
+  }
+  if (gate.status === "not_applicable") {
+    ready.push(`Script syntax checkpoint not applicable: ${gate.reason}`);
+    return gate;
+  }
+  ready.push(`All ${gate.scripts_scanned} campaign-owned script(s) loaded by built pages parse`);
+  return gate;
 }
 
 function recordSdkMarkupGate({ subject, pages, errors, warnings, ready, derived }) {

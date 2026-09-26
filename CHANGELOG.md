@@ -35,6 +35,80 @@ Notable supported-surface changes are recorded here.
   check (`data-layer-purchase`) still blocks too: the SDK pushes `dl_purchase`
   in the development render as well.
 
+## [1.43.1+agent.11] - 2026-09-26
+
+### Fixed
+
+- `start`, `prepare-build` and `build` now refuse a bare, empty or
+  whitespace-only `--template-family`, `--allow-uncertified-template`,
+  `--theme-policy` or `--brief`, and a `--theme-policy` other than
+  `inspect_only`, `auto` or `off`, before reading the spec, fetching the Map or
+  writing the spec cache. Before, these four were read only after the spec was
+  resolved: a blank value was quietly ignored (or, for `--theme-policy`, fell
+  back to `inspect_only`), and an unknown theme policy failed partway through
+  intake and was journaled as a handler failure. A refused invocation writes
+  no journal entry. Whether a named family is certified, and whether a named
+  brief can be read, still depend on file content, so those failures are still
+  journaled.
+## [1.43.1+agent.10] - 2026-09-26
+
+### Fixed
+
+- Browser QA no longer hangs on an upsell accept when the page moves on before
+  the upsell response body has loaded. The runner read that body with no time
+  limit, and a page that redirected as soon as the response headers arrived
+  could leave the read waiting forever. The read now gives up after a few
+  seconds: the step still reports the response and its status, with no order
+  body, and records that the read timed out. Checkout event capture keeps its
+  unbounded read, since nothing waits on it: an order body that loads late
+  still counts as order evidence.
+- A slow but successful upsell accept is no longer failed as "no new upsell
+  line". When the upsell body read times out on a successful response, the
+  step waits up to 15 seconds, inside its own time budget, for the late body
+  or an order read-back that shows the accepted line. If neither arrives, the
+  upsell is reported as unverified and the test order goes to manual review,
+  not to a blocker. A late body, or an order read-back captured after the
+  click, that lacks the line still fails.
+## [1.43.1+agent.9] - 2026-09-26
+
+### Fixed
+
+- Doctor no longer reports a build ready when a campaign script has a syntax
+  error. Every doctor run that sees built output, `doctor --built` and the
+  packet path alike, now parses each campaign-owned `.js` file a built page
+  loads by a local `<script src>`, and blocks under
+  `built_output.script_syntax.parse_failure` when one does not parse. The error
+  names the file, line and column, for example a hand-edited checkout script
+  left with one closing `});` too many. Remote scripts such as CDN URLs are not
+  read, `type="module"` scripts are parsed as modules, and classic `nomodule`
+  scripts are skipped. Script types are read as the browser reads them, trimmed
+  of surrounding whitespace and case-insensitive, and a module script is parsed
+  even when it carries `nomodule`, since the browser still runs it. Script paths resolve against the page's `<base href>` and are
+  percent-decoded, as the browser loads them. The gate is not waivable and
+  passes on every certified starter family.
+- QA no longer reads a page script that does not parse as "dynamic". The
+  credential binding treats its declarations as unavailable, and QA adds a
+  `script-parse:<page_id>` blocker naming the script, line and column. Both
+  report a fixed diagnostic category, never text from the script. QA
+  classifies script types the same way doctor does.
+## [1.43.1+agent.8] - 2026-09-26
+
+### Fixed
+
+- `prepare-build --force` (and `start --force` and `build --force`) now
+  regenerates a stale Design Source Package that an earlier `prepare-build`
+  synthesized, instead of refusing it. Previously, editing the source manifest
+  after a first run left `.campaign-runtime/input/design-source-package.json`
+  stale, and every rerun failed until the file was deleted by hand, with nothing
+  in the output saying so. The Assembly Report now records the package's
+  `origin` (`synthesized` or `adopted`), and a package counts as the producer's
+  own only when that report says `synthesized` and the bytes on disk still match
+  its hash. A package placed by an operator, edited by hand, or recorded by an
+  older report is still refused, `--force` or not. Every refusal now names the
+  file and the recovery: rerun with `--force` for the producer's own package,
+  otherwise reconcile it or delete it and rerun.
+- The manifest docs now say up front that a source-html manifest `pages[]`
+  entry with both `path` and `skip_reason` is invalid.
 ## [1.43.1+agent.7] - 2026-09-26
 
 ### Fixed

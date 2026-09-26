@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>script-syntax good</title>
+    <meta name="next-funnel" content="Example">
+    <meta name="next-page-type" content="checkout">
+    <script src="/example-campaign/config.js"></script>
+    <script src="https://cdn.example.com/vendor/library.min.js"></script>
+    <script type="application/ld+json">{"@context": "https://schema.org"}</script>
+    <script defer src="../js/checkout.js?v=1"></script>
+    <script type="module" src="/example-campaign/js/checkout-module.js"></script>
+  </head>
+  <body>
+    <form data-next-checkout>
+      <input data-next-checkout-field="email" type="email">
+      <button data-next-checkout-submit>Pay</button>
+    </form>
+  </body>
+</html>
