@@ -15,7 +15,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import { __qaBrowserTestHooks as hooks } from "./qa-browser.mjs";
-import { STATUS } from "./qa-verdict.mjs";
+import { applyQaBuildScope } from "./qa-build-scope.mjs";
+import { __qaNodeTestHooks as qaNodeHooks } from "./qa-node.mjs";
+import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 
 const FIXTURE = new URL("../fixtures/qa-analytics-partial-scope/checkout.html", import.meta.url).pathname;
 const ORIGIN = "https://partial.fixture.test";
@@ -51,8 +53,10 @@ async function chromiumAvailable() {
 }
 
 // The campaign root has no page; checkout/ is the built entry; the pixel
-// endpoint answers a 1x1 so nothing leaves the process.
-async function partialBuildContext() {
+// endpoint answers a 1x1 so nothing leaves the process. `pages` overrides a
+// path's status/body (e.g. a host that answers 200 with a generic fallback at
+// the root, or 503 everywhere).
+async function partialBuildContext(pages = {}) {
   const context = await (await sharedBrowser()).newContext();
   const html = await readFile(FIXTURE, "utf8");
   const visited = [];
@@ -62,6 +66,8 @@ async function partialBuildContext() {
       return route.fulfill({ status: 200, contentType: "image/gif", body: Buffer.from("R0lGODlhAQABAAAAACw=", "base64") });
     }
     if (route.request().resourceType() === "document") visited.push(url.pathname);
+    const override = url.origin === ORIGIN ? pages[url.pathname] : null;
+    if (override) return route.fulfill({ status: override.status, contentType: "text/html", body: override.body ?? html });
     if (url.origin === ORIGIN && url.pathname === "/campaign/checkout/") {
       return route.fulfill({ status: 200, contentType: "text/html", body: html });
     }
@@ -70,8 +76,8 @@ async function partialBuildContext() {
   return { context, visited };
 }
 
-async function runLeg(options) {
-  const { context, visited } = await partialBuildContext();
+async function runLeg(options, pages) {
+  const { context, visited } = await partialBuildContext(pages);
   try {
     const assertions = await hooks.captureAnalyticsCorrectnessInContext(context, ROOT, CONTRACT, ARGS, [], options);
     return { assertions, visited };
@@ -79,6 +85,34 @@ async function runLeg(options) {
     await context.close();
   }
 }
+
+// The capture options qa-node hands this leg, computed from a topology through
+// the real build-scope filter rather than written by hand.
+function scopeFor(pageIds, { skipped = [], partial = true, rootPage = null } = {}) {
+  const declared = skipped.map((page_id) => ({ page_id, skip_reason: "Remains on another host" }));
+  const topologies = [{
+    funnel_id: "default",
+    pages: pageIds.map((page_id, order) => ({
+      page_id, page_type: page_id, order, label: page_id,
+      url: page_id === rootPage ? ROOT : `${ROOT}${page_id}/`,
+    })),
+  }];
+  const qaScope = partial
+    ? applyQaBuildScope(topologies, {
+      packet: { source_html: { pages: declared } },
+      report: { stages: { prepare_build: { declared_out_of_scope: declared } } },
+      publicRouteSlug: "campaign",
+    })
+    : { topologies, excludedPages: [] };
+  return qaNodeHooks.analyticsCaptureScope({
+    analyticsCaptureTarget: { url: ROOT },
+    topologies: qaScope.topologies,
+    excludedPages: qaScope.excludedPages,
+  });
+}
+
+const GENERIC_FALLBACK = { status: 200, body: "<!doctype html><title>Index of /campaign/</title><h1>Index</h1>" };
+const UNAVAILABLE = { status: 503, body: "<!doctype html><title>Service unavailable</title>" };
 
 const byId = (assertions, id) => assertions.find((item) => item.id === id);
 
@@ -116,16 +150,16 @@ browserTest("a root in scope that answers non-2xx falls back to the built entry 
   assert.deepEqual(capture.evidence.root_fallback, { url: ROOT, reason: "non_2xx", http_status: 404 });
 });
 
-browserTest("with no capturable in-scope page the leg is skipped with a named reason, not a fail per vendor", async () => {
+browserTest("an in-scope root that answers non-2xx with no fallback is an unmeasured blocker, not a skip", async () => {
   const { assertions } = await runLeg({ rootInScope: true, fallbackTargets: [] });
 
   assert.equal(assertions.length, 1, "no per-vendor assertion is emitted against an empty page");
   const [capture] = assertions;
   assert.equal(capture.id, "analytics-correctness:capture");
-  assert.equal(capture.status, STATUS.SKIPPED);
-  assert.equal(capture.evidence.reason, "no_in_scope_page_captured");
+  assert.equal(capture.status, STATUS.FAIL);
+  assert.equal(capture.severity, SEVERITY.BLOCKER);
+  assert.equal(capture.evidence.reason, "no_capture_page_answered");
   assert.deepEqual(capture.evidence.attempts, [{ url: ROOT, source: "campaign_root", outcome: "non_2xx", http_status: 404 }]);
-  assert.equal(assertions.some((item) => item.status === STATUS.FAIL), false);
 });
 
 browserTest("an out-of-scope root with no built entry is skipped without a visit, and every attempt carries http_status", async () => {
@@ -149,4 +183,47 @@ browserTest("a fallback naming the root under another spelling is not loaded twi
 
   const outOfScope = await runLeg({ rootInScope: false, fallbackTargets: [unslashed, indexed, ENTRY] });
   assert.deepEqual(outOfScope.visited, ["/campaign/checkout/"], "the out-of-scope root is never loaded");
+});
+
+browserTest("presell and landing excluded: a root that answers 200 with a generic fallback is not captured; the checkout entry is", async () => {
+  const options = scopeFor(["presell", "landing", "checkout", "receipt"], { skipped: ["presell", "landing"] });
+  const { assertions, visited } = await runLeg(options, { "/campaign/": GENERIC_FALLBACK });
+
+  assert.deepEqual(visited, ["/campaign/checkout/"], "the unbuilt root is never visited");
+  const meta = byId(assertions, "analytics-correctness:tag:meta");
+  assert.equal(meta.status, STATUS.PASS, `tag:meta ${meta.status}: ${meta.actual}`);
+  assert.equal(meta.url, CHECKOUT);
+  const capture = byId(assertions, "analytics-correctness:capture");
+  assert.equal(capture.evidence.capture_page.page_id, "checkout");
+  assert.equal(capture.evidence.root_fallback.reason, "out_of_built_scope");
+});
+
+browserTest("every candidate answering 503 fails as a blocker naming each attempt, so a later order cannot report ready unmeasured", async () => {
+  const options = scopeFor(["presell", "landing", "checkout", "receipt"], { skipped: ["presell", "landing"] });
+  const { assertions } = await runLeg(options, { "/campaign/": UNAVAILABLE, "/campaign/checkout/": UNAVAILABLE });
+
+  assert.equal(assertions.length, 1);
+  const [capture] = assertions;
+  assert.equal(capture.id, "analytics-correctness:capture");
+  assert.equal(capture.status, STATUS.FAIL);
+  assert.equal(capture.severity, SEVERITY.BLOCKER);
+  assert.equal(capture.evidence.reason, "no_capture_page_answered");
+  assert.deepEqual(capture.evidence.attempts, [
+    { url: ROOT, source: "campaign_root", outcome: "out_of_built_scope", http_status: null },
+    { url: CHECKOUT, source: "built_entry", outcome: "non_2xx", http_status: 503 },
+  ]);
+  assert.match(capture.actual, /503/);
+});
+
+browserTest("a full build whose landing page is the root still captures the root", async () => {
+  const options = scopeFor(["landing", "checkout", "receipt"], { partial: false, rootPage: "landing" });
+  assert.equal(options.rootInScope, true);
+  const { assertions, visited } = await runLeg(options, { "/campaign/": { status: 200 } });
+
+  assert.deepEqual(visited, ["/campaign/"]);
+  const capture = byId(assertions, "analytics-correctness:capture");
+  assert.equal(capture.status, STATUS.PASS);
+  assert.equal(capture.evidence.capture_page.source, "campaign_root");
+  assert.equal(capture.evidence.root_fallback, undefined);
+  assert.equal(byId(assertions, "analytics-correctness:tag:meta").status, STATUS.PASS);
 });

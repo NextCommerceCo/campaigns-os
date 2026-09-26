@@ -2468,14 +2468,18 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   };
 }
 
-// #493: the inventory captures the campaign root unless the root is a page
-// the partial build declared out of scope and did not build; either way the
-// built entry pages (the same first in-scope entry #482 selects) are the
-// fallback when the root cannot be captured.
+// #493: a full build captures the campaign root. A partial build captures it
+// only when a built, in-scope page is served there; otherwise the root is
+// whatever the host answers (a directory index, a generic fallback) and must
+// not be measured. Either way the built entry pages (the same first in-scope
+// entry #482 selects) are the fallback when the root cannot be captured.
 function analyticsCaptureScope(resolved) {
   const rootPath = urlPathKey(resolved?.analyticsCaptureTarget?.url);
-  const excluded = Array.isArray(resolved?.excludedPages) ? resolved.excludedPages : [];
-  const rootInScope = !rootPath || !excluded.some((page) => urlPathKey(page?.url) === rootPath);
+  const topologies = topologyList(resolved?.topologies);
+  const partial = topologies.some((topology) => topology?.partial_build_scope)
+    || (Array.isArray(resolved?.excludedPages) && resolved.excludedPages.length > 0);
+  const rootInScope = !rootPath || !partial || topologies.some((topology) =>
+    (Array.isArray(topology?.pages) ? topology.pages : []).some((page) => urlPathKey(page?.url) === rootPath));
   return {
     rootInScope,
     fallbackTargets: deriveEntryUrls(resolved?.topologies),

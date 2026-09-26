@@ -501,8 +501,9 @@ export async function runAnalyticsParityChecks(args = {}, options = {}) {
 // the leg captures the first built in-scope entry instead
 // (`options.fallbackTargets`, the same entry the partial-scope planner
 // selects) and records which page it used. When nothing in scope can be
-// captured the leg is skipped with a named reason instead of failing every
-// declared vendor against an empty page.
+// captured, the leg is skipped when the build has no capturable page, and
+// fails as a blocker when candidates existed but none answered 2xx; neither
+// case fails every declared vendor against an empty page.
 function analyticsCorrectnessCaptureAssertions({ capture, contract, url, capturePage = null, rootFallback = null }) {
   const publicUrl = redactUrlQuery(url);
   const analyticsPage = { page_id: "analytics", url: publicUrl || undefined };
@@ -528,23 +529,39 @@ function analyticsCorrectnessCaptureAssertions({ capture, contract, url, capture
   return assertions;
 }
 
-// Every candidate was out of scope or answered non-2xx. SKIPPED is
-// disposition-neutral: the HTTP and browser legs already gate a missing page,
-// so an empty page must not also fail every declared vendor here.
+// No page was captured. Two cases, kept apart so a failed capture never
+// silently removes analytics gating:
+// - nothing built was capturable (the root is out of the built scope and no
+//   built entry exists): SKIPPED, disposition-neutral, since there is no page
+//   whose tags could be measured;
+// - candidates existed but none answered 2xx (e.g. transient 503s): the
+//   declared vendors went unmeasured, which is a blocker naming each attempt,
+//   so a later successful order cannot report the run ready.
 function analyticsCorrectnessNoCapturePageAssertion({ rootUrl, attempts }) {
   const publicUrl = redactUrlQuery(rootUrl);
+  const page = { page_id: "analytics", url: publicUrl || undefined };
+  const expected = "live dataLayer + tag-fire capture on the campaign root or the first built in-scope page";
+  const loaded = attempts.filter((attempt) => attempt.outcome === "non_2xx");
+  if (!loaded.length) {
+    return assertion({
+      id: "analytics-correctness:capture",
+      family: "analytics-correctness",
+      page,
+      status: STATUS.SKIPPED,
+      expected,
+      actual: "no_in_scope_page_captured: the campaign root is out of the built scope and the build has no in-scope entry page to capture",
+      evidence: { url: publicUrl, reason: "no_in_scope_page_captured", attempts },
+    });
+  }
   return assertion({
     id: "analytics-correctness:capture",
     family: "analytics-correctness",
-    page: { page_id: "analytics", url: publicUrl || undefined },
-    status: STATUS.SKIPPED,
-    expected: "live dataLayer + tag-fire capture on the campaign root or the first built in-scope page",
-    actual: "no_in_scope_page_captured: the campaign root is out of the built scope or answered non-2xx, and no built in-scope entry page answered 2xx",
-    evidence: {
-      url: publicUrl,
-      reason: "no_in_scope_page_captured",
-      attempts,
-    },
+    page,
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+    expected,
+    actual: `no_capture_page_answered: declared analytics went unmeasured; ${loaded.map((attempt) => `${attempt.url} answered HTTP ${attempt.http_status}`).join(", ")}`,
+    evidence: { url: publicUrl, reason: "no_capture_page_answered", attempts },
   });
 }
 
