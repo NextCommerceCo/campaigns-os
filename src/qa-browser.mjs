@@ -486,15 +486,24 @@ export async function runAnalyticsParityChecks(args = {}, options = {}) {
   }
 }
 
-// Analytics CORRECTNESS inventory leg: capture ONE campaign-root page and
-// assess only declared tags/pixels. Purchase is finalized later from the
-// canonical typed-card order's recognized receipt; this root visit is never
-// treated as Purchase authority.
+// Analytics CORRECTNESS inventory leg: capture ONE page and assess only
+// declared tags/pixels. Purchase is finalized later from the canonical
+// typed-card order's recognized receipt; this inventory visit is never treated
+// as Purchase authority.
 // `options.target` is the capture target resolved from the campaign's
 // identity (public_route_slug + route_root) in qa-node — packet 01 / INV-2:
 // this leg no longer reads --analytics-candidate or --base-url; the URL it
 // visits is a function of resolved identity, recorded on every assertion.
-function analyticsCorrectnessCaptureAssertions({ capture, contract, url }) {
+//
+// #493: a partial build can have no page at that campaign root (the built
+// entry is deeper, e.g. checkout/). When qa-node reports the root out of the
+// built scope (`options.rootInScope === false`), or the root answers non-2xx,
+// the leg captures the first built in-scope entry instead
+// (`options.fallbackTargets`, the same entry the partial-scope planner
+// selects) and records which page it used. When nothing in scope can be
+// captured the leg is skipped with a named reason instead of failing every
+// declared vendor against an empty page.
+function analyticsCorrectnessCaptureAssertions({ capture, contract, url, capturePage = null, rootFallback = null }) {
   const publicUrl = redactUrlQuery(url);
   const analyticsPage = { page_id: "analytics", url: publicUrl || undefined };
   const assertions = assessAnalyticsInventory(capture, contract || {}, { url: publicUrl });
@@ -504,16 +513,39 @@ function analyticsCorrectnessCaptureAssertions({ capture, contract, url }) {
     page: analyticsPage,
     status: STATUS.PASS,
     expected: "live dataLayer + tag-fire capture on the candidate page",
-    actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`,
+    actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`
+      + (rootFallback ? ` (captured built entry ${publicUrl}; campaign root ${rootFallback.reason === "non_2xx" ? `answered HTTP ${rootFallback.http_status}` : "is out of the built scope"})` : ""),
     // Counts only. Root capture is provider/tag inventory, never Purchase
     // authority, even if a stray Purchase happens to appear there.
     evidence: {
       url: publicUrl,
       event_count: capture.eventNames.length,
       inventory: Object.fromEntries(Object.entries(capture.inventory).map(([k, v]) => [k, v.length])),
+      ...(capturePage ? { capture_page: capturePage } : {}),
+      ...(rootFallback ? { root_fallback: rootFallback } : {}),
     },
   }));
   return assertions;
+}
+
+// Every candidate was out of scope or answered non-2xx. SKIPPED is
+// disposition-neutral: the HTTP and browser legs already gate a missing page,
+// so an empty page must not also fail every declared vendor here.
+function analyticsCorrectnessNoCapturePageAssertion({ rootUrl, attempts }) {
+  const publicUrl = redactUrlQuery(rootUrl);
+  return assertion({
+    id: "analytics-correctness:capture",
+    family: "analytics-correctness",
+    page: { page_id: "analytics", url: publicUrl || undefined },
+    status: STATUS.SKIPPED,
+    expected: "live dataLayer + tag-fire capture on the campaign root or the first built in-scope page",
+    actual: "no_in_scope_page_captured: the campaign root is out of the built scope or answered non-2xx, and no built in-scope entry page answered 2xx",
+    evidence: {
+      url: publicUrl,
+      reason: "no_in_scope_page_captured",
+      attempts,
+    },
+  });
 }
 
 function analyticsCorrectnessRunnerFailureAssertion({ url, error }) {
@@ -531,6 +563,68 @@ function analyticsCorrectnessRunnerFailureAssertion({ url, error }) {
   });
 }
 
+function isHttpOk(status) {
+  // A null status (same-document or non-HTTP navigation) is not evidence of
+  // a missing page, so it keeps the capture.
+  return status == null || (status >= 200 && status < 300);
+}
+
+function analyticsCaptureCandidates(url, options = {}) {
+  const candidates = [];
+  const seen = new Set();
+  const add = (candidate) => {
+    const key = redactUrlQuery(candidate.url);
+    if (!candidate.url || seen.has(key)) return;
+    seen.add(key);
+    candidates.push(candidate);
+  };
+  const rootInScope = options.rootInScope !== false;
+  if (rootInScope) add({ url, source: "campaign_root" });
+  for (const entry of Array.isArray(options.fallbackTargets) ? options.fallbackTargets : []) {
+    if (!entry || !trim(entry.url)) continue;
+    add({
+      url: trim(entry.url),
+      source: "built_entry",
+      page_id: entry.page_id || null,
+      funnel_id: entry.funnel_id || null,
+    });
+  }
+  return { candidates, rootInScope, rootKey: redactUrlQuery(url) };
+}
+
+// Browser-owning half split out so a real-browser test can drive the fallback
+// against a route-fulfilled context without a second Chromium launch policy.
+async function captureAnalyticsCorrectnessInContext(context, url, contract, args, extraHosts, options = {}) {
+  const { candidates, rootInScope, rootKey } = analyticsCaptureCandidates(url, options);
+  const attempts = [];
+  if (!rootInScope) attempts.push({ url: rootKey, source: "campaign_root", outcome: "out_of_built_scope" });
+  let rootFallback = rootInScope ? null : { url: rootKey, reason: "out_of_built_scope", http_status: null };
+  for (const candidate of candidates) {
+    const { capture, httpStatus } = await captureAnalyticsPage(context, candidate.url, args, extraHosts);
+    if (isHttpOk(httpStatus)) {
+      const usedFallback = candidate.source !== "campaign_root";
+      return analyticsCorrectnessCaptureAssertions({
+        capture,
+        contract,
+        url: candidate.url,
+        capturePage: {
+          url: redactUrlQuery(candidate.url),
+          source: candidate.source,
+          ...(candidate.page_id ? { page_id: candidate.page_id } : {}),
+          ...(candidate.funnel_id ? { funnel_id: candidate.funnel_id } : {}),
+          http_status: httpStatus ?? null,
+        },
+        rootFallback: usedFallback ? rootFallback : null,
+      });
+    }
+    attempts.push({ url: redactUrlQuery(candidate.url), source: candidate.source, outcome: "non_2xx", http_status: httpStatus });
+    if (candidate.source === "campaign_root") {
+      rootFallback = { url: rootKey, reason: "non_2xx", http_status: httpStatus };
+    }
+  }
+  return [analyticsCorrectnessNoCapturePageAssertion({ rootUrl: url, attempts })];
+}
+
 export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, options = {}) {
   const url = trim(options.target?.url) || null;
   const correctnessPage = { page_id: "analytics", url: redactUrlQuery(url) || undefined };
@@ -546,12 +640,7 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, op
     })];
   }
 
-  // Seed the host filter with declared out-of-band vendor names so vendors whose
-  // host contains their name (everflow, northbeam, …) get captured.
-  const vendorHosts = ((contract && contract.out_of_band_pixels) || [])
-    .map((p) => (p && p.vendor ? String(p.vendor) : null))
-    .filter(Boolean);
-  const extraHosts = [...analyticsExtraHosts(args), ...vendorHosts];
+  const extraHosts = analyticsCorrectnessExtraHosts(args, contract);
 
   const browser = await launchChromium(args);
   const context = await browser.newContext({
@@ -559,14 +648,22 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, op
     extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
   });
   try {
-    const capture = await captureAnalyticsForUrl(context, url, args, extraHosts);
-    return analyticsCorrectnessCaptureAssertions({ capture, contract, url });
+    return await captureAnalyticsCorrectnessInContext(context, url, contract, args, extraHosts, options);
   } catch (error) {
     return [analyticsCorrectnessRunnerFailureAssertion({ url, error })];
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
   }
+}
+
+// Seed the host filter with declared out-of-band vendor names so vendors whose
+// host contains their name (everflow, northbeam, …) get captured.
+function analyticsCorrectnessExtraHosts(args, contract) {
+  const vendorHosts = ((contract && contract.out_of_band_pixels) || [])
+    .map((p) => (p && p.vendor ? String(p.vendor) : null))
+    .filter(Boolean);
+  return [...analyticsExtraHosts(args), ...vendorHosts];
 }
 
 function analyticsExtraHosts(args) {
@@ -576,6 +673,13 @@ function analyticsExtraHosts(args) {
 }
 
 export async function captureAnalyticsForUrl(context, url, args, extraHosts = []) {
+  return (await captureAnalyticsPage(context, url, args, extraHosts)).capture;
+}
+
+// Same capture, plus the main-document HTTP status, which the correctness leg
+// uses to tell an empty page from a missing one (#493). Kept off the capture
+// object so parity comparisons never see it.
+async function captureAnalyticsPage(context, url, args, extraHosts = []) {
   const page = await context.newPage();
   const capture = await attachAnalyticsCapture(page, { extraHosts });
   const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
@@ -584,11 +688,13 @@ export async function captureAnalyticsForUrl(context, url, args, extraHosts = []
     // domcontentloaded (not "load") so a single stuck analytics beacon — exactly
     // the kind of subresource we're capturing — can't starve the goto timeout.
     // Mirrors runPageBrowserChecks; the settle wait below lets async tags fire.
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    let httpStatus = null;
+    try { httpStatus = typeof response?.status === "function" ? response.status() : null; } catch { httpStatus = null; }
     await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});
     // Let async GTM/pixel tags and deferred dataLayer pushes fire before reading.
     await page.waitForTimeout(settleMs);
-    return await capture.collect();
+    return { capture: await capture.collect(), httpStatus };
   } finally {
     capture.detach();
     await page.close().catch(() => {});
@@ -6559,6 +6665,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   COUPON_APPLY_CONTROL_SELECTOR,
   analyticsCorrectnessCaptureAssertions,
   analyticsCorrectnessRunnerFailureAssertion,
+  captureAnalyticsCorrectnessInContext,
   analyticsParityCaptureAssertions,
   analyticsParityRunnerFailureAssertion,
   acceptedUpsellProof,

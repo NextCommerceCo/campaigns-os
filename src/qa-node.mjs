@@ -2317,6 +2317,7 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
   } else if (analyticsLeg === "run") {
     assertions.push(...await operations.runInventory(args, analyticsContract || {}, {
       target: resolved.analyticsCaptureTarget,
+      ...analyticsCaptureScope(resolved),
     }));
   }
 
@@ -2465,6 +2466,31 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath, runSessionActive, disposition: verdict.disposition }),
     verdict,
   };
+}
+
+// #493: the inventory captures the campaign root unless the root is a page
+// the partial build declared out of scope and did not build; either way the
+// built entry pages (the same first in-scope entry #482 selects) are the
+// fallback when the root cannot be captured.
+function analyticsCaptureScope(resolved) {
+  const rootPath = urlPathKey(resolved?.analyticsCaptureTarget?.url);
+  const excluded = Array.isArray(resolved?.excludedPages) ? resolved.excludedPages : [];
+  const rootInScope = !rootPath || !excluded.some((page) => urlPathKey(page?.url) === rootPath);
+  return {
+    rootInScope,
+    fallbackTargets: deriveEntryUrls(resolved?.topologies),
+  };
+}
+
+function urlPathKey(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/(?:^|\/)index\.html$/, "/").replace(/\/+$/, "");
+    return `${url.origin}${path}/`;
+  } catch {
+    return null;
+  }
 }
 
 const ENTRY_PAGE_TYPES = new Set([
@@ -3676,6 +3702,7 @@ export const __qaNodeTestHooks = Object.freeze({
   resolveQaInputs,
   runResolvedQa,
   runPageChecks,
+  analyticsCaptureScope,
   analyticsCorrectnessLegDecision,
   analyticsCorrectnessDisabledAssertion,
   runAnalyticsOrderSequence,

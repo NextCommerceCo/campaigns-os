@@ -152,3 +152,44 @@ test("maybeRunTestOrders returns the private envelope for browser mode and empty
     receiptAnalytics: { plannedPlanIds: [], attempts: [] },
   });
 });
+
+test("#493: a partial build whose root is an unbuilt out-of-scope page hands the inventory its built entry", async () => {
+  const { analyticsCaptureScope } = __qaNodeTestHooks;
+  const partial = {
+    ...resolved,
+    excludedPages: [{ page_id: "landing", url: "https://shop.example/campaign/" }],
+    topologies: [{
+      funnel_id: "default",
+      partial_build_scope: true,
+      pages: [
+        { page_id: "checkout", page_type: "checkout", url: "https://shop.example/campaign/checkout/" },
+        { page_id: "receipt", page_type: "receipt", url: "https://shop.example/campaign/receipt/" },
+      ],
+    }],
+  };
+  const scope = analyticsCaptureScope(partial);
+  assert.equal(scope.rootInScope, false);
+  assert.equal(scope.fallbackTargets.length, 1);
+  assert.equal(scope.fallbackTargets[0].page_id, "checkout");
+  assert.equal(scope.fallbackTargets[0].url, "https://shop.example/campaign/checkout/");
+
+  // index.html spellings name the same root.
+  assert.equal(analyticsCaptureScope({
+    ...partial, excludedPages: [{ page_id: "landing", url: "https://shop.example/campaign/index.html" }],
+  }).rootInScope, false);
+
+  // A full build keeps the root; the entry is still offered for a non-2xx root.
+  const full = analyticsCaptureScope({ ...partial, excludedPages: [] });
+  assert.equal(full.rootInScope, true);
+  assert.equal(full.fallbackTargets[0].page_id, "checkout");
+
+  let received = null;
+  await runAnalyticsOrderSequence({ args: {}, resolved: partial, runId: "run-493", assertions: [] }, {
+    async runInventory(args, receivedContract, options) { received = options; return []; },
+    async runOrders() { return { orders: [], receiptAnalytics: { plannedPlanIds: [], attempts: [] } }; },
+    assessReceipt: assessReceiptPurchase,
+  });
+  assert.equal(received.target, target);
+  assert.equal(received.rootInScope, false);
+  assert.equal(received.fallbackTargets[0].page_id, "checkout");
+});

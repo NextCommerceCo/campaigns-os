@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.7] - 2026-09-26
+
+### Fixed
+
+- QA's analytics tracking check works on partial builds. It used to capture the
+  campaign root (`/<slug>/`) even when the build starts deeper, such as at
+  `checkout/`, so it read an empty page and failed every declared pixel as
+  absent. When the root is out of the built scope, or answers with a non-2xx
+  status, the check now captures the first built in-scope page, the same entry
+  partial-scope QA starts from, and records the page it used and why on the
+  `analytics-correctness:capture` evidence. If no in-scope page answers, the
+  check is skipped with the reason `no_in_scope_page_captured` instead of
+  failing each vendor.
+
 ## [1.43.1+agent.6] - 2026-09-26
 
 ### Fixed
