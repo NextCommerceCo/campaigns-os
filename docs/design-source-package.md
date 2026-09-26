@@ -335,8 +335,40 @@ If any current campaign, active/mapped page, source material, manifest or crawl
 provenance, coverage, template family/reference, material fingerprint,
 readiness, or readback check fails, `prepare-build` refuses. It leaves the
 existing package and packet/context/report/brief sidecars byte-identical. It
-does not silently regenerate or overwrite the package; source preparation must
-reconcile the package and its references explicitly before retrying.
+does not silently regenerate or overwrite the package. The refusal names the
+package file and says which recovery applies:
+
+- **A package `prepare-build` synthesized itself.** The Assembly Report's
+  `design_source_package` reference records `origin`: `"synthesized"` when
+  `prepare-build` wrote the package bytes (or reused bytes it had written), and
+  `"adopted"` when it validated and reused a package it did not write. When the
+  previous report at this run's report path says `"synthesized"` and the
+  package bytes still hash to that report's `sha256`, the stale package is the
+  producer's own output: rerun with `--force` and `prepare-build` regenerates
+  it from the current inputs (mode `regenerated`), announcing the replacement
+  on stderr. `--force` also resets any stage evidence the Assembly Report
+  carries, exactly as it does for the report alone.
+- **Any other package** — placed by an operator, edited by hand after it was
+  written, adopted by an earlier run, or recorded by a report that predates
+  `origin` — is never overwritten, `--force` or not. Reconcile it with the
+  current inputs, or, if no downstream stage has consumed it, delete it and
+  rerun so `prepare-build` synthesizes a fresh one.
+
+Only the Assembly Report carries `origin`; the packet and context references
+keep their four strict fields.
+
+Runs against the same target take turns. From the stage-evidence check and
+the reading of its inputs (CampaignSpec, source manifest, page mappings, asset
+crawl) through the packet, context and report that record them,
+`prepare-build` holds a lock directory beside the package
+(`.campaign-runtime/input/.design-source-package.json.lock`), so each run judges
+provenance against the report and package the previous run left, and records
+the inputs it actually read. Stage producers do not take this lock, so the
+report is checked for stage evidence again just before it is replaced; evidence
+that landed mid-run stops a run without `--force`. Of several
+concurrent `--force` runs, the first regenerates the package and the rest reuse
+it as `"synthesized"`. A run that finds the lock held waits up to a minute; a
+lock left by a process that died is recovered automatically.
 
 Before writing any output, `prepare-build` also requires distinct paths for the
 Build Packet, Build Context, Assembly Report, Doctor output, normalized Build
@@ -567,10 +599,10 @@ family the `template-baseline` contribution's `presentation_intent` names.
 
 ### Recovery after a blocked first run
 
-A blocked run still emits the package, and `prepare-build` never refreshes a
-package it did not just create. So a first run that blocked leaves a package
-whose provenance names the *old* manifest, and simply rerunning with a new
-manifest fails closed:
+A blocked run still emits the package, and a plain `prepare-build` never
+refreshes a package it did not just create. So a first run that blocked leaves a
+package whose provenance names the *old* manifest, and simply rerunning with a
+new manifest fails closed:
 
 ```
 campaigns-os: Design Source Package at <target>/.campaign-runtime/input/design-source-package.json
@@ -598,6 +630,12 @@ npm run campaigns-os -- start \
   --target <page-kit-repository> \
   --template-family <family>
 ```
+
+When the refusal says the package was synthesized by an earlier
+`prepare-build` and is unchanged since, skip step 2 and add `--force` to step 3
+instead: `prepare-build` (and `start` and `build`, which run the same intake)
+then regenerates the package itself. `--force` resets any stage evidence the
+Assembly Report carries, so the same caution applies.
 
 Step 2 is only ever correct for a package emitted by a blocked run that no
 downstream stage has consumed. Once Build or Polish has bound its evidence to a

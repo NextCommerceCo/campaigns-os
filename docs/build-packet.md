@@ -783,6 +783,47 @@ advisories, `unknown_attributes[]`, `pages_scanned`,
 It passes, with no advisory, on the canonical rendered output of every
 certified starter family (`fixtures/certified-families/`).
 
+### Built-output script syntax gate (`built_output.script_syntax`)
+
+Every doctor run that sees built output (the packet path and `doctor --built`
+alike) parses each campaign-owned `.js` file a built page loads by a local
+`<script src>`. A script that does not parse throws a `SyntaxError` on every
+load of every page that references it, and nothing it defines runs; every
+HTML-reading gate passes over it. The shape that shipped was a template-family
+checkout script, copied and hand-edited, left with one closing `});` too many.
+
+Parsing uses Acorn at the latest `ecmaVersion`: `sourceType: 'script'` for
+classic scripts and `'module'` for `type="module"`, which is how the browser
+reads each. Remote scripts (an `http(s):` URL, a protocol-relative `//` URL,
+`data:`) are not campaign-owned and are not read, and neither are data blocks
+such as JSON-LD. The type is compared as the browser compares it, with
+surrounding ASCII whitespace stripped and case ignored. A classic `nomodule`
+script is skipped: a module-capable browser never fetches or runs it. A
+`type="module"` script ignores `nomodule` and is still parsed. Each src resolves the way the browser resolves it, against
+the document's first `<base href>` or else the page, and the percent-decoded
+path maps under the site root first, then the campaign directory, never outside
+either. A base on another origin makes relative srcs remote. Imports inside a
+module are not followed.
+
+A parse failure blocks (not waivable — a script that cannot be parsed cannot be
+intended to ship) under `built_output.script_syntax.parse_failure`, one error
+per file. The message leads with `<file>:<line>:<column>` and a fixed
+diagnostic category (for example `Unexpected token` or `Invalid regular
+expression`), never text from the script, and names the pages that load the
+file. A referenced local script
+that is not on disk is listed on the gate as `scripts_unresolved[]`, not
+judged here.
+
+The gate's evidence lands beside the other checkpoint gates at
+`derived.checkpoint_gates[]` (`id: built_output.script_syntax`, status `pass` |
+`blocked` | `not_applicable`, `findings[]` with `file`, `line`, `column`,
+`source_type` and `pages`, `scripts_scanned`, `scripts_unresolved[]`,
+`pages_scanned`). Fixtures: `fixtures/script-syntax/{good,bad}`. It passes on
+the canonical rendered output of every certified starter family
+(`fixtures/certified-families/`). QA applies the same rule to the page scripts
+it reads for credential declarations (`script-parse:<page_id>`; see
+[QA and test orders](qa-and-test-orders.md)).
+
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
 ## Artifact Locations
@@ -1180,7 +1221,7 @@ The fetched spec is treated identically to a `--spec`-supplied local file from t
 
 ## Source HTML Manifest Auto-Population
 
-When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`, published at `schemas/source-html-manifest.v0.schema.json`) — or `--design-manifest <path>` names a manifest of that schema anywhere else, for a source root nobody can write to — `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching. Wherever the manifest lives, its `pages[].path` entries stay relative to `--source`. A `pages[]` entry with `skip_reason` and no `path` declares a template-stock page: its assembly decision carries `template_stock: true` and the locked family, and intake demands no design source for it ([Template-stock pages](design-source-package.md#template-stock-pages-the-family-decides)).
+When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`, published at `schemas/source-html-manifest.v0.schema.json`) — or `--design-manifest <path>` names a manifest of that schema anywhere else, for a source root nobody can write to — `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching. Wherever the manifest lives, its `pages[].path` entries stay relative to `--source`. Each `pages[]` entry carries exactly one of `path` or `skip_reason`: an entry with both is invalid, and an invalid entry makes prepare-build ignore the whole manifest and fall back to filesystem matching. A `pages[]` entry with `skip_reason` and no `path` declares a template-stock page: its assembly decision carries `template_stock: true` and the locked family, and intake demands no design source for it ([Template-stock pages](design-source-package.md#template-stock-pages-the-family-decides)).
 
 The source-html manifest remains a producer/source-HTML adapter input. It is not
 renamed into the Design Source Package. In the normalized source workflow,
@@ -1190,7 +1231,10 @@ contributions, coverage, gaps/TODOs, Surface Identity, references, and readback.
 When source-html data is the available input and the default package path is
 missing, current v0 `prepare-build` synthesizes the package. If a package already
 exists, it is validated against the current material inputs and reused byte for
-byte or refused; it is never silently regenerated. Downstream Build and Polish
+byte or refused; it is never silently regenerated. The one exception is a stale
+package an earlier `prepare-build` synthesized and nobody has changed since:
+`--force` regenerates it from the current inputs
+([Design Source Package: stale packages](design-source-package.md#prepare-build-emit-validate-or-refuse)). Downstream Build and Polish
 consume the package concept rather than branching back to
 `packet.source_html` as a second source model. The emitted package lives at
 `.campaign-runtime/input/design-source-package.json` by default and is referenced

@@ -1,11 +1,12 @@
 import { campaignSpecIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 // Best-effort producer adapter. Sanitized immutable bytes are durable before delivery.
 import {randomBytes,createHash} from 'node:crypto';
-import {mkdirSync,readFileSync,writeFileSync,renameSync,rmSync,readdirSync,lstatSync} from 'node:fs';
+import {mkdirSync,readFileSync,writeFileSync,renameSync,rmSync,readdirSync} from 'node:fs';
 import {join,resolve,dirname} from 'node:path';
 import {PROGRESS_SCHEMA_VERSION,PROGRESS_STAGES,PROGRESS_STAGE_STATUSES,PROGRESS_CONTINUATIONS,PROGRESS_ACTION_IDS,PROGRESS_GATE_IDS,canonicalProgressJson,progressSnapshotId,verifyProgressSnapshot} from './progress.mjs';
 import {specMaterialHash} from './spec-identity.mjs';
 import {sameFile} from './fs-identity.mjs';
+import {withDirectoryLock} from './directory-lock.mjs';
 import {resolveConsent,CANONICAL_REMIT_SCOPE,normalizeConsentScope,announceDefaultOnTelemetry} from './consent.mjs';
 import {boundedResponseText,isLoopbackHostname} from './remit.mjs';
 export const PROGRESS_OBSERVATION = Symbol('canonical progress observation');
@@ -71,39 +72,8 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
     continuation:{stage,blocked:continuation?.ok!==true||(Array.isArray(continuation?.divergences)&&continuation.divergences.length>0)||stage==='unknown'||gates.some(gate=>['blocked','unknown'].includes(gate.state))||actions.includes('unknown'),divergent:Array.isArray(continuation?.divergences)&&continuation.divergences.length>0,action_ids:actions,gates},qa,
   };
 }
-async function lock(dir,fn,{budgetMs=1500}={}) {
-  const path=join(dir,'.allocation-lock'); const start=Date.now();const token=randomBytes(16).toString('hex');
-  const abandoned=(unownedMtime=null)=>{
-    try {
-      const stat=lstatSync(path);if(!stat.isDirectory()||stat.isSymbolicLink())return false;
-      const owner=read(join(path,'owner.json'));
-      if(Number.isInteger(owner?.pid)&&owner.pid>0&&typeof owner.token==='string') {
-        try {process.kill(owner.pid,0);return false;}catch(error){return error.code==='ESRCH';}
-      }
-      // A killed process can leave the directory before writing its owner.
-      // Give a live allocator ample time to finish that tiny synchronous gap.
-      return Date.now()-(unownedMtime??stat.mtimeMs)>10000;
-    }catch{return false;}
-  };
-  const recover=()=>{
-    if(!abandoned())return;
-    let originalMtime;try{originalMtime=lstatSync(path).mtimeMs;}catch{return;}
-    const claim=join(path,'.recovery');
-    // Only this exclusive claimant can rename the old lock. An interrupted
-    // recovery claim fails closed for explicit offline recovery; recursively
-    // stealing recovery claims would reintroduce a check/rename race.
-    try {mkdirSync(claim);atomic(join(claim,'owner.json'),{pid:process.pid,token});}catch{return;}
-    let moved=false;
-    try {
-      if(!abandoned(originalMtime))return;
-      const tomb=`${path}.abandoned-${token}`;
-      renameSync(path,tomb);moved=true;rmSync(tomb,{recursive:true,force:true});
-    }catch{}finally{if(!moved&&read(join(claim,'owner.json'))?.token===token){try{rmSync(claim,{recursive:true,force:true});}catch{}}}
-  };
-  while (true) {
-    try {mkdirSync(path);atomic(join(path,'owner.json'),{pid:process.pid,token});break;}catch(error){if(error.code!=='EEXIST'||Date.now()-start>=budgetMs)throw new Error('progress.lock_unavailable');recover();await new Promise(resolve=>setTimeout(resolve,20));}
-  }
-  try{return await fn();}finally{if(read(join(path,'owner.json'))?.token===token)rmSync(path,{recursive:true,force:true});}
+function lock(dir,fn,{budgetMs=1500}={}) {
+  return withDirectoryLock(join(dir,'.allocation-lock'),fn,{budgetMs,unavailable:()=>new Error('progress.lock_unavailable')});
 }
 export async function persistProgressObservation(observation,{dir,now=()=>new Date(),historyLimit=32}={}) {
   mkdirSync(dir,{recursive:true,mode:0o700});

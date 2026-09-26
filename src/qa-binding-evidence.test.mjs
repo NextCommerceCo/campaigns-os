@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { observeBinding, bindingAssertion, expectedBinding, createBindingScriptLoader, BINDING_LIMITS } from './qa-binding-evidence.mjs';
+import { observeBinding, bindingAssertion, scriptParseAssertion, expectedBinding, createBindingScriptLoader, BINDING_LIMITS } from './qa-binding-evidence.mjs';
 import { __qaNodeTestHooks } from './qa-node.mjs';
 const key = 'binding-canary-7V4m9Q2z8P5';
 const page = { page_id: 'checkout', page_type: 'checkout', url: 'https://fixture.example.test/checkout' };
@@ -148,4 +148,142 @@ test('event handlers and redirected pages cannot silently certify the wrong sour
   let base;
   const result = await observe('', {source:{ok:true,html:'<script src="config.js"></script>',final_url:'https://fixture.example.test/new/checkout'},scriptLoader:async (_src,url)=>{base=url;return {ok:true,html:`window.nextConfig={apiKey:'${key}'}`};}});
   assert.equal(result.outcome,'match'); assert.equal(base,'https://fixture.example.test/new/checkout');
+});
+
+// #480: a script that does not parse is its own state, not "dynamic".
+const checkoutScript = 'document.addEventListener("DOMContentLoaded", () => {\n  init();\n});\n';
+test('an unparsable page script is recorded with its position, never as dynamic', async () => {
+  const parseFailures = [];
+  const evidence = await observe(inline(key) + '<script defer src="/js/checkout.js?v=2#x"></script>', {
+    parseFailures,
+    scriptLoader: async () => ({ ok: true, html: checkoutScript + '});\n' }),
+  });
+  assert.equal(evidence.outcome, 'unknown');
+  assert.notEqual(evidence.reason, 'dynamic_unresolved');
+  assert.equal(evidence.reason, 'script_unavailable_or_limit');
+  assert.deepEqual(parseFailures, [{ source_kind: 'config_script', script: '/js/checkout.js', line: 4, column: 1, message: 'Unexpected token' }]);
+  const inlineFailures = [];
+  await observe('<script>window.nextConfig = {apiKey: "x"};\n}</script>', { parseFailures: inlineFailures });
+  assert.deepEqual(inlineFailures.map(f => [f.source_kind, f.script, f.line, f.column]), [['inline', null, 2, 1]]);
+  // The same script without the stray bracket parses and records nothing.
+  const clean = [];
+  const ok = await observe(inline(key) + '<script src="/js/checkout.js"></script>', { parseFailures: clean, scriptLoader: async () => ({ ok: true, html: checkoutScript }) });
+  assert.deepEqual(clean, []);
+  assert.equal(ok.reason, 'dynamic_unresolved', 'a parsable non-declaration script is still dynamic');
+  // A module script parses as a module: import is not a syntax error there.
+  const modules = [];
+  await observe('<script type="module" src="/js/app.js"></script>', { parseFailures: modules, scriptLoader: async () => ({ ok: true, html: 'import x from "./x.js"; export default x;' }) });
+  assert.deepEqual(modules, []);
+});
+
+test('QA reports an unparsable page script as a blocker naming the script and position', async () => {
+  const { assertions } = await __qaNodeTestHooks.runPageChecks(page, {}, {
+    sourceLoader: async () => ({ ok: true, status: 200, status_text: 'OK', html: inline(key) + '<script src="/js/checkout.js"></script>' }),
+    bindingExpected: { value: key },
+    bindingScriptLoader: async () => ({ ok: true, html: checkoutScript + '});\n' }),
+  });
+  const parse = assertions.find(a => a.id === 'script-parse:checkout');
+  assert.ok(parse, 'no script-parse assertion');
+  assert.equal(parse.family, 'api-metadata');
+  assert.equal(parse.status, 'fail');
+  assert.equal(parse.severity, 'blocker');
+  assert.equal(parse.actual, 'unparsable: /js/checkout.js:4:1');
+  assert.equal(JSON.stringify(parse).includes(key), false);
+  assert.equal(assertions.find(a => a.id === 'page-binding:checkout').evidence.reason, 'script_unavailable_or_limit');
+  assert.equal(scriptParseAssertion(page, []), null);
+  const clean = await __qaNodeTestHooks.runPageChecks(page, {}, {
+    sourceLoader: async () => ({ ok: true, status: 200, status_text: 'OK', html: inline(key) + '<script src="/js/checkout.js"></script>' }),
+    bindingExpected: { value: key },
+    bindingScriptLoader: async () => ({ ok: true, html: checkoutScript }),
+  });
+  assert.equal(clean.assertions.some(a => a.id.startsWith('script-parse:')), false);
+});
+
+test('a parse failure in a script from another origin keeps its host, never the full URL', async () => {
+  const parseFailures = [];
+  await observe('<script src="https://cdn.fixture.test/lib/config.js?v=2#x"></script>', {
+    parseFailures,
+    scriptLoader: async () => ({ ok: true, html: 'window.nextConfig = {apiKey: "x"};\n}' }),
+  });
+  assert.equal(parseFailures.length, 1);
+  assert.equal(parseFailures[0].script, 'cdn.fixture.test/lib/config.js');
+});
+
+// Review follow-ups on #480.
+const canary = 'synthetic_canary_Zq81xT';
+test('a <base href> resolves page scripts to the URL the browser loads', async () => {
+  const requested = [];
+  const parseFailures = [];
+  await observe(`<base href="/shop/assets/">${inline(key)}<script src="checkout.js"></script>`, {
+    parseFailures,
+    scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript + '});\n' }; },
+  });
+  assert.deepEqual(requested, ['https://fixture.example.test/shop/assets/checkout.js']);
+  assert.deepEqual(parseFailures.map(f => f.script), ['/shop/assets/checkout.js']);
+  // A base on another origin: the real loader refuses the cross-origin script.
+  const fetched = [];
+  const loader = createBindingScriptLoader({ fetchImpl: async (url) => { fetched.push(url); return new Response('window.nextConfig = {apiKey: "x"};'); } });
+  const remote = await observe(`<base href="https://cdn.fixture.test/lib/">${inline(key)}<script src="config.js"></script>`, { scriptLoader: loader });
+  assert.deepEqual(fetched, []);
+  assert.equal(remote.reason, 'script_unavailable_or_limit');
+});
+
+test('a nomodule script is never parsed or reported: module-capable browsers skip it', async () => {
+  const parseFailures = [];
+  let loads = 0;
+  const evidence = await observe(`${inline(key)}<script nomodule src="/js/legacy.js"></script><script nomodule>}</script>`, {
+    parseFailures,
+    scriptLoader: async () => { loads += 1; return { ok: true, html: checkoutScript + '});\n' }; },
+  });
+  assert.deepEqual(parseFailures, []);
+  assert.equal(loads, 0);
+  assert.equal(evidence.reason, 'dynamic_unresolved');
+});
+
+test('a module script ignores nomodule, so QA still loads, parses and reports it', async () => {
+  const parseFailures = [];
+  let loads = 0;
+  await observe(`${inline(key)}<script type="module" nomodule src="/js/app.js"></script><script type=" MODULE " nomodule>}</script>`, {
+    parseFailures,
+    scriptLoader: async () => { loads += 1; return { ok: true, html: checkoutScript + '});\n' }; },
+  });
+  assert.equal(loads, 1);
+  assert.deepEqual(parseFailures.map(f => f.source_kind), ['config_script', 'inline']);
+});
+
+test('script types are ASCII-whitespace-trimmed and case-insensitive before QA classifies them', async () => {
+  const parseFailures = [];
+  await observe(`${inline(key)}<script type=" text/javascript ">}</script><script type="\tApplication/JavaScript\n">}</script><script type=" Module ">}</script>`, { parseFailures });
+  assert.equal(parseFailures.length, 3);
+  const skipped = [];
+  await observe(`${inline(key)}<script type="\u00a0text/javascript">}</script><script type=" ">}</script><script type="application/ld+json">}</script>`, { parseFailures: skipped });
+  assert.deepEqual(skipped, []);
+});
+
+test('parser messages never carry source text into QA evidence', async () => {
+  for (const html of [
+    `<script>var pattern = /${canary}(/;</script>`,
+    `<script>let ${canary} = 1; let ${canary} = 2;</script>`,
+    `<script src="/js/config.js"></script>`,
+  ]) {
+    const parseFailures = [];
+    await observe(html, { parseFailures, scriptLoader: async () => ({ ok: true, html: `var a = 1;\n@${canary}\n` }) });
+    assert.equal(parseFailures.length, 1, html);
+    const assertion = scriptParseAssertion(page, parseFailures);
+    assert.equal(JSON.stringify(assertion).includes(canary), false, JSON.stringify(assertion));
+    assert.match(parseFailures[0].message, /^[A-Z][a-z]/);
+  }
+});
+
+test('a data block carrying nomodule stays a data block; only a classic nomodule script leaves the binding unresolved', async () => {
+  const dataBlock = await observe(`${inline(key)}<script type="application/ld+json" nomodule>{}</script>`);
+  assert.equal(dataBlock.outcome, 'match');
+  const classic = await observe(`${inline(key)}<script nomodule src="/legacy.js"></script>`);
+  assert.equal(classic.outcome, 'unknown');
+  assert.equal(classic.reason, 'dynamic_unresolved');
+});
+
+test('a language attribute with trailing whitespace is not run by the browser, so it cannot bind', async () => {
+  const evidence = await observe(`<script language="JavaScript ">window.nextConfig = {apiKey: ${JSON.stringify(key)}};</script>`);
+  assert.notEqual(evidence.outcome, 'match');
 });
