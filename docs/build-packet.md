@@ -796,14 +796,19 @@ Parsing uses Acorn at the latest `ecmaVersion`: `sourceType: 'script'` for
 classic scripts and `'module'` for `type="module"`, which is how the browser
 reads each. Remote scripts (an `http(s):` URL, a protocol-relative `//` URL,
 `data:`) are not campaign-owned and are not read, and neither are data blocks
-such as JSON-LD. Absolute srcs resolve against the site root first, then the
-campaign directory; relative srcs resolve against the page. Imports inside a
+such as JSON-LD. A `nomodule` script is skipped: a module-capable browser never
+fetches or runs it. Each src resolves the way the browser resolves it, against
+the document's first `<base href>` or else the page, and the percent-decoded
+path maps under the site root first, then the campaign directory, never outside
+either. A base on another origin makes relative srcs remote. Imports inside a
 module are not followed.
 
 A parse failure blocks (not waivable — a script that cannot be parsed cannot be
 intended to ship) under `built_output.script_syntax.parse_failure`, one error
-per file. The message leads with `<file>:<line>:<column>` and the parser's
-message, and names the pages that load the file. A referenced local script
+per file. The message leads with `<file>:<line>:<column>` and a fixed
+diagnostic category (for example `Unexpected token` or `Invalid regular
+expression`), never text from the script, and names the pages that load the
+file. A referenced local script
 that is not on disk is listed on the gate as `scripts_unresolved[]`, not
 judged here.
 

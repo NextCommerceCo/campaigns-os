@@ -7101,7 +7101,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.1+agent.9",
-      "changelog_sha256": "38bff873b789a97d343f14eaacf02b8452d50429c68423326d91c8ce83f38e97",
+      "changelog_sha256": "8ba241cdf9c614df8853dd0b904d894ef505e4398a51353425c01a2a5290e432",
       "agent_impact": "Doctor now blocks under built_output.script_syntax.parse_failure when a campaign-owned script a built page loads by a local <script src> does not parse, naming the file, line and column; QA adds a script-parse:<page_id> blocker instead of reading an unparsable page script as dynamic.",
       "compatibility": "compatible",
       "migration": "none",
@@ -7131,7 +7131,7 @@
           "summary": "Document that QA reports an unparsable page script as a script-parse blocker, not as dynamic."
         }
       ],
-      "entry_sha256": "1d2ba1eb30deb4dada3b9ef84d84d62dc02cdac927bb690b889cf25d8b1086cc"
+      "entry_sha256": "0e04199a8d46d4a00e1b4b8c4a23dafb9e75822e04b52073e808e0a19649a0b3"
     }
   ]
 }

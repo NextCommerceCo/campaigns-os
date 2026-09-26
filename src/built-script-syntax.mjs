@@ -19,7 +19,7 @@
 // Both doctor entry points drive it, like the other static built-output gates.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 
 import { parse as parseJs } from "acorn";
 import { parse as parseHtml } from "parse5";
@@ -31,14 +31,71 @@ export const SCRIPT_SYNTAX_PARSE_FAILURE = `${SCRIPT_SYNTAX}.parse_failure`;
 // attribute (JSON-LD, text/template, importmap) is a data block, not script.
 const CLASSIC_SCRIPT_TYPE = /^(?:text|application)\/(?:x-)?(?:java|ecma)script$|^text\/(?:javascript1\.[0-5]|jscript|livescript)$/i;
 
+// Acorn messages that are fixed text. Anything else interpolates source text
+// (an identifier, a regex body, a character) and is reduced to its category,
+// so a token at the error site never reaches doctor or QA output.
+const FIXED_PARSE_MESSAGES = new Set([
+  "Unexpected token", "Unterminated string constant", "Unterminated template", "Unterminated template literal",
+  "Unterminated regular expression", "Unterminated comment", "Invalid regular expression flag",
+  "Duplicate regular expression flag", "Invalid number", "Identifier directly after number", "Assigning to rvalue",
+  "'return' outside of function", "'import' and 'export' may appear only with 'sourceType: module'",
+  "'import' and 'export' may only appear at the top level", "Cannot use 'import.meta' outside a module",
+  "Cannot use keyword 'await' outside an async function", "'super' keyword outside a method",
+  "super() call outside constructor of a subclass", "Illegal newline after throw", "Missing catch or finally clause",
+  "Multiple default clauses", "Argument name clash", "Redefinition of property", "Redefinition of __proto__ property",
+  "Bad escape sequence in untagged template literal", "Invalid use of 'super'", "'with' in strict mode",
+  "Deleting local variable in strict mode", "let is disallowed as a lexically bound name",
+  "Shorthand property assignments are valid only in destructuring patterns",
+  "Complex binding patterns require an initialization value", "Comma is not permitted after the rest element",
+  "Binding member expression", "Binding parenthesized expression", "Not enough stack space to parse input",
+  "Optional chaining cannot appear in left-hand side",
+  "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses",
+]);
+const PARSE_MESSAGE_CATEGORIES = [
+  [/^Invalid regular expression\b/, "Invalid regular expression"],
+  [/^Identifier .* has already been declared$/, "Identifier has already been declared"],
+  [/^Unexpected character\b/, "Unexpected character"],
+  [/^Unexpected keyword\b/, "Unexpected keyword"],
+  [/^The keyword .* is reserved$/, "Reserved keyword"],
+  [/^Label .* is already declared$/, "Duplicate label"],
+  [/^Duplicate export\b/, "Duplicate export"],
+  [/^Undefined export\b/, "Undefined export"],
+  [/^Unsyntactic (?:break|continue)$/, "Unsyntactic break or continue"],
+  [/^Escape sequence in keyword\b/, "Escape sequence in keyword"],
+  [/^Private field\b/, "Undeclared private field"],
+  [/^Expected number in radix\b/, "Invalid number"],
+  [/in strict mode$/, "Not allowed in strict mode"],
+];
+
+/**
+ * A parser error as a fixed-vocabulary category plus a 1-based position. The
+ * message never carries source text: acorn interpolates identifiers, regex
+ * bodies and characters from the script into some messages.
+ *
+ * @param {unknown} error
+ * @returns {{ line: number, column: number, message: string }}
+ */
+export function parseFailureDiagnostic(error) {
+  const line = Number.isInteger(error?.loc?.line) ? error.loc.line : 1;
+  const column = Number.isInteger(error?.loc?.column) ? error.loc.column + 1 : 1;
+  const raw = String(error?.message || "").replace(/\s*\(\d+:\d+\)$/, "");
+  let message = "Syntax error";
+  if (FIXED_PARSE_MESSAGES.has(raw)) message = raw;
+  else {
+    const category = PARSE_MESSAGE_CATEGORIES.find(([pattern]) => pattern.test(raw));
+    if (category) message = category[1];
+  }
+  return { line, column, message };
+}
+
 /**
  * Parse one script the way the browser would read it.
  *
  * @param {string} source
  * @param {{ module?: boolean }} [options]
  * @returns {null | { line: number, column: number, message: string }}
- *   null when the source parses; otherwise the 1-based position and acorn's
- *   message without its trailing "(line:col)".
+ *   null when the source parses; otherwise the 1-based position and a
+ *   source-free diagnostic category (see parseFailureDiagnostic).
  */
 export function parseScriptSyntax(source, { module = false } = {}) {
   try {
@@ -50,32 +107,33 @@ export function parseScriptSyntax(source, { module = false } = {}) {
     });
     return null;
   } catch (error) {
-    const line = Number.isInteger(error?.loc?.line) ? error.loc.line : 1;
-    const column = Number.isInteger(error?.loc?.column) ? error.loc.column + 1 : 1;
-    const message = String(error?.message || "Unparsable script").replace(/\s*\(\d+:\d+\)$/, "");
-    return { line, column, message };
+    return parseFailureDiagnostic(error);
   }
 }
 
 /**
  * `<script src>` references on a page, in document order, with whether each
- * is a module. Data-block types are dropped. Template content and noscript
- * are inert and not walked.
+ * is a module, and the document's first `<base href>` (null when none).
+ * Data-block types are dropped. `nomodule` scripts are dropped: a
+ * module-capable browser never fetches or runs them, so they cannot fail on
+ * load there. Template content and noscript are inert and not walked.
  *
  * @param {string} html
- * @returns {Array<{ src: string, module: boolean }>}
+ * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean }> }}
  */
-export function pageScriptReferences(html) {
+export function pageScriptDocument(html) {
   const refs = [];
+  let base = null;
   let document;
   try {
     document = parseHtml(String(html ?? ""));
   } catch {
-    return refs;
+    return { base, refs };
   }
   const walk = (node) => {
-    if (node.tagName === "script") {
-      const attrs = Object.fromEntries((node.attrs || []).map((attr) => [attr.name, attr.value]));
+    const attrs = node.tagName ? Object.fromEntries((node.attrs || []).map((attr) => [attr.name, attr.value])) : {};
+    if (node.tagName === "base" && base === null && typeof attrs.href === "string") base = attrs.href.trim();
+    if (node.tagName === "script" && !("nomodule" in attrs)) {
       const type = typeof attrs.type === "string" ? attrs.type.trim() : "";
       const module = type.toLowerCase() === "module";
       if (typeof attrs.src === "string" && attrs.src.trim() && (!type || module || CLASSIC_SCRIPT_TYPE.test(type))) {
@@ -86,7 +144,58 @@ export function pageScriptReferences(html) {
     for (const child of node.childNodes || []) walk(child);
   };
   walk(document);
-  return refs;
+  return { base, refs };
+}
+
+/** The `<script src>` references of pageScriptDocument, without the base. */
+export function pageScriptReferences(html) {
+  return pageScriptDocument(html).refs;
+}
+
+// A synthetic origin standing in for wherever the built site is served. Page
+// URLs are their path under the site root; a script URL on any other origin
+// is not campaign-owned.
+const BUILT_ORIGIN = "http://built-site.invalid";
+
+function pageUrlFor(siteRoot, builtPath) {
+  const rel = relative(siteRoot, builtPath);
+  const segments = rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel.split(sep) : [basename(builtPath)];
+  return `${BUILT_ORIGIN}/${segments.map(encodeURIComponent).join("/")}`;
+}
+
+// The browser's view of one reference: the URL it resolves to against the
+// document's effective base. null when that URL is not on the built origin.
+function resolveScriptUrl(src, base, pageUrl) {
+  let baseUrl;
+  try {
+    baseUrl = base ? new URL(base, pageUrl) : new URL(pageUrl);
+  } catch {
+    baseUrl = new URL(pageUrl);
+  }
+  let url;
+  try {
+    url = new URL(src, baseUrl);
+  } catch {
+    return { remote: false, pathname: null };
+  }
+  if (url.origin !== BUILT_ORIGIN) return { remote: true, pathname: null };
+  return { remote: false, pathname: url.pathname };
+}
+
+// Decode a URL path the way a static server does before it maps it onto the
+// disk, then keep it inside `root`. null for a malformed escape, a NUL, or a
+// path that escapes the root.
+function fileUnder(root, pathname) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+  if (decoded.includes("\0")) return null;
+  const rootAbs = resolve(root);
+  const path = resolve(rootAbs, `.${posix.normalize(`/${decoded.replace(/\\/g, "/")}`)}`);
+  return path === rootAbs || path.startsWith(`${rootAbs}${sep}`) ? path : null;
 }
 
 function isRemote(src) {
@@ -100,10 +209,13 @@ function relFrom(root, path) {
 
 /**
  * Resolve every built page's local script references against the filesystem.
- * Absolute srcs resolve against the site root first (page-kit emits
- * `/<slug>/js/...`), then the campaign directory (a root-served campaign emits
- * `/js/...`); relative srcs resolve against the page. The same rule the
- * campaign identity gate follows.
+ * Each src resolves as the browser resolves it: against the document's
+ * effective base (its first `<base href>`, else the page URL), with the page
+ * URL being its path under the site root. The resulting path is
+ * percent-decoded and mapped under the site root first (page-kit emits
+ * `/<slug>/js/...`), then the campaign directory (a root-served campaign
+ * emits `/js/...`), never outside either. A base or src on another origin is
+ * remote and not read.
  *
  * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
  * @param {string} targetRepo
@@ -119,17 +231,16 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
     } catch {
       continue;
     }
-    for (const ref of pageScriptReferences(html)) {
+    const { base, refs } = pageScriptDocument(html);
+    const pageUrl = pageUrlFor(scope.site_root, page.built_path);
+    for (const ref of refs) {
       if (isRemote(ref.src)) continue;
-      const clean = ref.src.replace(/[?#].*$/, "");
-      if (!clean) continue;
-      let path;
-      if (clean.startsWith("/")) {
-        const rel = clean.replace(/^\/+/, "");
-        const candidates = [join(scope.site_root, rel), join(scope.campaign_dir, rel)];
+      const { remote, pathname } = resolveScriptUrl(ref.src, base, pageUrl);
+      if (remote) continue;
+      let path = null;
+      if (pathname) {
+        const candidates = [fileUnder(scope.site_root, pathname), fileUnder(scope.campaign_dir, pathname)].filter(Boolean);
         path = candidates.find((candidate) => existsSync(candidate)) || null;
-      } else {
-        path = resolve(dirname(page.built_path), clean);
       }
       let isFile = false;
       try {

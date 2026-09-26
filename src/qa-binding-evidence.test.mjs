@@ -208,3 +208,49 @@ test('a parse failure in a script from another origin keeps its host, never the 
   assert.equal(parseFailures.length, 1);
   assert.equal(parseFailures[0].script, 'cdn.fixture.test/lib/config.js');
 });
+
+// Review follow-ups on #480.
+const canary = 'synthetic_canary_Zq81xT';
+test('a <base href> resolves page scripts to the URL the browser loads', async () => {
+  const requested = [];
+  const parseFailures = [];
+  await observe(`<base href="/shop/assets/">${inline(key)}<script src="checkout.js"></script>`, {
+    parseFailures,
+    scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript + '});\n' }; },
+  });
+  assert.deepEqual(requested, ['https://fixture.example.test/shop/assets/checkout.js']);
+  assert.deepEqual(parseFailures.map(f => f.script), ['/shop/assets/checkout.js']);
+  // A base on another origin: the real loader refuses the cross-origin script.
+  const fetched = [];
+  const loader = createBindingScriptLoader({ fetchImpl: async (url) => { fetched.push(url); return new Response('window.nextConfig = {apiKey: "x"};'); } });
+  const remote = await observe(`<base href="https://cdn.fixture.test/lib/">${inline(key)}<script src="config.js"></script>`, { scriptLoader: loader });
+  assert.deepEqual(fetched, []);
+  assert.equal(remote.reason, 'script_unavailable_or_limit');
+});
+
+test('a nomodule script is never parsed or reported: module-capable browsers skip it', async () => {
+  const parseFailures = [];
+  let loads = 0;
+  const evidence = await observe(`${inline(key)}<script nomodule src="/js/legacy.js"></script><script nomodule>}</script>`, {
+    parseFailures,
+    scriptLoader: async () => { loads += 1; return { ok: true, html: checkoutScript + '});\n' }; },
+  });
+  assert.deepEqual(parseFailures, []);
+  assert.equal(loads, 0);
+  assert.equal(evidence.reason, 'dynamic_unresolved');
+});
+
+test('parser messages never carry source text into QA evidence', async () => {
+  for (const html of [
+    `<script>var pattern = /${canary}(/;</script>`,
+    `<script>let ${canary} = 1; let ${canary} = 2;</script>`,
+    `<script src="/js/config.js"></script>`,
+  ]) {
+    const parseFailures = [];
+    await observe(html, { parseFailures, scriptLoader: async () => ({ ok: true, html: `var a = 1;\n@${canary}\n` }) });
+    assert.equal(parseFailures.length, 1, html);
+    const assertion = scriptParseAssertion(page, parseFailures);
+    assert.equal(JSON.stringify(assertion).includes(canary), false, JSON.stringify(assertion));
+    assert.match(parseFailures[0].message, /^[A-Z][a-z]/);
+  }
+});

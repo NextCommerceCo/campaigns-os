@@ -144,3 +144,128 @@ test("the evaluator names every unparsable file and counts the rest", () => {
   assert.match(gate.reason, /^2 of 3 campaign-owned script\(s\) do not parse: b\.js:1:9, c\.js:1:1\.$/);
   assert.equal(gate.required_actions.length, 2);
 });
+
+// Review follow-ups on #480: the gate reads the file the browser loads, and
+// nothing the parser echoes from the source reaches the doctor output.
+const BAD = "document.addEventListener(\"DOMContentLoaded\", () => {\n  init();\n});\n});\n";
+const GOOD = "document.addEventListener(\"DOMContentLoaded\", () => {\n  init();\n});\n";
+function builtSite(pageHtml, files) {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-script-syntax-"));
+  const site = join(dir, "_site", SLUG);
+  mkdirSync(join(site, "checkout"), { recursive: true });
+  writeFileSync(join(site, "checkout", "index.html"), `<!DOCTYPE html><html><head>${pageHtml}</head><body></body></html>`);
+  for (const [rel, content] of Object.entries(files)) {
+    const path = join(dir, rel);
+    mkdirSync(resolve(path, ".."), { recursive: true });
+    writeFileSync(path, content);
+  }
+  return { dir, run: () => doctorBuiltOutput({ built: dir, slug: SLUG }) };
+}
+const syntaxErrors = (result) => result.errors.filter((issue) => issue.code === SCRIPT_SYNTAX_PARSE_FAILURE);
+
+test("a <base href> moves the script the gate reads to the one the browser loads", () => {
+  const { dir, run } = builtSite(`<base href="/${SLUG}/assets/"><script src="checkout.js"></script>`, {
+    [`_site/${SLUG}/assets/checkout.js`]: BAD,
+    [`_site/${SLUG}/checkout/checkout.js`]: GOOD,
+  });
+  try {
+    const errors = syntaxErrors(run());
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].detail.finding.file, `_site/${SLUG}/assets/checkout.js`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const relative = builtSite('<base href="../assets/"><script src="checkout.js"></script>', {
+    [`_site/${SLUG}/assets/checkout.js`]: BAD,
+    [`_site/${SLUG}/checkout/checkout.js`]: GOOD,
+  });
+  try {
+    assert.equal(syntaxErrors(relative.run())[0]?.detail.finding.file, `_site/${SLUG}/assets/checkout.js`);
+  } finally {
+    rmSync(relative.dir, { recursive: true, force: true });
+  }
+  // A base on another origin makes a relative src remote: not campaign-owned, not read.
+  const remote = builtSite('<base href="https://cdn.example.com/lib/"><script src="checkout.js"></script>', {
+    [`_site/${SLUG}/checkout/checkout.js`]: BAD,
+  });
+  try {
+    const gate = gateOf(remote.run());
+    assert.equal(gate.status, "not_applicable", gate.reason);
+    assert.deepEqual(gate.scripts_unresolved, []);
+  } finally {
+    rmSync(remote.dir, { recursive: true, force: true });
+  }
+});
+
+test("a percent-encoded script path is decoded before it is mapped onto the built output", () => {
+  const { dir, run } = builtSite('<script src="../js/%63heckout.js"></script><script src="/example-campaign/js/with%20space.js"></script>', {
+    [`_site/${SLUG}/js/checkout.js`]: BAD,
+    [`_site/${SLUG}/js/with space.js`]: GOOD,
+  });
+  try {
+    const result = run();
+    const gate = gateOf(result);
+    assert.deepEqual(gate.scripts_unresolved, []);
+    assert.equal(gate.scripts_scanned, 2);
+    assert.deepEqual(syntaxErrors(result).map((issue) => issue.detail.finding.file), [`_site/${SLUG}/js/checkout.js`]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an encoded path never reads a file outside the built output", () => {
+  const { dir, run } = builtSite(
+    '<script src="/%2e%2e/outside.js"></script><script src="..%2f..%2f..%2foutside.js"></script><script src="/example-campaign/%2e%2e%2f%2e%2e%2foutside.js"></script><script src="/js/%E0%A4%A.js"></script>',
+    { "outside.js": BAD },
+  );
+  try {
+    const result = run();
+    const gate = gateOf(result);
+    assert.equal(gate.status, "not_applicable", gate.reason);
+    assert.equal(gate.scripts_unresolved.length, 4);
+    assert.deepEqual(syntaxErrors(result), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a nomodule script never runs in a module-capable browser and cannot block doctor", () => {
+  const { dir, run } = builtSite(`<script nomodule src="/${SLUG}/js/legacy.js"></script><script src="/${SLUG}/js/app.js"></script>`, {
+    [`_site/${SLUG}/js/legacy.js`]: BAD,
+    [`_site/${SLUG}/js/app.js`]: GOOD,
+  });
+  try {
+    const result = run();
+    assert.deepEqual(syntaxErrors(result), []);
+    const gate = gateOf(result);
+    assert.equal(gate.status, "pass", gate.reason);
+    assert.equal(gate.scripts_scanned, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(pageScriptReferences('<script nomodule src="a.js"></script><script src="b.js"></script>'), [{ src: "b.js", module: false }]);
+});
+
+test("source text at the error site never reaches the doctor output", () => {
+  const canary = "synthetic_canary_Zq81xT";
+  const sources = {
+    [`_site/${SLUG}/js/regex.js`]: `var pattern = /${canary}(/;\n`,
+    [`_site/${SLUG}/js/dup.js`]: `let ${canary} = 1;\nlet ${canary} = 2;\n`,
+    [`_site/${SLUG}/js/char.js`]: `var a = 1;\n@${canary}\n`,
+    [`_site/${SLUG}/js/reserved.js`]: `"use strict";\nvar ${canary} = 1; var yield = "${canary}";\n`,
+  };
+  const { dir, run } = builtSite(Object.keys(sources).map((rel) => `<script src="/${rel.replace(/^_site\//, "")}"></script>`).join(""), sources);
+  try {
+    const result = run();
+    assert.equal(syntaxErrors(result).length, 4);
+    assert.equal(JSON.stringify(result).includes(canary), false, "a parser message echoed source text");
+    for (const issue of syntaxErrors(result)) assert.match(issue.message, /^_site\/example-campaign\/js\/\w+\.js:\d+:\d+: [A-Z][a-z]/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  for (const source of [`/${canary}(/`, `let ${canary}; let ${canary};`, `"use strict"; var ${canary}; var let = "${canary}";`]) {
+    const failure = parseScriptSyntax(source);
+    assert.ok(failure, source);
+    assert.equal(failure.message.includes(canary), false, failure.message);
+  }
+});

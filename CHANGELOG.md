@@ -13,11 +13,14 @@ Notable supported-surface changes are recorded here.
   `built_output.script_syntax.parse_failure` when one does not parse. The error
   names the file, line and column, for example a hand-edited checkout script
   left with one closing `});` too many. Remote scripts such as CDN URLs are not
-  read, and `type="module"` scripts are parsed as modules. The gate is not
-  waivable and passes on every certified starter family.
+  read, `type="module"` scripts are parsed as modules, and `nomodule` scripts
+  are skipped. Script paths resolve against the page's `<base href>` and are
+  percent-decoded, as the browser loads them. The gate is not waivable and
+  passes on every certified starter family.
 - QA no longer reads a page script that does not parse as "dynamic". The
   credential binding treats its declarations as unavailable, and QA adds a
-  `script-parse:<page_id>` blocker naming the script, line and column.
+  `script-parse:<page_id>` blocker naming the script, line and column. Both
+  report a fixed diagnostic category, never text from the script.
 
 ## [1.43.1+agent.6] - 2026-09-26
 

@@ -1703,9 +1703,10 @@ a `SyntaxError` on it and nothing in it runs, so the binding reads its
 declarations as unavailable (`script_unavailable_or_limit`) and QA adds a
 separate `script-parse:<page_id>` blocker in the same `api-metadata` family.
 Its `actual` names each script by path (inline scripts as `inline script`)
-with the line and column, and its evidence lists the parser message per
-script. Classic scripts are parsed as scripts and `type="module"` scripts as
-modules. Doctor runs the same parse over the built output before deploy; see
+with the line and column, and its evidence lists a fixed diagnostic category
+per script, never text from the script. Classic scripts are parsed as scripts
+and `type="module"` scripts as modules; `nomodule` scripts are not fetched or
+parsed, and script srcs resolve against the page's first `<base href>`. Doctor runs the same parse over the built output before deploy; see
 `built_output.script_syntax` in [the Build Packet doc](build-packet.md).
 
 External executable scripts other than the recognized jsDelivr Campaign Cart
