@@ -145,9 +145,13 @@ For intake, run-record, built-site QA, and `next`, argv-only checks run before
 their handler reads the target; invalid values are refused without a journal
 entry. For `start`, `prepare-build`, and `build`, bare, empty, and whitespace-only
 values of `--spec`, `--map-id`, `--source`, `--target`, `--source-kind`,
-`--proxy-base`, `--wrapper-policy`, `--design-manifest`, and
-`--order-path-depth` are refused before local spec reads, Map fetches, or cache
-writes on the `--spec`, `--map-id`, and `--map-id --cached-spec` paths.
+`--proxy-base`, `--wrapper-policy`, `--design-manifest`, `--order-path-depth`,
+`--template-family`, `--allow-uncertified-template`, `--theme-policy`, and
+`--brief` are refused before local spec reads, Map fetches, or cache writes on
+the `--spec`, `--map-id`, and `--map-id --cached-spec` paths. So is a
+`--theme-policy` outside `inspect_only`, `auto`, and `off`. Whether a named
+template family is certified, and whether a named brief can be read, depend on
+file content: those checks still run in the handler and are journaled.
 The operator-facing `run-record` and `run end` commands refuse bare, empty, or
 whitespace-only values for every value-taking inherited run-record flag before
 packet work. The five agent

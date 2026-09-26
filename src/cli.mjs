@@ -137,6 +137,7 @@ import {
 } from "./source-html-manifest.mjs";
 import { crawlSourceAssetPaths } from "./source-asset-crawl.mjs";
 import {
+  THEME_POLICIES,
   inspectBrandTheme,
   validateAssemblyReportThemeBlock,
   validateThemeContextBlock,
@@ -1206,6 +1207,16 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     const wrapperPolicyFlag = refusing(() => parseWrapperPolicyFlag(args));
     refusing(() => requireDesignManifestValue(args));
     const orderPathDepthFlag = refusing(() => parseOrderPathDepthFlag(args, { command: "prepare-build" }));
+    // #477: the argv-only halves of the four flags prepareBuild reads after the
+    // spec is resolved. A bare, empty or whitespace value (and an
+    // out-of-vocabulary --theme-policy) is refused here, before any spec read,
+    // map fetch or cache write, instead of being dropped or failing
+    // mid-intake. What needs file content (whether the family is certified,
+    // whether the brief parses) stays in prepareBuild and stays journaled.
+    refusing(() => requireIntakeFlagValue(args, "template-family", "a starter template family name"));
+    refusing(() => requireIntakeFlagValue(args, "allow-uncertified-template", "the reason for building on an uncertified family"));
+    refusing(() => parseIntakeThemePolicyFlag(args));
+    refusing(() => requireIntakeFlagValue(args, "brief", "the path of a Campaign Build Brief (YAML or JSON)"));
     // Tier 2: mark sub-phases so the lifecycle journal entry carries per-phase
     // timings (spec resolve vs the prepare+doctor+install build), which Tier 1
     // aggregates into `start:resolve-spec` / `start:prepare-build` stages.
@@ -2341,6 +2352,26 @@ function parseDesignManifestFlag(args) {
   return path;
 }
 
+// An optional intake flag that, when given, must carry a value. Returns the
+// trimmed value, or null when the flag is absent.
+function requireIntakeFlagValue(args, flag, what) {
+  if (!Object.hasOwn(args, flag)) return null;
+  const raw = args[flag];
+  if (!isNonEmptyString(raw)) throw new Error(`--${flag} needs a value: ${what}.`);
+  return raw.trim();
+}
+
+// The same vocabulary inspectBrandTheme enforces, checked on argv alone.
+function parseIntakeThemePolicyFlag(args) {
+  const accepted = `Accepted values: ${[...THEME_POLICIES].join(", ")}.`;
+  if (!Object.hasOwn(args, "theme-policy")) return null;
+  const raw = args["theme-policy"];
+  if (!isNonEmptyString(raw)) throw new Error(`--theme-policy needs a value. ${accepted}`);
+  const value = raw.trim();
+  if (!THEME_POLICIES.has(value)) throw new Error(`Unsupported --theme-policy ${JSON.stringify(value)}. ${accepted}`);
+  return value;
+}
+
 function requireDesignManifestValue(args) {
   const raw = args["design-manifest"];
   if (raw != null && (raw === true || !isNonEmptyString(raw))) {
@@ -2405,8 +2436,10 @@ function prepareBuild(args, options = {}) {
   }
   if (!publicRouteSlug) throw new Error("CampaignSpec has no public route slug. Set spec_identity.public_route_slug or campaign.slug.");
 
-  // Dispatch validated the argv-only flags before spec resolution. Only the
-  // manifest's filesystem check remains here, before preparation writes.
+  // Dispatch validated the argv-only flags before spec resolution, including
+  // the value forms of --template-family, --allow-uncertified-template,
+  // --theme-policy and --brief (#477). Only the manifest's filesystem check
+  // remains here, before preparation writes.
   const sourceKind = options.sourceKind;
   const wrapperPolicyFlag = options.wrapperPolicyFlag;
   const designManifestPath = parseDesignManifestFlag(args);

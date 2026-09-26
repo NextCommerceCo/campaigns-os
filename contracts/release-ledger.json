@@ -7093,6 +7093,33 @@
         }
       ],
       "entry_sha256": "9c7500519109ff5b96d1131f3b3589c6cf291ca47ce7a6f720fb46d8ff96b795"
+    },
+    {
+      "id": "RL-0155",
+      "sequence": 153,
+      "date": "2026-09-26",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.11",
+      "changelog_sha256": "41d14d94c974d6b4bb2924429c7ca26685d38be1d5a9e6fead8e347960c08cb3",
+      "agent_impact": "start, prepare-build and build refuse a bare, empty or whitespace --template-family, --allow-uncertified-template, --theme-policy or --brief, and an out-of-vocabulary --theme-policy, before any spec read, Map fetch or cache write, with no journal entry. A blank value is no longer silently ignored. Certification and brief-file failures are still journaled handler failures.",
+      "compatibility": "compatible",
+      "migration": "Pass a value to each of these flags or omit the flag; a blank value that used to be ignored is now refused.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "The intake dispatch refuses blank --template-family, --allow-uncertified-template, --theme-policy and --brief values and an unknown --theme-policy before resolveSpecPath, on the --spec, --map-id and --map-id --cached-spec paths, for start, prepare-build and build."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "List the four late intake flags and the --theme-policy vocabulary among the argv-only refusals, and state that certification and brief-file checks stay journaled."
+        }
+      ],
+      "entry_sha256": "e67fe65e9984922bfa8befec5dc82e8bfa3efcd2cdf5aa06b50482d1f21c868d"
     }
   ]
 }
