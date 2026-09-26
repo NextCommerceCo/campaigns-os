@@ -2,6 +2,39 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.12] - 2026-09-26
+
+### Fixed
+
+- QA no longer blocks every local proof run on analytics. Under
+  `deploy.target: local-serve` the build renders the development environment,
+  which leaves out the vendor loaders on purpose, so a declared pixel could
+  never fire on localhost. When the run is served from localhost and the build
+  recorded `stages.assembly.evidence.build_environment: development`, the tag,
+  out-of-band vendor and receipt Purchase (`purchase-fires`) checks that did
+  not fire on a page measured on localhost are now `manual_review` with the
+  reason `local_serve_development_render` instead of blockers. Each one says
+  to re-run QA against the PR preview with `--base-url <preview-url>`, which
+  is a production render and still gates them, and cites the recorded
+  `page-kit parity` result when there is one. A production build, or a build
+  with no recorded environment, keeps its blockers on localhost. The exception
+  covers only pages measured on localhost: the tracking capture now records
+  the page URL it settled on after redirects (`final_url`), and a capture that
+  landed on another host, such as a built entry page whose URL is a production
+  preview or a localhost root that redirects to production, keeps its
+  blockers. So does a receipt Purchase check whose receipt page is not on
+  localhost, judged both by the order's final URL and by the page URL read
+  after the receipt's analytics settled (`receipt_document_url`), so a
+  localhost receipt that redirects to a hosted page while analytics settle
+  keeps its blocker, as does any check whose measured page was not recorded.
+  So does a capture that failed: a `purchase-fires` failure that lists
+  unmeasured receipts in `capture_error_plan_ids` still blocks, and a tracking
+  capture whose page could not be read (for example, a page that reloaded
+  while the capture read it) now fails as the analytics runner blocker instead
+  of reading as a page where nothing fired. The data-layer Purchase
+  check (`data-layer-purchase`) still blocks too: the SDK pushes `dl_purchase`
+  in the development render as well.
+
 ## [1.43.1+agent.11] - 2026-09-26
 
 ### Fixed

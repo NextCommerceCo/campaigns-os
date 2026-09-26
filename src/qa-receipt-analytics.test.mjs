@@ -326,6 +326,7 @@ test("receipt verdict evidence redacts query/order data and exposes only the fix
     "measured",
     "plan_id",
     "purchase_fired",
+    "receipt_document_url",
     "receipt_signals",
     "receipt_url",
     "scope",
@@ -377,6 +378,7 @@ test("browser private envelope: a recognized receipt carries the journey reading
   assert.deepEqual(assertion.evidence.receipts[0], {
     plan_id: "accept",
     receipt_url: "https://shop.example/receipt/",
+    receipt_document_url: null,
     measured: true,
     scope: "journey",
     purchase_fired: true,
