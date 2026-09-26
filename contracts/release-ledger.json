@@ -6954,8 +6954,29 @@
       "entry_sha256": "1e2836aecf0e9ee37473bf77d20427d7e57a632ba1adb67774e4a4498d3a7927"
     },
     {
-      "id": "RL-0151",
+      "id": "RL-0150",
       "sequence": 150,
+      "date": "2026-09-26",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.3",
+      "changelog_sha256": "d99684d3a0040d82cfa0f4452f2a6b4522709b2d66eed334abfc13625924a459",
+      "agent_impact": "Malformed legacy direct-API QA carts and modes are refused before input resolution and append no lifecycle entry. Browser precedence and legacy credential checks are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Document legacy API cart and mode argv refusals and the unchanged credential failure boundary."
+        }
+      ],
+      "entry_sha256": "011853957b11b9bf964487dbd8d17dbe2164deb2c0f82133de1720a5aaab675a"
+    },
+    {
+      "id": "RL-0151",
+      "sequence": 151,
       "date": "2026-09-26",
       "kind": "release",
       "surface_version": null,
@@ -7050,7 +7071,7 @@
           "summary": "Update current bundle revision examples to 1.43.1+skills.2."
         }
       ],
-      "entry_sha256": "96326a2c370c965c78e93881f66e039482b460cf2203b3b10039b770e4a830b6"
+      "entry_sha256": "27d696ec2cfae34a6ecb95432d8e15971c7234668d7430b87b5dade3e092836a"
     }
   ]
 }

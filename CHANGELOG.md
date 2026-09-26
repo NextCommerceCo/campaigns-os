@@ -13,6 +13,13 @@ Notable supported-surface changes are recorded here.
 - Build handoffs keep skipped routes unbuilt by default. Materializing a stock
   stand-in requires explicit per-page operator opt-in, so upstream pages on
   another host are not replaced with placeholder copy.
+## [1.43.1+agent.3] - 2026-09-26
+
+### Fixed
+
+- Legacy direct-API QA rejects missing or unusable carts and unknown test-order
+  modes before resolving campaign inputs, without appending a lifecycle entry.
+  Browser QA precedence and legacy API credential checks are unchanged.
 
 ## [1.43.1+agent.2] - 2026-09-26
 

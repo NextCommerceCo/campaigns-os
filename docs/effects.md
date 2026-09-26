@@ -191,6 +191,12 @@ flag without a value is refused with "Missing value for --<flag>". If a named
 packet yields neither a Map ID nor a valid local-spec identity after checkpoint
 preflight reads the packet, spec, and report, the requirement is a journaled
 handler failure. A conflicting local/Map identity is also a handler failure.
+When `qa run` selects `--legacy-api-test-order`, a missing, bare, empty, or
+unusable `--cart` and an unknown legacy mode are argv-only refusals before QA
+input resolution. They append no lifecycle entry. Accepted modes remain
+`accept`, `decline`, and `both` (case-insensitive); browser `--test-order` still
+takes precedence and does not require the legacy cart. API credentials are
+still checked only inside the legacy handler and failures there are journaled.
 The nested run-record refusal scope in session closeout guards against future
 changes. No internal closeout can currently create a refusal before its
 invoking command journals.

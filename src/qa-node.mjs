@@ -2136,6 +2136,13 @@ async function runQa(args, options = {}) {
   // Fail-fast before anything resolves or launches. The authoritative check
   // lives on the creation budget itself, which every browser path builds.
   refuseBadOrderCreationLimit(args);
+  // Match dispatch: an active browser mode takes precedence over legacy API
+  // diagnostics. Only the selected legacy path requires a cart and API mode.
+  const browserMode = String(args["test-order"] || "off").toLowerCase();
+  const legacyMode = String(args["legacy-api-test-order"] || "off").toLowerCase();
+  if (browserMode === "off" && legacyMode !== "off") {
+    refusing(() => legacyTestOrderInputs({ ...args, "test-order": legacyMode }));
+  }
   const resolved = await resolveQaInputs(args);
   return runResolvedQa(args, resolved, options);
 }
@@ -2743,15 +2750,12 @@ async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }
   const apiKey = stringArg(args["api-key"]) || process.env.QA_CAMPAIGNS_API_KEY;
   const apiBase = stringArg(args["campaigns-api-base"]) || process.env.CAMPAIGNS_API_BASE;
   if (!apiKey || !apiBase) throw new Error("Legacy direct API test orders require --api-key/QA_CAMPAIGNS_API_KEY and --campaigns-api-base/CAMPAIGNS_API_BASE.");
-  const cart = parseCart(args.cart);
-  if (!cart.length) throw new Error("--test-order requires --cart package_id:quantity pairs.");
+  const { cart, paths } = legacyTestOrderInputs(args);
   const checkout = findPage(resolved.topologies, "checkout");
   if (!checkout?.url) throw new Error("--test-order requires a checkout page URL.");
   const upsell = findPage(resolved.topologies, "upsell");
-  const paths = mode === "both" ? ["accept", "decline"] : [mode];
   const orders = [];
   for (const path of paths) {
-    if (!["accept", "decline"].includes(path)) throw new Error(`Unknown --test-order mode: ${mode}`);
     const create = await createTestOrder({ apiBase, apiKey, cart, runId, successUrl: checkout.expected_next_url || upsell?.url || checkout.url, spec: resolved.spec, args });
     const verification = { expected_line_count: cart.length, actual_line_count: 0, diff: [], verified: false };
     if (!create.ok) {
@@ -3617,6 +3621,14 @@ function decodeHtml(value) {
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
+}
+
+function legacyTestOrderInputs(args) {
+  const cart = typeof args.cart === "string" ? parseCart(args.cart) : [];
+  if (!cart.length) throw new Error("--test-order requires --cart package_id:quantity pairs.");
+  const mode = String(args["test-order"] || "off").toLowerCase();
+  if (!["accept", "decline", "both"].includes(mode)) throw new Error(`Unknown --test-order mode: ${mode}`);
+  return { cart, paths: mode === "both" ? ["accept", "decline"] : [mode] };
 }
 
 function parseCart(value) {
