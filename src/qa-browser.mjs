@@ -3469,8 +3469,8 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   // The index is the control's position among what its own locator matches,
   // so it replays with nth(); no selector is rebuilt from an attribute value.
   const target = page.locator(control.kind === "add_to_cart" ? CART_ENTRY_CONTROL_SELECTOR : "a[href]").nth(control.index);
-  await scrollControlIntoView(target);
-  await clickControl(target, { timeout: 8000 });
+  const perpetual = await scrollControlIntoView(target);
+  await clickControl(target, { timeout: 8000, perpetual });
 
   // The SDK owns the navigation (data-next-url, or the link the SDK reads
   // forcePackageId from on arrival). Waiting for the URL is what proves the
@@ -3764,8 +3764,8 @@ async function selectRequestedCart(page, args) {
   for (const item of cart) {
     const target = page.locator(packageCardClickSelector({ package_id: item.packageId })).first();
     if (await target.count().catch(() => 0)) {
-      await scrollControlIntoView(target);
-      await clickControl(target, { timeout: 5000, forceFallback: false }).catch(() => {});
+      const perpetual = await scrollControlIntoView(target);
+      await clickControl(target, { timeout: 5000, forceFallback: false, perpetual }).catch(() => {});
     }
   }
 }
@@ -3790,8 +3790,8 @@ async function selectPackageCard(page, item) {
   const candidate = resolvePackageCardCandidate(await renderedPackageCardCandidates(page), item);
   const selector = packageCardClickSelector(candidate);
   const target = page.locator(selector).first();
-  await scrollControlIntoView(target);
-  await clickControl(target, { timeout: 5000 });
+  const perpetual = await scrollControlIntoView(target);
+  await clickControl(target, { timeout: 5000, perpetual });
   const state = await packageCardSelectionState(page, selector);
   if (state === "unselected") {
     throw new Error(`--select-package ${item.packageId}: card matched ${selector} but did not enter a selected state after click`);
@@ -4389,8 +4389,8 @@ async function submitCheckout(page) {
   await closeAddressAutocomplete(page);
   const submit = page.locator('button.submit-button[os-checkout-payment="combo"], button[os-checkout-payment="combo"], button[type="submit"]').first();
   await submit.waitFor({ state: "visible" });
-  await scrollControlIntoView(submit);
-  await clickControl(submit, { forceFallback: false });
+  const perpetual = await scrollControlIntoView(submit);
+  await clickControl(submit, { forceFallback: false, perpetual });
 }
 
 // When events are supplied (the post-submit wait), a platform-rejected order
@@ -4548,43 +4548,50 @@ const CONTROL_SCROLL_TIMEOUT_MS = 2000;
 const UPSELL_CLICK_TIMEOUT_MS = 10000;
 const UPSELL_MUTATION_TIMEOUT_MS = 20000;
 
-async function scrollControlIntoView(locator, { timeout = CONTROL_SCROLL_TIMEOUT_MS } = {}) {
-  try {
-    await locator.evaluate((element) => {
-      element.scrollIntoView({ block: "center", inline: "nearest" });
-    }, undefined, { timeout });
-  } catch {
-    // Best effort, as the scroll always was: the click still scrolls itself.
+// Runs in the page: optionally scrolls the control to the viewport centre
+// (no stability wait), and reports whether the control or an ancestor runs an
+// infinite animation over a property that moves or resizes its box.
+// Paint-only loops (opacity, color, shadow) leave the box stable, so those
+// still take the normal click. Self-contained so Playwright can serialize it.
+function probeControlInPage(element, { scroll }) {
+  if (scroll) element.scrollIntoView({ block: "center", inline: "nearest" });
+  // Properties that move or resize the element's box, or its position
+  // inside an animated ancestor. Paint-only properties are left out.
+  const geometry = /^(transform|translate|scale|rotate|perspective|top|left|right|bottom|inset|width|height|blockSize|inlineSize|min|max|margin|padding|gap|rowGap|columnGap|fontSize|lineHeight|letterSpacing|textIndent|border(Top|Right|Bottom|Left|Block|Inline)?(Start|End)?Width)/;
+  const movesBox = (animation) => {
+    const timing = animation.effect?.getComputedTiming?.();
+    if (animation.playState !== "running" || timing?.iterations !== Infinity) return false;
+    const keyframes = animation.effect?.getKeyframes?.() || [];
+    return keyframes.some((frame) => Object.keys(frame).some((property) => geometry.test(property)));
+  };
+  for (let node = element; node; node = node.parentElement) {
+    if (typeof node.getAnimations === "function" && node.getAnimations().some(movesBox)) return true;
   }
+  return false;
 }
 
-// True when the control or an ancestor runs an infinite animation over a
-// property that moves or resizes its box. Paint-only loops (opacity, color,
-// shadow) leave the box stable, so those still take the normal click.
-async function isPerpetuallyAnimated(locator, { timeout = CONTROL_SCROLL_TIMEOUT_MS } = {}) {
+async function probeControl(locator, { scroll, timeout = CONTROL_SCROLL_TIMEOUT_MS }) {
   try {
-    return await locator.evaluate((element) => {
-      // Properties that move or resize the element's box, or its position
-      // inside an animated ancestor. Paint-only properties are left out.
-      const geometry = /^(transform|translate|scale|rotate|perspective|top|left|right|bottom|inset|width|height|blockSize|inlineSize|min|max|margin|padding|gap|rowGap|columnGap|fontSize|lineHeight|letterSpacing|textIndent|border(Top|Right|Bottom|Left|Block|Inline)?(Start|End)?Width)/;
-      const movesBox = (animation) => {
-        const timing = animation.effect?.getComputedTiming?.();
-        if (animation.playState !== "running" || timing?.iterations !== Infinity) return false;
-        const keyframes = animation.effect?.getKeyframes?.() || [];
-        return keyframes.some((frame) => Object.keys(frame).some((property) => geometry.test(property)));
-      };
-      for (let node = element; node; node = node.parentElement) {
-        if (typeof node.getAnimations === "function" && node.getAnimations().some(movesBox)) return true;
-      }
-      return false;
-    }, undefined, { timeout }) === true;
+    return await locator.evaluate(probeControlInPage, { scroll }, { timeout }) === true;
   } catch {
+    // Best effort, as the scroll always was: the click still scrolls itself,
+    // and an unprobed control takes the normal click.
     return false;
   }
 }
 
-// `perpetual` lets a caller that already probed (to size a response watch)
-// skip the second probe. forceFallback: false keeps a caller's strict click
+// One page round trip per click: scrolls the control into view and returns
+// the `perpetual` flag clickControl takes, so no call site probes twice.
+async function scrollControlIntoView(locator, options = {}) {
+  return probeControl(locator, { ...options, scroll: true });
+}
+
+async function isPerpetuallyAnimated(locator, options = {}) {
+  return probeControl(locator, { ...options, scroll: false });
+}
+
+// `perpetual` is the flag scrollControlIntoView returned, so the click does
+// not probe again; without it the click probes for itself. forceFallback: false keeps a caller's strict click
 // for a control that can settle; a perpetually animated control is always
 // forced, whatever forceFallback says, because a strict click on it can only
 // time out. It must still become visible first, or the visibility error throws.
@@ -4612,8 +4619,7 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     return { path, clicked: false, error: `Missing upsell control ${selector}` };
   }
   const expectedItems = path === "accept" ? await selectedUpsellItems(page) : [];
-  await scrollControlIntoView(control);
-  const perpetual = await isPerpetuallyAnimated(control);
+  const perpetual = await scrollControlIntoView(control);
   // Armed at the click, not before the scroll, and budgeted to outlast a
   // normal attempt that times out into its forced fallback: the watch must
   // still be listening when the click that actually fires posts (#481).
@@ -5685,8 +5691,8 @@ async function clickVisibleControlByText(page, pattern, { within = null } = {}) 
     const control = controls.nth(index);
     const text = trim((await control.innerText().catch(() => "")) || (await control.getAttribute("value").catch(() => "")));
     if (!pattern.test(text)) continue;
-    await scrollControlIntoView(control);
-    await clickControl(control, { timeout: 8000, forceFallback: false });
+    const perpetual = await scrollControlIntoView(control);
+    await clickControl(control, { timeout: 8000, forceFallback: false, perpetual });
     return true;
   }
   throw new Error(`No visible control matched ${pattern}`);
