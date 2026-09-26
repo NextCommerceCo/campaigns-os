@@ -5628,10 +5628,20 @@ function captureCheckoutEvents(page) {
 // caller here is on a live-navigation path: the upsell mutation read in
 // clickUpsellPath and the checkout event listener. The body is evidence, not
 // the proof of the response, so an unread body is reported as null after a
-// short bound instead of hanging the order run.
+// short bound instead of hanging the order run. Playwright has no way to
+// cancel a pending body read; the abandoned read is a protocol callback, not
+// a socket this process owns, and it is released when the run closes the
+// browser context.
 const RESPONSE_BODY_READ_TIMEOUT_MS = 3000;
 
-async function readJsonResponseBody(response, { timeoutMs = RESPONSE_BODY_READ_TIMEOUT_MS } = {}) {
+// Callers always get the fixed bound; only the test hook picks a shorter one.
+async function readJsonResponseBody(response) {
+  return readJsonResponseBodyWithin(response, RESPONSE_BODY_READ_TIMEOUT_MS);
+}
+
+async function readJsonResponseBodyWithin(response, timeoutMs) {
+  // A missing, zero or unbounded value would reintroduce the hang.
+  if (!(Number.isFinite(timeoutMs) && timeoutMs > 0)) timeoutMs = RESPONSE_BODY_READ_TIMEOUT_MS;
   let timer = null;
   const bounded = new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); });
   const read = Promise.resolve()
@@ -6591,6 +6601,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   clickUpsellPath,
   isPerpetuallyAnimated,
   readJsonResponseBody,
+  readJsonResponseBodyWithin,
   testEmail,
   testOrderPaths,
   testOrderPlans,
