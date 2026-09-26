@@ -2348,13 +2348,20 @@ function prepareDesignSourcePackage({
       throw new Error(`Could not claim the stale Design Source Package at ${path} for regeneration${error?.code ? ` (${error.code})` : ""}: ${error.message}`, { cause: error });
     }
     // Put the claimed bytes back without replacing anything that has appeared
-    // at `path` since. True when `path` holds a package afterwards.
+    // at `path` since. True only when `path` is now those very bytes (the
+    // same file), not merely occupied by another run's package.
     const putBack = () => {
       try {
         linkSync(retiredPath, path);
-        return true;
       } catch (error) {
-        return error?.code === "EEXIST";
+        if (error?.code !== "EEXIST") return false;
+      }
+      try {
+        const atPath = statSync(path);
+        const retired = statSync(retiredPath);
+        return atPath.ino === retired.ino && atPath.dev === retired.dev;
+      } catch {
+        return false;
       }
     };
     try {
@@ -2368,11 +2375,13 @@ function prepareDesignSourcePackage({
         publishStaged(stagedPath);
       }
     } catch (error) {
-      if (existsSync(path) || putBack()) {
+      // The claimed bytes are only removed once they are back at `path`. If
+      // another package now occupies it, they are kept and named instead.
+      if (putBack()) {
         rmSync(retiredPath, { force: true });
         throw error;
       }
-      throw new Error(`${error.message} The Design Source Package moved aside for regeneration could not be restored and is kept at ${retiredPath}.`, { cause: error });
+      throw new Error(`${error.message} The Design Source Package moved aside for regeneration could not be put back and is kept at ${retiredPath}.`, { cause: error });
     }
     rmSync(retiredPath, { force: true });
   };

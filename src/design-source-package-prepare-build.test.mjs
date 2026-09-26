@@ -978,6 +978,52 @@ syncBuiltinESMExports();
   );
 }));
 
+test("a --force regeneration that loses to a concurrent stale package keeps its claimed bytes and names them", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const staleBytes = readFileSync(dspPath);
+  editManifest(fixture, (manifest) => {
+    manifest.generated_at = "2026-08-22T11:00:00.000Z";
+  });
+  // Another publisher lands a package this run cannot accept (stale against
+  // its inputs) in the instant between the claim and this run's link.
+  const winnerBytes = Buffer.concat([staleBytes, Buffer.from("\n")]);
+  const winnerPath = join(fixture.dir, "concurrent-stale-winner.json");
+  writeFileSync(winnerPath, winnerBytes);
+  const preloadPath = join(fixture.dir, "dsp-concurrent-stale-winner.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalLinkSync = fs.linkSync;
+fs.linkSync = function concurrentStaleWinner(source, destination) {
+  if (path.resolve(String(destination)) === path.resolve(process.env.DSP_PATH) && String(source).endsWith(".tmp")) {
+    fs.writeFileSync(destination, fs.readFileSync(process.env.DSP_WINNER_PATH), { flag: "wx" });
+    const error = new Error("EEXIST: file already exists");
+    error.code = "EEXIST";
+    throw error;
+  }
+  return originalLinkSync(source, destination);
+};
+syncBuiltinESMExports();
+`);
+  const result = await runPrepareAsync(fixture, {
+    extraArgs: ["--force"],
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      DSP_PATH: dspPath,
+      DSP_WINNER_PATH: winnerPath,
+    },
+  });
+  assert.notEqual(result.status, 0);
+  assert.ok(readFileSync(dspPath).equals(winnerBytes), "the other publisher's package is left alone");
+  const kept = readdirSync(dirname(dspPath)).filter((name) => name.endsWith(".stale"));
+  assert.equal(kept.length, 1, "the claimed stale bytes are kept, not deleted");
+  assert.ok(readFileSync(join(dirname(dspPath), kept[0])).equals(staleBytes));
+  assert.ok(result.stderr.includes(join(dirname(dspPath), kept[0])), "the error names where they are kept");
+}));
+
 test("prepare-build --force still refuses a stale DSP it cannot show it synthesized", async (t) => {
   const assertRefusedWithDeleteRecovery = (fixture) => {
     const dspPath = join(fixture.target, DSP_REL_PATH);
