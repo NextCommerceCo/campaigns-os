@@ -4564,7 +4564,9 @@ async function scrollControlIntoView(locator, { timeout = CONTROL_SCROLL_TIMEOUT
 async function isPerpetuallyAnimated(locator, { timeout = CONTROL_SCROLL_TIMEOUT_MS } = {}) {
   try {
     return await locator.evaluate((element) => {
-      const geometry = /^(transform|translate|scale|rotate|top|left|right|bottom|inset|width|height|min|max|margin|padding|font|lineHeight|letterSpacing|border(Top|Right|Bottom|Left)?Width)/;
+      // Properties that move or resize the element's box, or its position
+      // inside an animated ancestor. Paint-only properties are left out.
+      const geometry = /^(transform|translate|scale|rotate|perspective|top|left|right|bottom|inset|width|height|blockSize|inlineSize|min|max|margin|padding|gap|rowGap|columnGap|fontSize|lineHeight|letterSpacing|textIndent|border(Top|Right|Bottom|Left|Block|Inline)?(Start|End)?Width)/;
       const movesBox = (animation) => {
         const timing = animation.effect?.getComputedTiming?.();
         if (animation.playState !== "running" || timing?.iterations !== Infinity) return false;
@@ -4582,11 +4584,14 @@ async function isPerpetuallyAnimated(locator, { timeout = CONTROL_SCROLL_TIMEOUT
 }
 
 // `perpetual` lets a caller that already probed (to size a response watch)
-// skip the second probe. forceFallback: false keeps a caller's strict click.
+// skip the second probe. forceFallback: false keeps a caller's strict click
+// for a control that can settle; a perpetually animated control is always
+// forced, whatever forceFallback says, because a strict click on it can only
+// time out. It must still become visible first, or the visibility error throws.
 async function clickControl(locator, { timeout, forceFallback = true, perpetual } = {}) {
   const animated = perpetual ?? await isPerpetuallyAnimated(locator);
   if (animated) {
-    await locator.waitFor({ state: "visible", timeout }).catch(() => {});
+    await locator.waitFor({ state: "visible", timeout });
     await locator.click({ force: true, timeout });
     return;
   }

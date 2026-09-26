@@ -87,6 +87,12 @@ browserTest("the pulsing accept control is detected as perpetually animated; a p
 browserTest("an accept on a pb-animate=\"pulse-upsell\" control sees the upsell POST well inside the step budget", async () => {
   const { context, page, posts } = await openOffer();
   try {
+    // The fixture only exercises the scroll if the accept starts off-screen.
+    const top = await page.locator('[data-next-upsell-action="add"]').evaluate((element) => element.getBoundingClientRect().top - window.innerHeight);
+    assert.ok(top > 0, "the accept control starts below the fold");
+
+    // clickUpsellPath is the production step end to end: scroll, probe,
+    // mutation watch, click, and the post-click checkout-result wait.
     const started = Date.now();
     const step = await hooks.clickUpsellPath(page, "accept");
     const elapsed = Date.now() - started;
