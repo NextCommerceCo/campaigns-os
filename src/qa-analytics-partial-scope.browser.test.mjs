@@ -127,3 +127,26 @@ browserTest("with no capturable in-scope page the leg is skipped with a named re
   assert.deepEqual(capture.evidence.attempts, [{ url: ROOT, source: "campaign_root", outcome: "non_2xx", http_status: 404 }]);
   assert.equal(assertions.some((item) => item.status === STATUS.FAIL), false);
 });
+
+browserTest("an out-of-scope root with no built entry is skipped without a visit, and every attempt carries http_status", async () => {
+  const { assertions, visited } = await runLeg({ rootInScope: false, fallbackTargets: [] });
+
+  assert.deepEqual(visited, [], "nothing is loaded");
+  assert.equal(assertions.length, 1);
+  const [capture] = assertions;
+  assert.equal(capture.status, STATUS.SKIPPED);
+  assert.equal(capture.evidence.reason, "no_in_scope_page_captured");
+  assert.deepEqual(capture.evidence.attempts, [{ url: ROOT, source: "campaign_root", outcome: "out_of_built_scope", http_status: null }]);
+});
+
+browserTest("a fallback naming the root under another spelling is not loaded twice, and never loads an out-of-scope root", async () => {
+  const unslashed = { ...ENTRY, page_id: "landing", url: `${ORIGIN}/campaign` };
+  const indexed = { ...ENTRY, page_id: "landing", url: `${ORIGIN}/campaign/index.html` };
+
+  const inScope = await runLeg({ rootInScope: true, fallbackTargets: [unslashed, indexed, ENTRY] });
+  assert.deepEqual(inScope.visited, ["/campaign/", "/campaign/checkout/"], "the root is loaded once");
+  assert.equal(byId(inScope.assertions, "analytics-correctness:tag:meta").status, STATUS.PASS);
+
+  const outOfScope = await runLeg({ rootInScope: false, fallbackTargets: [unslashed, indexed, ENTRY] });
+  assert.deepEqual(outOfScope.visited, ["/campaign/checkout/"], "the out-of-scope root is never loaded");
+});

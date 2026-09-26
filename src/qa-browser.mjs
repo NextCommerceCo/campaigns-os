@@ -569,17 +569,32 @@ function isHttpOk(status) {
   return status == null || (status >= 200 && status < 300);
 }
 
+// One page per path: `/campaign`, `/campaign/` and `/campaign/index.html` are
+// the same capture, so a topology URL written differently from the root is
+// not loaded twice. Mirrors qa-node's urlPathKey.
+function analyticsCapturePageKey(value) {
+  try {
+    const parsed = new URL(value);
+    const path = parsed.pathname.replace(/(?:^|\/)index\.html$/, "/").replace(/\/+$/, "");
+    return `${parsed.origin}${path}/`;
+  } catch {
+    return redactUrlQuery(value);
+  }
+}
+
 function analyticsCaptureCandidates(url, options = {}) {
   const candidates = [];
   const seen = new Set();
   const add = (candidate) => {
-    const key = redactUrlQuery(candidate.url);
+    const key = analyticsCapturePageKey(candidate.url);
     if (!candidate.url || seen.has(key)) return;
     seen.add(key);
     candidates.push(candidate);
   };
   const rootInScope = options.rootInScope !== false;
   if (rootInScope) add({ url, source: "campaign_root" });
+  // An out-of-scope root stays unvisited even if a fallback names it.
+  else if (url) seen.add(analyticsCapturePageKey(url));
   for (const entry of Array.isArray(options.fallbackTargets) ? options.fallbackTargets : []) {
     if (!entry || !trim(entry.url)) continue;
     add({
@@ -597,7 +612,7 @@ function analyticsCaptureCandidates(url, options = {}) {
 async function captureAnalyticsCorrectnessInContext(context, url, contract, args, extraHosts, options = {}) {
   const { candidates, rootInScope, rootKey } = analyticsCaptureCandidates(url, options);
   const attempts = [];
-  if (!rootInScope) attempts.push({ url: rootKey, source: "campaign_root", outcome: "out_of_built_scope" });
+  if (!rootInScope) attempts.push({ url: rootKey, source: "campaign_root", outcome: "out_of_built_scope", http_status: null });
   let rootFallback = rootInScope ? null : { url: rootKey, reason: "out_of_built_scope", http_status: null };
   for (const candidate of candidates) {
     const { capture, httpStatus } = await captureAnalyticsPage(context, candidate.url, args, extraHosts);
