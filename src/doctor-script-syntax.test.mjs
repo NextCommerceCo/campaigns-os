@@ -16,6 +16,7 @@ import {
   evaluateBuiltScriptSyntax,
   pageScriptReferences,
   parseScriptSyntax,
+  scriptKind,
 } from "./built-script-syntax.mjs";
 
 const FIXTURE_ROOT = resolve(new URL("../fixtures/script-syntax", import.meta.url).pathname);
@@ -304,4 +305,27 @@ test("source text at the error site never reaches the doctor output", () => {
     assert.ok(failure, source);
     assert.equal(failure.message.includes(canary), false, failure.message);
   }
+});
+
+test("scriptKind follows the HTML type-string steps, including whitespace-only types and the legacy language attribute", () => {
+  const cases = [
+    [{}, "classic"],
+    [{ type: "" }, "classic"],
+    // Stripped to "", which is not a JavaScript MIME type: the browser runs nothing.
+    [{ type: " " }, null],
+    [{ type: "\t\n" }, null],
+    // With no type, the browser builds "text/" + language.
+    [{ language: "" }, "classic"],
+    [{ language: "JavaScript" }, "classic"],
+    [{ language: "javascript1.5" }, "classic"],
+    [{ language: "vbscript" }, null],
+    // A type attribute wins over language.
+    [{ type: "", language: "vbscript" }, "classic"],
+    [{ type: "module", language: "vbscript" }, "module"],
+    // nomodule only stops classic scripts; a data block stays a data block.
+    [{ nomodule: "" }, null],
+    [{ type: "module", nomodule: "" }, "module"],
+    [{ type: "application/ld+json", nomodule: "" }, null],
+  ];
+  for (const [attrs, expected] of cases) assert.equal(scriptKind(attrs), expected, JSON.stringify(attrs));
 });

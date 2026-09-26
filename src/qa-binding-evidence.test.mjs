@@ -274,3 +274,11 @@ test('parser messages never carry source text into QA evidence', async () => {
     assert.match(parseFailures[0].message, /^[A-Z][a-z]/);
   }
 });
+
+test('a data block carrying nomodule stays a data block; only a classic nomodule script leaves the binding unresolved', async () => {
+  const dataBlock = await observe(`${inline(key)}<script type="application/ld+json" nomodule>{}</script>`);
+  assert.equal(dataBlock.outcome, 'match');
+  const classic = await observe(`${inline(key)}<script nomodule src="/legacy.js"></script>`);
+  assert.equal(classic.outcome, 'unknown');
+  assert.equal(classic.reason, 'dynamic_unresolved');
+});
