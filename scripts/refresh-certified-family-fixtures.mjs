@@ -16,10 +16,14 @@
 //      (`_synced_from_sha`), the same way check-template-doctrine does.
 //   2. Renders it with the page-kit install of the sibling checkout
 //      (`campaign-build`), in a temp dir; the checkout's own tree is untouched.
-//   3. Copies, for each certified family, every rendered *.html plus the
-//      family's config.js into fixtures/certified-families/_site/<family>/.
-//      CSS, images and per-page JS are not copied: no static markup gate reads
-//      them, and they are most of the bytes.
+//   3. Copies, for each certified family, every rendered *.html plus every
+//      local script those pages load by `<script src>` (config.js and the
+//      family's js/*.js), resolved the way the built_output.script_syntax
+//      gate resolves them, into fixtures/certified-families/_site/<family>/.
+//      A referenced local script the render does not contain fails the
+//      refresh: the fixture must carry every script the gate would parse
+//      (#502). CSS, images and unreferenced JS are not copied: no static
+//      markup gate reads them, and they are most of the bytes.
 //   4. Drops the `<link rel="dns-prefetch">` / `<link rel="preconnect">`
 //      resource hint for the campaign API host. It carries no SDK-markup meaning and its host is on this
 //      repository's private-string denylist. Nothing else is rewritten.
@@ -37,11 +41,12 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { collectBuiltScriptSyntaxInputs } from "../src/built-script-syntax.mjs";
 import { resolveStarterTemplatesRoot } from "./starter-templates-path.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -96,23 +101,50 @@ try {
 
   const families = certifiedFamilies();
   const files = {};
-  // Only the generated parts are replaced; README.md is hand-written.
-  rmSync(join(OUT, "_site"), { recursive: true, force: true });
-  rmSync(join(OUT, "manifest.json"), { force: true });
+  // Every family is checked and read before anything on disk is replaced, so a
+  // refusal leaves the committed fixture tree as it was.
+  const outputs = [];
   for (const family of families) {
     const rendered = join(work, "_site", family);
     if (!existsSync(rendered)) throw new Error(`Certified family "${family}" did not render at ${relative(work, rendered)}; the catalog and the templates source disagree.`);
-    for (const file of walk(rendered)) {
+    const renderedFiles = walk(rendered);
+    // The local scripts the rendered pages load, resolved by the gate itself
+    // so the fixture carries exactly what doctor parses.
+    const scriptInputs = collectBuiltScriptSyntaxInputs({
+      site_root: join(work, "_site"),
+      campaign_dir: rendered,
+      pages: renderedFiles.filter((file) => file.endsWith(".html")).map((file) => ({ page_id: relative(rendered, file), built_path: file })),
+    }, work);
+    if (scriptInputs.unresolved.length) {
+      throw new Error(`Certified family "${family}" references local script(s) the render does not contain: ${scriptInputs.unresolved.map((entry) => entry.src).join(", ")}.`);
+    }
+    const scripts = new Set(scriptInputs.scripts.map((script) => resolve(work, script.file)));
+    // Containment by the real path, not the lexical one: a symlinked script
+    // (or page) could otherwise copy bytes from outside the render into this
+    // public fixture tree.
+    const renderedReal = realpathSync(rendered);
+    for (const script of scripts) {
+      if (relative(rendered, script).startsWith("..") || relative(renderedReal, realpathSync(script)).startsWith("..")) {
+        throw new Error(`Certified family "${family}" loads a script outside its own render: ${relative(work, script)}.`);
+      }
+    }
+    for (const file of renderedFiles) {
       const rel = relative(rendered, file);
-      const keep = rel.endsWith(".html") || rel === "config.js";
+      const keep = rel.endsWith(".html") || scripts.has(file);
       if (!keep) continue;
+      if (lstatSync(file).isSymbolicLink()) throw new Error(`Certified family "${family}" renders ${rel} as a symlink; fixtures copy regular files only.`);
       let text = readFileSync(file, "utf8");
       if (rel.endsWith(".html")) text = text.replace(API_HOST_RESOURCE_HINT, "");
-      const out = join(OUT, "_site", family, rel);
-      mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, text);
+      outputs.push({ out: join(OUT, "_site", family, rel), text });
       files[`_site/${family}/${rel}`] = `sha256:${createHash("sha256").update(text).digest("hex")}`;
     }
+  }
+  // Only the generated parts are replaced; README.md is hand-written.
+  rmSync(join(OUT, "_site"), { recursive: true, force: true });
+  rmSync(join(OUT, "manifest.json"), { force: true });
+  for (const { out, text } of outputs) {
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(out, text);
   }
   writeFileSync(join(OUT, "manifest.json"), `${JSON.stringify({
     schema_version: "certified-family-fixtures/v0",

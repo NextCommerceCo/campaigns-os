@@ -2,6 +2,45 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.15] - 2026-09-27
+
+### Fixed
+
+- The doctor `built_output.script_syntax` gate and the QA `script-parse`
+  check now resolve each `<script src>` against the base in effect when the
+  parser prepares that script at its end tag: the first HTML `<base href>` in
+  tree order among those already parsed, or else the page. A `<base>` parsed
+  after a script no longer moves it, whether it is async, deferred or a
+  module, and parse order decides even when table foster parenting reorders
+  the tree. An SVG `base` no longer counts, and the href is no longer trimmed
+  of non-ASCII whitespace the URL parser keeps. Only HTML-namespace
+  `<script>` elements are page scripts: an SVG `<script src>` is no longer
+  read or parsed by doctor, and QA leaves a page with an SVG script dynamic
+  instead of fetching it. Only an empty `src` is skipped, as the browser
+  skips it; a `src` of other whitespace is resolved and read. QA recognises
+  the Campaign Cart SDK by its URL as the parser reads it, so a tab or
+  newline inside the attribute no longer makes the SDK look like an
+  unavailable config script. A base
+  the browser refuses (a `data:` or `javascript:` URL, or one that does not
+  parse) now falls back to the page, as the HTML "set the frozen base URL"
+  steps require, so the local script is read and a parse failure in it blocks
+  instead of the script being listed as unresolved (#502).
+
+### Changed
+
+- A local script a built page loads that is not in the built output is now a
+  doctor warning, `built_output.script_syntax.missing_script`, one per src
+  naming the pages that load it. It was information on the gate only. It does
+  not block. While a parse failure blocks the gate, the missing scripts stay
+  on the gate's `warned[]` (#502).
+- `fixtures/certified-families/` now carries every local script the rendered
+  pages load (each family's `js/*.js` beside `config.js`), refreshed from the
+  same templates commit. `scripts/refresh-certified-family-fixtures.mjs`
+  copies them, resolved the way the gate resolves them, and fails when a
+  referenced script is not in the render, or a copied file is a symlink or
+  resolves outside the family's render. The reachability test reads the
+  expected scripts from the HTML independently of the gate and requires the
+  gate to read exactly that set on every certified family (#502).
 ## [1.43.1+agent.14] - 2026-09-27
 
 ### Fixed

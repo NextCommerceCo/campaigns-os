@@ -13,7 +13,9 @@
 // how the browser reads each. A parse failure is an error naming the file, the
 // line and the column. Remote scripts (CDN URLs, protocol-relative, data:)
 // are not campaign-owned and are not read. A referenced local file that does
-// not exist on disk is listed on the gate as information, not judged here.
+// not exist on disk is a warning (#502): the browser gets a 404 for it and
+// nothing it would define runs, but whether the page needs it is not known
+// here, so it does not block.
 //
 // Not waivable: a script that cannot be parsed cannot be intended to ship.
 // Both doctor entry points drive it, like the other static built-output gates.
@@ -26,6 +28,7 @@ import { parse as parseHtml } from "parse5";
 
 export const SCRIPT_SYNTAX = "built_output.script_syntax";
 export const SCRIPT_SYNTAX_PARSE_FAILURE = `${SCRIPT_SYNTAX}.parse_failure`;
+export const SCRIPT_SYNTAX_MISSING_SCRIPT = `${SCRIPT_SYNTAX}.missing_script`;
 
 // Classic script MIME types the browser executes. Anything else with a type
 // attribute (JSON-LD, text/template, importmap) is a data block, not script.
@@ -141,44 +144,132 @@ export function parseScriptSyntax(source, { module = false } = {}) {
   }
 }
 
+export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
+/**
+ * A URL attribute value as the URL parser reads it: leading and trailing C0
+ * controls and space removed, nothing else (not U+00A0 or other Unicode
+ * whitespace, which String#trim would also strip).
+ *
+ * @param {string} value
+ */
+export function stripUrlSpace(value) {
+  return String(value).replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "");
+}
+
+/**
+ * Every HTML-namespace `<base href>` in a parse5 document (parsed with
+ * `sourceCodeLocationInfo`), in tree order, with the source offset at which
+ * the parser inserted it. An SVG or MathML `base` is not a base element.
+ *
+ * @param {object} root a parse5 node
+ * @returns {Array<{ href: string, offset: number }>}
+ */
+export function documentBases(root) {
+  const bases = [];
+  const walk = (node) => {
+    if (node.tagName === "base" && node.namespaceURI === HTML_NAMESPACE) {
+      const href = (node.attrs || []).find((attr) => attr.name === "href");
+      if (href) bases.push({ href: href.value, offset: node.sourceCodeLocation?.startOffset ?? -1 });
+    }
+    // Template content is a separate fragment in parse5 and never walked here.
+    for (const child of node.childNodes || []) walk(child);
+  };
+  walk(root);
+  return bases;
+}
+
+/**
+ * The `<base href>` in effect when the parser prepares a script element: the
+ * parser prepares it at its end tag, and "prepare the script element" parses
+ * `src` then, against the document base URL, which is the first base element
+ * with an href in tree order among those already in the document. Foster
+ * parenting can place a base parsed earlier after the script in tree order
+ * (it still counts) or one parsed later before it (it does not), so this
+ * compares source offsets rather than tree position. null when no base was
+ * in the document yet.
+ *
+ * @param {Array<{ href: string, offset: number }>} bases from documentBases
+ * @param {object} scriptNode a parse5 script element
+ * @returns {string | null}
+ */
+export function baseInEffect(bases, scriptNode) {
+  const location = scriptNode?.sourceCodeLocation;
+  const preparedAt = location?.endTag?.startOffset ?? location?.endOffset ?? Infinity;
+  const base = bases.find((entry) => entry.offset < preparedAt);
+  return base ? base.href : null;
+}
+
 /**
  * `<script src>` references on a page, in document order, with whether each
- * is a module, and the document's first `<base href>` (null when none).
- * Data-block types are dropped. Classic `nomodule` scripts are dropped: a
+ * is a module and the `<base href>` in effect when the browser prepares it
+ * (see baseInEffect), plus the document's first `<base href>` (null when
+ * none). A `<base>` parsed after a script does not move it, whether the
+ * script is async, deferred or a module: its URL is resolved when prepared,
+ * not when fetched.
+ *
+ * Only HTML-namespace script elements are references: an SVG `<script>`
+ * never loads a `src` attribute. Data-block types are dropped. Classic
+ * `nomodule` scripts are dropped: a
  * module-capable browser never fetches or runs them, so they cannot fail on
- * load there. A module script ignores `nomodule` and is kept (see scriptKind). Template content and noscript are inert and not walked.
+ * load there. A module script ignores `nomodule` and is kept (see scriptKind).
+ * Template content and noscript are inert and not walked.
  *
  * @param {string} html
- * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean }> }}
+ * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean, base: string | null }> }}
  */
 export function pageScriptDocument(html) {
   const refs = [];
-  let base = null;
   let document;
   try {
-    document = parseHtml(String(html ?? ""));
+    document = parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true });
   } catch {
-    return { base, refs };
+    return { base: null, refs };
   }
+  const bases = documentBases(document);
   const walk = (node) => {
     const attrs = node.tagName ? Object.fromEntries((node.attrs || []).map((attr) => [attr.name, attr.value])) : {};
-    if (node.tagName === "base" && base === null && typeof attrs.href === "string") base = attrs.href.trim();
-    if (node.tagName === "script") {
+    // Only an HTML-namespace <script> loads its `src`; an SVG script reads
+    // href / xlink:href, and a MathML "script" is not a script element.
+    if (node.tagName === "script" && node.namespaceURI === HTML_NAMESPACE) {
       const kind = scriptKind(attrs);
-      if (kind && typeof attrs.src === "string" && attrs.src.trim()) {
-        refs.push({ src: attrs.src.trim(), module: kind === "module" });
+      // "prepare the script element" skips only an empty src; anything else,
+      // even whitespace, is parsed as a URL and fetched.
+      if (kind && typeof attrs.src === "string" && attrs.src !== "") {
+        refs.push({ src: stripUrlSpace(attrs.src), module: kind === "module", base: baseInEffect(bases, node) });
       }
     }
     if (node.tagName === "noscript") return;
     for (const child of node.childNodes || []) walk(child);
   };
   walk(document);
-  return { base, refs };
+  return { base: bases[0]?.href ?? null, refs };
 }
 
-/** The `<script src>` references of pageScriptDocument, without the base. */
+/**
+ * The frozen base URL of a `<base href>` (HTML "set the frozen base URL"):
+ * the href parsed against the document's fallback base URL (its own URL),
+ * falling back to that URL when the parse fails or yields a `data:` or
+ * `javascript:` URL, which the browser refuses as a base.
+ *
+ * @param {string | null} href the base element's href, or null for none
+ * @param {string} documentUrl
+ * @returns {string} the URL scripts resolve against
+ */
+export function frozenBaseUrl(href, documentUrl) {
+  if (href === null || href === undefined) return documentUrl;
+  let url;
+  try {
+    url = new URL(href, documentUrl);
+  } catch {
+    return documentUrl;
+  }
+  return url.protocol === "data:" || url.protocol === "javascript:" ? documentUrl : url.href;
+}
+
+/** The `<script src>` references of pageScriptDocument, without any base. */
 export function pageScriptReferences(html) {
-  return pageScriptDocument(html).refs;
+  return pageScriptDocument(html).refs.map(({ src, module }) => ({ src, module }));
 }
 
 // A synthetic origin standing in for wherever the built site is served. Page
@@ -193,17 +284,12 @@ function pageUrlFor(siteRoot, builtPath) {
 }
 
 // The browser's view of one reference: the URL it resolves to against the
-// document's effective base. null when that URL is not on the built origin.
+// base in effect when the script was prepared. null when that URL is not on
+// the built origin.
 function resolveScriptUrl(src, base, pageUrl) {
-  let baseUrl;
-  try {
-    baseUrl = base ? new URL(base, pageUrl) : new URL(pageUrl);
-  } catch {
-    baseUrl = new URL(pageUrl);
-  }
   let url;
   try {
-    url = new URL(src, baseUrl);
+    url = new URL(src, frozenBaseUrl(base, pageUrl));
   } catch {
     return { remote: false, pathname: null };
   }
@@ -238,9 +324,11 @@ function relFrom(root, path) {
 
 /**
  * Resolve every built page's local script references against the filesystem.
- * Each src resolves as the browser resolves it: against the document's
- * effective base (its first `<base href>`, else the page URL), with the page
- * URL being its path under the site root. The resulting path is
+ * Each src resolves as the browser resolves it: against the base in effect
+ * when the script is prepared (the first `<base href>` before it in tree
+ * order, else the page URL; a `data:`, `javascript:` or unparsable base falls
+ * back to the page URL), with the page URL being its path under the site
+ * root. The resulting path is
  * percent-decoded and mapped under the site root first (page-kit emits
  * `/<slug>/js/...`), then the campaign directory (a root-served campaign
  * emits `/js/...`), never outside either. A base or src on another origin is
@@ -260,11 +348,11 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
     } catch {
       continue;
     }
-    const { base, refs } = pageScriptDocument(html);
+    const { refs } = pageScriptDocument(html);
     const pageUrl = pageUrlFor(scope.site_root, page.built_path);
     for (const ref of refs) {
       if (isRemote(ref.src)) continue;
-      const { remote, pathname } = resolveScriptUrl(ref.src, base, pageUrl);
+      const { remote, pathname } = resolveScriptUrl(ref.src, ref.base, pageUrl);
       if (remote) continue;
       let path = null;
       if (pathname) {
@@ -322,18 +410,30 @@ function gateBase(subject) {
 export function evaluateBuiltScriptSyntax({ subject, pages_scanned: pagesScanned = 0, scripts = [], unresolved = [] } = {}) {
   const list = Array.isArray(scripts) ? scripts : [];
   const missing = Array.isArray(unresolved) ? unresolved : [];
+  // A local script the page loads that is not in the built output: a 404 at
+  // runtime. A warning, not a blocker (#502).
+  const warned = missing.map((entry) => {
+    const pages = Array.isArray(entry.pages) ? entry.pages : [];
+    return {
+      code: SCRIPT_SYNTAX_MISSING_SCRIPT,
+      src: entry.src,
+      pages,
+      message: `${entry.src} is loaded by a local <script src>${pages.length ? ` on ${pages.join(", ")}` : ""} but is not in the built output. The browser gets a 404 for it and nothing it would define runs. Add the file to the build, or remove the reference if the page does not need it.`,
+    };
+  });
+  const missingNote = warned.length ? ` ${warned.length} referenced local script(s) are not in the built output.` : "";
+  const common = { scripts_unresolved: missing, warned, pages_scanned: pagesScanned };
   if (list.length === 0) {
     return {
       ...gateBase(subject),
       status: "not_applicable",
       code: `${SCRIPT_SYNTAX}.not_applicable`,
-      reason: pagesScanned
+      reason: (pagesScanned
         ? `No built page loads a campaign-owned script from disk (${pagesScanned} page(s) read).`
-        : "No built page was available to scan; script syntax is checked once pages are built.",
+        : "No built page was available to scan; script syntax is checked once pages are built.") + missingNote,
       findings: [],
       scripts_scanned: 0,
-      scripts_unresolved: missing,
-      pages_scanned: pagesScanned,
+      ...common,
       required_actions: [],
     };
   }
@@ -359,11 +459,10 @@ export function evaluateBuiltScriptSyntax({ subject, pages_scanned: pagesScanned
       ...gateBase(subject),
       status: "blocked",
       code: SCRIPT_SYNTAX_PARSE_FAILURE,
-      reason: `${findings.length} of ${list.length} campaign-owned script(s) do not parse: ${findings.map((finding) => `${finding.file}:${finding.line}:${finding.column}`).join(", ")}.`,
+      reason: `${findings.length} of ${list.length} campaign-owned script(s) do not parse: ${findings.map((finding) => `${finding.file}:${finding.line}:${finding.column}`).join(", ")}.${missingNote}`,
       findings,
       scripts_scanned: list.length,
-      scripts_unresolved: missing,
-      pages_scanned: pagesScanned,
+      ...common,
       required_actions: findings.map((finding) => `Fix the syntax error in ${finding.file} at line ${finding.line}, column ${finding.column}, then rebuild.`),
     };
   }
@@ -372,11 +471,10 @@ export function evaluateBuiltScriptSyntax({ subject, pages_scanned: pagesScanned
     ...gateBase(subject),
     status: "pass",
     code: `${SCRIPT_SYNTAX}.pass`,
-    reason: `All ${list.length} campaign-owned script(s) loaded by ${pagesScanned} built page(s) parse.`,
+    reason: `All ${list.length} campaign-owned script(s) loaded by ${pagesScanned} built page(s) parse.${missingNote}`,
     findings: [],
     scripts_scanned: list.length,
-    scripts_unresolved: missing,
-    pages_scanned: pagesScanned,
+    ...common,
     required_actions: [],
   };
 }

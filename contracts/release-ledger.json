@@ -7192,6 +7192,33 @@
         }
       ],
       "entry_sha256": "f2be3f58c79afb40343b1dc3b6baa8a8065be0a93b04c45ec870e5f91b7a49d1"
+    },
+    {
+      "id": "RL-0157",
+      "sequence": 156,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.15",
+      "changelog_sha256": "d78eb0be3faaada970e67f8e659164b4e080c07a404d057e79dbff37b505156f",
+      "agent_impact": "Doctor now warns under built_output.script_syntax.missing_script when a built page loads a local script that is not in the built output; it does not block. The script syntax gate resolves each script src against the <base href> in effect when the script is prepared, and falls back to the page URL for a data:, javascript: or unparsable base.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Surface the script syntax gate's missing-script findings as doctor warnings on doctor --built and the packet doctor registry, unless a parse failure blocks the gate."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document base-element ordering (parse order, HTML namespace, URL-parser whitespace) and the rejected-base fallback for script resolution, and the missing-script warning and warned[] evidence."
+        }
+      ],
+      "entry_sha256": "b704d4bd6f9e83e090200742dd4057d3b263d9884e09b506053b6cb6cd18ad24"
     }
   ]
 }
