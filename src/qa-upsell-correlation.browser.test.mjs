@@ -10,6 +10,8 @@
 //    body. It must not be taken as B's.
 // 2. A single accept whose body never loads and that nothing reads back is
 //    unverified. The order the run reports must not read as verified.
+// 3. An earlier step's mutation whose waiter expired answers only after this
+//    step's click. This step's waiter must not take it as its own response.
 //
 // Chromium is not part of `npm ci --ignore-scripts`, so the file skips when it
 // cannot launch locally. The browser CI lane requires Chromium.
@@ -20,7 +22,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { runBrowserTestOrders } from "./qa-browser.mjs";
+import { __qaBrowserTestHooks as hooks, runBrowserTestOrders } from "./qa-browser.mjs";
 import { summarizePurchaseProof } from "./qa-verdict.mjs";
 
 const FIXTURES = new URL("../fixtures/qa-upsell-correlation/", import.meta.url).pathname;
@@ -182,4 +184,66 @@ browserTest("an accepted upsell nothing could verify is not reported as a verifi
   assert.notEqual(order.verification.verified, true, "an order whose accepted upsell is unverified is not a verified order");
   assert.equal(summarizePurchaseProof({ verdict: { test_orders: [order] } }).orders_verified, 0);
   assert.equal(summarizePurchaseProof({ verdict: { test_orders: [order] } }).orders_created, 1);
+});
+
+// Step A's request is posted on load and held; step B's click posts; the
+// server then answers A first and B 200ms later. Both carry a marker body.
+async function serveStaleWaiter() {
+  const REF = "FIXTUREREF6";
+  const posts = [];
+  let heldA = null;
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, "http://localhost");
+    if (request.method === "POST" && url.pathname === `/api/v1/orders/${REF}/upsells/`) {
+      let raw = "";
+      for await (const chunk of request) raw += chunk;
+      const { offer } = JSON.parse(raw || "{}");
+      posts.push(offer);
+      const answer = () => {
+        response.writeHead(201, { "content-type": "application/json" });
+        response.end(JSON.stringify({ ref_id: REF, offer }));
+      };
+      if (offer === "a") {
+        heldA = answer;
+        return undefined;
+      }
+      heldA?.();
+      setTimeout(answer, 200);
+      return undefined;
+    }
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    return response.end(await readFile(join(FIXTURES, "stale-waiter.html")));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    url: `http://127.0.0.1:${server.address().port}/x/upsell-b/?ref_id=${REF}`,
+    posts,
+    close: () => new Promise((resolve) => {
+      server.closeAllConnections?.();
+      server.close(resolve);
+    }),
+  };
+}
+
+browserTest("an earlier step's mutation answering after this step's click is not taken as this step's response", { timeout: 60000 }, async () => {
+  const server = await serveStaleWaiter();
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(server.url, { waitUntil: "load" });
+    // A's request is in flight before this step's click.
+    for (let waited = 0; server.posts.length < 1 && waited < 5000; waited += 50) await page.waitForTimeout(50);
+    assert.deepEqual(server.posts, ["a"], "step A's mutation was posted before step B's click");
+
+    const step = await hooks.clickUpsellPath(page, "accept");
+
+    assert.deepEqual(server.posts, ["a", "b"]);
+    assert.equal(step.api_response_seen, true, "step B's own response is still taken");
+    assert.equal(step.api_response_status, 201);
+    assert.equal(step.api_response_order_body?.offer, "b", `step B took the response to offer ${step.api_response_order_body?.offer}`);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
 });

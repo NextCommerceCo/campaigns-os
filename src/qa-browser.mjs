@@ -4867,11 +4867,22 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
   // Armed at the click, not before the scroll, and budgeted to outlast a
   // normal attempt that times out into its forced fallback: the watch must
   // still be listening when the click that actually fires posts (#481).
+  //
+  // Only a request started at or after the watch was armed can be this
+  // click's. An earlier step posts to the same order-upsells URL, and when
+  // its own watch expired its response may still arrive during this click
+  // (#505). armedAt and the request's start time are both epoch milliseconds
+  // on the system clock (Date.now() here; Playwright's timing().startTime is
+  // the browser's wall time at request start), and armedAt is read before the
+  // click is sent, so this click's request starts at or after it. A request
+  // with no known start time is not excluded: nothing shows it is stale.
+  const armedAt = Date.now();
   const mutationPromise = path === "accept"
-    ? page.waitForResponse((response) => (
-        response.request().method() === "POST"
-        && isOrderUpsellsUrl(response.url())
-      ), { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
+    ? page.waitForResponse((response) => {
+        if (response.request().method() !== "POST" || !isOrderUpsellsUrl(response.url())) return false;
+        const startedAt = responseRequestStartedAt(response);
+        return startedAt === null || startedAt >= armedAt;
+      }, { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
     : Promise.resolve(null);
   trace?.markClickAttempted();
   await clickControl(control, { timeout: UPSELL_CLICK_TIMEOUT_MS, perpetual });

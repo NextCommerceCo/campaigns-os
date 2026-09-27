@@ -16,7 +16,11 @@ Notable supported-surface changes are recorded here.
   Playwright request of each captured response and of each step's mutation
   and accepts a late body only when the two are the same request. A step
   whose own body never arrived and that no later read-back settled is
-  unverified even when the stale lines on hand would have matched.
+  unverified even when the stale lines on hand would have matched. The
+  step's mutation watch also ignores any order-upsells response whose
+  request started before the watch was armed at the click, so an earlier
+  step's response that arrives late, after its own watch expired, is no
+  longer taken as this step's.
 - A test-order path whose only open question is an unverified accepted upsell
   is no longer `ok` on its result. The result carries `upsell_unverified`
   instead, the order's `verification.verified` is `false` (so the purchase
