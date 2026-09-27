@@ -2,6 +2,40 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.18] - 2026-09-27
+
+### Fixed
+
+- `prepare-build` no longer loses track of a Design Source Package it
+  synthesized when the run fails or is killed after publishing the package
+  but before writing the Assembly Report that records it. Before the package
+  goes out, the run writes a pending provenance record beside it
+  (`.campaign-runtime/input/.design-source-package.json.pending-provenance.json`)
+  with the sha256 of the bytes it is publishing, and removes it once the
+  report is written. A retry that finds the record treats a package that
+  still hashes to it as `origin: "synthesized"`, so a later `--force` after a
+  manifest edit regenerates the package instead of refusing it as someone
+  else's. A `--force` regeneration keeps the replaced package's hash in the
+  record until the replacement is recorded, so a regeneration that fails or
+  dies part way leaves the package on disk provable, and a run that adopts
+  another writer's package instead of publishing drops its own candidate from
+  the record. Just before the report is published the record is narrowed to
+  the package the report records. Bytes changed since the failure, and a
+  malformed record, are not vouched for. The record's path is reserved: no
+  configurable output may point at it.
+- The `manifest_sha256` the Design Source Package records is now the hash of
+  the exact source-html manifest bytes source intake parsed. The file was
+  read twice, once to parse and once to hash, so an edit between the two
+  recorded a hash that did not describe the parsed manifest.
+- With `--map-id`, `start`, `prepare-build` and `build` still fetch the Map
+  first, but write the fetched spec to the shared
+  `.campaign-runtime/fetched-specs/<map-id>.json` cache file only once they
+  hold the per-target prepare-build lock. A run waiting for the lock could
+  previously overwrite the cache with a newer revision while the lock holder
+  was still recording it, so the holder recorded mappings from one revision
+  beside hashes of the other. Argv-only intake refusals still happen before
+  any spec read, fetch or cache write, and a failed fetch still writes
+  nothing.
 ## [1.43.1+agent.17] - 2026-09-27
 
 ### Fixed

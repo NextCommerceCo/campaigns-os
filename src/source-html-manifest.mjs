@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -95,10 +96,16 @@ export function readSourceHtmlManifestFile(sourceRoot, { manifestPath = null } =
   return { ...readManifestAt(resolvedPath), explicit: Boolean(explicit) };
 }
 
+// One read: the manifest is parsed from, and hashed over, the same bytes. An
+// edit that lands on disk after the read changes neither, so the sha256 a
+// consumer records always describes what was parsed (#501).
 function readManifestAt(manifestPath) {
   let manifest;
+  let sha256;
   try {
-    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const bytes = readFileSync(manifestPath);
+    sha256 = createHash("sha256").update(bytes).digest("hex");
+    manifest = JSON.parse(bytes.toString("utf8"));
   } catch (error) {
     return {
       manifest: null,
@@ -125,7 +132,7 @@ function readManifestAt(manifestPath) {
   const warnings = (validation.warnings || []).map(
     (entry) => `Source-html manifest at ${manifestPath}: [${entry.code}] ${entry.message}`,
   );
-  return { manifest, path: manifestPath, warning: null, warnings, validation };
+  return { manifest, path: manifestPath, sha256, warning: null, warnings, validation };
 }
 
 function validateManifestPage(entry, index, add, addWarning = () => {}) {

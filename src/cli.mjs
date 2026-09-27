@@ -1223,7 +1223,10 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     // Tier 2: mark sub-phases so the lifecycle journal entry carries per-phase
     // timings (spec resolve vs the prepare+doctor+install build), which Tier 1
     // aggregates into `start:resolve-spec` / `start:prepare-build` stages.
-    const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
+    // A --map-id fetch runs here, but the fetched spec is written to the
+    // shared cache file inside prepareBuild, under the per-target lock, so it
+    // never replaces the spec another run is reading and hashing (#501).
+    const { publishSpec, ...resolved } = await recorder.time("resolve-spec", () => resolveSpecPath(args, { deferCacheWrite: true }));
     // The spec as the operator named it, before resolution, so the build
     // context can record which input to replay (a local file, or a map id
     // fetched from a given store).
@@ -1231,7 +1234,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     args.spec = resolved.specPath;
     // `command` rides along for the doctor sidecar's generated_by stamp when
     // the mode runs doctor (#312): threaded from here, not re-read from argv.
-    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, command, specInput, sourceKind, wrapperPolicyFlag, orderPathDepthFlag }));
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, command, specInput, publishSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag }));
     result.spec_source = resolved;
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
@@ -1567,11 +1570,17 @@ async function resolveSpecPath(args, opts = {}) {
       return { specPath: cachePath, source: "cache", mapId, proxyBase };
     }
     const spec = await fetchSpecByMapId(mapId, { proxyBase, fetchImpl: opts.fetchImpl });
-    mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
+    const publishSpec = () => {
+      mkdirSync(cacheDir, { recursive: true });
+      writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
+    };
+    // deferCacheWrite hands the cache write back to the caller, which makes it
+    // under the prepare-build lock.
+    if (!opts.deferCacheWrite) publishSpec();
     return { specPath: cachePath, source: "remote", mapId, proxyBase,
       savedMapRevision: { map_id: mapId, hash: spec.spec_identity?.spec_hash || spec.spec_hash || null,
         algorithm: "map-store-v1", local_spec_material_hash: specMaterialHash(spec) },
+      ...(opts.deferCacheWrite ? { publishSpec } : {}),
     };
   }
   throw refused(
@@ -2105,19 +2114,69 @@ function assertValidPreparedDesignSourcePackage(value, path, currentPageScope, c
 // disk still hash to what it recorded, so a hand edit, a package dropped in by
 // an operator, a report from another path, and a report written before `origin`
 // existed all fall to "not provably ours" and are never overwritten.
+//
+// The package is published before the report that records it, so a run that
+// fails or dies between the two would leave its own package unrecorded (#501).
+// The pending provenance record beside the package closes that gap: it names
+// the sha256 of the bytes a run is about to publish, plus the stale package's
+// when a --force run is replacing one it proved its own, so a regeneration
+// that fails or dies part way leaves whichever package ends up on disk
+// provable. It is written before the package goes out, loses the candidate
+// hash if the run adopts another writer's package instead of publishing, and
+// is removed once a report has recorded the package. A retry that finds it
+// still accepts only bytes that hash to one of its entries.
 function readPriorDesignSourceProvenance(reportPath, packagePath) {
-  let report;
+  const synthesized = [];
+  const pending = readJsonIfExistsQuietly(pendingDesignSourceProvenancePath(packagePath));
+  // All or nothing: a record with any entry that is not a digest (a torn or
+  // hand-edited file) is no proof, never a partial one.
+  if (isObject(pending) && pending.origin === DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED
+    && Array.isArray(pending.sha256) && pending.sha256.length > 0
+    && pending.sha256.every((entry) => typeof entry === "string" && /^sha256:[0-9a-f]{64}$/.test(entry))) {
+    synthesized.push(...pending.sha256);
+  }
+  let report = null;
   try {
     report = readJson(reportPath);
   } catch {
-    return null;
+    // No readable report: only a pending record can vouch for the package.
   }
   const ref = report?.design_source_package;
-  if (!isObject(ref) || ref.origin !== DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED) return null;
-  if (!isNonEmptyString(ref.sha256)) return null;
-  const recordedPath = resolveFromFile(reportPath, ref.path);
-  if (!recordedPath || !filesystemPathsMatch(recordedPath, packagePath)) return null;
-  return { origin: ref.origin, sha256: ref.sha256 };
+  if (isObject(ref) && ref.origin === DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED && isNonEmptyString(ref.sha256)) {
+    const recordedPath = resolveFromFile(reportPath, ref.path);
+    if (recordedPath && filesystemPathsMatch(recordedPath, packagePath)) synthesized.push(ref.sha256);
+  }
+  return synthesized.length ? { synthesized } : null;
+}
+
+function readJsonIfExistsQuietly(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function pendingDesignSourceProvenancePath(designSourcePackagePath) {
+  return join(dirname(designSourcePackagePath), `.${basename(designSourcePackagePath)}.pending-provenance.json`);
+}
+
+// Written (staged, then renamed into place) before a synthesized package is
+// published, so the claim survives a crash between that publication and the
+// report's. An empty list removes the record.
+function recordPendingDesignSourceProvenance(designSourcePackagePath, sha256) {
+  const pendingPath = pendingDesignSourceProvenancePath(designSourcePackagePath);
+  if (!sha256.length) {
+    rmSync(pendingPath, { force: true });
+    return;
+  }
+  const stagedPath = `${pendingPath}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(stagedPath, `${JSON.stringify({ origin: DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED, sha256 })}\n`, { flag: "wx" });
+    renameSync(stagedPath, pendingPath);
+  } finally {
+    rmSync(stagedPath, { force: true });
+  }
 }
 
 const DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED = "synthesized";
@@ -2208,7 +2267,9 @@ function createCurrentHtmlFunnelScope({
   }));
 
   if (manifest) {
-    manifest.sha256 = manifestResult.path ? sha256File(manifestResult.path) : null;
+    // The hash of the bytes source intake parsed, not a second read of the
+    // file, which an edit mid-run could have changed since (#501).
+    manifest.sha256 = manifestResult.sha256 || null;
     manifest.files = (manifest.files || []).map((file) => ({
       ...file,
       sha256: materialFiles.get(file.path)?.sha256 || null,
@@ -2313,8 +2374,9 @@ function prepareDesignSourcePackage({
     } catch (error) {
       throw new Error(`Design Source Package at ${path} is not valid JSON: ${error.message}`, { cause: error });
     }
-    const synthesizedHere = isNonEmptyString(priorProvenance?.sha256)
-      && hashSerializedDesignSourcePackage(existingBytes) === priorProvenance.sha256;
+    const existingSha256 = hashSerializedDesignSourcePackage(existingBytes);
+    const synthesizedHere = Array.isArray(priorProvenance?.synthesized)
+      && priorProvenance.synthesized.includes(existingSha256);
     let problem = preparedDesignSourcePackageProblem(existingValue, currentPageScope, currentHtmlFunnelScope);
     if (problem == null && existingValue.source_kind !== "html_funnel") {
       problem = `declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`;
@@ -2323,7 +2385,7 @@ function prepareDesignSourcePackage({
       // A package an earlier prepare-build synthesized, unchanged since, is
       // this producer's own stale output: --force regenerates it from the
       // current inputs. Anything else is left for the operator to reconcile.
-      if (synthesizedHere && force) return { stale: true, sha256: priorProvenance.sha256 };
+      if (synthesizedHere && force) return { stale: true, sha256: existingSha256 };
       const recovery = synthesizedHere
         ? "It was synthesized by an earlier prepare-build and is unchanged since, so rerun with --force to regenerate it from the current inputs "
           + "(--force also resets any stage evidence the Assembly Report carries)."
@@ -2395,6 +2457,9 @@ function prepareDesignSourcePackage({
           { cause: error },
         );
       }
+      // Another writer's package is at the path, not this run's bytes: the
+      // pending record stops vouching for the candidate before it is judged.
+      recordPendingDesignSourceProvenance(path, pendingCarried);
       reuseWinner();
     }
   };
@@ -2449,12 +2514,18 @@ function prepareDesignSourcePackage({
   };
 
   const existing = existsSync(path) ? readExisting() : null;
+  // The stale package a --force run replaces is provably the producer's own;
+  // its hash stays in the pending record until the replacement is recorded,
+  // so a failed or interrupted replacement that leaves it in place (put back,
+  // or never moved) can still be regenerated.
+  const pendingCarried = existing?.stale ? [existing.sha256] : [];
   if (existing && !existing.stale) {
     ({ value, rawBytes, origin } = existing);
     mode = "reused";
   } else {
     const stagedPath = stageSynthesized();
     try {
+      recordPendingDesignSourceProvenance(path, [hashSerializedDesignSourcePackage(rawBytes), ...pendingCarried]);
       if (existing?.stale) replaceStale(stagedPath, existing.sha256);
       else publishStaged(stagedPath);
     } finally {
@@ -2608,8 +2679,13 @@ async function prepareBuild(args, options = {}) {
   const specPath = resolve(requireArg(args, "spec"));
   const sourceRoot = resolve(requireArg(args, "source"));
   const targetRepo = resolve(requireArg(args, "target"));
-  if (!existsSync(specPath)) throw new Error(`CampaignSpec does not exist: ${specPath}`);
+  // A --map-id spec already fetched, whose cache write waits for the lock.
+  const publishSpec = typeof options.publishSpec === "function" ? options.publishSpec : null;
+  if (!publishSpec && !existsSync(specPath)) throw new Error(`CampaignSpec does not exist: ${specPath}`);
   if (!existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) throw new Error(`Source root is not a directory: ${sourceRoot}`);
+  // The cache write used to precede this check and create a missing target
+  // on its way to .campaign-runtime/fetched-specs/; keep that for --map-id.
+  if (publishSpec && !existsSync(targetRepo)) mkdirSync(targetRepo, { recursive: true });
   if (!existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) throw new Error(`Target repo is not a directory: ${targetRepo}`);
 
   const sidecars = campaignSidecarPaths(targetRepo);
@@ -2635,6 +2711,7 @@ async function prepareBuild(args, options = {}) {
     ...prepareBuildThemeOutputPaths,
     ["Design Source Package", designSourcePackagePath],
     ["prepare-build target lock directory", targetLockPath(targetRepo), { reservedTree: true }],
+    ["Design Source Package pending provenance record", pendingDesignSourceProvenancePath(designSourcePackagePath)],
   ];
   assertDistinctPrepareBuildOutputPaths(prepareBuildCollisionPaths);
   // One prepare-build at a time per target, from reading its inputs through
@@ -2647,22 +2724,28 @@ async function prepareBuild(args, options = {}) {
   // hashes the Design Source Package records, and the publication are one
   // critical section: a run that waited here sees exactly what the last
   // completed run left, not what was on disk when it started waiting.
-  return withTargetLock(targetRepo, () => prepareBuildUnderLock({
-    args,
-    options,
-    specPath,
-    sourceRoot,
-    targetRepo,
-    packetPath,
-    contextPath,
-    reportPath,
-    doctorOutPath,
-    briefPath,
-    designSourcePackagePath,
-    prepareBuildOutputPaths,
-    prepareBuildThemeOutputPaths,
-    prepareBuildCollisionPaths,
-  }), { command: "prepare-build" });
+  return withTargetLock(targetRepo, () => {
+    // The fetched spec goes into the shared cache file inside the critical
+    // section: the spec this run reads, hashes and records is the one it
+    // fetched, and a run waiting here cannot replace it meanwhile.
+    publishSpec?.();
+    return prepareBuildUnderLock({
+      args,
+      options,
+      specPath,
+      sourceRoot,
+      targetRepo,
+      packetPath,
+      contextPath,
+      reportPath,
+      doctorOutPath,
+      briefPath,
+      designSourcePackagePath,
+      prepareBuildOutputPaths,
+      prepareBuildThemeOutputPaths,
+      prepareBuildCollisionPaths,
+    });
+  }, { command: "prepare-build" });
 }
 
 function prepareBuildUnderLock({
@@ -3157,6 +3240,17 @@ function prepareBuildUnderLock({
     templateSelection,
   }));
 
+  // Before the report goes out, narrow the pending record to exactly what the
+  // report will say: the package's own hash when it is synthesized, nothing
+  // when it is adopted. A candidate this run or an earlier failed one never
+  // published cannot then outlive the report, even if the run dies between
+  // publishing the report and removing the record below.
+  recordPendingDesignSourceProvenance(
+    designSourcePackagePath,
+    designSourcePackage.origin === DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED
+      ? [hashSerializedDesignSourcePackage(designSourcePackage.rawBytes)]
+      : [],
+  );
   publishPrepareBuildJsonOutputs([
     { label: "Build Packet", path: packetPath, value: packet },
     { label: "Campaign Build Brief", path: briefPath, value: buildBrief.artifact },
@@ -3165,6 +3259,9 @@ function prepareBuildUnderLock({
   ], prepareBuildCollisionPaths, {
     beforePublish: recheckStageEvidence,
   });
+  // The report now records the package and its origin, so a pending
+  // provenance record has served its purpose.
+  rmSync(pendingDesignSourceProvenancePath(designSourcePackagePath), { force: true });
 
   let doctor = null;
   // Housekeeping for the target's git history: the machine-local half of

@@ -15,6 +15,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -1450,6 +1451,423 @@ syncBuiltinESMExports();
   assert.ok(readFileSync(join(dirname(dspPath), kept[0])).equals(staleBytes));
   assert.ok(result.stderr.includes(join(dirname(dspPath), kept[0])), "the error names where they are kept");
 }));
+
+// #501 item 1: the package goes out before the Assembly Report that records
+// it as prepare-build's own. A run that fails or dies between the two must
+// not leave that package unprovable: the retry still records it as
+// "synthesized", and a later --force after a manifest edit regenerates it
+// instead of refusing it.
+function reportPublicationFailureEnv(fixture, how) {
+  const preloadPath = join(fixture.dir, `report-publication-${how}.cjs`);
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRenameSync = fs.renameSync;
+fs.renameSync = function failReportPublication(from, to, ...rest) {
+  if (path.resolve(String(to)) === path.resolve(process.env.PB_REPORT) && String(from).endsWith(".tmp")) {
+    if (process.env.PB_REPORT_FAILURE === "kill") process.kill(process.pid, "SIGKILL");
+    const error = new Error("simulated report publication failure");
+    error.code = "EIO";
+    throw error;
+  }
+  return originalRenameSync.call(fs, from, to, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  return {
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+    PB_REPORT: join(fixture.target, ".campaign-runtime/assembly-report.json"),
+    PB_REPORT_FAILURE: how,
+  };
+}
+
+test("a package published before a failed or interrupted report publication stays recorded as synthesized", async (t) => {
+  for (const how of ["throw", "kill"]) {
+    await t.test(`--force regeneration, report publication ${how === "kill" ? "killed" : "fails"}`, () => withFixture(async (fixture) => {
+      const first = runPrepare(fixture);
+      assert.equal(first.status, 0, first.stderr);
+      const dspPath = join(fixture.target, DSP_REL_PATH);
+      const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+      const staleBytes = readFileSync(dspPath);
+      const priorReport = readFileSync(reportPath);
+      editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+
+      const failed = await runPrepareAsync(fixture, { extraArgs: ["--force"], env: reportPublicationFailureEnv(fixture, how) });
+      assert.notEqual(failed.status, 0);
+      if (how === "throw") assert.match(failed.stderr, /simulated report publication failure/);
+      const regeneratedBytes = readFileSync(dspPath);
+      assert.equal(regeneratedBytes.equals(staleBytes), false, "the regenerated package was published");
+      assert.ok(readFileSync(reportPath).equals(priorReport), "the report still records the retired package");
+
+      const retry = runPrepare(fixture);
+      assert.equal(retry.status, 0, retry.stderr);
+      assert.equal(retry.json.designSourcePackageMode, "reused");
+      assert.ok(readFileSync(dspPath).equals(regeneratedBytes));
+      assert.equal(readJson(reportPath).design_source_package.origin, "synthesized",
+        "the package this producer regenerated must not be recorded as adopted");
+      assertStillRegeneratesAfterAnotherEdit(fixture);
+      assert.deepEqual(readdirSync(dirname(dspPath)).filter((name) => name.includes("pending")), [],
+        "the pending provenance record is cleared once a report records the package");
+    }));
+  }
+
+  await t.test("first emit, report publication fails", () => withFixture(async (fixture) => {
+    const failed = await runPrepareAsync(fixture, { env: reportPublicationFailureEnv(fixture, "throw") });
+    assert.notEqual(failed.status, 0);
+    assert.match(failed.stderr, /simulated report publication failure/);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    assert.ok(existsSync(dspPath), "the package was published before the report failed");
+    assert.equal(existsSync(join(fixture.target, ".campaign-runtime/assembly-report.json")), false);
+
+    const retry = runPrepare(fixture);
+    assert.equal(retry.status, 0, retry.stderr);
+    assert.equal(retry.json.designSourcePackageMode, "reused");
+    assertStillRegeneratesAfterAnotherEdit(fixture);
+  }));
+
+  await t.test("a pending record never vouches for bytes changed after the failure", () => withFixture(async (fixture) => {
+    const failed = await runPrepareAsync(fixture, { env: reportPublicationFailureEnv(fixture, "throw") });
+    assert.notEqual(failed.status, 0);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    // Same material, different bytes: a valid package the producer did not write.
+    writeFileSync(dspPath, `${JSON.stringify(reverseKeys(readJson(dspPath)), null, 4)}\n`);
+    const retry = runPrepare(fixture);
+    assert.equal(retry.status, 0, retry.stderr);
+    assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.origin, "adopted");
+  }));
+});
+
+// A package whose only proof of origin is the pending record keeps that proof
+// through a --force regeneration that fails or dies before it publishes.
+function pendingRecordEnv(fixture, how) {
+  const preloadPath = join(fixture.dir, `pending-record-${how}.cjs`);
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRenameSync = fs.renameSync, originalLinkSync = fs.linkSync;
+const dsp = path.resolve(process.env.PB_DSP);
+const pending = path.join(path.dirname(dsp), "." + path.basename(dsp) + ".pending-provenance.json");
+fs.renameSync = function killAfterPendingRecord(from, to, ...rest) {
+  const result = originalRenameSync.call(fs, from, to, ...rest);
+  if (process.env.PB_HOW === "kill-after-pending" && path.resolve(String(to)) === pending) process.kill(process.pid, "SIGKILL");
+  return result;
+};
+fs.linkSync = function failStagedPublication(source, destination) {
+  if (process.env.PB_HOW === "fail-publication" && path.resolve(String(destination)) === dsp && String(source).endsWith(".tmp")) {
+    const error = new Error("simulated publication failure");
+    error.code = "EIO";
+    throw error;
+  }
+  return originalLinkSync.call(fs, source, destination);
+};
+syncBuiltinESMExports();
+`);
+  return {
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+    PB_DSP: join(fixture.target, DSP_REL_PATH),
+    PB_HOW: how,
+  };
+}
+
+test("a --force regeneration that fails or dies keeps the pending proof for the package it leaves in place", async (t) => {
+  for (const how of ["fail-publication", "kill-after-pending"]) {
+    await t.test(how, () => withFixture(async (fixture) => {
+      const failed = await runPrepareAsync(fixture, { env: reportPublicationFailureEnv(fixture, "throw") });
+      assert.notEqual(failed.status, 0);
+      const dspPath = join(fixture.target, DSP_REL_PATH);
+      const emittedBytes = readFileSync(dspPath);
+      editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+
+      const interrupted = await runPrepareAsync(fixture, { extraArgs: ["--force"], env: pendingRecordEnv(fixture, how) });
+      assert.notEqual(interrupted.status, 0);
+      assert.ok(readFileSync(dspPath).equals(emittedBytes), "the package prepare-build emitted is still in place");
+
+      const forced = runPrepare(fixture, { extraArgs: ["--force"] });
+      assert.equal(forced.status, 0, forced.stderr);
+      assert.equal(forced.json.designSourcePackageMode, "regenerated");
+      assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.origin, "synthesized");
+    }));
+  }
+});
+
+// The pending record names bytes a run intends to publish. When the run loses
+// publication to identical bytes some other writer put there first, it adopts
+// them, and the record must not later vouch for them as the producer's own.
+test("a pending record does not vouch for a package the run adopted instead of publishing", () => withFixture(async (fixture) => {
+  const preloadPath = join(fixture.dir, "identical-winner.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalLinkSync = fs.linkSync, originalRenameSync = fs.renameSync;
+const dsp = path.resolve(process.env.PB_DSP);
+fs.linkSync = function identicalWinner(source, destination) {
+  if (path.resolve(String(destination)) === dsp && String(source).endsWith(".tmp")) {
+    // Another writer puts the same bytes at the path first.
+    fs.writeFileSync(dsp, fs.readFileSync(source));
+  }
+  return originalLinkSync.call(fs, source, destination);
+};
+fs.renameSync = function failReportPublication(from, to, ...rest) {
+  if (path.resolve(String(to)) === path.resolve(process.env.PB_REPORT) && String(from).endsWith(".tmp")) {
+    const error = new Error("simulated report publication failure");
+    error.code = "EIO";
+    throw error;
+  }
+  return originalRenameSync.call(fs, from, to, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  const lost = await runPrepareAsync(fixture, {
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      PB_DSP: join(fixture.target, DSP_REL_PATH),
+      PB_REPORT: join(fixture.target, ".campaign-runtime/assembly-report.json"),
+    },
+  });
+  assert.notEqual(lost.status, 0);
+  assert.match(lost.stderr, /simulated report publication failure/);
+
+  const retry = runPrepare(fixture);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.origin, "adopted",
+    "bytes another writer published are adopted, not claimed through the run's pending record");
+}));
+
+function pendingRecordPath(fixture) {
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  return join(dirname(dspPath), `.${basename(dspPath)}.pending-provenance.json`);
+}
+
+// A malformed pending record is no proof at all: any entry that is not a
+// sha256 digest discards the whole record rather than trusting the rest.
+test("a malformed pending record vouches for nothing", async (t) => {
+  for (const [label, content] of [
+    ["a non-digest entry beside a valid one", (hash) => JSON.stringify({ origin: "synthesized", sha256: [null, hash] })],
+    ["a torn write", (hash) => JSON.stringify({ origin: "synthesized", sha256: [hash] }).slice(0, 40)],
+    ["a bare string", (hash) => JSON.stringify({ origin: "synthesized", sha256: hash })],
+  ]) {
+    await t.test(label, () => withFixture(async (fixture) => {
+      const failed = await runPrepareAsync(fixture, { env: reportPublicationFailureEnv(fixture, "throw") });
+      assert.notEqual(failed.status, 0);
+      const hash = `sha256:${sha256(readFileSync(join(fixture.target, DSP_REL_PATH)))}`;
+      writeFileSync(pendingRecordPath(fixture), content(hash));
+      const retry = runPrepare(fixture);
+      assert.equal(retry.status, 0, retry.stderr);
+      assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.origin, "adopted");
+    }));
+  }
+});
+
+// Before the report goes out, the pending record is narrowed to the package
+// the report records, so a candidate that was never published cannot outlive
+// the report (a kill between report publication and record removal).
+test("the pending record is narrowed to the recorded package before the report is published", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const keptHash = `sha256:${sha256(readFileSync(dspPath))}`;
+  const manifestPath = join(fixture.source, ".campaigns-os/source-html-manifest.json");
+  const originalManifest = readFileSync(manifestPath);
+  editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+  const failed = await runPrepareAsync(fixture, { extraArgs: ["--force"], env: pendingRecordEnv(fixture, "fail-publication") });
+  assert.notEqual(failed.status, 0);
+  assert.equal(readJson(pendingRecordPath(fixture)).sha256.length, 2, "the failed regeneration left its candidate and the kept package");
+
+  // Inputs restored: the retry reuses the kept package and is killed right
+  // after its report is published, before the record is removed.
+  writeFileSync(manifestPath, originalManifest);
+  const killed = await runPrepareAsync(fixture, { env: reportPublishedThenKilledEnv(fixture) });
+  assert.notEqual(killed.status, 0);
+  assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.sha256, keptHash);
+  assert.deepEqual(readJson(pendingRecordPath(fixture)).sha256, [keptHash],
+    "only the recorded package may survive in the pending record");
+}));
+
+function reportPublishedThenKilledEnv(fixture) {
+  const preloadPath = join(fixture.dir, "report-published-then-killed.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRenameSync = fs.renameSync;
+fs.renameSync = function killAfterReport(from, to, ...rest) {
+  const result = originalRenameSync.call(fs, from, to, ...rest);
+  if (path.resolve(String(to)) === path.resolve(process.env.PB_REPORT)) process.kill(process.pid, "SIGKILL");
+  return result;
+};
+syncBuiltinESMExports();
+`);
+  return {
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+    PB_REPORT: join(fixture.target, ".campaign-runtime/assembly-report.json"),
+  };
+}
+
+// #501 item 6: the manifest hash recorded in the Design Source Package is the
+// hash of the bytes source intake parsed, even when the file is rewritten
+// between the parse and the hash.
+test("the recorded manifest hash is the hash of the exact bytes that were parsed", () => withFixture(async (fixture) => {
+  const manifestPath = join(fixture.source, ".campaigns-os/source-html-manifest.json");
+  const parsedBytes = readFileSync(manifestPath);
+  const edited = readJson(manifestPath);
+  edited.generated_at = "2026-08-22T13:00:00.000Z";
+  const editedBytes = `${JSON.stringify(edited, null, 2)}\n`;
+  const preloadPath = join(fixture.dir, "manifest-edit-after-parse.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalReadFileSync = fs.readFileSync;
+let edited = false;
+fs.readFileSync = function editManifestAfterRead(file, ...rest) {
+  const result = originalReadFileSync.call(fs, file, ...rest);
+  if (!edited && path.resolve(String(file)) === path.resolve(process.env.PB_MANIFEST)) {
+    edited = true;
+    fs.writeFileSync(process.env.PB_MANIFEST, process.env.PB_MANIFEST_EDIT);
+  }
+  return result;
+};
+syncBuiltinESMExports();
+`);
+  const result = await runPrepareAsync(fixture, {
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      PB_MANIFEST: manifestPath,
+      PB_MANIFEST_EDIT: editedBytes,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(manifestPath, "utf8"), editedBytes, "the manifest was rewritten mid-run");
+  assert.equal(result.json.context.source.manifest.generated_at, "2026-08-22T10:00:00.000Z", "intake parsed the original bytes");
+  const dsp = readJson(join(fixture.target, DSP_REL_PATH));
+  const html = dsp.contributions.find((contribution) => contribution.id === "html-funnel");
+  assert.equal(html.provenance.manifest_sha256, `sha256:${sha256(parsedBytes)}`,
+    "the recorded hash must describe the bytes that were parsed, not the file as it was later");
+}));
+
+// #501 item 7: with --map-id the Map fetch and the write of the shared
+// fetched-spec cache happen under the per-target lock. Run A holds the lock
+// and has parsed revision 1 when run B starts against an edited Map
+// (revision 2). B must not overwrite the cache A is recording until A is
+// done, so A records the hash of the revision it parsed.
+test("a --map-id run records the Map revision it parsed while another run waits to fetch the next one", () => withFixture(async (fixture) => {
+  const revision1 = readJson(fixture.specPath);
+  const revision2 = cloneForRevision(revision1);
+  revision2.funnels[0].pages[0].label = "Landing revision 2";
+  let served = revision1;
+  let requests = 0;
+  const server = createServer((_request, response) => {
+    requests += 1;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: true, data: served }));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  try {
+    const proxyBase = `http://127.0.0.1:${server.address().port}`;
+    const mapId = revision1.spec_identity.map_id;
+    const cachePath = join(fixture.target, ".campaign-runtime/fetched-specs", `${mapId}.json`);
+    const lockPath = join(dirname(join(fixture.target, DSP_REL_PATH)), `.${basename(DSP_REL_PATH)}.lock`);
+    const signalDir = join(fixture.dir, "map-fetch-signals");
+    mkdirSync(signalDir, { recursive: true });
+    // Role "reader": after parsing the cached spec, hold until the other run
+    // is waiting for the lock. Role "waiter": signal when the lock is taken.
+    const preloadPath = join(fixture.dir, "map-fetch-choreography.cjs");
+    writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const role = process.env.MAP_ROLE;
+const cache = path.resolve(process.env.MAP_CACHE);
+const waiting = path.join(process.env.MAP_SIGNALS, "waiter-at-lock");
+const originalReadFileSync = fs.readFileSync, originalMkdirSync = fs.mkdirSync;
+let held = false;
+fs.readFileSync = function holdAfterSpecRead(file, ...rest) {
+  const result = originalReadFileSync.call(fs, file, ...rest);
+  if (role === "reader" && !held && path.resolve(String(file)) === cache) {
+    held = true;
+    fs.writeFileSync(path.join(process.env.MAP_SIGNALS, "reader-read"), String(process.pid));
+    const deadline = Date.now() + 20000;
+    while (!fs.existsSync(waiting) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+  return result;
+};
+fs.mkdirSync = function signalLockWait(candidate, ...rest) {
+  try {
+    return originalMkdirSync.call(fs, candidate, ...rest);
+  } catch (error) {
+    if (role === "waiter" && error?.code === "EEXIST" && path.resolve(String(candidate)) === path.resolve(process.env.MAP_LOCK)) {
+      fs.writeFileSync(waiting, String(process.pid));
+    }
+    throw error;
+  }
+};
+syncBuiltinESMExports();
+`);
+    const run = (role) => new Promise((done) => {
+      const child = spawn(process.execPath, [
+        CLI, "prepare-build",
+        "--map-id", mapId,
+        "--proxy-base", proxyBase,
+        "--source", fixture.source,
+        "--target", fixture.target,
+        "--template-family", "olympus",
+        "--no-run-session",
+        "--force",
+        "--json",
+      ], {
+        cwd: fixture.dir,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          CAMPAIGNS_OS_TELEMETRY: "off",
+          NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+          MAP_ROLE: role,
+          MAP_CACHE: cachePath,
+          MAP_LOCK: lockPath,
+          MAP_SIGNALS: signalDir,
+        },
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+      child.on("close", (status) => done({ status, stderr, json: status === 0 ? JSON.parse(stdout) : null }));
+    });
+
+    const reader = run("reader");
+    const deadline = Date.now() + 20000;
+    while (!existsSync(join(signalDir, "reader-read"))) {
+      if (Date.now() > deadline) throw new Error("the reader never parsed the cached spec");
+      await new Promise((done) => setTimeout(done, 10));
+    }
+    served = revision2;
+    const waiter = run("waiter");
+    const [a, b] = await Promise.all([reader, waiter]);
+    assert.equal(a.status, 0, a.stderr);
+    assert.equal(b.status, 0, b.stderr);
+    assert.equal(requests, 2);
+
+    const revisionBytes = (spec) => `${JSON.stringify(spec, null, 2)}\n`;
+    assert.equal(a.json.context.spec.active_pages[0].label, "Landing", "run A parsed revision 1");
+    assert.equal(a.json.context.spec.hash, sha256(revisionBytes(revision1)),
+      "run A must record the hash of the revision it parsed, not the one run B fetched meanwhile");
+    assert.equal(a.json.report.identity.spec_hash, a.json.context.spec.hash);
+    assert.equal(b.json.context.spec.active_pages[0].label, "Landing revision 2");
+    assert.equal(b.json.context.spec.hash, sha256(revisionBytes(revision2)));
+    assert.equal(sha256(readFileSync(cachePath)), b.json.context.spec.hash, "the cache holds what the last run recorded");
+  } finally {
+    await new Promise((done) => server.close(done));
+  }
+}));
+
+function cloneForRevision(value) {
+  return JSON.parse(JSON.stringify(value));
+}
 
 test("prepare-build --force still refuses a stale DSP it cannot show it synthesized", async (t) => {
   const assertRefusedWithDeleteRecovery = (fixture) => {
