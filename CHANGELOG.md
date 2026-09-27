@@ -34,6 +34,21 @@ Notable supported-surface changes are recorded here.
   `.lock.recovery-staging-*`, `.lock.released-*`, `.lock.abandoned-*`),
   including through a symlinked directory or a case-only alias. Such an output was written and then deleted with the lock, leaving
   the packet and context pointing at a missing file.
+## [1.43.1+agent.13] - 2026-09-27
+
+### Changed
+
+- The lifecycle effects tests now prove that `start`, `prepare-build` and
+  `build` refuse a bare, empty or whitespace `--template-family`,
+  `--allow-uncertified-template`, `--theme-policy` or `--brief`, and an
+  unsupported `--theme-policy`, before the CampaignSpec is looked at. The
+  earlier refusal tests seeded a valid spec, so a check that ran after the
+  spec was read would still have passed them. The new cases make the local
+  `--spec` file and the `--cached-spec` cache file missing, a directory, or
+  malformed JSON, and require the flag refusal with no journal entry, no fetch
+  and an unchanged tree. The tree snapshot these tests compare now lists
+  directories as well as files, so a refusal that only creates an empty
+  directory is caught too. Tests only; CLI behavior is unchanged (#504).
 
 ## [1.43.1+agent.12] - 2026-09-26
 
