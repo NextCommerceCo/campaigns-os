@@ -5,6 +5,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { readdirSync, realpathSync } from 'node:fs';
+import { relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parse } from 'acorn';
 
 const cli = resolve(import.meta.dirname, '../bin/campaigns-os.mjs');
 test('lightweight CLI commands do not load QA, while QA dispatch still does', t => {
@@ -39,4 +43,63 @@ test('lightweight CLI commands do not load QA, while QA dispatch still does', t 
   });
   assert.equal(ordinaryQa.status, 0, ordinaryQa.stderr);
   assert.match(ordinaryQa.stdout, /campaigns-os qa/);
+});
+
+// Source-observed, because an import of the CLI from these modules loads
+// without a cycle or ordering error: nothing at runtime would notice it.
+test('doctor and the shared helper modules never import the CLI module', () => {
+  const src = import.meta.dirname;
+  const cliModule = join(src, 'cli.mjs');
+  const files = [
+    ...readdirSync(join(src, 'doctor'), { recursive: true })
+      .filter(name => name.endsWith('.mjs') && !name.endsWith('.test.mjs'))
+      .map(name => join(src, 'doctor', name)),
+    join(src, 'install-invocation.mjs'),
+    join(src, 'cli-helpers.mjs'),
+    join(src, 'campaigns-api-key.mjs'),
+  ];
+  assert.ok(files.length > 0, 'no modules were scanned');
+  assert.ok(files.includes(join(src, 'doctor', 'checks.mjs')), 'src/doctor/checks.mjs was not scanned');
+  // Parsed, not pattern-matched: a comment or unusual spacing between
+  // `import` and its specifier must not hide the dependency.
+  const moduleSpecifiers = source => {
+    const specifiers = [];
+    const visit = node => {
+      if (!node || typeof node.type !== 'string') return;
+      if (node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration') {
+        if (node.source) specifiers.push(node.source.value);
+      } else if (node.type === 'ImportExpression') {
+        if (node.source.type === 'Literal' && typeof node.source.value === 'string') specifiers.push(node.source.value);
+        else if (node.source.type === 'TemplateLiteral' && node.source.expressions.length === 0) specifiers.push(node.source.quasis[0].value.cooked);
+      }
+      for (const value of Object.values(node)) {
+        if (Array.isArray(value)) value.forEach(visit);
+        else if (value && typeof value === 'object' && typeof value.type === 'string') visit(value);
+      }
+    };
+    visit(parse(source, { ecmaVersion: 'latest', sourceType: 'module' }));
+    return specifiers;
+  };
+  // Classified the way Node classifies a specifier: `./`, `../` and `/` are
+  // relative URLs against the importing file, an absolute URL is taken as is,
+  // and everything else is a bare package or builtin, which cannot be this
+  // file. Percent-encoding decodes through fileURLToPath; the native realpath
+  // folds symlinks and, on a case-insensitive disk, letter case.
+  const samePath = path => { try { return realpathSync.native(path); } catch { return path; } };
+  const cliPath = samePath(cliModule);
+  const resolvesToCli = (file, specifier) => {
+    let url;
+    if (/^(\.\.?\/|\/)/.test(specifier)) url = new URL(specifier, pathToFileURL(file));
+    else { try { url = new URL(specifier); } catch { return false; } }
+    if (url.protocol !== 'file:') return false;
+    return samePath(fileURLToPath(url)) === cliPath;
+  };
+  for (const file of files) {
+    for (const specifier of moduleSpecifiers(readFileSync(file, 'utf8'))) {
+      assert.ok(
+        !resolvesToCli(file, specifier),
+        `src/${relative(src, file)} imports the CLI module as "${specifier}"`,
+      );
+    }
+  }
 });

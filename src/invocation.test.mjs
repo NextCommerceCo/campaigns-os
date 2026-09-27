@@ -150,7 +150,7 @@ test("invocation: the declaration is data, imports nothing from cli.mjs, and not
   const declaration = source.slice(source.indexOf("const CLASS_STEPS"), source.indexOf("export const commandNames"));
   assert.doesNotMatch(declaration, /=>|\bfunction\b/, "a declaration entry is a function");
   assert.doesNotMatch(source, /from\s+["']\.\/cli\.mjs["']/);
-  for (const file of readdirSync(join(ROOT, "src")).filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"))) {
+  for (const file of readdirSync(join(ROOT, "src"), { recursive: true }).filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"))) {
     assert.doesNotMatch(readText(`src/${file}`), /effects\.v1\.json["'`]/, `src/${file} names the effect contract as a path`);
   }
 });

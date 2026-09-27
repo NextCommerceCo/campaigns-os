@@ -14,6 +14,9 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { LOCAL_INVOCATION_PREFIX } from "./install-mode.mjs";
+import { existsSync } from "node:fs";
+import { basename } from "node:path";
+import { ROOT as INSTALL_ROOT } from "./install-invocation.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -63,4 +66,15 @@ test("no skill or doc tells a reader to run a plain `npx campaigns-os <command>`
     [],
     `spell these as \`${LOCAL_INVOCATION_PREFIX} …\`; to describe the old spelling in prose, name it without a command word (\`npx campaigns-os\` or \`npx campaigns-os …\`)`,
   );
+});
+
+// The printed prefix cannot show this: from a checkout it is the bare form
+// wherever ROOT points. The install mode is decided from ROOT, so ROOT itself
+// is pinned to the package root.
+test("ROOT names the package root, not src/", () => {
+  assert.equal(INSTALL_ROOT, ROOT);
+  const manifest = join(INSTALL_ROOT, "package.json");
+  assert.ok(existsSync(manifest), `${manifest} does not exist`);
+  assert.equal(JSON.parse(readFileSync(manifest, "utf8")).name, "@nextcommerce/campaigns-os");
+  assert.notEqual(basename(INSTALL_ROOT), "src");
 });
