@@ -51,15 +51,18 @@ function runCli(args, { cwd, env = {} } = {}) {
   });
 }
 
-// Relative path + content hash for every file under `dir`, sorted. Content, not
-// mtime: a rewrite with identical bytes is not an effect worth failing on, and
-// an append always changes the hash.
+// Relative path + content hash for every file under `dir`, and every
+// directory as `<path>/`, sorted. Content, not mtime: a rewrite with identical
+// bytes is not an effect worth failing on, and an append always changes the
+// hash. Directories are listed so a refusal that only creates an empty
+// directory (a `mkdirSync` ahead of the check) still changes the snapshot.
 function snapshotTree(dir) {
   const files = [];
   const walk = (current) => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       const full = join(current, entry.name);
       if (entry.isDirectory()) {
+        files.push(`${relative(dir, full)}/`);
         walk(full);
         continue;
       }
@@ -570,6 +573,89 @@ test("(i) intake value forms refuse on local, fetched, and cached spec paths bef
       }
     }
   });
+});
+
+// #504: the refusals above seed valid specs, so a regression that read or
+// parsed the spec before rejecting a late intake flag would still pass them:
+// file hashes, the journal and fetch counts cannot see a read. Here the spec
+// the intake would resolve (the local --spec file, or the --cached-spec cache
+// file) is missing, unreadable (a directory at the path, which fails to read
+// as root too) or malformed JSON. The flag refusal must still win, with no
+// journal, no fetch and an unchanged tree. If an argv-only check ran after
+// resolveSpecPath, a missing spec would surface its not-found error instead;
+// if it ran after the spec read, the unreadable and malformed specs would
+// surface a read or parse error instead.
+const BROKEN_SPEC_CONDITIONS = {
+  missing: (path) => rmSync(path, { force: true }),
+  unreadable: (path) => {
+    rmSync(path, { force: true });
+    mkdirSync(path);
+    writeFileSync(join(path, "not-a-spec.txt"), "a directory where the spec file should be\n");
+  },
+  malformed: (path) => writeFileSync(path, "{\"spec_version\": \"campaignspec.v42\", \"spec_identity\": {\n"),
+};
+// Deliberately broad: any sign that the spec was resolved, read or parsed
+// (not-found, directory, or any JSON parse wording, however it is phrased)
+// means the refusal came too late, so a looser match only makes the test
+// stricter.
+const ANY_SPEC_LOAD_DIAGNOSTIC = /CampaignSpec does not exist|no cached spec found|EISDIR|expected a file but found a directory|in JSON at|end of JSON input|not valid JSON/;
+const LATE_INTAKE_FLAG_FORMS = [
+  ...["template-family", "allow-uncertified-template", "theme-policy", "brief"].flatMap((flag) => [null, "", "   "].map((value) => ({
+    flag,
+    value,
+    expect: new RegExp(`--${flag} needs a value`),
+  }))),
+  { flag: "theme-policy", value: "bogus", expect: /Unsupported --theme-policy "bogus"/ },
+];
+
+test("(i) #504: late intake flag refusals precede the spec read with missing, unreadable and malformed specs", async (t) => {
+  let fetches = 0;
+  const server = createServer((_request, response) => {
+    fetches += 1;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(readFileSync(join(ROOT, "examples/campaignspec.v42.basic.json")));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const proxyBase = `http://127.0.0.1:${server.address().port}`;
+  for (const path of ["local", "cached"]) {
+    for (const [condition, breakSpec] of Object.entries(BROKEN_SPEC_CONDITIONS)) {
+      for (const { flag, value, expect } of LATE_INTAKE_FLAG_FORMS) {
+        await t.test(`${path} spec ${condition}: --${flag} ${JSON.stringify(value)} refuses before the spec is read`, async () => {
+          await Promise.all(["start", "prepare-build", "build"].map(async (command) => {
+            const dir = mkdtempSync(join(tmpdir(), "campaigns-os-intake-broken-spec-"));
+            try {
+              seedRefusalFixture(dir, path === "cached" ? "cached-intake" : "intake");
+              const specPath = path === "cached"
+                ? join(dir, "target/.campaign-runtime/fetched-specs/demo.json")
+                : join(dir, "spec.json");
+              breakSpec(specPath);
+              const baseline = path === "local" ? ["--spec", specPath] : ["--map-id", "demo", "--cached-spec"];
+              const argv = [command, ...baseline, "--source", join(dir, "source"), "--target", join(dir, "target"), "--proxy-base", proxyBase, `--${flag}`];
+              if (value !== null) argv.push(value);
+              argv.push("--no-run-session", "--no-remit", "--json");
+              const journal = join(dir, "x.jsonl");
+              const before = snapshotTree(dir);
+              const fetchesBefore = fetches;
+              const result = await execFileAsync(process.execPath, [CLI, ...argv], {
+                cwd: dir,
+                env: childEnv({ CAMPAIGNS_OS_LIFECYCLE_LOG: journal }),
+              }).then(() => null, (error) => error);
+              assert.ok(result, `${command} should refuse`);
+              const diagnostic = `${result.stderr}${result.stdout}`;
+              assert.match(diagnostic, expect, `${command}: the flag refusal, not a spec error`);
+              assert.doesNotMatch(diagnostic, ANY_SPEC_LOAD_DIAGNOSTIC, `${command}: no spec diagnostic`);
+              assert.deepEqual(snapshotTree(dir), before, `${command} must not change target files`);
+              assert.equal(existsSync(journal), false, `${command} must not journal`);
+              assert.equal(fetches, fetchesBefore, `${command} must not fetch`);
+            } finally {
+              rmSync(dir, { recursive: true, force: true });
+            }
+          }));
+        });
+      }
+    }
+  }
 });
 
 // The other half of (i): suppression must stop at the refusal boundary. A
