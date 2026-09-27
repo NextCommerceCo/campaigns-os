@@ -7192,6 +7192,39 @@
         }
       ],
       "entry_sha256": "f2be3f58c79afb40343b1dc3b6baa8a8065be0a93b04c45ec870e5f91b7a49d1"
+    },
+    {
+      "id": "RL-0160",
+      "sequence": 156,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.18",
+      "changelog_sha256": "4b20c21243c83167a87e4fd591d555b13943d30a16e4a0c744970b4fcb2e1e89",
+      "agent_impact": "prepare-build keeps a Design Source Package it synthesized recorded as synthesized across a failure or kill between package and report publication (a pending provenance record beside the package), records the hash of the exact source-html manifest bytes it parsed, and with --map-id writes the fetched spec to the shared cache only under the per-target lock.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Write and consult a pending Design Source Package provenance record around package publication, hash the manifest bytes intake parsed, and defer the --map-id cache write into the prepare-build lock."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Document the pending provenance record, the lock-held --map-id cache write, and the single-read manifest hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "State that the fetched-spec cache is written only under the per-target prepare-build lock."
+        }
+      ],
+      "entry_sha256": "469c1fbbffc48c3d82bdfb7562b0592d5fba5851a2acd077a5aa72c807a3504b"
     }
   ]
 }

@@ -357,13 +357,27 @@ package file and says which recovery applies:
 Only the Assembly Report carries `origin`; the packet and context references
 keep their four strict fields.
 
+The package is published before the report that records it. So that a run
+which fails or dies between the two does not leave its own package unprovable,
+`prepare-build` first writes a pending provenance record beside the package
+(`.campaign-runtime/input/.design-source-package.json.pending-provenance.json`)
+naming the sha256 of the bytes it is about to publish, and removes it once the
+Assembly Report is written. A retry that finds the record treats a package
+whose bytes still hash to it as `"synthesized"`, exactly as if the report had
+recorded it; bytes changed since are not vouched for. The record's path is
+reserved like the other outputs, so no configurable output may point at it.
+
 Runs against the same target take turns. From the stage-evidence check and
 the reading of its inputs (CampaignSpec, source manifest, page mappings, asset
 crawl) through the packet, context and report that record them,
 `prepare-build` holds a lock directory beside the package
 (`.campaign-runtime/input/.design-source-package.json.lock`), so each run judges
 provenance against the report and package the previous run left, and records
-the inputs it actually read. Stage producers do not take this lock, so the
+the inputs it actually read. With `--map-id`, the fetched spec is written to the
+shared `fetched-specs/` cache file inside the same lock, so a run waiting for
+the lock cannot replace the spec the lock holder is reading. The source-html
+manifest is read once: the `manifest_sha256` the package records is the hash of
+the exact bytes source intake parsed. Stage producers do not take this lock, so the
 report is checked for stage evidence again just before it is replaced; evidence
 that landed mid-run stops a run without `--force`. Of several
 concurrent `--force` runs, the first regenerates the package and the rest reuse
