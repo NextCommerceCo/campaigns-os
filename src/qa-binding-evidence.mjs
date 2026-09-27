@@ -1,7 +1,7 @@
 import { parse as parseHtml } from 'parse5';
 import { parse as parseJs } from 'acorn';
 import { createPageSourceLoader, resolveCommercialApiKey } from './qa-commercial-parity.mjs';
-import { parseFailureDiagnostic, scriptKind } from './built-script-syntax.mjs';
+import { frozenBaseUrl, parseFailureDiagnostic, scriptKind } from './built-script-syntax.mjs';
 
 export const BINDING_SCHEMA = 'campaigns-os-page-binding/v0';
 export const BINDING_LIMITS = Object.freeze({ scripts_per_page: 6, scripts_per_run: 24, script_bytes: 262144, timeout_ms: 5000 });
@@ -120,19 +120,20 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
     if (node.tagName === 'base' && baseHref === null && typeof attrs.href === 'string') baseHref = attrs.href.trim();
     if (node.tagName === 'base' || Object.entries(attrs).some(([name, value]) => /^on/i.test(name) || /^\s*javascript:/i.test(value))) dynamic = true;
     if (node.tagName === 'meta' && attrs.name === 'next-api-key') { values.push(attrs.content ?? ''); kinds.add('meta'); }
-    if (node.tagName === 'script') scripts.push({ attrs, text: (node.childNodes || []).map(n => n.value || '').join('') });
+    // Each script keeps the <base href> in effect when the parser prepares it
+    // (its end tag): the first one before it in tree order, or none (#502).
+    if (node.tagName === 'script') scripts.push({ attrs, base: baseHref, text: (node.childNodes || []).map(n => n.value || '').join('') });
     // parse5 keeps template content separate; it is inert, as is noscript at boot.
     if (node.tagName !== 'noscript') for (const child of node.childNodes || []) walk(child);
   };
   try { walk(parseHtml(source.html)); } catch { return result('unknown', 'dynamic_unresolved'); }
-  // Script srcs resolve against the document's effective base: its first
-  // <base href>, else the page URL. The loader still scopes the result to
-  // the page origin, so a cross-origin base leaves those scripts unavailable.
-  let scriptBase = pageUrl;
-  if (baseHref !== null) {
-    try { scriptBase = new URL(baseHref, pageUrl).href; } catch { scriptBase = pageUrl; }
-  }
-  const scriptRef = src => { try { return new URL(src, scriptBase).href; } catch { return null; } };
+  // A script src resolves against the base in effect when the script is
+  // prepared: the frozen base URL of the first <base href> before it, where a
+  // data:, javascript: or unparsable base falls back to the page URL (HTML
+  // "set the frozen base URL"), else the page URL. The loader still scopes
+  // the result to the page origin, so a cross-origin base leaves those
+  // scripts unavailable.
+  const scriptRef = (src, base) => { try { return new URL(src, frozenBaseUrl(base, pageUrl)).href; } catch { return null; } };
   let count = 0, unavailable = false;
   for (const script of scripts) {
     const { attrs } = script;
@@ -152,7 +153,7 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
     if (attrs.src) {
       kind = 'config_script';
       if (++count > BINDING_LIMITS.scripts_per_page) { unavailable = true; continue; }
-      const ref = baseHref === null ? attrs.src : scriptRef(attrs.src);
+      const ref = script.base === null ? attrs.src : scriptRef(attrs.src, script.base);
       const loaded = ref ? await scriptLoader(ref, pageUrl) : { ok: false };
       if (!loaded.ok) { unavailable = true; continue; }
       text = loaded.html;
@@ -161,7 +162,7 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
     if (found.unparsable) {
       // The declarations in an unparsable script are unavailable, not dynamic.
       unavailable = true;
-      if (Array.isArray(parseFailures)) parseFailures.push({ source_kind: kind, script: attrs.src ? scriptPath(scriptRef(attrs.src) ?? attrs.src, pageUrl) : null, ...found.unparsable });
+      if (Array.isArray(parseFailures)) parseFailures.push({ source_kind: kind, script: attrs.src ? scriptPath(scriptRef(attrs.src, script.base) ?? attrs.src, pageUrl) : null, ...found.unparsable });
       continue;
     }
     if (found.values.length) { kinds.add(kind); values.push(...found.values); }

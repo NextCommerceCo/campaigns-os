@@ -12,8 +12,10 @@ import { test } from "node:test";
 import { doctorBuiltOutput, doctorPacket } from "./cli.mjs";
 import {
   SCRIPT_SYNTAX,
+  SCRIPT_SYNTAX_MISSING_SCRIPT,
   SCRIPT_SYNTAX_PARSE_FAILURE,
   evaluateBuiltScriptSyntax,
+  frozenBaseUrl,
   pageScriptReferences,
   parseScriptSyntax,
   scriptKind,
@@ -117,19 +119,7 @@ test("script references: a commented-out script tag is not a reference", () => {
   assert.deepEqual(refs, [{ src: "live.js", module: false }]);
 });
 
-test("a referenced local script missing from disk is listed, not judged", () => {
-  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-script-syntax-"));
-  try {
-    const page = join(dir, "_site", SLUG, "checkout");
-    mkdirSync(page, { recursive: true });
-    writeFileSync(join(page, "index.html"), '<html><head><script src="/example-campaign/js/absent.js"></script><script src="//cdn.example.com/x.js"></script></head><body></body></html>');
-    const gate = gateOf(doctorBuiltOutput({ built: dir, slug: SLUG }));
-    assert.equal(gate.status, "not_applicable");
-    assert.deepEqual(gate.scripts_unresolved, [{ src: "/example-campaign/js/absent.js", pages: ["checkout"] }]);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+
 
 test("the evaluator names every unparsable file and counts the rest", () => {
   const gate = evaluateBuiltScriptSyntax({
@@ -333,4 +323,101 @@ test("scriptKind follows the HTML type-string steps, including whitespace-only t
     [{ type: "application/ld+json", nomodule: "" }, null],
   ];
   for (const [attrs, expected] of cases) assert.equal(scriptKind(attrs), expected, JSON.stringify(attrs));
+});
+
+test("a referenced local script missing from disk is a warning, not a blocker (#502)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-script-syntax-"));
+  try {
+    const page = join(dir, "_site", SLUG, "checkout");
+    mkdirSync(page, { recursive: true });
+    writeFileSync(join(page, "index.html"), '<html><head><script src="/example-campaign/js/absent.js"></script><script src="//cdn.example.com/x.js"></script></head><body></body></html>');
+    const result = doctorBuiltOutput({ built: dir, slug: SLUG });
+    const gate = gateOf(result);
+    assert.equal(gate.status, "not_applicable");
+    assert.deepEqual(gate.scripts_unresolved, [{ src: "/example-campaign/js/absent.js", pages: ["checkout"] }]);
+    const warnings = result.warnings.filter((issue) => issue.code === SCRIPT_SYNTAX_MISSING_SCRIPT);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0].message, /^\/example-campaign\/js\/absent\.js is loaded by a local <script src> on checkout but is not in the built output\./);
+    assert.deepEqual(warnings[0].detail.finding.pages, ["checkout"]);
+    assert.deepEqual(result.errors.filter((issue) => issue.code.startsWith(SCRIPT_SYNTAX)), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // Negative control: the same page with the script present warns about nothing.
+  const present = builtSite('<script src="/example-campaign/js/present.js"></script>', { [`_site/${SLUG}/js/present.js`]: GOOD });
+  try {
+    const result = present.run();
+    assert.equal(gateOf(result).status, "pass");
+    assert.deepEqual(result.warnings.filter((issue) => issue.code.startsWith(SCRIPT_SYNTAX)), []);
+  } finally {
+    rmSync(present.dir, { recursive: true, force: true });
+  }
+});
+
+test("a missing script next to a parse failure stays on the gate, not as a second disposition", () => {
+  const { dir, run } = builtSite('<script src="/example-campaign/js/absent.js"></script><script src="/example-campaign/js/bad.js"></script>', {
+    [`_site/${SLUG}/js/bad.js`]: BAD,
+  });
+  try {
+    const result = run();
+    const gate = gateOf(result);
+    assert.equal(gate.status, "blocked");
+    assert.deepEqual(gate.warned.map((item) => item.src), ["/example-campaign/js/absent.js"]);
+    assert.deepEqual(result.warnings.filter((issue) => issue.code === SCRIPT_SYNTAX_MISSING_SCRIPT), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// #502: each script resolves against the base in effect when the parser
+// prepares it (at its end tag), so a <base> later in the document does not
+// move an earlier script, whatever its async/defer/module attributes.
+test("a script before the <base> is read from next to the page, not from the later base", () => {
+  for (const attrs of ["", " async", " defer", ' type="module"']) {
+    const { dir, run } = builtSite(`<script${attrs} src="checkout.js"></script><base href="/${SLUG}/assets/"><script src="after.js"></script>`, {
+      [`_site/${SLUG}/checkout/checkout.js`]: BAD,
+      [`_site/${SLUG}/assets/checkout.js`]: GOOD,
+      [`_site/${SLUG}/assets/after.js`]: BAD,
+      [`_site/${SLUG}/checkout/after.js`]: GOOD,
+    });
+    try {
+      const result = run();
+      assert.deepEqual(
+        syntaxErrors(result).map((issue) => issue.detail.finding.file).sort(),
+        [`_site/${SLUG}/assets/after.js`, `_site/${SLUG}/checkout/checkout.js`],
+        attrs,
+      );
+      assert.deepEqual(gateOf(result).scripts_unresolved, [], attrs);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a data: or javascript: base falls back to the page URL: the script is read and its parse failure blocks", () => {
+  for (const base of ["data:text/plain,x", "javascript:void(0)", " JavaScript:alert(1)"]) {
+    const { dir, run } = builtSite(`<base href="${base}"><script src="checkout.js"></script>`, {
+      [`_site/${SLUG}/checkout/checkout.js`]: BAD,
+    });
+    try {
+      const result = run();
+      const gate = gateOf(result);
+      assert.equal(gate.status, "blocked", `${base}: ${gate.reason}`);
+      assert.deepEqual(gate.scripts_unresolved, [], base);
+      assert.deepEqual(syntaxErrors(result).map((issue) => issue.detail.finding.file), [`_site/${SLUG}/checkout/checkout.js`], base);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("frozenBaseUrl follows HTML 'set the frozen base URL'", () => {
+  const page = "http://built-site.invalid/example-campaign/checkout/index.html";
+  assert.equal(frozenBaseUrl(null, page), page);
+  assert.equal(frozenBaseUrl("data:text/plain,x", page), page);
+  assert.equal(frozenBaseUrl("javascript:void(0)", page), page);
+  assert.equal(frozenBaseUrl("http://[bad", page), page);
+  assert.equal(frozenBaseUrl("../assets/", page), "http://built-site.invalid/example-campaign/assets/");
+  assert.equal(frozenBaseUrl("https://cdn.example.com/lib/", page), "https://cdn.example.com/lib/");
+  assert.equal(frozenBaseUrl("", page), page);
 });

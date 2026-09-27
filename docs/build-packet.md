@@ -799,27 +799,38 @@ reads each. Remote scripts (an `http(s):` URL, a protocol-relative `//` URL,
 such as JSON-LD. The type is compared as the browser compares it, with
 surrounding ASCII whitespace stripped and case ignored. A classic `nomodule`
 script is skipped: a module-capable browser never fetches or runs it. A
-`type="module"` script ignores `nomodule` and is still parsed. Each src resolves the way the browser resolves it, against
-the document's first `<base href>` or else the page, and the percent-decoded
-path maps under the site root first, then the campaign directory, never outside
-either. A base on another origin makes relative srcs remote. Imports inside a
-module are not followed.
+`type="module"` script ignores `nomodule` and is still parsed. Each src
+resolves the way the browser resolves it: against the base in effect when the
+parser prepares the script, which is the first `<base href>` in the document
+when that comes before the script, or else the page. A `<base>` later in the
+document does not move an earlier script, whether it is async, deferred or a
+module: its URL is fixed when it is prepared, not when it is fetched. A base
+the browser refuses (one that does not parse, or a `data:` or `javascript:`
+URL) falls back to the page, as the HTML "set the frozen base URL" steps
+require. The percent-decoded path maps under the site root first, then the
+campaign directory, never outside either. A base on another origin makes
+relative srcs remote. Imports inside a module are not followed.
 
 A parse failure blocks (not waivable — a script that cannot be parsed cannot be
 intended to ship) under `built_output.script_syntax.parse_failure`, one error
 per file. The message leads with `<file>:<line>:<column>` and a fixed
 diagnostic category (for example `Unexpected token` or `Invalid regular
 expression`), never text from the script, and names the pages that load the
-file. A referenced local script
-that is not on disk is listed on the gate as `scripts_unresolved[]`, not
-judged here.
+file. A referenced local script that is not in the built output is a warning,
+not a blocker, under `built_output.script_syntax.missing_script`, one warning
+per src naming the pages that load it: the browser gets a 404 for it and
+nothing it would define runs, but whether the page needs it is not known here.
+The src is also listed in `scripts_unresolved[]`. While a parse failure blocks
+the gate, the missing scripts stay on the gate's `warned[]` rather than also
+surfacing as warnings.
 
 The gate's evidence lands beside the other checkpoint gates at
 `derived.checkpoint_gates[]` (`id: built_output.script_syntax`, status `pass` |
 `blocked` | `not_applicable`, `findings[]` with `file`, `line`, `column`,
-`source_type` and `pages`, `scripts_scanned`, `scripts_unresolved[]`,
-`pages_scanned`). Fixtures: `fixtures/script-syntax/{good,bad}`. It passes on
-the canonical rendered output of every certified starter family
+`source_type` and `pages`, `warned[]` with `src` and `pages`,
+`scripts_scanned`, `scripts_unresolved[]`, `pages_scanned`). Fixtures: `fixtures/script-syntax/{good,bad}`. It passes, parsing every
+local script the pages load and with no missing-script warning, on the
+canonical rendered output of every certified starter family
 (`fixtures/certified-families/`). QA applies the same rule to the page scripts
 it reads for credential declarations (`script-parse:<page_id>`; see
 [QA and test orders](qa-and-test-orders.md)).

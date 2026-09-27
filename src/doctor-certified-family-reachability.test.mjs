@@ -15,7 +15,7 @@ import { test } from "node:test";
 import { CAMPAIGN_IDENTITY } from "./campaign-identity.mjs";
 import { doctorBuiltOutput } from "./cli.mjs";
 import { SDK_MARKUP } from "./sdk-markup.mjs";
-import { SCRIPT_SYNTAX } from "./built-script-syntax.mjs";
+import { SCRIPT_SYNTAX, pageScriptReferences } from "./built-script-syntax.mjs";
 import { UPSELL_SELECTOR_SCOPE } from "./upsell-selector-scope.mjs";
 
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -71,8 +71,8 @@ for (const family of certified) {
     assert.deepEqual(blockingCodes, [], `${family}: static gates raised errors on canonical output`);
     // The advisory codes hold to the same bar: a warning that fires on every
     // canonical page is noise, not a signal.
-    const advisoryCodes = result.warnings.map((issue) => issue.code).filter((code) => code.startsWith(SDK_MARKUP));
-    assert.deepEqual(advisoryCodes, [], `${family}: SDK markup advisories fired on canonical output`);
+    const advisoryCodes = result.warnings.map((issue) => issue.code).filter((code) => code.startsWith(SDK_MARKUP) || code.startsWith(SCRIPT_SYNTAX));
+    assert.deepEqual(advisoryCodes, [], `${family}: SDK markup or script syntax advisories fired on canonical output`);
   });
 
   test(`${family}: SDK markup scans every page and its only advisory is the templates' own data-next-* hooks`, () => {
@@ -86,13 +86,31 @@ for (const family of certified) {
     assert.ok(Array.isArray(gate.unknown_attributes));
   });
 
-  test(`${family}: script syntax parses the shared config.js the pages load`, () => {
-    // The fixture tree carries HTML and config.js only; the family's js/*.js
-    // files are listed as unresolved, not judged. config.js is the proof the
-    // gate reads a real local script and passes it.
-    const gate = gateOf(doctorBuiltOutput({ built: FIXTURE_ROOT, slug: family }), SCRIPT_SYNTAX);
+  test(`${family}: script syntax parses every local script the pages load`, () => {
+    // The fixture tree carries every local script the rendered pages load
+    // (config.js and the family's js/*.js; #502). Counted here from the HTML,
+    // independently of the gate, so a script the gate stopped reading, or one
+    // the refresh stopped copying, fails this test rather than passing it by
+    // omission.
+    const referenced = new Set();
+    for (const rel of Object.keys(manifest.files).filter((file) => file.startsWith(`_site/${family}/`) && file.endsWith(".html"))) {
+      const html = readFileSync(join(FIXTURE_ROOT, rel), "utf8");
+      for (const { src } of pageScriptReferences(html)) {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("//")) continue;
+        const pageUrl = new URL(`http://fixture.invalid/${rel.replace(/^_site\//, "")}`);
+        referenced.add(new URL(src, pageUrl).pathname);
+      }
+    }
+    assert.ok(referenced.size >= 2, `${family}: expected config.js and at least one family script, got ${[...referenced].join(", ")}`);
+    for (const path of referenced) {
+      assert.ok(existsSync(join(FIXTURE_ROOT, "_site", decodeURIComponent(path))), `${family}: ${path} is referenced but not in the fixture tree; rerun scripts/refresh-certified-family-fixtures.mjs`);
+    }
+    const result = doctorBuiltOutput({ built: FIXTURE_ROOT, slug: family });
+    const gate = gateOf(result, SCRIPT_SYNTAX);
     assert.equal(gate.status, "pass", gate.reason);
-    assert.ok(gate.scripts_scanned >= 1, `${family}: no local script parsed`);
+    assert.deepEqual(gate.scripts_unresolved, [], `${family}: referenced local scripts were not scanned`);
+    assert.deepEqual(gate.warned, []);
+    assert.equal(gate.scripts_scanned, referenced.size, `${family}: the gate parsed ${gate.scripts_scanned} of ${referenced.size} referenced local scripts`);
   });
 
   test(`${family}: campaign identity resolves the key from the shared config.js and one funnel`, () => {

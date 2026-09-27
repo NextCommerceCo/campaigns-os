@@ -2,6 +2,34 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.15] - 2026-09-27
+
+### Fixed
+
+- The doctor `built_output.script_syntax` gate and the QA `script-parse`
+  check now resolve each `<script src>` against the base in effect when the
+  parser prepares that script: the first `<base href>` before it in the
+  document, or else the page. A `<base>` later in the document no longer
+  moves an earlier script, whether it is async, deferred or a module. A base
+  the browser refuses (a `data:` or `javascript:` URL, or one that does not
+  parse) now falls back to the page, as the HTML "set the frozen base URL"
+  steps require, so the local script is read and a parse failure in it blocks
+  instead of the script being listed as unresolved (#502).
+
+### Changed
+
+- A local script a built page loads that is not in the built output is now a
+  doctor warning, `built_output.script_syntax.missing_script`, one per src
+  naming the pages that load it. It was information on the gate only. It does
+  not block. While a parse failure blocks the gate, the missing scripts stay
+  on the gate's `warned[]` (#502).
+- `fixtures/certified-families/` now carries every local script the rendered
+  pages load (each family's `js/*.js` beside `config.js`), refreshed from the
+  same templates commit. `scripts/refresh-certified-family-fixtures.mjs`
+  copies them, resolved the way the gate resolves them, and fails when a
+  referenced script is not in the render. The reachability test requires the
+  gate to scan every referenced script on every certified family (#502).
+
 ## [1.43.1+agent.12] - 2026-09-26
 
 ### Fixed

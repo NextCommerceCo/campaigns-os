@@ -287,3 +287,42 @@ test('a language attribute with trailing whitespace is not run by the browser, s
   const evidence = await observe(`<script language="JavaScript ">window.nextConfig = {apiKey: ${JSON.stringify(key)}};</script>`);
   assert.notEqual(evidence.outcome, 'match');
 });
+
+// #502: a script resolves against the base in effect when the parser prepares
+// it, and a base the browser refuses (data:, javascript:) falls back to the
+// page URL (HTML "set the frozen base URL").
+test('a script before the <base> resolves against the page URL, whatever its async/defer/module attributes', async () => {
+  for (const attrs of ['', ' async', ' defer', ' type="module"']) {
+    const requested = [];
+    const parseFailures = [];
+    await observe(`${inline(key)}<script${attrs} src="checkout.js"></script><base href="/shop/assets/"><script src="after.js"></script>`, {
+      parseFailures,
+      scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript + '});\n' }; },
+    });
+    assert.deepEqual(requested, ['https://fixture.example.test/checkout.js', 'https://fixture.example.test/shop/assets/after.js'], attrs);
+    assert.deepEqual(parseFailures.map(f => f.script), ['/checkout.js', '/shop/assets/after.js'], attrs);
+  }
+});
+
+test('only the first <base href> counts, even for scripts after a later one', async () => {
+  const requested = [];
+  await observe(`${inline(key)}<base href="/one/"><script src="a.js"></script><base href="/two/"><script src="b.js"></script>`, {
+    scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript }; },
+  });
+  assert.deepEqual(requested, ['https://fixture.example.test/one/a.js', 'https://fixture.example.test/one/b.js']);
+});
+
+test('a data: or javascript: base falls back to the page URL, so the script is still read and a parse failure blocks', async () => {
+  for (const base of ['data:text/plain,x', 'javascript:void(0)', ' JavaScript:alert(1)']) {
+    const requested = [];
+    const parseFailures = [];
+    const evidence = await observe(`<base href="${base}">${inline(key)}<script src="checkout.js"></script>`, {
+      parseFailures,
+      scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript + '});\n' }; },
+    });
+    assert.deepEqual(requested, ['https://fixture.example.test/checkout.js'], base);
+    assert.deepEqual(parseFailures.map(f => f.script), ['/checkout.js'], base);
+    assert.equal(scriptParseAssertion(page, parseFailures)?.severity, 'blocker', base);
+    assert.equal(evidence.reason, 'script_unavailable_or_limit', base);
+  }
+});
