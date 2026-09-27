@@ -101,9 +101,9 @@ try {
 
   const families = certifiedFamilies();
   const files = {};
-  // Only the generated parts are replaced; README.md is hand-written.
-  rmSync(join(OUT, "_site"), { recursive: true, force: true });
-  rmSync(join(OUT, "manifest.json"), { force: true });
+  // Every family is checked and read before anything on disk is replaced, so a
+  // refusal leaves the committed fixture tree as it was.
+  const outputs = [];
   for (const family of families) {
     const rendered = join(work, "_site", family);
     if (!existsSync(rendered)) throw new Error(`Certified family "${family}" did not render at ${relative(work, rendered)}; the catalog and the templates source disagree.`);
@@ -135,11 +135,16 @@ try {
       if (lstatSync(file).isSymbolicLink()) throw new Error(`Certified family "${family}" renders ${rel} as a symlink; fixtures copy regular files only.`);
       let text = readFileSync(file, "utf8");
       if (rel.endsWith(".html")) text = text.replace(API_HOST_RESOURCE_HINT, "");
-      const out = join(OUT, "_site", family, rel);
-      mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, text);
+      outputs.push({ out: join(OUT, "_site", family, rel), text });
       files[`_site/${family}/${rel}`] = `sha256:${createHash("sha256").update(text).digest("hex")}`;
     }
+  }
+  // Only the generated parts are replaced; README.md is hand-written.
+  rmSync(join(OUT, "_site"), { recursive: true, force: true });
+  rmSync(join(OUT, "manifest.json"), { force: true });
+  for (const { out, text } of outputs) {
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(out, text);
   }
   writeFileSync(join(OUT, "manifest.json"), `${JSON.stringify({
     schema_version: "certified-family-fixtures/v0",
