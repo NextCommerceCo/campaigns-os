@@ -34,6 +34,31 @@ Notable supported-surface changes are recorded here.
   `.lock.recovery-staging-*`, `.lock.released-*`, `.lock.abandoned-*`),
   including through a symlinked directory or a case-only alias. Such an output was written and then deleted with the lock, leaving
   the packet and context pointing at a missing file.
+## [1.43.1+agent.16] - 2026-09-27
+
+### Fixed
+
+- QA's optional analytics comparison against a legacy funnel
+  (`--analytics-baseline`) now measures a partial build's first built page
+  when the campaign root is not part of the build or does not answer, the same
+  way the analytics correctness check has since #493. It used to measure the
+  campaign root only, which a partial build does not have. The comparison
+  records which page it measured. When no built page answers, it is skipped
+  if there was nothing to try, and blocks if every page it tried failed; in
+  both cases the legacy funnel is not loaded. An explicit
+  `--analytics-candidate` URL is still measured as given.
+- A funnel entry whose URL differs from the campaign root only by its query
+  string (for example `/campaign/?step=checkout`) is no longer treated as the
+  root. On a partial build, the root counted as built and the entry was
+  dropped as a duplicate, so the root's generic page was measured instead of
+  that entry. The entry is now measured itself and marked `query_routed`.
+  Step routing stays path-based in every certified family.
+- `docs/qa-and-test-orders.md` now describes which page the analytics checks
+  measure on a partial build, the `no_in_scope_page_captured` and
+  `no_capture_page_answered` outcomes, how query strings affect page identity,
+  and when a local-serve run turns a silent pixel into `manual_review`: a
+  recorded development render and a page measured on localhost, with
+  `data-layer-purchase` still blocking.
 ## [1.43.1+agent.15] - 2026-09-27
 
 ### Fixed

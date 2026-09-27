@@ -249,3 +249,77 @@ test("#493: a partial build with no built page at the root keeps the root out of
   assert.equal(full.rootInScope, true);
   assert.equal(full.fallbackTargets[0].page_id, "landing");
 });
+
+// #503: step routing is path-based in every certified family (page-kit builds
+// each page to its own `<route>/index.html`, and a spec route has its query
+// stripped). A topology entry that nonetheless declares a query-routed URL is
+// its own page: it must never be judged "the root" on path alone, or the
+// root's generic answer is measured instead of that entry.
+test("#503: a query-routed partial-build entry is not merged into the campaign root", () => {
+  const { analyticsCaptureScope } = __qaNodeTestHooks;
+  const root = "https://shop.example/campaign/";
+  const scope = analyticsCaptureScope({
+    analyticsCaptureTarget: { url: root },
+    topologies: [{ funnel_id: "default", partial_build_scope: true, pages: [
+      { page_id: "checkout", page_type: "checkout", url: `${root}?step=checkout` },
+      { page_id: "receipt", page_type: "receipt", url: `${root}receipt/` },
+    ] }],
+    excludedPages: [{ page_id: "landing", url: `${root}landing/` }],
+  });
+  assert.equal(scope.rootInScope, false, "the root is not in scope because a query-routed page shares its path");
+  assert.equal(scope.fallbackTargets[0].url, `${root}?step=checkout`);
+
+  // Negative controls: a page with no query of its own, or the same query as
+  // the root, is still the root.
+  const plain = analyticsCaptureScope({
+    analyticsCaptureTarget: { url: `${root}?preview=1` },
+    topologies: [{ funnel_id: "default", partial_build_scope: true, pages: [
+      { page_id: "landing", page_type: "landing", url: root },
+      { page_id: "checkout", page_type: "checkout", url: `${root}checkout/` },
+    ] }],
+    excludedPages: [{ page_id: "presell", url: `${root}presell/` }],
+  });
+  assert.equal(plain.rootInScope, true);
+  const sameQuery = analyticsCaptureScope({
+    analyticsCaptureTarget: { url: `${root}?preview=1` },
+    topologies: [{ funnel_id: "default", partial_build_scope: true, pages: [
+      { page_id: "landing", page_type: "landing", url: `${root}index.html?preview=1` },
+    ] }],
+    excludedPages: [{ page_id: "presell", url: `${root}presell/` }],
+  });
+  assert.equal(sameQuery.rootInScope, true);
+});
+
+// #503: the opt-in parity leg gets the same partial-scope capture options the
+// correctness inventory gets (#493), not only the identity root.
+test("#503: the analytics parity leg receives the partial-build capture scope", async () => {
+  const partial = {
+    ...resolved,
+    excludedPages: [{ page_id: "landing", url: "https://shop.example/campaign/" }],
+    topologies: [{
+      funnel_id: "default",
+      partial_build_scope: true,
+      pages: [
+        { page_id: "checkout", page_type: "checkout", url: "https://shop.example/campaign/checkout/" },
+        { page_id: "receipt", page_type: "receipt", url: "https://shop.example/campaign/receipt/" },
+      ],
+    }],
+  };
+  let received = null;
+  await runAnalyticsOrderSequence({
+    args: { "analytics-baseline": "https://legacy.example/checkout/" },
+    resolved: partial,
+    runId: "run-503",
+    assertions: [],
+  }, {
+    async runInventory() { return []; },
+    async runParity(args, options) { received = options; return []; },
+    async runOrders() { return { orders: [], receiptAnalytics: { plannedPlanIds: [], attempts: [] } }; },
+    assessReceipt: assessReceiptPurchase,
+  });
+  assert.ok(received, "parity ran");
+  assert.equal(received.target, target);
+  assert.equal(received.rootInScope, false);
+  assert.equal(received.fallbackTargets[0].page_id, "checkout");
+  assert.equal(received.fallbackTargets[0].url, "https://shop.example/campaign/checkout/");
+});
