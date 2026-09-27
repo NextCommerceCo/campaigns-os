@@ -7195,7 +7195,7 @@
     },
     {
       "id": "RL-0157",
-      "sequence": 157,
+      "sequence": 156,
       "date": "2026-09-27",
       "kind": "release",
       "surface_version": null,
@@ -7218,7 +7218,7 @@
           "summary": "Document base-element ordering and the rejected-base fallback for script resolution, and the missing-script warning and warned[] evidence."
         }
       ],
-      "entry_sha256": "07bb6cf62d0374c092a68f9c2c5b6579bc3c76bb5623d1ef5863c7a57da2aa91"
+      "entry_sha256": "e665929dde3a84a0922c84ef0163af9b3a13aa48b98485ca5cd67b884e5f767d"
     }
   ]
 }
