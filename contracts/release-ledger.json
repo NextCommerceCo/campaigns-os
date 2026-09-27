@@ -7306,6 +7306,27 @@
         }
       ],
       "entry_sha256": "6e0890174577dcc2eca884e5321d163a012ca50ccec56276557133296772b042"
+    },
+    {
+      "id": "RL-0161",
+      "sequence": 160,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.19",
+      "changelog_sha256": "48dbf60f2eb321f33e6aaf78206c06ab58107e4b295b2981a9b8d81849a08598",
+      "agent_impact": "No command behaves differently: invocation policy (session-recovery bypasses, where the stale run-session closeout runs and what suppresses it, lifecycle journal exemptions, the --dry-run implementers and the qa run session auto-end) now has one owner in the CLI, and the did-you-mean command list derives from it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "Every command, start included, runs the same steps in the same order as before; the rules for which steps run now live in one declaration instead of in each step."
+        }
+      ],
+      "entry_sha256": "b07d6b3c6871a4c32c913cde03e4f7612359332a82d23b132cfe178509645a76"
     }
   ]
 }
