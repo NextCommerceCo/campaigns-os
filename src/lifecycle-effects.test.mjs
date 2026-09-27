@@ -594,6 +594,11 @@ const BROKEN_SPEC_CONDITIONS = {
   },
   malformed: (path) => writeFileSync(path, "{\"spec_version\": \"campaignspec.v42\", \"spec_identity\": {\n"),
 };
+// Deliberately broad: any sign that the spec was resolved, read or parsed
+// (not-found, directory, or any JSON parse wording, however it is phrased)
+// means the refusal came too late, so a looser match only makes the test
+// stricter.
+const ANY_SPEC_LOAD_DIAGNOSTIC = /CampaignSpec does not exist|no cached spec found|EISDIR|expected a file but found a directory|in JSON at|end of JSON input|not valid JSON/;
 const LATE_INTAKE_FLAG_FORMS = [
   ...["template-family", "allow-uncertified-template", "theme-policy", "brief"].flatMap((flag) => [null, "", "   "].map((value) => ({
     flag,
@@ -639,7 +644,7 @@ test("(i) #504: late intake flag refusals precede the spec read with missing, un
               assert.ok(result, `${command} should refuse`);
               const diagnostic = `${result.stderr}${result.stdout}`;
               assert.match(diagnostic, expect, `${command}: the flag refusal, not a spec error`);
-              assert.doesNotMatch(diagnostic, /CampaignSpec does not exist|no cached spec found|EISDIR|expected a file but found a directory|in JSON at|end of JSON input|not valid JSON/, `${command}: no spec diagnostic`);
+              assert.doesNotMatch(diagnostic, ANY_SPEC_LOAD_DIAGNOSTIC, `${command}: no spec diagnostic`);
               assert.deepEqual(snapshotTree(dir), before, `${command} must not change target files`);
               assert.equal(existsSync(journal), false, `${command} must not journal`);
               assert.equal(fetches, fetchesBefore, `${command} must not fetch`);
