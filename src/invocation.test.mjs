@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { knownCommands } from "./cli.mjs";
+import { knownCommands, parseArgs } from "./cli.mjs";
 import { commandNames, resolveInvocationPolicy, subcommandNames } from "./invocation.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -45,13 +45,9 @@ function rowArgs(row) {
   for (const flag of row.flags) args[flag.slice(2)] = true;
   return { ...args, ...PREREQUISITES[[pairOf(row), ...row.flags].join("|")] };
 }
+// Through the CLI's own parser, so these cases see the argv shape main() does.
 const policyOf = (argv) => {
-  const args = { _: [] };
-  for (let index = 0; index < argv.length; index += 1) {
-    if (!argv[index].startsWith("--")) args._.push(argv[index]);
-    else if (!argv[index + 1] || argv[index + 1].startsWith("--")) args[argv[index].slice(2)] = true;
-    else args[argv[index].slice(2)] = argv[(index += 1)];
-  }
+  const args = parseArgs(argv);
   return resolveInvocationPolicy(args._[0], args);
 };
 

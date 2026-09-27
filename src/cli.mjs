@@ -621,7 +621,7 @@ function closestCommand(input) {
 // (authentication, and the two raw-token validators).
 export async function main(argv, { authentication } = {}) {
   return runInvocation(parseArgs(argv), {
-    dispatch: (command, args, recorder, ambient, sessionHolder) => dispatch(command, args, recorder, ambient, sessionHolder, { argv, authentication }),
+    dispatch: (command, args, context) => dispatch(command, args, { ...context, argv, authentication }),
     closeOutStaleRunSessions,
     ambientRunSession,
     lifecycleIdentity,
@@ -1049,7 +1049,7 @@ const PREPARE_MODES = Object.freeze({
 // no ambient session, and ahead of help routing, so `login --help`, `demo
 // --help` and `tooling setup --help` reach their own handlers. `argv` is the
 // unparsed argv, for the handlers that must see repeated tokens.
-async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null, sessionHolder = null, { argv, authentication } = {}) {
+async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = null, sessionHolder = null, argv, authentication } = {}) {
   // Authentication never recovers/remits run sessions or records argv in a
   // lifecycle journal. Credentials belong only in the user credential store.
   if (command === "login" || command === "logout") {
@@ -1360,7 +1360,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   );
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = { _: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];

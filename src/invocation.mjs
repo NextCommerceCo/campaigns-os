@@ -15,7 +15,8 @@
 
 import { runWithRefusalScope, withCommandLifecycle } from "./lifecycle.mjs";
 
-const frozen = (table) => Object.freeze(Object.fromEntries(Object.entries(table).map(([key, entry]) => [key, Object.freeze(entry)])));
+// Frozen all the way down, so a caller handed a subcommand list cannot edit it.
+const frozen = (value) => { if (value && typeof value === "object") Object.values(value).forEach(frozen); return Object.freeze(value); };
 
 // The steps each pre-dispatch class runs. `auth` and `inline` commands run
 // their handler in place: no sweep, no ambient read, no wrapper, no journal.
@@ -35,9 +36,9 @@ const CLASS_STEPS = frozen({
 // Every top-level command, in the order did-you-mean breaks ties. Fields:
 // `class` (default "standard"); `sweepRoot` ("target": the --target directory,
 // "session": the run-session root; default none); `dryRun` (the command
-// implements --dry-run); `journalExempt`; `inspectsWith`/`writesWith` (journal
-// exempt when the first flag is given and the second is not bare: an
-// inspection must not append to a delivered campaign's active run);
+// implements --dry-run); `journalExempt`; `journalExemptWhen` (exempt when the
+// `given` flag is set and the `unlessBare` flag is not bare: an inspection must
+// not append to a delivered campaign's active run);
 // `subcommands` (the only subcommand names that resolve; others inherit the
 // command's entry and are refused by the handler).
 //
@@ -52,29 +53,29 @@ const COMMANDS = frozen({
   login: { class: "auth" },
   logout: { class: "auth" },
   demo: { class: "inline" },
-  tooling: { subcommands: "diagnose setup status" },
-  sdk: { subcommands: "storage-check" },
+  tooling: { subcommands: ["diagnose", "setup", "status"] },
+  sdk: { subcommands: ["storage-check"] },
   readback: { class: "projection" },
   start: { sweepRoot: "target" },
   "prepare-build": { sweepRoot: "target" },
   build: { sweepRoot: "target" },
-  doctor: { inspectsWith: "packet", writesWith: "write" },
-  bundle: { subcommands: "check" },
+  doctor: { journalExemptWhen: { given: "packet", unlessBare: "write" } },
+  bundle: { subcommands: ["check"] },
   standardize: {},
-  theme: { subcommands: "generate inspect waive" },
-  checkpoint: { subcommands: "waive" },
-  polish: { subcommands: "capture" },
+  theme: { subcommands: ["generate", "inspect", "waive"] },
+  checkpoint: { subcommands: ["waive"] },
+  polish: { subcommands: ["capture"] },
   "validate-assembly-report": {},
   "install-agent-context": { dryRun: true },
   "install-skills": { dryRun: true },
-  "page-kit": { subcommands: "parity sync" },
-  spec: { subcommands: "derive" },
-  next: { subcommands: "build deploy polish qa setup" },
-  qa: { subcommands: "install-browser parity policy promote publish resolve run waive" },
-  findings: { subcommands: "add export harvest list" },
+  "page-kit": { subcommands: ["parity", "sync"] },
+  spec: { subcommands: ["derive"] },
+  next: { subcommands: ["build", "deploy", "polish", "qa", "setup"] },
+  qa: { subcommands: ["install-browser", "parity", "policy", "promote", "publish", "resolve", "run", "waive"] },
+  findings: { subcommands: ["add", "export", "harvest", "list"] },
   "run-record": { dryRun: true },
-  telemetry: { subcommands: "list off on status" },
-  run: { subcommands: "end start status" },
+  telemetry: { subcommands: ["list", "off", "on", "status"] },
+  run: { subcommands: ["end", "start", "status"] },
 });
 
 // Where a subcommand's policy differs from its command's entry. Matched on the
@@ -97,7 +98,7 @@ const SUBCOMMAND_OVERRIDES = frozen({
 
 export const commandNames = () => Object.keys(COMMANDS);
 
-export const subcommandNames = (command) => (Object.hasOwn(COMMANDS, command) && COMMANDS[command].subcommands?.split(" ")) || [];
+export const subcommandNames = (command) => (Object.hasOwn(COMMANDS, command) && COMMANDS[command].subcommands) || frozen([]);
 
 // A run opted out of sessions altogether: no stale sweep, and no intake
 // auto-start (which reads this predicate from here).
@@ -121,7 +122,7 @@ export function resolveInvocationPolicy(command, args) {
   const noWrite = args["no-write"] === true;
   const implementsDryRun = rule.dryRun === true;
   const sweepSuppressed = optsOutOfRunSession(args) || noWrite || (Object.hasOwn(args, "dry-run") && implementsDryRun);
-  const inspection = Boolean(rule.inspectsWith && args[rule.inspectsWith] && args[rule.writesWith] !== true);
+  const inspection = Boolean(rule.journalExemptWhen && args[rule.journalExemptWhen.given] && args[rule.journalExemptWhen.unlessBare] !== true);
   return Object.freeze({
     class: rule.class,
     wrapper: steps.includes("wrapper"), ambient: steps.includes("ambient"),
@@ -132,7 +133,7 @@ export function resolveInvocationPolicy(command, args) {
 }
 
 // The sequence main() delegates to. `steps` are cli.mjs mechanisms:
-//   dispatch(command, args, recorder?, ambient?, sessionHolder?)
+//   dispatch(command, args, { recorder?, ambient?, sessionHolder? }?)
 //   closeOutStaleRunSessions(rootKind, args) -> the closed-out stale sessions
 //   ambientRunSession(args) -> the active session, or null
 //   lifecycleIdentity(args, ambient) -> { argvShape, runId }
@@ -172,7 +173,7 @@ export async function runInvocation(args, steps) {
           if (policy.autoEnd) await steps.autoEndAfterQa(args, sessionHolder, thrown, policy.implementsDryRun);
         },
       },
-      (recorder) => steps.dispatch(command, args, recorder, ambient, sessionHolder),
+      (recorder) => steps.dispatch(command, args, { recorder, ambient, sessionHolder }),
     );
   });
 }
