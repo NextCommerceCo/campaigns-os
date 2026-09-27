@@ -118,7 +118,8 @@ be recorded without the bytes actually moving somewhere.
 ### Fixes that touch only policy-ignored paths
 
 A fix living entirely in paths the policy ignores — `src/` other than
-`src/cli.mjs`, `scripts/`, tests and fixtures — carries a same-surface CHANGELOG
+`src/cli.mjs`, `src/agent/` and `src/doctor/`, `scripts/`, tests and
+fixtures — carries a same-surface CHANGELOG
 section (`X.Y.Z+agent.N`) and **no ledger entry**. There is nothing for an entry
 to claim: every change item must map to a classified changed path in the range,
 and an ignored path is never classified, so an entry written for such a PR is
@@ -127,9 +128,10 @@ path-less item fails the same way, because no classified change of its class
 exists in the range. The ignore list and its stated reasons are in
 [`contracts/agent-relevant-change-policy.v1.json`](../contracts/agent-relevant-change-policy.v1.json).
 
-The dividing line inside `src/` is `src/cli.mjs`: an explicit rule classifies it
-as `cli_surface`, so any change to it is agent-relevant and owes an entry, even
-when the behaviour change originates in a helper module beside it.
+The classified paths inside `src/` are `src/cli.mjs`, `src/agent/` and
+`src/doctor/`: an explicit rule classifies each as `cli_surface`, so any change
+there is agent-relevant and owes an entry, even when the behaviour change
+originates in a helper module beside it.
 
 ### Amendments
 

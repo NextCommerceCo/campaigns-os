@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { checkpointWaive, doctorPacket, nextStage } from "./cli.mjs";
+import { checkpointWaive, nextStage } from "./cli.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 
 const EXAMPLES = new URL("../examples/", import.meta.url);
 

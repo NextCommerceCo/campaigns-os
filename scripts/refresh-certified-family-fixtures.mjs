@@ -69,7 +69,7 @@ if (!existsSync(pageKitDir)) {
 }
 const pageKitVersion = JSON.parse(readFileSync(join(pageKitDir, "package.json"), "utf8")).version;
 
-// Certified = in the catalog AND carrying a brand contract (cli.mjs
+// Certified = in the catalog AND carrying a brand contract (src/doctor/checks.mjs
 // certifiedTemplateFamilies); the same rule, read from the files.
 function certifiedFamilies() {
   return Object.keys(catalog.families || {})

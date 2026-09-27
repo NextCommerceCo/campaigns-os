@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { doctorBuiltOutput, doctorPacket } from "./cli.mjs";
+import { doctorBuiltOutput, doctorPacket } from "./doctor/inspect.mjs";
 import {
   SCRIPT_SYNTAX,
   SCRIPT_SYNTAX_MISSING_SCRIPT,

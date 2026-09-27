@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { runPricingCssHideCheck, validateCommerceCatalog, validateExitPopContract, validateTemplateFamilyInventory } from "./cli.mjs";
+import { runPricingCssHideCheck } from "./doctor/inspect.mjs";
+import { validateCommerceCatalog, validateExitPopContract, validateTemplateFamilyInventory } from "./doctor/checks.mjs";
 import { singleLineDetail } from "./text-safety.mjs";
 
 const codes = (issues) => issues.map((issue) => issue.code);

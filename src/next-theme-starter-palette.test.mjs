@@ -24,7 +24,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { buildNextActions, nextTinyPromptLines, safeBrandContractCode, safeFamilyLabel } from "./cli.mjs";
+import { buildNextActions, nextTinyPromptLines, safeFamilyLabel } from "./cli.mjs";
+import { safeBrandContractCode } from "./doctor/checks.mjs";
 import { resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { contractHasPaletteResidueChecks, templateBrandContractPath } from "./template-brand-contract.mjs";
 

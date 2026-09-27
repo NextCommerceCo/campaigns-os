@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { inspectCommerceZones, validateCommerceZoneFindings } from "./cli.mjs";
+import { inspectCommerceZones } from "./cli.mjs";
+import { validateCommerceZoneFindings } from "./doctor/checks.mjs";
 
 function withTempDir(run) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-commerce-shell-"));

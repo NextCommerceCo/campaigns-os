@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { doctorBuiltOutput } from "./cli.mjs";
+import { doctorBuiltOutput } from "./doctor/inspect.mjs";
 import { UPSELL_SELECTOR_SCOPE } from "./upsell-selector-scope.mjs";
 
 const FIXTURE_ROOT = resolve(new URL("../fixtures/upsell-selector-scope", import.meta.url).pathname);

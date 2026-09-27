@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { collectDemoRefHits } from "./cli.mjs";
+import { collectDemoRefHits } from "./doctor/checks.mjs";
 
 // Shared vocab: the starter template's demo-only refs collide with real
 // low-integer Campaigns-API ref_ids ("1"/"2") — the root of R2-B1.

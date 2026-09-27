@@ -4,7 +4,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { doctorPacket } from "./cli.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 
 // Doctor's view of the Campaigns API key is a projection of the resolver the
 // remit rails use, so the two cannot disagree about whether a value is a key.

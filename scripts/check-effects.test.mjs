@@ -198,7 +198,7 @@ test("HELP_SOURCE_PATHS names every module that owns a usage block", () => {
   // own help. Derived here from the source rather than restated: any file under
   // src/ that declares `const HELP = \`` and spells a `campaigns-os <cmd>` usage
   // line owes its subcommands a row, so it has to be scanned.
-  const owners = readdirSync(resolve(root, "src"))
+  const owners = readdirSync(resolve(root, "src"), { recursive: true })
     .filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"))
     .filter((name) => {
       const source = read(`src/${name}`);
@@ -350,6 +350,9 @@ test("the paths this change declares are agent-relevant, with the class the poli
     // Hypothetical, deliberately: the rule has to be in place BEFORE the
     // subtree exists, or its first change is born unclassified.
     ["src/agent/install.mjs", "cli_surface"],
+    ["src/doctor/checks.mjs", "cli_surface"],
+    ["src/doctor/inspect.mjs", "cli_surface"],
+    ["src/doctor/next-step.mjs", "cli_surface"],
     ["skills/next-campaigns-os/SKILL.md", "skill"],
   ];
   for (const [path, expectedClass] of expected) {
@@ -363,11 +366,14 @@ test("a new agents/ or src/agent/ path is not swallowed by the broad ignore pref
   // The exact failure mode: `agents/` used to be ignored as illustrative and
   // `src/` still is. Both rules must win over their ignore, and the rule pass
   // runs before the ignore pass, so the assertion is on `source`.
-  for (const path of ["agents/claude/CLAUDE.md", "agents/some-new-platform/instructions.md", "src/agent/install.mjs"]) {
+  for (const path of ["agents/claude/CLAUDE.md", "agents/some-new-platform/instructions.md", "src/agent/install.mjs", "src/doctor/checks.mjs"]) {
     const result = classifyPath(path, { policy, surface });
     assert.equal(result.source, "rule", `${path} was classified by ${result.source}, not by an explicit rule`);
     assert.notEqual(result.source, "ignored");
   }
-  // And the rest of src/ is still implementation, so the new rule is narrow.
-  assert.equal(classifyPath("src/cli-loading.test.mjs", { policy, surface }).source, "ignored");
+  // And the rest of src/ is still implementation, so the new rules are narrow:
+  // the helper modules the doctor shares with the CLI stay ignored on purpose.
+  for (const path of ["src/cli-loading.test.mjs", "src/cli-helpers.mjs", "src/install-invocation.mjs", "src/campaigns-api-key.mjs"]) {
+    assert.equal(classifyPath(path, { policy, surface }).source, "ignored", `${path} should be implementation`);
+  }
 });

@@ -7327,6 +7327,57 @@
         }
       ],
       "entry_sha256": "b07d6b3c6871a4c32c913cde03e4f7612359332a82d23b132cfe178509645a76"
+    },
+    {
+      "id": "RL-0162",
+      "sequence": 161,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.20",
+      "changelog_sha256": "b504e2a11e3506ff186f434b113a3c3f461d66611a997e3cf5d6ecddb491d2ff",
+      "agent_impact": "No command behaves differently. The doctor checks, packet inspection and next-step picker moved under src/doctor/, and the agent-relevant change policy now classifies a change there as a CLI-surface change, so doctor check changes keep appearing in this ledger.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/agent-relevant-change-policy.v1.json",
+          "surface_entry": "contracts/agent-relevant-change-policy.v1.json",
+          "summary": "Classify a change under src/doctor/ as a CLI-surface change, ahead of the broad src/ ignore."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "The CLI imports the doctor checks, packet inspection, next-step picker and shared helpers from their new modules; every command behaves as before."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The doctor check registries, packet validation and every check they run, moved unchanged out of the CLI module."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "The doctor command, packet inspection and built-output inspection, moved unchanged out of the CLI module."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "next",
+          "summary": "The next-step picker and the gate issues next reads from doctor, moved unchanged out of the CLI module."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/release-ledger-authoring-guide.md",
+          "surface_entry": "docs/release-ledger-authoring-guide.md",
+          "summary": "Name src/agent/ and src/doctor/ alongside src/cli.mjs as the classified paths inside src/."
+        }
+      ],
+      "entry_sha256": "365537b5c46368048f99250ef3b794beb170a06cd0b8e7bdfa6e44a99eddd023"
     }
   ]
 }

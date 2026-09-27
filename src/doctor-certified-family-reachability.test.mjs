@@ -13,7 +13,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { CAMPAIGN_IDENTITY } from "./campaign-identity.mjs";
-import { doctorBuiltOutput } from "./cli.mjs";
+import { doctorBuiltOutput } from "./doctor/inspect.mjs";
 import { SDK_MARKUP } from "./sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs } from "./built-script-syntax.mjs";
 import { UPSELL_SELECTOR_SCOPE } from "./upsell-selector-scope.mjs";
@@ -23,7 +23,7 @@ const FIXTURE_ROOT = join(ROOT, "fixtures", "certified-families");
 const manifest = JSON.parse(readFileSync(join(FIXTURE_ROOT, "manifest.json"), "utf8"));
 const catalog = JSON.parse(readFileSync(join(ROOT, "contracts", "commerce-surface-catalog.json"), "utf8"));
 
-// Same rule cli.mjs applies (catalog family + brand contract), read from the
+// Same rule src/doctor/checks.mjs applies (catalog family + brand contract), read from the
 // files so this test cannot drift from the certified set by forgetting one.
 const certified = Object.keys(catalog.families || {})
   .filter((family) => existsSync(join(ROOT, "contracts", `template-brand-contract.${family}.v0.json`)))

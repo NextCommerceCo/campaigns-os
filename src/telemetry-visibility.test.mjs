@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { describeCampaignKeyRejection, resolveCampaignsApiKeySource, resolveCampaignsApiKeyValue } from "./cli.mjs";
+import { describeCampaignKeyRejection, resolveCampaignsApiKeySource, resolveCampaignsApiKeyValue } from "./campaigns-api-key.mjs";
 import { buildRunSession, findRunSession, findStaleRunSession, resolveRunSessionPath, writeRunSession } from "./run-session.mjs";
 import { resolveRunRecordPath } from "./run-record.mjs";
 

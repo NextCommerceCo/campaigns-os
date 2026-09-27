@@ -13,7 +13,8 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { buildNextActions, doctorPacket, nextStage, pageKitParityCommand } from "./cli.mjs";
+import { buildNextActions, nextStage, pageKitParityCommand } from "./cli.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 import {
   compareRenderedOutputs,
@@ -514,7 +515,7 @@ test("no action or next-action text proposes editing a generated include to make
     if (proposesEdit) assert.match(action.description, /Never edit a generated include/, action.id);
   }
   assert.match(LOCAL_PROOF_NEVER_EDIT_RULE, /^Never edit a generated include/);
-  const sources = readdirSync(join(ROOT, "src")).filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"));
+  const sources = readdirSync(join(ROOT, "src"), { recursive: true }).filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"));
   for (const name of sources) {
     const text = readFileSync(join(ROOT, "src", name), "utf8");
     for (const line of text.split("\n")) {

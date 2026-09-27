@@ -68,6 +68,11 @@
       "_note": "The agent-facing entry points (skill install, agent context, the tooling-status revision check) are reachable from the supported argv surface, so a change under src/agent/ is a CLI-surface change even though the rest of src/ is unsupported implementation. This rule sits ahead of the broad src/ ignore on purpose: the ignore's reason is 'implementation reachable only through declared package exports', which is exactly what this subtree is not."
     },
     {
+      "match": { "kind": "prefix", "value": "src/doctor/" },
+      "class": "cli_surface",
+      "_note": "Doctor checks are kernel-declared behavior reachable from the supported argv surface (`doctor`, `next`, `start`, `prepare-build` and `qa run` read them), so a change under src/doctor/ is a CLI-surface change even though the rest of src/ is unsupported implementation. This rule sits ahead of the broad src/ ignore on purpose, as the src/agent/ rule does. The shared helper modules beside it under src/ (src/install-invocation.mjs, src/cli-helpers.mjs, src/campaigns-api-key.mjs) remain implementation under the broad src/ ignore."
+    },
+    {
       "match": { "kind": "prefix", "value": "agents/" },
       "class": "documentation",
       "_note": "The per-platform agent instruction files an agent orients on (and that `install-agent-context` copies into a target repo). They were ignored as 'illustrative' while nothing consumed them; they are now named supported surface, so a change to one is a documentation change a consumer can see."

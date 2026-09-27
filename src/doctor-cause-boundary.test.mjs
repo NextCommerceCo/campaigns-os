@@ -12,7 +12,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { doctorCommand, doctorPacket, recordQaStageOutcome } from "./cli.mjs";
+import { recordQaStageOutcome } from "./cli.mjs";
+import { doctorCommand, doctorPacket } from "./doctor/inspect.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE = join(repoRoot, "contracts/fixtures/sidecar-bundle/production-shaped");

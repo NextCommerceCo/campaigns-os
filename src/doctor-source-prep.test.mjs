@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { DOCTOR_NEXT_STAGE_OWNERS } from "./cli.mjs";
+import { DOCTOR_NEXT_STAGE_OWNERS } from "./doctor/next-step.mjs";
 import { NEXT_STAGE_ORDER } from "./orchestration-stage-contract.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
