@@ -447,6 +447,8 @@ export function commitAssemblyReport(workspace, mutate, {
   command = null,
   stage = null,
   lockBudgetMs,
+  // lock: false skips the target lock entirely; only for callers that write
+  // nothing (the waiver dry-run preview). A real commit must take the lock.
   lock = true,
 } = {}) {
   const hasRefresh = typeof refreshDoctor === "function";
