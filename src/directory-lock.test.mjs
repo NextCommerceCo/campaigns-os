@@ -77,6 +77,59 @@ test("an ownerless lock is refused after a short grace, not after the whole budg
   assert.ok(clock <= 1100);
 }));
 
+// Two stats cannot see a lock atomically: a holder can release between the
+// waiter's stat of the lock and its stat of owner.json, and the next holder
+// can publish before the waiter polls again. Every such sample looks
+// ownerless, but no lock ever existed without its owner, so a healthy waiter
+// must not be refused by the ownerless grace.
+test("holders churning between the waiter's two stats never read as one ownerless lock", () => withScratch(async (dir) => {
+  const lock = join(dir, "lock");
+  const ownerPath = join(lock, "owner.json");
+  const publishHolder = (n) => {
+    const staging = join(dir, `holder-${n}`);
+    mkdirSync(staging);
+    writeFileSync(join(staging, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: `holder-${n}` })}\n`);
+    renameSync(staging, lock);
+  };
+  publishHolder(0);
+  let clock = 0;
+  let holders = 0;
+  const originalLstat = fs.lstatSync;
+  fs.lstatSync = function churnBetweenStats(target, ...rest) {
+    if (String(target) === ownerPath && clock < 3000 && existsSync(lock)) {
+      // The current holder releases just before the owner stat...
+      renameSync(lock, join(dir, `released-${holders}`));
+      try {
+        return originalLstat.call(fs, target, ...rest);
+      } finally {
+        // ...and the next one publishes before the waiter looks again.
+        holders += 1;
+        publishHolder(holders);
+      }
+    }
+    return originalLstat.call(fs, target, ...rest);
+  };
+  syncBuiltinESMExports();
+  try {
+    let entered = false;
+    await withDirectoryLock(lock, () => { entered = true; }, {
+      budgetMs: 60_000,
+      unavailable,
+      now: () => clock,
+      sleep: async () => {
+        clock += 100;
+        if (clock >= 3000) rmSync(lock, { recursive: true, force: true });
+      },
+    });
+    assert.ok(holders >= 10, `the churn was exercised (${holders} holders)`);
+    assert.equal(entered, true, "the waiter acquired once the churn stopped, instead of being refused as ownerless");
+  } finally {
+    clock = Infinity;
+    fs.lstatSync = originalLstat;
+    syncBuiltinESMExports();
+  }
+}));
+
 // A writer is suspended (in a child process) in the middle of acquiring the
 // lock, at its first owner.json write. Another writer then acquires the lock,
 // with the suspended writer's directory aged past any ownerless grace period,

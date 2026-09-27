@@ -146,23 +146,35 @@ function createLock(path, { budgetMs, unavailable, now = Date.now, ownerlessGrac
   // Publish, then fence on the token actually on disk.
   const publish = () => publishStagedDirectory(stagingPath, path) && readOwner(ownerPath)?.token === token;
   const heldBySelfProcess = () => readOwner(ownerPath)?.pid === process.pid;
+  // The identity of the lock directory if it is ownerless, else null. Two
+  // stats cannot see the lock atomically: a holder can release between the
+  // stat of the directory and the stat of its owner, which reads as a missing
+  // owner. So the directory must still be the same one after the owner was
+  // found missing, and the grace runs only while the same directory stays
+  // ownerless: holders coming and going never add up to one ownerless lock.
   let ownerlessSince = null;
+  let ownerlessIdentity = null;
   const ownerless = () => {
     try {
-      return lstatSync(path).isDirectory() && !exists(ownerPath);
+      const before = lstatSync(path);
+      if (!before.isDirectory() || exists(ownerPath)) return null;
+      const after = lstatSync(path);
+      if (after.dev !== before.dev || after.ino !== before.ino || after.birthtimeMs !== before.birthtimeMs) return null;
+      return `${before.dev}:${before.ino}:${before.birthtimeMs}`;
     } catch {
-      return false;
+      return null;
     }
   };
-  // True once the budget is spent, or once the lock has stayed ownerless past
-  // the grace period.
+  // True once the budget is spent, or once one lock directory has stayed
+  // ownerless past the grace period.
   const expired = () => {
     const current = now();
-    if (ownerless()) {
-      ownerlessSince ??= current;
+    const identity = ownerless();
+    if (identity && identity === ownerlessIdentity) {
       if (current - ownerlessSince >= ownerlessGraceMs) return true;
     } else {
-      ownerlessSince = null;
+      ownerlessIdentity = identity;
+      ownerlessSince = identity ? current : null;
     }
     return current - start >= budgetMs;
   };
