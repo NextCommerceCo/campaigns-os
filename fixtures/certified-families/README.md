@@ -1,7 +1,8 @@
 # Certified families — rendered reachability fixtures
 
-The rendered output (`*.html` and `config.js`) of every certified starter
-family, built with page-kit from `NextCommerceCo/campaign-cart-starter-templates`
+The rendered output (`*.html`, plus every local script those pages load by
+`<script src>`: `config.js` and the family's `js/*.js`) of every certified
+starter family, built with page-kit from `NextCommerceCo/campaign-cart-starter-templates`
 at the commit `manifest.json` names (`source_sha`, with `source_note` saying
 why). The default is the commit the vendored commerce-surface catalog was
 synced from (`_synced_from_sha`); when the two differ the reachability test

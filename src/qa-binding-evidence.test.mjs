@@ -287,3 +287,82 @@ test('a language attribute with trailing whitespace is not run by the browser, s
   const evidence = await observe(`<script language="JavaScript ">window.nextConfig = {apiKey: ${JSON.stringify(key)}};</script>`);
   assert.notEqual(evidence.outcome, 'match');
 });
+
+// #502: a script resolves against the base in effect when the parser prepares
+// it, and a base the browser refuses (data:, javascript:) falls back to the
+// page URL (HTML "set the frozen base URL").
+test('a script before the <base> resolves against the page URL, whatever its async/defer/module attributes', async () => {
+  for (const attrs of ['', ' async', ' defer', ' type="module"']) {
+    const requested = [];
+    const parseFailures = [];
+    await observe(`${inline(key)}<script${attrs} src="checkout.js"></script><base href="/shop/assets/"><script src="after.js"></script>`, {
+      parseFailures,
+      scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript + '});\n' }; },
+    });
+    assert.deepEqual(requested, ['https://fixture.example.test/checkout.js', 'https://fixture.example.test/shop/assets/after.js'], attrs);
+    assert.deepEqual(parseFailures.map(f => f.script), ['/checkout.js', '/shop/assets/after.js'], attrs);
+  }
+});
+
+test('only the first <base href> counts, even for scripts after a later one', async () => {
+  const requested = [];
+  await observe(`${inline(key)}<base href="/one/"><script src="a.js"></script><base href="/two/"><script src="b.js"></script>`, {
+    scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript }; },
+  });
+  assert.deepEqual(requested, ['https://fixture.example.test/one/a.js', 'https://fixture.example.test/one/b.js']);
+});
+
+test('a data: or javascript: base falls back to the page URL, so the script is still read and a parse failure blocks', async () => {
+  for (const base of ['data:text/plain,x', 'javascript:void(0)', ' JavaScript:alert(1)']) {
+    const requested = [];
+    const parseFailures = [];
+    const evidence = await observe(`<base href="${base}">${inline(key)}<script src="checkout.js"></script>`, {
+      parseFailures,
+      scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript + '});\n' }; },
+    });
+    assert.deepEqual(requested, ['https://fixture.example.test/checkout.js'], base);
+    assert.deepEqual(parseFailures.map(f => f.script), ['/checkout.js'], base);
+    assert.equal(scriptParseAssertion(page, parseFailures)?.severity, 'blocker', base);
+    assert.equal(evidence.reason, 'script_unavailable_or_limit', base);
+  }
+});
+
+// Codex review of #508: parse order, HTML namespace, URL-parser whitespace.
+test('the base in effect follows parse order when foster parenting reorders the tree; SVG bases and NBSP trimming do not apply', async () => {
+  const run = async html => {
+    const requested = [];
+    await observe(`${inline(key)}${html}`, { scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript }; } });
+    return requested;
+  };
+  assert.deepEqual(await run('<table><tr><td><base href="/assets/"></td></tr><div><script src="checkout.js"></script></div></table>'), ['https://fixture.example.test/assets/checkout.js']);
+  assert.deepEqual(await run('<table><script src="checkout.js"></script><base href="/assets/"></table>'), ['https://fixture.example.test/checkout.js']);
+  assert.deepEqual(await run('<svg><base href="/assets/"/></svg><script src="checkout.js"></script>'), ['https://fixture.example.test/checkout.js']);
+  assert.deepEqual(await run('<base href="&nbsp;/assets/"><script src="checkout.js"></script>'), ['https://fixture.example.test/%C2%A0/assets/checkout.js']);
+  // Negative control: C0 space is stripped, as the URL parser does.
+  assert.deepEqual(await run('<base href=" /assets/ "><script src="checkout.js"></script>'), ['https://fixture.example.test/assets/checkout.js']);
+});
+
+test('an SVG <script> is not fetched or parsed; the HTML script beside it still is', async () => {
+  const requested = [];
+  const parseFailures = [];
+  await observe(`${inline(key)}<svg><script src="svg.js"></script></svg><script src="html.js"></script>`, {
+    parseFailures,
+    scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).pathname); return { ok: true, html: checkoutScript + '});\n' }; },
+  });
+  assert.deepEqual(requested, ['/html.js']);
+  assert.deepEqual(parseFailures.map(f => f.script), ['/html.js']);
+  // An inline SVG script is not modelled: the binding stays dynamic, never a match.
+  assert.equal((await observe(`${inline(key)}<svg><script>window.nextConfig = {apiKey: "x"};</script></svg>`)).reason, 'dynamic_unresolved');
+  assert.equal((await observe(inline(key))).outcome, 'match');
+});
+
+test('the SDK exemption matches the URL as the parser reads it, tab and newline removed', async () => {
+  const loads = [];
+  const sdk = 'https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v1/dist/in&#10;dex.js';
+  const evidence = await observe(`${inline(key)}<script src="${sdk}"></script>`, { scriptLoader: async (src) => { loads.push(src); return { ok: false }; } });
+  assert.deepEqual(loads, []);
+  assert.equal(evidence.outcome, 'match');
+  // Negative control: a script that is not the SDK is still fetched.
+  const other = await observe(`${inline(key)}<script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v1/dist/other.js"></script>`, { scriptLoader: async () => ({ ok: false }) });
+  assert.equal(other.reason, 'script_unavailable_or_limit');
+});
