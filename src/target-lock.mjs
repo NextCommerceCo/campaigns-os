@@ -4,7 +4,7 @@
 // the Assembly Report, so no stage evidence lands between prepare-build's
 // pre-publish re-check and its rename. It lives beside the Design Source
 // Package, inside the input directory prepare-build's writes already cover.
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { DESIGN_SOURCE_PACKAGE_REL_PATH } from "./design-source-package.mjs";
 import { withDirectoryLock, withDirectoryLockSync } from "./directory-lock.mjs";
@@ -18,23 +18,37 @@ export function targetLockPath(targetRepo) {
   return join(dirname(designSourcePackagePath), `.${basename(designSourcePackagePath)}.lock`);
 }
 
-function unavailable(targetRepo, lockPath, holder) {
-  return (error) => error?.code === "EEXIST"
-    ? new Error(
-      `Another ${holder} is writing ${targetRepo} (lock ${lockPath}). `
+// `command` names the waiting command. The lock does not record which command
+// holds it, only a pid, so the holder is described generically. A lock with
+// no owner record is called out on its own: it is never taken over, and the
+// operator needs to know it will not clear by waiting.
+function unavailable(targetRepo, lockPath, command) {
+  return (error) => {
+    if (error?.code !== "EEXIST") {
+      return new Error(`${command} could not take the target lock at ${lockPath}${error?.code ? ` (${error.code})` : ""}: ${error?.message}`, { cause: error });
+    }
+    if (existsSync(lockPath) && !existsSync(join(lockPath, "owner.json"))) {
+      return new Error(
+        `${command}: the target lock at ${lockPath} has no owner record, so it is never taken over automatically `
+        + "(an older campaigns-os release or an interrupted run left it). "
+        + `Confirm no campaigns-os process is working on ${targetRepo}, then remove that lock directory and retry.`,
+      );
+    }
+    return new Error(
+      `${command}: another campaigns-os command is writing ${targetRepo} (lock ${lockPath}). `
       + "Retry after it finishes. If a run was interrupted, confirm no campaigns-os process is working on this target before removing that lock directory.",
-    )
-    : new Error(`Could not take the target lock at ${lockPath}${error?.code ? ` (${error.code})` : ""}: ${error?.message}`, { cause: error });
+    );
+  };
 }
 
-export function withTargetLock(targetRepo, fn, { holder = "campaigns-os writer", budgetMs = TARGET_LOCK_BUDGET_MS } = {}) {
+export function withTargetLock(targetRepo, fn, { command = "campaigns-os", budgetMs = TARGET_LOCK_BUDGET_MS } = {}) {
   const lockPath = targetLockPath(targetRepo);
   mkdirSync(dirname(lockPath), { recursive: true });
-  return withDirectoryLock(lockPath, fn, { budgetMs, unavailable: unavailable(targetRepo, lockPath, holder) });
+  return withDirectoryLock(lockPath, fn, { budgetMs, unavailable: unavailable(targetRepo, lockPath, command) });
 }
 
-export function withTargetLockSync(targetRepo, fn, { holder = "campaigns-os writer", budgetMs = TARGET_LOCK_BUDGET_MS } = {}) {
+export function withTargetLockSync(targetRepo, fn, { command = "campaigns-os", budgetMs = TARGET_LOCK_BUDGET_MS } = {}) {
   const lockPath = targetLockPath(targetRepo);
   mkdirSync(dirname(lockPath), { recursive: true });
-  return withDirectoryLockSync(lockPath, fn, { budgetMs, unavailable: unavailable(targetRepo, lockPath, holder) });
+  return withDirectoryLockSync(lockPath, fn, { budgetMs, unavailable: unavailable(targetRepo, lockPath, command) });
 }

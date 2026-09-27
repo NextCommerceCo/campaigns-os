@@ -16,7 +16,9 @@
 // would reintroduce a check/rename race. A lock directory WITHOUT an owner
 // record is never taken over: this module cannot produce one, so it belongs
 // to an older writer that may still be alive between its mkdir and its owner
-// write (#501). It is left for the documented offline procedure.
+// write (#501). A waiter refuses it after a short grace, leaving it for the
+// documented offline procedure. (See publishStagedDirectory for the one
+// mixed-version race this cannot close.)
 //
 // The lock is reentrant for its holder: code running inside `fn` (in the
 // same async context) that asks for the same lock enters directly instead of
@@ -55,19 +57,31 @@ function stageOwnedDirectory(stagingPath, owner) {
   }
 }
 
-// Returns false when `dest` already exists (someone else holds it); throws on
-// any other failure. The staging directory is gone either way.
+// rename(2) onto a non-empty directory fails with one of these; the holder
+// may already have released by the time the error is seen, so they are
+// contention whether or not the destination still exists.
+const CONTENTION_CODES = new Set(["EEXIST", "ENOTEMPTY"]);
+// Codes some platforms use for an existing destination (EPERM on Windows)
+// that are also genuine failures: contention only while the destination
+// exists.
+const MAYBE_CONTENTION_CODES = new Set(["EPERM", "ENOTDIR", "EISDIR"]);
+
+// Returns false when `dest` is held by someone else; throws on any other
+// failure. The staging directory is gone either way.
 function publishStagedDirectory(stagingPath, dest) {
   try {
-    // rename(2) replaces an EMPTY destination directory, and only an older
-    // writer leaves one (between its mkdir and its owner write), so never
-    // rename over an existing entry. The residual race is confined to mixing
-    // versions on one target.
+    // rename(2) replaces an EMPTY destination directory, so never rename over
+    // an existing entry. This module never leaves an empty directory at a
+    // lock path; only an older release does, for the instant between its
+    // mkdir and its owner write. A new writer's check-then-rename can land in
+    // that instant and replace it, so running an older release and this one
+    // on the same target at the same moment is not safe (#501).
     if (exists(dest)) return false;
     try {
       renameSync(stagingPath, dest);
     } catch (error) {
-      if (exists(dest)) return false;
+      if (CONTENTION_CODES.has(error?.code)) return false;
+      if (MAYBE_CONTENTION_CODES.has(error?.code) && exists(dest)) return false;
       throw error;
     }
     return true;
@@ -76,7 +90,12 @@ function publishStagedDirectory(stagingPath, dest) {
   }
 }
 
-function createLock(path, { budgetMs, unavailable, now = Date.now }) {
+// An ownerless lock is never taken over, so waiting out the whole budget on
+// one only delays the refusal. A live older writer fills its owner within
+// microseconds; one still ownerless after this grace is refused at once.
+const OWNERLESS_GRACE_MS = 1000;
+
+function createLock(path, { budgetMs, unavailable, now = Date.now, ownerlessGraceMs = OWNERLESS_GRACE_MS }) {
   const token = randomBytes(16).toString("hex");
   const start = now();
   const owner = { pid: process.pid, token };
@@ -127,7 +146,26 @@ function createLock(path, { budgetMs, unavailable, now = Date.now }) {
   // Publish, then fence on the token actually on disk.
   const publish = () => publishStagedDirectory(stagingPath, path) && readOwner(ownerPath)?.token === token;
   const heldBySelfProcess = () => readOwner(ownerPath)?.pid === process.pid;
-  const expired = () => now() - start >= budgetMs;
+  let ownerlessSince = null;
+  const ownerless = () => {
+    try {
+      return lstatSync(path).isDirectory() && !exists(ownerPath);
+    } catch {
+      return false;
+    }
+  };
+  // True once the budget is spent, or once the lock has stayed ownerless past
+  // the grace period.
+  const expired = () => {
+    const current = now();
+    if (ownerless()) {
+      ownerlessSince ??= current;
+      if (current - ownerlessSince >= ownerlessGraceMs) return true;
+    } else {
+      ownerlessSince = null;
+    }
+    return current - start >= budgetMs;
+  };
   const fail = (error) => unavailable(error);
   const contended = () => Object.assign(new Error(`Lock is held: ${path}`), { code: "EEXIST" });
 

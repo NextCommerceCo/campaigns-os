@@ -1694,6 +1694,13 @@ test("prepare-build rejects configurable outputs inside the target lock director
     assertArtifactsUnchanged(snapshot);
   }));
 
+  await t.test("--report-out named like the lock but outside its tree is an ordinary output", () => withFixture((fixture) => {
+    const beside = join(fixture.target, `${lockRel}.report.json`);
+    const result = runPrepare(fixture, { extraArgs: ["--report-out", beside] });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(beside), true, "the report survives the lock release");
+  }));
+
   for (const flag of ["--report-out", "--context-out"]) {
     await t.test(`${flag} through a symlinked input directory`, () => withFixture((fixture) => {
       const inputDir = join(fixture.target, ".campaign-runtime/input");

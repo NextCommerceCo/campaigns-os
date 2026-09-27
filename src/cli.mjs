@@ -1919,13 +1919,15 @@ function prepareBuildPathIdentity(path) {
 
 // A reserved tree is a directory no output may be written into: the target
 // lock, whose release removes the directory recursively (#501). The staging,
-// tomb and recovery siblings it creates share its name as a prefix
-// (`<lock>.staging-*`, `<lock>.released-*`), so the whole name family is
-// reserved with it.
+// tomb and recovery siblings the lock creates and removes
+// (src/directory-lock.mjs) are reserved with it; other names that merely
+// start with the lock's name are ordinary outputs.
+const PREPARE_BUILD_LOCK_SIBLING_SUFFIXES = [".staging-", ".recovery-staging-", ".released-", ".abandoned-"];
+
 function prepareBuildReservedTreeContains(reservedIdentity, pathIdentity) {
   return pathIdentity === reservedIdentity
     || pathIdentity.startsWith(`${reservedIdentity}${sep}`)
-    || pathIdentity.startsWith(`${reservedIdentity}.`);
+    || PREPARE_BUILD_LOCK_SIBLING_SUFFIXES.some((suffix) => pathIdentity.startsWith(`${reservedIdentity}${suffix}`));
 }
 
 function assertOutsidePrepareBuildReservedTrees(label, absolute, canonical, reservedTrees) {
@@ -2660,7 +2662,7 @@ async function prepareBuild(args, options = {}) {
     prepareBuildOutputPaths,
     prepareBuildThemeOutputPaths,
     prepareBuildCollisionPaths,
-  }), { holder: "prepare-build" });
+  }), { command: "prepare-build" });
 }
 
 function prepareBuildUnderLock({
@@ -3953,7 +3955,10 @@ export function commitWaiverToAssemblyReport(workspace, mutate, options, { dryRu
     applyDerivedAssemblyReportSummary(mutated);
     return null;
   };
-  return commitAssemblyReport(workspace, previewOrCommit, options);
+  // A preview writes nothing, so it does not take the target lock either: the
+  // lock's staging and owner files are writes, and a preview must work on a
+  // target it cannot write.
+  return commitAssemblyReport(workspace, previewOrCommit, dryRun ? { ...options, lock: false } : options);
 }
 
 function waiveReadiness(packetPath, reportPath) {

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { syncBuiltinESMExports } from "node:module";
 import test from "node:test";
 
 import { withDirectoryLock, withDirectoryLockSync } from "./directory-lock.mjs";
@@ -57,6 +58,23 @@ test("an ownerless lock directory is never taken over, however old (#501)", () =
   );
   assert.equal(entered, false, "the critical section was not entered");
   assert.deepEqual(readdirSync(lock), [], "the ownerless directory is left for the offline procedure");
+}));
+
+test("an ownerless lock is refused after a short grace, not after the whole budget", () => withScratch(async (dir) => {
+  const lock = join(dir, "lock");
+  mkdirSync(lock);
+  let clock = 0;
+  await assert.rejects(
+    withDirectoryLock(lock, () => {}, { budgetMs: 60_000, unavailable, now: () => clock, sleep: async () => { clock += 100; } }),
+    /lock unavailable: EEXIST/,
+  );
+  assert.ok(clock <= 1100, `refused after ${clock}ms of waiting, not the 60s budget`);
+  clock = 0;
+  assert.throws(
+    () => withDirectoryLockSync(lock, () => {}, { budgetMs: 60_000, unavailable, now: () => clock, sleep: () => { clock += 100; } }),
+    /lock unavailable: EEXIST/,
+  );
+  assert.ok(clock <= 1100);
 }));
 
 // A writer is suspended (in a child process) in the middle of acquiring the
@@ -183,6 +201,38 @@ test("a writer paused between staging its owner and publishing the lock waits fo
   }, { budgetMs: 1000, unavailable, now: () => clock });
   await first;
   assert.deepEqual(events, ["second enter", "second exit", "first enter", "first exit"]);
+}));
+
+// The publishing rename fails because another writer holds the lock, and
+// that writer releases before the failure is examined. That is contention,
+// and the waiter keeps its remaining budget instead of failing.
+test("a publish that loses to a holder who has already released retries instead of failing", () => withScratch(async (dir) => {
+  const lock = join(dir, "lock");
+  const originalRename = fs.renameSync;
+  let raced = false;
+  fs.renameSync = function racingRename(from, to, ...rest) {
+    if (!raced && String(to) === lock && String(from).includes(".staging-")) {
+      raced = true;
+      mkdirSync(lock);
+      writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: process.pid, token: "brief-holder" })}\n`);
+      try {
+        return originalRename.call(fs, from, to, ...rest);
+      } finally {
+        rmSync(lock, { recursive: true, force: true });
+      }
+    }
+    return originalRename.call(fs, from, to, ...rest);
+  };
+  syncBuiltinESMExports();
+  try {
+    let entered = false;
+    await withDirectoryLock(lock, () => { entered = true; }, { budgetMs: 5000, unavailable });
+    assert.equal(raced, true, "the race was staged");
+    assert.equal(entered, true);
+  } finally {
+    fs.renameSync = originalRename;
+    syncBuiltinESMExports();
+  }
 }));
 
 test("release never removes a lock directory another holder now owns", () => withScratch(async (dir) => {

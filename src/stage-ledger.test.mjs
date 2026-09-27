@@ -867,3 +867,22 @@ commitAssemblyReport(${JSON.stringify(workspace)}, (report) => ({ ...report, sta
   assert.deepEqual(final.stages.qa?.evidence, ["qa verdict"], "the stage writer's evidence landed after the publication, not under it");
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("a stage writer names an ownerless target lock and how to clear it", async () => {
+  const { targetLockPath } = await import("./target-lock.mjs");
+  const { dir, workspace } = workspaceFixture();
+  const lock = targetLockPath(workspace.targetRepo);
+  mkdirSync(lock, { recursive: true });
+  const started = Date.now();
+  assert.throws(
+    () => commitAssemblyReport(workspace, (report) => ({ ...report, note: "edited" }), { command: "unit waive", staleReason: "unit reason" }),
+    (error) => {
+      assert.match(error.message, /^unit waive: the target lock at .*\.design-source-package\.json\.lock has no owner record/);
+      assert.ok(error.message.includes(lock), "names the lock path");
+      assert.match(error.message, /remove that lock directory and retry/);
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 10_000, "refused after the ownerless grace, not the one-minute budget");
+  rmSync(dir, { recursive: true, force: true });
+});

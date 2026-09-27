@@ -7200,8 +7200,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.1+agent.17",
-      "changelog_sha256": "04befa66284b353d6e4661d99ae84bf2f3f042724c462c6c29c27ad9e6813677",
-      "agent_impact": "prepare-build refuses any configurable output path inside its target lock directory or the lock directory's .lock.* siblings, directly or through a directory alias. The per-target and progress allocation locks publish their owner with the directory and never take over an ownerless lock; stage producers that edit the Assembly Report wait for a prepare-build holding the target lock.",
+      "changelog_sha256": "c479b34451dfed258ce2b0a27606a77ab74ffc80bac67def6a53ed6dd1209148",
+      "agent_impact": "prepare-build refuses any configurable output path inside its target lock directory or the staging and tomb directories the lock creates beside it, directly or through a directory alias. The per-target and progress allocation locks publish their owner with the directory and refuse an ownerless lock after about a second, naming it; stage producers that edit the Assembly Report wait for a prepare-build holding the target lock, and waiver --dry-run previews take no lock.",
       "compatibility": "compatible",
       "migration": "Choose output paths outside .campaign-runtime/input/.design-source-package.json.lock. A lock directory without owner.json, left by an older release, is no longer recovered after ten seconds: confirm no campaigns-os process is working on the target, then remove it.",
       "changes": [
@@ -7221,10 +7221,10 @@
           "class": "named_surface",
           "path": "docs/progress-snapshots.md",
           "surface_entry": "docs/progress-snapshots.md",
-          "summary": "Replace the ten-second ownerless recovery with the atomic owner publication and the offline procedure for an ownerless lock."
+          "summary": "Replace the ten-second ownerless recovery with the atomic owner publication, the ownerless refusal and the offline procedure, and name the lock in the warning."
         }
       ],
-      "entry_sha256": "4fc304ff1216c258f846cfc8a461f10f843a4c7e4a0976a250da1acbd37c57cb"
+      "entry_sha256": "8e5dd4db09b06f836a0e2c799ab3b9a289b9d24e02dd35e4194ad965d2987206"
     }
   ]
 }

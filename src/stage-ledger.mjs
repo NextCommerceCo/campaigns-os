@@ -432,7 +432,9 @@ export function assemblyReportMatchesPacket(report, packet) {
  * publication; inside prepare-build's own critical section it enters
  * directly. A workspace without `targetRepo` (only possible with an explicit
  * refreshDoctor and no stale stamp) names no target to lock and runs as is.
- * `lockBudgetMs` bounds the wait (default: the target lock budget).
+ * `lockBudgetMs` bounds the wait (default: the target lock budget). A caller
+ * whose mutate always returns null (a preview) passes `lock: false`: it
+ * writes nothing, so it takes no lock and creates no lock files.
  *
  * Returns `{ written, skipped, report, reportPath, doctorOutPath }` where
  * `skipped` is `null`, `"absent"`, `"identity"` or `"unchanged"` and `report`
@@ -445,6 +447,7 @@ export function commitAssemblyReport(workspace, mutate, {
   command = null,
   stage = null,
   lockBudgetMs,
+  lock = true,
 } = {}) {
   const hasRefresh = typeof refreshDoctor === "function";
   const hasStale = typeof staleReason === "string" && staleReason.trim();
@@ -466,9 +469,9 @@ export function commitAssemblyReport(workspace, mutate, {
   const commit = () => commitAssemblyReportUnderLock(workspace, mutate, {
     refreshDoctor, staleReason, command, stage, hasRefresh, reportPath, doctorOutPath, targetRepo,
   });
-  if (!targetRepo) return commit();
+  if (!targetRepo || lock === false) return commit();
   return withTargetLockSync(targetRepo, commit, {
-    holder: `campaigns-os writer (${command.trim()})`,
+    command: command.trim(),
     ...(lockBudgetMs === undefined ? {} : { budgetMs: lockBudgetMs }),
   });
 }
