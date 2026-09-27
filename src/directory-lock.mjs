@@ -18,7 +18,7 @@
 // to an older writer that may still be alive between its mkdir and its owner
 // write (#501). A waiter refuses it after a short grace, leaving it for the
 // documented offline procedure. (See publishStagedDirectory for the one
-// mixed-version race this cannot close.)
+// mixed-version race this cannot close, tracked in #514.)
 //
 // The lock is reentrant for its holder: code running inside `fn` (in the
 // same async context) that asks for the same lock enters directly instead of
@@ -75,7 +75,7 @@ function publishStagedDirectory(stagingPath, dest) {
     // lock path; only an older release does, for the instant between its
     // mkdir and its owner write. A new writer's check-then-rename can land in
     // that instant and replace it, so running an older release and this one
-    // on the same target at the same moment is not safe (#501).
+    // on the same target at the same moment is not safe (#501; tracked in #514).
     if (exists(dest)) return false;
     try {
       renameSync(stagingPath, dest);
