@@ -23,7 +23,10 @@ Notable supported-surface changes are recorded here.
   proof summary no longer counts it in `orders_verified`; it still counts in
   `orders_created`), and the path is neither re-run (a second order) nor
   passed through read-only recovery (which cannot re-check an upsell). The
-  `browser-test-order` assertion still reports it as `manual_review`.
+  `browser-test-order` assertion still reports it as `manual_review`. A path
+  with an unverified upsell and another failure is recovered as before, but
+  a recovery that clears the other failure leaves the upsell unverified: the
+  result goes to `manual_review`, not `pass`, and the order stays unverified.
 
 ## [1.43.1+agent.12] - 2026-09-26
 

@@ -3570,6 +3570,9 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       : acceptedSteps.every((step) => step.verification?.accepted_upsell_line_present === true);
     if (unverifiedSteps.length) {
       order.verification.upsell_unverified = unverifiedSteps.map((step) => step.verification.accepted_upsell_match.reason);
+      // Whatever else the path finds, an order whose accepted upsell nothing
+      // proved is not a verified order (#505).
+      order.verification.verified = false;
     }
     order.verification.upsell_api_response_seen = acceptedSteps.every((step) => step.verification?.upsell_api_response_seen === true);
     order.verification.accepted_upsell_matches = acceptedSteps.map((step) => step.verification?.accepted_upsell_match).filter(Boolean);
@@ -3605,7 +3608,6 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   // for manual review (#505). The order itself was created and read back, so
   // order.ok keeps saying so; only its verification drops to unverified.
   const upsellUnverified = clean ? order.verification.upsell_unverified || null : null;
-  if (upsellUnverified) order.verification.verified = false;
   const ok = clean && !upsellUnverified;
   return {
     ok,
@@ -5652,13 +5654,22 @@ async function recoverCreatedOrder({ context, attempt, plan = null, checkoutPage
     }
 
     const cleared = remaining.length === 0;
+    // An unverified accepted upsell is not a failure recovery can clear, nor
+    // one it can re-check: re-reading the order says nothing about which
+    // mutation added what. With everything else cleared, the recovered result
+    // is the same manual-review shape executeTestOrderPath returns (#505).
+    const upsellUnverified = Array.isArray(order.verification?.upsell_unverified) && order.verification.upsell_unverified.length
+      ? order.verification.upsell_unverified
+      : null;
+    if (upsellUnverified) recovered.verification.verified = false;
     return {
       attempts: 1,
       cleared,
       checks,
       result: {
         ...attempt,
-        ok: cleared,
+        ok: cleared && !upsellUnverified,
+        ...(cleared && upsellUnverified ? { upsell_unverified: upsellUnverified } : {}),
         error: cleared ? null : remaining.join("; "),
         order: recovered,
       },
@@ -5800,9 +5811,12 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
   // not be checked: its mutation body never loaded and no read-back arrived.
   // Neither proved nor disproved, so a human decides, as for a hosted checkout.
   // The result is not ok (the path is not proven), but nothing failed either.
-  const upsellUnverified = !result.ok && Array.isArray(result.upsell_unverified) && result.upsell_unverified.length
+  // A result that says ok while its order still carries unverified reasons is
+  // read the same way: never a pass.
+  const orderUnverified = result.order?.verification?.upsell_unverified;
+  const upsellUnverified = Array.isArray(result.upsell_unverified) && result.upsell_unverified.length
     ? result.upsell_unverified
-    : null;
+    : result.ok && Array.isArray(orderUnverified) && orderUnverified.length ? orderUnverified : null;
   const created = result.ok || Boolean(upsellUnverified);
   return assertion({
     id: `browser-test-order:${id}`,
