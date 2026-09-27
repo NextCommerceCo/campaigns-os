@@ -1059,10 +1059,9 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   // An offline sample must not recover sessions or emit lifecycle evidence.
   if (command === "demo") {
-    // Validate raw tokens first: parsing loses duplicate flags. The parsed
-    // shape is then rechecked and the target extracted.
-    demoArguments(args, argv);
-    const target = demoArguments(args);
+    // Validate the raw tokens (parsing loses duplicate flags) and the parsed
+    // shape in one call, which returns the target.
+    const target = demoArguments(args, argv);
     if (target === null) {
       console.log("campaigns-os demo --target <new-directory>\nOffline Apollo sample only. Open the printed landing/index.html file. Start a real campaign in a separate new Page Kit folder; preserve your sample edits.");
       return;
