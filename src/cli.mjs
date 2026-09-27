@@ -2081,14 +2081,18 @@ function assertValidPreparedDesignSourcePackage(value, path, currentPageScope, c
 // The package is published before the report that records it, so a run that
 // fails or dies between the two would leave its own package unrecorded (#501).
 // The pending provenance record beside the package closes that gap: it names
-// the sha256 of the bytes a run is about to publish, is written before the
-// package goes out, and is removed once a report has recorded the package. A
-// retry that finds it still accepts only bytes that hash to it.
+// the sha256 of the bytes a run is about to publish, plus the stale package's
+// when a --force run is replacing one it proved its own, so a regeneration
+// that fails or dies part way leaves whichever package ends up on disk
+// provable. It is written before the package goes out, loses the candidate
+// hash if the run adopts another writer's package instead of publishing, and
+// is removed once a report has recorded the package. A retry that finds it
+// still accepts only bytes that hash to one of its entries.
 function readPriorDesignSourceProvenance(reportPath, packagePath) {
   const synthesized = [];
   const pending = readJsonIfExistsQuietly(pendingDesignSourceProvenancePath(packagePath));
-  if (isObject(pending) && pending.origin === DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED && isNonEmptyString(pending.sha256)) {
-    synthesized.push(pending.sha256);
+  if (isObject(pending) && pending.origin === DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED && Array.isArray(pending.sha256)) {
+    synthesized.push(...pending.sha256.filter(isNonEmptyString));
   }
   let report = null;
   try {
@@ -2118,9 +2122,13 @@ function pendingDesignSourceProvenancePath(designSourcePackagePath) {
 
 // Written (staged, then renamed into place) before a synthesized package is
 // published, so the claim survives a crash between that publication and the
-// report's.
+// report's. An empty list removes the record.
 function recordPendingDesignSourceProvenance(designSourcePackagePath, sha256) {
   const pendingPath = pendingDesignSourceProvenancePath(designSourcePackagePath);
+  if (!sha256.length) {
+    rmSync(pendingPath, { force: true });
+    return;
+  }
   const stagedPath = `${pendingPath}.${randomUUID()}.tmp`;
   try {
     writeFileSync(stagedPath, `${JSON.stringify({ origin: DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED, sha256 })}\n`, { flag: "wx" });
@@ -2418,6 +2426,9 @@ function prepareDesignSourcePackage({
           { cause: error },
         );
       }
+      // Another writer's package is at the path, not this run's bytes: the
+      // pending record stops vouching for the candidate before it is judged.
+      recordPendingDesignSourceProvenance(path, pendingCarried);
       reuseWinner();
     }
   };
@@ -2472,13 +2483,18 @@ function prepareDesignSourcePackage({
   };
 
   const existing = existsSync(path) ? readExisting() : null;
+  // The stale package a --force run replaces is provably the producer's own;
+  // its hash stays in the pending record until the replacement is recorded,
+  // so a failed or interrupted replacement that leaves it in place (put back,
+  // or never moved) can still be regenerated.
+  const pendingCarried = existing?.stale ? [existing.sha256] : [];
   if (existing && !existing.stale) {
     ({ value, rawBytes, origin } = existing);
     mode = "reused";
   } else {
     const stagedPath = stageSynthesized();
     try {
-      recordPendingDesignSourceProvenance(path, hashSerializedDesignSourcePackage(rawBytes));
+      recordPendingDesignSourceProvenance(path, [hashSerializedDesignSourcePackage(rawBytes), ...pendingCarried]);
       if (existing?.stale) replaceStale(stagedPath, existing.sha256);
       else publishStaged(stagedPath);
     } finally {

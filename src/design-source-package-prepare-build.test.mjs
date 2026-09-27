@@ -1537,6 +1537,104 @@ test("a package published before a failed or interrupted report publication stay
   }));
 });
 
+// A package whose only proof of origin is the pending record keeps that proof
+// through a --force regeneration that fails or dies before it publishes.
+function pendingRecordEnv(fixture, how) {
+  const preloadPath = join(fixture.dir, `pending-record-${how}.cjs`);
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRenameSync = fs.renameSync, originalLinkSync = fs.linkSync;
+const dsp = path.resolve(process.env.PB_DSP);
+const pending = path.join(path.dirname(dsp), "." + path.basename(dsp) + ".pending-provenance.json");
+fs.renameSync = function killAfterPendingRecord(from, to, ...rest) {
+  const result = originalRenameSync.call(fs, from, to, ...rest);
+  if (process.env.PB_HOW === "kill-after-pending" && path.resolve(String(to)) === pending) process.kill(process.pid, "SIGKILL");
+  return result;
+};
+fs.linkSync = function failStagedPublication(source, destination) {
+  if (process.env.PB_HOW === "fail-publication" && path.resolve(String(destination)) === dsp && String(source).endsWith(".tmp")) {
+    const error = new Error("simulated publication failure");
+    error.code = "EIO";
+    throw error;
+  }
+  return originalLinkSync.call(fs, source, destination);
+};
+syncBuiltinESMExports();
+`);
+  return {
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+    PB_DSP: join(fixture.target, DSP_REL_PATH),
+    PB_HOW: how,
+  };
+}
+
+test("a --force regeneration that fails or dies keeps the pending proof for the package it leaves in place", async (t) => {
+  for (const how of ["fail-publication", "kill-after-pending"]) {
+    await t.test(how, () => withFixture(async (fixture) => {
+      const failed = await runPrepareAsync(fixture, { env: reportPublicationFailureEnv(fixture, "throw") });
+      assert.notEqual(failed.status, 0);
+      const dspPath = join(fixture.target, DSP_REL_PATH);
+      const emittedBytes = readFileSync(dspPath);
+      editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+
+      const interrupted = await runPrepareAsync(fixture, { extraArgs: ["--force"], env: pendingRecordEnv(fixture, how) });
+      assert.notEqual(interrupted.status, 0);
+      assert.ok(readFileSync(dspPath).equals(emittedBytes), "the package prepare-build emitted is still in place");
+
+      const forced = runPrepare(fixture, { extraArgs: ["--force"] });
+      assert.equal(forced.status, 0, forced.stderr);
+      assert.equal(forced.json.designSourcePackageMode, "regenerated");
+      assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.origin, "synthesized");
+    }));
+  }
+});
+
+// The pending record names bytes a run intends to publish. When the run loses
+// publication to identical bytes some other writer put there first, it adopts
+// them, and the record must not later vouch for them as the producer's own.
+test("a pending record does not vouch for a package the run adopted instead of publishing", () => withFixture(async (fixture) => {
+  const preloadPath = join(fixture.dir, "identical-winner.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalLinkSync = fs.linkSync, originalRenameSync = fs.renameSync;
+const dsp = path.resolve(process.env.PB_DSP);
+fs.linkSync = function identicalWinner(source, destination) {
+  if (path.resolve(String(destination)) === dsp && String(source).endsWith(".tmp")) {
+    // Another writer puts the same bytes at the path first.
+    fs.writeFileSync(dsp, fs.readFileSync(source));
+  }
+  return originalLinkSync.call(fs, source, destination);
+};
+fs.renameSync = function failReportPublication(from, to, ...rest) {
+  if (path.resolve(String(to)) === path.resolve(process.env.PB_REPORT) && String(from).endsWith(".tmp")) {
+    const error = new Error("simulated report publication failure");
+    error.code = "EIO";
+    throw error;
+  }
+  return originalRenameSync.call(fs, from, to, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  const lost = await runPrepareAsync(fixture, {
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      PB_DSP: join(fixture.target, DSP_REL_PATH),
+      PB_REPORT: join(fixture.target, ".campaign-runtime/assembly-report.json"),
+    },
+  });
+  assert.notEqual(lost.status, 0);
+  assert.match(lost.stderr, /simulated report publication failure/);
+
+  const retry = runPrepare(fixture);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.origin, "adopted",
+    "bytes another writer published are adopted, not claimed through the run's pending record");
+}));
+
 // #501 item 6: the manifest hash recorded in the Design Source Package is the
 // hash of the bytes source intake parsed, even when the file is rewritten
 // between the parse and the hash.

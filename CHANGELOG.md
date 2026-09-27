@@ -15,8 +15,12 @@ Notable supported-surface changes are recorded here.
   report is written. A retry that finds the record treats a package that
   still hashes to it as `origin: "synthesized"`, so a later `--force` after a
   manifest edit regenerates the package instead of refusing it as someone
-  else's. Bytes changed since the failure are not vouched for. The record's
-  path is reserved: no configurable output may point at it.
+  else's. A `--force` regeneration keeps the replaced package's hash in the
+  record until the replacement is recorded, so a regeneration that fails or
+  dies part way leaves the package on disk provable, and a run that adopts
+  another writer's package instead of publishing drops its own candidate from
+  the record. Bytes changed since the failure are not vouched for. The
+  record's path is reserved: no configurable output may point at it.
 - The `manifest_sha256` the Design Source Package records is now the hash of
   the exact source-html manifest bytes source intake parsed. The file was
   read twice, once to parse and once to hash, so an edit between the two

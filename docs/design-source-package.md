@@ -362,9 +362,14 @@ which fails or dies between the two does not leave its own package unprovable,
 `prepare-build` first writes a pending provenance record beside the package
 (`.campaign-runtime/input/.design-source-package.json.pending-provenance.json`)
 naming the sha256 of the bytes it is about to publish, and removes it once the
-Assembly Report is written. A retry that finds the record treats a package
-whose bytes still hash to it as `"synthesized"`, exactly as if the report had
-recorded it; bytes changed since are not vouched for. The record's path is
+Assembly Report is written. A `--force` run that replaces a stale package it
+proved its own keeps that package's sha256 in the record too, so a
+regeneration that fails or dies part way leaves whichever package is on disk
+provable. A run that finds another writer's package at the path and adopts it
+instead of publishing drops its own candidate from the record. A retry that
+finds the record treats a package whose bytes still hash to one of its entries
+as `"synthesized"`, exactly as if the report had recorded it; bytes changed
+since are not vouched for. The record's path is
 reserved like the other outputs, so no configurable output may point at it.
 
 Runs against the same target take turns. From the stage-evidence check and
