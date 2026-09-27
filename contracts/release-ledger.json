@@ -7195,7 +7195,7 @@
     },
     {
       "id": "RL-0159",
-      "sequence": 159,
+      "sequence": 156,
       "date": "2026-09-27",
       "kind": "release",
       "surface_version": null,
@@ -7224,7 +7224,7 @@
           "summary": "Replace the ten-second ownerless recovery with the atomic owner publication and the offline procedure for an ownerless lock."
         }
       ],
-      "entry_sha256": "e39b2654b1bfb9a28a60693ccd565b774d0e67679d3c3cbeb37eed9c72163d9f"
+      "entry_sha256": "4fc304ff1216c258f846cfc8a461f10f843a4c7e4a0976a250da1acbd37c57cb"
     }
   ]
 }
