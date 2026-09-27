@@ -54,6 +54,7 @@ test('doctor and the shared helper modules never import the CLI module', () => {
     join(src, 'install-invocation.mjs'),
     join(src, 'cli-helpers.mjs'),
     join(src, 'campaigns-api-key.mjs'),
+    join(src, 'design-source-publication.mjs'),
   ];
   assert.ok(files.length > 0, 'no modules were scanned');
   assert.ok(files.includes(join(src, 'doctor', 'checks.mjs')), 'src/doctor/checks.mjs was not scanned');
@@ -84,19 +85,33 @@ test('doctor and the shared helper modules never import the CLI module', () => {
   // folds symlinks and, on a case-insensitive disk, letter case.
   const samePath = path => { try { return realpathSync.native(path); } catch { return path; } };
   const cliPath = samePath(cliModule);
-  const resolvesToCli = (file, specifier) => {
+  const resolvedFile = (file, specifier) => {
     let url;
     if (/^(\.\.?\/|\/)/.test(specifier)) url = new URL(specifier, pathToFileURL(file));
-    else { try { url = new URL(specifier); } catch { return false; } }
-    if (url.protocol !== 'file:') return false;
-    return samePath(fileURLToPath(url)) === cliPath;
+    else { try { url = new URL(specifier); } catch { return null; } }
+    if (url.protocol !== 'file:') return null;
+    return samePath(fileURLToPath(url));
   };
-  for (const file of files) {
+  const resolvesToCli = (file, specifier) => resolvedFile(file, specifier) === cliPath;
+  // Transitive: every module these reach is walked in turn, so an import of
+  // the CLI one module away is caught too.
+  const visited = new Set(files.map(samePath));
+  const queue = [...visited];
+  while (queue.length > 0) {
+    const file = queue.shift();
     for (const specifier of moduleSpecifiers(readFileSync(file, 'utf8'))) {
       assert.ok(
         !resolvesToCli(file, specifier),
         `src/${relative(src, file)} imports the CLI module as "${specifier}"`,
       );
+      const path = resolvedFile(file, specifier);
+      if (path && /\.m?js$/.test(path) && !visited.has(path)) {
+        visited.add(path);
+        queue.push(path);
+      }
     }
+  }
+  for (const name of ['target-lock.mjs', 'directory-lock.mjs', 'brand-theme.mjs']) {
+    assert.ok(visited.has(samePath(join(src, name))), `the import walk did not reach src/${name}`);
   }
 });

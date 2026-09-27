@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.21] - 2026-09-27
+
+### Changed
+
+- No command behaves differently. Design Source Package publication for
+  `prepare-build`, `start` and `build` now has one owner instead of being
+  restated inside `prepare-build`: the pending provenance record, the target
+  lock's critical section, the output collision checks, the stage-evidence
+  re-checks and the staged publication order. The on-disk names, the
+  publication order, every message and every exit code are unchanged.
+
 ## [1.43.1+agent.20] - 2026-09-27
 
 ### Changed
