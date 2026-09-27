@@ -5823,7 +5823,10 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
   // Neither proved nor disproved, so a human decides, as for a hosted checkout.
   // The result is not ok (the path is not proven), but nothing failed either.
   // A result that says ok while its order still carries unverified reasons is
-  // read the same way: never a pass.
+  // read the same way: never a pass. No current producer does that (both
+  // executeTestOrderPath and recoverCreatedOrder clear ok when an upsell is
+  // unverified); this arm stops a future ok-producing path, like the recovery
+  // that once promoted an unverified upsell to pass, from doing it silently.
   const orderUnverified = result.order?.verification?.upsell_unverified;
   const upsellUnverified = Array.isArray(result.upsell_unverified) && result.upsell_unverified.length
     ? result.upsell_unverified
