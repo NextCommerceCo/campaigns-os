@@ -7200,7 +7200,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.1+agent.15",
-      "changelog_sha256": "621a7c61992b584965440620210e7f5b6cf730ba29aa6736ce428c4da855c36b",
+      "changelog_sha256": "d78eb0be3faaada970e67f8e659164b4e080c07a404d057e79dbff37b505156f",
       "agent_impact": "Doctor now warns under built_output.script_syntax.missing_script when a built page loads a local script that is not in the built output; it does not block. The script syntax gate resolves each script src against the <base href> in effect when the script is prepared, and falls back to the page URL for a data:, javascript: or unparsable base.",
       "compatibility": "compatible",
       "migration": "none",
@@ -7218,7 +7218,7 @@
           "summary": "Document base-element ordering (parse order, HTML namespace, URL-parser whitespace) and the rejected-base fallback for script resolution, and the missing-script warning and warned[] evidence."
         }
       ],
-      "entry_sha256": "ccf145b8de709fd114af616ee77922660c8a4d02da0ae887223361d7a2b01af0"
+      "entry_sha256": "b704d4bd6f9e83e090200742dd4057d3b263d9884e09b506053b6cb6cd18ad24"
     }
   ]
 }

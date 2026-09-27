@@ -16,7 +16,11 @@ Notable supported-surface changes are recorded here.
   of non-ASCII whitespace the URL parser keeps. Only HTML-namespace
   `<script>` elements are page scripts: an SVG `<script src>` is no longer
   read or parsed by doctor, and QA leaves a page with an SVG script dynamic
-  instead of fetching it. A base
+  instead of fetching it. Only an empty `src` is skipped, as the browser
+  skips it; a `src` of other whitespace is resolved and read. QA recognises
+  the Campaign Cart SDK by its URL as the parser reads it, so a tab or
+  newline inside the attribute no longer makes the SDK look like an
+  unavailable config script. A base
   the browser refuses (a `data:` or `javascript:` URL, or one that does not
   parse) now falls back to the page, as the HTML "set the frozen base URL"
   steps require, so the local script is read and a parse failure in it blocks

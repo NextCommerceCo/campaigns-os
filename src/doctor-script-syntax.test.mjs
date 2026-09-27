@@ -504,3 +504,19 @@ test("an SVG <script> is not a page script: only HTML-namespace scripts are read
   }
   assert.deepEqual(pageScriptReferences('<svg><script src="a.js"></script></svg><math><script src="b.js"></script></math><script src="c.js"></script>'), [{ src: "c.js", module: false }]);
 });
+
+// Codex second pass on #508: the browser skips only an empty src; a src of
+// non-ASCII whitespace is a real relative URL and its script is loaded.
+test("only an empty src is skipped: a src of U+00A0 is fetched and parsed", () => {
+  const { dir, run } = builtSite('<script src="&#160;"></script><script src=""></script>', {
+    [`_site/${SLUG}/checkout/ `]: BAD,
+  });
+  try {
+    const result = run();
+    assert.deepEqual(syntaxErrors(result).map((issue) => issue.detail.finding.file), [`_site/${SLUG}/checkout/ `]);
+    // Negative control: the empty src is never a reference.
+    assert.deepEqual(gateOf(result).scripts_unresolved, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

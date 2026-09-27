@@ -355,3 +355,14 @@ test('an SVG <script> is not fetched or parsed; the HTML script beside it still 
   assert.equal((await observe(`${inline(key)}<svg><script>window.nextConfig = {apiKey: "x"};</script></svg>`)).reason, 'dynamic_unresolved');
   assert.equal((await observe(inline(key))).outcome, 'match');
 });
+
+test('the SDK exemption matches the URL as the parser reads it, tab and newline removed', async () => {
+  const loads = [];
+  const sdk = 'https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v1/dist/in&#10;dex.js';
+  const evidence = await observe(`${inline(key)}<script src="${sdk}"></script>`, { scriptLoader: async (src) => { loads.push(src); return { ok: false }; } });
+  assert.deepEqual(loads, []);
+  assert.equal(evidence.outcome, 'match');
+  // Negative control: a script that is not the SDK is still fetched.
+  const other = await observe(`${inline(key)}<script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v1/dist/other.js"></script>`, { scriptLoader: async () => ({ ok: false }) });
+  assert.equal(other.reason, 'script_unavailable_or_limit');
+});

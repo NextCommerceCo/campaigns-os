@@ -233,7 +233,9 @@ export function pageScriptDocument(html) {
     // href / xlink:href, and a MathML "script" is not a script element.
     if (node.tagName === "script" && node.namespaceURI === HTML_NAMESPACE) {
       const kind = scriptKind(attrs);
-      if (kind && typeof attrs.src === "string" && attrs.src.trim()) {
+      // "prepare the script element" skips only an empty src; anything else,
+      // even whitespace, is parsed as a URL and fetched.
+      if (kind && typeof attrs.src === "string" && attrs.src !== "") {
         refs.push({ src: stripUrlSpace(attrs.src), module: kind === "module", base: baseInEffect(bases, node) });
       }
     }

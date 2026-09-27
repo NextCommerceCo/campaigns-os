@@ -153,7 +153,9 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
     const classicNomodule = scriptType === null && 'nomodule' in attrs && scriptKind(withoutNomodule) === 'classic';
     // Data-block types (e.g. JSON-LD) are not fetched and consume no config-request budget.
     if (scriptType === null && !classicNomodule) continue;
-    if (attrs.src && SDK.test(attrs.src)) continue;
+    // Matched on the URL as the parser reads it (tab and newline removed,
+    // host case-folded), against the base in effect for this script.
+    if (attrs.src && SDK.test(scriptRef(attrs.src, script.base) ?? attrs.src)) continue;
     if (classicNomodule) { dynamic = true; continue; }
     let text = script.text;
     let kind = 'inline';
