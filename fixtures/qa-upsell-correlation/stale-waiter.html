@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Upsell step with an earlier step's mutation still in flight</title>
+</head>
+<body>
+<div data-next-upsell>
+  <h1>Offer B</h1>
+  <button type="button" data-next-upsell-action="add">Yes, add offer B</button>
+  <button type="button" data-next-upsell-action="skip">No thanks</button>
+</div>
+<script>
+  // An earlier step's (A's) order upsell mutation, posted before this step's
+  // click: its waiter gave up long ago and the server has not answered it
+  // yet. Its headers arrive only once this step's click has posted. This
+  // step's accept posts to the same order-upsells URL.
+  var ref = new URLSearchParams(location.search).get("ref_id");
+  var url = "/api/v1/orders/" + encodeURIComponent(ref) + "/upsells/";
+  var post = function (offer) {
+    return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ offer: offer }) });
+  };
+  post("a");
+  document.querySelector('[data-next-upsell-action="add"]').addEventListener("click", function () { post("b"); });
+</script>
+</body>
+</html>

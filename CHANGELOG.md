@@ -2,6 +2,35 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.14] - 2026-09-27
+
+### Fixed
+
+- An accepted upsell whose mutation body loads late is now matched to the
+  request its own click made, not to any response on the order-upsells URL.
+  Every upsell step in a path posts to the same `/orders/<ref>/upsells/` URL,
+  whether the steps share a page or sit on separate pages, so an earlier
+  step's slow body could land while a later step waited for its own and be
+  judged as the later step's evidence: failing it when that body lacked its
+  line, or passing it on the earlier step's line. The runner keeps the
+  Playwright request of each captured response and of each step's mutation
+  and accepts a late body only when the two are the same request. A step
+  whose own body never arrived and that no later read-back settled is
+  unverified even when the stale lines on hand would have matched. The
+  step's mutation watch also ignores any order-upsells response whose
+  request started before the watch was armed at the click, so an earlier
+  step's response that arrives late, after its own watch expired, is no
+  longer taken as this step's.
+- A test-order path whose only open question is an unverified accepted upsell
+  is no longer `ok` on its result. The result carries `upsell_unverified`
+  instead, the order's `verification.verified` is `false` (so the purchase
+  proof summary no longer counts it in `orders_verified`; it still counts in
+  `orders_created`), and the path is neither re-run (a second order) nor
+  passed through read-only recovery (which cannot re-check an upsell). The
+  `browser-test-order` assertion still reports it as `manual_review`. A path
+  with an unverified upsell and another failure is recovered as before, but
+  a recovery that clears the other failure leaves the upsell unverified: the
+  result goes to `manual_review`, not `pass`, and the order stays unverified.
 ## [1.43.1+agent.13] - 2026-09-27
 
 ### Changed
