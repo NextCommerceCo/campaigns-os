@@ -801,10 +801,15 @@ surrounding ASCII whitespace stripped and case ignored. A classic `nomodule`
 script is skipped: a module-capable browser never fetches or runs it. A
 `type="module"` script ignores `nomodule` and is still parsed. Each src
 resolves the way the browser resolves it: against the base in effect when the
-parser prepares the script, which is the first `<base href>` in the document
-when that comes before the script, or else the page. A `<base>` later in the
-document does not move an earlier script, whether it is async, deferred or a
-module: its URL is fixed when it is prepared, not when it is fetched. A base
+parser prepares the script at its end tag, which is the first HTML `<base
+href>` in tree order among those already parsed, or else the page. A `<base>`
+parsed after a script does not move it, whether it is async, deferred or a
+module: its URL is fixed when it is prepared, not when it is fetched. Parse
+order decides, not final tree position, so a base that table foster parenting
+moves ahead of an earlier script still does not apply to it. A `base` inside
+SVG or MathML is not a base element. The href is read as the URL parser reads
+it: only leading and trailing ASCII control characters and spaces are
+stripped. A base
 the browser refuses (one that does not parse, or a `data:` or `javascript:`
 URL) falls back to the page, as the HTML "set the frozen base URL" steps
 require. The percent-decoded path maps under the site root first, then the

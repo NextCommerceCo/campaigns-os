@@ -41,7 +41,7 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -119,13 +119,20 @@ try {
       throw new Error(`Certified family "${family}" references local script(s) the render does not contain: ${scriptInputs.unresolved.map((entry) => entry.src).join(", ")}.`);
     }
     const scripts = new Set(scriptInputs.scripts.map((script) => resolve(work, script.file)));
+    // Containment by the real path, not the lexical one: a symlinked script
+    // (or page) could otherwise copy bytes from outside the render into this
+    // public fixture tree.
+    const renderedReal = realpathSync(rendered);
     for (const script of scripts) {
-      if (relative(rendered, script).startsWith("..")) throw new Error(`Certified family "${family}" loads a script outside its own render: ${relative(work, script)}.`);
+      if (relative(rendered, script).startsWith("..") || relative(renderedReal, realpathSync(script)).startsWith("..")) {
+        throw new Error(`Certified family "${family}" loads a script outside its own render: ${relative(work, script)}.`);
+      }
     }
     for (const file of renderedFiles) {
       const rel = relative(rendered, file);
       const keep = rel.endsWith(".html") || scripts.has(file);
       if (!keep) continue;
+      if (lstatSync(file).isSymbolicLink()) throw new Error(`Certified family "${family}" renders ${rel} as a symlink; fixtures copy regular files only.`);
       let text = readFileSync(file, "utf8");
       if (rel.endsWith(".html")) text = text.replace(API_HOST_RESOURCE_HINT, "");
       const out = join(OUT, "_site", family, rel);

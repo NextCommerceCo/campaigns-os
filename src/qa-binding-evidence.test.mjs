@@ -326,3 +326,18 @@ test('a data: or javascript: base falls back to the page URL, so the script is s
     assert.equal(evidence.reason, 'script_unavailable_or_limit', base);
   }
 });
+
+// Codex review of #508: parse order, HTML namespace, URL-parser whitespace.
+test('the base in effect follows parse order when foster parenting reorders the tree; SVG bases and NBSP trimming do not apply', async () => {
+  const run = async html => {
+    const requested = [];
+    await observe(`${inline(key)}${html}`, { scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).href); return { ok: true, html: checkoutScript }; } });
+    return requested;
+  };
+  assert.deepEqual(await run('<table><tr><td><base href="/assets/"></td></tr><div><script src="checkout.js"></script></div></table>'), ['https://fixture.example.test/assets/checkout.js']);
+  assert.deepEqual(await run('<table><script src="checkout.js"></script><base href="/assets/"></table>'), ['https://fixture.example.test/checkout.js']);
+  assert.deepEqual(await run('<svg><base href="/assets/"/></svg><script src="checkout.js"></script>'), ['https://fixture.example.test/checkout.js']);
+  assert.deepEqual(await run('<base href="&nbsp;/assets/"><script src="checkout.js"></script>'), ['https://fixture.example.test/%C2%A0/assets/checkout.js']);
+  // Negative control: C0 space is stripped, as the URL parser does.
+  assert.deepEqual(await run('<base href=" /assets/ "><script src="checkout.js"></script>'), ['https://fixture.example.test/assets/checkout.js']);
+});

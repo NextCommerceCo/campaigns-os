@@ -421,3 +421,68 @@ test("frozenBaseUrl follows HTML 'set the frozen base URL'", () => {
   assert.equal(frozenBaseUrl("https://cdn.example.com/lib/", page), "https://cdn.example.com/lib/");
   assert.equal(frozenBaseUrl("", page), page);
 });
+
+// Codex review of #508: the base in effect is the first <base href> in tree
+// order among those the parser has inserted when it reaches the script's end
+// tag. Foster parenting can put a base after the script in tree order yet
+// before it in the source, or the reverse; only HTML-namespace base elements
+// count; and the href reaches the URL parser untrimmed except for what the
+// URL parser itself strips (C0 controls and space).
+test("the base in effect follows parse order, not final tree order, when foster parenting reorders them", () => {
+  // The base (inside a cell) is parsed first; the div holding the script is
+  // foster-parented before the table, so it precedes the base in tree order.
+  const fostered = builtSite(`</head><body><table><tr><td><base href="/${SLUG}/assets/"></td></tr><div><script src="checkout.js"></script></div></table>`, {
+    [`_site/${SLUG}/assets/checkout.js`]: BAD,
+    [`_site/${SLUG}/checkout/checkout.js`]: GOOD,
+  });
+  try {
+    assert.deepEqual(syntaxErrors(fostered.run()).map((issue) => issue.detail.finding.file), [`_site/${SLUG}/assets/checkout.js`]);
+  } finally {
+    rmSync(fostered.dir, { recursive: true, force: true });
+  }
+  // The reverse: the script is prepared before the base is parsed, but the
+  // fostered base lands before the table in tree order.
+  const reverse = builtSite(`</head><body><table><script src="checkout.js"></script><base href="/${SLUG}/assets/"></table>`, {
+    [`_site/${SLUG}/assets/checkout.js`]: GOOD,
+    [`_site/${SLUG}/checkout/checkout.js`]: BAD,
+  });
+  try {
+    assert.deepEqual(syntaxErrors(reverse.run()).map((issue) => issue.detail.finding.file), [`_site/${SLUG}/checkout/checkout.js`]);
+  } finally {
+    rmSync(reverse.dir, { recursive: true, force: true });
+  }
+});
+
+test("an SVG <base> is not the document base, and a non-ASCII-space href is not trimmed", () => {
+  const svg = builtSite(`</head><body><svg><base href="/${SLUG}/assets/"/></svg><script src="checkout.js"></script>`, {
+    [`_site/${SLUG}/assets/checkout.js`]: GOOD,
+    [`_site/${SLUG}/checkout/checkout.js`]: BAD,
+  });
+  try {
+    assert.deepEqual(syntaxErrors(svg.run()).map((issue) => issue.detail.finding.file), [`_site/${SLUG}/checkout/checkout.js`]);
+  } finally {
+    rmSync(svg.dir, { recursive: true, force: true });
+  }
+  // U+00A0 is not stripped by the URL parser: the base is the relative path
+  // "%C2%A0/<slug>/assets/" under the page's directory.
+  const nbsp = builtSite(`<base href="&nbsp;/${SLUG}/assets/"><script src="checkout.js"></script>`, {
+    [`_site/${SLUG}/assets/checkout.js`]: BAD,
+    [`_site/${SLUG}/checkout/ /${SLUG}/assets/checkout.js`]: GOOD,
+  });
+  try {
+    const result = nbsp.run();
+    assert.deepEqual(syntaxErrors(result), []);
+    assert.equal(gateOf(result).scripts_scanned, 1);
+  } finally {
+    rmSync(nbsp.dir, { recursive: true, force: true });
+  }
+  // Negative control: C0 space around the href is stripped, as the URL parser does.
+  const spaced = builtSite(`<base href=" \t/${SLUG}/assets/ "><script src="checkout.js"></script>`, {
+    [`_site/${SLUG}/assets/checkout.js`]: BAD,
+  });
+  try {
+    assert.deepEqual(syntaxErrors(spaced.run()).map((issue) => issue.detail.finding.file), [`_site/${SLUG}/assets/checkout.js`]);
+  } finally {
+    rmSync(spaced.dir, { recursive: true, force: true });
+  }
+});

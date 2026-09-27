@@ -8,9 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - The doctor `built_output.script_syntax` gate and the QA `script-parse`
   check now resolve each `<script src>` against the base in effect when the
-  parser prepares that script: the first `<base href>` before it in the
-  document, or else the page. A `<base>` later in the document no longer
-  moves an earlier script, whether it is async, deferred or a module. A base
+  parser prepares that script at its end tag: the first HTML `<base href>` in
+  tree order among those already parsed, or else the page. A `<base>` parsed
+  after a script no longer moves it, whether it is async, deferred or a
+  module, and parse order decides even when table foster parenting reorders
+  the tree. An SVG `base` no longer counts, and the href is no longer trimmed
+  of non-ASCII whitespace the URL parser keeps. A base
   the browser refuses (a `data:` or `javascript:` URL, or one that does not
   parse) now falls back to the page, as the HTML "set the frozen base URL"
   steps require, so the local script is read and a parse failure in it blocks
@@ -27,8 +30,10 @@ Notable supported-surface changes are recorded here.
   pages load (each family's `js/*.js` beside `config.js`), refreshed from the
   same templates commit. `scripts/refresh-certified-family-fixtures.mjs`
   copies them, resolved the way the gate resolves them, and fails when a
-  referenced script is not in the render. The reachability test requires the
-  gate to scan every referenced script on every certified family (#502).
+  referenced script is not in the render, or a copied file is a symlink or
+  resolves outside the family's render. The reachability test reads the
+  expected scripts from the HTML independently of the gate and requires the
+  gate to read exactly that set on every certified family (#502).
 
 ## [1.43.1+agent.12] - 2026-09-26
 

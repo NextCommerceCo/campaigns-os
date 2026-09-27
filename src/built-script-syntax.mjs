@@ -144,18 +144,69 @@ export function parseScriptSyntax(source, { module = false } = {}) {
   }
 }
 
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
+/**
+ * A URL attribute value as the URL parser reads it: leading and trailing C0
+ * controls and space removed, nothing else (not U+00A0 or other Unicode
+ * whitespace, which String#trim would also strip).
+ *
+ * @param {string} value
+ */
+export function stripUrlSpace(value) {
+  return String(value).replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "");
+}
+
+/**
+ * Every HTML-namespace `<base href>` in a parse5 document (parsed with
+ * `sourceCodeLocationInfo`), in tree order, with the source offset at which
+ * the parser inserted it. An SVG or MathML `base` is not a base element.
+ *
+ * @param {object} root a parse5 node
+ * @returns {Array<{ href: string, offset: number }>}
+ */
+export function documentBases(root) {
+  const bases = [];
+  const walk = (node) => {
+    if (node.tagName === "base" && node.namespaceURI === HTML_NAMESPACE) {
+      const href = (node.attrs || []).find((attr) => attr.name === "href");
+      if (href) bases.push({ href: href.value, offset: node.sourceCodeLocation?.startOffset ?? -1 });
+    }
+    // Template content is a separate fragment in parse5 and never walked here.
+    for (const child of node.childNodes || []) walk(child);
+  };
+  walk(root);
+  return bases;
+}
+
+/**
+ * The `<base href>` in effect when the parser prepares a script element: the
+ * parser prepares it at its end tag, and "prepare the script element" parses
+ * `src` then, against the document base URL, which is the first base element
+ * with an href in tree order among those already in the document. Foster
+ * parenting can place a base parsed earlier after the script in tree order
+ * (it still counts) or one parsed later before it (it does not), so this
+ * compares source offsets rather than tree position. null when no base was
+ * in the document yet.
+ *
+ * @param {Array<{ href: string, offset: number }>} bases from documentBases
+ * @param {object} scriptNode a parse5 script element
+ * @returns {string | null}
+ */
+export function baseInEffect(bases, scriptNode) {
+  const location = scriptNode?.sourceCodeLocation;
+  const preparedAt = location?.endTag?.startOffset ?? location?.endOffset ?? Infinity;
+  const base = bases.find((entry) => entry.offset < preparedAt);
+  return base ? base.href : null;
+}
+
 /**
  * `<script src>` references on a page, in document order, with whether each
- * is a module and the `<base href>` in effect when the browser prepares it,
- * plus the document's first `<base href>` (null when none).
- *
- * The HTML parser prepares a script element at its end tag, and "prepare the
- * script element" parses `src` relative to the node document then, so the
- * URL is fixed against whatever base the document has at that point: the
- * first `<base href>` in tree order that precedes the script, or none (the
- * document URL). A `<base>` later in the document does not move a script
- * already prepared. That holds for async, defer and module scripts too: they
- * are fetched later but their URL is resolved when prepared.
+ * is a module and the `<base href>` in effect when the browser prepares it
+ * (see baseInEffect), plus the document's first `<base href>` (null when
+ * none). A `<base>` parsed after a script does not move it, whether the
+ * script is async, deferred or a module: its URL is resolved when prepared,
+ * not when fetched.
  *
  * Data-block types are dropped. Classic `nomodule` scripts are dropped: a
  * module-capable browser never fetches or runs them, so they cannot fail on
@@ -167,28 +218,26 @@ export function parseScriptSyntax(source, { module = false } = {}) {
  */
 export function pageScriptDocument(html) {
   const refs = [];
-  let base = null;
   let document;
   try {
-    document = parseHtml(String(html ?? ""));
+    document = parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true });
   } catch {
-    return { base, refs };
+    return { base: null, refs };
   }
+  const bases = documentBases(document);
   const walk = (node) => {
     const attrs = node.tagName ? Object.fromEntries((node.attrs || []).map((attr) => [attr.name, attr.value])) : {};
-    // Only the first <base href> in tree order counts; the rest are ignored.
-    if (node.tagName === "base" && base === null && typeof attrs.href === "string") base = attrs.href.trim();
     if (node.tagName === "script") {
       const kind = scriptKind(attrs);
       if (kind && typeof attrs.src === "string" && attrs.src.trim()) {
-        refs.push({ src: attrs.src.trim(), module: kind === "module", base });
+        refs.push({ src: stripUrlSpace(attrs.src), module: kind === "module", base: baseInEffect(bases, node) });
       }
     }
     if (node.tagName === "noscript") return;
     for (const child of node.childNodes || []) walk(child);
   };
   walk(document);
-  return { base, refs };
+  return { base: bases[0]?.href ?? null, refs };
 }
 
 /**

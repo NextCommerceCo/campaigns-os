@@ -1,7 +1,7 @@
 import { parse as parseHtml } from 'parse5';
 import { parse as parseJs } from 'acorn';
 import { createPageSourceLoader, resolveCommercialApiKey } from './qa-commercial-parity.mjs';
-import { frozenBaseUrl, parseFailureDiagnostic, scriptKind } from './built-script-syntax.mjs';
+import { baseInEffect, documentBases, frozenBaseUrl, parseFailureDiagnostic, scriptKind } from './built-script-syntax.mjs';
 
 export const BINDING_SCHEMA = 'campaigns-os-page-binding/v0';
 export const BINDING_LIMITS = Object.freeze({ scripts_per_page: 6, scripts_per_run: 24, script_bytes: 262144, timeout_ms: 5000 });
@@ -114,21 +114,24 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
   const values = [];
   const scripts = [];
   let dynamic = false;
-  let baseHref = null;
+  let bases = [];
   const walk = node => {
     const attrs = Object.fromEntries((node.attrs || []).map(a => [a.name, a.value]));
-    if (node.tagName === 'base' && baseHref === null && typeof attrs.href === 'string') baseHref = attrs.href.trim();
     if (node.tagName === 'base' || Object.entries(attrs).some(([name, value]) => /^on/i.test(name) || /^\s*javascript:/i.test(value))) dynamic = true;
     if (node.tagName === 'meta' && attrs.name === 'next-api-key') { values.push(attrs.content ?? ''); kinds.add('meta'); }
     // Each script keeps the <base href> in effect when the parser prepares it
-    // (its end tag): the first one before it in tree order, or none (#502).
-    if (node.tagName === 'script') scripts.push({ attrs, base: baseHref, text: (node.childNodes || []).map(n => n.value || '').join('') });
+    // at its end tag (see baseInEffect; #502).
+    if (node.tagName === 'script') scripts.push({ attrs, base: baseInEffect(bases, node), text: (node.childNodes || []).map(n => n.value || '').join('') });
     // parse5 keeps template content separate; it is inert, as is noscript at boot.
     if (node.tagName !== 'noscript') for (const child of node.childNodes || []) walk(child);
   };
-  try { walk(parseHtml(source.html)); } catch { return result('unknown', 'dynamic_unresolved'); }
+  try {
+    const document = parseHtml(source.html, { sourceCodeLocationInfo: true });
+    bases = documentBases(document);
+    walk(document);
+  } catch { return result('unknown', 'dynamic_unresolved'); }
   // A script src resolves against the base in effect when the script is
-  // prepared: the frozen base URL of the first <base href> before it, where a
+  // prepared: the frozen base URL of that <base href>, where a
   // data:, javascript: or unparsable base falls back to the page URL (HTML
   // "set the frozen base URL"), else the page URL. The loader still scopes
   // the result to the page origin, so a cross-origin base leaves those
