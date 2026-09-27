@@ -19,8 +19,10 @@ Notable supported-surface changes are recorded here.
   record until the replacement is recorded, so a regeneration that fails or
   dies part way leaves the package on disk provable, and a run that adopts
   another writer's package instead of publishing drops its own candidate from
-  the record. Bytes changed since the failure are not vouched for. The
-  record's path is reserved: no configurable output may point at it.
+  the record. Just before the report is published the record is narrowed to
+  the package the report records. Bytes changed since the failure, and a
+  malformed record, are not vouched for. The record's path is reserved: no
+  configurable output may point at it.
 - The `manifest_sha256` the Design Source Package records is now the hash of
   the exact source-html manifest bytes source intake parsed. The file was
   read twice, once to parse and once to hash, so an edit between the two

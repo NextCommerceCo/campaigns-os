@@ -7200,7 +7200,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.1+agent.18",
-      "changelog_sha256": "43e306106efe9d152885a697163607f0d668f489b67f23db8da028dbb18f4d29",
+      "changelog_sha256": "9d67f3051f960cbf01912f4138482cfecf25b2f6ece64ab4f0f14eb975e982e7",
       "agent_impact": "prepare-build keeps a Design Source Package it synthesized recorded as synthesized across a failure or kill between package and report publication (a pending provenance record beside the package), records the hash of the exact source-html manifest bytes it parsed, and with --map-id writes the fetched spec to the shared cache only under the per-target lock.",
       "compatibility": "compatible",
       "migration": "none",
@@ -7224,7 +7224,7 @@
           "summary": "State that the fetched-spec cache is written only under the per-target prepare-build lock."
         }
       ],
-      "entry_sha256": "722dd8a4a12a3da6f32a3936f9faba3c2ce5bab5a0087c061fbd05ba79cbdd7f"
+      "entry_sha256": "75aadf5673c3df23d383116ea68d98e1ca7c1d011f080df0ff8cc8c8ab62ff94"
     }
   ]
 }

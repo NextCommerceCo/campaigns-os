@@ -1635,6 +1635,76 @@ syncBuiltinESMExports();
     "bytes another writer published are adopted, not claimed through the run's pending record");
 }));
 
+function pendingRecordPath(fixture) {
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  return join(dirname(dspPath), `.${basename(dspPath)}.pending-provenance.json`);
+}
+
+// A malformed pending record is no proof at all: any entry that is not a
+// sha256 digest discards the whole record rather than trusting the rest.
+test("a malformed pending record vouches for nothing", async (t) => {
+  for (const [label, content] of [
+    ["a non-digest entry beside a valid one", (hash) => JSON.stringify({ origin: "synthesized", sha256: [null, hash] })],
+    ["a torn write", (hash) => JSON.stringify({ origin: "synthesized", sha256: [hash] }).slice(0, 40)],
+    ["a bare string", (hash) => JSON.stringify({ origin: "synthesized", sha256: hash })],
+  ]) {
+    await t.test(label, () => withFixture(async (fixture) => {
+      const failed = await runPrepareAsync(fixture, { env: reportPublicationFailureEnv(fixture, "throw") });
+      assert.notEqual(failed.status, 0);
+      const hash = `sha256:${sha256(readFileSync(join(fixture.target, DSP_REL_PATH)))}`;
+      writeFileSync(pendingRecordPath(fixture), content(hash));
+      const retry = runPrepare(fixture);
+      assert.equal(retry.status, 0, retry.stderr);
+      assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.origin, "adopted");
+    }));
+  }
+});
+
+// Before the report goes out, the pending record is narrowed to the package
+// the report records, so a candidate that was never published cannot outlive
+// the report (a kill between report publication and record removal).
+test("the pending record is narrowed to the recorded package before the report is published", () => withFixture(async (fixture) => {
+  const first = runPrepare(fixture);
+  assert.equal(first.status, 0, first.stderr);
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const keptHash = `sha256:${sha256(readFileSync(dspPath))}`;
+  const manifestPath = join(fixture.source, ".campaigns-os/source-html-manifest.json");
+  const originalManifest = readFileSync(manifestPath);
+  editManifest(fixture, (manifest) => { manifest.generated_at = "2026-08-22T11:00:00.000Z"; });
+  const failed = await runPrepareAsync(fixture, { extraArgs: ["--force"], env: pendingRecordEnv(fixture, "fail-publication") });
+  assert.notEqual(failed.status, 0);
+  assert.equal(readJson(pendingRecordPath(fixture)).sha256.length, 2, "the failed regeneration left its candidate and the kept package");
+
+  // Inputs restored: the retry reuses the kept package and is killed right
+  // after its report is published, before the record is removed.
+  writeFileSync(manifestPath, originalManifest);
+  const killed = await runPrepareAsync(fixture, { env: reportPublishedThenKilledEnv(fixture) });
+  assert.notEqual(killed.status, 0);
+  assert.equal(readJson(join(fixture.target, ".campaign-runtime/assembly-report.json")).design_source_package.sha256, keptHash);
+  assert.deepEqual(readJson(pendingRecordPath(fixture)).sha256, [keptHash],
+    "only the recorded package may survive in the pending record");
+}));
+
+function reportPublishedThenKilledEnv(fixture) {
+  const preloadPath = join(fixture.dir, "report-published-then-killed.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalRenameSync = fs.renameSync;
+fs.renameSync = function killAfterReport(from, to, ...rest) {
+  const result = originalRenameSync.call(fs, from, to, ...rest);
+  if (path.resolve(String(to)) === path.resolve(process.env.PB_REPORT)) process.kill(process.pid, "SIGKILL");
+  return result;
+};
+syncBuiltinESMExports();
+`);
+  return {
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+    PB_REPORT: join(fixture.target, ".campaign-runtime/assembly-report.json"),
+  };
+}
+
 // #501 item 6: the manifest hash recorded in the Design Source Package is the
 // hash of the bytes source intake parsed, even when the file is rewritten
 // between the parse and the hash.

@@ -369,7 +369,10 @@ provable. A run that finds another writer's package at the path and adopts it
 instead of publishing drops its own candidate from the record. A retry that
 finds the record treats a package whose bytes still hash to one of its entries
 as `"synthesized"`, exactly as if the report had recorded it; bytes changed
-since are not vouched for. The record's path is
+since are not vouched for, and a malformed record vouches for nothing. Just
+before the report is published the record is narrowed to what the report
+records (the package's hash when synthesized, nothing when adopted), so no
+unpublished candidate outlives the report. The record's path is
 reserved like the other outputs, so no configurable output may point at it.
 
 Runs against the same target take turns. From the stage-evidence check and

@@ -2091,8 +2091,12 @@ function assertValidPreparedDesignSourcePackage(value, path, currentPageScope, c
 function readPriorDesignSourceProvenance(reportPath, packagePath) {
   const synthesized = [];
   const pending = readJsonIfExistsQuietly(pendingDesignSourceProvenancePath(packagePath));
-  if (isObject(pending) && pending.origin === DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED && Array.isArray(pending.sha256)) {
-    synthesized.push(...pending.sha256.filter(isNonEmptyString));
+  // All or nothing: a record with any entry that is not a digest (a torn or
+  // hand-edited file) is no proof, never a partial one.
+  if (isObject(pending) && pending.origin === DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED
+    && Array.isArray(pending.sha256) && pending.sha256.length > 0
+    && pending.sha256.every((entry) => typeof entry === "string" && /^sha256:[0-9a-f]{64}$/.test(entry))) {
+    synthesized.push(...pending.sha256);
   }
   let report = null;
   try {
@@ -3215,6 +3219,17 @@ function prepareBuildUnderLock({
     templateSelection,
   }));
 
+  // Before the report goes out, narrow the pending record to exactly what the
+  // report will say: the package's own hash when it is synthesized, nothing
+  // when it is adopted. A candidate this run or an earlier failed one never
+  // published cannot then outlive the report, even if the run dies between
+  // publishing the report and removing the record below.
+  recordPendingDesignSourceProvenance(
+    designSourcePackagePath,
+    designSourcePackage.origin === DESIGN_SOURCE_PACKAGE_ORIGIN_SYNTHESIZED
+      ? [hashSerializedDesignSourcePackage(designSourcePackage.rawBytes)]
+      : [],
+  );
   publishPrepareBuildJsonOutputs([
     { label: "Build Packet", path: packetPath, value: packet },
     { label: "Campaign Build Brief", path: briefPath, value: buildBrief.artifact },
