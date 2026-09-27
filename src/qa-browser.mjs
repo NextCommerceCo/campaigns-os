@@ -402,7 +402,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
 // with --analytics-baseline's legacy receipt, and identity resolution cannot
 // derive a receipt page yet (receipt-aware capture is out of packet 01's
 // scope). Absent that override, the candidate IS the resolved target.
-function analyticsParityCaptureAssertions({ baseline, candidate, baselineUrl, candidateUrl }) {
+function analyticsParityCaptureAssertions({ baseline, candidate, baselineUrl, candidateUrl, capturePage = null, rootFallback = null }) {
   const baselinePublicUrl = redactUrlQuery(baselineUrl);
   const candidatePublicUrl = redactUrlQuery(candidateUrl);
   const analyticsPage = { page_id: "analytics", url: candidatePublicUrl || baselinePublicUrl || undefined };
@@ -422,6 +422,8 @@ function analyticsParityCaptureAssertions({ baseline, candidate, baselineUrl, ca
       candidate_event_count: candidate.eventNames.length,
       baseline_inventory: Object.fromEntries(Object.entries(baseline.inventory).map(([k, v]) => [k, v.length])),
       candidate_inventory: Object.fromEntries(Object.entries(candidate.inventory).map(([k, v]) => [k, v.length])),
+      ...(capturePage ? { capture_page: capturePage } : {}),
+      ...(rootFallback ? { root_fallback: rootFallback } : {}),
     },
   }));
   return assertions;
@@ -475,15 +477,44 @@ export async function runAnalyticsParityChecks(args = {}, options = {}) {
     extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
   });
   try {
-    const baseline = await captureAnalyticsForUrl(context, baselineUrl, args, extraHosts);
-    const candidate = await captureAnalyticsForUrl(context, candidateUrl, args, extraHosts);
-    return analyticsParityCaptureAssertions({ baseline, candidate, baselineUrl, candidateUrl });
+    // An explicit --analytics-candidate (the receipt pairing above) is the
+    // page the operator named, so it is captured as given.
+    if (trim(args["analytics-candidate"])) {
+      const baseline = await captureAnalyticsForUrl(context, baselineUrl, args, extraHosts);
+      const candidate = await captureAnalyticsForUrl(context, candidateUrl, args, extraHosts);
+      return analyticsParityCaptureAssertions({ baseline, candidate, baselineUrl, candidateUrl });
+    }
+    return await captureAnalyticsParityInContext(context, baselineUrl, candidateUrl, args, extraHosts, options);
   } catch (error) {
     return [analyticsParityRunnerFailureAssertion({ baselineUrl, candidateUrl, error })];
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
   }
+}
+
+// #503: the resolved-target candidate gets the same partial-scope fallback as
+// the correctness inventory (#493). A partial build has no page at the
+// identity root, so the candidate is the first built in-scope entry, and a
+// root that answers non-2xx falls back the same way. The candidate is picked
+// first: when nothing in scope answers, the leg reports
+// no_in_scope_page_captured (skipped) or no_capture_page_answered (blocker)
+// without loading the baseline, instead of diffing the baseline against an
+// empty or generic page.
+async function captureAnalyticsParityInContext(context, baselineUrl, targetUrl, args, extraHosts, options = {}) {
+  const selected = await captureFirstAnsweringAnalyticsPage(context, targetUrl, args, extraHosts, options);
+  if (!selected.capture) {
+    return [analyticsCorrectnessNoCapturePageAssertion({ rootUrl: targetUrl, attempts: selected.attempts, family: "analytics-parity" })];
+  }
+  const baseline = await captureAnalyticsForUrl(context, baselineUrl, args, extraHosts);
+  return analyticsParityCaptureAssertions({
+    baseline,
+    candidate: selected.capture,
+    baselineUrl,
+    candidateUrl: selected.url,
+    capturePage: selected.capturePage,
+    rootFallback: selected.rootFallback,
+  });
 }
 
 // Analytics CORRECTNESS inventory leg: capture ONE page and assess only
@@ -547,15 +578,16 @@ function analyticsCorrectnessCaptureAssertions({ capture, contract, url, capture
 // - candidates existed but none answered 2xx (e.g. transient 503s): the
 //   declared vendors went unmeasured, which is a blocker naming each attempt,
 //   so a later successful order cannot report the run ready.
-function analyticsCorrectnessNoCapturePageAssertion({ rootUrl, attempts }) {
+// The parity leg (#503) reports the same two outcomes under its own family.
+function analyticsCorrectnessNoCapturePageAssertion({ rootUrl, attempts, family = "analytics-correctness" }) {
   const publicUrl = redactUrlQuery(rootUrl);
   const page = { page_id: "analytics", url: publicUrl || undefined };
   const expected = "live dataLayer + tag-fire capture on the campaign root or the first built in-scope page";
   const loaded = attempts.filter((attempt) => attempt.outcome === "non_2xx" || attempt.outcome === "navigation_error");
   if (!loaded.length) {
     return assertion({
-      id: "analytics-correctness:capture",
-      family: "analytics-correctness",
+      id: `${family}:capture`,
+      family,
       page,
       status: STATUS.SKIPPED,
       expected,
@@ -564,8 +596,8 @@ function analyticsCorrectnessNoCapturePageAssertion({ rootUrl, attempts }) {
     });
   }
   return assertion({
-    id: "analytics-correctness:capture",
-    family: "analytics-correctness",
+    id: `${family}:capture`,
+    family,
     page,
     status: STATUS.FAIL,
     severity: SEVERITY.BLOCKER,
@@ -598,32 +630,58 @@ function isHttpOk(status) {
   return status == null || (status >= 200 && status < 300);
 }
 
-// One page per path: `/campaign`, `/campaign/` and `/campaign/index.html` are
-// the same capture, so a topology URL written differently from the root is
-// not loaded twice. Mirrors qa-node's urlPathKey.
+// One capture per page: `/campaign`, `/campaign/` and `/campaign/index.html`
+// are the same page, so a topology URL written differently from the root is
+// not loaded twice.
+// #503: step routing is path-based in every certified family (page-kit builds
+// each page to its own `<route>/index.html`; a spec route has its query
+// stripped), so a query string does not normally name a different page. A
+// URL that declares its own query (`/campaign/?step=checkout`) is still kept
+// apart from a page without that query: merging it into the root on path alone
+// measured the root's generic answer instead of that entry. A URL without a
+// query of its own names the page on any query (an operator's `?preview=` on
+// the root does not split it from the built page at that path).
 function analyticsCapturePageKey(value) {
   try {
     const parsed = new URL(value);
     const path = parsed.pathname.replace(/(?:^|\/)index\.html$/, "/").replace(/\/+$/, "");
-    return `${parsed.origin}${path}/`;
+    parsed.searchParams.sort();
+    return { path: `${parsed.origin}${path}/`, query: parsed.searchParams.toString() };
   } catch {
-    return redactUrlQuery(value);
+    return typeof value === "string" && value.trim() ? { path: redactUrlQuery(value), query: "" } : null;
+  }
+}
+
+// True when `candidate` is the page `known` already names (see
+// analyticsCapturePageKey). Shared with qa-node's root-in-scope judgment so
+// scope and deduplication cannot disagree about which page is the root.
+export function isSameAnalyticsCapturePage(candidate, known) {
+  const a = analyticsCapturePageKey(candidate);
+  const b = analyticsCapturePageKey(known);
+  if (!a || !b || a.path !== b.path) return false;
+  return !a.query || a.query === b.query;
+}
+
+function hasUrlQuery(value) {
+  try {
+    return new URL(value).search.length > 1;
+  } catch {
+    return false;
   }
 }
 
 function analyticsCaptureCandidates(url, options = {}) {
   const candidates = [];
-  const seen = new Set();
+  const seen = [];
   const add = (candidate) => {
-    const key = analyticsCapturePageKey(candidate.url);
-    if (!candidate.url || seen.has(key)) return;
-    seen.add(key);
+    if (!candidate.url || seen.some((known) => isSameAnalyticsCapturePage(candidate.url, known))) return;
+    seen.push(candidate.url);
     candidates.push(candidate);
   };
   const rootInScope = options.rootInScope !== false;
   if (rootInScope) add({ url, source: "campaign_root" });
   // An out-of-scope root stays unvisited even if a fallback names it.
-  else if (url) seen.add(analyticsCapturePageKey(url));
+  else if (url) seen.push(url);
   for (const entry of Array.isArray(options.fallbackTargets) ? options.fallbackTargets : []) {
     if (!entry || !trim(entry.url)) continue;
     add({
@@ -631,31 +689,33 @@ function analyticsCaptureCandidates(url, options = {}) {
       source: "built_entry",
       page_id: entry.page_id || null,
       funnel_id: entry.funnel_id || null,
+      // The query value is redacted from every record; this says the entry
+      // was told apart from the root by its query alone.
+      ...(hasUrlQuery(trim(entry.url)) ? { query_routed: true } : {}),
     });
   }
   return { candidates, rootInScope, rootKey: redactUrlQuery(url) };
 }
 
-// Browser-owning half split out so a real-browser test can drive the fallback
-// against a route-fulfilled context without a second Chromium launch policy.
-async function captureAnalyticsCorrectnessInContext(context, url, contract, args, extraHosts, options = {}) {
+// Walks the capture candidates (the campaign root when in scope, then the
+// built entries) and captures the first page that answers 2xx. Shared by the
+// correctness inventory (#493) and the opt-in parity candidate (#503) so both
+// legs pick the same page. Returns `{ capture, url, capturePage, rootFallback }`
+// for the page it used, or `{ capture: null, attempts }` when none answered.
+async function captureFirstAnsweringAnalyticsPage(context, url, args, extraHosts, options = {}, { strictCollect = false } = {}) {
   const { candidates, rootInScope, rootKey } = analyticsCaptureCandidates(url, options);
   const attempts = [];
   if (!rootInScope) attempts.push({ url: rootKey, source: "campaign_root", outcome: "out_of_built_scope", http_status: null });
   let rootFallback = rootInScope ? null : { url: rootKey, reason: "out_of_built_scope", http_status: null };
+  const queryRouted = (candidate) => (candidate.query_routed ? { query_routed: true } : {});
   for (const candidate of candidates) {
-    // strictCollect: a page.evaluate() that fails during collection (the
-    // execution context destroyed by a reload, a crashed page) must not read
-    // as a clean empty capture. It propagates and becomes the
-    // analytics-correctness:runner blocker, so no tag check is emitted from an
-    // unmeasured page and local-serve review has nothing to downgrade (#500).
     const { capture, httpStatus, navigationError } = await captureAnalyticsPage(
-      context, candidate.url, args, extraHosts, { perPageNavigationErrors: true, strictCollect: true },
+      context, candidate.url, args, extraHosts, { perPageNavigationErrors: true, strictCollect },
     );
     if (navigationError) {
       // One page failing to load (a timeout, a refused connection) moves on to
-      // the next candidate; the blocker below lists it if none answers.
-      attempts.push({ url: redactUrlQuery(candidate.url), source: candidate.source, outcome: "navigation_error", http_status: null, error_code: navigationError });
+      // the next candidate; the blocker lists it if none answers.
+      attempts.push({ url: redactUrlQuery(candidate.url), source: candidate.source, ...queryRouted(candidate), outcome: "navigation_error", http_status: null, error_code: navigationError });
       if (candidate.source === "campaign_root") {
         rootFallback = { url: rootKey, reason: "navigation_error", http_status: null, error_code: navigationError };
       }
@@ -663,26 +723,45 @@ async function captureAnalyticsCorrectnessInContext(context, url, contract, args
     }
     if (isHttpOk(httpStatus)) {
       const usedFallback = candidate.source !== "campaign_root";
-      return analyticsCorrectnessCaptureAssertions({
+      return {
         capture,
-        contract,
         url: candidate.url,
         capturePage: {
           url: redactUrlQuery(candidate.url),
           source: candidate.source,
           ...(candidate.page_id ? { page_id: candidate.page_id } : {}),
           ...(candidate.funnel_id ? { funnel_id: candidate.funnel_id } : {}),
+          ...queryRouted(candidate),
           http_status: httpStatus ?? null,
         },
         rootFallback: usedFallback ? rootFallback : null,
-      });
+      };
     }
-    attempts.push({ url: redactUrlQuery(candidate.url), source: candidate.source, outcome: "non_2xx", http_status: httpStatus });
+    attempts.push({ url: redactUrlQuery(candidate.url), source: candidate.source, ...queryRouted(candidate), outcome: "non_2xx", http_status: httpStatus });
     if (candidate.source === "campaign_root") {
       rootFallback = { url: rootKey, reason: "non_2xx", http_status: httpStatus };
     }
   }
-  return [analyticsCorrectnessNoCapturePageAssertion({ rootUrl: url, attempts })];
+  return { capture: null, attempts };
+}
+
+// Browser-owning half split out so a real-browser test can drive the fallback
+// against a route-fulfilled context without a second Chromium launch policy.
+async function captureAnalyticsCorrectnessInContext(context, url, contract, args, extraHosts, options = {}) {
+  // strictCollect: a page.evaluate() that fails during collection (the
+  // execution context destroyed by a reload, a crashed page) must not read
+  // as a clean empty capture. It propagates and becomes the
+  // analytics-correctness:runner blocker, so no tag check is emitted from an
+  // unmeasured page and local-serve review has nothing to downgrade (#500).
+  const selected = await captureFirstAnsweringAnalyticsPage(context, url, args, extraHosts, options, { strictCollect: true });
+  if (!selected.capture) return [analyticsCorrectnessNoCapturePageAssertion({ rootUrl: url, attempts: selected.attempts })];
+  return analyticsCorrectnessCaptureAssertions({
+    capture: selected.capture,
+    contract,
+    url: selected.url,
+    capturePage: selected.capturePage,
+    rootFallback: selected.rootFallback,
+  });
 }
 
 export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, options = {}) {
@@ -7008,6 +7087,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   analyticsCorrectnessCaptureAssertions,
   analyticsCorrectnessRunnerFailureAssertion,
   captureAnalyticsCorrectnessInContext,
+  captureAnalyticsParityInContext,
   analyticsParityCaptureAssertions,
   analyticsParityRunnerFailureAssertion,
   acceptedUpsellProof,

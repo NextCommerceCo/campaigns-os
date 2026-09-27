@@ -74,8 +74,10 @@ async function partialBuildContext(pages = {}) {
     if (url.hostname.endsWith("facebook.com")) {
       return route.fulfill({ status: 200, contentType: "image/gif", body: Buffer.from("R0lGODlhAQABAAAAACw=", "base64") });
     }
-    if (route.request().resourceType() === "document") visited.push(url.pathname);
-    const override = url.origin === ORIGIN ? pages[url.pathname] : null;
+    if (route.request().resourceType() === "document") visited.push(`${url.pathname}${url.search}`);
+    // A key with a query string (#503) names that exact URL; a bare path
+    // names every query on it.
+    const override = url.origin === ORIGIN ? pages[`${url.pathname}${url.search}`] ?? pages[url.pathname] : null;
     if (override?.abort) return route.abort(override.abort);
     if (override) return route.fulfill({ status: override.status, contentType: "text/html", body: override.body ?? html });
     if (url.origin === ORIGIN && url.pathname === "/campaign/checkout/") {
@@ -292,4 +294,118 @@ browserTest("a broken browser context is not a per-page failure: the leg still t
   await assert.rejects(
     hooks.captureAnalyticsCorrectnessInContext(context, ROOT, CONTRACT, ARGS, [], { rootInScope: true, fallbackTargets: [ENTRY] }),
   );
+});
+
+// #503: a query-routed entry shares the root's path. Step routing is path-based
+// in every certified family, but a topology that declares one must have that
+// entry measured, not the root's generic answer.
+const QUERY_ENTRY = { funnel_id: "default", page_id: "checkout", url: `${ROOT}?step=checkout` };
+
+browserTest("#503: a query-routed partial-build entry is captured itself, never deduplicated into the root", async () => {
+  const options = qaNodeHooks.analyticsCaptureScope({
+    analyticsCaptureTarget: { url: ROOT },
+    topologies: [{ funnel_id: "default", partial_build_scope: true, pages: [
+      { page_id: "checkout", page_type: "checkout", order: 0, url: QUERY_ENTRY.url },
+      { page_id: "receipt", page_type: "thankyou", order: 1, url: `${ROOT}receipt/` },
+    ] }],
+    excludedPages: [{ page_id: "landing", url: `${ROOT}landing/` }],
+  });
+  const { assertions, visited } = await runLeg(options, {
+    "/campaign/": GENERIC_FALLBACK,
+    "/campaign/?step=checkout": { status: 200 },
+  });
+
+  assert.deepEqual(visited, ["/campaign/?step=checkout"], "the generic root answer is never measured");
+  const meta = byId(assertions, "analytics-correctness:tag:meta");
+  assert.equal(meta.status, STATUS.PASS, `tag:meta ${meta.status}: ${meta.actual}`);
+  const capture = byId(assertions, "analytics-correctness:capture");
+  assert.equal(capture.status, STATUS.PASS);
+  assert.deepEqual(capture.evidence.capture_page, {
+    url: ROOT, source: "built_entry", page_id: "checkout", funnel_id: "default", query_routed: true, http_status: 200,
+  }, "the query value stays redacted; the record says the entry was query-routed");
+  assert.equal(capture.evidence.root_fallback.reason, "out_of_built_scope");
+});
+
+browserTest("#503: an in-scope root that fails still falls back to a query-routed entry on the same path", async () => {
+  const { assertions, visited } = await runLeg(
+    { rootInScope: true, fallbackTargets: [QUERY_ENTRY] },
+    { "/campaign/": UNAVAILABLE, "/campaign/?step=checkout": { status: 200 } },
+  );
+
+  assert.deepEqual(visited, ["/campaign/", "/campaign/?step=checkout"]);
+  const capture = byId(assertions, "analytics-correctness:capture");
+  assert.equal(capture.status, STATUS.PASS);
+  assert.equal(capture.evidence.capture_page.query_routed, true);
+  assert.deepEqual(capture.evidence.root_fallback, { url: ROOT, reason: "non_2xx", http_status: 503 });
+});
+
+// #503: the opt-in parity leg captures its candidate with the same
+// partial-scope fallback as the correctness inventory.
+const BASELINE = `${ORIGIN}/legacy/checkout/`;
+const BASELINE_PAGE = { "/legacy/checkout/": { status: 200 } };
+
+async function runParityLeg(options, pages = {}) {
+  const { context, visited, release } = await partialBuildContext({ ...BASELINE_PAGE, ...pages });
+  try {
+    const assertions = await hooks.captureAnalyticsParityInContext(context, BASELINE, ROOT, ARGS, [], options);
+    return { assertions, visited };
+  } finally {
+    release();
+    await context.close();
+  }
+}
+
+browserTest("#503: parity on a partial build compares the built entry, not the absent root", async () => {
+  const { assertions, visited } = await runParityLeg({ rootInScope: false, fallbackTargets: [ENTRY] });
+
+  assert.deepEqual(visited, ["/campaign/checkout/", "/legacy/checkout/"], "the out-of-scope root is never visited");
+  const capture = byId(assertions, "analytics-parity:capture");
+  assert.equal(capture.status, STATUS.PASS);
+  assert.equal(capture.evidence.candidate_url, CHECKOUT);
+  assert.deepEqual(capture.evidence.capture_page, {
+    url: CHECKOUT, source: "built_entry", page_id: "checkout", funnel_id: "default", http_status: 200,
+  });
+  assert.deepEqual(capture.evidence.root_fallback, { url: ROOT, reason: "out_of_built_scope", http_status: null });
+  assert.ok(capture.evidence.candidate_event_count >= 0);
+  assert.ok(Object.values(capture.evidence.candidate_inventory).some((count) => count > 0), "the built entry's pixel was captured");
+});
+
+browserTest("#503: parity on a partial build with no capturable page is skipped without visiting the baseline", async () => {
+  const { assertions, visited } = await runParityLeg({ rootInScope: false, fallbackTargets: [] });
+
+  assert.deepEqual(visited, []);
+  assert.equal(assertions.length, 1);
+  const [capture] = assertions;
+  assert.equal(capture.id, "analytics-parity:capture");
+  assert.equal(capture.status, STATUS.SKIPPED);
+  assert.equal(capture.evidence.reason, "no_in_scope_page_captured");
+});
+
+browserTest("#503: parity whose candidates all answer 503 is an unmeasured blocker naming each attempt", async () => {
+  const { assertions } = await runParityLeg(
+    { rootInScope: true, fallbackTargets: [ENTRY] },
+    { "/campaign/": UNAVAILABLE, "/campaign/checkout/": UNAVAILABLE },
+  );
+
+  assert.equal(assertions.length, 1);
+  const [capture] = assertions;
+  assert.equal(capture.id, "analytics-parity:capture");
+  assert.equal(capture.status, STATUS.FAIL);
+  assert.equal(capture.severity, SEVERITY.BLOCKER);
+  assert.equal(capture.evidence.reason, "no_capture_page_answered");
+  assert.deepEqual(capture.evidence.attempts, [
+    { url: ROOT, source: "campaign_root", outcome: "non_2xx", http_status: 503 },
+    { url: CHECKOUT, source: "built_entry", outcome: "non_2xx", http_status: 503 },
+  ]);
+});
+
+browserTest("#503: parity on a full build whose root answers still compares the root", async () => {
+  const { assertions, visited } = await runParityLeg({ rootInScope: true, fallbackTargets: [ENTRY] }, { "/campaign/": { status: 200 } });
+
+  assert.deepEqual(visited, ["/campaign/", "/legacy/checkout/"]);
+  const capture = byId(assertions, "analytics-parity:capture");
+  assert.equal(capture.status, STATUS.PASS);
+  assert.equal(capture.evidence.candidate_url, ROOT);
+  assert.equal(capture.evidence.capture_page.source, "campaign_root");
+  assert.equal(capture.evidence.root_fallback, undefined);
 });
