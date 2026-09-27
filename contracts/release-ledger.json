@@ -7335,9 +7335,9 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.1+agent.20",
-      "changelog_sha256": "f321a46561b5fe11d5f13249e89e532e506a6f0375f35674b4a264b9698834c2",
+      "changelog_sha256": "b504e2a11e3506ff186f434b113a3c3f461d66611a997e3cf5d6ecddb491d2ff",
       "agent_impact": "No command behaves differently. The doctor checks, packet inspection and next-step picker moved under src/doctor/, and the agent-relevant change policy now classifies a change there as a CLI-surface change, so doctor check changes keep appearing in this ledger.",
-      "compatibility": "additive",
+      "compatibility": "compatible",
       "migration": "none",
       "changes": [
         {
@@ -7369,9 +7369,15 @@
           "path": "src/doctor/next-step.mjs",
           "surface_entry": "next",
           "summary": "The next-step picker and the gate issues next reads from doctor, moved unchanged out of the CLI module."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/release-ledger-authoring-guide.md",
+          "surface_entry": "docs/release-ledger-authoring-guide.md",
+          "summary": "Name src/agent/ and src/doctor/ alongside src/cli.mjs as the classified paths inside src/."
         }
       ],
-      "entry_sha256": "b96a009c32f0993ddefaf4f429df58c89f949ea939bd234f48244090e6a6ecb9"
+      "entry_sha256": "365537b5c46368048f99250ef3b794beb170a06cd0b8e7bdfa6e44a99eddd023"
     }
   ]
 }

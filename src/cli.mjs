@@ -3098,9 +3098,10 @@ function toConstantCase(value) {
   return normalized || "WARNING";
 }
 
-// The producer names the four sidecar writers stamp (#312). A producer
-// function that is one command states its own; the intake body, which
-// serves three, receives the dispatched command (`start` | `build`).
+// The producer names the four sidecar writers stamp (#312): the two here plus
+// DOCTOR_PRODUCER in src/doctor/inspect.mjs. A producer function that is one
+// command states its own; the intake body, which serves three, receives the
+// dispatched command (`start` | `build`).
 const NEXT_PRODUCER = "next";
 const QA_RUN_PRODUCER = "qa run";
 

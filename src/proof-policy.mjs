@@ -4,7 +4,7 @@
 //
 // `qa.proof_policy.order_path_depth` is seeded by prepare-build/start and
 // mirrored into `report.proof_policy` at the same moment. The two are compared
-// by `assessPurchaseProofCoverage` (cli.mjs): a disagreement is `unknown`,
+// by `assessPurchaseProofCoverage` (src/doctor/next-step.mjs): a disagreement is `unknown`,
 // never one side's value. Doctor, `next` and the coverage reason all describe
 // that state through the single action below, so the command an operator is
 // told to run is spelled once. A leaf: gate-actions only.

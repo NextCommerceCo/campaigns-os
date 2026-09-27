@@ -85,6 +85,7 @@ function relativizeDoctorOutput(result, baseDir) {
 
   return visit(result);
 }
+// Sidecar producer name; see the producer comment above NEXT_PRODUCER in src/cli.mjs.
 const DOCTOR_PRODUCER = "doctor";
 
 export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {

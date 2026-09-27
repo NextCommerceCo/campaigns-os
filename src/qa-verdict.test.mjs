@@ -237,7 +237,7 @@ test("QA_ASSERTION_FAMILY_VOCABULARY matches every family literal the runner emi
   // constant or template instead of a literal must extend this scan.
   const srcDir = fileURLToPath(new URL("./", import.meta.url));
   const emitted = new Set();
-  for (const name of readdirSync(srcDir)) {
+  for (const name of readdirSync(srcDir, { recursive: true })) {
     if (!name.endsWith(".mjs") || name.endsWith(".test.mjs")) continue;
     // Strip comments so a family named in prose never counts as emitted; the
     // lookbehind keeps prefixed keys like template_family: out of the scan.

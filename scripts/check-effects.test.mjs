@@ -198,7 +198,7 @@ test("HELP_SOURCE_PATHS names every module that owns a usage block", () => {
   // own help. Derived here from the source rather than restated: any file under
   // src/ that declares `const HELP = \`` and spells a `campaigns-os <cmd>` usage
   // line owes its subcommands a row, so it has to be scanned.
-  const owners = readdirSync(resolve(root, "src"))
+  const owners = readdirSync(resolve(root, "src"), { recursive: true })
     .filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"))
     .filter((name) => {
       const source = read(`src/${name}`);

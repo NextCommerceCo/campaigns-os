@@ -23,7 +23,7 @@ const FIXTURE_ROOT = join(ROOT, "fixtures", "certified-families");
 const manifest = JSON.parse(readFileSync(join(FIXTURE_ROOT, "manifest.json"), "utf8"));
 const catalog = JSON.parse(readFileSync(join(ROOT, "contracts", "commerce-surface-catalog.json"), "utf8"));
 
-// Same rule cli.mjs applies (catalog family + brand contract), read from the
+// Same rule src/doctor/checks.mjs applies (catalog family + brand contract), read from the
 // files so this test cannot drift from the certified set by forgetting one.
 const certified = Object.keys(catalog.families || {})
   .filter((family) => existsSync(join(ROOT, "contracts", `template-brand-contract.${family}.v0.json`)))

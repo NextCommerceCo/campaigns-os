@@ -11,9 +11,11 @@ Notable supported-surface changes are recorded here.
   share now live under `src/doctor/` instead of inside the CLI module. Every
   check, its order, its messages and its exit codes are unchanged.
 - `contracts/agent-relevant-change-policy.v1.json` classifies a change under
-  `src/doctor/` as a CLI-surface change, so a later change to a doctor check
-  still owes a release-ledger entry, as it did while the checks lived in
-  `src/cli.mjs`.
+  `src/doctor/` as a CLI-surface change, so a later change there owes a
+  release-ledger entry. The shared helper modules `src/install-invocation.mjs`,
+  `src/cli-helpers.mjs` and `src/campaigns-api-key.mjs` are classified as
+  implementation, so a change confined to them owes a CHANGELOG section but no
+  release-ledger entry, even where a doctor message reads through them.
 - The general helpers the CLI and the doctor share (the install-aware command
   spelling, small value and JSON-file helpers, and Campaigns API key
   resolution) moved to their own modules under `src/`. They are internal

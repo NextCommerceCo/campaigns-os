@@ -83,7 +83,7 @@ function privateTemplateSourcesPath() {
 }
 
 // No caching, recomputed per call — matches certifiedTemplateFamilies()'s
-// existing convention (cli.mjs) so a long-lived process never serves a stale
+// existing convention (src/doctor/checks.mjs) so a long-lived process never serves a stale
 // allowlist after an edit.
 export function loadPrivateTemplateSources() {
   const path = privateTemplateSourcesPath();
