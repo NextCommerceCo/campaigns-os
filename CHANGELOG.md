@@ -14,7 +14,9 @@ Notable supported-surface changes are recorded here.
   spec was read would still have passed them. The new cases make the local
   `--spec` file and the `--cached-spec` cache file missing, a directory, or
   malformed JSON, and require the flag refusal with no journal entry, no fetch
-  and an unchanged tree. Tests only; CLI behavior is unchanged (#504).
+  and an unchanged tree. The tree snapshot these tests compare now lists
+  directories as well as files, so a refusal that only creates an empty
+  directory is caught too. Tests only; CLI behavior is unchanged (#504).
 
 ## [1.43.1+agent.12] - 2026-09-26
 

@@ -51,15 +51,18 @@ function runCli(args, { cwd, env = {} } = {}) {
   });
 }
 
-// Relative path + content hash for every file under `dir`, sorted. Content, not
-// mtime: a rewrite with identical bytes is not an effect worth failing on, and
-// an append always changes the hash.
+// Relative path + content hash for every file under `dir`, and every
+// directory as `<path>/`, sorted. Content, not mtime: a rewrite with identical
+// bytes is not an effect worth failing on, and an append always changes the
+// hash. Directories are listed so a refusal that only creates an empty
+// directory (a `mkdirSync` ahead of the check) still changes the snapshot.
 function snapshotTree(dir) {
   const files = [];
   const walk = (current) => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       const full = join(current, entry.name);
       if (entry.isDirectory()) {
+        files.push(`${relative(dir, full)}/`);
         walk(full);
         continue;
       }
