@@ -2,6 +2,24 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.19] - 2026-09-27
+
+### Changed
+
+- No command behaves differently. The CLI's invocation policy now has one
+  owner instead of being restated at each step: which commands run outside
+  session recovery and lifecycle capture, where the stale run-session
+  closeout runs before `start`, `prepare-build`, `build`, `run start` and
+  `run end` and what suppresses it (`--no-write`, `--no-run-session`, and
+  `--dry-run` on a command that implements it), which invocations append no
+  lifecycle entry, which commands implement `--dry-run`, and when `qa run`
+  ends its run session. Every declared effect, every argument refusal and its
+  order, and the valued `--dry-run` and bare `run` behaviours are unchanged.
+- The command list behind the did-you-mean suggestion for an unknown command
+  now comes from that same declaration instead of being read out of the
+  dispatch code's text. The list, its order and the suggestions are
+  unchanged.
+
 ## [1.43.1+agent.18] - 2026-09-27
 
 ### Fixed

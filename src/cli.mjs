@@ -113,8 +113,8 @@ import {
   refused,
   refusing,
   runWithRefusalScope,
-  withCommandLifecycle,
 } from "./lifecycle.mjs";
+import { commandNames, optsOutOfRunSession, runInvocation } from "./invocation.mjs";
 import {
   clearRunSession,
   findRunSession,
@@ -564,20 +564,14 @@ Examples:
 // imports them, so the factory has to sit below both.
 
 // Top-level commands the CLI dispatches, used to offer a did-you-mean
-// suggestion on a typo instead of a bare "Unknown command". Derived from the
-// `command === "…"` literals in main() and dispatch() (memoized on first use) so
-// the list cannot drift as dispatch branches are added or removed. The regex
-// tolerates whitespace and either quote style so common reformats don't
-// silently empty the list; a known-commands test guards against a refactor
-// (switch table, extracted constant) that the regex can't follow.
+// suggestion on a typo instead of a bare "Unknown command". These are the
+// commands the invocation declaration names (src/invocation.mjs), memoized on
+// first use; src/invocation.test.mjs checks that dispatch() branches on
+// exactly those names, so the list cannot drift from the branches.
 let knownCommandsCache = null;
 export function knownCommands() {
   if (knownCommandsCache) return knownCommandsCache;
-  const found = new Set(["help"]);
-  for (const match of (main.toString() + dispatch.toString()).matchAll(/command\s*===\s*["']([^"']+)["']/g)) {
-    found.add(match[1]);
-  }
-  knownCommandsCache = [...found];
+  knownCommandsCache = commandNames();
   return knownCommandsCache;
 }
 
@@ -621,110 +615,32 @@ function closestCommand(input) {
   return bestDistance <= budget ? best : null;
 }
 
+// Which of the steps below run for an invocation, and in what order, is
+// invocation policy: src/invocation.mjs owns it and main() only hands over the
+// mechanisms. The raw argv rides along for the handlers that must see it
+// (authentication, and the two raw-token validators).
 export async function main(argv, { authentication } = {}) {
-  const args = parseArgs(argv);
-  // `npx --yes -p <spec> campaigns-os <command>` and `npx --yes <spec>
-  // campaigns-os <command>` both hand the bin its own name as the first
-  // positional. Treat that leading token as the program name, not a command,
-  // so the package-install invocation the docs give cannot fail with
-  // "Unknown command: campaigns-os".
-  if (args._[0] === "campaigns-os") args._.shift();
-  const command = args._[0] || "help";
-
-  // Everything below — dispatch and the onFinish that reads the verdict — runs
-  // inside ONE refusal scope, so a refusal raised by this invocation is visible
-  // only to this invocation's persistence step. Two main() calls interleaved
-  // in-process (a test, an embedding host) no longer share the verdict.
-  return runWithRefusalScope(async () => {
-    // Authentication never recovers/remits run sessions or records argv in a
-    // lifecycle journal. Credentials belong only in the user credential store.
-    if (command === "login" || command === "logout") {
-      const { runAuthentication } = await import("./login.mjs");
-      return runAuthentication(argv[0] === "campaigns-os" ? argv.slice(1) : argv, authentication);
-    }
-
-    // An offline sample must not recover sessions or emit lifecycle evidence.
-    if (command === "demo") {
-      // Validate raw tokens here: parsing loses duplicate flags. The private
-      // dispatcher then rechecks the parsed shape and extracts the target.
-      demoArguments(args, argv);
-      await dispatch(command, args);
-      return;
-    }
-
-    // Diagnostic export is an inspection, including when a run is active or
-    // stale. Bypass session sweeping, ambient resolution, and lifecycle capture
-    // so no closeout/remit or journal write can occur before the projection.
-    if (command === "tooling" && args._[1] === "diagnose") {
-      const result = toolingDiagnose(args);
-      console.log(args.json ? JSON.stringify(result, null, 2) : diagnosticTextLines(result).join("\n"));
-      return;
-    }
-
-    // Project setup must not recover campaign sessions, read gateway bindings,
-    // or emit lifecycle/telemetry evidence before a campaign is selected.
-    if (command === "tooling" && args._[1] === "setup") {
-      const { setupArguments, setupTooling, setupTextLines } = await import("./tooling-setup.mjs");
-      setupArguments(args, argv);
-      const { installQaBrowser } = await import("./qa-node.mjs");
-      const result = setupTooling(args, { packageRoot: ROOT, installSkills, installAgentContext, installBrowser: installQaBrowser });
-      console.log(args.json ? JSON.stringify(result, null, 2) : setupTextLines(result).join("\n"));
-      if (!result.ok) process.exitCode = 2;
-      return;
-    }
-
-    // Ambient run session (Tier 3): when `run start` is active, every command
-    // shares its run_id WITHOUT --run-id. Explicit --run-id still wins. Resolved
-    // ONCE here and threaded through dispatch + persistence so the run_id a
-    // command is tagged with and the journal it writes to come from a single
-    // read (no TOCTOU skew if the session changes mid-run).
-    //
-    // Before that read, close out any STALE session at the root this command is
-    // about to open a new one in. findRunSession ignores stale sessions so a new
-    // run never inherits an old run_id — but an ignored session was also an
-    // abandoned one: nine of them were found lingering with no Run Record and
-    // nothing remitted. Closing out is best-effort and never blocks the command.
-    const storageInspection = command === "sdk" && args._[1] === "storage-check";
-    // `readback` bypasses session resolution entirely, sweep included. Its
-    // `--packet` is a readback OVERRIDE naming the Build Packet to project, not a
-    // Build Packet to act on, and ambientRunSession treats that flag as a session
-    // locator: it read the named file whole through readJson, so a 40 MB packet
-    // was loaded into memory past readback's own 32 MiB bound before readback
-    // ever saw it, and a valid override exited 1 whenever some active session was
-    // bound to a different packet. Neither belongs to a command declared
-    // read-only. The lifecycle wrapper below still runs; the read-only exemption
-    // lives in persistLifecycleIfRequested, which writes no entry for readback.
-    const readOnlyProjection = command === "readback";
-    const sweptStale = storageInspection || readOnlyProjection ? [] : await closeOutStaleRunSessions(command, args);
-    const ambient = readOnlyProjection ? null : ambientRunSession(args);
-
-    // Wrap every command in the lifecycle instrumentation (T6): it captures the
-    // command, its argv shape, exit status, and timing. Re-throws unchanged so
-    // the CLI exit code is unaffected. Persistence runs via onFinish so it fires
-    // on BOTH the success and error paths — a command that THROWS (the most
-    // valuable failure telemetry) is recorded too, not just clean exits.
-    // Persistence is OPT-IN — an explicit --lifecycle-journal /
-    // CAMPAIGNS_OS_LIFECYCLE_LOG, or an active run session. With none, behavior
-    // is identical to before.
-    //
-    // `sessionHolder` is per-invocation, NOT module state: when start/
-    // prepare-build auto-open a run session mid-command, they publish it here
-    // so onFinish persists this command's own lifecycle entry into the new
-    // session — without two interleaved invocations ever sharing a session.
-    const sessionHolder = { current: ambient, autoStarted: false, adopted: false, qaResult: null, sweptStale };
-    await withCommandLifecycle(
-      {
-        command,
-        argvShape: argvShape(args),
-        runId: optionalString(args["run-id"]) || ambient?.session?.run_id || null,
-        onFinish: async (lifecycle, thrown) => {
-          persistLifecycleIfRequested(args, command, lifecycle, sessionHolder, thrown);
-          await autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown);
-        },
-      },
-      (recorder) => dispatch(command, args, recorder, ambient, sessionHolder),
-    );
+  return runInvocation(parseArgs(argv), {
+    dispatch: (command, args, recorder, ambient, sessionHolder) => dispatch(command, args, recorder, ambient, sessionHolder, { argv, authentication }),
+    closeOutStaleRunSessions,
+    ambientRunSession,
+    lifecycleIdentity,
+    persistLifecycle: persistLifecycleIfRequested,
+    autoEndAfterQa: autoEndRunSessionAfterTerminalQa,
   });
+}
+
+// The lifecycle entry's identity (T6): its argv shape and its run_id. Ambient
+// run session (Tier 3): when `run start` is active, every command shares its
+// run_id WITHOUT --run-id. Explicit --run-id still wins. The session is
+// resolved ONCE per invocation and threaded through dispatch + persistence so
+// the run_id a command is tagged with and the journal it writes to come from a
+// single read (no TOCTOU skew if the session changes mid-run).
+function lifecycleIdentity(args, ambient) {
+  return {
+    argvShape: argvShape(args),
+    runId: optionalString(args["run-id"]) || ambient?.session?.run_id || null,
+  };
 }
 
 function ambientRunSession(args = {}) {
@@ -782,7 +698,7 @@ function ambientRunSession(args = {}) {
 // derived from packet location, so an overridden packet path cannot split
 // the session from the build.
 function autoStartRunSession(prepareResult, args, ambient, sessionHolder) {
-  if (args["no-run-session"] === true || ambient) return null;
+  if (optsOutOfRunSession(args) || ambient) return null;
   try {
     const packetPath = prepareResult?.packetPath;
     const targetRepo = optionalString(args.target) ? resolve(args.target) : null;
@@ -840,72 +756,29 @@ function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = 
   return fallbackDir ? join(resolve(fallbackDir), LIFECYCLE_JOURNAL_REL_PATH) : null;
 }
 
-// The commands and subcommands that actually IMPLEMENT `--dry-run`. The flag
-// reaches every handler through a permissive parseArgs, so it is silently
-// accepted everywhere — and the lifecycle exemption below, scoped to the flag
-// alone, therefore fired on commands that ignore it: `qa run --dry-run` placed
-// orders while writing no journal entry, and (see runSessionEndArgs) carried
-// the flag into its own auto-end, which assembled no Run Record and left the
-// session open. Keyed by `command`, or `command <args._[1]>` where the flag
-// belongs to one subcommand. A command outside this set given `--dry-run`
-// behaves exactly as it did before: it journals if it otherwise would, and it
-// is not refused — refusing unknown flags is separate work.
-const DRY_RUN_COMMANDS = new Set([
-  "page-kit sync",
-  "spec derive",
-  "install-skills",
-  "install-agent-context",
-  "run-record",
-  "run end",
-  "qa publish",
-  "checkpoint waive",
-  "theme waive",
-]);
-
-function commandImplementsDryRun(command, args = {}) {
-  return DRY_RUN_COMMANDS.has(command) || DRY_RUN_COMMANDS.has(`${command} ${args._?.[1]}`);
-}
-
 // Append the command's lifecycle entry only when capture is active: an explicit
 // flag/env, or an ambient run session. Never throws — a lifecycle write must
-// not break a command (telemetry never blocks a build). `help` is a no-op
-// command and is not worth recording.
+// not break a command (telemetry never blocks a build).
+//
+// Which invocations are exempt by command, subcommand or flag (`help`, `run
+// status`, `readback`, `sdk storage-check`, the read-only `doctor --packet`,
+// --no-write, and --dry-run on a command that implements it) is invocation
+// policy, decided in src/invocation.mjs, which does not call this for an
+// exempt invocation. The in-process lifecycle object is still built; only the
+// persistence below — the journal append and the deviation entry that follows
+// it — is skipped, so a suppressed command still exits as before.
 function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder, thrown) {
-  if (command === "help" || (command === "sdk" && args._[1] === "storage-check")) return;
-  // Three rules about what NEVER reaches the journal, whichever way the journal
-  // was selected (--lifecycle-journal, CAMPAIGNS_OS_LIFECYCLE_LOG, or an
-  // ambient run session). The in-process lifecycle object is still built; only
-  // the persistence below — the journal append and the deviation entry that
-  // follows it — is skipped, so a suppressed command still exits as before.
-  //   1. --no-write writes nothing, the journal included (issue #459: `run
-  //      status --no-write` under an ambient session still created
-  //      .campaign-runtime/command-lifecycle.jsonl).
-  //   2. A refused INVOCATION records nothing — an unknown top-level command,
-  //      an unknown subcommand (`tooling statuss`), or a flag the command
-  //      refuses up front (`standardize --dryrun`). None of them reached a
-  //      handler, so a typo must not materialize a journal under the target.
-  //      The tag the refusal carries IS the mechanism, read two ways: on the
-  //      thrown error, or via refusalSeen() when the refusal was caught and
-  //      rendered instead of thrown. There is deliberately no command-list
-  //      backstop here — knownCommands() is regex-harvested and documented as
-  //      fragile, so a second reading of it would be a second command list that
-  //      could disagree with dispatch.
-  //   3. `run status` is read-only: it never sweeps and never journals.
-  if (args["no-write"] === true) return;
+  // A refused INVOCATION records nothing, whichever way the journal was
+  // selected (--lifecycle-journal, CAMPAIGNS_OS_LIFECYCLE_LOG, or an ambient
+  // run session) — an unknown top-level command, an unknown subcommand
+  // (`tooling statuss`), or a flag the command refuses up front (`standardize
+  // --dryrun`). None of them reached a handler, so a typo must not materialize
+  // a journal under the target. The tag the refusal carries IS the mechanism,
+  // read two ways: on the thrown error, or via refusalSeen() when the refusal
+  // was caught and rendered instead of thrown. There is deliberately no
+  // command-list backstop here: a second reading of the command list could
+  // disagree with dispatch about what was refused.
   if (refusalSeen() || thrown?.code === REFUSED_INVOCATION) return;
-  if (command === "run" && args._[1] === "status") return;
-  // An inspection must not append to a delivered campaign's active run either.
-  // (--no-write is handled above, so only the read-only `doctor` form is left.)
-  if (command === "doctor" && args.packet && args.write !== true) return;
-  // The same rule, per-flag, for every command that takes `--dry-run`: the
-  // flag's whole promise is that the invocation writes nothing under the
-  // target, and the journal lives under the target. Only for the commands that
-  // make that promise, though — DRY_RUN_COMMANDS above.
-  if (args["dry-run"] === true && commandImplementsDryRun(command, args)) return;
-  // `readback` is declared read-only for the whole command, not per-flag: it
-  // writes nothing under the target, so a journal entry would be the one write
-  // its own contract forbids. Skipped the way doctor inspection is skipped.
-  if (command === "readback") return;
   const ambient = sessionHolder?.current || null;
   // A session auto-started DURING this command (start/prepare-build) is
   // published into sessionHolder by autoStartRunSession; this command's own
@@ -1090,8 +963,10 @@ export function autoEndCloseoutNotice({ runId, recordPath = null, remitState = n
   return `${assembled}[campaigns-os] That record's remit did not complete${why}. ${kept} There is no retry-from-file path yet: re-running run-record against this run id reassembles the record from current disk state, without the session's attempt references, so it would overwrite this one with less than it has.\n`;
 }
 
-async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown) {
-  if (command !== "qa" || args._[1] !== "run" || thrown) return;
+// Runs after `qa run` persistence (the trigger is invocation policy, declared in
+// src/invocation.mjs); `implementsDryRun` is that invocation's resolved answer.
+async function autoEndRunSessionAfterTerminalQa(args, sessionHolder, thrown, implementsDryRun) {
+  if (thrown) return;
   const found = sessionHolder?.current;
   const result = sessionHolder?.qaResult;
   if (!found?.session || !result?.verdict) return;
@@ -1144,7 +1019,7 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
   // terminal QA. Every other inheritable flag `qa run` may carry is one
   // run-record reads the same way whoever passed it.
   const extraArgs = { ...args, "qa-verdict": result.local_path };
-  if (!commandImplementsDryRun(command, args)) delete extraArgs["dry-run"];
+  if (!implementsDryRun) delete extraArgs["dry-run"];
 
   const summary = await closeRunSession(updatedFound, {
     packet,
@@ -1169,9 +1044,24 @@ const PREPARE_MODES = Object.freeze({
   "prepare-build": { runDoctor: false, installContext: false },
 });
 
-async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null, sessionHolder = null) {
+// The branches before the help check run for the `auth` and `inline` classes
+// of src/invocation.mjs: outside the lifecycle wrapper, with no stale sweep and
+// no ambient session, and ahead of help routing, so `login --help`, `demo
+// --help` and `tooling setup --help` reach their own handlers. `argv` is the
+// unparsed argv, for the handlers that must see repeated tokens.
+async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null, sessionHolder = null, { argv, authentication } = {}) {
+  // Authentication never recovers/remits run sessions or records argv in a
+  // lifecycle journal. Credentials belong only in the user credential store.
+  if (command === "login" || command === "logout") {
+    const { runAuthentication } = await import("./login.mjs");
+    return runAuthentication(argv[0] === "campaigns-os" ? argv.slice(1) : argv, authentication);
+  }
+
+  // An offline sample must not recover sessions or emit lifecycle evidence.
   if (command === "demo") {
-    // main() already validated raw argv before entering this private function.
+    // Validate raw tokens first: parsing loses duplicate flags. The parsed
+    // shape is then rechecked and the target extracted.
+    demoArguments(args, argv);
     const target = demoArguments(args);
     if (target === null) {
       console.log("campaigns-os demo --target <new-directory>\nOffline Apollo sample only. Open the printed landing/index.html file. Start a real campaign in a separate new Page Kit folder; preserve your sample edits.");
@@ -1181,6 +1071,29 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     console.log(`Offline sample only; no campaign evidence.\nOpen: ${result.index}\nStart a real campaign in a separate new Page Kit folder. Preserve sample edits; demo is never converted automatically.`);
     return;
   }
+
+  // Diagnostic export is an inspection, including when a run is active or
+  // stale. It runs with no session sweeping, ambient resolution, or lifecycle
+  // capture so no closeout/remit or journal write can occur before the
+  // projection.
+  if (command === "tooling" && args._[1] === "diagnose") {
+    const result = toolingDiagnose(args);
+    console.log(args.json ? JSON.stringify(result, null, 2) : diagnosticTextLines(result).join("\n"));
+    return;
+  }
+
+  // Project setup must not recover campaign sessions, read gateway bindings,
+  // or emit lifecycle/telemetry evidence before a campaign is selected.
+  if (command === "tooling" && args._[1] === "setup") {
+    const { setupArguments, setupTooling, setupTextLines } = await import("./tooling-setup.mjs");
+    setupArguments(args, argv);
+    const { installQaBrowser } = await import("./qa-node.mjs");
+    const result = setupTooling(args, { packageRoot: ROOT, installSkills, installAgentContext, installBrowser: installQaBrowser });
+    console.log(args.json ? JSON.stringify(result, null, 2) : setupTextLines(result).join("\n"));
+    if (!result.ok) process.exitCode = 2;
+    return;
+  }
+
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
@@ -1189,8 +1102,8 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   if (command === "start" || command === "prepare-build" || command === "build") {
     // One intake body, three modes: `start` = prepare + doctor + agent context,
     // `build` = prepare + doctor, `prepare-build` = prepare only. The three
-    // literal string comparisons above stay so knownCommands() keeps deriving
-    // them from this function's source.
+    // literal string comparisons above stay so src/invocation.test.mjs keeps
+    // observing them in this function's source.
     const mode = PREPARE_MODES[command];
     if (!mode) throw new Error(`No intake mode registered for "${command}"; add it to PREPARE_MODES.`);
     // Validate argv before --spec is inspected or --map-id fetches and caches.
@@ -1351,9 +1264,9 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "page-kit") {
     const subcommand = args._[1] || null;
-    // Spelled as inequalities: knownCommands() harvests the top-level
-    // command literals from this function by an equality pattern that a
-    // subcommand equality would also match.
+    // Spelled as inequalities: src/invocation.test.mjs harvests the
+    // top-level command literals from this function by an equality pattern
+    // that a subcommand equality would also match.
     if (subcommand !== "sync" && subcommand !== "parity") throw refused("Unknown page-kit subcommand. Use: campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json], or campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json].");
     const parity = subcommand !== "sync";
     const result = parity ? pageKitParityCommand(args) : pageKitSyncCommand(args);
@@ -1365,8 +1278,9 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "spec") {
     const subcommand = args._[1] || null;
-    // Inequality on purpose: knownCommands() harvests top-level command
-    // literals by an equality pattern a subcommand equality would also match.
+    // Inequality on purpose: src/invocation.test.mjs harvests top-level
+    // command literals by an equality pattern a subcommand equality would
+    // also match.
     if (subcommand !== "derive") throw refused("Unknown spec subcommand. Use: campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json].");
     const result = await specDeriveWithMapWriteback(args);
     if (args.json) console.log(JSON.stringify(result, null, 2));
@@ -13211,8 +13125,8 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
 // Record's argv_shape, so carrying them over would file them as run-record's.
 // `dry-run` is on the list for `run end --dry-run`, the one closer whose
 // invoking command implements the flag; a closer invoked by a command that
-// does not (the QA auto-end) drops it from extraArgs before calling — see
-// DRY_RUN_COMMANDS and autoEndRunSessionAfterTerminalQa.
+// does not (the QA auto-end) drops it from extraArgs before calling — see the
+// `dryRun` entries in src/invocation.mjs and autoEndRunSessionAfterTerminalQa.
 export const RUN_RECORD_INHERITABLE_FLAGS = Object.freeze([
   "context", "report", "qa-verdict", "journal", "surfaces", "primary-surface", "surface-confidence",
   "agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms", "agent-model", "agent-usage-source",
@@ -13277,44 +13191,23 @@ async function closeRunSession(found, { packet, extraArgs = {}, silent = false, 
 // runs most worth learning from (blocked, abandoned, agent-driven) left no
 // record. Now, right before a command opens a NEW session at a root, the stale
 // one there is assembled into its Run Record (remit under the usual consent)
-// and removed. Roots: --target for start/prepare-build/build; the packet's
-// target repo for `run start --packet` / `run end --packet`, cwd for the bare
-// forms. `run status` never sweeps — it is read-only.
+// and removed. Which commands sweep, at which root, and what suppresses the
+// sweep (--no-run-session, --no-write, --dry-run on a command implementing it)
+// is invocation policy in src/invocation.mjs, which calls this with the root
+// kind only when the sweep runs: "target" (--target, for start/prepare-build/
+// build) or "session" (the packet's target repo for `run start --packet` /
+// `run end --packet`, cwd for the bare forms). `run status` never sweeps — it
+// is read-only.
 // Best-effort throughout: a closeout failure clears the file and says so on
 // stderr; it never blocks the command that triggered it.
 //
 // The sweep is an effect of the command that triggers it, and it runs BEFORE
 // dispatch — so it happens even when the argv that follows is refused. That is
-// deliberate (the stale session at the target is closed out either way), but it
-// makes the sweep the one place where `--no-write` could still write: it
-// assembles a Run Record and removes the session file. `--no-write` writes
-// nothing, the closeout included; see the guard below.
-const STALE_SWEEP_TARGET_COMMANDS = new Set(["start", "prepare-build", "build"]);
-
-async function closeOutStaleRunSessions(command, args) {
-  // A command that opted out of sessions altogether must not sweep either.
-  if (args["no-run-session"] === true) return [];
-  // --no-write leaves the tree byte-identical. Inheriting the flag into the
-  // closeout was not enough: it suppressed the Run Record but clearRunSession
-  // still deleted the session file, so `--no-write` moved bytes. Skip the
-  // sweep entirely instead — the stale session stays for the next run that
-  // does write.
-  if (args["no-write"] === true) return [];
-  // Nor may a dry run sweep. The closeout writes a Run Record, deletes the
-  // session file and (under consent) sends a remit — every effect --dry-run
-  // promises not to have. The sweep runs BEFORE dispatch, so it was doing all
-  // three for commands that implement the flag: `run end --dry-run --json`
-  // over an aged session exited 0, wrote a record, POSTed once and removed the
-  // session. --dry-run means "show me, do nothing"; the stale session simply
-  // stays stale until a real invocation closes it. Gated on the same predicate
-  // persistLifecycleIfRequested uses, so a stray --dry-run on a command that
-  // does not implement it changes nothing here either.
-  // A valued flag will be refused by the handler. Preserve its do-nothing
-  // intent here too, before that refusal can run.
-  if (Object.hasOwn(args, "dry-run") && commandImplementsDryRun(command, args)) return [];
+// deliberate (the stale session at the target is closed out either way).
+async function closeOutStaleRunSessions(rootKind, args) {
   const roots = [];
-  if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
-  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) {
+  if (rootKind === "target" && optionalString(args.target)) roots.push(resolve(args.target));
+  if (rootKind === "session") {
     // cwd is deliberately not a second root when --packet is given: the sweep
     // closes out (assembles and, under consent, remits) the stale session at
     // the root the command is about to act on, and a stale session at an
@@ -13330,8 +13223,8 @@ async function closeOutStaleRunSessions(command, args) {
   // The closeout inherits the invoking command's remit controls: an explicit
   // --no-remit stays an opt-out, and a run pointed at a custom --proxy-base
   // never remits the stale record to the canonical endpoint. --no-write is
-  // carried too, though the guard above means it never arrives true: if the
-  // sweep ever becomes conditional rather than skipped, the closeout must
+  // carried too, though the invocation policy means it never arrives true: if
+  // the sweep ever becomes conditional rather than skipped, the closeout must
   // still see it.
   const inherited = {};
   for (const flag of ["no-remit", "no-write", "proxy-base"]) {
