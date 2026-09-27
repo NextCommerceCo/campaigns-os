@@ -409,3 +409,15 @@ browserTest("#503: parity on a full build whose root answers still compares the 
   assert.equal(capture.evidence.capture_page.source, "campaign_root");
   assert.equal(capture.evidence.root_fallback, undefined);
 });
+
+// #509 review: `query_routed` marks an entry told apart from the root by its
+// query alone, not any entry that happens to carry a query.
+browserTest("#503: a built entry on its own path is not marked query_routed even when it carries a query", async () => {
+  const entry = { ...ENTRY, url: `${CHECKOUT}?preview=1` };
+  const { assertions, visited } = await runLeg({ rootInScope: false, fallbackTargets: [entry] });
+
+  assert.deepEqual(visited, ["/campaign/checkout/?preview=1"]);
+  const capture = byId(assertions, "analytics-correctness:capture");
+  assert.equal(capture.status, STATUS.PASS);
+  assert.equal(capture.evidence.capture_page.query_routed, undefined);
+});

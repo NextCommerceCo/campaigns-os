@@ -662,12 +662,13 @@ export function isSameAnalyticsCapturePage(candidate, known) {
   return !a.query || a.query === b.query;
 }
 
-function hasUrlQuery(value) {
-  try {
-    return new URL(value).search.length > 1;
-  } catch {
-    return false;
-  }
+// A URL on `root`'s path told apart from it by a query of its own: the entry
+// `isSameAnalyticsCapturePage` keeps separate from the root although its
+// redacted URL reads as the root.
+function isQueryRoutedFrom(value, root) {
+  const a = analyticsCapturePageKey(value);
+  const b = analyticsCapturePageKey(root);
+  return !!a && !!b && a.path === b.path && !!a.query && a.query !== b.query;
 }
 
 function analyticsCaptureCandidates(url, options = {}) {
@@ -691,7 +692,7 @@ function analyticsCaptureCandidates(url, options = {}) {
       funnel_id: entry.funnel_id || null,
       // The query value is redacted from every record; this says the entry
       // was told apart from the root by its query alone.
-      ...(hasUrlQuery(trim(entry.url)) ? { query_routed: true } : {}),
+      ...(url && isQueryRoutedFrom(trim(entry.url), url) ? { query_routed: true } : {}),
     });
   }
   return { candidates, rootInScope, rootKey: redactUrlQuery(url) };

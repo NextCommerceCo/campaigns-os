@@ -888,11 +888,13 @@ page to its own `<route>/index.html`, and QA strips the query string from a
 CampaignSpec route. So `/campaign`, `/campaign/` and `/campaign/index.html` are
 one page, and a query string does not name a different page. A topology page
 whose own URL declares a query (for example `/campaign/?step=checkout`) is
-still never merged into the root on its path alone. It does not put the root
-in scope, it is captured as its own entry, and its `capture_page` carries
-`query_routed: true`, since the redacted URL alone would read as the root. A
-URL with no query of its own names the page at that path whatever query the
-other URL carries.
+still never merged into the root on its path alone. Unless its query is
+exactly the root's own (parameter order aside), it does not put the root in
+scope, it is captured as its own entry, and its `capture_page` carries
+`query_routed: true`, since the redacted URL alone would read as the root. An
+entry on a different path is never marked `query_routed`, whatever query it
+carries. A URL with no query of its own names the page at that path whatever
+query the other URL carries.
 
 ### Local-serve review (`manual_review`)
 
