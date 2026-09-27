@@ -41,6 +41,21 @@ Notable supported-surface changes are recorded here.
   resolves outside the family's render. The reachability test reads the
   expected scripts from the HTML independently of the gate and requires the
   gate to read exactly that set on every certified family (#502).
+## [1.43.1+agent.13] - 2026-09-27
+
+### Changed
+
+- The lifecycle effects tests now prove that `start`, `prepare-build` and
+  `build` refuse a bare, empty or whitespace `--template-family`,
+  `--allow-uncertified-template`, `--theme-policy` or `--brief`, and an
+  unsupported `--theme-policy`, before the CampaignSpec is looked at. The
+  earlier refusal tests seeded a valid spec, so a check that ran after the
+  spec was read would still have passed them. The new cases make the local
+  `--spec` file and the `--cached-spec` cache file missing, a directory, or
+  malformed JSON, and require the flag refusal with no journal entry, no fetch
+  and an unchanged tree. The tree snapshot these tests compare now lists
+  directories as well as files, so a refusal that only creates an empty
+  directory is caught too. Tests only; CLI behavior is unchanged (#504).
 
 ## [1.43.1+agent.12] - 2026-09-26
 
