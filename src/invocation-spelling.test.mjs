@@ -8,14 +8,12 @@
 // carries the flag; CHANGELOG.md and the release ledger are history and keep
 // what each release shipped.
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { LOCAL_INVOCATION_PREFIX } from "./install-mode.mjs";
-import { existsSync } from "node:fs";
-import { basename } from "node:path";
 import { ROOT as INSTALL_ROOT } from "./install-invocation.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));

@@ -1,13 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { readdirSync, realpathSync } from 'node:fs';
-import { relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parse } from 'acorn';
 
 const cli = resolve(import.meta.dirname, '../bin/campaigns-os.mjs');
