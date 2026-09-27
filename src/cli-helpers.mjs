@@ -34,6 +34,10 @@ function firstNonEmptyString(...values) {
   return null;
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
@@ -86,6 +90,7 @@ export {
   isNonEmptyString,
   optionalString,
   firstNonEmptyString,
+  cloneJson,
   readJson,
   readJsonIfExists,
   sha256File,

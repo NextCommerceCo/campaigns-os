@@ -7378,6 +7378,27 @@
         }
       ],
       "entry_sha256": "365537b5c46368048f99250ef3b794beb170a06cd0b8e7bdfa6e44a99eddd023"
+    },
+    {
+      "id": "RL-0163",
+      "sequence": 162,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.21",
+      "changelog_sha256": "6e4df1a341d47dce5e71e045cb0c182400ea4abaf57d5fbe61b39d8cdb3be4f8",
+      "agent_impact": "No command behaves differently: prepare-build, start and build publish the Design Source Package, its pending provenance record and their JSON outputs exactly as before, with that publication now owned by one module instead of restated in prepare-build.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "prepare-build names its outputs and hands Design Source Package publication (lock, collision checks, evidence re-checks, pending provenance record, publication order) to its one owner; every on-disk name and message is unchanged."
+        }
+      ],
+      "entry_sha256": "0b4d674dd8df3355b63f63afb8a66a6a57e6c13ee237bebacacf13a1b3317a8d"
     }
   ]
 }
