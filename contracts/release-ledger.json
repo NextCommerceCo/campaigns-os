@@ -7240,6 +7240,39 @@
         }
       ],
       "entry_sha256": "36fe47ebc1bd791d6017e5a50a2112597392222419883993eaca378c03a45996"
+    },
+    {
+      "id": "RL-0159",
+      "sequence": 158,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.17",
+      "changelog_sha256": "c479b34451dfed258ce2b0a27606a77ab74ffc80bac67def6a53ed6dd1209148",
+      "agent_impact": "prepare-build refuses any configurable output path inside its target lock directory or the staging and tomb directories the lock creates beside it, directly or through a directory alias. The per-target and progress allocation locks publish their owner with the directory and refuse an ownerless lock after about a second, naming it; stage producers that edit the Assembly Report wait for a prepare-build holding the target lock, and waiver --dry-run previews take no lock.",
+      "compatibility": "compatible",
+      "migration": "Choose output paths outside .campaign-runtime/input/.design-source-package.json.lock. A lock directory without owner.json, left by an older release, is no longer recovered after ten seconds: confirm no campaigns-os process is working on the target, then remove it.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Take the per-target lock through the shared target-lock module and reserve the lock directory, its .lock.* siblings and their aliases in the output-collision checks."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "State that stage producers take the target lock, that an ownerless lock is never taken over, and that outputs inside the lock directory are refused."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Replace the ten-second ownerless recovery with the atomic owner publication, the ownerless refusal and the offline procedure, and name the lock in the warning."
+        }
+      ],
+      "entry_sha256": "6e01214c091eea12b92e18880aad38911c2c093d6e1554da21b90eff3fe62e32"
     }
   ]
 }

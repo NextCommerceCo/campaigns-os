@@ -1,7 +1,7 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanText, htmlScanDigest } from "./html-scan.mjs";
 import { createHash, randomUUID } from "node:crypto";
-import { withDirectoryLock } from "./directory-lock.mjs";
+import { targetLockPath, withTargetLock } from "./target-lock.mjs";
 import { createDemo, demoArguments } from "./demo.mjs";
 import { execFileSync } from "node:child_process";
 import {
@@ -1917,10 +1917,46 @@ function prepareBuildPathIdentity(path) {
   return resolve(path).normalize("NFC").toLowerCase();
 }
 
-function assertDistinctPrepareBuildOutputPaths(outputs) {
+// A reserved tree is a directory no output may be written into: the target
+// lock, whose release removes the directory recursively (#501). The staging,
+// tomb and recovery siblings the lock creates and removes
+// (src/directory-lock.mjs) are reserved with it; other names that merely
+// start with the lock's name are ordinary outputs.
+const PREPARE_BUILD_LOCK_SIBLING_SUFFIXES = [".staging-", ".recovery-staging-", ".released-", ".abandoned-"];
+
+function prepareBuildReservedTreeContains(reservedIdentity, pathIdentity) {
+  return pathIdentity === reservedIdentity
+    || pathIdentity.startsWith(`${reservedIdentity}${sep}`)
+    || PREPARE_BUILD_LOCK_SIBLING_SUFFIXES.some((suffix) => pathIdentity.startsWith(`${reservedIdentity}${suffix}`));
+}
+
+function assertOutsidePrepareBuildReservedTrees(label, absolute, canonical, reservedTrees) {
+  for (const reserved of reservedTrees) {
+    if (
+      prepareBuildReservedTreeContains(reserved.identity, prepareBuildPathIdentity(absolute))
+      || prepareBuildReservedTreeContains(reserved.canonicalIdentity, prepareBuildPathIdentity(canonical))
+    ) {
+      throw new Error(`Prepare-build output path collision: ${label} at ${absolute} is inside the ${reserved.label} at ${reserved.path}, which is removed when the lock is released. Choose an output path outside it; the Design Source Package path is fixed.`);
+    }
+  }
+}
+
+function assertDistinctPrepareBuildOutputPaths(entries) {
   const seenPaths = new Map();
   const seenCanonicalPaths = new Map();
   const seenFiles = new Map();
+  const reservedTrees = entries
+    .filter(([, , kind]) => kind?.reservedTree)
+    .map(([label, path]) => {
+      const absolute = resolve(path);
+      return {
+        label,
+        path: absolute,
+        identity: prepareBuildPathIdentity(absolute),
+        canonicalIdentity: prepareBuildPathIdentity(canonicalPrepareBuildOutputPath(absolute, label)),
+      };
+    });
+  const outputs = entries.filter(([, , kind]) => !kind?.reservedTree);
   for (const [label, path] of outputs) {
     const absolute = resolve(path);
     const pathIdentity = prepareBuildPathIdentity(absolute);
@@ -1932,6 +1968,7 @@ function assertDistinctPrepareBuildOutputPaths(outputs) {
 
     const canonical = canonicalPrepareBuildOutputPath(absolute, label);
     const canonicalIdentity = prepareBuildPathIdentity(canonical);
+    assertOutsidePrepareBuildReservedTrees(label, absolute, canonical, reservedTrees);
     const priorCanonical = seenCanonicalPaths.get(canonicalIdentity);
     if (priorCanonical) {
       throw new Error(`Prepare-build output path collision: ${priorCanonical.label} at ${priorCanonical.path} and ${label} at ${absolute} resolve through filesystem aliases to ${canonical}. Choose distinct output paths; the Design Source Package path is fixed.`);
@@ -2212,16 +2249,6 @@ function createCurrentHtmlFunnelScope({
     campaignSlug: publicRouteSlug,
     sourceRoot: artifactRelativePath(packagePath, sourceRoot),
   };
-}
-
-// prepare-build serializes per target on a lock directory beside the Design
-// Source Package, inside the input directory its writes already cover. The
-// budget is generous: a live holder is doing ordinary local work, and a
-// holder that died is recovered by pid.
-const PREPARE_BUILD_LOCK_BUDGET_MS = 60000;
-
-function prepareBuildLockPath(designSourcePackagePath) {
-  return join(dirname(designSourcePackagePath), `.${basename(designSourcePackagePath)}.lock`);
 }
 
 function prepareDesignSourcePackage({
@@ -2607,18 +2634,20 @@ async function prepareBuild(args, options = {}) {
     ...prepareBuildOutputPaths,
     ...prepareBuildThemeOutputPaths,
     ["Design Source Package", designSourcePackagePath],
+    ["prepare-build target lock directory", targetLockPath(targetRepo), { reservedTree: true }],
   ];
   assertDistinctPrepareBuildOutputPaths(prepareBuildCollisionPaths);
   // One prepare-build at a time per target, from reading its inputs through
-  // the packet, context and report that record them. The lock is taken before
+  // the packet, context and report that record them. Stage writers take the
+  // same lock around their Assembly Report edits (commitAssemblyReport), so
+  // no stage evidence lands between the pre-publish re-check and the rename;
+  // they enter directly when prepare-build itself reaches them. The lock is taken before
   // the stage-evidence guard and before the CampaignSpec, manifest, mappings
   // and asset crawl are read, so the evidence check, the input snapshot whose
   // hashes the Design Source Package records, and the publication are one
   // critical section: a run that waited here sees exactly what the last
   // completed run left, not what was on disk when it started waiting.
-  const lockPath = prepareBuildLockPath(designSourcePackagePath);
-  mkdirSync(dirname(lockPath), { recursive: true });
-  return withDirectoryLock(lockPath, () => prepareBuildUnderLock({
+  return withTargetLock(targetRepo, () => prepareBuildUnderLock({
     args,
     options,
     specPath,
@@ -2633,15 +2662,7 @@ async function prepareBuild(args, options = {}) {
     prepareBuildOutputPaths,
     prepareBuildThemeOutputPaths,
     prepareBuildCollisionPaths,
-  }), {
-    budgetMs: PREPARE_BUILD_LOCK_BUDGET_MS,
-    unavailable: (error) => error?.code === "EEXIST"
-      ? new Error(
-        `Another prepare-build is writing ${targetRepo} (lock ${lockPath}). `
-        + "Retry after it finishes. If a run was interrupted, confirm no campaigns-os process is working on this target before removing that lock directory.",
-      )
-      : new Error(`Could not take the prepare-build lock at ${lockPath}${error?.code ? ` (${error.code})` : ""}: ${error?.message}`, { cause: error }),
-  });
+  }), { command: "prepare-build" });
 }
 
 function prepareBuildUnderLock({
@@ -3935,7 +3956,10 @@ export function commitWaiverToAssemblyReport(workspace, mutate, options, { dryRu
     applyDerivedAssemblyReportSummary(mutated);
     return null;
   };
-  return commitAssemblyReport(workspace, previewOrCommit, options);
+  // A preview writes nothing, so it does not take the target lock either: the
+  // lock's staging and owner files are writes, and a preview must work on a
+  // target it cannot write.
+  return commitAssemblyReport(workspace, previewOrCommit, dryRun ? { ...options, lock: false } : options);
 }
 
 function waiveReadiness(packetPath, reportPath) {

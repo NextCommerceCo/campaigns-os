@@ -550,6 +550,29 @@ test("theme waive --dry-run records nothing on the assembly report", async (t) =
   assert.equal(readJson(reportPath).theme.waiver.waived_by, "Jordan Lee");
 });
 
+// #501: a waiver preview writes nothing, so it takes no target lock: it
+// creates no lock directory (or the input directory that holds it) and does
+// not wait for a writer that holds the lock.
+test("waive --dry-run takes no target lock and creates no lock files", async (t) => {
+  const { dir, packetPath, targetRepo } = seedTarget(t);
+  const inputDir = join(targetRepo, ".campaign-runtime/input");
+  assert.equal(existsSync(inputDir), false, "precondition: no input directory yet");
+  const fresh = await runCli(["theme", "waive", "--packet", packetPath, ...WAIVE_ARGS, "--dry-run", "--json"], { cwd: dir });
+  assert.equal(fresh.code, 0, fresh.stderr);
+  assert.equal(existsSync(inputDir), false, "the preview created no lock directory or input directory");
+
+  // Another live process holds the target lock: the preview neither waits
+  // out the one-minute budget nor refuses.
+  const lock = join(inputDir, ".design-source-package.json.lock");
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "held-by-another-writer" })}\n`);
+  const started = Date.now();
+  const held = await runCli(["theme", "waive", "--packet", packetPath, ...WAIVE_ARGS, "--dry-run", "--json"], { cwd: dir });
+  assert.equal(held.code, 0, held.stderr);
+  assert.ok(Date.now() - started < 20_000, "the preview did not wait for the lock");
+  assert.deepEqual(readdirSync(inputDir), [".design-source-package.json.lock"], "no staging directory was left beside the lock");
+});
+
 // The session-preservation assertion above covers the ACTIVE session. The
 // stale one is swept before dispatch ever reads the command's flags, and that
 // sweep is the full closeout: it assembles a Run Record, remits it under

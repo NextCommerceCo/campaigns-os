@@ -363,18 +363,30 @@ crawl) through the packet, context and report that record them,
 `prepare-build` holds a lock directory beside the package
 (`.campaign-runtime/input/.design-source-package.json.lock`), so each run judges
 provenance against the report and package the previous run left, and records
-the inputs it actually read. Stage producers do not take this lock, so the
-report is checked for stage evidence again just before it is replaced; evidence
-that landed mid-run stops a run without `--force`. Of several
-concurrent `--force` runs, the first regenerates the package and the rest reuse
-it as `"synthesized"`. A run that finds the lock held waits up to a minute; a
-lock left by a process that died is recovered automatically.
+the inputs it actually read. Every command that edits the Assembly Report
+(`doctor`, `qa run`, waivers, the polish merge and the other stage producers)
+takes the same lock for its read-modify-write, so no stage evidence lands
+between `prepare-build`'s final stage-evidence check and its publication; a
+producer that `prepare-build` reaches from inside its own run enters directly.
+Of several concurrent `--force` runs, the first regenerates the package and the
+rest reuse it as `"synthesized"`. A command that finds the lock held waits up to
+a minute. The lock directory and its owner record appear together, so a lock
+left by a process that died is recovered automatically, and a lock directory
+without an owner record (only an older release leaves one) is never taken
+over: the command refuses it after about a second and names it. Confirm no
+campaigns-os process is working on the target, then remove it. Do not run an
+older Campaigns OS release against the same target at the same time. A
+waiver's `--dry-run` preview takes no lock.
 
 Before writing any output, `prepare-build` also requires distinct paths for the
 Build Packet, Build Context, Assembly Report, Doctor output, normalized Build
 Brief, and fixed Design Source Package. Equal paths and filesystem aliases are
 rejected, including symlinks, hard links, dangling leaf symlinks, and symlinked
-parent directories.
+parent directories. No output may be placed inside the lock directory, or
+inside the staging and tomb directories the lock creates beside it
+(`.lock.staging-*`, `.lock.recovery-staging-*`, `.lock.released-*`,
+`.lock.abandoned-*`), directly or through a directory alias: they are removed
+with their contents when the run finishes.
 
 This behavior is the implemented v0 compatibility boundary. It does not promise
 that a separate future workflow command will generate, repair, approve, or
