@@ -7221,8 +7221,62 @@
       "entry_sha256": "b704d4bd6f9e83e090200742dd4057d3b263d9884e09b506053b6cb6cd18ad24"
     },
     {
-      "id": "RL-0160",
+      "id": "RL-0158",
       "sequence": 157,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.16",
+      "changelog_sha256": "e6e03aea1c1cb3bb84827e584e7f3cf849eec5ff7e0d14c4aca5c7aa9b3fbe3f",
+      "agent_impact": "QA's opt-in analytics parity leg now picks its candidate page the way the correctness inventory does on a partial build (the root when in scope and answering, else the first built entry), records capture_page and root_fallback, and reports no_in_scope_page_captured (skipped) or no_capture_page_answered (blocker) without loading the baseline. A topology entry that differs from the root only by its own query string is no longer merged into the root. docs/qa-and-test-orders.md documents the capture fallback, both outcomes, path-based step routing and the local-serve manual_review exception.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the partial-scope analytics capture fallback for the correctness and parity legs, the no_in_scope_page_captured and no_capture_page_answered outcomes, path-based step routing with query-routed entries kept apart from the root, and the local-serve manual_review exception with data-layer-purchase still blocking."
+        }
+      ],
+      "entry_sha256": "36fe47ebc1bd791d6017e5a50a2112597392222419883993eaca378c03a45996"
+    },
+    {
+      "id": "RL-0159",
+      "sequence": 158,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.17",
+      "changelog_sha256": "c479b34451dfed258ce2b0a27606a77ab74ffc80bac67def6a53ed6dd1209148",
+      "agent_impact": "prepare-build refuses any configurable output path inside its target lock directory or the staging and tomb directories the lock creates beside it, directly or through a directory alias. The per-target and progress allocation locks publish their owner with the directory and refuse an ownerless lock after about a second, naming it; stage producers that edit the Assembly Report wait for a prepare-build holding the target lock, and waiver --dry-run previews take no lock.",
+      "compatibility": "compatible",
+      "migration": "Choose output paths outside .campaign-runtime/input/.design-source-package.json.lock. A lock directory without owner.json, left by an older release, is no longer recovered after ten seconds: confirm no campaigns-os process is working on the target, then remove it.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Take the per-target lock through the shared target-lock module and reserve the lock directory, its .lock.* siblings and their aliases in the output-collision checks."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "State that stage producers take the target lock, that an ownerless lock is never taken over, and that outputs inside the lock directory are refused."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Replace the ten-second ownerless recovery with the atomic owner publication, the ownerless refusal and the offline procedure, and name the lock in the warning."
+        }
+      ],
+      "entry_sha256": "6e01214c091eea12b92e18880aad38911c2c093d6e1554da21b90eff3fe62e32"
+    },
+    {
+      "id": "RL-0160",
+      "sequence": 159,
       "date": "2026-09-27",
       "kind": "release",
       "surface_version": null,
@@ -7251,7 +7305,7 @@
           "summary": "State that the fetched-spec cache is written only under the per-target prepare-build lock."
         }
       ],
-      "entry_sha256": "e6841a339c69b0955da9e5a6a1225c90af5db19426f087334b1748102795fcd2"
+      "entry_sha256": "6e0890174577dcc2eca884e5321d163a012ca50ccec56276557133296772b042"
     }
   ]
 }

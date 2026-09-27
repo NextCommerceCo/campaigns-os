@@ -30,7 +30,7 @@ const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(im
 function cmd(verb, rest = "") {
   return `${invocationPrefixFor(PACKAGE_ROOT)} ${verb}${rest ? ` ${rest}` : ""}`;
 }
-import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
+import { isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
@@ -2336,10 +2336,13 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
     }));
   }
 
-  // Analytics parity is unchanged and remains opt-in between root inventory
-  // and typed-card receipt capture.
+  // Analytics parity remains opt-in between root inventory and typed-card
+  // receipt capture. #503: it gets the same partial-scope capture options.
   if (stringArg(args["analytics-baseline"])) {
-    assertions.push(...await operations.runParity(args, { target: resolved.analyticsCaptureTarget }));
+    assertions.push(...await operations.runParity(args, {
+      target: resolved.analyticsCaptureTarget,
+      ...analyticsCaptureScope(resolved),
+    }));
   }
 
   const result = await operations.runOrders({
@@ -2609,25 +2612,28 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
 // whatever the host answers (a directory index, a generic fallback) and must
 // not be measured. Either way the built entry pages (the same first in-scope
 // entry #482 selects) are the fallback when the root cannot be captured.
+// #503: "served there" is the page identity the capture leg deduplicates by
+// (isSameAnalyticsCapturePage): a query-routed page on the root's path
+// (`/campaign/?step=checkout`) is not the root, so it cannot put the root in
+// scope.
 function analyticsCaptureScope(resolved) {
-  const rootPath = urlPathKey(resolved?.analyticsCaptureTarget?.url);
+  const rootUrl = rootCaptureUrl(resolved?.analyticsCaptureTarget?.url);
   const topologies = topologyList(resolved?.topologies);
   const partial = topologies.some((topology) => topology?.partial_build_scope)
     || (Array.isArray(resolved?.excludedPages) && resolved.excludedPages.length > 0);
-  const rootInScope = !rootPath || !partial || topologies.some((topology) =>
-    (Array.isArray(topology?.pages) ? topology.pages : []).some((page) => urlPathKey(page?.url) === rootPath));
+  const rootInScope = !rootUrl || !partial || topologies.some((topology) =>
+    (Array.isArray(topology?.pages) ? topology.pages : []).some((page) =>
+      typeof page?.url === "string" && isSameAnalyticsCapturePage(page.url, rootUrl)));
   return {
     rootInScope,
     fallbackTargets: deriveEntryUrls(resolved?.topologies),
   };
 }
 
-function urlPathKey(value) {
+function rootCaptureUrl(value) {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
-    const url = new URL(value);
-    const path = url.pathname.replace(/(?:^|\/)index\.html$/, "/").replace(/\/+$/, "");
-    return `${url.origin}${path}/`;
+    return new URL(value).toString();
   } catch {
     return null;
   }

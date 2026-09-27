@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { STATUS as QA_STATUS } from "./qa-verdict.mjs";
 import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
+import { withTargetLockSync } from "./target-lock.mjs";
 import {
   ASSEMBLY_REPORT_STAGE_KEYS,
   NEXT_STAGE_CONTRACTS,
@@ -425,6 +426,16 @@ export function assemblyReportMatchesPacket(report, packet) {
  * (waivers, evidence merges) pass no `stage`: they require the report to
  * exist and bind its identity themselves.
  *
+ * The read-modify-write runs under the per-target writer lock that
+ * prepare-build holds (src/target-lock.mjs, #501), so a stage producer's edit
+ * never lands between prepare-build's pre-publish evidence re-check and its
+ * publication; inside prepare-build's own critical section it enters
+ * directly. A workspace without `targetRepo` (only possible with an explicit
+ * refreshDoctor and no stale stamp) names no target to lock and runs as is.
+ * `lockBudgetMs` bounds the wait (default: the target lock budget). A caller
+ * whose mutate always returns null (a preview) passes `lock: false`: it
+ * writes nothing, so it takes no lock and creates no lock files.
+ *
  * Returns `{ written, skipped, report, reportPath, doctorOutPath }` where
  * `skipped` is `null`, `"absent"`, `"identity"` or `"unchanged"` and `report`
  * is what is now on disk (the mutated report when written, else the one read,
@@ -435,6 +446,10 @@ export function commitAssemblyReport(workspace, mutate, {
   staleReason = null,
   command = null,
   stage = null,
+  lockBudgetMs,
+  // lock: false skips the target lock entirely; only for callers that write
+  // nothing (the waiver dry-run preview). A real commit must take the lock.
+  lock = true,
 } = {}) {
   const hasRefresh = typeof refreshDoctor === "function";
   const hasStale = typeof staleReason === "string" && staleReason.trim();
@@ -453,6 +468,19 @@ export function commitAssemblyReport(workspace, mutate, {
   if (hasRefresh && !doctorOutPath) throw new TypeError("commitAssemblyReport requires a workspace with doctorOutPath to refresh the doctor sidecar.");
   if (hasStale && !targetRepo) throw new TypeError("commitAssemblyReport requires a workspace with targetRepo to stamp the doctor sidecar stale.");
 
+  const commit = () => commitAssemblyReportUnderLock(workspace, mutate, {
+    refreshDoctor, staleReason, command, stage, hasRefresh, reportPath, doctorOutPath, targetRepo,
+  });
+  if (!targetRepo || lock === false) return commit();
+  return withTargetLockSync(targetRepo, commit, {
+    command: command.trim(),
+    ...(lockBudgetMs === undefined ? {} : { budgetMs: lockBudgetMs }),
+  });
+}
+
+function commitAssemblyReportUnderLock(workspace, mutate, {
+  refreshDoctor, staleReason, command, stage, hasRefresh, reportPath, doctorOutPath, targetRepo,
+}) {
   const outcome = { written: false, skipped: null, report: null, reportPath, doctorOutPath };
   const finish = () => {
     if (hasRefresh) {

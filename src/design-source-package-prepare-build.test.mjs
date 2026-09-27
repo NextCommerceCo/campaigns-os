@@ -1151,15 +1151,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { syncBuiltinESMExports } = require("node:module");
 const originalMkdirSync = fs.mkdirSync;
+// Each acquisition attempt stages its owner in <lock>.staging-<token> before
+// publishing it at the lock path. A second staging means the first attempt
+// found the lock taken: the run is waiting.
+const stagingPrefix = path.resolve(process.env.PB_LOCK_PATH) + ".staging-";
+let attempts = 0;
 fs.mkdirSync = function signalLockWait(candidate, ...rest) {
-  try {
-    return originalMkdirSync.call(fs, candidate, ...rest);
-  } catch (error) {
-    if (error?.code === "EEXIST" && path.resolve(String(candidate)) === path.resolve(process.env.PB_LOCK_PATH)) {
-      fs.writeFileSync(process.env.PB_LOCK_WAIT_SIGNAL, String(process.pid));
-    }
-    throw error;
+  if (path.resolve(String(candidate)).startsWith(stagingPrefix) && ++attempts === 2) {
+    fs.writeFileSync(process.env.PB_LOCK_WAIT_SIGNAL, String(process.pid));
   }
+  return originalMkdirSync.call(fs, candidate, ...rest);
 };
 syncBuiltinESMExports();
 `);
@@ -2080,6 +2081,68 @@ test("fresh prepare-build rejects dangling and parent-directory symlink aliases 
       assert.equal(lstatSync(aliasDir).isSymbolicLink(), true);
     }));
   }
+});
+
+// The target lock directory is removed recursively when the lock is
+// released, so an output written inside it would vanish on success and leave
+// the packet and context pointing at a missing file (#501).
+test("prepare-build rejects configurable outputs inside the target lock directory, directly or through a directory alias", async (t) => {
+  const lockRel = ".campaign-runtime/input/.design-source-package.json.lock";
+  for (const flag of CONFIGURABLE_OUTPUT_FLAGS) {
+    await t.test(`${flag} inside the lock directory`, () => withFixture((fixture) => {
+      const first = runPrepare(fixture);
+      assert.equal(first.status, 0, first.stderr);
+      const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+      const inside = join(fixture.target, lockRel, `${flag.slice(2)}.json`);
+
+      const collision = runPrepare(fixture, { extraArgs: [flag, inside] });
+      assert.notEqual(collision.status, 0, "an output inside the lock directory is refused");
+      assert.match(collision.stderr, /output path collision.*inside the prepare-build target lock directory/i);
+      assertArtifactsUnchanged(snapshot);
+      assert.equal(existsSync(join(fixture.target, lockRel)), false, "the lock is released");
+    }));
+  }
+
+  await t.test("--report-out in a staging sibling of the lock", () => withFixture((fixture) => {
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+    const sibling = join(fixture.target, `${lockRel}.staging-0123/report.json`);
+    const collision = runPrepare(fixture, { extraArgs: ["--report-out", sibling] });
+    assert.notEqual(collision.status, 0);
+    assert.match(collision.stderr, /output path collision.*inside the prepare-build target lock directory/i);
+    assertArtifactsUnchanged(snapshot);
+  }));
+
+  await t.test("--report-out named like the lock but outside its tree is an ordinary output", () => withFixture((fixture) => {
+    const beside = join(fixture.target, `${lockRel}.report.json`);
+    const result = runPrepare(fixture, { extraArgs: ["--report-out", beside] });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(beside), true, "the report survives the lock release");
+  }));
+
+  for (const flag of ["--report-out", "--context-out"]) {
+    await t.test(`${flag} through a symlinked input directory`, () => withFixture((fixture) => {
+      const inputDir = join(fixture.target, ".campaign-runtime/input");
+      mkdirSync(inputDir, { recursive: true });
+      const aliasDir = join(fixture.target, ".campaign-runtime/input-alias");
+      symlinkSync(inputDir, aliasDir);
+      const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+      const aliased = join(aliasDir, ".design-source-package.json.lock", "report.json");
+
+      const collision = runPrepare(fixture, { extraArgs: [flag, aliased] });
+      assert.notEqual(collision.status, 0, "the alias reaches the lock directory");
+      assert.match(collision.stderr, /output path collision.*inside the prepare-build target lock directory/i);
+      assertArtifactsUnchanged(snapshot);
+    }));
+  }
+
+  await t.test("--report-out through a case-only alias of the lock directory", () => withFixture((fixture) => {
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+    const caseAlias = join(fixture.target, ".campaign-runtime/input/.DESIGN-SOURCE-PACKAGE.JSON.LOCK/report.json");
+    const collision = runPrepare(fixture, { extraArgs: ["--report-out", caseAlias] });
+    assert.notEqual(collision.status, 0);
+    assert.match(collision.stderr, /output path collision/i);
+    assertArtifactsUnchanged(snapshot);
+  }));
 });
 
 test("fresh prepare-build conservatively rejects case-only DSP aliases for every configurable output", async (t) => {

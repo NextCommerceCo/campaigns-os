@@ -36,6 +36,63 @@ Notable supported-surface changes are recorded here.
   beside hashes of the other. Argv-only intake refusals still happen before
   any spec read, fetch or cache write, and a failed fetch still writes
   nothing.
+## [1.43.1+agent.17] - 2026-09-27
+
+### Fixed
+
+- The per-target lock that `prepare-build` holds, and the progress allocation
+  lock, can no longer be held by two processes at once. A process suspended
+  after creating the lock directory but before recording its owner used to
+  lose the lock to a waiter after ten seconds, and then both ran. The lock
+  directory and its owner record are now published together by one rename,
+  each holder confirms its own token before entering, and release only ever
+  removes a lock that still carries the holder's token. A lock directory with
+  no owner record, which only an older release leaves, is never taken over:
+  the command refuses it after about a second with a message naming the lock
+  directory (for progress capture, the warning now names the affected
+  `.allocation-lock`); remove it by hand once no campaigns-os process is
+  working on the target. A waiter that loses the publishing rename to a
+  holder that has already released now retries instead of failing. Do not run
+  an older release against the same target at the same time.
+- Commands that edit the Assembly Report (`doctor`, `qa run`, waivers, the
+  polish merge and the other stage producers) now take the same per-target
+  lock as `prepare-build` for their read-modify-write, so stage evidence can
+  no longer land between `prepare-build`'s final stage-evidence check and its
+  publication. A producer reached from inside `prepare-build`'s own run enters
+  without waiting on itself. A waiver `--dry-run` preview writes nothing and
+  takes no lock.
+- `prepare-build` refuses a `--out`, `--context-out`, `--report-out`,
+  `--doctor-out` or `--brief-out` path inside the lock directory
+  (`.campaign-runtime/input/.design-source-package.json.lock`) or the
+  staging and tomb directories the lock creates beside it (`.lock.staging-*`,
+  `.lock.recovery-staging-*`, `.lock.released-*`, `.lock.abandoned-*`),
+  including through a symlinked directory or a case-only alias. Such an output was written and then deleted with the lock, leaving
+  the packet and context pointing at a missing file.
+## [1.43.1+agent.16] - 2026-09-27
+
+### Fixed
+
+- QA's optional analytics comparison against a legacy funnel
+  (`--analytics-baseline`) now measures a partial build's first built page
+  when the campaign root is not part of the build or does not answer, the same
+  way the analytics correctness check has since #493. It used to measure the
+  campaign root only, which a partial build does not have. The comparison
+  records which page it measured. When no built page answers, it is skipped
+  if there was nothing to try, and blocks if every page it tried failed; in
+  both cases the legacy funnel is not loaded. An explicit
+  `--analytics-candidate` URL is still measured as given.
+- A funnel entry whose URL differs from the campaign root only by its query
+  string (for example `/campaign/?step=checkout`) is no longer treated as the
+  root. On a partial build, the root counted as built and the entry was
+  dropped as a duplicate, so the root's generic page was measured instead of
+  that entry. The entry is now measured itself and marked `query_routed`.
+  Step routing stays path-based in every certified family.
+- `docs/qa-and-test-orders.md` now describes which page the analytics checks
+  measure on a partial build, the `no_in_scope_page_captured` and
+  `no_capture_page_answered` outcomes, how query strings affect page identity,
+  and when a local-serve run turns a silent pixel into `manual_review`: a
+  recorded development render and a page measured on localhost, with
+  `data-layer-purchase` still blocking.
 ## [1.43.1+agent.15] - 2026-09-27
 
 ### Fixed

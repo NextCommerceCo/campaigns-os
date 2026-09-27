@@ -86,7 +86,9 @@ test('source endpoint precedence, malformed/credential transport and foreign con
 
 test('abandoned allocation owners recover while a live owner remains exclusive',scratch(async dir=>{
  const lock=join(dir,'.allocation-lock');mkdirSync(lock);const old=new Date(Date.now()-20000);utimesSync(lock,old,old);
- assert.equal((await persistProgressObservation(observation(),{dir})).snapshot.sequence,1,'old ownerless crash gap recovers');
+ await assert.rejects(persistProgressObservation(observation(),{dir}),/progress.lock_unavailable/,'an ownerless lock may be a live writer between mkdir and owner write (#501)');
+ assert.equal(existsSync(lock),true,'an ownerless lock is never taken over, however old');rmSync(lock,{recursive:true});
+ assert.equal((await persistProgressObservation(observation(),{dir})).snapshot.sequence,1);
  mkdirSync(lock);const child=spawnSync(process.execPath,['-e','process.exit(0)']);
  writeFileSync(join(lock,'owner.json'),JSON.stringify({pid:child.pid,token:'dead-owner'}));
  assert.equal((await persistProgressObservation(observation(),{dir})).reused,true,'dead PID owner recovers immediately');
@@ -263,4 +265,17 @@ test('malformed local progress identity is refused before storage or remittance'
   assert.deepEqual(result,{state:'failed',reason:'capture_unavailable'});
   assert.equal(existsSync(join(dir,'.campaign-runtime','progress')),false);
  }
+}));
+
+test('an occupied allocation lock is reported with its path and the removal step (#501)',scratch(async dir=>{
+ const input=setup(dir);Object.defineProperty(input.continuation,PROGRESS_OBSERVATION,{value:input});
+ const warnings=[];const opts={packageVersion:'1.36.0',resolveKey:()=>({key:'test_key'}),configPath:join(dir,'consent.json'),env:{},warn:message=>warnings.push(message)};
+ assert.equal((await observeProgress({'no-remit':true},input.continuation,opts)).reason,'no_remit');
+ const scopes=readdirSync(join(dir,'.campaign-runtime','progress'));assert.equal(scopes.length,1);
+ const lock=join(dir,'.campaign-runtime','progress',scopes[0],'.allocation-lock');mkdirSync(lock);
+ assert.deepEqual(await observeProgress({'no-remit':true},input.continuation,opts),{state:'failed',reason:'capture_unavailable'});
+ const warning=warnings.at(-1);
+ assert.ok(warning.includes(lock),'names the lock directory of the affected scope');
+ assert.match(warning,/remove that lock directory/);
+ assert.equal(existsSync(lock),true,'an ownerless lock is left in place');
 }));
