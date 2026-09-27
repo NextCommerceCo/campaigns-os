@@ -27,6 +27,74 @@ Notable supported-surface changes are recorded here.
   and when a local-serve run turns a silent pixel into `manual_review`: a
   recorded development render and a page measured on localhost, with
   `data-layer-purchase` still blocking.
+## [1.43.1+agent.15] - 2026-09-27
+
+### Fixed
+
+- The doctor `built_output.script_syntax` gate and the QA `script-parse`
+  check now resolve each `<script src>` against the base in effect when the
+  parser prepares that script at its end tag: the first HTML `<base href>` in
+  tree order among those already parsed, or else the page. A `<base>` parsed
+  after a script no longer moves it, whether it is async, deferred or a
+  module, and parse order decides even when table foster parenting reorders
+  the tree. An SVG `base` no longer counts, and the href is no longer trimmed
+  of non-ASCII whitespace the URL parser keeps. Only HTML-namespace
+  `<script>` elements are page scripts: an SVG `<script src>` is no longer
+  read or parsed by doctor, and QA leaves a page with an SVG script dynamic
+  instead of fetching it. Only an empty `src` is skipped, as the browser
+  skips it; a `src` of other whitespace is resolved and read. QA recognises
+  the Campaign Cart SDK by its URL as the parser reads it, so a tab or
+  newline inside the attribute no longer makes the SDK look like an
+  unavailable config script. A base
+  the browser refuses (a `data:` or `javascript:` URL, or one that does not
+  parse) now falls back to the page, as the HTML "set the frozen base URL"
+  steps require, so the local script is read and a parse failure in it blocks
+  instead of the script being listed as unresolved (#502).
+
+### Changed
+
+- A local script a built page loads that is not in the built output is now a
+  doctor warning, `built_output.script_syntax.missing_script`, one per src
+  naming the pages that load it. It was information on the gate only. It does
+  not block. While a parse failure blocks the gate, the missing scripts stay
+  on the gate's `warned[]` (#502).
+- `fixtures/certified-families/` now carries every local script the rendered
+  pages load (each family's `js/*.js` beside `config.js`), refreshed from the
+  same templates commit. `scripts/refresh-certified-family-fixtures.mjs`
+  copies them, resolved the way the gate resolves them, and fails when a
+  referenced script is not in the render, or a copied file is a symlink or
+  resolves outside the family's render. The reachability test reads the
+  expected scripts from the HTML independently of the gate and requires the
+  gate to read exactly that set on every certified family (#502).
+## [1.43.1+agent.14] - 2026-09-27
+
+### Fixed
+
+- An accepted upsell whose mutation body loads late is now matched to the
+  request its own click made, not to any response on the order-upsells URL.
+  Every upsell step in a path posts to the same `/orders/<ref>/upsells/` URL,
+  whether the steps share a page or sit on separate pages, so an earlier
+  step's slow body could land while a later step waited for its own and be
+  judged as the later step's evidence: failing it when that body lacked its
+  line, or passing it on the earlier step's line. The runner keeps the
+  Playwright request of each captured response and of each step's mutation
+  and accepts a late body only when the two are the same request. A step
+  whose own body never arrived and that no later read-back settled is
+  unverified even when the stale lines on hand would have matched. The
+  step's mutation watch also ignores any order-upsells response whose
+  request started before the watch was armed at the click, so an earlier
+  step's response that arrives late, after its own watch expired, is no
+  longer taken as this step's.
+- A test-order path whose only open question is an unverified accepted upsell
+  is no longer `ok` on its result. The result carries `upsell_unverified`
+  instead, the order's `verification.verified` is `false` (so the purchase
+  proof summary no longer counts it in `orders_verified`; it still counts in
+  `orders_created`), and the path is neither re-run (a second order) nor
+  passed through read-only recovery (which cannot re-check an upsell). The
+  `browser-test-order` assertion still reports it as `manual_review`. A path
+  with an unverified upsell and another failure is recovered as before, but
+  a recovery that clears the other failure leaves the upsell unverified: the
+  result goes to `manual_review`, not `pass`, and the order stays unverified.
 ## [1.43.1+agent.13] - 2026-09-27
 
 ### Changed
