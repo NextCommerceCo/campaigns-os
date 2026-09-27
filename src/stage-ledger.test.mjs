@@ -778,3 +778,92 @@ test("commitAssemblyReport refuses a mutator that returns something other than a
   assert.equal(readJson(workspace.doctorOutPath).stale, undefined, "nothing is stamped");
   rmSync(dir, { recursive: true, force: true });
 });
+
+// #501: stage writers take the per-target lock prepare-build holds, so no
+// evidence lands between prepare-build's pre-publish re-check and its rename.
+
+test("commitAssemblyReport does not write while another process holds the target lock", async () => {
+  const { withTargetLock, targetLockPath } = await import("./target-lock.mjs");
+  const { dir, workspace } = workspaceFixture();
+  const lock = targetLockPath(workspace.targetRepo);
+  mkdirSync(lock, { recursive: true });
+  // A live process other than this one: the test runner.
+  writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "prepare-build" })}\n`);
+  const before = readFileSync(workspace.reportPath, "utf8");
+  let mutated = false;
+  assert.throws(
+    () => commitAssemblyReport(workspace, (report) => { mutated = true; return { ...report, note: "edited" }; }, {
+      stage: "doctor", command: "unit-test", refreshDoctor: () => null, lockBudgetMs: 100,
+    }),
+    /is writing .* \(lock .*design-source-package\.json\.lock\)/,
+  );
+  assert.equal(mutated, false, "the report was not even read for editing");
+  assert.equal(readFileSync(workspace.reportPath, "utf8"), before);
+
+  rmSync(lock, { recursive: true });
+  const outcome = commitAssemblyReport(workspace, (report) => ({ ...report, note: "edited" }), { command: "unit waive", staleReason: "unit reason" });
+  assert.equal(outcome.written, true);
+  assert.equal(existsSync(lock), false, "the writer released the lock");
+
+  // prepare-build reaching a stage writer inside its own critical section
+  // re-enters rather than waiting on itself.
+  const nested = await withTargetLock(workspace.targetRepo, () => commitAssemblyReport(
+    workspace, (report) => ({ ...report, note: "nested" }), { command: "unit waive", staleReason: "unit reason", lockBudgetMs: 100 },
+  ));
+  assert.equal(nested.written, true);
+  assert.equal(readJson(workspace.reportPath).note, "nested");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("stage evidence committed during prepare-build's re-check-to-publish window is not lost", async () => {
+  const { withTargetLock, targetLockPath } = await import("./target-lock.mjs");
+  const { dir, workspace } = workspaceFixture({ report: { identity: { map_id: "map_1", public_route_slug: "demo" }, stages: {}, published_by: "earlier run" } });
+  const lock = targetLockPath(workspace.targetRepo);
+  const waiting = join(dir, "writer-waiting.signal");
+  const preload = join(dir, "signal-lock-wait.cjs");
+  writeFileSync(preload, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalMkdirSync = fs.mkdirSync;
+const stagingPrefix = ${JSON.stringify(lock)} + ".staging-";
+let attempts = 0;
+fs.mkdirSync = function signalLockWait(candidate, ...rest) {
+  // A second staged attempt means the first found the lock held.
+  if (path.resolve(String(candidate)).startsWith(stagingPrefix) && ++attempts === 2) fs.writeFileSync(${JSON.stringify(waiting)}, "");
+  return originalMkdirSync.call(fs, candidate, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  const moduleUrl = new URL("./stage-ledger.mjs", import.meta.url).href;
+  const tick = () => new Promise((done) => setTimeout(done, 5));
+  let writer;
+
+  await withTargetLock(workspace.targetRepo, async () => {
+    // prepare-build's pre-publish re-check: the report it is about to replace.
+    const checked = readFileSync(workspace.reportPath, "utf8");
+    const { spawn } = await import("node:child_process");
+    writer = new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ["--input-type=module", "-e", `
+import { commitAssemblyReport } from ${JSON.stringify(moduleUrl)};
+commitAssemblyReport(${JSON.stringify(workspace)}, (report) => ({ ...report, stages: { ...report.stages, qa: { stage: "qa", status: "completed", evidence: ["qa verdict"] } } }), { command: "unit waive", staleReason: "unit reason" });
+`], { env: { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preload}`.trim() }, stdio: ["ignore", "ignore", "pipe"] });
+      let stderr = "";
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+      child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(stderr))));
+    });
+    // Until the stage writer has either committed (no lock) or is waiting.
+    const deadline = Date.now() + 20000;
+    while (!existsSync(waiting) && readFileSync(workspace.reportPath, "utf8") === checked) {
+      if (Date.now() > deadline) throw new Error("the stage writer never committed or waited");
+      await tick();
+    }
+    // prepare-build publishes what it re-checked, then releases.
+    writeFileSync(workspace.reportPath, JSON.stringify({ ...JSON.parse(checked), published_by: "prepare-build" }));
+  });
+  await writer;
+  const final = readJson(workspace.reportPath);
+  assert.equal(final.published_by, "prepare-build");
+  assert.deepEqual(final.stages.qa?.evidence, ["qa verdict"], "the stage writer's evidence landed after the publication, not under it");
+  rmSync(dir, { recursive: true, force: true });
+});

@@ -7192,6 +7192,39 @@
         }
       ],
       "entry_sha256": "f2be3f58c79afb40343b1dc3b6baa8a8065be0a93b04c45ec870e5f91b7a49d1"
+    },
+    {
+      "id": "RL-0159",
+      "sequence": 159,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.17",
+      "changelog_sha256": "04befa66284b353d6e4661d99ae84bf2f3f042724c462c6c29c27ad9e6813677",
+      "agent_impact": "prepare-build refuses any configurable output path inside its target lock directory or the lock directory's .lock.* siblings, directly or through a directory alias. The per-target and progress allocation locks publish their owner with the directory and never take over an ownerless lock; stage producers that edit the Assembly Report wait for a prepare-build holding the target lock.",
+      "compatibility": "compatible",
+      "migration": "Choose output paths outside .campaign-runtime/input/.design-source-package.json.lock. A lock directory without owner.json, left by an older release, is no longer recovered after ten seconds: confirm no campaigns-os process is working on the target, then remove it.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Take the per-target lock through the shared target-lock module and reserve the lock directory, its .lock.* siblings and their aliases in the output-collision checks."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "State that stage producers take the target lock, that an ownerless lock is never taken over, and that outputs inside the lock directory are refused."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Replace the ten-second ownerless recovery with the atomic owner publication and the offline procedure for an ownerless lock."
+        }
+      ],
+      "entry_sha256": "e39b2654b1bfb9a28a60693ccd565b774d0e67679d3c3cbeb37eed9c72163d9f"
     }
   ]
 }

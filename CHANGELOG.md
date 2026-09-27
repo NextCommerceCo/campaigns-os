@@ -2,6 +2,32 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.17] - 2026-09-27
+
+### Fixed
+
+- The per-target lock that `prepare-build` holds, and the progress allocation
+  lock, can no longer be held by two processes at once. A process suspended
+  after creating the lock directory but before recording its owner used to
+  lose the lock to a waiter after ten seconds, and then both ran. The lock
+  directory and its owner record are now published together by one rename,
+  each holder confirms its own token before entering, and release only ever
+  removes a lock that still carries the holder's token. A lock directory with
+  no owner record, which only an older release leaves, is never taken over;
+  remove it by hand once no campaigns-os process is working on the target.
+- Commands that edit the Assembly Report (`doctor`, `qa run`, waivers, the
+  polish merge and the other stage producers) now take the same per-target
+  lock as `prepare-build` for their read-modify-write, so stage evidence can
+  no longer land between `prepare-build`'s final stage-evidence check and its
+  publication. A producer reached from inside `prepare-build`'s own run enters
+  without waiting on itself.
+- `prepare-build` refuses a `--out`, `--context-out`, `--report-out`,
+  `--doctor-out` or `--brief-out` path inside the lock directory
+  (`.campaign-runtime/input/.design-source-package.json.lock`) or its
+  `.lock.*` siblings, including through a symlinked directory or a case-only
+  alias. Such an output was written and then deleted with the lock, leaving
+  the packet and context pointing at a missing file.
+
 ## [1.43.1+agent.12] - 2026-09-26
 
 ### Fixed

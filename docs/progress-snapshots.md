@@ -59,12 +59,15 @@ across them. A progress stream is independent of a run-session ID.
 
 Sanitized immutable snapshots are written under the target repository's
 `.campaign-runtime/progress/` before any request. Allocation uses an exclusive
-local lock with a process owner. Dead owners are recovered through an exclusive
-recovery claim and an atomic rename; a live process is never evicted. An ownerless
-crash gap is recoverable after ten seconds. If recovery itself is interrupted,
-capture fails closed: stop all Campaigns OS writers for that target, then remove
-the abandoned `.allocation-lock` directory in the affected progress scope before
-retrying `next`. Do not remove a lock while a writer is active.
+local lock with a process owner; the lock directory and its owner record are
+published together in one rename, so a lock never exists without its owner.
+Dead owners are recovered through an exclusive recovery claim and an atomic
+rename; a live process is never evicted. A lock directory with no owner record
+(left by an older release) is never taken over. If one is found, or if recovery
+itself is interrupted, capture fails closed: stop all Campaigns OS writers for
+that target, then remove the abandoned `.allocation-lock` directory in the
+affected progress scope before retrying `next`. Do not remove a lock while a
+writer is active.
 
 An unchanged projection reuses its ID, timestamp and sequence. Identity
 changes start a new stream. Each local scope retains at most 32 snapshots and

@@ -86,7 +86,9 @@ test('source endpoint precedence, malformed/credential transport and foreign con
 
 test('abandoned allocation owners recover while a live owner remains exclusive',scratch(async dir=>{
  const lock=join(dir,'.allocation-lock');mkdirSync(lock);const old=new Date(Date.now()-20000);utimesSync(lock,old,old);
- assert.equal((await persistProgressObservation(observation(),{dir})).snapshot.sequence,1,'old ownerless crash gap recovers');
+ await assert.rejects(persistProgressObservation(observation(),{dir}),/progress.lock_unavailable/,'an ownerless lock may be a live writer between mkdir and owner write (#501)');
+ assert.equal(existsSync(lock),true,'an ownerless lock is never taken over, however old');rmSync(lock,{recursive:true});
+ assert.equal((await persistProgressObservation(observation(),{dir})).snapshot.sequence,1);
  mkdirSync(lock);const child=spawnSync(process.execPath,['-e','process.exit(0)']);
  writeFileSync(join(lock,'owner.json'),JSON.stringify({pid:child.pid,token:'dead-owner'}));
  assert.equal((await persistProgressObservation(observation(),{dir})).reused,true,'dead PID owner recovers immediately');
