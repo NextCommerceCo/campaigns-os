@@ -6,7 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { checkpointWaive, doctorPacket, nextStage, nextTinyPromptLines, resultTextLines, themeWaive } from "./cli.mjs";
+import { checkpointWaive, nextStage, nextTinyPromptLines, resultTextLines, themeWaive } from "./cli.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 import { evaluateThemeGate, themeWaiverFrom } from "./theme-gate.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { doctorBuiltOutput, doctorPacket } from "./cli.mjs";
+import { doctorBuiltOutput, doctorPacket } from "./doctor/inspect.mjs";
 
 function withTempDir(run) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-doctor-built-"));

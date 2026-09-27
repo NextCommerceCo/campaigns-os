@@ -71,7 +71,7 @@ test('oversize files are read normally without retaining their contents', t => {
 });
 
 test('the public copy scanner refreshes files between repeated calls', async t => {
-  const { validateMarketSensitiveCopy } = await import('./cli.mjs');
+  const { validateMarketSensitiveCopy } = await import('./doctor/checks.mjs');
   const path = fixture(t);
   const { dirname } = await import('node:path');
   const spec = { campaign: { currency: 'GBP' } };

@@ -26,12 +26,9 @@ function shadowWithoutPlaywright(t) {
   }
   // src and bin are copied, not linked: a symlinked file resolves its imports
   // from its real path back in ROOT and finds the checkout's playwright again.
+  // src is copied with its subdirectories and without any *.test.mjs file.
   cpSync(join(ROOT, "bin"), join(shadow, "bin"), { recursive: true });
-  mkdirSync(join(shadow, "src"));
-  for (const entry of readdirSync(join(ROOT, "src"))) {
-    if (!entry.endsWith(".mjs") || entry.endsWith(".test.mjs")) continue;
-    cpSync(join(ROOT, "src", entry), join(shadow, "src", entry));
-  }
+  cpSync(join(ROOT, "src"), join(shadow, "src"), { recursive: true, filter: (path) => !path.endsWith(".test.mjs") });
   mkdirSync(join(shadow, "node_modules"));
   for (const entry of readdirSync(join(ROOT, "node_modules"))) {
     if (entry.startsWith("playwright")) continue;

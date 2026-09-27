@@ -13,7 +13,8 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { buildNextActions, doctorPacket, nextStage, pageKitParityCommand } from "./cli.mjs";
+import { buildNextActions, nextStage, pageKitParityCommand } from "./cli.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 import {
   compareRenderedOutputs,

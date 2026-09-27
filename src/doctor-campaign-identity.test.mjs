@@ -13,7 +13,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { CAMPAIGN_IDENTITY, CAMPAIGN_IDENTITY_KINDS } from "./campaign-identity.mjs";
-import { doctorBuiltOutput } from "./cli.mjs";
+import { doctorBuiltOutput } from "./doctor/inspect.mjs";
 
 const FIXTURE_ROOT = resolve(new URL("../fixtures/campaign-identity", import.meta.url).pathname);
 const SLUG = "example-campaign";

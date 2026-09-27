@@ -13,7 +13,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { CAMPAIGN_IDENTITY } from "./campaign-identity.mjs";
-import { doctorBuiltOutput } from "./cli.mjs";
+import { doctorBuiltOutput } from "./doctor/inspect.mjs";
 import { SDK_MARKUP } from "./sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs } from "./built-script-syntax.mjs";
 import { UPSELL_SELECTOR_SCOPE } from "./upsell-selector-scope.mjs";

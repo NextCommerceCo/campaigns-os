@@ -4,7 +4,8 @@ import { mkdtempSync, cpSync, existsSync, readFileSync, rmSync, statSync } from 
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { doctorCommand, doctorPacket, recordQaStageOutcome } from "./cli.mjs";
+import { recordQaStageOutcome } from "./cli.mjs";
+import { doctorCommand, doctorPacket } from "./doctor/inspect.mjs";
 
 // NEXT-114 dogfood finding wf_1785566917680: only prepare-build/start wrote
 // .campaign-runtime/doctor-output.json, so every later standalone doctor run

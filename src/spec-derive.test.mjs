@@ -9,7 +9,8 @@ import { test } from "node:test";
 
 import { createHash } from "node:crypto";
 
-import { checkpointWaive, doctorPacket, specDeriveCommand, specDeriveTextLines, specDeriveWithMapWriteback, specDeriveWriteMapTextLines } from "./cli.mjs";
+import { checkpointWaive, specDeriveCommand, specDeriveTextLines, specDeriveWithMapWriteback, specDeriveWriteMapTextLines } from "./cli.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
 import { entryInScaffoldState, evaluatePageKitSdkVersion, SPEC_DERIVE_COMMAND } from "./page-kit-sdk-version.mjs";

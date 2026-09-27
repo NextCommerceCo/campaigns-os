@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { doctorBuiltOutput } from "./cli.mjs";
+import { doctorBuiltOutput } from "./doctor/inspect.mjs";
 import { SDK_ATTRIBUTE_INDEX_VERSION, SDK_DATA_NEXT_ATTRIBUTES, isIndexedSdkAttribute, isKnownCheckoutFieldName } from "./sdk-attribute-index.mjs";
 import { SDK_MARKUP, SDK_MARKUP_CODES, evaluateSdkMarkup, scanPageMarkup } from "./sdk-markup.mjs";
 

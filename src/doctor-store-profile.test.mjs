@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { isLocalhostDevelopmentOrigin, validateSpecStoreProfile } from "./cli.mjs";
+import { isLocalhostDevelopmentOrigin, validateSpecStoreProfile } from "./doctor/checks.mjs";
 
 const codes = (issues) => issues.map((issue) => issue.code);
 

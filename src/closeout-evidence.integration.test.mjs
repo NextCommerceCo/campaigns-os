@@ -18,7 +18,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { doctorPacket, nextStage, recordQaStageOutcome } from "./cli.mjs";
+import { nextStage, recordQaStageOutcome } from "./cli.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 

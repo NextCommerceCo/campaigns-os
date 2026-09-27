@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { doctorErrorsAreOnlyPolishGate, gateIssue } from "./cli.mjs";
+import { doctorErrorsAreOnlyPolishGate, gateIssue } from "./doctor/next-step.mjs";
 
 // One projection of a gate into an issue, for doctor (the gate's own code) and
 // for `next` (next.<stage>.<code>). The codes and messages below are the ones

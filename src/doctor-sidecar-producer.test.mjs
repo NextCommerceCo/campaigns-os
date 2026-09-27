@@ -14,7 +14,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { doctorCommand, nextStage, recordQaStageOutcome } from "./cli.mjs";
+import { nextStage, recordQaStageOutcome } from "./cli.mjs";
+import { doctorCommand } from "./doctor/inspect.mjs";
 import { DOCTOR_SIDECAR_REL_PATH, stampDoctorProducer, writeDoctorSidecar } from "./doctor-sidecar.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));

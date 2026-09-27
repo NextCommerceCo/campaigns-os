@@ -21,7 +21,8 @@ let requests = 0;
 let output;
 try {
   // Imports and fixture setup are deliberately outside the operation timer.
-  const cli = await import('../../src/cli.mjs');
+  const inspect = await import('../../src/doctor/inspect.mjs');
+  const checks = await import('../../src/doctor/checks.mjs');
   const qa = await import('../../src/qa-node.mjs');
   const { CycleDetection } = await import('../../campaign-spec/dist/rules/cycle-detection.js');
   fs.cpSync(join(root, 'examples'), dir, { recursive: true });
@@ -73,12 +74,12 @@ try {
   syncBuiltinESMExports();
   const start = performance.now();
   if (workload === 'doctor') {
-    const result = cli.doctorPacket(packetPath, { reportPath });
+    const result = inspect.doctorPacket(packetPath, { reportPath });
     assert.ok(result.derived.doctor_checks.length > 0);
     output = result;
   } else if (workload === 'copy-scans') {
     const warnings = [], ready = [];
-    cli.validateMarketSensitiveCopy(spec, warnings, ready, { source_root: source, target_output_dir: target });
+    checks.validateMarketSensitiveCopy(spec, warnings, ready, { source_root: source, target_output_dir: target });
     assert.ok(warnings.some(issue => issue.code === 'copy.hardcoded_currency_symbol'));
     assert.ok(warnings.some(issue => issue.code === 'copy.hardcoded_phone'));
     output = { warnings, ready };

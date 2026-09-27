@@ -13,7 +13,8 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { buildNextActions, doctorPacket, nextStage } from "./cli.mjs";
+import { buildNextActions, nextStage } from "./cli.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 import { describeRemitBaseKind, stampRemittedCopy } from "./remit.mjs";
 import {
   RUN_RECORD_REMIT_BASE_KINDS,

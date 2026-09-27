@@ -6,7 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { doctorCommand, doctorRequiredActionLines, doctorTinyPromptLines, resultTextLines } from "./cli.mjs";
+import { doctorRequiredActionLines, doctorTinyPromptLines, resultTextLines } from "./cli.mjs";
+import { doctorCommand } from "./doctor/inspect.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = join(ROOT, "bin/campaigns-os.mjs");

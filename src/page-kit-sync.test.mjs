@@ -6,7 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { checkpointWaive, doctorPacket, nextStage, pageKitSyncCommand, pageKitSyncTextLines } from "./cli.mjs";
+import { checkpointWaive, nextStage, pageKitSyncCommand, pageKitSyncTextLines } from "./cli.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
 import { evaluatePageKitSdkVersion, resolveSpecSdkPin, sdkPinWriteDecision } from "./page-kit-sdk-version.mjs";
 import { stageRealPackageInstall } from "./package-install-fixture.mjs";

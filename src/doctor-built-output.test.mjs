@@ -18,7 +18,7 @@ import {
   validateBuiltStarterLogoResidue,
   validateMarketSensitiveCopy,
   validateSpecRoutingMetaTags,
-} from "./cli.mjs";
+} from "./doctor/checks.mjs";
 
 function withTempDir(run) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-doctor-"));
@@ -63,7 +63,7 @@ test("R2-B2 routing: defers to built output once assembly is complete and _site 
 // validate routing metas against that declared root instead of assuming
 // slug-as-prefix; public_route_slug stays required identity.
 
-import { validateBuiltSdkMetaTags, validateRouteRootDeclaration } from "./cli.mjs";
+import { validateBuiltSdkMetaTags, validateRouteRootDeclaration } from "./doctor/checks.mjs";
 
 const ROOT_SERVED_PACKET = { campaign: { public_route_slug: "ruggie", route_root: "/" } };
 const ROOT_ROUTING_SPEC = {
@@ -733,7 +733,7 @@ test("analytics contract: data-next-show handler (not just hide) also counts", (
 // check; corrupting it (classically: to the Map ID) silently disarmed the whole
 // family. These tests pin the identity cross-check and the loud target-root
 // failure that replaced the silent skip.
-import { validateRouteSlugIdentity, validateBuiltOutputTargetRoot } from "./cli.mjs";
+import { validateRouteSlugIdentity, validateBuiltOutputTargetRoot } from "./doctor/checks.mjs";
 
 const IDENTITY_SPEC = {
   spec_identity: { map_id: "test-campaign-k9x2", public_route_slug: SLUG },

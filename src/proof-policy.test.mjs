@@ -18,7 +18,7 @@ import {
   orderPathDepthsDisagree,
   parseOrderPathDepthFlag,
 } from "./proof-policy.mjs";
-import { assessPurchaseProofCoverage } from "./cli.mjs";
+import { assessPurchaseProofCoverage } from "./doctor/next-step.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
