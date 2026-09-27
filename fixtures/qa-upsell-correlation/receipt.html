@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Receipt</title>
+<style>body{font-family:sans-serif;margin:24px}</style>
+</head>
+<body data-read-back="__READ_BACK__">
+<main>
+  <h1>Thank you</h1>
+  <div data-next-order-items class="order-has-items">__ROWS__</div>
+</main>
+<script>
+  // The rows are rendered by the server from the order it holds. The receipt
+  // reads the order back only when the fixture asks it to: without a
+  // read-back, nothing after the accept shows whether its line was added.
+  var ref = new URLSearchParams(location.search).get("ref_id");
+  if (document.body.getAttribute("data-read-back") === "yes" && ref) {
+    fetch("/api/v1/orders/" + encodeURIComponent(ref) + "/");
+  }
+</script>
+</body>
+</html>

@@ -257,6 +257,11 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
         // reader could be surprised by. Over-charging costs at worst one unspent
         // planned path; under-charging costs a real order nobody budgeted for.
         creationBudget.consume({ plan_id: identifier, kind: "hosted_checkout_redirect" });
+      } else if (firstAttempt.upsell_unverified) {
+        // Created, and every check passed except an accepted upsell nothing
+        // could prove or disprove. A re-run would buy a second order to ask
+        // again, and recovery cannot re-check an upsell read-only, so the
+        // attempt stands and goes to manual review.
       } else if (!firstAttempt.ok) {
         const classification = classifyTestOrderCreation(firstAttempt);
         if (classification.creation === "not_created") {
@@ -3565,6 +3570,9 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       : acceptedSteps.every((step) => step.verification?.accepted_upsell_line_present === true);
     if (unverifiedSteps.length) {
       order.verification.upsell_unverified = unverifiedSteps.map((step) => step.verification.accepted_upsell_match.reason);
+      // Whatever else the path finds, an order whose accepted upsell nothing
+      // proved is not a verified order (#505).
+      order.verification.verified = false;
     }
     order.verification.upsell_api_response_seen = acceptedSteps.every((step) => step.verification?.upsell_api_response_seen === true);
     order.verification.accepted_upsell_matches = acceptedSteps.map((step) => step.verification?.accepted_upsell_match).filter(Boolean);
@@ -3591,10 +3599,20 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   }
 
   const pathFailures = [...stepFailures, ...receiptFailures, ...couponFailures];
-  const ok = order.ok && pathFailures.length === 0;
+  const clean = order.ok && pathFailures.length === 0;
+  // A path whose only open question is an unverified accepted upsell is not
+  // a pass: nothing proved the line was added. `ok` stays false so no reader
+  // of the result or the order takes it as proven, and `upsell_unverified`
+  // tells it apart from a failure: the dispatcher neither re-runs it (that
+  // would buy a second order) nor recovers it, and the assertion reports it
+  // for manual review (#505). The order itself was created and read back, so
+  // order.ok keeps saying so; only its verification drops to unverified.
+  const upsellUnverified = clean ? order.verification.upsell_unverified || null : null;
+  const ok = clean && !upsellUnverified;
   return {
     ok,
-    error: ok ? null : order.error || order.upsell?.error || pathFailures.join("; ") || "accepted upsell did not appear in final order lines",
+    ...(upsellUnverified ? { upsell_unverified: upsellUnverified } : {}),
+    error: clean ? null : order.error || order.upsell?.error || pathFailures.join("; ") || "accepted upsell did not appear in final order lines",
     order,
     events: sanitizedEvents(events),
   };
@@ -4849,11 +4867,22 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
   // Armed at the click, not before the scroll, and budgeted to outlast a
   // normal attempt that times out into its forced fallback: the watch must
   // still be listening when the click that actually fires posts (#481).
+  //
+  // Only a request started at or after the watch was armed can be this
+  // click's. An earlier step posts to the same order-upsells URL, and when
+  // its own watch expired its response may still arrive during this click
+  // (#505). armedAt and the request's start time are both epoch milliseconds
+  // on the system clock (Date.now() here; Playwright's timing().startTime is
+  // the browser's wall time at request start), and armedAt is read before the
+  // click is sent, so this click's request starts at or after it. A request
+  // with no known start time is not excluded: nothing shows it is stale.
+  const armedAt = Date.now();
   const mutationPromise = path === "accept"
-    ? page.waitForResponse((response) => (
-        response.request().method() === "POST"
-        && isOrderUpsellsUrl(response.url())
-      ), { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
+    ? page.waitForResponse((response) => {
+        if (response.request().method() !== "POST" || !isOrderUpsellsUrl(response.url())) return false;
+        const startedAt = responseRequestStartedAt(response);
+        return startedAt === null || startedAt >= armedAt;
+      }, { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
     : Promise.resolve(null);
   trace?.markClickAttempted();
   await clickControl(control, { timeout: UPSELL_CLICK_TIMEOUT_MS, perpetual });
@@ -4863,7 +4892,7 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     ? await readJsonResponseBodyBounded(mutationResponse, RESPONSE_BODY_READ_TIMEOUT_MS)
     : null;
   await waitForCheckoutResult(page);
-  return {
+  const record = {
     path,
     clicked: true,
     offer_url: offerUrl,
@@ -4881,6 +4910,12 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     // waits for a later read-back before it judges the step.
     ...(bodyRead ? { api_response_body_read: { timed_out: bodyRead.timed_out, waited_ms: bodyRead.waited_ms, bound_ms: bodyRead.bound_ms } } : {}),
   };
+  // The request this click made. Another step's upsell mutation posts to the
+  // same order-upsells URL, so a late body is this step's only when it
+  // answers this request.
+  const mutationRequest = mutationResponse ? responseRequest(mutationResponse) : null;
+  if (mutationRequest) record[REQUEST_IDENTITY] = mutationRequest;
+  return record;
 }
 
 function receiptProofEvidence(order) {
@@ -5630,13 +5665,22 @@ async function recoverCreatedOrder({ context, attempt, plan = null, checkoutPage
     }
 
     const cleared = remaining.length === 0;
+    // An unverified accepted upsell is not a failure recovery can clear, nor
+    // one it can re-check: re-reading the order says nothing about which
+    // mutation added what. With everything else cleared, the recovered result
+    // is the same manual-review shape executeTestOrderPath returns (#505).
+    const upsellUnverified = Array.isArray(order.verification?.upsell_unverified) && order.verification.upsell_unverified.length
+      ? order.verification.upsell_unverified
+      : null;
+    if (upsellUnverified) recovered.verification.verified = false;
     return {
       attempts: 1,
       cleared,
       checks,
       result: {
         ...attempt,
-        ok: cleared,
+        ok: cleared && !upsellUnverified,
+        ...(cleared && upsellUnverified ? { upsell_unverified: upsellUnverified } : {}),
         error: cleared ? null : remaining.join("; "),
         order: recovered,
       },
@@ -5777,22 +5821,32 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
   // The order was created and nothing failed, but an accepted upsell could
   // not be checked: its mutation body never loaded and no read-back arrived.
   // Neither proved nor disproved, so a human decides, as for a hosted checkout.
-  const upsellUnverified = result.ok ? result.order?.verification?.upsell_unverified || null : null;
+  // The result is not ok (the path is not proven), but nothing failed either.
+  // A result that says ok while its order still carries unverified reasons is
+  // read the same way: never a pass. No current producer does that (both
+  // executeTestOrderPath and recoverCreatedOrder clear ok when an upsell is
+  // unverified); this arm stops a future ok-producing path, like the recovery
+  // that once promoted an unverified upsell to pass, from doing it silently.
+  const orderUnverified = result.order?.verification?.upsell_unverified;
+  const upsellUnverified = Array.isArray(result.upsell_unverified) && result.upsell_unverified.length
+    ? result.upsell_unverified
+    : result.ok && Array.isArray(orderUnverified) && orderUnverified.length ? orderUnverified : null;
+  const created = result.ok || Boolean(upsellUnverified);
   return assertion({
     id: `browser-test-order:${id}`,
     family: "browser-test-order",
     page,
-    status: result.ok ? (upsellUnverified ? STATUS.MANUAL_REVIEW : STATUS.PASS) : STATUS.FAIL,
-    severity: result.ok ? (upsellUnverified ? SEVERITY.WARN : undefined) : SEVERITY.BLOCKER,
+    status: created ? (upsellUnverified ? STATUS.MANUAL_REVIEW : STATUS.PASS) : STATUS.FAIL,
+    severity: created ? (upsellUnverified ? SEVERITY.WARN : undefined) : SEVERITY.BLOCKER,
     expected: "test order created through deployed checkout page",
-    actual: result.ok
+    actual: created
       ? upsellUnverified
         ? `${result.order.next_order_id || result.order.ref_id}; ${upsellUnverified.join("; ")}`
         : result.order.next_order_id || result.order.ref_id
       : stoppedForAmbiguity
         ? `${failureText} — not re-run: ${creationRecord.classification.reason}. Check for an existing order against this run's QA email before running this path again.`
         : failureText,
-    evidence: result.ok
+    evidence: created
       ? {
           ...planEvidence,
           ...retry,
@@ -5837,6 +5891,21 @@ function mutationRespondedAt(response) {
   }
 }
 
+// The Playwright Request a response answers, kept under a symbol key so it
+// never reaches serialized evidence (JSON and the sanitized event log skip
+// it). Playwright hands every listener the same Request object for one
+// request, and a different one for each request, even to the same URL: an
+// upsell step matches its own mutation's late body by this identity (#505).
+const REQUEST_IDENTITY = Symbol("campaigns-os.request-identity");
+
+function responseRequest(response) {
+  try {
+    return response.request() || null;
+  } catch {
+    return null;
+  }
+}
+
 // When the browser started a response's request, in epoch milliseconds (the
 // same clock as Date.now()), or null when Playwright does not report it.
 function responseRequestStartedAt(response) {
@@ -5868,12 +5937,15 @@ function captureCheckoutEvents(page) {
     // Taken before the body read: an entry lands in the log when its body
     // finishes, so its position says nothing about when it was requested.
     const requestStartedAt = responseRequestStartedAt(response);
-    events.responses.push({
+    const request = responseRequest(response);
+    const entry = {
       status: response.status(),
       url: response.url(),
       request_started_at: requestStartedAt,
       body: await readJsonResponseBodyWhenLoaded(response),
-    });
+    };
+    if (request) entry[REQUEST_IDENTITY] = request;
+    events.responses.push(entry);
   });
   page.on("requestfailed", (request) => {
     if (!interesting.test(request.url())) return;
@@ -6669,6 +6741,13 @@ function upsellBodyReadTimedOut(upsell) {
 // keeps reading it), or an order read-back whose lines carry the accepted
 // upsell. Returns the body to judge from, or source "none" when neither came.
 //
+// "Its own body" is the entry answering the very request this step's click
+// made (mutationRequest, Playwright request identity), not any order-upsells
+// URL: every upsell step in a path, on one page or on separate pages, posts
+// to the same /orders/<ref>/upsells/ URL, and an earlier step's slow body can
+// land during this step's wait. Taking it would judge this step by another
+// step's lines. With no request identity no late body counts (#505).
+//
 // A read-back whose request started after the upsell mutation's response
 // arrived (by the browser's request start time, not its position in the log,
 // which reflects when its body finished) that shows the persisted order
@@ -6680,7 +6759,7 @@ function upsellBodyReadTimedOut(upsell) {
 // "order_read_back_missing_line", and the step fails instead of going to
 // manual review. A read-back requested before that, or with no known start
 // time, never counts as a negative.
-async function waitForLateUpsellEvidence(events, { responseIndexBefore, mutationRespondedAt = null, initialLineItems, expectedItems, timeoutMs, intervalMs = 250 }) {
+async function waitForLateUpsellEvidence(events, { responseIndexBefore, mutationRequest = null, mutationRespondedAt = null, initialLineItems, expectedItems, timeoutMs, intervalMs = 250 }) {
   const started = Date.now();
   const deadline = started + Math.max(0, Number(timeoutMs) || 0);
   const latestMissingLineReadBack = () => {
@@ -6703,7 +6782,8 @@ async function waitForLateUpsellEvidence(events, { responseIndexBefore, mutation
       const response = fresh[index];
       if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
       if (!(response.status >= 200 && response.status < 300)) continue;
-      if (ORDER_UPSELLS_RESPONSE_PATTERN.test(response.url)) return { source: "late_upsell_body", body: response.body };
+      if (!ORDER_UPSELLS_RESPONSE_PATTERN.test(response.url)) continue;
+      if (mutationRequest && response[REQUEST_IDENTITY] === mutationRequest) return { source: "late_upsell_body", body: response.body };
     }
     for (let index = fresh.length - 1; index >= 0; index -= 1) {
       const response = fresh[index];
@@ -6737,6 +6817,7 @@ async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPa
   if (step === "accept" && upsellBodyReadTimedOut(upsell)) {
     lateUpsellEvidence = await waitForLateUpsellEvidence(events, {
       responseIndexBefore,
+      mutationRequest: upsell[REQUEST_IDENTITY] || null,
       mutationRespondedAt: upsell.mutation_responded_at,
       initialLineItems,
       expectedItems: upsell.expected_items,
@@ -6755,8 +6836,13 @@ async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPa
 // are stale, and the step is unverified rather than missing its upsell. A
 // post-click read-back without the line ("order_read_back_missing_line") is
 // such evidence, so the failure stands.
+//
+// A passing proof from those stale lines is no more evidence than a failing
+// one: lines on hand before this step's mutation answered cannot carry its
+// upsell, and can carry an earlier step's (whose body may have landed on the
+// same order-upsells URL meanwhile), so it is unverified too (#505).
 function acceptedUpsellStepProof(upsell, lateEvidence, proof) {
-  if (proof.ok || !upsellBodyReadTimedOut(upsell)) return proof;
+  if (!upsellBodyReadTimedOut(upsell)) return proof;
   if (lateEvidence && lateEvidence.source !== "none") return proof;
   const read = upsell.api_response_body_read;
   return {
@@ -6764,7 +6850,10 @@ function acceptedUpsellStepProof(upsell, lateEvidence, proof) {
     ok: false,
     unverified: true,
     reason: `accepted upsell unverified: the order upsell API answered HTTP ${upsell.api_response_status} but its body did not load within ${read.bound_ms}ms, and no later order read-back showed the accepted line within ${lateEvidence?.waited_ms ?? 0}ms`,
-    stale_reason: proof.reason,
+    matched_lines: [],
+    stale_reason: proof.ok
+      ? "the order lines on hand predate this step's upsell mutation, so a match in them is not evidence of it"
+      : proof.reason,
   };
 }
 
@@ -7028,6 +7117,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   waitForLateUpsellEvidence,
   refreshUpsellStepEvidence,
   acceptedUpsellStepProof,
+  REQUEST_IDENTITY,
   captureCheckoutEvents,
   buildOrderEvidence,
   testEmail,

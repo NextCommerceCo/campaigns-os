@@ -3643,6 +3643,7 @@ export function doctorBuiltOutput(args) {
     },
     inputs: collectBuiltScriptSyntaxInputs(scope, targetRepo),
     errors,
+    warnings,
     ready,
     derived,
   });
@@ -4617,7 +4618,7 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: SCRIPT_SYNTAX,
     phase: "built-output",
-    run: ({ packet, errors, ready, derived }) => validateBuiltScriptSyntax(packet, errors, ready, derived),
+    run: ({ packet, errors, warnings, ready, derived }) => validateBuiltScriptSyntax(packet, errors, warnings, ready, derived),
   },
   {
     id: "built_output.sdk_meta_tags",
@@ -7126,7 +7127,7 @@ function validateSdkMarkup(packet, errors, warnings, ready, derived) {
 // points, filesystem enumeration, blocking regardless of stage status — the
 // same contract as the gates above: a script that throws a SyntaxError on
 // load is not a work-in-progress state that becomes true later.
-function validateBuiltScriptSyntax(packet, errors, ready, derived) {
+function validateBuiltScriptSyntax(packet, errors, warnings, ready, derived) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
@@ -7138,14 +7139,21 @@ function validateBuiltScriptSyntax(packet, errors, ready, derived) {
     },
     inputs: scope?.ok ? collectBuiltScriptSyntaxInputs(scope, targetRepo) : {},
     errors,
+    warnings,
     ready,
     derived,
   });
 }
 
-function recordScriptSyntaxGate({ subject, inputs, errors, ready, derived }) {
+function recordScriptSyntaxGate({ subject, inputs, errors, warnings, ready, derived }) {
   const gate = evaluateBuiltScriptSyntax({ subject, ...inputs });
   if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(gate);
+  // A referenced local script missing from the built output is a warning
+  // (#502). One terminal disposition per gate, as with SDK markup: while a
+  // parse failure blocks, the missing scripts stay on gate.warned[].
+  if (gate.status !== "blocked" && Array.isArray(warnings)) {
+    for (const item of gate.warned) addIssue(warnings, item.code, item.message, { finding: item, checkpoint_gate: gate });
+  }
   if (gate.status === "blocked") {
     // One error per file, each naming the file, line and column.
     for (const finding of gate.findings) {

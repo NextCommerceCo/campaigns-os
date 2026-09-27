@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One more thing</title>
+<style>body{font-family:sans-serif;margin:24px}</style>
+</head>
+<body data-steps="__STEPS__">
+<main>
+  <div data-next-upsell id="offer"></div>
+</main>
+<script>
+  // A client-side upsell stepper. Each step's accept posts the order upsell
+  // mutation to the same /api/v1/orders/<ref>/upsells/ URL, and moves on as
+  // soon as the response headers arrive, without reading the body: to the
+  // next step's page by history.pushState (the document, and the earlier
+  // step's still-loading body, stay alive), or to the receipt. Arriving on a
+  // step page reads the order back, as the SDK does on a ?ref_id= page.
+  var ref = new URLSearchParams(location.search).get("ref_id");
+  var steps = document.body.getAttribute("data-steps").split(",");
+  var offer = document.getElementById("offer");
+  function render(index) {
+    var step = steps[index];
+    offer.innerHTML = "";
+    var title = document.createElement("h1");
+    title.textContent = "Offer " + step.toUpperCase();
+    var add = document.createElement("button");
+    add.type = "button";
+    add.setAttribute("data-next-upsell-action", "add");
+    add.textContent = "Yes, add offer " + step.toUpperCase();
+    var skip = document.createElement("button");
+    skip.type = "button";
+    skip.setAttribute("data-next-upsell-action", "skip");
+    skip.textContent = "No thanks";
+    offer.append(title, add, skip);
+    add.addEventListener("click", function () {
+      fetch("/api/v1/orders/" + encodeURIComponent(ref) + "/upsells/", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ offer: step }),
+      }).then(function (response) {
+        if (!response.ok) return;
+        if (index + 1 < steps.length) {
+          history.pushState(null, "", "/x/upsell-" + steps[index + 1] + "/?ref_id=" + encodeURIComponent(ref));
+          render(index + 1);
+          fetch("/api/v1/orders/" + encodeURIComponent(ref) + "/");
+        } else {
+          location.href = "/x/receipt/?ref_id=" + encodeURIComponent(ref);
+        }
+      });
+    });
+  }
+  fetch("/api/v1/orders/" + encodeURIComponent(ref) + "/").then(function () {
+    render(0);
+    document.documentElement.classList.add("next-display-ready");
+  });
+</script>
+</body>
+</html>

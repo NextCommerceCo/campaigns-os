@@ -392,3 +392,49 @@ test("a read-back served with a querystring is read, not ignored", async () => {
   assert.equal(checkFor(recovery, "order_read_back").ok, true);
   assert.equal(recovery.cleared, true);
 });
+
+// --- An unverified accepted upsell survives recovery (#505) ---
+//
+// A path with an unverified accepted upsell AND another failure (here a
+// receipt that did not render) is not ok, so the dispatcher recovers it.
+// Recovery re-reads the receipt read-only; it cannot re-check an upsell. When
+// it clears the receipt, the upsell is still unverified: the recovered result
+// must go to manual review, not pass, and its order must not read as verified.
+
+test("recovery that clears a receipt failure keeps an unverified accepted upsell in manual review", async () => {
+  const reason = "accepted upsell unverified: the order upsell API answered HTTP 201 but its body did not load within 3000ms";
+  const attempt = receiptFailureAttempt();
+  attempt.order.path = "accept";
+  attempt.order.card = { last4: "1111" };
+  attempt.order.verification.accepted_upsell_line_present = null;
+  attempt.order.verification.upsell_unverified = [reason];
+  const { context } = fakeReceiptContext({
+    responses: [{ status: 200, url: ORDER_READ_URL, body: persistedOrderBody({ lines: 1 }) }],
+    rendered: renderedReceipt(1),
+  });
+  const recoveries = [];
+  const { assertions } = await dispatchTestOrderPlans({
+    context,
+    plans: ["accept"],
+    checkoutPage: CHECKOUT_PAGE,
+    args: {},
+    runId: "test-run",
+    options: {
+      runSingleTestOrder: async () => attempt,
+      recoverCreatedOrder: async (input) => {
+        const recovery = await recoverCreatedOrder(input);
+        recoveries.push(recovery);
+        return recovery;
+      },
+    },
+  });
+  assert.equal(recoveries.length, 1, "the receipt failure was recovered");
+  const [recovery] = recoveries;
+  assert.equal(checkFor(recovery, "receipt_rendering")?.ok, true, "the receipt failure itself cleared");
+  assert.notEqual(recovery.result.ok, true, "a recovered result with an unverified upsell is not a pass");
+  assert.deepEqual(recovery.result.upsell_unverified, [reason]);
+  assert.equal(recovery.result.order.verification.verified, false);
+  const order = assertions.find((entry) => entry.id === "browser-test-order:accept");
+  assert.equal(order.status, "manual_review", order.actual);
+  assert.deepEqual(order.evidence.upsell_unverified, [reason]);
+});
