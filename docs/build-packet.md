@@ -807,7 +807,8 @@ parsed after a script does not move it, whether it is async, deferred or a
 module: its URL is fixed when it is prepared, not when it is fetched. Parse
 order decides, not final tree position, so a base that table foster parenting
 moves ahead of an earlier script still does not apply to it. A `base` inside
-SVG or MathML is not a base element. The href is read as the URL parser reads
+SVG or MathML is not a base element, and only HTML-namespace `<script>`
+elements are read: an SVG `<script>` never loads a `src` attribute. The href is read as the URL parser reads
 it: only leading and trailing ASCII control characters and spaces are
 stripped. A base
 the browser refuses (one that does not parse, or a `data:` or `javascript:`

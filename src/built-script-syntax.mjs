@@ -144,7 +144,7 @@ export function parseScriptSyntax(source, { module = false } = {}) {
   }
 }
 
-const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 /**
  * A URL attribute value as the URL parser reads it: leading and trailing C0
@@ -208,7 +208,9 @@ export function baseInEffect(bases, scriptNode) {
  * script is async, deferred or a module: its URL is resolved when prepared,
  * not when fetched.
  *
- * Data-block types are dropped. Classic `nomodule` scripts are dropped: a
+ * Only HTML-namespace script elements are references: an SVG `<script>`
+ * never loads a `src` attribute. Data-block types are dropped. Classic
+ * `nomodule` scripts are dropped: a
  * module-capable browser never fetches or runs them, so they cannot fail on
  * load there. A module script ignores `nomodule` and is kept (see scriptKind).
  * Template content and noscript are inert and not walked.
@@ -227,7 +229,9 @@ export function pageScriptDocument(html) {
   const bases = documentBases(document);
   const walk = (node) => {
     const attrs = node.tagName ? Object.fromEntries((node.attrs || []).map((attr) => [attr.name, attr.value])) : {};
-    if (node.tagName === "script") {
+    // Only an HTML-namespace <script> loads its `src`; an SVG script reads
+    // href / xlink:href, and a MathML "script" is not a script element.
+    if (node.tagName === "script" && node.namespaceURI === HTML_NAMESPACE) {
       const kind = scriptKind(attrs);
       if (kind && typeof attrs.src === "string" && attrs.src.trim()) {
         refs.push({ src: stripUrlSpace(attrs.src), module: kind === "module", base: baseInEffect(bases, node) });

@@ -486,3 +486,21 @@ test("an SVG <base> is not the document base, and a non-ASCII-space href is not 
     rmSync(spaced.dir, { recursive: true, force: true });
   }
 });
+
+test("an SVG <script> is not a page script: only HTML-namespace scripts are read", () => {
+  const { dir, run } = builtSite(`</head><body><svg><script src="/${SLUG}/js/svg.js"></script></svg><script src="/${SLUG}/js/html.js"></script>`, {
+    [`_site/${SLUG}/js/svg.js`]: BAD,
+    [`_site/${SLUG}/js/html.js`]: BAD,
+  });
+  try {
+    const result = run();
+    const gate = gateOf(result);
+    // Positive control: the HTML script beside it is still scanned and blocks.
+    assert.deepEqual(syntaxErrors(result).map((issue) => issue.detail.finding.file), [`_site/${SLUG}/js/html.js`]);
+    assert.equal(gate.scripts_scanned, 1);
+    assert.deepEqual(gate.scripts_unresolved, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(pageScriptReferences('<svg><script src="a.js"></script></svg><math><script src="b.js"></script></math><script src="c.js"></script>'), [{ src: "c.js", module: false }]);
+});

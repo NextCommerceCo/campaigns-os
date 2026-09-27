@@ -341,3 +341,17 @@ test('the base in effect follows parse order when foster parenting reorders the 
   // Negative control: C0 space is stripped, as the URL parser does.
   assert.deepEqual(await run('<base href=" /assets/ "><script src="checkout.js"></script>'), ['https://fixture.example.test/assets/checkout.js']);
 });
+
+test('an SVG <script> is not fetched or parsed; the HTML script beside it still is', async () => {
+  const requested = [];
+  const parseFailures = [];
+  await observe(`${inline(key)}<svg><script src="svg.js"></script></svg><script src="html.js"></script>`, {
+    parseFailures,
+    scriptLoader: async (src, pageUrl) => { requested.push(new URL(src, pageUrl).pathname); return { ok: true, html: checkoutScript + '});\n' }; },
+  });
+  assert.deepEqual(requested, ['/html.js']);
+  assert.deepEqual(parseFailures.map(f => f.script), ['/html.js']);
+  // An inline SVG script is not modelled: the binding stays dynamic, never a match.
+  assert.equal((await observe(`${inline(key)}<svg><script>window.nextConfig = {apiKey: "x"};</script></svg>`)).reason, 'dynamic_unresolved');
+  assert.equal((await observe(inline(key))).outcome, 'match');
+});

@@ -13,7 +13,10 @@ Notable supported-surface changes are recorded here.
   after a script no longer moves it, whether it is async, deferred or a
   module, and parse order decides even when table foster parenting reorders
   the tree. An SVG `base` no longer counts, and the href is no longer trimmed
-  of non-ASCII whitespace the URL parser keeps. A base
+  of non-ASCII whitespace the URL parser keeps. Only HTML-namespace
+  `<script>` elements are page scripts: an SVG `<script src>` is no longer
+  read or parsed by doctor, and QA leaves a page with an SVG script dynamic
+  instead of fetching it. A base
   the browser refuses (a `data:` or `javascript:` URL, or one that does not
   parse) now falls back to the page, as the HTML "set the frozen base URL"
   steps require, so the local script is read and a parse failure in it blocks
