@@ -2,6 +2,29 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.14] - 2026-09-27
+
+### Fixed
+
+- An accepted upsell whose mutation body loads late is now matched to the
+  request its own click made, not to any response on the order-upsells URL.
+  Every upsell step in a path posts to the same `/orders/<ref>/upsells/` URL,
+  whether the steps share a page or sit on separate pages, so an earlier
+  step's slow body could land while a later step waited for its own and be
+  judged as the later step's evidence: failing it when that body lacked its
+  line, or passing it on the earlier step's line. The runner keeps the
+  Playwright request of each captured response and of each step's mutation
+  and accepts a late body only when the two are the same request. A step
+  whose own body never arrived and that no later read-back settled is
+  unverified even when the stale lines on hand would have matched.
+- A test-order path whose only open question is an unverified accepted upsell
+  is no longer `ok` on its result. The result carries `upsell_unverified`
+  instead, the order's `verification.verified` is `false` (so the purchase
+  proof summary no longer counts it in `orders_verified`; it still counts in
+  `orders_created`), and the path is neither re-run (a second order) nor
+  passed through read-only recovery (which cannot re-check an upsell). The
+  `browser-test-order` assertion still reports it as `manual_review`.
+
 ## [1.43.1+agent.12] - 2026-09-26
 
 ### Fixed
