@@ -4,10 +4,9 @@ import { randomUUID } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { writeThemeArtifacts } from "./brand-theme.mjs";
-import { cloneJson, isObject, isNonEmptyString, optionalString, readJson, resolveFromFile, sha256File } from "./cli-helpers.mjs";
+import { cloneJson, filesystemPathsMatch, isObject, isNonEmptyString, optionalString, readJson, resolveFromFile, sha256File } from "./cli-helpers.mjs";
 import { DESIGN_SOURCE_PACKAGE_REL_PATH, createDesignSourcePackageArtifactReference, hashSerializedDesignSourcePackage, serializeDesignSourcePackage, synthesizeHtmlFunnelDesignSourcePackage, validateDesignSourcePackage } from "./design-source-package.mjs";
 import { stampDoctorProducer } from "./doctor-sidecar.mjs";
-import { filesystemPathsMatch } from "./doctor/next-step.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS } from "./orchestration-stage-contract.mjs";
 import { targetLockPath, withTargetLock } from "./target-lock.mjs";
 import { resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
@@ -46,12 +45,12 @@ function assemblyReportStagesWithEvidence(existingReport) {
 // existence — a report whose stages are all still at their seed states (a real
 // re-prepare before any work) regenerates freely with no flag.
 //
-// prepare-build runs it twice under its target lock: once before reading its
-// inputs, and again (with `announced`, the keys the first call returned) right
-// before the report is renamed into place. Stage producers commit the report
-// without that lock, so evidence can land while the run is working; the second
-// call refuses it without --force and, with --force, names any stage it had
-// not already announced.
+// withDesignSourcePublication runs it twice inside the target lock: once
+// before reading its inputs, and again (with `announced`, the keys the first
+// call returned) right before the report is renamed into place. Stage
+// producers commit the report without that lock, so evidence can land while
+// the run is working; the second call refuses it without --force and, with
+// --force, names any stage it had not already announced.
 function guardAssemblyReportOverwrite(reportPath, args, { announced = null } = {}) {
   if (!existsSync(reportPath)) return [];
   let existingReport = null;
@@ -629,8 +628,9 @@ function prepareDesignSourcePackage({
     return stagedPath;
   };
 
-  // prepareBuild holds the target lock around this whole decision, so no other
-  // prepare-build publishes here meanwhile. A package that still appears at
+  // withDesignSourcePublication holds the target lock around this whole
+  // decision, so no other publication (prepare-build, start or build) lands
+  // here meanwhile. A package that still appears at
   // `path` (an operator, or a tool that does not take the lock) is
   // authoritative: validate and reuse its exact bytes rather than overwrite.
   const reuseWinner = () => {

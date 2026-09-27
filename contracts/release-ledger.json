@@ -7399,6 +7399,33 @@
         }
       ],
       "entry_sha256": "0b4d674dd8df3355b63f63afb8a66a6a57e6c13ee237bebacacf13a1b3317a8d"
+    },
+    {
+      "id": "RL-0164",
+      "sequence": 163,
+      "date": "2026-09-28",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.22",
+      "changelog_sha256": "07ef03ec9df3d1b56fae28b712eef11374e6990282b03ce0f56ea6531eafcfb7",
+      "agent_impact": "None. doctor, next, prepare-build, start and build behave exactly as before; a shared path-identity helper moved out of src/doctor/ into the shared helper module, stale lock-holder comments were reworded, a private clone helper was renamed, and unused CLI imports were removed.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "The CLI drops three imports nothing used; every command behaves as before."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "next",
+          "summary": "The next-step picker imports the filesystem path-identity helper from the shared helper module instead of defining it; every check and message is unchanged."
+        }
+      ],
+      "entry_sha256": "ace0043152c12322dcb17f29b86c44ca09083f4e425460eda4034cc5020068ba"
     }
   ]
 }

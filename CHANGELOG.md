@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.22] - 2026-09-28
+
+### Changed
+
+- No command behaves differently. Follow-ups the 1.43.1+agent.21 review
+  recorded: the filesystem path-identity helper the doctor's next-step picker
+  and the Design Source Package publication share moved from `src/doctor/`
+  to the shared helper module (one definition; the doctor module now imports
+  it), stale comments in the publication module that still named
+  `prepare-build` as the target-lock holder now name the publication entry
+  that holds it, the Campaign Build Brief's private JSON clone (which maps a
+  nullish brief to an empty object, unlike the shared clone) is renamed so it
+  no longer shadows the shared helper, and the CLI drops three imports
+  nothing used. Every message and every exit code is unchanged.
+
 ## [1.43.1+agent.21] - 2026-09-27
 
 ### Changed
