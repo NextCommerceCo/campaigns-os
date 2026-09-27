@@ -801,9 +801,12 @@ retire that guard once #36 ships and `cartLines` is populated.
 Analytics correctness has two deliberately separate evidence phases in one QA
 run:
 
-1. The campaign-root visit inventories declared providers, containers, pixels,
-   and other observable tags. It does not prove or disprove Purchase, even if a
-   stray Purchase-shaped event appears there.
+1. The inventory visit inventories declared providers, containers, pixels,
+   and other observable tags on one page: the campaign root, or a built entry
+   when the root cannot be captured (see
+   [Which page the inventory captures](#which-page-the-inventory-captures)).
+   It does not prove or disprove Purchase, even if a stray Purchase-shaped
+   event appears there.
 2. The existing canonical typed-card order run supplies Purchase evidence. For
    each planned order, the topology classifier must recognize the final URL as
    that plan's receipt, then the runner waits the full `--analytics-settle`
@@ -847,6 +850,98 @@ analytics block to gate. The SDK's own data layer is a separate, always-on
 reading taken on the same order — see [Purchase data layer](#purchase-data-layer-dl_purchase)
 under Test Orders.
 
+### Which page the inventory captures
+
+The inventory starts at the campaign root composed from the campaign identity
+(`public_route_slug` plus `route_root`). A partial build (a topology with a
+partial build scope, or pages excluded from the build) may have no page there:
+the root is then whatever the host answers, such as a directory index or a
+generic fallback. So the root is visited only when it is in scope. On a full
+build it always is; on a partial build it is in scope only when a built,
+in-scope topology page is served at the root. When the root is out of scope,
+answers non-2xx, or fails to load (a timeout, a refused connection), the leg
+tries each funnel's built entry in turn: the first in-scope page on a partial
+build (the same entry the partial-scope planner selects), otherwise the first
+entry-like page. It captures the first page that answers 2xx. A response with no
+HTTP status counts as an answer. A closed page or a disconnected browser is not
+a per-page failure: it is the `analytics-correctness:runner` blocker.
+
+`analytics-correctness:capture` records the page it used:
+`evidence.capture_page` holds `url` (the URL requested, query redacted),
+`source` (`campaign_root` or `built_entry`), `page_id`, `funnel_id` and
+`http_status`. `evidence.final_url` is the page URL after redirects and
+settling. When a built entry was used, `evidence.root_fallback` says why the
+root was not: `reason` is `out_of_built_scope`, `non_2xx` (with the root's
+`http_status`), or `navigation_error` (with its `error_code`).
+
+When no page is captured, the leg emits `analytics-correctness:capture` alone,
+with no per-vendor assertion measured against an empty page. There are two
+outcomes, and `evidence.attempts` lists each page tried:
+
+| `evidence.reason` | When | Result |
+|---|---|---|
+| `no_in_scope_page_captured` | The root is out of the built scope and no built entry other than the root is left to try, so nothing was loaded | `skipped`: there is no page whose tags could be measured |
+| `no_capture_page_answered` | At least one page was tried, and every one answered non-2xx or failed to load | `FAIL`/`BLOCKER`: the declared analytics went unmeasured, so a later passing order cannot report the run ready |
+
+Step routing is path-based in every certified family. Page-kit builds each
+page to its own `<route>/index.html`, and QA strips the query string from a
+CampaignSpec route. So `/campaign`, `/campaign/` and `/campaign/index.html` are
+one page, and a query string does not name a different page. A topology page
+whose own URL declares a query (for example `/campaign/?step=checkout`) is
+still never merged into the root on its path alone. Unless its query is
+exactly the root's own (parameter order aside), it does not put the root in
+scope, it is captured as its own entry, and its `capture_page` carries
+`query_routed: true`, since the redacted URL alone would read as the root. An
+entry on a different path is never marked `query_routed`, whatever query it
+carries. A URL with no query of its own names the page at that path whatever
+query the other URL carries.
+
+### Local-serve review (`manual_review`)
+
+A local proof run renders the development environment on purpose (see
+[Local proof mode](#local-proof-mode-deploytarget-local-serve)), and the
+starter templates gate every vendor loader out of that render. A pixel that
+did not fire there is the render's design, not a campaign defect. So on a
+local-serve run, a failing fire-dependent check becomes `manual_review` at
+`warn` instead of a blocker. The fire-dependent checks are
+`analytics-correctness:tag:*`, `analytics-correctness:oob:*` and
+`analytics-correctness:purchase-fires`.
+
+The run qualifies only when all of these hold:
+
+- the packet's `deploy.target` is `local-serve`;
+- the analytics capture target (else the base URL) is a loopback URL;
+- the Assembly Report records the development render:
+  `stages.assembly.evidence.build_environment` is `development`. A production
+  build served on localhost, or a build whose environment was never recorded,
+  keeps its blockers.
+
+Each failing check is then downgraded only when the page it measured is on
+record as loopback. For `tag:*` and `oob:*`, the check's own URL, the passing
+capture's `capture_page.url` and its `final_url` must all be loopback, so a
+built-entry fallback on a remote host, or a localhost root that redirected to
+a production host, keeps the blocker. For `purchase-fires`, there must be at
+least one judged receipt, and every one needs a loopback `receipt_url` and
+`receipt_document_url` (the page URL read after the receipt analytics
+settled). A missing or unparseable URL keeps the blocker.
+
+What always stays a blocker:
+
+- `analytics-correctness:data-layer-purchase:<path>`. It counts the SDK's own
+  `dl_purchase`, which the development render still pushes, so a miss on
+  localhost can be a real defect.
+- A capture or runner failure: `analytics-correctness:runner`, a check whose
+  evidence carries an `error_code`, and a `purchase-fires` reading whose
+  `capture_error_plan_ids` is missing or not empty. The environment explains a
+  silent pixel, not an unmeasured one.
+
+A downgraded check keeps its evidence and adds `reason:
+local_serve_development_render`, `local_serve_status: fail`, the recorded
+`build_environment`, the recorded `production_parity` (`status:
+not_recorded` when none is on the report, with a note unless it passed), and a
+`follow_up`: re-run `qa run` against the PR preview (a production render) with
+`--base-url <preview-url>`. That run gates these checks.
+
 ## Analytics parity (dataLayer / GTM)
 
 The analytics-parity leg proves the live **dataLayer event stream + GTM/pixel
@@ -866,14 +961,22 @@ npm run campaigns-os -- qa run \
 ```
 
 This receipt-to-receipt parity example names `--analytics-candidate`
-explicitly. When that flag is omitted, the candidate is the campaign identity's
-composed root (`public_route_slug` plus `route_root`), not the raw
-`--base-url` value.
+explicitly, and that URL is captured as given. When that flag is omitted, the
+candidate is chosen the same way as the correctness inventory (see
+[Which page the inventory captures](#which-page-the-inventory-captures)): the
+campaign identity's composed root (`public_route_slug` plus `route_root`), not
+the raw `--base-url` value, when it is in scope and answers 2xx, else the first
+built entry that does. `analytics-parity:capture` then records the same
+`capture_page` and `root_fallback` evidence. The candidate is captured before
+the baseline, and when no candidate page is captured the leg emits
+`analytics-parity:capture` alone, without loading the baseline:
+`no_in_scope_page_captured` (skipped) or `no_capture_page_answered`
+(`FAIL`/`BLOCKER`).
 
 | Flag | Meaning |
 |---|---|
 | `--analytics-baseline <url>` | Legacy funnel URL to capture as the parity baseline (enables the leg) |
-| `--analytics-candidate <url>` | Migrated URL to capture; defaults to the identity-composed campaign root |
+| `--analytics-candidate <url>` | Migrated URL to capture as given; defaults to the identity-composed campaign root, or the first built entry when that root is out of the built scope or does not answer |
 | `--analytics-hosts a,b` | Extra host substrings to treat as analytics tag-fires (Everflow is built in) |
 | `--analytics-settle <ms>` | Wait after analytics page loads and after a recognized typed-order receipt for async tags to fire (default 5000); receipt settling must fit inside the order deadline |
 

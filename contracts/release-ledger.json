@@ -7219,6 +7219,27 @@
         }
       ],
       "entry_sha256": "b704d4bd6f9e83e090200742dd4057d3b263d9884e09b506053b6cb6cd18ad24"
+    },
+    {
+      "id": "RL-0158",
+      "sequence": 157,
+      "date": "2026-09-27",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.16",
+      "changelog_sha256": "e6e03aea1c1cb3bb84827e584e7f3cf849eec5ff7e0d14c4aca5c7aa9b3fbe3f",
+      "agent_impact": "QA's opt-in analytics parity leg now picks its candidate page the way the correctness inventory does on a partial build (the root when in scope and answering, else the first built entry), records capture_page and root_fallback, and reports no_in_scope_page_captured (skipped) or no_capture_page_answered (blocker) without loading the baseline. A topology entry that differs from the root only by its own query string is no longer merged into the root. docs/qa-and-test-orders.md documents the capture fallback, both outcomes, path-based step routing and the local-serve manual_review exception.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the partial-scope analytics capture fallback for the correctness and parity legs, the no_in_scope_page_captured and no_capture_page_answered outcomes, path-based step routing with query-routed entries kept apart from the root, and the local-serve manual_review exception with data-layer-purchase still blocking."
+        }
+      ],
+      "entry_sha256": "36fe47ebc1bd791d6017e5a50a2112597392222419883993eaca378c03a45996"
     }
   ]
 }
