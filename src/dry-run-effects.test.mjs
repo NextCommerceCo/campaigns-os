@@ -376,9 +376,10 @@ test("run end carries --dry-run to run-record and leaves the session open", asyn
 // The lifecycle journal is a write under the target, so a command that
 // implements --dry-run appends no entry. `--dry-run` reaches every handler
 // through a permissive parser, though, so that exemption is scoped to the
-// commands that implement the flag (DRY_RUN_COMMANDS): on any other command
-// the flag is accepted and ignored exactly as it was before, telemetry
-// included.
+// commands that implement the flag (declared `dryRun: true` in
+// src/invocation.mjs's COMMANDS / SUBCOMMAND_OVERRIDES): on any other
+// command the flag is accepted and ignored exactly as it was before,
+// telemetry included.
 test("--dry-run skips the lifecycle entry only on the commands that implement it", async (t) => {
   const { dir, packetPath } = seedTarget(t);
   const journal = join(dir, "lifecycle.jsonl");

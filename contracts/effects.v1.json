@@ -236,7 +236,7 @@
       "sends": [],
       "effect_test": "effects: page-kit sync --dry-run",
       "test_scope": "full",
-      "notes": "page-kit sync --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+      "notes": "page-kit sync --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
     },
     {
       "command": "spec",
@@ -255,7 +255,7 @@
       "sends": [],
       "effect_test": "effects: spec derive --dry-run",
       "test_scope": "full",
-      "notes": "spec derive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+      "notes": "spec derive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
     },
     {
       "command": "install-skills",
@@ -274,7 +274,7 @@
       "sends": [],
       "effect_test": "effects: install-skills --dry-run",
       "test_scope": "full",
-      "notes": "install-skills --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+      "notes": "install-skills --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
     },
     {
       "command": "install-agent-context",
@@ -293,7 +293,7 @@
       "sends": [],
       "effect_test": "effects: install-agent-context --dry-run",
       "test_scope": "full",
-      "notes": "install-agent-context --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+      "notes": "install-agent-context --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
     },
     {
       "command": "qa",
@@ -312,7 +312,7 @@
       "sends": [],
       "effect_test": "effects: qa publish --dry-run",
       "test_scope": "full",
-      "notes": "qa publish --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout. Local-spec packets are refused before publication because they have no saved Map destination."
+      "notes": "qa publish --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout. Local-spec packets are refused before publication because they have no saved Map destination."
     },
     {
       "command": "checkpoint",
@@ -331,7 +331,7 @@
       "sends": [],
       "effect_test": "effects: checkpoint waive --dry-run",
       "test_scope": "full",
-      "notes": "checkpoint waive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+      "notes": "checkpoint waive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
     },
     {
       "command": "theme",
@@ -350,7 +350,7 @@
       "sends": [],
       "effect_test": "effects: theme waive --dry-run",
       "test_scope": "full",
-      "notes": "theme waive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+      "notes": "theme waive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
     },
     {
       "command": "run-record",
@@ -369,7 +369,7 @@
       "sends": [],
       "effect_test": "effects: run-record --dry-run",
       "test_scope": "full",
-      "notes": "run-record --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (DRY_RUN_COMMANDS) and runs no stale-session closeout."
+      "notes": "run-record --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
     },
     {
       "command": "run-record",
