@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.2] - 2026-09-28
+
+### Changed
+
+- No command behaves differently. `docs/sdk-storage-compatibility.md` now takes
+  the `sdk storage-check` manifest from a Campaign Cart release tag, v0.4.40 or
+  later.
+
 ## [1.43.2+agent.1] - 2026-09-28
 
 ### Changed

@@ -7591,6 +7591,27 @@
         }
       ],
       "entry_sha256": "71b294dd65c9b016af9f0339f51def9b208942d372aa178acc8a4f82a782c8ad"
+    },
+    {
+      "id": "RL-0168",
+      "sequence": 167,
+      "date": "2026-09-28",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.2+agent.2",
+      "changelog_sha256": "9443507038d867831f0801c5eb77f30803f1b04fca8a5c04ec26001fadaadb07",
+      "agent_impact": "None. sdk storage-check behaves exactly as before; its doc now takes the manifest from a Campaign Cart release tag.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Take the manifest from a Campaign Cart release tag, v0.4.40 or later."
+        }
+      ],
+      "entry_sha256": "04a40b1fafb4c065abcf44f0f2f728e50d34cc51202a6e2f3d099c0f48370aec"
     }
   ]
 }
