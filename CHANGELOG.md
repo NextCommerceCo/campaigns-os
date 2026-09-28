@@ -2,6 +2,16 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.3] - 2026-09-28
+
+### Changed
+
+- `campaigns-os login` asks the gateway for the `https://mcp.nextcommerce.com/mcp`
+  resource and the `campaigns.read` capability, matching the gateway's move
+  from `/campaigns` and `campaigns:read`. A login
+  saved under the old resource is refused; sign in again. The gateway pilot is
+  not live, so no working login is affected.
+
 ## [1.43.2+agent.2] - 2026-09-28
 
 ### Changed

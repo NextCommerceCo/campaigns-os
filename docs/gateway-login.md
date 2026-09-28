@@ -17,6 +17,9 @@ campaigns-os login --store example
 There is no discovery or guess from the current project. Noninteractive calls
 must supply `--store`. URLs, paths and unrelated hosts are refused before any
 request. Login uses the fixed `https://mcp.nextcommerce.com` gateway.
+It asks for the `https://mcp.nextcommerce.com/mcp` resource and the
+`campaigns.read` capability. A login saved before 1.43.2+agent.3, which named
+the earlier `/campaigns` resource, is refused; sign in again.
 
 Open the displayed device page in one browser tab and enter the displayed code.
 Keep that tab: if installation is needed, follow its Install Campaigns link,

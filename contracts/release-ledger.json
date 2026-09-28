@@ -7612,6 +7612,27 @@
         }
       ],
       "entry_sha256": "04a40b1fafb4c065abcf44f0f2f728e50d34cc51202a6e2f3d099c0f48370aec"
+    },
+    {
+      "id": "RL-0169",
+      "sequence": 168,
+      "date": "2026-09-28",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.2+agent.3",
+      "changelog_sha256": "ef05748c2d3c16270e625010b7fabfd839a1b0cbd53726e1f358e24b31c8ac12",
+      "agent_impact": "Gateway login now requests the /mcp resource and the campaigns.read capability; a login saved under the old /campaigns resource must be repeated.",
+      "compatibility": "compatible",
+      "migration": "Run campaigns-os login again if a saved gateway login is refused.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/gateway-login.md",
+          "surface_entry": "docs/gateway-login.md",
+          "summary": "Name the /mcp resource and campaigns.read capability login requests, and say an older saved login must be repeated."
+        }
+      ],
+      "entry_sha256": "b04ee701fcb95fce30ddb6c19291320187a92cb16563c58c951217ddc5543e9b"
     }
   ]
 }
