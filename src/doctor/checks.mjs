@@ -2513,10 +2513,11 @@ export function validateRouteRootDeclaration(packet, errors, ready) {
   const declared = packet?.campaign?.route_root;
   if (declared == null) return;
   const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
-  // The packet rule is exact (canonical form only, mirroring the schema
-  // pattern) and it is the same rule every other stage reads the packet by,
-  // so a near miss ("/ruggie", "//ruggie//") is blocked here and honoured
-  // nowhere — the silent-disarm split this check exists to close.
+  // The packet rule is exact: "/" or the canonical "/<public_route_slug>/"
+  // only, mirroring the schema pattern, and it is the same rule every other
+  // stage reads the packet by. So a near miss ("/example", "//example//") is
+  // blocked here and honoured nowhere — the silent-disarm split this check
+  // exists to close.
   const honoured = packetRouteRoot(declared, slug);
   if (honoured === "/") {
     ready.push(`Campaign is declared root-served (route_root "/"): routing metas and public routes validate against site-root paths; public_route_slug "${slug}" remains identity, not a path prefix`);
