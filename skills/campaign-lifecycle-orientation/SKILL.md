@@ -1,6 +1,6 @@
 ---
 name: campaign-lifecycle-orientation
-version: 1.0.8
+version: 1.0.9
 description: Orient a reader to the Campaigns OS lifecycle artifacts a run has already emitted, without advancing any stage or changing any state.
 ---
 

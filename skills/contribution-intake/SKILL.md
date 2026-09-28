@@ -1,6 +1,6 @@
 ---
 name: contribution-intake
-version: 1.0.8
+version: 1.0.9
 description: Turn a suggestion about the agent surface into a classified, evidence-checked proposal and, only with attended approval, one issue on this repository's tracker.
 ---
 

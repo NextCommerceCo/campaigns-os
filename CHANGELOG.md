@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2] - 2026-09-28
+
+### Changed
+
+- Stabilization release. Package and supported-surface version advance to
+  1.43.2 and ship every same-surface change recorded since 1.43.1
+  (`1.43.1+agent.1` through `1.43.1+agent.23`). No command, message, or exit
+  code changes in this release itself.
+- `contracts/effects.v1.json` notes for the eight `--dry-run` invocations now
+  say the command is declared `dryRun` in `src/invocation.mjs` instead of
+  naming the removed `DRY_RUN_COMMANDS` set. The declared effects are
+  unchanged.
+- The local setup install command pins the 1.43.2 package. Bundled skills
+  carry revision `1.43.2+skills.1`, with each skill version advanced one patch.
+
 ## [1.43.1+agent.23] - 2026-09-28
 
 ### Changed

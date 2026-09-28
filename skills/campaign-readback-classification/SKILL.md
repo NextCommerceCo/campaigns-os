@@ -1,6 +1,6 @@
 ---
 name: campaign-readback-classification
-version: 1.0.8
+version: 1.0.9
 description: Classify a selected campaign from the readback projection's v2 fields and write a read-only handoff without turning diagnosis into permission.
 ---
 
