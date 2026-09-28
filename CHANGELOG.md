@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.1] - 2026-09-28
+
+### Changed
+
+- No command behaves differently. `docs/sdk-storage-compatibility.md` now says
+  where the `sdk storage-check` manifest comes from: Campaign Cart's `main`
+  branch, where the storage-migrations contract (campaign-cart #104, closing
+  #102) merged on 2026-09-24. No released SDK tag carries the file yet, so the
+  doc directs `--manifest` at an unmodified checkout of `main`. It previously
+  described the contract as unpublished.
+
 ## [1.43.2] - 2026-09-28
 
 ### Changed
