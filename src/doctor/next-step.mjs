@@ -1,6 +1,5 @@
 // The next step doctor recommends, and the gate issues `next` reads from doctor.
 import { campaignIdentitiesMatch } from "../spec-source-identity.mjs";
-import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { orderPathDepthDriftText } from "../proof-policy.mjs";
 import { anyAssemblyReportStageBlocked } from "../stage-ledger.mjs";
@@ -9,7 +8,6 @@ import {
   SOURCE_PREP_FRONTMATTER_RESIDUE,
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "../source-prep.mjs";
-import { isAbsoluteHttpUrl } from "../route-identity.mjs";
 import {
   NEXT_STAGE_ORDER,
   NEXT_STAGE_OWNERS,
@@ -20,7 +18,7 @@ import {
 } from "../orchestration-stage-contract.mjs";
 import { evaluatePolishGate } from "../polish-gate.mjs";
 import { cmd } from "../install-invocation.mjs";
-import { isObject, isNonEmptyString, optionalString, resolveFromFile, addIssue } from "../cli-helpers.mjs";
+import { isObject, isNonEmptyString, optionalString, resolveFromFile, addIssue, filesystemPathsMatch } from "../cli-helpers.mjs";
 import { orderPathDepthDrift } from "./checks.mjs";
 
 // The orchestration stage contract lives in orchestration-stage-contract.mjs so
@@ -89,21 +87,6 @@ function reportStageBlockerIssues(reportStage, fallbackCode, fallbackMessage) {
     message: blocker.message || fallbackMessage,
     detail: blocker,
   }));
-}
-
-function filesystemPathsMatch(left, right) {
-  if (!isNonEmptyString(left) || !isNonEmptyString(right)) return false;
-  if (isAbsoluteHttpUrl(left) || isAbsoluteHttpUrl(right)) return left === right;
-  const resolvedLeft = resolve(left);
-  const resolvedRight = resolve(right);
-  if (resolvedLeft === resolvedRight) return true;
-  try {
-    const leftStats = statSync(resolvedLeft);
-    const rightStats = statSync(resolvedRight);
-    return leftStats.dev === rightStats.dev && leftStats.ino === rightStats.ino;
-  } catch {
-    return false;
-  }
 }
 
 function designSourceReferenceMismatches(expected, expectedArtifactPath, actual, actualArtifactPath) {
@@ -739,7 +722,6 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
 export {
   polishGateRequiresBuild,
   pushGateIssue,
-  filesystemPathsMatch,
   nextPrepareBuildBindingIssues,
   prepareBuildGateIssue,
   addPrepareBuildGateErrors,

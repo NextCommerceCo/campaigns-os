@@ -170,7 +170,7 @@ export function createCampaignBuildBriefArtifact({
   const loaded = inputPath ? loadCampaignBuildBriefFile(inputPath) : null;
   const mode = loaded ? "prepared" : "guided_draft";
   const baseBrief = loaded
-    ? cloneJson(loaded.value)
+    ? cloneJsonOrEmpty(loaded.value)
     : draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFamily, sourceAssetCrawl });
 
   const errors = [];
@@ -306,7 +306,7 @@ export function validateCampaignBuildBriefArtifact(brief, { spec = null } = {}) 
 }
 
 function normalizeCampaignBuildBrief(value, meta, errors) {
-  const brief = isObject(value) ? cloneJson(value) : {};
+  const brief = isObject(value) ? cloneJsonOrEmpty(value) : {};
   if (!isObject(value)) {
     errors.push({ code: "build_brief.type", field: null, message: "Campaign Build Brief must be a YAML/JSON object." });
   }
@@ -596,7 +596,7 @@ function normalizeQaPolicy(policy = {}) {
   const value = objectOrEmpty(policy);
   return {
     ...value,
-    enforcement: cloneJson(QA_POLICY_ENFORCEMENT),
+    enforcement: cloneJsonOrEmpty(QA_POLICY_ENFORCEMENT),
     require_desktop_mobile_screenshots: value.require_desktop_mobile_screenshots !== false,
     require_checkout_flow: value.require_checkout_flow !== false,
     require_post_purchase_flow: value.require_post_purchase_flow !== false,
@@ -753,7 +753,9 @@ function objectOrEmpty(value) {
   return isObject(value) ? value : {};
 }
 
-function cloneJson(value) {
+// Unlike cli-helpers' cloneJson, a nullish input clones to {}: an empty brief
+// file parses to null and is normalized as an empty object.
+function cloneJsonOrEmpty(value) {
   return JSON.parse(JSON.stringify(value ?? {}));
 }
 

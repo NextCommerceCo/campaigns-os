@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { shellToken } from "./shell-token.mjs";
 import { diagnosticExport, diagnosticTextLines } from "./diagnostic.mjs";
 import { observeProgress, PROGRESS_OBSERVATION } from "./progress-node.mjs";
@@ -45,9 +45,7 @@ import {
   assembleRunRecord,
   RUN_RECORD_COMMIT_PATTERN,
   RUN_RECORD_SURFACE_VERSION_PATTERN,
-  RUN_RECORDS_DIR_REL_PATH,
   mintRunId,
-  orderRunRecordFileNames,
   readRunRecordsForTarget,
   resolveRunRecordPath,
   RUN_RECORD_SURFACES,

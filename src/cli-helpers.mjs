@@ -1,6 +1,6 @@
 // Small general helpers the CLI and the doctor modules share.
 import { htmlScanDigest } from "./html-scan.mjs";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { canonicalPath } from "./fs-identity.mjs";
 import { refused } from "./lifecycle.mjs";
@@ -36,6 +36,21 @@ function firstNonEmptyString(...values) {
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function filesystemPathsMatch(left, right) {
+  if (!isNonEmptyString(left) || !isNonEmptyString(right)) return false;
+  if (isAbsoluteHttpUrl(left) || isAbsoluteHttpUrl(right)) return left === right;
+  const resolvedLeft = resolve(left);
+  const resolvedRight = resolve(right);
+  if (resolvedLeft === resolvedRight) return true;
+  try {
+    const leftStats = statSync(resolvedLeft);
+    const rightStats = statSync(resolvedRight);
+    return leftStats.dev === rightStats.dev && leftStats.ino === rightStats.ino;
+  } catch {
+    return false;
+  }
 }
 
 function readJson(path) {
@@ -97,6 +112,7 @@ export {
   relFromDir,
   isLocalAbsolutePath,
   resolveFromFile,
+  filesystemPathsMatch,
   extractFrontmatterValue,
   addIssue,
 };
