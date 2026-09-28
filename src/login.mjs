@@ -2,8 +2,8 @@ import { createCredentialStore } from './credential-store.mjs';
 
 export const GATEWAY = 'https://mcp.nextcommerce.com';
 export const CLIENT_ID = 'campaigns-os-owned-store-pilot';
-export const RESOURCE = GATEWAY + '/campaigns';
-export const SCOPE = 'campaigns:read';
+export const RESOURCE = GATEWAY + '/mcp';
+export const SCOPE = 'campaigns.read';
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const safeString = (value, max = 8192) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/u.test(value);
