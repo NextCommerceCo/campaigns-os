@@ -7570,6 +7570,27 @@
         }
       ],
       "entry_sha256": "7aa355a3a9aa0b93c526eb1fe426db0fa13fbdb920b96edef93fe62d49d848d6"
+    },
+    {
+      "id": "RL-0167",
+      "sequence": 166,
+      "date": "2026-09-28",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.2+agent.1",
+      "changelog_sha256": "87d82143f361ea3bb0f15674310090e92cc95d56eb50b21c835cda5c0d8277b8",
+      "agent_impact": "None. sdk storage-check behaves exactly as before; its doc now names Campaign Cart main as the manifest source instead of describing the contract as unpublished.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Name Campaign Cart main (campaign-cart #104, merged 2026-09-24) as the manifest source; no released SDK tag carries it yet."
+        }
+      ],
+      "entry_sha256": "71b294dd65c9b016af9f0339f51def9b208942d372aa178acc8a4f82a782c8ad"
     }
   ]
 }
