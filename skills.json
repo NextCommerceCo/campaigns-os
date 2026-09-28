@@ -1,7 +1,7 @@
 {
   "name": "campaigns-os-skills",
   "description": "Skills bundled with Campaigns OS. `skills.sh` installs these into the shared agent skill directories (~/.claude/skills, ~/.codex/skills), so each one is a versioned package: bump the version whenever a package changes. `bundle_revision` identifies the bundle as a whole — `<package version>+skills.<n>`, where the prefix is this package's version and `<n>` counts the skill-text revisions published against it. It advances whenever ANY bundled skill changes, every SKILL.md states it on its first body line, and `campaigns-os tooling status --skills-revision <value>` compares the value an agent read from a skill against the bundle on disk. See docs/skills-revision.md.",
-  "bundle_revision": "1.43.1+skills.2",
+  "bundle_revision": "1.43.2+skills.1",
   "homepage": "https://github.com/NextCommerceCo/campaigns-os",
   "retired_skills": [
     {
