@@ -7599,8 +7599,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.2+agent.2",
-      "changelog_sha256": "29d5bc6cf05ca0d7dbf074463fc0ee4c6dbd62cce0b7b63df525022b181cc8e6",
-      "agent_impact": "None. sdk storage-check behaves exactly as before; its doc now names a Campaign Cart release tag (v0.4.40 or later) as the manifest source and states the v0.4.40 manifest covers a 0.4.38 target only.",
+      "changelog_sha256": "58df35dfc08bfa86d9cbcc9405b14ceb3a69249b2c25314eea61f227ddfec598",
+      "agent_impact": "None. sdk storage-check behaves exactly as before; its doc now names a Campaign Cart release tag (v0.4.40 or later) as the manifest source and says to read the target range the manifest declares.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -7608,10 +7608,10 @@
           "class": "named_surface",
           "path": "docs/sdk-storage-compatibility.md",
           "surface_entry": "docs/sdk-storage-compatibility.md",
-          "summary": "Take the manifest from a Campaign Cart release tag (v0.4.40 or later; v0.4.39 was replaced) and state its 0.4.38-only target range."
+          "summary": "Take the manifest from a Campaign Cart release tag (v0.4.40 or later; v0.4.39 was replaced) and read its declared target range, 0.4.38 only as of v0.4.40."
         }
       ],
-      "entry_sha256": "cc2ccee99864fa2e0b8178b921b05dadcabca98d3f6e52d033d444fc8b2647bd"
+      "entry_sha256": "77e31bec20c286c8890abd3126ce1447aba52e954140538b9c4579dd118c1a3b"
     }
   ]
 }

@@ -10,9 +10,10 @@ Notable supported-surface changes are recorded here.
   the `sdk storage-check` manifest from a Campaign Cart release tag: the
   storage-migrations contract first shipped in v0.4.39, and v0.4.40 or later is
   the one to use because v0.4.39 was replaced for broken CDN paths. It also
-  says the v0.4.40 manifest covers a 0.4.38 target only. The 1.43.2+agent.1
-  wording said no released tag carried the file, which stopped being true the
-  same day.
+  says to read the target range the checked-out manifest declares, since newer
+  tags may widen it; the v0.4.40 manifest covers a 0.4.38 target only. The
+  1.43.2+agent.1 wording said no released tag carried the file, which stopped
+  being true the same day.
 
 ## [1.43.2+agent.1] - 2026-09-28
 
