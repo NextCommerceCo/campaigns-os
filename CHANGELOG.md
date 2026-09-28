@@ -2,6 +2,15 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.1+agent.23] - 2026-09-28
+
+### Changed
+
+- No command behaves differently. The comment in the doctor's `route_root`
+  declaration check now uses a neutral placeholder for its near-miss route
+  examples and states the canonical form (`"/"` or `"/<public_route_slug>/"`)
+  outright. Comment-only; every message and every exit code is unchanged.
+
 ## [1.43.1+agent.22] - 2026-09-28
 
 ### Changed

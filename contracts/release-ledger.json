@@ -7426,6 +7426,27 @@
         }
       ],
       "entry_sha256": "ace0043152c12322dcb17f29b86c44ca09083f4e425460eda4034cc5020068ba"
+    },
+    {
+      "id": "RL-0165",
+      "sequence": 164,
+      "date": "2026-09-28",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.1+agent.23",
+      "changelog_sha256": "c6406bad6b7c425016e5c2944b3a6134564089364f99082adbdb63eb6792b040",
+      "agent_impact": "None. doctor behaves exactly as before; a code comment in the route_root declaration check was reworded to use a neutral placeholder.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "A comment in the route_root declaration check now uses a neutral placeholder for its near-miss examples; every check and message is unchanged."
+        }
+      ],
+      "entry_sha256": "54a238fae479cad0e0ccc56eee0bb82246d73b8f30e588872e5dccfe46c2904f"
     }
   ]
 }
