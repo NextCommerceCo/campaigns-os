@@ -527,3 +527,93 @@ test("an unrecognized --wrapper-policy value is refused with the accepted vocabu
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// #535: a page with no source mapping. Hand-written HTML has no exporter, so
+// a page without a Figma design_source is told the manifest path, the schema
+// and a minimal entry to write by hand; a Figma page (or any page in a spec
+// with one) is told the provenance gate needs the exporter's handoff manifest,
+// because a hand-written manifest fails that gate.
+function unmappedLandingFixture(dir, figmaPageId = null) {
+  const sourceRoot = resolve(dir, "source-html");
+  const targetRepo = resolve(dir, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(resolve(targetRepo, "src", "runtime-packet-demo"), { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["checkout", "upsell", "receipt"]) writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page}</section>`);
+  const spec = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+  if (figmaPageId) spec.funnels[0].pages.find((page) => page.id === figmaPageId).design_source = { type: "figma", file_url: "https://design.example.com/file/abc" };
+  const specPath = resolve(dir, "campaignspec.json");
+  writeJson(specPath, spec);
+  const packet = readJson(resolve(ROOT, "examples/build-packet.basic.json"));
+  packet.spec.local_path = specPath;
+  packet.source_html.root = sourceRoot;
+  packet.assembly.target_repo = targetRepo;
+  packet.assembly.commerce_catalog.path = resolve(ROOT, "contracts/commerce-surface-catalog.json");
+  packet.source_html.pages = packet.source_html.pages.filter((page) => page.page_id !== "landing");
+  const packetPath = resolve(dir, "campaign-runtime.build.json");
+  writeJson(packetPath, packet);
+  return { sourceRoot, packetPath };
+}
+
+function coverageMessage(packetPath) {
+  const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+  const coverage = doctor.errors.find((issue) => issue.code === "source_html.pages.coverage");
+  assert.ok(coverage, JSON.stringify(doctor.errors.map((issue) => issue.code)));
+  return coverage.message;
+}
+
+const HAND_WRITTEN_ENTRY = '{"schema_version": "source-html-manifest/v0", "pages": [{"page_id": "landing", "path": "<file>.html"}]}';
+const PROVENANCE_CODES = /^source_html\.(producer_provenance|files\.)/;
+
+test("coverage error for an unmapped hand-authored page gives the manifest path, schema and a hand-written entry that doctor accepts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-coverage-message-"));
+  try {
+    const { sourceRoot, packetPath } = unmappedLandingFixture(dir);
+    const message = coverageMessage(packetPath);
+    assert.match(message, /<source-root>\/\.campaigns-os\/source-html-manifest\.json/);
+    assert.match(message, /schemas\/source-html-manifest\.v0\.schema\.json/);
+    assert.ok(message.includes(HAND_WRITTEN_ENTRY), message);
+    assert.match(message, /"wrapper_policy": "preserve_document_wrappers"/);
+    assert.match(message, /No exporter is required/);
+
+    // The advice holds: the suggested manifest, written by hand, adds no
+    // manifest or provenance error.
+    mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+    writeFileSync(resolve(sourceRoot, "landing.html"), "<!doctype html><html><head><title>offer</title></head><body><section>landing</section></body></html>");
+    writeJson(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"), JSON.parse(HAND_WRITTEN_ENTRY.replace("<file>.html", "landing.html")));
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    const blocking = doctor.errors.map((issue) => issue.code).filter((code) => PROVENANCE_CODES.test(code) || code === "source_html.manifest");
+    assert.deepEqual(blocking, []);
+    assert.equal(doctor.warnings.some((issue) => issue.code === "source_html.manifest"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("coverage error for an unmapped Figma page says the provenance gate needs the exporter's handoff manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-coverage-message-"));
+  try {
+    const { packetPath } = unmappedLandingFixture(dir, "landing");
+    const message = coverageMessage(packetPath);
+    assert.match(message, /Design is in Figma at https:\/\/design\.example\.com\/file\/abc/);
+    assert.match(message, /Figma provenance gate \(source_html\.producer_provenance\) needs the exporter's handoff manifest/);
+    assert.match(message, /<source-root>\/\.campaigns-os\/source-html-manifest\.json/);
+    assert.doesNotMatch(message, /No exporter is required|write the file yourself/);
+    assert.equal(message.includes(HAND_WRITTEN_ENTRY), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("coverage error for an unmapped hand-authored page in a spec with a Figma page names the provenance gate, not a hand-written manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-coverage-message-"));
+  try {
+    const { packetPath } = unmappedLandingFixture(dir, "checkout");
+    const message = coverageMessage(packetPath);
+    assert.match(message, /<source-root>\/\.campaigns-os\/source-html-manifest\.json/);
+    assert.match(message, /active page whose design_source is Figma, so this manifest must also pass the Figma provenance gate/);
+    assert.doesNotMatch(message, /No exporter is required|write the file yourself/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
