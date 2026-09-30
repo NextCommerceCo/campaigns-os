@@ -2739,10 +2739,13 @@ function withSdkPriceDisplaySelectors(selectors) {
 // the only price row on a full-price upsell and 48/48 checks still passed.
 // A bundle-display node is the price text itself, so it also needs
 // non-whitespace text: a sized but empty node is a price the SDK never filled.
+// The rule follows the node's attribute, not the selector that reached it
+// first, so a bundle-display node that also carries `.price-wrapper` still
+// needs text.
 async function countVisiblePriceRows(browserPage, selectors) {
   return browserPage.evaluate((targets) => {
     // Runs in the page, so it cannot read SDK_BUNDLE_PRICE_DISPLAY_SELECTOR.
-    const textRequired = new Set(["[data-next-bundle-display*='price']"]);
+    const textRequired = (element) => element.matches("[data-next-bundle-display*='price']");
     const visible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -2756,7 +2759,7 @@ async function countVisiblePriceRows(browserPage, selectors) {
           if (seen.has(element)) continue;
           seen.add(element);
           if (!visible(element)) continue;
-          if (textRequired.has(selector) && !(element.textContent || "").trim()) continue;
+          if (textRequired(element) && !(element.textContent || "").trim()) continue;
           count += 1;
         }
       } catch {

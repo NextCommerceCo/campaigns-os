@@ -99,3 +99,20 @@ test("a checkout bundle card counts a filled data-next-bundle-display price and 
   assert.equal(empty.evidence.total_visible_count, 0);
   assert.equal(empty.status, "fail");
 });
+
+test("an empty data-next-bundle-display price does not count through an overlapping .price-wrapper selector", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  // .price-wrapper comes first in both surfaces' selector lists, so it reaches
+  // the node before the bundle-display selector does.
+  const overlap = '<span class="price-wrapper" data-next-bundle-display="price" style="display:inline-block;width:100px;height:20px"></span>';
+  for (const pageDescriptor of [upsellPage, checkoutPage]) {
+    const row = await priceRow(overlap, pageDescriptor);
+    assert.equal(row.evidence.selectors[0], ".price-wrapper", pageDescriptor.page_id);
+    assert.equal(row.evidence.visible_count, 0, pageDescriptor.page_id);
+    assert.equal(row.status, "fail", pageDescriptor.page_id);
+  }
+  // A filled node carrying both still counts once.
+  const filled = await priceRow('<span class="price-wrapper" data-next-bundle-display="price">$29.00</span>');
+  assert.equal(filled.status, "pass");
+  assert.equal(filled.evidence.visible_count, 1);
+});
