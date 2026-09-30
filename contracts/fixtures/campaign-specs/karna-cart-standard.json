@@ -23,7 +23,7 @@
   },
   "spec_identity": {
     "map_id": "fixture-karna-cart-map",
-    "source": "adsbranded-templates agent fixture",
+    "source": "private-template agent fixture",
     "preferred_template_family": "karna"
   },
   "global_config": {

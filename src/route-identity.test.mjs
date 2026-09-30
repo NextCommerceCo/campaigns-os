@@ -144,11 +144,11 @@ test("resolveRouteRoot reads the first declaration under its artifact's rule and
 });
 
 test("campaignRouteRoot is the packet's honoured root or the slug default", () => {
-  assert.equal(campaignRouteRoot({ campaign: { public_route_slug: "ruggie", route_root: "/" } }), "/");
-  assert.equal(campaignRouteRoot({ campaign: { public_route_slug: "ruggie", route_root: "/ruggie/" } }), "/ruggie/");
-  assert.equal(campaignRouteRoot({ campaign: { public_route_slug: "ruggie" } }), "/ruggie/");
-  for (const malformed of ["/foo", "/ruggie", "//ruggie//", "/Ruggie/", 42]) {
-    assert.equal(campaignRouteRoot({ campaign: { public_route_slug: "ruggie", route_root: malformed } }), "/ruggie/", JSON.stringify(malformed));
+  assert.equal(campaignRouteRoot({ campaign: { public_route_slug: "rootfunnel", route_root: "/" } }), "/");
+  assert.equal(campaignRouteRoot({ campaign: { public_route_slug: "rootfunnel", route_root: "/rootfunnel/" } }), "/rootfunnel/");
+  assert.equal(campaignRouteRoot({ campaign: { public_route_slug: "rootfunnel" } }), "/rootfunnel/");
+  for (const malformed of ["/foo", "/rootfunnel", "//rootfunnel//", "/Rootfunnel/", 42]) {
+    assert.equal(campaignRouteRoot({ campaign: { public_route_slug: "rootfunnel", route_root: malformed } }), "/rootfunnel/", JSON.stringify(malformed));
   }
   assert.equal(campaignRouteRoot({ campaign: {} }), null);
   assert.equal(campaignRouteRoot(null), null);

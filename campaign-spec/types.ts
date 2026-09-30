@@ -586,8 +586,8 @@ export interface Campaign {
 /**
  * Analytics & attribution contract (Slice 4g) — what a campaign's analytics,
  * tag-management, and querystring-param tracking are SUPPOSED to be, so doctor
- * + QA can validate them instead of discovering gaps in QA (cf. the Chamelo
- * Shield `?reviews=n`-has-no-handler finding and the Walla Sound Redtrack/
+ * + QA can validate them instead of discovering gaps in QA (cf. a production
+ * `?reviews=n`-has-no-handler finding and a production Redtrack/
  * campaign.js sub1-6 param conflict).
  *
  * Modeled on real production-funnel usage, NOT the idealized "SDK fires the

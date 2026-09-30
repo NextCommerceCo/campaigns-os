@@ -1,8 +1,8 @@
 /**
  * AnalyticsContractShape — validates the optional top-level `analytics` block
  * when present. The block declares a campaign's analytics/attribution/param
- * contract so doctor + QA can validate against intent (cf. the Chamelo Shield
- * `?reviews=n`-has-no-handler QA finding and the Walla Sound Redtrack param
+ * contract so doctor + QA can validate against intent (cf. a production
+ * `?reviews=n`-has-no-handler QA finding and a production Redtrack param
  * conflict — both are gaps that had no declared contract to check against).
  *
  * The block is fully OPTIONAL — a spec without `analytics` is silent (SDK

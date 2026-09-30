@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.46.0+agent.3] - 2026-09-30
+
+### Changed
+
+- Comments, test fixtures, docs and example reports no longer name real
+  merchants, partners or their products. Provenance comments now say "a
+  production build" instead, the root-served route examples use the synthetic
+  slug `rootfunnel`, and the three Campaign Standardization Report examples are
+  renamed to `multi-root-repo.md`, `repo-root-campaign.md` and
+  `subfolder-campaign.md` with synthetic repo and slug names. The doctor
+  `analytics_contract.content_param_no_handler` message drops its build
+  reference; its code, trigger and detail fields are unchanged.
+
 ## [1.46.0+agent.2] - 2026-09-30
 
 ### Fixed

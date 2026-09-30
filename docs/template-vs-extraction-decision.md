@@ -71,6 +71,6 @@ extraction/hybrid path, not the family path.
 ## Source
 
 Distilled from the campaigns-os template-from-wild-checkout runbook (§5 decision
-rule, §1 two-layer model) and the ArcticClip-on-Arjuna build learnings (L6 loose
+rule, §1 two-layer model) and the Arjuna production-build learnings (L6 loose
 template-family fit, L7 packet-gated QA). Point to the principle there rather
 than re-deriving it per build.

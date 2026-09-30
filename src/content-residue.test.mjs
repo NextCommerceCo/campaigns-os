@@ -78,13 +78,13 @@ test("proof attestation: usable states ship freely; shipped pending/non-attestab
     { id: "pa-2", modality: "study", content: "developed with NASA scientists", verified: false, attestable: false, attestation_status: "none" },
     { id: "pa-3", modality: "count", content: "546,000+ happy sleepers", verified: false, attestable: true, attestation_status: "pending" },
   ];
-  const shippedAll = "In FluffCo's own survey, 89% reported better sleep. Developed with NASA scientists. 546,000+ happy sleepers.";
+  const shippedAll = "In the brand's own survey, 89% reported better sleep. Developed with NASA scientists. 546,000+ happy sleepers.";
   const findings = evaluateProofAssets(assets, shippedAll);
   const { shippedNonAttestable, shippedPending } = attestationBlockers(findings);
   assert.deepEqual(shippedNonAttestable.map((f) => f.assetId), ["pa-2"]);
   assert.deepEqual(shippedPending.map((f) => f.assetId), ["pa-3"]);
 
-  const excluded = evaluateProofAssets(assets, "In FluffCo's own survey, 89% reported better sleep. Nothing else.");
+  const excluded = evaluateProofAssets(assets, "In the brand's own survey, 89% reported better sleep. Nothing else.");
   const blockers = attestationBlockers(excluded);
   assert.equal(blockers.shippedNonAttestable.length, 0, "excluded non-attestable content must not block");
   assert.equal(blockers.shippedPending.length, 0);

@@ -209,7 +209,7 @@ test("catalog refresh keeps the local private family when the public source rede
       families: {
         arjuna: {
           private: true,
-          description: "Adsbranded internal",
+          description: "Private internal",
           agentContract: { status: "agent-ready", qaStructure: { checkout: { description: "local" } } },
         },
       },

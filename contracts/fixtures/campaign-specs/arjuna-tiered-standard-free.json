@@ -35,7 +35,7 @@
   },
   "spec_identity": {
     "map_id": "fixture-arjuna-tiered-map",
-    "source": "adsbranded-templates agent fixture",
+    "source": "private-template agent fixture",
     "preferred_template_family": "arjuna"
   },
   "global_config": {
