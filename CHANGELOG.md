@@ -17,6 +17,20 @@ Notable supported-surface changes are recorded here.
   key in `X-Campaign-Key`. No store or Admin credential is used, and the read
   writes nothing. `doctor` now accepts `--proxy-base <url>` (https, or a
   loopback host over http); without it the canonical proxy is used.
+- For this read, an `api_key_source` env var whose name contains `ADMIN`,
+  `TOKEN`, `SECRET`, `PASSWORD`, `PRIVATE` or `STORE` (any case) is refused
+  even when the name also contains `CAMPAIGN`: its value is not sent, no
+  request is made, and the check is `not_run` with reason
+  `key_source_refused`, shown as the `built_output.live_refs_not_run` warning.
+  `env:CAMPAIGNS_API_KEY` is unaffected.
+- Page shipping and package refs are now read from the parsed HTML, for the
+  live check and for the existing `built_output.shipping_ref` /
+  `built_output.package_ref` CampaignSpec check alike. Spaces around `=`,
+  unquoted or single-quoted values, upper-case attribute names and
+  entity-encoded values are all read. `<template>` content is read, since the
+  SDK clones it into the page. Comments, `<noscript>` content and visible text
+  are not. Inline `packageId:` / `shippingId:` config is read from `<script>`
+  text and attribute values.
 - A ref the live campaign does not serve is a blocker:
   `built_output.shipping_ref_live_missing` or
   `built_output.package_ref_live_missing`. This applies even when the

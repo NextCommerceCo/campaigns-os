@@ -21,6 +21,8 @@
 // no key, no fetch, a network error, a non-2xx, a timeout, a body that is not a
 // campaign — is `not_run` with its reason, never a pass and never a fall back
 // to the Map's own list.
+import { parse as parseHtml } from "parse5";
+
 import { runWithDeadline } from "./deadline.mjs";
 import { assertSecureProxyBase } from "./remit.mjs";
 import { resolveCampaignsApiKeySource, describeCampaignKeyRejection } from "./campaigns-api-key.mjs";
@@ -37,27 +39,58 @@ export const LIVE_REF_CODES = Object.freeze({
   notRun: "built_output.live_refs_not_run",
 });
 
-// Every attribute and inline config key the doctor's CampaignSpec ref check
-// reads refs from; the live comparison reads the same set.
+// The refs a page renders, read the way a browser reads the markup: parsed
+// with parse5, so any valid attribute syntax is seen (spaces around `=`,
+// unquoted or single-quoted values, upper-case names, entity-encoded values)
+// and markup the browser never builds into elements is not. One extractor
+// feeds the CampaignSpec ref check, the live check and commercial parity.
+//
+//   - attributes: `data-next-package-id` / `data-package-id` (packages) and
+//     `data-next-shipping-id` (shipping), on any element;
+//   - inline config: `packageId:` / `shippingId:` keys in `<script>` text and
+//     in attribute values (an inline handler or a JSON config attribute);
+//   - `<template>` content is read: the SDK clones templates into the live DOM,
+//     so a ref there is a ref the shopper can reach;
+//   - comments and `<noscript>` content are not: neither becomes an element
+//     while the SDK runs.
+const PACKAGE_REF_ATTRIBUTES = new Set(["data-next-package-id", "data-package-id"]);
+const SHIPPING_REF_ATTRIBUTES = new Set(["data-next-shipping-id"]);
+const PACKAGE_CONFIG_KEY = /["']?packageId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi;
+const SHIPPING_CONFIG_KEY = /["']?shippingId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi;
+
+export function extractRenderedRefs(content) {
+  const packageRefs = new Set();
+  const shippingRefs = new Set();
+  const readConfig = (text) => {
+    for (const match of String(text || "").matchAll(PACKAGE_CONFIG_KEY)) addRenderedRef(packageRefs, match[1] || match[2] || match[3]);
+    for (const match of String(text || "").matchAll(SHIPPING_CONFIG_KEY)) addRenderedRef(shippingRefs, match[1] || match[2] || match[3]);
+  };
+  const visit = (node) => {
+    const children = node.content ? node.content.childNodes : node.childNodes;
+    for (const child of children || []) {
+      if (!child.tagName) continue;
+      for (const attr of child.attrs || []) {
+        const name = attr.name.toLowerCase();
+        if (PACKAGE_REF_ATTRIBUTES.has(name)) addRenderedRef(packageRefs, attr.value);
+        else if (SHIPPING_REF_ATTRIBUTES.has(name)) addRenderedRef(shippingRefs, attr.value);
+        else readConfig(attr.value);
+      }
+      if (child.tagName.toLowerCase() === "script") {
+        readConfig((child.childNodes || []).map((text) => text.value || "").join(""));
+      }
+      visit(child);
+    }
+  };
+  visit(parseHtml(String(content || "")));
+  return { package_refs: packageRefs, shipping_refs: shippingRefs };
+}
+
 export function extractRenderedPackageRefs(content) {
-  const refs = new Set();
-  const text = String(content || "");
-  for (const match of text.matchAll(/\bdata-next-package-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
-  for (const match of text.matchAll(/\bdata-package-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
-  for (const match of text.matchAll(/["']?packageId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi)) {
-    addRenderedRef(refs, match[1] || match[2] || match[3]);
-  }
-  return refs;
+  return extractRenderedRefs(content).package_refs;
 }
 
 export function extractRenderedShippingRefs(content) {
-  const refs = new Set();
-  const text = String(content || "");
-  for (const match of text.matchAll(/\bdata-next-shipping-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
-  for (const match of text.matchAll(/["']?shippingId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi)) {
-    addRenderedRef(refs, match[1] || match[2] || match[3]);
-  }
-  return refs;
+  return extractRenderedRefs(content).shipping_refs;
 }
 
 function addRenderedRef(refs, value) {
@@ -166,11 +199,39 @@ export async function readLiveCampaign({
   return { status: "read", ...refs };
 }
 
+// An env var whose name says it holds something other than a public campaign
+// key. The shared resolver only asks that the name contain CAMPAIGN, so
+// `CAMPAIGN_ADMIN_TOKEN` would pass it; this read sends the value off the
+// machine, so it also refuses these words.
+const NON_PUBLIC_KEY_ENV_WORD = /ADMIN|TOKEN|SECRET|PASSWORD|PRIVATE|STORE/i;
+
+function refusedEnvKeySource(packet, resolved) {
+  const source = typeof packet?.campaign?.api_key_source === "string" ? packet.campaign.api_key_source.trim() : "";
+  if (!source.startsWith("env:")) return null;
+  const envName = source.slice("env:".length).trim();
+  if (!NON_PUBLIC_KEY_ENV_WORD.test(envName)) return null;
+  // Only when the env source is the one in play: a key from the packet or its
+  // CampaignSpec wins over it, and a refused packet or CampaignSpec value is
+  // already reported as that.
+  const envInPlay = resolved.key
+    ? resolved.origin === `env:${envName}`
+    : !resolved.rejected || resolved.rejected.kind === "unsupported_env_name" || resolved.rejected.source === `env:${envName}`;
+  return envInPlay ? envName : null;
+}
+
 // The key from the packet, its local CampaignSpec, or the declared
 // campaign-key env var (the resolver the remit and Map write use; its shape
-// and env-name gates apply), then one read.
+// and env-name gates apply, plus the stricter env-name gate above), then one
+// read.
 export async function readLiveCampaignForPacket({ packet, packetPath = null, spec = undefined, env = process.env, fetchImpl = null, proxyBase = null, timeoutMs, warn } = {}) {
   const resolved = resolveCampaignsApiKeySource(packet, packetPath, env, spec === undefined ? {} : { spec });
+  const refusedEnv = refusedEnvKeySource(packet, resolved);
+  if (refusedEnv) {
+    return notRun(
+      "key_source_refused",
+      `api_key_source "env:${refusedEnv}" names a variable that holds an admin, store or secret credential rather than the public Campaigns API key, so its value was not sent and the live campaign was not read. Point api_key_source at the public campaign key (for example env:CAMPAIGNS_API_KEY).`,
+    );
+  }
   if (!resolved.key) {
     return resolved.rejected
       ? notRun("key_rejected", describeCampaignKeyRejection(resolved.rejected))

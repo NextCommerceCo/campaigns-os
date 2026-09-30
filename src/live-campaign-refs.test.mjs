@@ -8,6 +8,7 @@ import { doctorPacket, readDoctorLiveCampaign } from "./doctor/inspect.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
 import {
   evaluateLiveCampaignRefs,
+  extractRenderedRefs,
   readLiveCampaign,
   readLiveCampaignForPacket,
 } from "./live-campaign-refs.mjs";
@@ -118,6 +119,49 @@ test("D2: package refs are checked from every attribute the CampaignSpec check r
   });
 });
 
+test("ref extraction: every valid attribute syntax is read; comments, noscript and visible text are not", () => {
+  // [markup, shipping refs, package refs]
+  const cases = [
+    ['<input data-next-shipping-id="21">', ["21"], []],
+    ['<input data-next-shipping-id = "21">', ["21"], []],
+    ["<input data-next-shipping-id=21>", ["21"], []],
+    ["<input data-next-shipping-id='21'>", ["21"], []],
+    ['<input DATA-NEXT-SHIPPING-ID="21">', ["21"], []],
+    ['<input data-next-shipping-id="&#50;&#49;">', ["21"], []],
+    ['<input data-next-shipping-id=" 21 ">', ["21"], []],
+    ["<div data-next-package-id = 10></div>", [], ["10"]],
+    ["<div DATA-PACKAGE-ID='17'></div>", [], ["17"]],
+    ['<div data-package-id="&#49;&#55;"></div>', [], ["17"]],
+    ['<script>window.cfg = { packageId: 19, shippingId: "21" };</script>', ["21"], ["19"]],
+    ['<script type="application/json">{"packageId":"19"}</script>', [], ["19"]],
+    ['<button onclick="next.addItem({packageId: 30})">Add</button>', [], ["30"]],
+    ["<template><div data-next-package-id=30></div></template>", [], ["30"]],
+    ['<!-- <input data-next-shipping-id="21"> -->', [], []],
+    ['<noscript><input data-next-shipping-id="21"></noscript>', [], []],
+    ["<p>shippingId: 21, packageId: 19</p>", [], []],
+    ['<input data-next-shipping-id="">', [], []],
+  ];
+  for (const [markup, shipping, packages] of cases) {
+    const refs = extractRenderedRefs(page(markup));
+    assert.deepEqual([...refs.shipping_refs], shipping, markup);
+    assert.deepEqual([...refs.package_refs], packages, markup);
+  }
+});
+
+test("ref extraction: spaced and unquoted refs reach both the live check and the CampaignSpec check", async () => {
+  await withBuiltCampaign({
+    checkoutHtml: page("<div data-next-package-id = 10></div><input data-next-shipping-id = \"21\"><input data-next-shipping-id=99>"),
+  }, ({ doctor }) => {
+    const result = doctor({ status: "read", package_refs: ["10", "17", "19", "30"], shipping_refs: ["20"] });
+    const live = result.errors.find((entry) => entry.code === "built_output.shipping_ref_live_missing");
+    assert.deepEqual(live?.detail.refs, ["21", "99"]);
+    assert.equal(result.derived.live_campaign_refs.status, "blocked");
+    // 99 is not in the Map either: the CampaignSpec check reads the same refs.
+    const map = [...result.errors, ...result.warnings].find((entry) => entry.code === "built_output.shipping_ref");
+    assert.match(map?.message || "", /: 99\.$/);
+  });
+});
+
 test("D3: Map-vs-live drift is a separate warning in both directions and never softens a page blocker", async () => {
   await withBuiltCampaign({
     checkoutHtml: page('<div data-next-package-id="10"></div><input data-next-shipping-id="21">'),
@@ -166,7 +210,7 @@ test("D4: no key, no read, network failure, non-2xx, 404, timeout and a non-camp
     env: { STORE_ADMIN_TOKEN: "admin-secret-value" },
     fetchImpl: () => assert.fail("no request without a campaign key"),
   });
-  assert.equal(refused.reason_code, "key_rejected");
+  assert.equal(refused.reason_code, "key_source_refused");
 
   await withBuiltCampaign({ checkoutHtml: page('<input data-next-shipping-id="21">') }, async ({ doctor }) => {
     const failed = doctor(cases.find(([reason]) => reason === "http_status")[1]);
@@ -180,6 +224,58 @@ test("D4: no key, no read, network failure, non-2xx, 404, timeout and a non-camp
     const unread = doctor(undefined);
     assert.equal(unread.derived.live_campaign_refs.status, "not_run");
     assert.equal(unread.derived.live_campaign_refs.reason_code, "not_read");
+  });
+});
+
+test("credential isolation: an api_key_source env name that says admin, token, secret, password, private or store is refused with no request", async () => {
+  for (const name of ["CAMPAIGN_ADMIN_TOKEN", "CAMPAIGNS_API_TOKEN", "NEXT_ADMIN_TOKEN_SHOP", "campaign_store_key", "CAMPAIGN_SECRET_KEY"]) {
+    for (const env of [{ [name]: "pk_looks_like_a_key_01" }, {}]) {
+      const refused = await readLiveCampaignForPacket({
+        packet: { campaign: { api_key_source: `env:${name}` } },
+        env,
+        fetchImpl: () => assert.fail(`no request for env:${name}`),
+        proxyBase: PROXY_BASE,
+      });
+      assert.equal(refused.status, "not_run", name);
+      assert.equal(refused.reason_code, "key_source_refused", name);
+      assert.doesNotMatch(refused.reason, /pk_looks_like_a_key_01/);
+    }
+  }
+  // The documented public-key name still reads.
+  const calls = [];
+  const read = await readLiveCampaignForPacket({
+    packet: { campaign: { api_key_source: "env:CAMPAIGNS_API_KEY" } },
+    env: { CAMPAIGNS_API_KEY: "pk_fixture_public_key" },
+    fetchImpl: jsonFetch(liveBody(), { calls }),
+    proxyBase: PROXY_BASE,
+  });
+  assert.equal(read.status, "read");
+  assert.equal(read.key_source, "env:CAMPAIGNS_API_KEY");
+  assert.deepEqual(calls.map((call) => call.init.headers["X-Campaign-Key"]), ["pk_fixture_public_key"]);
+  // A packet key wins over the env source, so the refused variable is never
+  // read and only the packet's public key travels.
+  const packetCalls = [];
+  const packetFirst = await readLiveCampaignForPacket({
+    packet: { campaign: { campaigns_api_key: "pk_fixture_public_key", api_key_source: "env:CAMPAIGN_ADMIN_TOKEN" } },
+    env: { CAMPAIGN_ADMIN_TOKEN: "admin_token_value_01" },
+    fetchImpl: jsonFetch(liveBody(), { calls: packetCalls }),
+    proxyBase: PROXY_BASE,
+  });
+  assert.equal(packetFirst.status, "read");
+  assert.deepEqual(packetCalls.map((call) => call.init.headers["X-Campaign-Key"]), ["pk_fixture_public_key"]);
+  // Doctor shows the refusal: the key check sees a campaign-named source, so
+  // the live check is where the operator learns nothing was sent.
+  await withBuiltCampaign({ checkoutHtml: page('<input data-next-shipping-id="21">') }, async ({ doctor }) => {
+    const result = doctor(await readLiveCampaignForPacket({
+      packet: { campaign: { api_key_source: "env:CAMPAIGN_ADMIN_TOKEN" } },
+      env: { CAMPAIGN_ADMIN_TOKEN: "admin_token_value_01" },
+      fetchImpl: () => assert.fail("no request"),
+      proxyBase: PROXY_BASE,
+    }));
+    assert.equal(result.derived.live_campaign_refs.reason_code, "key_source_refused");
+    const warning = result.warnings.find((entry) => entry.code === "built_output.live_refs_not_run");
+    assert.equal(warning?.detail.reason_code, "key_source_refused");
+    assert.doesNotMatch(JSON.stringify(result), /admin_token_value_01/);
   });
 });
 

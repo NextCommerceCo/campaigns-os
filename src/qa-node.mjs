@@ -102,8 +102,7 @@ import {
   LIVE_REF_CODES,
   campaignDriftMessage,
   evaluateLiveCampaignRefs,
-  extractRenderedPackageRefs,
-  extractRenderedShippingRefs,
+  extractRenderedRefs,
   liveRefFindingMessage,
   liveRefsNotRunMessage,
   readLiveCampaignForPacket,
@@ -2912,10 +2911,11 @@ async function runPageChecks(page, args, {
     }));
   }
 
+  const rendered = extractRenderedRefs(html);
   return {
     assertions,
     commercialCapture,
-    renderedRefs: { package_refs: [...extractRenderedPackageRefs(html)], shipping_refs: [...extractRenderedShippingRefs(html)] },
+    renderedRefs: { package_refs: [...rendered.package_refs], shipping_refs: [...rendered.shipping_refs] },
   };
 }
 

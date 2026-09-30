@@ -115,6 +115,7 @@ import {
   campaignDriftMessage,
   evaluateLiveCampaignRefs,
   extractRenderedPackageRefs,
+  extractRenderedRefs,
   extractRenderedShippingRefs,
   liveRefFindingMessage,
   liveRefsNotRunMessage,
@@ -1739,8 +1740,7 @@ function validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, de
       pages.push({
         page_id: page.id,
         file: relFromDir(targetRepo, builtPath),
-        package_refs: extractRenderedPackageRefs(content),
-        shipping_refs: extractRenderedShippingRefs(content),
+        ...extractRenderedRefs(content),
       });
     }
   }
