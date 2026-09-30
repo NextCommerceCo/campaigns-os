@@ -1,11 +1,11 @@
 ---
 name: campaign-lifecycle-orientation
-version: 1.0.10
+version: 1.0.11
 description: Orient a reader to the Campaigns OS lifecycle artifacts a run has already emitted, without advancing any stage or changing any state.
 ---
 
-Bundle revision: 1.43.3+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.43.3+skills.1`
+Bundle revision: 1.44.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.44.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -33,6 +33,15 @@ it names — `CONTEXT.md`, `CHANGELOG.md`, `skills.json`, the `contracts/`,
 cite `src/` or `scripts/`: those are implementation and may change without a
 supported-surface bump, so a reader cannot check them and a rename would not
 reach this text. `docs/supported-surface.md` is the prose twin of that list.
+
+`CHANGELOG.md` and `contracts/release-ledger.json` hold recent history. When
+the ledger declares a `baseline_floor`, the older entries and the sections they
+link sit in the dated `contracts/archive/` files it names: cite those for
+history, but they are not part of an orientation read. An orientation whose
+reviewed baseline is older than the floor is refused with
+`baseline_below_floor`, and the remedy is to adopt a newer reviewed baseline.
+That is a reviewed change for an authorized human, not something to do in a
+session.
 
 Identity comes from the tool, not from a file beside the session.
 `campaigns-os tooling status --json` (tier `B`: its only write is the

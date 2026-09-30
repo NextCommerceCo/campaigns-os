@@ -42,7 +42,10 @@ consumer needs to know about an agent-relevant change even when
 `CHANGELOG.md` narrates them, and the two are checked against each other in both
 directions. Reason codes and semantic classes are append-only vocabularies —
 renaming or removing one is a breaking change. Raising a limit advances
-`limits_version` and owes its own ledger entry.
+`limits_version` and owes its own ledger entry. Rotating the baseline (moving
+old entries and their sections into a dated `contracts/archive/` pair under the
+ledger's `baseline_floor`) changes no limit and no schema id; it is recorded as
+its own ledger entry.
 
 The runtime recipe carries two version identifiers because they gate different
 things. The **kind** names what an installed consumer must already understand in
