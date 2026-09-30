@@ -2928,7 +2928,9 @@ function coverageErrorMessage(page) {
   if (designSource) {
     const fileUrl = optionalString(designSource.file_url);
     if (designSource.type === "figma" && fileUrl) {
-      return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}; supply the source-html manifest for the page (see docs/design-source-package.md) — the exporter that produced the design emits it — then rerun prepare-build.`;
+      // An exporter may write the manifest, but hand-written HTML has none, so
+      // the message gives the path, the schema and an entry to write by hand.
+      return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}. Map the page in the source-html manifest at <source-root>/.campaigns-os/source-html-manifest.json (schema: schemas/source-html-manifest.v0.schema.json; see docs/build-packet.md#source-html-manifest-auto-population). No exporter is required: for hand-written HTML, write the file yourself. A minimal entry: {"schema_version": "source-html-manifest/v0", "pages": [{"page_id": "${page.id}", "path": "<file>.html"}]}; for standalone HTML documents kept whole, add "wrapper_policy": "preserve_document_wrappers". Because this page's design_source is Figma, doctor also checks the manifest's producer_provenance (source_html.producer_provenance). Then rerun prepare-build.`;
     }
     if (designSource.type === "ai-generated") {
       const fileUrlHint = fileUrl ? ` (design reference: ${fileUrl})` : "";

@@ -912,7 +912,9 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
   const pageErrors = [];
   const failedRequests = [];
   browserPage.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(trim(message.text()));
+    // The location URL is kept beside the text: a "Failed to load resource"
+    // message names its status but not the request, which is the location.
+    if (message.type() === "error") consoleErrors.push({ text: trim(message.text()), url: message.location?.()?.url || null });
   });
   browserPage.on("pageerror", (error) => pageErrors.push(trim(error.message)));
   browserPage.on("requestfailed", (request) => {
@@ -1019,16 +1021,55 @@ function isIgnorableFailedRequest(request) {
   }
 }
 
+// `messages` are { text, url } records (url: the console message's location);
+// the result is the actionable messages' text.
 async function actionableRuntimeConsoleErrors(browserPage, messages) {
   if (!messages.length) return [];
   const runtimeReady = await browserPage.evaluate(() => (
     document.documentElement.classList.contains("next-display-ready")
     || Boolean(window.next && Object.keys(window.next).length)
   )).catch(() => false);
-  return messages.filter((message) => {
-    if (runtimeReady && isKnownSdkLoaderFalsePositive(message)) return false;
-    return true;
-  });
+  // The page's final URL, after redirects: the host the browser actually
+  // shows, not the host the page record requested.
+  const pageUrl = browserPage.url();
+  return messages
+    .filter((message) => {
+      if (runtimeReady && isKnownSdkLoaderFalsePositive(message.text)) return false;
+      if (isNetlifyPreviewDrawerConsoleError(pageUrl, message)) return false;
+      return true;
+    })
+    .map((message) => message.text);
+}
+
+// Netlify injects its deploy-preview drawer (the collaboration toolbar) into
+// pages it serves from *.netlify.app preview hosts, and a failed drawer request
+// is logged as a "Failed to load resource" console error on every page (a 428
+// has been observed). That error is Netlify's, not the campaign's.
+//
+// Each exempt request is an exact host plus an exact path:
+//   netlify-cdp-loader.netlify.app /netlify.js — the drawer's loader script,
+//     the one `<script src>` Netlify injects into preview HTML.
+// Nothing else is exempt: any other path on a Netlify host (app.netlify.com
+// included), and the drawer's own URL on a page whose final URL (after
+// redirects) is not on a *.netlify.app host, still counts. A "Failed to load resource" message names
+// its status but not the request; the request is the message's location URL.
+const NETLIFY_PREVIEW_DRAWER_REQUESTS = Object.freeze([
+  { hostname: "netlify-cdp-loader.netlify.app", pathname: "/netlify.js" },
+]);
+
+function isNetlifyPreviewHost(hostname) {
+  return hostname.endsWith(".netlify.app");
+}
+
+function isNetlifyPreviewDrawerConsoleError(pageUrl, message) {
+  if (!/^Failed to load resource\b/.test(String(message?.text || ""))) return false;
+  try {
+    const request = new URL(message.url);
+    return isNetlifyPreviewHost(new URL(pageUrl).hostname)
+      && NETLIFY_PREVIEW_DRAWER_REQUESTS.some((drawer) => drawer.hostname === request.hostname && drawer.pathname === request.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function isKnownSdkLoaderFalsePositive(message) {

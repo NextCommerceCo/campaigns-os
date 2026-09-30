@@ -7633,6 +7633,111 @@
         }
       ],
       "entry_sha256": "b04ee701fcb95fce30ddb6c19291320187a92cb16563c58c951217ddc5543e9b"
+    },
+    {
+      "id": "RL-0176",
+      "sequence": 169,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.2+agent.10",
+      "changelog_sha256": "e82bca3588e3fd74f37868f4fc26b57a911d0cc9895fc3b53ebca3d2b276991a",
+      "agent_impact": "qa install-browser, qa policy set and qa resolve no longer record deviations, and a deviation declared with --deviation-reason prints one confirming line. next quotes each ledger/artifact divergence inline. install-skills lists the SKILL.md files to read in the current session instead of asking for a restart. The Figma coverage error gives the manifest path, schema and a minimal entry. QA ignores the Netlify deploy-preview drawer loader script's failed request on *.netlify.app pages. Bundled skills move to 1.43.2+skills.2.",
+      "compatibility": "compatible",
+      "migration": "Refresh bundled skills to 1.43.2+skills.2 with install-skills, then read the SKILL.md files it lists.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "The divergence_inspect action and the prepare-build recovery prompt quote each divergence (stage, ledger claim, artifact evidence) and say divergences[] is next --json output, not a file."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "install-skills",
+          "summary": "List each written SKILL.md under Read now (read_now[] in --json) with read-now-in-this-session guidance instead of a restart instruction."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa install-browser, qa policy set and qa resolve record no deviation; a deviation with --deviation-reason prints one confirming line instead of the warning; QA ignores a failed request for the Netlify deploy-preview drawer's loader script (netlify-cdp-loader.netlify.app/netlify.js) only on pages whose final URL, after any redirect, is on a *.netlify.app host."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The source_html.pages.coverage error for an unmapped Figma-sourced page names the manifest path, schema file and a minimal page entry, and says no exporter is required."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.43.2+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.43.2+skills.2 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Give the standalone-HTML route (keep the document whole, wrapper_policy: preserve_document_wrappers) beside the wrapper-stripping conversion; stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "a00aa90fe675a51fee9f4761b8dcee74cd81a135c4808e728116bb4f23f4d8e0"
     }
   ]
 }

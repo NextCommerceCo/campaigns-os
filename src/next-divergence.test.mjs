@@ -448,6 +448,23 @@ test("the inspection action tells the agent the list is deliberately truncated",
   rmSync(dir, { recursive: true, force: true });
 });
 
+// #535: the text renderer prints the action description, not divergences[],
+// so a count stated there without its entries pointed at a list the reader
+// could not see. The description quotes every entry it counts and says where
+// the list is.
+test("the inspection action quotes each divergence inline and says where divergences[] is", () => {
+  const { dir, packetPath } = selfTargetFixture({ builtOutput: true, deployUrlInReport: true, verdict: true });
+  const result = runNext(packetPath);
+  const inspect = result.next_actions.find((action) => action.id === "divergence_inspect");
+  assert.equal(result.divergences.length, 3);
+  assert.match(inspect.description, /disagree — 3 divergence\(s\): \(1\) assembly: /);
+  result.divergences.forEach((entry, index) => {
+    assert.ok(inspect.description.includes(`(${index + 1}) ${entry.stage}: ledger claims ${entry.ledger_claim}; artifact evidence: ${entry.artifact_evidence}`), entry.code);
+  });
+  assert.match(inspect.description, /divergences\[\] field of `campaigns-os next --json` output; they are not written to any file/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a CLEAN packet is untouched by the suppression — stage actions still flow", () => {
   const { dir, packetPath } = selfTargetFixture();
   const result = runNext(packetPath);

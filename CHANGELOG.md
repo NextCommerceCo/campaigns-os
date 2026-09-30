@@ -2,6 +2,48 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.10] - 2026-09-30
+
+### Changed
+
+- Agent deviation telemetry (#535): `qa install-browser`, `qa policy set` and
+  `qa resolve` no longer record a deviation when `next` recommended another
+  stage. They install the QA browser, edit QA policy, and report the resolved QA
+  targets, and produce no stage output. `qa run` and
+  every other subcommand of a tracked command are still compared with the
+  recommendation. A deviation recorded with `--deviation-reason` now prints one
+  line confirming the reason instead of the warning that asks for one.
+- `next` (#535): when the assembly report and the repository's artifacts
+  disagree, the `divergence_inspect` action and the prepare-build recovery
+  prompt quote each divergence inline (stage, ledger claim, artifact evidence)
+  and say that `divergences[]` is part of `next --json` output and is not
+  written to any file. Text output previously stated a count and pointed at a
+  `divergences[]` it did not show.
+- Doctor's `source_html.pages.coverage` error for an unmapped Figma-sourced page
+  (#535) names the manifest path
+  (`<source-root>/.campaigns-os/source-html-manifest.json`), the schema file,
+  and a minimal page entry, and says no exporter is required. It still notes
+  that a Figma-sourced page's manifest is checked for producer provenance.
+- `install-skills` (#535) lists each `SKILL.md` it wrote under `Read now` and
+  says to read them in the current session, since a running agent does not load
+  skills installed after it started; `--json` adds `read_now[]`. It no longer
+  tells the agent to restart. When nothing changed it says there is nothing new
+  to read.
+- QA browser (#535): on a page whose final URL, after any redirect, is on a
+  `*.netlify.app` host (deploy previews included), `browser-console-errors`
+  ignores a "Failed to load resource" error for the Netlify deploy-preview
+  drawer's loader script, `https://netlify-cdp-loader.netlify.app/netlify.js`.
+  The same error for any other request, including any other path on a Netlify
+  host, or on a page that ends on any other host, still counts.
+- README and quickstart (#535) install with `@<version>` instead of a pinned
+  1.37.3, and say where the current release is listed (npm `latest`,
+  `contracts/release-ledger.json`, this changelog). Their source-preparation
+  guidance leads with standalone HTML mockups: keep them whole and set
+  `wrapper_policy: preserve_document_wrappers`.
+- Bundled skills carry revision `1.43.2+skills.2`, with each skill version
+  advanced one patch. `next-campaigns-build` gives the standalone-HTML route
+  beside the wrapper-stripping conversion.
+
 ## [1.43.2+agent.3] - 2026-09-28
 
 ### Changed

@@ -641,6 +641,7 @@ function persistDeviationIfDetected(args, command, lifecycle, ambient) {
     const entry = detectDeviation({
       lastRecommendation: ambient.session.last_recommendation,
       command,
+      subcommand: optionalString(args._?.[1]) || null,
       argvShape: lifecycle?.argv_shape || [],
       runId: ambient.session.run_id || null,
       deviationReason: optionalString(args["deviation-reason"]) || null,
@@ -648,8 +649,11 @@ function persistDeviationIfDetected(args, command, lifecycle, ambient) {
     if (!entry) return;
     const journalPath = join(ambient.dir, DEVIATION_JOURNAL_REL_PATH);
     appendDeviation(journalPath, entry);
-    process.stderr.write(
-      `[campaigns-os] deviation recorded: \`${command}\` ran while next recommended stage "${entry.recommended_stage}" (expected: ${entry.recommended_commands.join(", ") || "none"}). Declare intent with --deviation-reason, or follow \`campaigns-os next\`.\n`,
+    // A declared detour gets one confirming line; only an undeclared one is
+    // told how to declare intent.
+    process.stderr.write(entry.deviation_reason
+      ? `[campaigns-os] deviation recorded with reason: \`${command}\` ran while next recommended stage "${entry.recommended_stage}"; reason: "${singleLineField(entry.deviation_reason)}".\n`
+      : `[campaigns-os] deviation recorded: \`${command}\` ran while next recommended stage "${entry.recommended_stage}" (expected: ${entry.recommended_commands.join(", ") || "none"}). Declare intent with --deviation-reason, or follow \`campaigns-os next\`.\n`,
     );
   } catch {
     // telemetry never blocks a command
@@ -3902,7 +3906,7 @@ export function nextStage(stage, args, ambient = null) {
   // and the recommendation is recorded on the active run session for
   // deviation telemetry.
   const prepareBuildRecoveryPrompt = divergences.length
-    ? `The assembly report's ledger and the repository's artifacts disagree (see divergences[]). Inspect both sides and decide which is right before acting. Do not rerun \`${cmd("prepare-build")}\` or \`${cmd("start")}\` on the strength of the ledger alone.`
+    ? `The assembly report's ledger and the repository's artifacts disagree: ${quoteDivergences(divergences)} Inspect both sides and decide which is right before acting. Do not rerun \`${cmd("prepare-build")}\` or \`${cmd("start")}\` on the strength of the ledger alone.`
     : prepareBuildGate?.binding_failure
       ? prepareBuildGate.reason
       : prepareBuildGate?.stage
@@ -4282,6 +4286,14 @@ function themeStarterPaletteAdvisory(themeGate, packetPath, residueState) {
 //
 // This action is emitted ALONE (see buildNextActions): a divergent packet is
 // a stop-and-reconcile state, not a stage with a recommended command.
+// Each divergence inline, so the count is never stated without the entries it
+// counts: text output renders only the action description, not divergences[].
+function quoteDivergences(divergences) {
+  return divergences
+    .map((divergence, index) => `(${index + 1}) ${divergence.stage}: ledger claims ${divergence.ledger_claim}; artifact evidence: ${String(divergence.artifact_evidence).replace(/\.?$/, ".")}`)
+    .join(" ");
+}
+
 function divergenceInspectAction(divergences, packetPath) {
   const divergedStages = divergences.map((divergence) => divergence.stage);
   const forwardHint = divergedStages.includes("qa")
@@ -4293,7 +4305,7 @@ function divergenceInspectAction(divergences, packetPath) {
     id: "divergence_inspect",
     kind: "manual",
     command: null,
-    description: `Ledger and artifacts disagree — ${divergences.length} divergence(s) recorded in divergences[]. This is the ONLY next action: stage actions are suppressed while the disagreement stands, because every one of them would be derived from the same contradictory evidence. Inspect both sides (each entry quotes the ledger claim and the artifact evidence) and decide which is right; update the assembly report only after inspection. Do not rerun start/prepare-build or redo completed-looking work on the strength of the ledger alone, and do not treat artifact presence as proof a stage is complete. ${forwardHint} Re-run \`${cmd("next")} --packet ${packetPath} --json\` once the report matches the artifacts to get the normal action list.`,
+    description: `Ledger and artifacts disagree — ${divergences.length} divergence(s): ${quoteDivergences(divergences)} The same entries are the divergences[] field of \`${cmd("next")} --json\` output; they are not written to any file. This is the ONLY next action: stage actions are suppressed while the disagreement stands, because every one of them would be derived from the same contradictory evidence. Inspect both sides and decide which is right; update the assembly report only after inspection. Do not rerun start/prepare-build or redo completed-looking work on the strength of the ledger alone, and do not treat artifact presence as proof a stage is complete. ${forwardHint} Re-run \`${cmd("next")} --packet ${packetPath} --json\` once the report matches the artifacts to get the normal action list.`,
     required: true,
   };
 }
@@ -4991,6 +5003,7 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
     source_directory: sourceDir,
     targets: targetResults,
     skills: targetResults.flatMap((target) => target.skills),
+    read_now: targetResults.flatMap((target) => target.read_now),
     available_platforms: SKILL_PLATFORMS.map((platform) => ({
       platform: platform.id,
       label: platform.label,
@@ -4998,8 +5011,17 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
     })),
     note: dryRun
       ? "Dry run only; no skill files were written."
-      : "Restart local agent sessions to pick up new or updated skills.",
+      : skillsReadNowNote(targetResults.flatMap((target) => target.read_now), "local agent sessions"),
   };
+}
+
+// A running agent does not load skills written after it started, and it cannot
+// restart itself, so the session that ran install-skills is told to read the
+// written SKILL.md files directly. A restart is the secondary route: it only
+// matters to sessions started later.
+function skillsReadNowNote(readNow, sessionLabel) {
+  if (!readNow.length) return "No skill files changed; nothing new to read.";
+  return `Read these now in this session: the SKILL.md files listed under "Read now" (a running session does not load skills installed after it started). New ${sessionLabel} load them on their own.`;
 }
 
 // A platform directory counts as installed when a skill already sits under one
@@ -5773,6 +5795,11 @@ function installSkillsToTarget({ sourceDir, target, dryRun, retired = [] }) {
     });
   }
 
+  // The SKILL.md files this run wrote; an unchanged one is what was already
+  // there for the session to load.
+  const readNow = dryRun
+    ? []
+    : skills.filter((skill) => skill.action === "created" || skill.action === "updated").map((skill) => skill.destination);
   return {
     ok: true,
     status: dryRun ? "dry_run" : "installed",
@@ -5781,9 +5808,10 @@ function installSkillsToTarget({ sourceDir, target, dryRun, retired = [] }) {
     source_directory: sourceDir,
     target_directory: targetDir,
     skills,
+    read_now: readNow,
     note: dryRun
       ? "Dry run only; no skill files were written."
-      : `Restart ${target.platform_label} session to pick up new or updated skills.`,
+      : skillsReadNowNote(readNow, `${target.platform_label} sessions`),
   };
 }
 
@@ -7929,6 +7957,10 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   if (result.skills?.length) {
     lines.push("Skills:");
     for (const skill of result.skills) lines.push(`- ${formatSkillInstallSummary(skill)}`);
+  }
+  if (result.read_now?.length) {
+    lines.push("Read now (read these now in this session):");
+    for (const path of result.read_now) lines.push(`- ${path}`);
   }
   if (result.ready?.length) {
     lines.push("Ready:");

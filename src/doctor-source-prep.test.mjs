@@ -527,3 +527,42 @@ test("an unrecognized --wrapper-policy value is refused with the accepted vocabu
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// #535: a Figma-sourced page with no source mapping. Hand-written HTML has no
+// exporter, so the message names the manifest path, the schema, and a minimal
+// entry to write by hand instead of pointing at "the exporter".
+test("coverage error for an unmapped Figma page gives the manifest path, schema and a minimal entry", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-coverage-message-"));
+  try {
+    const sourceRoot = resolve(dir, "source-html");
+    const targetRepo = resolve(dir, "target-page-kit");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(resolve(targetRepo, "src", "runtime-packet-demo"), { recursive: true });
+    writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+    for (const page of ["checkout", "upsell", "receipt"]) writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page}</section>`);
+    const spec = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+    spec.funnels[0].pages.find((page) => page.id === "landing").design_source = { type: "figma", file_url: "https://design.example.com/file/abc" };
+    const specPath = resolve(dir, "campaignspec.json");
+    writeJson(specPath, spec);
+    const packet = readJson(resolve(ROOT, "examples/build-packet.basic.json"));
+    packet.spec.local_path = specPath;
+    packet.source_html.root = sourceRoot;
+    packet.assembly.target_repo = targetRepo;
+    packet.assembly.commerce_catalog.path = resolve(ROOT, "contracts/commerce-surface-catalog.json");
+    packet.source_html.pages = packet.source_html.pages.filter((page) => page.page_id !== "landing");
+    const packetPath = resolve(dir, "campaign-runtime.build.json");
+    writeJson(packetPath, packet);
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    const coverage = doctor.errors.find((issue) => issue.code === "source_html.pages.coverage");
+    assert.ok(coverage, JSON.stringify(doctor.errors.map((issue) => issue.code)));
+    assert.match(coverage.message, /<source-root>\/\.campaigns-os\/source-html-manifest\.json/);
+    assert.match(coverage.message, /schemas\/source-html-manifest\.v0\.schema\.json/);
+    assert.ok(coverage.message.includes('{"schema_version": "source-html-manifest/v0", "pages": [{"page_id": "landing", "path": "<file>.html"}]}'), coverage.message);
+    assert.match(coverage.message, /"wrapper_policy": "preserve_document_wrappers"/);
+    assert.match(coverage.message, /No exporter is required/);
+    assert.doesNotMatch(coverage.message, /the exporter that produced the design emits it/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
