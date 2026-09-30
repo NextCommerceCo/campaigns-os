@@ -40,6 +40,11 @@ every read, so nothing shifts under you mid-orientation.
 | 8 | `contracts/agent-relevant-change-policy.v1.json` | What this repository counts as agent-relevant, and why a path was excluded. |
 | 9 | `docs/orientation-contract-reference.md` | Every enum, reason code, remedy, bound, and a worked example per terminal outcome. |
 
+The ledger may declare a `baseline_floor`. History before it lives in dated
+files under `contracts/archive/`; those are optional reads, not part of this
+order. A reviewed baseline older than the floor is refused with
+`baseline_below_floor`: adopt a newer reviewed baseline.
+
 Apply the limits from step 4 **before** you finish assembling. Exceeding one is
 a refusal with reason code `orientation_too_large`. Never truncate: a partial
 view of a release is worse than no view, because you cannot tell which part you

@@ -9,6 +9,7 @@
     contracts/orientation-reason-codes.v1.json
     contracts/orientation-limits.v1.json
     contracts/supported-surface.json
+    contracts/release-ledger.json (baseline_floor only)
     contracts/fixtures/orientation/canonicalization/v1.json
   Regenerate: node ./scripts/generate-orientation-reference.mjs --write
   CI runs the same script with --check, so a stale copy of this file fails the build.
@@ -25,7 +26,7 @@ Ledger schema id: `campaigns-os-release-ledger/v1`
 Change policy version: `1.0.0`  
 Reason-code vocabulary version: `1.0.0`  
 Limits version: `1.0.0`  
-Supported surface at generation time: `1.43.3`
+Supported surface at generation time: `1.44.0`
 
 ## Forward compatibility
 
@@ -60,6 +61,43 @@ position, so a consumer reading history in array order reads it in `sequence` or
 its number to `sequence`; the two diverge legitimately, because when concurrent pull requests
 land the later one restamps its `sequence` to follow the earlier while keeping the id it was
 written with. Order by `sequence`, identify by `id`, and do not infer one from the other.
+After a baseline rotation the file starts at `baseline_floor.last_archived_sequence + 1`, not at 1;
+entries are never renumbered, so position plus that offset is still the sequence.
+
+## Baseline rotation
+
+The ledger and the changelog are bounded as whole files, so they are rotated rather than allowed to
+outgrow the limits. A rotation moves every entry up to a reviewed cut, and the changelog from the first section
+those entries link to the end of the file (unlinked sections in that range included), byte-for-byte and in order
+into a dated archive pair under `contracts/archive/`, and declares the cut as
+`baseline_floor` in `contracts/release-ledger.json`. Archived entries keep their `sequence`, `entry_sha256` and
+`changelog_sha256`; each section hash verifies against the archive changelog. The floor names the archive
+files with their SHA-256, the last archived entry and its sequence, the first kept entry, the live entry that
+recorded the rotation, and the reason code to refuse with. The floor only moves forward, only with a new
+rotation entry, and an archive file never changes once merged; the next rotation writes a new dated pair.
+
+Rotation changes no mandatory read. The reading order in `AGENTS.md` is unchanged, and `source_bytes` measures
+exactly its data files (steps 1 to 8):
+
+- `contracts/supported-surface.json`
+- `contracts/release-ledger.json`
+- `CHANGELOG.md`
+- `contracts/orientation-limits.v1.json`
+- `contracts/orientation-reason-codes.v1.json`
+- `schemas/campaigns-os-tooling-orientation.v1.schema.json`
+- `schemas/campaigns-os-release-ledger.v1.schema.json`
+- `contracts/agent-relevant-change-policy.v1.json`
+
+The archive files are not among them: they are optional history reads and count against no limit, and their
+sections and entries are not in `section_count` or `ledger_entries`.
+
+Current floor: last archived entry `RL-0124` (sequence 124), first kept entry
+`RL-0125`, recorded by `RL-0190`. Archives, oldest rotation first:
+
+- [`contracts/archive/release-ledger.2026-09-30.json`](../contracts/archive/release-ledger.2026-09-30.json) and [`contracts/archive/CHANGELOG.2026-09-30.md`](../contracts/archive/CHANGELOG.2026-09-30.md)
+
+A consumer whose reviewed baseline's newest ledger entry is older than `RL-0124` refuses with
+`baseline_below_floor`. Adopt a newer reviewed baseline whose ledger reaches the floor's last_archived_id; every commit at or after the floor's first_kept_id qualifies. Do not orient on the partial live window, and do not stitch the archive in as a substitute: the archive holds the history for reference, not for this read.
 
 ## Release-ledger digest canonicalization
 
@@ -120,6 +158,7 @@ consumer's parser tests.
 |---|---|---|---|---|---|
 | `ahead_of_upstream` | `refused` | campaigns-agent | `TP-D4-ahead-of-upstream` | The checkout carries commits the upstream default branch does not, so its contracts are not a published generation. | Push or drop the local commits, or run against a managed generation at the published OID. |
 | `already_current` | `current` | campaigns-agent | `TP-B3-already-current` | The verified target equals the active generation; nothing changed and no restart is required. | None. |
+| `baseline_below_floor` | `refused` | campaigns-os | `A1-baseline-below-floor` | The target ledger declares a baseline_floor, and the reviewed baseline's newest ledger entry is older than the floor's last archived entry. Part of the baseline-to-target window was rotated into the archive files the floor names, which are not mandatory orientation reads, so the window cannot be read from the live ledger and changelog. | Adopt a newer reviewed baseline whose ledger reaches the floor's last_archived_id; every commit at or after the floor's first_kept_id qualifies. Do not orient on the partial live window, and do not stitch the archive in as a substitute: the archive holds the history for reference, not for this read. |
 | `checkout_acquisition_failed` | `refused` | campaigns-agent | `TP-D1-acquisition-failed` | Managed acquisition did not complete: interrupted clone, remote validation failure, or a broken linked-worktree backpointer. Partial state is quarantined, never exposed as ready. | Rerun acquisition. If it fails repeatedly, inspect the quarantined partial named in the diagnostic and confirm remote reachability. |
 | `checkout_already_exists` | `refused` | campaigns-agent | `TP-D1-checkout-already-exists` | The managed root reserved for acquisition appeared concurrently and is not an empty reservation this run owns. | Rerun so the existing root is validated as a managed store, or remove the unexpected directory after confirming it holds no needed state. |
 | `checkout_missing` | `refused` | campaigns-agent | `TP-D1-checkout-missing` | No checkout exists at the configured location and the mode does not authorize acquiring one. | Supply the operator checkout at the configured path, or switch to managed mode so a generation can be acquired. |
@@ -205,7 +244,7 @@ nowhere in the schemas, or in the schemas and not here, is a generation failure.
 | `$defs.baseline.properties.kind` | `legacy_commit`, `supported_surface` |
 | `$defs.change_class` | `schema`, `hashed_surface`, `named_surface`, `cli_surface`, `skill`, `package_export`, `compatibility_policy`, `documentation`, `workflow`, `generated_runtime` |
 | `$defs.disposition` | `current`, `orientation_available`, `updated`, `restart_required`, `recovered_interrupted_update`, `legacy_baseline`, `freshness_unknown`, `refused` |
-| `$defs.reason_code` | `already_current`, `ahead_of_upstream`, `checkout_acquisition_failed`, `checkout_already_exists`, `checkout_missing`, `checkout_mutation_not_authorized`, `detached_head`, `dirty_checkout`, `diverged_history`, `evidence_budget_exceeded`, `fetch_failed`, `git_environment_unsafe`, `history_incomplete`, `missing_upstream`, `orientation_contract_missing`, `orientation_in_progress`, `orientation_incomplete`, `orientation_rendered`, `orientation_too_large`, `pointer_race`, `runtime_commit_mismatch`, `runtime_refresh_failed`, `runtime_refresh_required`, `surface_incompatible`, `transaction_incomplete`, `transaction_reconciled`, `wrong_remote` |
+| `$defs.reason_code` | `already_current`, `ahead_of_upstream`, `baseline_below_floor`, `checkout_acquisition_failed`, `checkout_already_exists`, `checkout_missing`, `checkout_mutation_not_authorized`, `detached_head`, `dirty_checkout`, `diverged_history`, `evidence_budget_exceeded`, `fetch_failed`, `git_environment_unsafe`, `history_incomplete`, `missing_upstream`, `orientation_contract_missing`, `orientation_in_progress`, `orientation_incomplete`, `orientation_rendered`, `orientation_too_large`, `pointer_race`, `runtime_commit_mismatch`, `runtime_refresh_failed`, `runtime_refresh_required`, `surface_incompatible`, `transaction_incomplete`, `transaction_reconciled`, `wrong_remote` |
 
 ### `schemas/campaigns-os-release-ledger.v1.schema.json`
 
