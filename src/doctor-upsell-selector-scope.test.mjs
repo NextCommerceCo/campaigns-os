@@ -150,7 +150,7 @@ test("#529: an upsell route whose meta was copied from another page still blocks
   }
 });
 
-test("#529: an oto route takes its role from a checkout meta, and blocks with no meta or an upsell one", () => {
+test("#529: an oto route takes its role only from a checkout meta, and blocks with any other meta or none", () => {
   const offer = `<main><div data-next-upsell="offer">${UNSCOPED}</div></main>`;
   const CHECKOUT_HEAD = '<meta name="next-page-type" content="checkout">';
   const cases = [
@@ -158,6 +158,9 @@ test("#529: an oto route takes its role from a checkout meta, and blocks with no
     ["oto-1", CHECKOUT_HEAD, "not_applicable"],
     ["oto-1", "", "blocked"],
     ["oto-1", UPSELL_HEAD, "blocked"],
+    // A meta copied from the product or thank-you page is not a checkout.
+    ["oto-1", '<meta name="next-page-type" content="product">', "blocked"],
+    ["one-time-offer", '<meta name="next-page-type" content="receipt">', "blocked"],
   ];
   for (const [route, head, status] of cases) {
     withTempDir((repo) => {

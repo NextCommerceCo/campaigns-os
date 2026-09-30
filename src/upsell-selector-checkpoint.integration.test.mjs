@@ -291,3 +291,21 @@ test("#529: the packet path keeps an explicit upsell route in the gate whatever 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("#529: the packet path keeps an oto route in the gate when its meta is not checkout", () => {
+  const { dir, packetPath, targetRepo } = fixture();
+  try {
+    const built = join(targetRepo, "_site", SLUG, "oto-1", "index.html");
+    mkdirSync(dirname(built), { recursive: true });
+    writeFileSync(
+      built,
+      '<html><head><meta name="next-page-type" content="product"></head><body>'
+        + '<div data-next-upsell="offer"><div data-next-bundle-selector data-next-selector-id="copied-meta"></div></div>'
+        + "</body></html>",
+    );
+    const gate = gateOf(doctorPacket(packetPath));
+    assert.deepEqual(gate.findings.map((finding) => finding.selector_id).sort(), ["copied-meta", "upsell-bundle-1x"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

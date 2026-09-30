@@ -203,31 +203,34 @@ export function builtPageTypeMeta(content) {
   return rest.every((value) => value.toLowerCase() === first.toLowerCase()) ? first : null;
 }
 
-// Whether the route guess is too weak to stand against the page's own meta.
-// Only two guesses are: an upsell read from "oto" / "one-time-offer" alone,
-// with no "upsell" word, and a route that also reads as checkout. An explicit
-// "upsell" or "downsell" word is never ambiguous, whatever else the route
-// says: the charge comes from the page's place in the funnel, not its meta.
+// Whether the route guess is too weak to stand against the page's own meta:
+// an upsell read from "oto" / "one-time-offer" alone, with no "upsell" word.
+// An explicit "upsell" or "downsell" word is never ambiguous, whatever else
+// the route says: the charge comes from the page's place in the funnel, not
+// its meta. A route that reads only as checkout needs no relief, since its
+// guess is not post-purchase to begin with.
 function routeGuessIsAmbiguous(route) {
   if (route === null || route === undefined) return false;
   const value = String(route).toLowerCase().trim();
   if (ROUTE_TOKENS.upsell.test(value) || ROUTE_TOKENS.downsell.test(value)) return false;
-  return ROUTE_TOKENS.one_time_offer.test(value) || ROUTE_TOKENS.checkout.test(value);
+  return ROUTE_TOKENS.one_time_offer.test(value);
 }
 
 // The type to hand in as `page_type` when the only other source is a guess
 // from the built route (resolveBuiltSiteScope's inferPageType). "/checkout-oto/"
 // infers as an upsell, but a checkout page with an embedded one-time offer
-// declares `checkout` in its meta (#529). So a declared meta replaces the
-// guess only when the guess is ambiguous (above); an explicit upsell or
-// downsell route keeps its type, so a meta copied from another page cannot
-// lift it out of the gate. The guess also stands for a page that declares
-// nothing, or declares it only in inert or conflicting markup, and when no
-// route is given. A type declared by a spec is not a guess and is passed
-// through as before.
+// declares `checkout` in its meta (#529). So a declared `checkout` (any case)
+// replaces the guess, and only when the guess is ambiguous (above). Any other
+// declared role leaves the upsell guess, so a meta copied from the product or
+// thank-you page cannot lift an oto page out of the gate, and an explicit
+// upsell or downsell route keeps its type whatever it declares. The guess also
+// stands for a page that declares nothing, or declares it only in inert or
+// conflicting markup, and when no route is given. A type declared by a spec
+// is not a guess and is passed through as before.
 export function builtPageTypeOverRouteGuess({ route = null, route_type = null, content = "" } = {}) {
   if (!routeGuessIsAmbiguous(route)) return route_type;
-  return builtPageTypeMeta(content) ?? route_type;
+  const declared = builtPageTypeMeta(content);
+  return declared?.toLowerCase() === "checkout" ? declared : route_type;
 }
 
 // A built page's funnel role, from either signal that carries it. The declared

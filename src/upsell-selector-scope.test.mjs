@@ -250,11 +250,11 @@ test("a selector inside a <template> is scanned — this SDK clones slot templat
 
 // --- Declared page type over the route guess (#529) ---------------------------
 
-// One row per way a page can carry next-page-type. `role` is what the page
-// declares over an ambiguous route that guesses "upsell" ("checkout-oto-1"):
-// only a meta the browser puts in the document, unambiguously, replaces the
-// guess. Anything else leaves the guess standing, so the post-purchase blocker
-// is never lost to inert markup.
+// One row per way a page can carry a checkout next-page-type. `role` is what
+// the page declares over an ambiguous route that guesses "upsell"
+// ("checkout-oto-1"): only a meta the browser puts in the document,
+// unambiguously, replaces the guess. Anything else leaves the guess standing,
+// so the post-purchase blocker is never lost to inert markup.
 const META = (attrs) => `<meta ${attrs}>`;
 const CHECKOUT = META('name="next-page-type" content="checkout"');
 const DECLARATIONS = [
@@ -295,17 +295,19 @@ test("only a live, unambiguous next-page-type meta replaces the route guess", ()
 });
 
 // Route x meta -> flagged, over a page with an unscoped bundle selector inside
-// its offer container. The meta beats the route guess only when the guess is
-// ambiguous: "oto" / "one-time-offer" without an "upsell" word, or a route
-// that also reads as checkout. An explicit upsell or downsell route blocks
-// whatever its meta says, because the charge comes from the page's place in
-// the funnel (#529). Where the guess is not post-purchase, an upsell meta
-// still brings the page in.
+// its offer container. Only an ambiguous route guess ("oto" / "one-time-offer"
+// without an "upsell" or "downsell" word) gives way, and only to a `checkout`
+// meta: a checkout page with an embedded offer (#529). Any other meta, such as
+// one copied from the product or thank-you page, leaves the upsell guess. An
+// explicit upsell or downsell route blocks whatever its meta says, because the
+// charge comes from the page's place in the funnel. Where the guess is not
+// post-purchase (checkout routes included), an upsell meta still brings the
+// page in and nothing else does.
 const OFFER_BODY = `<div data-next-upsell="offer">${UNSCOPED}</div>`;
-const ROUTE_META_METAS = [null, "checkout", "upsell", "product", "receipt"];
+const ROUTE_META_METAS = [null, "checkout", "upsell", "product", "receipt", "landing", "foo"];
 const flaggedFor = (...metas) => Object.fromEntries(ROUTE_META_METAS.map((meta) => [meta ?? "(none)", metas.includes(meta)]));
 const ALWAYS = flaggedFor(...ROUTE_META_METAS);
-const AMBIGUOUS = flaggedFor(null, "upsell");
+const AMBIGUOUS = flaggedFor(...ROUTE_META_METAS.filter((meta) => meta !== "checkout"));
 const NOT_POST_PURCHASE = flaggedFor("upsell");
 const ROUTE_META_TABLE = [
   ["upsell-1", ALWAYS],
@@ -317,16 +319,21 @@ const ROUTE_META_TABLE = [
   ["checkout-downsell", ALWAYS],
   ["oto-1", AMBIGUOUS],
   ["oto1", AMBIGUOUS],
+  ["/oto/", AMBIGUOUS],
+  ["oto-2/index", AMBIGUOUS],
   ["one-time-offer", AMBIGUOUS],
+  ["/one-time-offer/", AMBIGUOUS],
   ["checkout-oto-1", AMBIGUOUS],
   ["checkout-oto-v2", AMBIGUOUS],
   ["checkout", NOT_POST_PURCHASE],
+  ["cart", NOT_POST_PURCHASE],
   ["order", NOT_POST_PURCHASE],
+  ["checkout-thank-you", NOT_POST_PURCHASE],
   ["offer", NOT_POST_PURCHASE],
   ["special", NOT_POST_PURCHASE],
 ];
 
-test("route x meta: a meta beats only an ambiguous route guess; an explicit upsell or downsell route always blocks", () => {
+test("route x meta: only a checkout meta beats an ambiguous route guess; an explicit upsell or downsell route always blocks", () => {
   for (const [route, expected] of ROUTE_META_TABLE) {
     for (const meta of ROUTE_META_METAS) {
       const head = meta ? META(`name="next-page-type" content="${meta}"`) : "";
