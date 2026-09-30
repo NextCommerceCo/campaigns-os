@@ -17,6 +17,17 @@ export const DEVIATION_JOURNAL_REL_PATH = ".campaign-runtime/agent-deviations.js
 // (doctor, next, findings, telemetry, run, validate-*) never deviate.
 export const TRACKED_STAGE_COMMANDS = Object.freeze(new Set(["start", "prepare-build", "theme", "polish", "qa", "run-record"]));
 
+// Setup and metadata subcommands of a tracked command. They produce no stage
+// output, so running one outside the recommendation is not a detour:
+//   qa install-browser — installs the package-owned QA browser binary;
+//   qa policy set      — edits the packet's QA policy fields (and the
+//                        assembly report's mirror of them);
+//   qa resolve         — read-only diagnostic: prints the derived QA targets
+//                        and, unless --no-probe, probes their reachability.
+// Every other subcommand of a tracked command (`qa run`, `polish capture`,
+// `theme generate`, ...) is still compared against the recommendation.
+export const UNTRACKED_SUBCOMMANDS = Object.freeze(new Set(["qa install-browser", "qa policy", "qa resolve"]));
+
 // Commands every recommendation implicitly allows for its stage. Stage work is
 // agent/skill work, so the expected command set is small and explicit.
 const EXPECTED_COMMANDS_BY_STAGE = Object.freeze({
@@ -65,8 +76,9 @@ export function buildRecommendation({ stage, status, expectedCommands, now = new
  * Compare a pipeline-advancing command against the session's last
  * recommendation. Returns a deviation entry or null.
  */
-export function detectDeviation({ lastRecommendation, command, argvShape = [], runId = null, deviationReason = null, now = new Date() }) {
+export function detectDeviation({ lastRecommendation, command, subcommand = null, argvShape = [], runId = null, deviationReason = null, now = new Date() }) {
   if (!TRACKED_STAGE_COMMANDS.has(command)) return null;
+  if (subcommand && UNTRACKED_SUBCOMMANDS.has(`${command} ${subcommand}`)) return null;
   if (!lastRecommendation || !Array.isArray(lastRecommendation.expected_commands)) return null;
   if (lastRecommendation.expected_commands.includes(command)) return null;
   return {

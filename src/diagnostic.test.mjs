@@ -28,6 +28,20 @@ test("diagnostic exports accepted IDs and fixed recovery while dropping seeded s
   assert.ok(result.recovery.every((item) => item.owner && item.input_needed));
 });
 
+test("source-provenance findings export their own reason ids, waived or inert, and never their text", () => {
+  const codes = [
+    "source_html.producer_provenance", "source_html.producer_provenance.source_type",
+    "source_html.producer_provenance.screenshot_fallback_used", "source_html.producer_provenance.semantic_section_count",
+    "source_html.producer_provenance.material_fingerprint", "source_html.producer_provenance.section_exports",
+  ];
+  const doctor = { status: "ready_with_waivers", next: { stage: "build" }, errors: [],
+    warnings: [...codes.map((code) => ({ code, message: SECRET, detail: { waived: true, page_id: SECRET } })),
+      { code: "source_html.producer_provenance.waiver_inert", message: SECRET, detail: { pages: [SECRET] } }] };
+  const result = diagnosticExport({ tooling, doctor });
+  assert.equal(JSON.stringify(result).includes(SECRET), false);
+  assert.deepEqual(result.reason_ids, [...codes, "source_html.producer_provenance.waiver_inert"].sort());
+});
+
 test("unsupported diagnostic enums and package version never echo their raw values", () => {
   const result = diagnosticExport({ tooling: { ...tooling, package: { version: SECRET }, install: { mode: SECRET }, status: SECRET }, doctor: { status: SECRET, next: { stage: SECRET } }, platform: SECRET });
   assert.equal(JSON.stringify(result).includes(SECRET), false);
@@ -61,6 +75,14 @@ test("present tooling marks only non-boolean skills.ok values unsupported", () =
   assert.equal(stale.reason_ids.includes("diagnostic.unsupported_value"), false);
   assert.ok(stale.reason_ids.includes("tooling.skills_stale"));
   assert.ok(stale.action_ids.includes("install-skills"));
+});
+
+// #535: the agent that reads this recovery cannot restart itself.
+test("the stale-skills recovery says to read the Read now files in the running session, restart only as a fallback", () => {
+  const stale = diagnosticExport({ tooling: { ...tooling, skills: { ok: false } } });
+  const recovery = stale.recovery.find((item) => item.action_id === "install-skills");
+  assert.match(recovery.instruction, /read the SKILL\.md files install-skills lists under Read now in the running session; restart the agent only if it cannot read them/);
+  assert.doesNotMatch(recovery.instruction, /and restart the agent/);
 });
 
 test("diagnose forwards only read-only inputs and suppresses sensitive producer exceptions", () => {

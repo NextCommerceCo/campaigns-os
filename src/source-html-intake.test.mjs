@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import {
   createSourceHtmlIntake,
+  parseHostPrefixedRoute,
   publicRouteForPage,
+  stripHostPrefixedRoutes,
 } from "./source-html-intake.mjs";
+import { specMaterialHash } from "./spec-identity.mjs";
 import {
   readSourceHtmlManifestFile,
   SOURCE_HTML_MANIFEST_SCHEMA,
@@ -754,4 +758,480 @@ test("the decline branch is taken wherever it is declared, not only on upsells",
   const frontmatter = result.mappings.find((m) => m.page_id === "p").page_kit.frontmatter;
   assert.equal(frontmatter.next_url, "/campaign/next-target/");
   assert.equal(frontmatter.decline_url, "/campaign/decline-target/");
+});
+
+// #531: an older saved Map stored page_url values with the host in them.
+const HOST_ROUTE_CASES = [
+  ["shop.example.com/route/x/", "/route/x/"],
+  ["https://shop.example.com/route/x/", "/route/x/"],
+  ["http://shop.example.com/route/x/", "/route/x/"],
+  ["//shop.example.com/route/x/", "/route/x/"],
+  ["SHOP.Example.com/route/", "/route/"],
+  ["localhost:8080/route/", "/route/"],
+  ["shop.example.com:8443/route/x/", "/route/x/"],
+  ["127.0.0.1:4000/route/x/", "/route/x/"],
+  ["192.168.0.255/route/x/", "/route/x/"],
+  ["shop.example.com/route/x/?variant=b#offer", "/route/x/?variant=b#offer"],
+  ["https://shop.example.com?variant=b", "/?variant=b"],
+  ["https://shop.example.com", "/"],
+  // `pl` is a country-code domain, not only a script extension.
+  ["shop.example.pl/route/x/", "/route/x/"],
+];
+const NOT_HOST_ROUTE_CASES = [
+  "/route/x/",
+  "/",
+  "route/x/",
+  "v1.2/offer/",
+  "300.1.2.3/offer/",
+  "999.999.999.999/offer/",
+  "256.0.0.1/x/",
+  "checkout.html",
+  "landing/index.html",
+  "//route/x/",
+  // A dotted first segment ending in a page or script extension is a
+  // filename, not a host.
+  "index.php/checkout/",
+  "upsell.php/",
+  "INDEX.PHP/checkout/",
+  "offer.asp/x/",
+  "offer.aspx/x/",
+  "order.jsp/",
+  "promo.shtml/",
+  "promo.htm/",
+  "run.cgi/x/",
+  "//index.php/checkout/",
+  "shop.example.com",
+  "ftp://shop.example.com/route/x/",
+  "",
+  "   ",
+  null,
+  undefined,
+];
+
+test("parseHostPrefixedRoute keeps the rooted path of a host-prefixed route and leaves every route alone", () => {
+  for (const [value, rooted] of HOST_ROUTE_CASES) {
+    const parsed = parseHostPrefixedRoute(value);
+    assert.ok(parsed, `expected ${JSON.stringify(value)} to read as host-prefixed`);
+    assert.equal(parsed.to, rooted, JSON.stringify(value));
+    assert.equal(parsed.from, value);
+  }
+  for (const value of NOT_HOST_ROUTE_CASES) {
+    assert.equal(parseHostPrefixedRoute(value), null, `expected ${JSON.stringify(value)} to stay a route`);
+  }
+  // An absolute URL is a valid SDK routing target doctor already accepts;
+  // only the bare and protocol-relative forms count there.
+  assert.equal(parseHostPrefixedRoute("https://shop.example.com/route/x/", { keepAbsolute: true }), null);
+  assert.equal(parseHostPrefixedRoute("shop.example.com/route/x/", { keepAbsolute: true }).to, "/route/x/");
+  assert.equal(parseHostPrefixedRoute("//shop.example.com/route/x/", { keepAbsolute: true }).to, "/route/x/");
+});
+
+test("stripHostPrefixedRoutes records one evidence entry per changed value and returns a clean spec unchanged", () => {
+  const clean = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+  const untouched = stripHostPrefixedRoutes(clean);
+  assert.equal(untouched.spec, clean);
+  assert.deepEqual(untouched.evidence, []);
+
+  const spec = structuredClone(clean);
+  const [, checkout, upsell] = spec.funnels[0].pages;
+  upsell.page_url = " shop.example.com/runtime-packet-demo/upsell/?b=1#top";
+  checkout.sdk_hints.meta_tags["next-success-url"] = "shop.example.com/runtime-packet-demo/upsell/";
+  upsell.sdk_hints.meta_tags["next-upsell-accept-url"] = "https://shop.example.com/runtime-packet-demo/receipt/";
+  spec.funnel_pages = [{ id: "upsell", page_url: "https://shop.example.com/runtime-packet-demo/upsell/" }];
+  const before = structuredClone(spec);
+
+  const { spec: stripped, evidence } = stripHostPrefixedRoutes(spec);
+  assert.deepEqual(spec, before, "the input spec is not mutated");
+  assert.deepEqual(evidence, [
+    { code: "routing_meta.host_stripped", page_id: "checkout", field: "funnels[0].pages[1].sdk_hints.meta_tags.next-success-url", from: "shop.example.com/runtime-packet-demo/upsell/", to: "/runtime-packet-demo/upsell/" },
+    { code: "routing_meta.host_stripped", page_id: "upsell", field: "funnels[0].pages[2].page_url", from: " shop.example.com/runtime-packet-demo/upsell/?b=1#top", to: "/runtime-packet-demo/upsell/?b=1#top" },
+    { code: "routing_meta.host_stripped", page_id: "upsell", field: "funnel_pages[0].page_url", from: "https://shop.example.com/runtime-packet-demo/upsell/", to: "/runtime-packet-demo/upsell/" },
+  ]);
+  assert.equal(stripped.funnels[0].pages[2].page_url, "/runtime-packet-demo/upsell/?b=1#top");
+  assert.equal(stripped.funnels[0].pages[1].sdk_hints.meta_tags["next-success-url"], "/runtime-packet-demo/upsell/");
+  // An absolute URL in a routing meta tag is a valid SDK target: kept.
+  assert.equal(stripped.funnels[0].pages[2].sdk_hints.meta_tags["next-upsell-accept-url"], "https://shop.example.com/runtime-packet-demo/receipt/");
+  assert.equal(stripped.funnels[0].pages[0].page_url, "landing/");
+});
+
+function runCliRaw(args, { preload = null } = {}) {
+  const result = spawnSync(process.execPath, [...(preload ? ["--import", pathToFileURL(preload).href] : []), CLI, ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, CAMPAIGNS_API_KEY: "", CAMPAIGNS_OS_TELEMETRY: "off" },
+  });
+  return { status: result.status, stderr: result.stderr, json: result.stdout.trim() ? JSON.parse(result.stdout) : null };
+}
+
+function hostPrefixSpec(specPath) {
+  const spec = readJson(specPath);
+  const [, checkout, upsell] = spec.funnels[0].pages;
+  upsell.page_url = "shop.example.com/runtime-packet-demo/upsell/";
+  checkout.sdk_hints.meta_tags["next-success-url"] = "shop.example.com/runtime-packet-demo/upsell/";
+  return spec;
+}
+
+test("start leaves a local spec with host-prefixed routes byte-identical, says it must be edited, and doctor blocks", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    writeJson(specPath, hostPrefixSpec(specPath));
+    const bytes = readFileSync(specPath);
+    const mtime = statSync(specPath).mtimeMs;
+    const result = runCliRaw(["start", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
+    assert.ok(result.json, result.stderr);
+
+    assert.deepEqual(readFileSync(specPath), bytes, "an operator's spec file is never rewritten");
+    assert.equal(statSync(specPath).mtimeMs, mtime);
+    assert.equal(result.json.context.spec.hash, createHash("sha256").update(bytes).digest("hex"));
+    const report = readJson(resolve(targetRepo, result.json.context.report_path));
+    assert.deepEqual(report.evidence, [], "nothing was changed, so nothing is recorded as stripped");
+
+    const notices = result.stderr.split("\n").filter((line) => line.includes("host-prefixed route"));
+    assert.equal(notices.length, 1, result.stderr);
+    assert.match(notices[0], /must be edited/);
+    assert.match(notices[0], /"shop\.example\.com\/runtime-packet-demo\/upsell\/" -> "\/runtime-packet-demo\/upsell\/"/);
+
+    const blocker = (result.json.doctor?.errors || []).find((issue) => issue.code === "routing_meta.host_prefixed");
+    assert.ok(blocker, JSON.stringify((result.json.doctor?.errors || []).map((issue) => issue.code)));
+    assert.match(blocker.message, /upsell:page_url "shop\.example\.com\/runtime-packet-demo\/upsell\/" -> "\/runtime-packet-demo\/upsell\/"/);
+  });
+});
+
+test("prepare-build leaves a spec with no host-prefixed route byte-identical and records no evidence", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    const bytes = readFileSync(specPath);
+    const mtime = statSync(specPath).mtimeMs;
+    const result = runCliRaw(["prepare-build", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
+    assert.ok(result.json, result.stderr);
+    assert.deepEqual(readFileSync(specPath), bytes);
+    assert.equal(statSync(specPath).mtimeMs, mtime, "the spec file is not rewritten");
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    assert.equal(result.json.context.spec.hash, hash);
+    assert.equal(result.json.context.spec.material_hash, specMaterialHash(JSON.parse(bytes)));
+    const report = readJson(resolve(targetRepo, result.json.context.report_path));
+    assert.equal(report.identity.spec_hash, hash);
+    assert.deepEqual(report.evidence, []);
+    assert.equal(result.stderr.includes("routing_meta.host_stripped"), false);
+  });
+});
+
+test("start accepts an absolute page_url in a local spec as before: no notice, no blocker, projected to its path", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    const spec = readJson(specPath);
+    spec.funnels[0].pages[2].page_url = "https://shop.example.com/runtime-packet-demo/upsell/";
+    writeJson(specPath, spec);
+    const bytes = readFileSync(specPath);
+    const result = runCliRaw(["start", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
+    assert.ok(result.json, result.stderr);
+
+    assert.deepEqual(readFileSync(specPath), bytes);
+    assert.equal(result.stderr.includes("host-prefixed route"), false, result.stderr);
+    const report = readJson(resolve(targetRepo, result.json.context.report_path));
+    assert.deepEqual(report.evidence, []);
+    const upsell = result.json.packet.source_html.pages.find((page) => page.page_id === "upsell");
+    assert.equal(upsell.page_kit.public_route, "/runtime-packet-demo/upsell/");
+    const codes = (result.json.doctor?.errors || []).map((issue) => issue.code);
+    assert.equal(codes.includes("routing_meta.host_prefixed"), false, JSON.stringify(codes));
+  });
+});
+
+// A preload that stands in for the Map store: globalThis.fetch answers every
+// request with `served`, so --map-id runs with no network.
+function mapFetchPreload(dir, served) {
+  const preload = join(dir, "map-fetch.mjs");
+  writeFileSync(preload, `globalThis.fetch = async () => new Response(${JSON.stringify(JSON.stringify({ ok: true, data: served }))}, { status: 200, headers: { "content-type": "application/json" } });\n`);
+  return preload;
+}
+
+function cachedSpecPath(targetRepo, mapId) {
+  return resolve(targetRepo, ".campaign-runtime/fetched-specs", `${mapId}.json`);
+}
+
+test("start --map-id strips the host at intake, caches the rooted spec, records evidence with the value the Map returned, and says so once", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const served = hostPrefixSpec(specPath);
+    const result = runCliRaw(["start", "--map-id", served.spec_identity.map_id, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"], { preload: mapFetchPreload(dir, served) });
+    assert.ok(result.json, result.stderr);
+    const cachePath = cachedSpecPath(targetRepo, served.spec_identity.map_id);
+    const cached = readJson(cachePath);
+    assert.equal(cached.funnels[0].pages[2].page_url, "/runtime-packet-demo/upsell/");
+    assert.equal(cached.funnels[0].pages[1].sdk_hints.meta_tags["next-success-url"], "/runtime-packet-demo/upsell/");
+    const report = readJson(resolve(targetRepo, result.json.context.report_path));
+    assert.deepEqual(report.evidence, [
+      { code: "routing_meta.host_stripped", page_id: "checkout", field: "funnels[0].pages[1].sdk_hints.meta_tags.next-success-url", from: "shop.example.com/runtime-packet-demo/upsell/", to: "/runtime-packet-demo/upsell/" },
+      { code: "routing_meta.host_stripped", page_id: "upsell", field: "funnels[0].pages[2].page_url", from: "shop.example.com/runtime-packet-demo/upsell/", to: "/runtime-packet-demo/upsell/" },
+    ]);
+    const hash = createHash("sha256").update(readFileSync(cachePath)).digest("hex");
+    assert.equal(report.identity.spec_hash, hash, "the recorded spec hash is the rewritten copy's");
+    assert.equal(result.json.context.spec.hash, hash);
+    const revision = result.json.context.intake.saved_map_revision;
+    assert.equal(revision.map_id, served.spec_identity.map_id);
+    assert.equal(revision.local_spec_material_hash, specMaterialHash(cached));
+
+    const upsell = result.json.packet.source_html.pages.find((page) => page.page_id === "upsell");
+    assert.equal(upsell.page_kit.public_route, "/runtime-packet-demo/upsell/");
+    assert.equal(upsell.page_kit.spec_route, "upsell/");
+    const checkout = result.json.packet.source_html.pages.find((page) => page.page_id === "checkout");
+    assert.equal(checkout.page_kit.frontmatter.next_url, "/runtime-packet-demo/upsell/");
+
+    const notices = result.stderr.split("\n").filter((line) => line.includes("routing_meta.host_stripped"));
+    assert.equal(notices.length, 1, result.stderr);
+    assert.match(notices[0], /"shop\.example\.com\/runtime-packet-demo\/upsell\/" -> "\/runtime-packet-demo\/upsell\/"/);
+    const doctorCodes = (result.json.doctor?.errors || []).map((issue) => issue.code);
+    assert.equal(doctorCodes.includes("routing_meta.host_prefixed"), false, "intake left nothing for doctor to block");
+  });
+});
+
+// --cached-spec reuses the copy as it is: a host-prefixed copy, wherever it
+// resolves, is never rewritten, and doctor blocks with a remedy naming a
+// fresh fetch.
+for (const [label, link] of [
+  ["a regular file in fetched-specs/", ({ targetRepo, mapId }) => {
+    mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
+    return cachedSpecPath(targetRepo, mapId);
+  }],
+  ["a symlink to a file outside the target", ({ dir, targetRepo, mapId }) => {
+    const external = join(dir, "operator-spec.json");
+    mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
+    symlinkSync(external, cachedSpecPath(targetRepo, mapId));
+    return external;
+  }],
+  ["in a symlinked fetched-specs directory", ({ dir, targetRepo, mapId }) => {
+    const externalDir = join(dir, "elsewhere");
+    mkdirSync(externalDir, { recursive: true });
+    mkdirSync(join(targetRepo, ".campaign-runtime"), { recursive: true });
+    symlinkSync(externalDir, join(targetRepo, ".campaign-runtime/fetched-specs"));
+    return join(externalDir, `${mapId}.json`);
+  }],
+]) {
+  test(`start --cached-spec leaves a host-prefixed copy that is ${label} unchanged, and doctor blocks naming a fresh fetch`, () => {
+    withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+      const spec = hostPrefixSpec(specPath);
+      const mapId = spec.spec_identity.map_id;
+      const file = link({ dir, targetRepo, mapId });
+      writeJson(file, spec);
+      const bytes = readFileSync(file);
+      const mtime = statSync(file).mtimeMs;
+      const result = runCliRaw(["start", "--map-id", mapId, "--cached-spec", "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
+      assert.ok(result.json, result.stderr);
+      // The fixture has no design-source package, so doctor already blocks and
+      // start exits 2 on the base commit as well; the exit is unchanged.
+      assert.equal(result.status, 2, result.stderr);
+
+      assert.deepEqual(readFileSync(file), bytes, "--cached-spec never rewrites the copy");
+      assert.equal(statSync(file).mtimeMs, mtime);
+      assert.equal(result.json.context.spec.hash, createHash("sha256").update(bytes).digest("hex"));
+      const report = readJson(resolve(targetRepo, result.json.context.report_path));
+      assert.deepEqual(report.evidence, []);
+      const notices = result.stderr.split("\n").filter((line) => line.includes("host-prefixed route"));
+      assert.equal(notices.length, 1, result.stderr);
+      assert.match(notices[0], /re-run without --cached-spec so the Map is fetched and normalised/);
+      const blocker = (result.json.doctor?.errors || []).find((issue) => issue.code === "routing_meta.host_prefixed");
+      assert.ok(blocker, JSON.stringify((result.json.doctor?.errors || []).map((issue) => issue.code)));
+      assert.match(blocker.message, /upsell:page_url "shop\.example\.com\/runtime-packet-demo\/upsell\/" -> "\/runtime-packet-demo\/upsell\/"/);
+      assert.match(blocker.message, /re-run prepare-build \(or start\) with --map-id and without --cached-spec so the Map is fetched and normalised/);
+    });
+  });
+}
+
+// A cache entry hard-linked to an operator file outside the target: the
+// rewrite replaces the entry by rename, so the other name keeps its bytes.
+test("start --map-id never writes an operator file hard-linked to the cache entry", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const spec = hostPrefixSpec(specPath);
+    const mapId = spec.spec_identity.map_id;
+    const operatorFile = join(dir, "operator-notes.json");
+    writeJson(operatorFile, spec);
+    const bytes = readFileSync(operatorFile);
+    mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
+    linkSync(operatorFile, cachedSpecPath(targetRepo, mapId));
+    const args = ["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"];
+    const result = runCliRaw(args, { preload: mapFetchPreload(dir, spec) });
+    assert.ok(result.json, result.stderr);
+
+    assert.deepEqual(readFileSync(operatorFile), bytes, "the operator file keeps its bytes");
+    assert.equal(readJson(cachedSpecPath(targetRepo, mapId)).funnels[0].pages[2].page_url, "/runtime-packet-demo/upsell/");
+    assert.notEqual(statSync(cachedSpecPath(targetRepo, mapId)).ino, statSync(operatorFile).ino, "the cache entry is its own file now");
+  });
+});
+
+// The rooted copy is written only after the Assembly Report that records the
+// change is published: a publish that fails leaves the copy as fetched.
+test("start --map-id leaves the fetched copy as fetched when publishing the assembly report fails", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const served = hostPrefixSpec(specPath);
+    const mapId = served.spec_identity.map_id;
+    const preload = mapFetchPreload(dir, served);
+    writeFileSync(preload, `${readFileSync(preload, "utf8")}
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const renameSync = fs.renameSync;
+fs.renameSync = (from, to) => {
+  if (String(to).endsWith("assembly-report.json")) throw Object.assign(new Error("simulated assembly report publish failure"), { code: "EIO" });
+  return renameSync(from, to);
+};
+syncBuiltinESMExports();
+`);
+    const result = runCliRaw(["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session"], { preload });
+
+    assert.notEqual(result.status, 0, result.stderr);
+    assert.match(result.stderr, /simulated assembly report publish failure/);
+    assert.deepEqual(readJson(cachedSpecPath(targetRepo, mapId)), served, "the copy holds the values as fetched");
+    assert.equal(result.stderr.includes("rewrote the fetched copy"), false, result.stderr);
+  });
+});
+
+// A preload whose fs.renameSync runs `hook(from, to, renameSync)` before each
+// rename; a hook that returns true has made the rename itself.
+function renameHookPreload(dir, name, hook, prefix = "") {
+  const preload = join(dir, name);
+  writeFileSync(preload, `${prefix}
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const renameSync = fs.renameSync;
+const hook = ${hook};
+fs.renameSync = (from, to) => {
+  if (hook(String(from), String(to), renameSync) === true) return undefined;
+  return renameSync(from, to);
+};
+syncBuiltinESMExports();
+`);
+  return preload;
+}
+
+function assemblyReportsUnder(dir) {
+  return readdirSync(dir, { recursive: true }).filter((path) => String(path).endsWith("assembly-report.json"));
+}
+
+test("start prints no host-prefixed notice for a local spec when publishing the assembly report fails", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    writeJson(specPath, hostPrefixSpec(specPath));
+    const preload = renameHookPreload(dir, "publish-fails.mjs", `(from, to) => {
+  if (to.endsWith("assembly-report.json")) throw Object.assign(new Error("simulated assembly report publish failure"), { code: "EIO" });
+}`);
+    const result = runCliRaw(["start", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session"], { preload });
+
+    assert.notEqual(result.status, 0, result.stderr);
+    assert.match(result.stderr, /simulated assembly report publish failure/);
+    assert.equal(result.stderr.includes("host-prefixed route"), false, result.stderr);
+  });
+});
+
+// The cache entry turns into a symlink after the fetch is cached but before
+// prepare-build rewrites it: the check runs before the report is published,
+// so no report records hosts as stripped from a copy that was never rewritten.
+test("start --map-id stops before publishing the assembly report when the cached copy cannot be rewritten", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const served = hostPrefixSpec(specPath);
+    const mapId = served.spec_identity.map_id;
+    const cachePath = cachedSpecPath(targetRepo, mapId);
+    const external = join(dir, "operator-spec.json");
+    const fetchPreload = mapFetchPreload(dir, served);
+    const preload = renameHookPreload(dir, "swap-cache.mjs", `(() => {
+  let swapped = false;
+  return (from, to, renameSync) => {
+    if (swapped || to !== ${JSON.stringify(cachePath)}) return;
+    swapped = true;
+    // The fetch lands outside the target, and the entry becomes a link to it.
+    renameSync(from, ${JSON.stringify(external)});
+    fs.symlinkSync(${JSON.stringify(external)}, to);
+    return true;
+  };
+})()`, readFileSync(fetchPreload, "utf8"));
+    const result = runCliRaw(["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session"], { preload });
+
+    assert.notEqual(result.status, 0, result.stderr);
+    assert.match(result.stderr, /Refusing to write the fetched CampaignSpec: .* is a symlink/);
+    assert.deepEqual(assemblyReportsUnder(dir), [], "no assembly report records routing_meta.host_stripped");
+    assert.equal(result.stderr.includes("rewrote the fetched copy"), false, result.stderr);
+    assert.deepEqual(readJson(external), served, "the linked file holds the values as fetched");
+  });
+});
+
+// The rewrite itself fails after the report is out (the residual race): one
+// line says the report and the cached copy disagree, and the run fails.
+test("start --map-id says the report records stripped hosts the cached copy lacks when the rewrite fails after publishing", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const served = hostPrefixSpec(specPath);
+    const mapId = served.spec_identity.map_id;
+    const cachePath = cachedSpecPath(targetRepo, mapId);
+    const fetchPreload = mapFetchPreload(dir, served);
+    const preload = renameHookPreload(dir, "rewrite-fails.mjs", `(() => {
+  let published = false;
+  return (from, to) => {
+    if (to.endsWith("assembly-report.json")) published = true;
+    else if (published && to === ${JSON.stringify(cachePath)}) throw Object.assign(new Error("simulated cache rewrite failure"), { code: "EIO" });
+    return false;
+  };
+})()`, readFileSync(fetchPreload, "utf8"));
+    const result = runCliRaw(["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session"], { preload });
+
+    assert.notEqual(result.status, 0, result.stderr);
+    const lines = result.stderr.split("\n").filter((line) => line.includes("was not rewritten"));
+    assert.equal(lines.length, 1, result.stderr);
+    assert.match(lines[0], /records the stripped host\(s\) as routing_meta\.host_stripped, but the cached spec .* was not rewritten.*simulated cache rewrite failure/);
+    assert.deepEqual(readJson(cachePath), served, "the copy holds the values as fetched");
+    const [reportFile] = assemblyReportsUnder(dir);
+    assert.ok(reportFile, "the assembly report was published");
+    assert.equal(readJson(join(dir, reportFile)).evidence.length, 2);
+    assert.equal(result.stderr.includes("rewrote the fetched copy"), false, result.stderr);
+  });
+});
+
+// A fresh fetch refuses a symlinked .campaign-runtime/, fetched-specs/ or
+// cache entry, and writes nothing through the link.
+for (const [label, link] of [
+  [".campaign-runtime is a symlinked directory", ({ dir, targetRepo, mapId }) => {
+    const externalDir = join(dir, "elsewhere");
+    mkdirSync(join(externalDir, "fetched-specs"), { recursive: true });
+    symlinkSync(externalDir, join(targetRepo, ".campaign-runtime"));
+    return join(externalDir, "fetched-specs", `${mapId}.json`);
+  }],
+  ["fetched-specs is a symlinked directory", ({ dir, targetRepo, mapId }) => {
+    const externalDir = join(dir, "elsewhere");
+    mkdirSync(externalDir, { recursive: true });
+    mkdirSync(join(targetRepo, ".campaign-runtime"), { recursive: true });
+    symlinkSync(externalDir, join(targetRepo, ".campaign-runtime/fetched-specs"));
+    return join(externalDir, `${mapId}.json`);
+  }],
+  ["the cache entry is a symlink to a file outside the target", ({ dir, targetRepo, mapId }) => {
+    const external = join(dir, "operator-spec.json");
+    mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
+    symlinkSync(external, cachedSpecPath(targetRepo, mapId));
+    return external;
+  }],
+]) {
+  test(`start --map-id refuses to write the fetch cache when ${label}`, () => {
+    withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+      const spec = hostPrefixSpec(specPath);
+      const mapId = spec.spec_identity.map_id;
+      const sentinel = link({ dir, targetRepo, mapId });
+      writeFileSync(sentinel, "operator sentinel\n");
+      const result = runCliRaw(["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"], { preload: mapFetchPreload(dir, spec) });
+
+      assert.equal(readFileSync(sentinel, "utf8"), "operator sentinel\n", "nothing is written through the link");
+      assert.notEqual(result.status, 0, result.stderr);
+      assert.match(result.stderr, /Refusing to write the fetched CampaignSpec: .* is a symlink/);
+      assert.deepEqual(readdirSync(dirname(sentinel)).filter((name) => name.endsWith(".tmp")), [], "no temp file is left beside the link target");
+    });
+  });
+}
+
+test("doctor blocks a host-prefixed route that reaches it without intake, naming the value and its rooted form", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    const prepared = runCliRaw(["prepare-build", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
+    assert.ok(prepared.json, prepared.stderr);
+    // The spec is edited after intake, so doctor is the first reader.
+    writeJson(specPath, hostPrefixSpec(specPath));
+
+    const doctor = runCliRaw(["doctor", "--packet", prepared.json.packetPath, "--json"]).json;
+    const blocker = (doctor.errors || []).find((issue) => issue.code === "routing_meta.host_prefixed");
+    assert.ok(blocker, `expected a host-prefix blocker; errors=${JSON.stringify((doctor.errors || []).map((issue) => issue.code))}`);
+    assert.match(blocker.message, /upsell:page_url "shop\.example\.com\/runtime-packet-demo\/upsell\/" -> "\/runtime-packet-demo\/upsell\/"/);
+    assert.match(blocker.message, /checkout:sdk_hints\.meta_tags\.next-success-url "shop\.example\.com\/runtime-packet-demo\/upsell\/" -> "\/runtime-packet-demo\/upsell\/"/);
+    // The ordinary unrooted hints still warn, and only they do.
+    const warning = (doctor.warnings || []).find((issue) => issue.code === "routing_meta.runtime_root");
+    assert.ok(warning);
+    assert.equal(warning.message.includes("shop.example.com"), false);
+    assert.match(warning.message, /upsell:next-upsell-accept-url=receipt\//);
+  });
 });

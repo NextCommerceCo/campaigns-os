@@ -14,7 +14,7 @@ import { test } from "node:test";
 
 import { CAMPAIGN_IDENTITY } from "./campaign-identity.mjs";
 import { doctorBuiltOutput } from "./doctor/inspect.mjs";
-import { SDK_MARKUP } from "./sdk-markup.mjs";
+import { SDK_MARKUP, SDK_MARKUP_CODES } from "./sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs } from "./built-script-syntax.mjs";
 import { UPSELL_SELECTOR_SCOPE } from "./upsell-selector-scope.mjs";
 
@@ -70,15 +70,20 @@ for (const family of certified) {
     const blockingCodes = result.errors.map((issue) => issue.code).filter((code) => STATIC_BUILT_OUTPUT_GATES.some((id) => code.startsWith(id)));
     assert.deepEqual(blockingCodes, [], `${family}: static gates raised errors on canonical output`);
     // The advisory codes hold to the same bar: a warning that fires on every
-    // canonical page is noise, not a signal.
-    const advisoryCodes = result.warnings.map((issue) => issue.code).filter((code) => code.startsWith(SDK_MARKUP) || code.startsWith(SCRIPT_SYNTAX));
+    // canonical page is noise, not a signal. One named exception: the starter
+    // bump includes write data-next-is-upsell="true" by default (#535), so every canonical
+    // checkout that renders a bump carries the defect CHECKOUT_BUMP_IS_UPSELL
+    // reports. It stays listed here until the templates change the default.
+    const advisoryCodes = result.warnings.map((issue) => issue.code).filter((code) => code.startsWith(SDK_MARKUP) || code.startsWith(SCRIPT_SYNTAX))
+      .filter((code) => code !== SDK_MARKUP_CODES.CHECKOUT_BUMP_IS_UPSELL.code);
     assert.deepEqual(advisoryCodes, [], `${family}: SDK markup or script syntax advisories fired on canonical output`);
   });
 
-  test(`${family}: SDK markup scans every page and its only advisory is the templates' own data-next-* hooks`, () => {
+  test(`${family}: SDK markup scans every page and its only advisories are the templates' own data-next-* hooks and the starter bump default`, () => {
     const gate = gateOf(doctorBuiltOutput({ built: FIXTURE_ROOT, slug: family }), SDK_MARKUP);
     assert.equal(gate.status, "pass");
-    assert.equal(gate.code, `${SDK_MARKUP}.pass`);
+    assert.deepEqual(gate.warned.map((item) => item.code_name), ["CHECKOUT_BUMP_IS_UPSELL"], `${family}: expected only the starter bump-default advisory`);
+    assert.match(gate.warned[0].file, /\/(checkout|information)\/index\.html$/);
     assert.ok(gate.pages_scanned >= 7, `${family}: only ${gate.pages_scanned} page(s) scanned`);
     // Not asserted empty on purpose: the templates carry hooks of their own
     // (data-next-catalog-component and friends) that the SDK never reads.

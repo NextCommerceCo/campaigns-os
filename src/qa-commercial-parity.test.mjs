@@ -847,3 +847,41 @@ test('page aborts during body streaming use timeout codes, while size errors ret
   const oversized = createPageSourceLoader({ limits: { max_html_bytes: 1 }, fetchImpl: async () => new Response('large') });
   assert.equal((await oversized({ url: 'https://example.test/large' })).error_code, 'page_html_response_too_large');
 });
+
+test("recurring claim absent: a rendered subscription package with no extracted rebill claim warns and names the package", async () => {
+  const spec = rawRecurringSpec();
+  spec.funnels[0].pages[0].packages.push({ ref_id: "6", qty: 1 });
+  const run = (html) => runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11", url: "https://preview.example.test/checkout/" }, html)],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+    },
+  });
+
+  // The rebill copy is in an image, so nothing readable states the cadence.
+  const absent = await run(`
+    <div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong><img alt="" src="/rebill.png"></div>
+    <div data-next-package-toggle><strong data-next-package-id="6">One-time</strong></div>
+  `);
+  const rows = absent.assertions.filter((entry) => entry.id.startsWith("commercial_parity.recurring_claim_absent"));
+  assert.deepEqual(rows.map((entry) => [entry.id, entry.status, entry.severity, entry.evidence.package_id]), [
+    ["commercial_parity.recurring_claim_absent:page_mt104ehn_11:package-5", "warn", "warn", "5"],
+  ]);
+  assert.match(rows[0].actual, /package 5/);
+  assert.deepEqual(absent.commercial.recurring_claim_absences.map((entry) => entry.package_id), ["5"]);
+  assert.ok(absent.commercial.issues.some((issue) => issue.code === "recurring_claim_absent"));
+  assert.notEqual(absent.commercial.status, "pass");
+
+  // A readable claim for the package: no row.
+  const claimed = await run(`
+    <div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>
+  `);
+  assert.equal(claimed.assertions.some((entry) => entry.id.startsWith("commercial_parity.recurring_claim_absent")), false);
+
+  // The page renders only the one-time package: no row.
+  const oneTime = await run(`<div data-next-package-toggle><strong data-next-package-id="6">One-time</strong></div>`);
+  assert.equal(oneTime.assertions.some((entry) => entry.id.startsWith("commercial_parity.recurring_claim_absent")), false);
+  assert.deepEqual(oneTime.commercial.recurring_claim_absences, []);
+});

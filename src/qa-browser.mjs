@@ -16,7 +16,9 @@ import { redactUrlQuery } from "./qa-url-privacy.mjs";
 import {
   canonicalHttpUrl,
   commonTestOrderPaths,
+  commonTestOrderPlan,
   fullTestOrderPaths,
+  OFFER_PAGE_TYPES,
   pageAtUrl,
   remainingActionDisposition,
   resolveTestOrderTopology,
@@ -137,6 +139,7 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
 export async function runBrowserTestOrders(topologies, args = {}, runId = "local", options = {}) {
   const checkoutPage = findPage(topologies, "checkout");
   if (!checkoutPage?.url) {
+    const coverage = upsellActionCoverageAssertion({ topologies, orders: [], checkoutPage });
     return {
       orders: [],
       receiptAnalytics: { plannedPlanIds: [], attempts: [] },
@@ -149,7 +152,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
         severity: SEVERITY.BLOCKER,
         expected: "checkout page URL",
         actual: "missing",
-      })],
+      }), ...(coverage ? [coverage] : [])],
     };
   }
 
@@ -158,6 +161,8 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   // discover that the operator needs to raise --max-test-orders.
   const plans = testOrderPlans(args["test-order"], topologies, args);
   enforceTestOrderLimit(plans, args);
+  const orderPathPlan = isCommonTestOrderMode(args["test-order"]) ? commonOrderPathPlan(topologies, args) : null;
+  if (orderPathPlan) (options.warn || ((line) => process.stderr.write(`${line}\n`)))(describeCommonOrderPathPlan(orderPathPlan));
   const creationBudget = createOrderCreationBudget({ plans, args });
 
   const browser = await launchChromium(args);
@@ -175,7 +180,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       runId,
       // The topologies travel with the options so each attempt can resolve the
       // funnel's cart-entry page for the checkout it drives (campaigns-os#206).
-      options: { ...options, creationBudget, topologies },
+      options: { ...options, creationBudget, topologies, orderPathPlan },
     });
     return {
       orders: dispatched.orders,
@@ -215,6 +220,9 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
 
   const assertions = [];
   const orders = [];
+  // The plan behind each entry in `orders`, index for index, so the upsell
+  // coverage row can tell which funnel an order ran through.
+  const orderPlans = [];
   try {
     for (let index = 0; index < plans.length; index += 1) {
       const plan = plans[index];
@@ -224,6 +232,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       const pageForPlan = (typeof plan === "object" && plan?.checkout_page?.url) ? plan.checkout_page : checkoutPage;
       const firstAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
       orders.push(firstAttempt.order);
+      orderPlans.push(plan);
       // Every attempt this path actually SUBMITTED, in order. The confirmed
       // creation count is read from these and never from the deciding result
       // alone: a recovered result is derived from the first attempt, so
@@ -281,7 +290,10 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
             try {
               const rerunAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
               attemptsForPlan.push(rerunAttempt);
-              if (rerunAttempt.order) orders.push(rerunAttempt.order);
+              if (rerunAttempt.order) {
+                orders.push(rerunAttempt.order);
+                orderPlans.push(plan);
+              }
               if (rerunAttempt.budget_exhausted) {
                 // The re-run stopped itself before its submit click, so it
                 // proved nothing. Letting it decide would erase this path's
@@ -389,6 +401,15 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       evidence: { planned_paths: plans.map((plan) => planId(plan)), completed_paths: orders.map((order) => order?.plan_id || order?.path) },
     }));
   }
+  const coverage = upsellActionCoverageAssertion({
+    topologies: options.topologies || [],
+    plans,
+    orders,
+    orderPlans,
+    checkoutPage,
+    orderPathPlan: options.orderPathPlan || null,
+  });
+  if (coverage) assertions.push(coverage);
 
   return { orders, assertions, receiptAnalytics, journeyAnalytics, creationBudget };
 }
@@ -912,7 +933,9 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
   const pageErrors = [];
   const failedRequests = [];
   browserPage.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(trim(message.text()));
+    // The location URL is kept beside the text: a "Failed to load resource"
+    // message names its status but not the request, which is the location.
+    if (message.type() === "error") consoleErrors.push({ text: trim(message.text()), url: message.location?.()?.url || null });
   });
   browserPage.on("pageerror", (error) => pageErrors.push(trim(error.message)));
   browserPage.on("requestfailed", (request) => {
@@ -1019,16 +1042,65 @@ function isIgnorableFailedRequest(request) {
   }
 }
 
+// `messages` are { text, url } records (url: the console message's location);
+// the result is the actionable messages' text.
 async function actionableRuntimeConsoleErrors(browserPage, messages) {
   if (!messages.length) return [];
   const runtimeReady = await browserPage.evaluate(() => (
     document.documentElement.classList.contains("next-display-ready")
     || Boolean(window.next && Object.keys(window.next).length)
   )).catch(() => false);
-  return messages.filter((message) => {
-    if (runtimeReady && isKnownSdkLoaderFalsePositive(message)) return false;
-    return true;
-  });
+  // The page's final URL, after redirects: the host the browser actually
+  // shows, not the host the page record requested.
+  const pageUrl = browserPage.url();
+  return messages
+    .filter((message) => {
+      if (runtimeReady && isKnownSdkLoaderFalsePositive(message.text)) return false;
+      if (isNetlifyPreviewDrawerConsoleError(pageUrl, message)) return false;
+      return true;
+    })
+    .map((message) => message.text);
+}
+
+// Netlify injects its deploy-preview drawer (the collaboration toolbar) into
+// preview pages, and a failed drawer request is logged as a "Failed to load
+// resource" console error on every page (a 428 has been observed). That error
+// is Netlify's, not the campaign's.
+//
+// Each exempt request is an exact host plus an exact path:
+//   netlify-cdp-loader.netlify.app /netlify.js — the drawer's loader script,
+//     the one `<script src>` Netlify injects into preview HTML.
+// It is exempt only on a page whose final URL (after redirects) is a Netlify
+// preview host: any *.netlify.app host, or a deploy-preview subdomain on a
+// custom domain (deploy-preview-7.shop.example.com, or
+// deploy-preview-7--shop.example.com). Nothing else is exempt: any other path
+// on a Netlify host (app.netlify.com included), and the drawer's own URL on any
+// other page host, still counts. A "Failed to load resource" message names its
+// status but not the request; the request is the message's location URL.
+const NETLIFY_PREVIEW_DRAWER_REQUESTS = Object.freeze([
+  { hostname: "netlify-cdp-loader.netlify.app", pathname: "/netlify.js" },
+]);
+
+// The first label of a deploy-preview host: `deploy-preview-<n>`, or
+// `deploy-preview-<n>--<site>` for a per-deploy host on a custom domain.
+// Only numeric ids match, deliberately: Netlify issues numeric deploy-preview
+// ids, and widening would hide real errors on any host named deploy-preview-*.
+const DEPLOY_PREVIEW_LABEL = /^deploy-preview-\d+(?:--[a-z0-9-]+)?$/;
+
+function isNetlifyPreviewHost(hostname) {
+  const labels = hostname.split(".");
+  return hostname.endsWith(".netlify.app") || (labels.length > 2 && DEPLOY_PREVIEW_LABEL.test(labels[0]));
+}
+
+function isNetlifyPreviewDrawerConsoleError(pageUrl, message) {
+  if (!/^Failed to load resource\b/.test(String(message?.text || ""))) return false;
+  try {
+    const request = new URL(message.url);
+    return isNetlifyPreviewHost(new URL(pageUrl).hostname)
+      && NETLIFY_PREVIEW_DRAWER_REQUESTS.some((drawer) => drawer.hostname === request.hostname && drawer.pathname === request.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function isKnownSdkLoaderFalsePositive(message) {
@@ -1486,11 +1558,124 @@ async function checkoutCommerceStructureAssertions(browserPage, page) {
   }
 
   const evidence = await inspectCommerceStructure(browserPage, contract);
+  const behaviour = await inspectCheckoutBehaviour(browserPage);
   return [commerceStructureAssertionFromEvidence(page, {
     template_family: family,
     contract_status: contractStatus,
     ...evidence,
+    behaviour,
   })];
+}
+
+// The checkout's wrapper and page composition belong to the campaign source,
+// not the template family (#532). A catalog rule is family shell when every
+// selector it reads is on this list: the layout wrapper and column classes the
+// pinned catalog uses, and the family include's shipping field row marker.
+// Every other selector is SDK wiring the checkout needs to work
+// (`[data-next-checkout]`, `[os-checkout-payment]`, `[data-next-cart-summary]`,
+// `[data-next-bundle-slots-for]`) and is never relaxed. That includes any
+// selector not listed here, even a bare class such as the hosted payment
+// field's `.input-flds`, so a catalog recorded in the packet cannot widen it.
+const FAMILY_SHELL_SELECTORS = Object.freeze([
+  ".checkout-wrapper",
+  ".checkout-layout__left",
+  ".checkout-layout__right",
+  ".checkout__layout",
+  ".checkout__column--left",
+  ".checkout__column--right",
+  '[data-next-component="shipping-field-row"]',
+]);
+
+function isFamilyShellSelector(selector) {
+  return FAMILY_SHELL_SELECTORS.includes(String(selector || "").trim());
+}
+
+function isFamilyShellCheck(check) {
+  const selectors = Array.isArray(check?.selectors) ? check.selectors : [];
+  return selectors.length > 0 && selectors.every(isFamilyShellSelector);
+}
+
+// What a checkout has to do, whoever composed it. The required fields are the
+// contact and shipping fields the test-order form fill types without the
+// optional flag (fillCheckoutFields): each must be a form control carrying
+// data-next-checkout-field inside a <form data-next-checkout="form">, and not a
+// type="hidden" input or a disabled control (its own attribute or a disabled
+// fieldset), since a customer cannot fill either. Visibility is not required:
+// progressive-reveal checkouts hide the address fields until a country is
+// chosen. The total is the cart-summary total the order-total parity check
+// reads.
+const CHECKOUT_FORM_SELECTOR = 'form[data-next-checkout="form"]';
+const CHECKOUT_BEHAVIOUR_REQUIRED_FIELDS = Object.freeze([
+  "email",
+  "fname",
+  "lname",
+  "country",
+  "address1",
+  "city",
+  "province",
+  "postal",
+]);
+
+function checkoutBehaviourProbeInput() {
+  return {
+    formSelector: CHECKOUT_FORM_SELECTOR,
+    requiredFields: [...CHECKOUT_BEHAVIOUR_REQUIRED_FIELDS],
+    totalSelectors: checkoutTotalSelectors(),
+  };
+}
+
+async function inspectCheckoutBehaviour(browserPage) {
+  return browserPage.evaluate((input) => {
+    const visible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0
+        && rect.height > 0
+        && style.display !== "none"
+        && style.visibility !== "hidden"
+        && Number(style.opacity || "1") !== 0;
+    };
+    const forms = Array.from(document.querySelectorAll(input.formSelector));
+    const controls = new Set(["INPUT", "SELECT", "TEXTAREA"]);
+    // readonly has no effect on a select, so only an input or textarea loses it.
+    const fillable = (field) => controls.has(field.tagName)
+      && !(field.tagName === "INPUT" && field.type === "hidden")
+      && !field.matches(":disabled")
+      && !(field.tagName !== "SELECT" && field.hasAttribute("readonly"))
+      && field.getAttribute("aria-disabled") !== "true";
+    const missing = input.requiredFields.filter((name) => !forms.some((form) => Array
+      .from(form.querySelectorAll("[data-next-checkout-field]"))
+      .some((field) => field.getAttribute("data-next-checkout-field") === name && fillable(field))));
+    const totals = input.totalSelectors.flatMap((selector) => {
+      try {
+        return Array.from(document.querySelectorAll(selector));
+      } catch {
+        return [];
+      }
+    });
+    const visibleTotals = totals.filter((element) => visible(element) && (element.textContent || "").trim().length > 0);
+    const checkoutForm = { selector: input.formSelector, count: forms.length, status: forms.length ? "pass" : "fail" };
+    const fieldsBound = {
+      required: input.requiredFields,
+      missing,
+      status: forms.length && !missing.length ? "pass" : "fail",
+    };
+    const totalVisible = {
+      selectors: input.totalSelectors,
+      count: totals.length,
+      visible_count: visibleTotals.length,
+      status: visibleTotals.length ? "pass" : "fail",
+    };
+    return {
+      status: [checkoutForm, fieldsBound, totalVisible].every((check) => check.status === "pass") ? "pass" : "fail",
+      checkout_form: checkoutForm,
+      fields_bound: fieldsBound,
+      total_visible: totalVisible,
+    };
+  }, checkoutBehaviourProbeInput()).catch((error) => ({
+    status: "fail",
+    error: error instanceof Error ? error.message : String(error),
+  }));
 }
 
 async function inspectCommerceStructure(browserPage, contract) {
@@ -1577,18 +1762,28 @@ function commerceStructureAssertionFromEvidence(page, evidence) {
       evidence,
     });
   }
-  const failed = checks.filter((check) => check.status === "fail");
+  const classified = checks.map((check) => ({ ...check, kind: isFamilyShellCheck(check) ? "family_shell" : "sdk_wiring" }));
+  const failed = classified.filter((check) => check.status === "fail");
+  // A missing family-shell selector is a warning only when nothing else failed
+  // and the behaviour probe ran and passed; absent or failing behaviour
+  // evidence keeps the row a failure.
+  const shellOnly = failed.length > 0 && failed.every((check) => check.kind === "family_shell");
+  const behaviourPassed = evidence?.behaviour?.status === "pass";
+  const relaxed = shellOnly && behaviourPassed;
+  const missing = `${checks.length - failed.length}/${checks.length} structure check(s) passed; missing ${failed.map((check) => check.name).join(", ")}`;
   return assertion({
     id: `browser-commerce-structure:${page.page_id}`,
     family: "browser-runtime",
     page,
-    status: failed.length ? STATUS.FAIL : STATUS.PASS,
+    status: !failed.length ? STATUS.PASS : relaxed ? STATUS.WARN : STATUS.FAIL,
     severity: failed.length ? SEVERITY.WARN : undefined,
     expected: "rendered checkout conforms to the selected template-family commerce structure contract",
-    actual: failed.length
-      ? `${checks.length - failed.length}/${checks.length} structure check(s) passed; missing ${failed.map((check) => check.name).join(", ")}`
-      : `${checks.length}/${checks.length} structure check(s) passed`,
-    evidence,
+    actual: !failed.length
+      ? `${checks.length}/${checks.length} structure check(s) passed`
+      : relaxed
+        ? `${missing}; the checkout form, bound fields and visible total pass, so the missing family shell is source-owned`
+        : missing,
+    evidence: { ...evidence, checks: classified },
   });
 }
 
@@ -2590,13 +2785,13 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
   if (!surfaces) return [];
   const pageType = contractPageType(page);
   if (["upsell", "downsell"].includes(pageType)) {
-    const selectors = surfaces.upsell?.price_row_selectors || [];
+    const selectors = withSdkPriceDisplaySelectors(surfaces.upsell?.price_row_selectors);
     if (!selectors.length) return [];
     const visibleCount = await countVisiblePriceRows(browserPage, selectors);
     return [upsellPriceVisibilityAssertion({ page, selectors, visibleCount })];
   }
   if (pageType === "checkout") {
-    const selectors = surfaces.checkout_bundle?.price_row_selectors || [];
+    const selectors = withSdkPriceDisplaySelectors(surfaces.checkout_bundle?.price_row_selectors);
     // Two price surfaces satisfy this check. The contract's bundle price rows
     // are one; the rendered cart-summary total is the other — the same
     // selectors the order-total parity check reads at submit. A family that
@@ -2615,11 +2810,29 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
   return [];
 }
 
+// The SDK renders a bundle or upsell price through data-next-bundle-display as
+// well as data-next-display (#532). A contract surface that lists price rows
+// also counts that attribute; an empty list stays empty so a contract that
+// declares no rows keeps skipping the count.
+const SDK_BUNDLE_PRICE_DISPLAY_SELECTOR = "[data-next-bundle-display*='price']";
+
+function withSdkPriceDisplaySelectors(selectors) {
+  const list = Array.isArray(selectors) ? selectors : [];
+  if (!list.length || list.includes(SDK_BUNDLE_PRICE_DISPLAY_SELECTOR)) return list;
+  return [...list, SDK_BUNDLE_PRICE_DISPLAY_SELECTOR];
+}
+
 // Visible = non-zero bounding box, display != none, visibility != hidden. This
 // is what caught nothing in the dogfood run: a campaign CSS rule display:none'd
 // the only price row on a full-price upsell and 48/48 checks still passed.
+// A bundle-display node is the price text itself, so it also needs
+// non-whitespace text: a sized but empty node is a price the SDK never filled.
+// The rule follows the node's attribute, not the selector that reached it
+// first, so a bundle-display node that also carries `.price-wrapper` still
+// needs text.
 async function countVisiblePriceRows(browserPage, selectors) {
-  return browserPage.evaluate((targets) => {
+  return browserPage.evaluate(({ targets, bundlePriceSelector }) => {
+    const textRequired = (element) => element.matches(bundlePriceSelector);
     const visible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -2632,14 +2845,16 @@ async function countVisiblePriceRows(browserPage, selectors) {
         for (const element of document.querySelectorAll(selector)) {
           if (seen.has(element)) continue;
           seen.add(element);
-          if (visible(element)) count += 1;
+          if (!visible(element)) continue;
+          if (textRequired(element) && !(element.textContent || "").trim()) continue;
+          count += 1;
         }
       } catch {
         // invalid selector: contract bug surfaced elsewhere
       }
     }
     return count;
-  }, selectors).catch(() => 0);
+  }, { targets: selectors, bundlePriceSelector: SDK_BUNDLE_PRICE_DISPLAY_SELECTOR }).catch(() => 0);
 }
 
 // Page-scoped like every other per-page row (`template-residue:<page>:…`,
@@ -6313,12 +6528,13 @@ async function closeAddressAutocomplete(page) {
   }
 }
 
-function testOrderPaths(mode, topologies = []) {
+function testOrderPaths(mode, topologies = [], args = {}) {
   const normalized = String(mode || "off").toLowerCase();
   // `common` (also the bare `--test-order` flag, which parses to boolean true)
-  // is the default sample: at most four graph-derived shapes for everyday QA.
+  // is the default: every actual terminal path when they fit under the flood
+  // cap, otherwise the sample plus one decline path per uncovered offer page.
   // `full` is the explicit opt-in for every actual terminal path.
-  if (normalized === "common" || normalized === "true") return testOrderCommonPaths(topologies);
+  if (isCommonTestOrderMode(normalized)) return commonOrderPathPlan(topologies, args).paths;
   if (normalized === "full") return fullTestOrderPaths(resolvePrimaryTestOrderTopology(topologies));
   if (normalized === "both") return ["accept", "decline"];
   if (["checkout", "accept", "decline"].includes(normalized)) return [normalized];
@@ -6356,7 +6572,7 @@ function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
   const applyCoupon = stringArg(args["apply-coupon"]);
   const checkoutPage = findPage(topologies, "checkout");
   const topologyPlan = resolvePrimaryTestOrderTopology(topologies);
-  return testOrderPaths(mode, topologies).map((path) => ({
+  return testOrderPaths(mode, topologies, args).map((path) => ({
     path,
     select_package: selectPackage,
     apply_coupon: applyCoupon,
@@ -6634,13 +6850,304 @@ function summarizeTestOrderPlan(plan) {
   };
 }
 
-// The default "common shapes" sample: checkout baseline, plus first-offer
-// accept and decline when the checkout enters an offer graph, plus the shortest
-// real receipt path when that adds coverage. Stays within 1-4 orders so it never
-// trips the flood cap. Bundle/quantity and bump coverage come from `--cart`;
+// The "common shapes" sample: checkout baseline, plus first-offer accept and
+// decline when the checkout enters an offer graph, plus the shortest real
+// receipt path when that adds coverage. 1-4 orders. `tiers:common` crosses
+// each tier with this sample; the operator `common` depth builds on it through
+// commonOrderPathPlan. Bundle/quantity and bump coverage come from `--cart`;
 // every actual terminal path comes from `full`.
 function testOrderCommonPaths(topologies = []) {
   return commonTestOrderPaths(resolvePrimaryTestOrderTopology(topologies));
+}
+
+function isCommonTestOrderMode(mode) {
+  const normalized = String(mode ?? "off").toLowerCase();
+  return normalized === "common" || normalized === "true";
+}
+
+// The operator `common` depth, planned against the same cap the flood guard
+// enforces, so the plan that decides "full fits" is the plan that is checked.
+function commonOrderPathPlan(topologies = [], args = {}) {
+  return commonTestOrderPlan(resolvePrimaryTestOrderTopology(topologies), {
+    cap: numberArg(args["max-test-orders"], DEFAULT_MAX_TEST_ORDERS),
+  });
+}
+
+function describeCommonOrderPathPlan(plan) {
+  const head = plan.effective_depth === "full"
+    ? `[qa:test-order] common runs every actual terminal path (${plan.paths.length}, at or under the cap of ${plan.cap}).`
+    : `[qa:test-order] common runs ${plan.paths.length} path(s): the sample${plan.coverage_paths.length ? ` plus ${plan.coverage_paths.join(", ")} to click through offer declines` : ""}${plan.full_path_count ? `; full would plan ${plan.full_path_count}, above the cap of ${plan.cap}` : ""}.`;
+  if (!plan.uncovered_pages.length) return head;
+  const pages = plan.uncovered_pages.map((page) => `${page.page_id || "(unnamed)"}${page.reason === "unreachable" ? " (unreachable from the checkout)" : ""}`);
+  return `${head} No planned path clicks the decline on: ${pages.join(", ")}. Use --test-order full with the --max-test-orders it names to cover them.`;
+}
+
+// Which offer pages had their decline clicked by an order this run actually
+// placed (#530). The unit is the decline control: an order that reached a page,
+// or clicked only its accept, does not count, because a broken decline link is
+// the failure this row exists to surface. Read from the click records the
+// runner kept, never from the plan.
+//
+// The row is conservative by construction. It may be `pass` or `warn` only
+// when coverage is certain: every funnel in the run lists its pages, every page
+// is either a known non-offer type or an offer page with its own absolute URL
+// (no URL shared with another page), every plan belongs to exactly one of those
+// funnels (same checkout, same page list), and every click a placed order
+// recorded lands on a declared offer page of that order's own funnel. A click
+// credits only the funnel whose plan made it, never another funnel by URL. Any
+// doubt, no placed order, or `--test-order off` makes the row `manual_review`
+// naming the pages and the reasons. When certain, it is `warn` naming each
+// page whose decline no order clicked, else `pass`. No row when coverage is
+// certain and no funnel has an offer page, or when nothing was topologised,
+// planned or placed. `orderPlans` holds the plan behind each entry in
+// `orders`, index for index.
+function upsellActionCoverageAssertion({ topologies = [], plans = [], orders = [], orderPlans = [], checkoutPage = null, orderPathPlan = null, testOrdersOff = false } = {}) {
+  const funnels = (Array.isArray(topologies) ? topologies : []).map((topology, index) => ({
+    index,
+    funnel_id: topology?.funnel_id || null,
+    pages: Array.isArray(topology?.pages) ? topology.pages : null,
+  }));
+  const funnelName = (funnel) => funnel.funnel_id || `(unnamed funnel ${funnel.index + 1})`;
+  // Run-level reasons coverage is not certain; per-page reasons live on the
+  // page entries.
+  const doubts = [];
+
+  // Every offer page of every funnel, and every page whose type does not rule
+  // it out. The same declaration listed twice in one funnel is one page.
+  const entries = [];
+  for (const funnel of funnels) {
+    if (!funnel.pages) {
+      entries.push({ funnel, key: null, page_id: null, page_type: null, label: "(page list missing)", reason: "no_pages" });
+      continue;
+    }
+    const rows = new Set();
+    funnel.pages.forEach((page, index) => {
+      const type = String(page?.page_type || "").toLowerCase().replace(/[-_]/g, "");
+      if (NON_OFFER_PAGE_TYPES.has(type)) return;
+      const key = canonicalHttpUrl(page?.url);
+      const row = `${page?.page_id ?? ""}\u0000${key ?? `#${index}`}`;
+      if (rows.has(row)) return;
+      rows.add(row);
+      entries.push({
+        funnel,
+        key,
+        page_id: page?.page_id || null,
+        page_type: page?.page_type || null,
+        label: page?.page_id || `(unnamed page ${index + 1})`,
+        reason: !OFFER_PAGE_TYPES.has(type)
+          ? "unknown_page_type"
+          : key ? null : (typeof page?.url === "string" && page.url.trim() ? "unresolvable_url" : "no_url"),
+      });
+    });
+  }
+  const entriesByKey = new Map();
+  for (const entry of entries) {
+    if (!entry.key) continue;
+    if (!entriesByKey.has(entry.key)) entriesByKey.set(entry.key, []);
+    entriesByKey.get(entry.key).push(entry);
+  }
+  for (const shared of entriesByKey.values()) {
+    if (shared.length < 2) continue;
+    for (const entry of shared) entry.reason ||= "shared_url";
+  }
+
+  // A plan belongs to a funnel only when its checkout is that funnel's own
+  // checkout page (the same object, or failing that the one funnel whose
+  // checkout has its URL) and the page list it planned over is that funnel's.
+  const planOwners = new Map();
+  const ownerOf = (plan) => {
+    if (planOwners.has(plan)) return planOwners.get(plan);
+    let owner = null;
+    if (plan && typeof plan === "object") {
+      let candidates = plan.checkout_page ? funnels.filter((funnel) => funnel.pages?.includes(plan.checkout_page)) : [];
+      if (!candidates.length) {
+        const checkoutKey = canonicalHttpUrl(plan.checkout_page?.url || plan.topology_plan?.checkout_url);
+        candidates = checkoutKey
+          ? funnels.filter((funnel) => funnel.pages?.some((page) => String(page?.page_type || "").toLowerCase() === "checkout" && canonicalHttpUrl(page?.url) === checkoutKey))
+          : [];
+      }
+      const [candidate] = candidates;
+      if (candidates.length === 1 && (!plan.topology_plan || plannedOverFunnel(plan.topology_plan, candidate))) owner = candidate;
+    }
+    planOwners.set(plan, owner);
+    return owner;
+  };
+  const unattributedPlans = [...new Set([...plans, ...orderPlans])].filter((plan) => !ownerOf(plan));
+  if (unattributedPlans.length) {
+    doubts.push({ reason: "unattributed_plan", plans: unattributedPlans.map((plan) => (plan && typeof plan === "object") || typeof plan === "string" ? planId(plan) : String(plan)) });
+  }
+
+  const placedByFunnel = new Map();
+  const undeclaredClicks = new Set();
+  let unattributedClicks = 0;
+  let placed = 0;
+  orders.forEach((order, index) => {
+    if (!isPlacedTestOrder(order)) return;
+    placed += 1;
+    const funnel = ownerOf(orderPlans[index]);
+    if (funnel) placedByFunnel.set(funnel, (placedByFunnel.get(funnel) || 0) + 1);
+    for (const step of Array.isArray(order.upsell_steps) ? order.upsell_steps : []) {
+      if (step?.clicked !== true) continue;
+      const key = canonicalHttpUrl(step?.offer_url);
+      if (!key || !funnel) {
+        unattributedClicks += 1;
+        continue;
+      }
+      const entry = entries.find((candidate) => candidate.funnel === funnel && candidate.key === key);
+      if (!entry) {
+        undeclaredClicks.add(key);
+        continue;
+      }
+      if (step.path === "accept") entry.accept_clicked = true;
+      if (step.path === "decline") entry.decline_clicked = true;
+    }
+  });
+  if (unattributedClicks) doubts.push({ reason: "unattributed_click", clicks: unattributedClicks });
+  if (undeclaredClicks.size) doubts.push({ reason: "undeclared_click", urls: [...undeclaredClicks].map((key) => new URL(key).pathname) });
+
+  if (!funnels.length) {
+    // No funnel topology reached this row, so its pages cannot be listed. That
+    // is unknown, not "no offer pages".
+    if (!(plans.length || orders.length)) return null;
+    doubts.unshift({ reason: "no_topology" });
+  }
+  if (!entries.length && !doubts.length) return null;
+
+  const nameFunnels = funnels.length > 1;
+  const pageName = (entry) => {
+    const notes = [];
+    if (nameFunnels) notes.push(`funnel ${funnelName(entry.funnel)}`);
+    if (entry.reason) notes.push(UPSELL_COVERAGE_UNASSESSABLE[entry.reason]);
+    return `${entry.label}${notes.length ? ` (${notes.join("; ")})` : ""}`;
+  };
+  const pages = entries.map((entry) => ({
+    page_id: entry.page_id,
+    page_type: entry.page_type,
+    funnel_id: entry.funnel.funnel_id,
+    accept_clicked: entry.accept_clicked === true,
+    decline_clicked: entry.decline_clicked === true,
+    ...(entry.reason ? { assessable: false, reason: entry.reason } : {}),
+  }));
+  const open = entries.filter((entry) => !entry.decline_clicked || entry.reason);
+  const unassessable = entries.filter((entry) => entry.reason);
+  const evidence = {
+    basis: "decline_clicked",
+    orders_placed: placed,
+    pages,
+    not_clicked_through: open.map((entry) => entry.label),
+    not_assessable: unassessable.map((entry) => ({ page_id: entry.page_id, funnel_id: entry.funnel.funnel_id, reason: entry.reason })),
+    uncertainty: doubts,
+    funnels: funnels.map((funnel) => ({
+      funnel_id: funnel.funnel_id,
+      orders_placed: placedByFunnel.get(funnel) || 0,
+      not_clicked_through: open.filter((entry) => entry.funnel === funnel).map((entry) => entry.label),
+    })),
+    ...(orderPathPlan ? {
+      order_path_depth: orderPathPlan.requested_depth,
+      order_path_depth_effective: orderPathPlan.effective_depth,
+      order_path_depth_reason: orderPathPlan.reason,
+      max_test_orders: orderPathPlan.cap,
+      full_path_count: orderPathPlan.full_path_count,
+      coverage_paths: orderPathPlan.coverage_paths,
+      planned_uncovered_pages: orderPathPlan.uncovered_pages,
+    } : {}),
+  };
+  const base = {
+    id: "browser-test-order:upsell-action-coverage",
+    family: "browser-test-order",
+    page: checkoutPage || { page_id: "checkout" },
+    expected: "every page with upsell actions has its decline clicked by at least one test order of its own funnel",
+  };
+
+  // The one predicate pass and warn depend on.
+  const certain = placed > 0 && !testOrdersOff && !doubts.length && !unassessable.length;
+  if (!certain) {
+    const reason = doubts[0]?.reason === "no_topology"
+      ? "no_topology"
+      : testOrdersOff ? "test_orders_off" : !placed ? "no_order_recorded" : "not_assessable";
+    const why = reason === "no_topology"
+      ? "no funnel topology reached the coverage check, so the pages with upsell actions could not be listed"
+      : reason === "test_orders_off"
+        ? "browser test orders were off (--test-order off)"
+        : reason === "no_order_recorded"
+          ? "no test order was placed"
+          : `coverage cannot be attributed with certainty (${[
+            ...doubts.map(describeCoverageDoubt),
+            ...(unassessable.length ? [`${unassessable.length} page(s) cannot be matched to a click`] : []),
+          ].join("; ")})`;
+    const named = open.length ? `, so ${open.length} of ${pages.length} page(s) with upsell actions are not proved clicked through: ${open.map(pageName).join(", ")}` : "";
+    return assertion({
+      ...base,
+      status: STATUS.MANUAL_REVIEW,
+      severity: SEVERITY.WARN,
+      actual: `${why}${named}`,
+      evidence: { ...evidence, reason },
+    });
+  }
+  if (open.length) {
+    const unrun = [...new Set(open.map((entry) => entry.funnel))].filter((funnel) => !placedByFunnel.get(funnel));
+    return assertion({
+      ...base,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      actual: `no test order clicked the decline on ${open.length} of ${pages.length} page(s) with upsell actions: ${open.map(pageName).join(", ")}${unrun.length ? `. No test order ran through funnel(s) ${unrun.map(funnelName).join(", ")}` : ""}`,
+      evidence,
+    });
+  }
+  return assertion({
+    ...base,
+    status: STATUS.PASS,
+    actual: `decline clicked on all ${pages.length} page(s) with upsell actions`,
+    evidence,
+  });
+}
+
+// True when a resolved topology plan was planned over exactly this funnel: the
+// same funnel id and the same page list, page for page.
+function plannedOverFunnel(topologyPlan, funnel) {
+  if ((topologyPlan?.topology_id || null) !== (funnel.funnel_id || "default")) return false;
+  const planned = Array.isArray(topologyPlan?.route_pages) ? topologyPlan.route_pages : null;
+  if (!planned || planned.length !== funnel.pages.length) return false;
+  return funnel.pages.every((page, index) => (page?.page_id || null) === planned[index]?.page_id
+    && (page?.page_type || null) === planned[index]?.page_type
+    && (page?.url || null) === planned[index]?.url);
+}
+
+function describeCoverageDoubt(doubt) {
+  if (doubt.reason === "unattributed_plan") return `order plan(s) ${doubt.plans.join(", ")} cannot be matched to exactly one funnel's checkout and page list`;
+  if (doubt.reason === "unattributed_click") return `${doubt.clicks} recorded click(s) carry no usable page URL or come from an order with no funnel`;
+  if (doubt.reason === "undeclared_click") return `an order clicked page(s) its funnel does not declare: ${doubt.urls.join(", ")}`;
+  return doubt.reason;
+}
+
+// Page types that never carry an upsell action. Any other type, or none, does
+// not say either way.
+const NON_OFFER_PAGE_TYPES = new Set(["presell", "landing", "select", "product", "checkout", "thankyou", "receipt"]);
+const UPSELL_COVERAGE_UNASSESSABLE = Object.freeze({
+  no_url: "no URL",
+  unresolvable_url: "URL is not an absolute http(s) address",
+  unknown_page_type: "page type does not say whether it offers anything",
+  shared_url: "URL shared with another page",
+  no_pages: "funnel lists no pages",
+});
+
+// An attempt counts as a placed order only when it carries the order reference
+// the runner read back; a failure placeholder has none.
+function isPlacedTestOrder(order) {
+  if (!order || typeof order !== "object") return false;
+  return [order.ref_id, order.next_order_id].some((value) => value != null && String(value).trim() !== "");
+}
+
+// The coverage row for a run that drove no browser test order at all
+// (`--test-order off`), so its verdict never reads as every decline clicked.
+// Null when no funnel has offer pages, as in a run that placed orders.
+export function upsellActionCoverageWithoutOrders(topologies = []) {
+  return upsellActionCoverageAssertion({
+    topologies,
+    orders: [],
+    checkoutPage: findPage(topologies, "checkout"),
+    testOrdersOff: true,
+  });
 }
 
 function enforceTestOrderLimit(plans, args) {
@@ -6659,7 +7166,7 @@ function enforceTestOrderLimit(plans, args) {
   throw new Error([
     `--test-order ${args["test-order"]} expands to ${plans.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
     `Planned paths: ${preview}.`,
-    `This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with --max-test-orders ${plans.length} for this exhaustive proof.`,
+    `This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default depth, or rerun with --max-test-orders ${plans.length} for this exhaustive proof.`,
     "The cap bounds planned paths. Actual order creations are bounded separately by --max-order-creations, which defaults to the planned path count and is reserved before each submit.",
   ].join(" "));
 }
@@ -7204,6 +7711,9 @@ export const __qaBrowserTestHooks = Object.freeze({
   testEmail,
   testOrderPaths,
   testOrderPlans,
+  commonOrderPathPlan,
+  describeCommonOrderPathPlan,
+  upsellActionCoverageAssertion,
   planId,
   argsForPlan,
   enforceTestOrderLimit,

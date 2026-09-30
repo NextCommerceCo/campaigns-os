@@ -43,13 +43,14 @@ Existing page-kit campaign: `cd` into it (its `package.json` declares
 `next-campaign-page-kit`). Then, in the campaign folder:
 
 ```bash
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.3
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@<version>
 npx --no-install campaigns-os tooling status --platform claude
 ```
 
-`1.37.3` is an exact published example. Select the release you reviewed and
-verify its tag/provenance against the source commit; do not use a floating
-dist-tag. Commit both `package.json` and `package-lock.json`. An unreleased
+`<version>` is the exact release you reviewed. The newest published release is
+npm's `latest` (`npm view @nextcommerce/campaigns-os version`), and
+`contracts/release-ledger.json` and `CHANGELOG.md` list every release. Verify
+its tag/provenance against the source commit; do not use a floating dist-tag. Commit both `package.json` and `package-lock.json`. An unreleased
 reviewed commit may instead be pinned with
 `npm install --save-dev --save-exact "github:NextCommerceCo/campaigns-os#<full-sha>"`.
 The package install runs its own lifecycle build; it is separate from the
@@ -67,7 +68,7 @@ real campaign. See [offline sample preview](demo-preview.md).
 Global use is also supported, with an exact release:
 
 ```bash
-npm install -g @nextcommerce/campaigns-os@1.37.3
+npm install -g @nextcommerce/campaigns-os@<version>
 campaigns-os tooling status --platform claude
 campaigns-os install-skills --platform claude
 ```
@@ -142,7 +143,7 @@ After installing or updating the CLI, refresh the Campaigns OS skills in Claude 
 npx --no-install campaigns-os install-skills --platform claude
 ```
 
-This syncs bundled `skills/*` directories from the installed package into `~/.claude/skills/<skill-name>/` (`--platform codex` writes `~/.codex/skills`), replacing same-name folders, and reports which skills were created, updated, or unchanged. Restart the agent afterwards. Preview changes without writing files:
+This syncs bundled `skills/*` directories from the installed package into `~/.claude/skills/<skill-name>/` (`--platform codex` writes `~/.codex/skills`), replacing same-name folders, and reports which skills were created, updated, or unchanged. It lists each `SKILL.md` it wrote under `Read now`: read those files now in the same session, because a running agent does not load skills installed after it started (a new session loads them on its own). Preview changes without writing files:
 
 ```bash
 npx --no-install campaigns-os install-skills --dry-run
@@ -157,8 +158,9 @@ npx --no-install campaigns-os install-skills --platform all --dry-run
 ```
 
 If `tooling status` reports stale skills, run the refresh command it prints —
-it names each stale platform, through the same prefix — and restart local
-agent sessions so the new instructions are loaded. The build after `start` is
+it names each stale platform, through the same prefix — and read the
+`SKILL.md` files it lists under `Read now` in the running session so the new
+instructions are loaded (new sessions load them on their own). The build after `start` is
 agent-driven — `next` names the skill for each stage — so install skills before
 the first `start`.
 
@@ -209,7 +211,31 @@ producer path such as `checkout/index.html` should still target
 
 ## Prepare Raw HTML Source
 
-`html_funnel` source files should be page-kit-ready source, not full browser
+**Standalone HTML mockups: keep them whole, set
+`wrapper_policy: preserve_document_wrappers`.** Put it in the source-html
+manifest at `<source>/.campaigns-os/source-html-manifest.json` (or pass
+`--wrapper-policy preserve_document_wrappers` to `start` / `prepare-build`).
+Source screenshot proof must be of the standalone document, so a page kept whole
+needs no conversion, and doctor reports its document wrappers as a warning that
+names the decision. For pages without a Figma `design_source`, no exporter is
+required: for hand-written HTML, write the manifest yourself. When any active
+page's `design_source` is Figma, the manifest must pass the Figma provenance
+gate (`source_html.producer_provenance`), which needs the exporter's handoff
+manifest. A minimal one (schema:
+`schemas/source-html-manifest.v0.schema.json`):
+
+```json
+{
+  "schema_version": "source-html-manifest/v0",
+  "wrapper_policy": "preserve_document_wrappers",
+  "pages": [{ "page_id": "landing", "path": "landing.html" }]
+}
+```
+
+Decide this before capturing screenshots or computing `source_hash`; the rest
+of this section is the conversion for source that is not kept whole.
+
+Otherwise, `html_funnel` source files should be page-kit-ready source, not full browser
 documents copied verbatim from an AI tool. This is not a wholesale Liquid
 rewrite. Use Liquid only for page-kit helpers such as `campaign_link`,
 `campaign_asset`, and `campaign_include`.

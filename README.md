@@ -47,7 +47,7 @@ steps, in this order:
 mkdir "<route>" && cd "<route>"
 npm init -y && npm i next-campaign-page-kit
 npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.3
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@<version>
 npx --no-install campaigns-os tooling status --platform claude
 npx --no-install campaigns-os install-skills --platform claude
 mkdir -p source
@@ -57,7 +57,7 @@ The toolkit is also published to npm as `@nextcommerce/campaigns-os`, so the
 CLI can be installed once, globally, instead of pinned per campaign:
 
 ```bash
-npm install -g @nextcommerce/campaigns-os@1.37.3
+npm install -g @nextcommerce/campaigns-os@<version>
 campaigns-os tooling status --platform claude
 campaigns-os install-skills --platform claude
 ```
@@ -73,9 +73,11 @@ runs the full check in an unprivileged job and publishes the verified tarball
 with provenance from a second, environment-gated job.
 
 For an existing page-kit campaign, skip the first three lines and `cd` into it
-(its `package.json` already declares `next-campaign-page-kit`). `1.37.3` is
-an exact published example; choose the release you reviewed, never a floating
-dist-tag for a reproducible build. Commit `package.json` and `package-lock.json`.
+(its `package.json` already declares `next-campaign-page-kit`). `<version>` is
+the exact release you reviewed. The newest published release is npm's `latest`
+(`npm view @nextcommerce/campaigns-os version`), and
+`contracts/release-ledger.json` and `CHANGELOG.md` list every release. Pin the
+exact version, never a floating dist-tag, for a reproducible build. Commit `package.json` and `package-lock.json`.
 `tooling diagnose` requires 1.35.0 or later and `demo` requires 1.37.0 or later.
 A Git source pin remains supported when using an unreleased reviewed commit:
 `npm install --save-dev --save-exact "github:NextCommerceCo/campaigns-os#<full-sha>"`.
@@ -94,7 +96,10 @@ check registry currency or establish trust. On a fresh profile, preflight exits
 use `--platform codex` for a Codex-only profile. Without `--platform`, status
 checks every supported agent profile.
 `install-skills` writes `~/.claude/skills` (`--platform codex` writes
-`~/.codex/skills`), replacing same-name folders; restart the agent after.
+`~/.codex/skills`), replacing same-name folders, and lists each `SKILL.md` it
+wrote under `Read now`. A running agent does not load skills installed after it
+started, so read those files now in the same session; a new session loads them
+on its own.
 Run commands from the campaign folder: `npx` selects its local installation
 even when another global copy is on PATH. A global-only installation prints
 bare commands when its binary matches PATH, or an explicit `node` invocation
@@ -232,10 +237,25 @@ Then ask your AI tool to continue from the emitted handoff. Fresh target repos u
 
 The current source adapter is `html_funnel`: bring prepared HTML/CSS/assets for the campaign pages, plus a CampaignSpec exported from Campaign Map Builder or authored by the coding agent through the [local-spec entry](docs/build-packet.md#local-spec-entry).
 
-For raw AI-generated or exported static HTML, "prepared" means page-kit-ready
-source, not a browser document dropped in unchanged and not a wholesale Liquid
-rewrite. Page Kit source is HTML with YAML frontmatter and optional Liquid
-helpers. Convert standalone HTML into the target page format first: remove outer
+Standalone HTML mockups: keep them whole and set
+`wrapper_policy: preserve_document_wrappers` in the source-html manifest at
+`<source>/.campaigns-os/source-html-manifest.json` (or pass
+`--wrapper-policy preserve_document_wrappers` to `start`). Source screenshot
+proof must be of the standalone document, so a page kept whole needs no
+conversion; doctor reports its document wrappers as a warning that names the
+decision. For pages without a Figma `design_source`, no exporter is required:
+a hand-written manifest is enough (when any active page's `design_source` is
+Figma, the manifest must pass the Figma provenance gate, which needs the
+exporter's handoff manifest), for example
+`{"schema_version": "source-html-manifest/v0", "wrapper_policy": "preserve_document_wrappers", "pages": [{"page_id": "landing", "path": "landing.html"}]}`
+(schema: `schemas/source-html-manifest.v0.schema.json`; see
+[Selecting the wrapper policy at intake](docs/source-adapters.md#selecting-the-wrapper-policy-at-intake)).
+
+Otherwise, for raw AI-generated or exported static HTML, "prepared" means
+page-kit-ready source, not a browser document dropped in unchanged and not a
+wholesale Liquid rewrite. Page Kit source is HTML with YAML frontmatter and
+optional Liquid helpers. Convert standalone HTML into the target page format
+first: remove outer
 `<html>`, `<head>`, and `<body>` wrappers, add page frontmatter, move shared
 CSS/assets into the campaign asset tree when useful, root links/assets with
 `campaign_link` and `campaign_asset` when needed, and keep landing/presell
@@ -295,7 +315,8 @@ for a package install the pinned commit is the freshness answer, and there is
 no npm dist-tag to compare against. Neither mode makes agent skills current on
 its own: when skills are stale, run the refresh command the status output
 prints (it names each stale platform, through the same prefix you ran
-`tooling status` with) and restart local agent sessions. Without `--platform`,
+`tooling status` with), then read the `SKILL.md` files it lists under `Read now`
+in the running session (new sessions load them on their own). Without `--platform`,
 status checks only the platforms where Campaigns OS skills are installed.
 
 Run `campaigns-os qa install-browser` (`npm run qa:install-browser` from a

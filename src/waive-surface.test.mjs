@@ -234,7 +234,7 @@ test("an unknown checkpoint gate is refused with the registered gate list", () =
   try {
     assert.throws(
       () => checkpointWaive({ _: ["checkpoint", "waive"], packet: packetPath, gate: "polish.evidence_missing", reason: "x", "waived-by": "Jordan Lee", "review-condition": "never" }),
-      /Unknown checkpoint gate "polish\.evidence_missing"; registered gates: page_kit\.sdk_version, page_kit\.store_profile, built_output\.upsell_selector_scope, polish\.hidden_eager_media\./,
+      /Unknown checkpoint gate "polish\.evidence_missing"; registered gates: page_kit\.sdk_version, page_kit\.store_profile, built_output\.upsell_selector_scope, polish\.hidden_eager_media, source_html\.producer_provenance\./,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -249,7 +249,7 @@ test("--json refusals of both waive commands return an envelope on stdout with e
     const envelope = JSON.parse(unknown.stdout);
     assert.equal(envelope.ok, false);
     assert.equal(envelope.gate, "polish.evidence_missing");
-    assert.deepEqual(envelope.registered_gates, ["page_kit.sdk_version", "page_kit.store_profile", "built_output.upsell_selector_scope", "polish.hidden_eager_media"]);
+    assert.deepEqual(envelope.registered_gates, ["page_kit.sdk_version", "page_kit.store_profile", "built_output.upsell_selector_scope", "polish.hidden_eager_media", "source_html.producer_provenance"]);
     assert.match(envelope.error, /Unknown checkpoint gate/);
     assert.match(unknown.stderr, /campaigns-os: Unknown checkpoint gate/);
 
@@ -259,7 +259,7 @@ test("--json refusals of both waive commands return an envelope on stdout with e
     assert.equal(noGateEnvelope.ok, false);
     assert.equal("gate" in noGateEnvelope, false, "no --gate given: the key is omitted, not null");
     assert.match(noGateEnvelope.error, /--gate/);
-    assert.deepEqual(noGateEnvelope.registered_gates, ["page_kit.sdk_version", "page_kit.store_profile", "built_output.upsell_selector_scope", "polish.hidden_eager_media"]);
+    assert.deepEqual(noGateEnvelope.registered_gates, ["page_kit.sdk_version", "page_kit.store_profile", "built_output.upsell_selector_scope", "polish.hidden_eager_media", "source_html.producer_provenance"]);
 
     const noBound = runCli(["checkpoint", "waive", "--packet", packetPath, "--gate", "page_kit.sdk_version", "--reason", "x", "--waived-by", "Jordan Lee", "--json"], dir);
     assert.equal(noBound.status, 1);

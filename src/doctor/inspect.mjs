@@ -8,6 +8,9 @@ import { commitAssemblyReport, recordProducerStageOutcome } from "../stage-ledge
 import { annotateDoctorIssueCauses } from "../finding-cause.mjs";
 import { DOCTOR_SIDECAR_SCHEMA } from "../doctor-sidecar.mjs";
 import { resolveCampaignWorkspace } from "../campaign-workspace.mjs";
+import { normalizePublicRouteSlug } from "../route-identity.mjs";
+import { DEFAULT_PROXY_BASE } from "../spec-fetch.mjs";
+import { disabledLiveRead, liveRefsDisabled, readLiveCampaignForPacket } from "../live-campaign-refs.mjs";
 import { evaluateThemeGate } from "../theme-gate.mjs";
 import { findForbiddenPriceHides } from "../template-brand-contract.mjs";
 import { resolveBuiltSiteScope, synthesizeMinimalBuildPacket } from "../built-site-scope.mjs";
@@ -88,7 +91,38 @@ function relativizeDoctorOutput(result, baseDir) {
 // Sidecar producer name; see the producer comment above NEXT_PRODUCER in src/cli.mjs.
 const DOCTOR_PRODUCER = "doctor";
 
-export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
+// The live campaign read the `doctor` command makes before it inspects (#533):
+// packet mode only, only when the packet's built _site/<route>/ exists (with
+// no built page there is nothing to compare, so nothing is sent), and only
+// under the public Campaigns API key the packet, its local CampaignSpec or its
+// declared campaign-key env var resolves. One GET of {proxy-base}/api/campaign;
+// --proxy-base names the proxy, else the canonical one; --no-live-refs sends
+// nothing and records not_run with reason `disabled`. `undefined` means no
+// read was due, which doctor records as not_run; every other outcome,
+// failures included, is a readLiveCampaign result.
+export async function readDoctorLiveCampaign(args, { fetchImpl = globalThis.fetch, env = process.env, warn = undefined } = {}) {
+  if (((args.built || args.site) && !args.packet) || !isNonEmptyString(args.packet)) return undefined;
+  if (liveRefsDisabled(args)) return disabledLiveRead();
+  let workspace;
+  try {
+    workspace = resolveCampaignWorkspace(resolve(args.packet), { followContextPointer: false });
+  } catch {
+    // An unreadable packet is doctor's own blocker; there is nothing to read for.
+    return undefined;
+  }
+  const slug = normalizePublicRouteSlug(workspace.packet?.campaign?.public_route_slug);
+  if (!workspace.targetRepo || !slug || !existsSync(join(workspace.targetRepo, "_site", slug))) return undefined;
+  return readLiveCampaignForPacket({
+    packet: workspace.packet,
+    packetPath: workspace.packetPath,
+    env,
+    fetchImpl,
+    proxyBase: optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE,
+    ...(warn ? { warn } : {}),
+  });
+}
+
+export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = undefined } = {}) {
   // Non-packet mode (learnings L7): doctor a `campaign-build`'d page-kit
   // campaign that has only a built _site/ and no full Build Packet. Resolves
   // scope from the built output and runs the built-output residue/text/
@@ -103,6 +137,9 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     contextPath: args.context ? resolve(args.context) : explicitSidecarArgs ? null : undefined,
     reportPath: args.report ? resolve(args.report) : explicitSidecarArgs ? null : undefined,
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
+    // A live campaign read (live-campaign-refs.mjs) the caller already made;
+    // absent, the live ref check is recorded not_run.
+    ...(liveCampaign !== undefined ? { liveCampaign } : {}),
   };
   const result = runDoctor(packetPath, doctorOptions);
   // Inspection and recording are separate operations. A laptop's untracked
@@ -234,10 +271,11 @@ export function doctorBuiltOutput(args) {
   // branch above: the defect is family-independent, and this mode is reached
   // without --family more often than with it. Page roles come from the built
   // route (resolveBuiltSiteScope infers them) and from each page's own
-  // next-page-type meta, so no packet or spec is needed; a meta the browser
-  // reads, declared unambiguously, replaces the route guess (#529). No assembly report
-  // exists on this path, so there are no waivers to assess — a blocker here is
-  // repaired in the source, or waived through the packet path.
+  // next-page-type meta, so no packet or spec is needed; a `checkout` meta the
+  // browser reads, declared unambiguously, replaces an ambiguous route guess
+  // such as "/checkout-oto-1/", never an explicit upsell or downsell route (#529). No
+  // assembly report exists on this path, so there are no waivers to assess — a
+  // blocker here is repaired in the source, or waived through the packet path.
   recordUpsellSelectorScopeGate({
     subject: {
       public_route_slug: scope.slug || null,
@@ -247,7 +285,7 @@ export function doctorBuiltOutput(args) {
       const content = readFileSync(page.built_path, "utf8");
       return {
         page_id: page.page_id,
-        page_type: builtPageTypeOverRouteGuess({ route_type: page.page_type, content }),
+        page_type: builtPageTypeOverRouteGuess({ route: page.route, route_type: page.page_type, content }),
         file: relFromDir(targetRepo, page.built_path),
         content,
       };
@@ -378,7 +416,7 @@ export function doctorPacket(packetPath, options = {}) {
   return result;
 }
 
-function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
+function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null, liveCampaign = undefined } = {}) {
   // The Build Context records where prepare-build wrote the report
   // (--report-out). `next` follows that pointer when no --report is given;
   // doctor reads the same report so its gates and its next block cannot
@@ -429,7 +467,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     },
   };
 
-  validatePacket(packet, packetPath, errors, warnings, ready, derived, { context, report });
+  validatePacket(packet, packetPath, errors, warnings, ready, derived, { context, report, liveCampaign });
   runDoctorChecks(ARTIFACT_DOCTOR_CHECKS, { context, report, errors, warnings, ready, derived });
 
   // Doctor and the stage ladder must agree over one packet (#238): when the

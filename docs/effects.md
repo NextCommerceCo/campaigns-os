@@ -38,8 +38,10 @@ that already understands those hints needs no translation layer.
 **`readOnlyHint` counts the command-lifecycle journal.** A journal append is a
 write like any other, so every `readOnlyHint: true` row is an invocation the
 CLI exempts from lifecycle capture (the converse does not hold: `demo` and the
-`--no-write` forms skip the journal but still write other declared files): `help`, `readback`,
-`run status`, `doctor` inspection, `doctor --no-write`, `sdk storage-check`,
+`--no-write` forms skip the journal but still write other declared files, and
+`doctor` inspection and `doctor --no-write` skip it and write nothing but may
+send the one live campaign read): `help`, `readback`,
+`run status`, `doctor --no-live-refs` inspection, `sdk storage-check`,
 `tooling diagnose`, a refused invocation, `run-record --no-write`, and every
 `--dry-run` form on the commands that implement the flag. Everything else
 appends an entry when a journal is selected — an active run session,
@@ -93,6 +95,34 @@ are on every row for those three commands. The effect test runs each row with
 the one condition whose `--proxy-base` is the loopback receiver, so the fetch
 and the write are observed rather than taken on trust.
 
+### The live campaign read
+
+`doctor --packet` (with or without `--write` / `--no-write`) and every `qa run`
+form check each page's shipping and package refs against the live campaign.
+Doctor reads when the packet's built `_site/<route>/` exists; QA reads when it
+has read at least one served page. Both need a public Campaigns API key from
+the packet, its local CampaignSpec or the declared campaign-key env var. The
+read is one `GET {proxy-base}/api/campaign` with the key in `X-Campaign-Key`,
+plus `?ref_id=<id>` when the CampaignSpec's `campaign.ref_id` names the
+campaign. No store or Admin credential is used. The proxy's answer is an
+envelope whose `data` field holds the campaign. A failed read, an `ok: false`
+envelope, one with an `error` and no campaign, or several campaigns with no
+`campaign.ref_id` to pick one is recorded as `not_run` with its reason, never
+as a pass. `--no-live-refs` on `doctor` or `qa run` skips only this read and
+records `not_run` with reason `disabled`; every other declared write and send
+is unchanged. Each form has its own row, including `doctor --write
+--no-live-refs` and `qa run --no-live-refs` with each `qa run` modifier.
+`doctor --no-write --no-live-refs` has the effects of the `doctor
+--no-live-refs` row.
+
+Only `doctor` and `qa run` make this read. The other commands that run doctor
+internally make no request and record `derived.live_campaign_refs` as
+`not_run` with reason `not_read`, with no warning: `start`, `prepare-build`
+and `build` (the intake alias for prepare-build + doctor), `theme waive`,
+`checkpoint`, `findings harvest`, `run-record`, `next`, and the doctor
+sidecar refresh `qa run` makes after it records the QA stage (the verdict
+itself carries QA's own read).
+
 ## How to read a row
 
 ```jsonc
@@ -120,7 +150,7 @@ There is **one row per command and per effect-changing flag combination**. The
 flags that change what the invocation does to the world are listed once, in
 `vocabulary.effect_changing_flags`: `--browser`, `--built`, `--dry-run`,
 `--emit-packet`, `--example`, `--force`, `--from-store`, `--list`,
-`--no-post-verdict`, `--no-probe`, `--no-remit`, `--no-run-session`,
+`--no-live-refs`, `--no-post-verdict`, `--no-probe`, `--no-remit`, `--no-run-session`,
 `--no-write`, `--republish`, `--test-order`, `--write`, `--write-map`. Flags
 that only change the output shape (`--json`, `--report`) deliberately do not.
 
