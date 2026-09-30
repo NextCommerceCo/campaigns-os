@@ -195,7 +195,7 @@ import {
 } from "./polish-node.mjs";
 import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
 import { POLISH_BEACON_RESOURCE_TYPES, captureOrigin, redactCaptureUrl } from "./polish-capture.mjs";
-import { SOURCE_PROVENANCE_SCOPE } from "./doctor/source-provenance.mjs";
+import { SOURCE_PROVENANCE_EXPORTER_CLAIM_CODE, SOURCE_PROVENANCE_SCOPE } from "./doctor/source-provenance.mjs";
 import {
   appendCheckpointWaiver,
   createCheckpointRegistry,
@@ -2756,6 +2756,9 @@ export function checkpointWaive(args) {
       throw new Error(`Checkpoint gate "${gateId}" is not blocked (status=${gate.status}); no waiver was recorded.`);
     }
     if (gate.waivable !== true) {
+      if (gate.code === SOURCE_PROVENANCE_EXPORTER_CLAIM_CODE) {
+        throw new Error(`Checkpoint gate "${gateId}" cannot be waived for page "${pageId}": the source-html manifest's generator claims figma-sections-export, so its missing provenance is the export's own defect. Re-run figma-sections-export, or, when the approved source is hand-written HTML, set the manifest's generator to name the real producer and waive again.`);
+      }
       const residueFields = gateId === PAGE_KIT_STORE_PROFILE_SCOPE ? storeProfileDemoResidueFields(gate) : [];
       if (residueFields.length) {
         throw new Error(`Checkpoint gate "${gateId}" cannot be waived: ${residueFields.join(", ")} still carr${residueFields.length === 1 ? "ies" : "y"} starter demo residue (a demo storefront URL or phone). Replace the demo value(s) in ${gate.subject?.target_path || "_data/campaigns.json"}[${gate.subject?.public_route_slug || "<public-route-slug>"}]; only spec mismatches and missing values are waivable.`);
@@ -4178,6 +4181,9 @@ function withPacketSubstitutedIssue(issue, packetPath) {
 }
 
 function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate = prepareBuildGateIssue(report), packetPath = null }) {
+  const checkpointGates = Array.isArray(doctor?.derived?.checkpoint_gates) ? doctor.derived.checkpoint_gates : [];
+  const campaignCheckpointGates = checkpointGates.filter((gate) => !PER_PAGE_CHECKPOINT_GATES.has(gate?.id));
+  const perPageGates = checkpointGates.filter((gate) => PER_PAGE_CHECKPOINT_GATES.has(gate?.id));
   return [
     {
       id: "doctor",
@@ -4189,9 +4195,7 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
       status: prepareBuildGate ? "blocked" : "pass",
       reason: prepareBuildGate ? prepareBuildGate.reason : "prepare_build stage is terminal.",
     },
-    ...(Array.isArray(doctor?.derived?.checkpoint_gates)
-      ? doctor.derived.checkpoint_gates.map((gate) => withPacketSubstituted(gate, packetPath))
-      : []),
+    ...campaignCheckpointGates.map((gate) => withPacketSubstituted(gate, packetPath)),
     ...(doctor?.derived?.polish_checkpoint_gate
       ? [withPacketSubstituted(doctor.derived.polish_checkpoint_gate, packetPath)]
       : []),
@@ -4213,6 +4217,10 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
           waiver: polishGate?.waiver || null,
           required_actions: polishGate?.required_actions || [],
         }]),
+    // Per-page gates last: one per page can outnumber the rest, and a
+    // truncated projection of this list (progress keeps 16) must still carry
+    // every campaign-wide gate.
+    ...perPageGates.map((gate) => withPacketSubstituted(gate, packetPath)),
   ];
 }
 

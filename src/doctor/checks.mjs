@@ -79,7 +79,7 @@ import {
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "../campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
-import { SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
+import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
 import {
@@ -3243,6 +3243,7 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
       },
     })),
     blockingCodes: provenanceBlockers.map((finding) => finding.code),
+    generatorClaimsExport: generatorClaimsFigma,
     waivers,
   });
   if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(...gates);
@@ -3251,18 +3252,19 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
     addIssue(
       warnings,
       `${SOURCE_PROVENANCE_SCOPE}.waiver_inert`,
-      `Source-provenance waiver history contains ${inertTotal} inert record(s); stale, foreign, malformed, and expired decisions, and decisions for pages that no longer have a Figma design source${inert.pages.length ? ` (${inert.pages.join(", ")})` : ""}, never satisfy the current checkpoint.`,
+      `Source-provenance waiver history contains ${inertTotal} inert record(s); stale, foreign, malformed, and expired decisions, decisions for pages that no longer have a Figma design source${inert.pages.length ? ` (${inert.pages.join(", ")})` : ""}, and decisions under a manifest whose generator claims figma-sections-export never satisfy the current checkpoint.`,
       { counts: inert.counts, pages: inert.pages },
     );
   }
   if (!expectsFigma) return;
 
-  // The source_html.producer_provenance* blockers are reported once per
-  // Figma-typed page that demands them: as errors naming an unwaived page, and
-  // as warnings carrying `waived: true` naming a waived page. When the
-  // manifest's own generator claims figma-sections-export, the manifest
-  // demands them itself, so they are reported once, manifest-wide, as errors
-  // no page waiver can clear. Every other finding keeps its severity.
+  // The waivable family (source_html.producer_provenance* and the export's
+  // file inventory) is reported once per Figma-typed page that demands it:
+  // as errors naming an unwaived page, and as warnings carrying `waived: true`
+  // naming a waived page. When the manifest's own generator claims
+  // figma-sections-export, the manifest demands them itself, so they are
+  // reported once, manifest-wide, as errors no page waiver can clear. Every
+  // other finding keeps its severity.
   const waived = gates.filter((gate) => gate.status === "waived");
   for (const finding of findings) {
     if (finding.severity === "warning") {
@@ -3293,14 +3295,14 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
     const waivedBy = [...new Set(waived.map((gate) => gate.waiver.waived_by))].join(", ");
     ready.push(`Figma producer provenance accepted under named-human exception for page(s) ${waivedPageIds.join(", ")} (${waivedBy}).`);
   }
-  if (errors.every((issue) => !isSourceProvenanceCode(issue.code) && !["source_html.files.partial", "source_html.files.asset"].includes(issue.code)) && waived.length === 0) {
+  if (errors.every((issue) => !isSourceProvenanceCode(issue.code) && !FIGMA_EXPORT_FILE_CODES.includes(issue.code)) && waived.length === 0) {
     ready.push("Figma producer provenance gate passed: semantic_figma_export with package fingerprint");
   }
 }
 
 // Returns every Figma-provenance finding in emission order, each tagged with
 // its severity: "provenance" (the waivable source_html.producer_provenance*
-// blockers), "error", or "warning".
+// and source_html.files.partial/asset blockers), "error", or "warning".
 function collectFigmaProvenanceFindings(manifest, provenance, rawProvenance) {
   const findings = [];
   const add = (severity, code, message) => findings.push({ severity, code, message });
@@ -3343,10 +3345,10 @@ function collectFigmaProvenanceFindings(manifest, provenance, rawProvenance) {
 
   const files = Array.isArray(manifest?.files) ? manifest.files : [];
   if (!files.some((entry) => entry.role === "partial")) {
-    add("error", "source_html.files.partial", "Figma source manifest files[] must include section partials.");
+    add("provenance", "source_html.files.partial", "Figma source manifest files[] must include section partials.");
   }
   if (!files.some((entry) => entry.role === "asset")) {
-    add("error", "source_html.files.asset", "Figma source manifest files[] must include exported assets.");
+    add("provenance", "source_html.files.asset", "Figma source manifest files[] must include exported assets.");
   }
 
   const sectionExports = Array.isArray(provenance.section_exports) ? provenance.section_exports : [];

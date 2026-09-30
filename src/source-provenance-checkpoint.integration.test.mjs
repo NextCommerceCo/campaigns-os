@@ -7,12 +7,13 @@
 // behavioural assertion, not on a missing module.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { checkpointWaive, parseArgs } from "./cli.mjs";
+import { checkpointWaive, nextStage, parseArgs } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
 
 const SOURCE_PROVENANCE_SCOPE = "source_html.producer_provenance";
@@ -28,9 +29,24 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-// The shipped example tree with a valid, hand-written source-html manifest (no
-// producer_provenance) and a Figma design_source on the named pages.
-function fixture({ figmaPages = ["landing"], files = null, generator = "hand-written" } = {}) {
+// The Figma-export family a hand-written page is waived for: the provenance
+// codes and the export's file inventory.
+const FIGMA_EXPORT_FILE_CODES = ["source_html.files.partial", "source_html.files.asset"];
+// Every finding a bare hand-written manifest raises for one Figma-typed page.
+const BARE_MANIFEST_CODES = [
+  SOURCE_PROVENANCE_SCOPE,
+  `${SOURCE_PROVENANCE_SCOPE}.material_fingerprint`,
+  `${SOURCE_PROVENANCE_SCOPE}.screenshot_fallback_used`,
+  `${SOURCE_PROVENANCE_SCOPE}.section_exports`,
+  `${SOURCE_PROVENANCE_SCOPE}.semantic_section_count`,
+  `${SOURCE_PROVENANCE_SCOPE}.source_type`,
+  ...FIGMA_EXPORT_FILE_CODES,
+].sort();
+
+// The shipped example tree with a bare, hand-written source-html manifest
+// (only `role: page` files, no producer_provenance) and a Figma design_source
+// on the named pages. `extraPages` adds that many more Figma-typed pages.
+function fixture({ figmaPages = ["landing"], files = null, generator = "hand-written", extraPages = 0 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "source-provenance-"));
   for (const file of ["build-packet.basic.json", "campaignspec.v42.basic.json"]) {
     cpSync(new URL(file, EXAMPLES), join(dir, file));
@@ -53,6 +69,17 @@ function fixture({ figmaPages = ["landing"], files = null, generator = "hand-wri
       if (figmaPages.includes(page.id)) page.design_source = { type: "figma", file_url: FIGMA_URL };
     }
   }
+  const template = spec.funnels[0].pages.find((page) => page.id === "landing");
+  for (let index = 1; index <= extraPages; index += 1) {
+    spec.funnels[0].pages.push({
+      ...structuredClone(template),
+      id: `offer-${index}`,
+      order: 100 + index,
+      is_entry: false,
+      page_url: `offer-${index}/`,
+      design_source: { type: "figma", file_url: FIGMA_URL },
+    });
+  }
   writeJson(specPath, spec);
 
   const sourceRoot = join(dir, "source-html");
@@ -60,10 +87,11 @@ function fixture({ figmaPages = ["landing"], files = null, generator = "hand-wri
   writeJson(manifestPath, {
     schema_version: "source-html-manifest/v0",
     generator,
-    files: files || [
-      { path: "landing.html", role: "partial", sha256: "b".repeat(64) },
-      { path: "assets/hero.png", role: "asset", sha256: "c".repeat(64) },
-    ],
+    files: files || packet.source_html.pages.map((page) => ({
+      path: page.path,
+      role: "page",
+      sha256: createHash("sha256").update(readFileSync(join(sourceRoot, page.path))).digest("hex"),
+    })),
     pages: packet.source_html.pages.map((page) => ({ page_id: page.page_id, path: page.path })),
   });
 
@@ -87,7 +115,8 @@ function inDir(options, run) {
   }
 }
 
-const isProvenance = (issue) => issue.code === SOURCE_PROVENANCE_SCOPE || issue.code.startsWith(`${SOURCE_PROVENANCE_SCOPE}.`);
+const isProvenance = (issue) => issue.code === SOURCE_PROVENANCE_SCOPE || issue.code.startsWith(`${SOURCE_PROVENANCE_SCOPE}.`)
+  || FIGMA_EXPORT_FILE_CODES.includes(issue.code);
 const provenanceErrors = (doctor) => doctor.errors.filter(isProvenance);
 const provenanceWarnings = (doctor) => doctor.warnings.filter((issue) => isProvenance(issue) && issue.code !== `${SOURCE_PROVENANCE_SCOPE}.waiver_inert`);
 const gateFor = (doctor, pageId) => doctor.derived.checkpoint_gates.find((gate) => gate.id === SOURCE_PROVENANCE_SCOPE && gate.subject.page_id === pageId);
@@ -118,8 +147,14 @@ function waive(packetPath, page, extra = {}) {
 test("a waiver re-emits the Figma-provenance blockers as waived warnings; expired or unparseable, they block again", () => {
   inDir({}, ({ packetPath, reportPath }) => {
     const before = doctorPacket(packetPath);
-    assert.ok(provenanceErrors(before).length > 0, "negative control: no Figma export, the provenance family blocks");
+    assert.deepEqual(
+      provenanceErrors(before).map((issue) => issue.code).sort(),
+      BARE_MANIFEST_CODES,
+      "negative control: a bare hand-written manifest raises the six provenance codes and the export file inventory",
+    );
+    assert.deepEqual(before.errors.map((issue) => issue.code).sort(), BARE_MANIFEST_CODES, "those eight are doctor's only blockers");
     assert.equal(gateFor(before, "landing")?.status, "blocked");
+    assert.deepEqual(gateFor(before, "landing")?.state.findings, BARE_MANIFEST_CODES);
 
     const result = waive(packetPath, "landing");
     assert.equal(result.ok, true);
@@ -127,7 +162,9 @@ test("a waiver re-emits the Figma-provenance blockers as waived warnings; expire
     assert.equal(result.status, "ready_with_waivers");
 
     const after = doctorPacket(packetPath);
-    assert.deepEqual(provenanceErrors(after), []);
+    assert.deepEqual(after.errors, [], "the eight blockers no longer block");
+    assert.equal(after.ok, true);
+    assert.equal(after.status, "ready_with_waivers");
     const warned = provenanceWarnings(after);
     assert.deepEqual(
       warned.map((issue) => issue.code).sort(),
@@ -181,14 +218,43 @@ test("a waiver is per page: page A's findings are waived warnings while page B's
   });
 });
 
-test("a manifest whose generator claims figma-sections-export keeps its provenance errors under a page waiver", () => {
-  inDir({ generator: "figma-sections-export@1.0.0" }, ({ packetPath }) => {
-    waive(packetPath, "landing");
+test("a manifest whose generator claims figma-sections-export is refused a page waiver and reports the gate blocked", () => {
+  inDir({ generator: "figma-sections-export@1.0.0" }, ({ packetPath, reportPath }) => {
+    const before = readFileSync(reportPath, "utf8");
+    assert.throws(
+      () => checkpointWaive(waiveArgs(packetPath, "landing")),
+      /cannot be waived for page "landing": the source-html manifest's generator claims figma-sections-export/,
+    );
+    assert.throws(() => checkpointWaive(waiveArgs(packetPath, "landing", { "dry-run": true })), /generator claims figma-sections-export/);
+    assert.equal(readFileSync(reportPath, "utf8"), before, "nothing recorded");
     const doctor = doctorPacket(packetPath);
-    assert.equal(gateFor(doctor, "landing")?.status, "waived");
+    const gate = gateFor(doctor, "landing");
+    assert.equal(gate?.status, "blocked");
+    assert.equal(gate.code, `${SOURCE_PROVENANCE_SCOPE}.exporter_claim`);
+    assert.equal(gate.waivable, false);
+    assert.deepEqual(gate.required_actions.map((action) => action.id), ["repair_target"]);
     assert.ok(provenanceErrors(doctor).length > 0);
     assert.ok(provenanceErrors(doctor).every((issue) => issue.detail?.generator === "figma-sections-export@1.0.0"));
     assert.deepEqual(provenanceWarnings(doctor), []);
+  });
+});
+
+test("a waiver recorded before the manifest claimed figma-sections-export is inert and the gate blocks with its remediation", () => {
+  inDir({}, ({ packetPath, sourceRoot }) => {
+    waive(packetPath, "landing");
+    const manifestPath = join(sourceRoot, ".campaigns-os/source-html-manifest.json");
+    writeJson(manifestPath, { ...readJson(manifestPath), generator: "figma-sections-export@1.0.0" });
+    const doctor = doctorPacket(packetPath);
+    const gate = gateFor(doctor, "landing");
+    assert.equal(gate?.status, "blocked", "never waived under an exporter claim");
+    assert.equal(gate.waiver, null);
+    assert.ok(gate.required_actions.length > 0, "the remediation is reported");
+    const inert = doctor.warnings.find((issue) => issue.code === `${SOURCE_PROVENANCE_SCOPE}.waiver_inert`);
+    assert.equal(inert?.detail.counts.exporter_claim, 1);
+    assert.equal(doctor.status, "blocked");
+    const next = nextStage(null, { packet: packetPath, _: [], "no-write": true });
+    const nextGate = next.gates.find((candidate) => candidate.id === SOURCE_PROVENANCE_SCOPE && candidate.subject?.page_id === "landing");
+    assert.equal(nextGate?.status, "blocked");
   });
 });
 
@@ -210,6 +276,7 @@ test("a generator naming figma-sections-export in any form is an exporter claim 
       assert.ok(provenanceErrors(doctor).every((issue) => issue.detail?.generator === generator.trim()), `generator=${JSON.stringify(generator)}`);
       assert.deepEqual(provenanceWarnings(doctor), [], `generator=${JSON.stringify(generator)}: nothing is waived`);
       assert.equal(doctor.status, "blocked", `generator=${JSON.stringify(generator)}`);
+      assert.equal(gateFor(doctor, "landing")?.status, "blocked", `generator=${JSON.stringify(generator)}: the gate is not waived`);
     }
   });
 });
@@ -273,18 +340,33 @@ test("the page scope is --page only: unknown pages, the <gate>:<page_id> form an
   });
 });
 
-test("while waived, manifest file inventory and wrapper-policy findings keep blocking", () => {
-  inDir({ files: [{ path: "assets/hero.png", role: "asset", sha256: "c".repeat(64) }] }, ({ packetPath, sourceRoot }) => {
-    writeFileSync(join(sourceRoot, "landing.html"), "<!doctype html>\n<html><head><title>Offer</title></head><body><main>Offer</main></body></html>\n");
+test("while waived, wrapper-policy and page-file findings keep blocking", () => {
+  inDir({}, ({ packetPath, sourceRoot }) => {
     waive(packetPath, "landing");
+    writeFileSync(join(sourceRoot, "landing.html"), "<!doctype html>\n<html><head><title>Offer</title></head><body><main>Offer</main></body></html>\n");
+    rmSync(join(sourceRoot, "receipt.html"));
     const doctor = doctorPacket(packetPath);
     assert.equal(gateFor(doctor, "landing")?.status, "waived");
     assert.deepEqual(provenanceErrors(doctor), []);
-    assert.ok(provenanceWarnings(doctor).length > 0, "the provenance findings are re-emitted as warnings");
+    assert.deepEqual(provenanceWarnings(doctor).map((issue) => issue.code).sort(), BARE_MANIFEST_CODES, "the export family is re-emitted as warnings");
     const errors = doctor.errors.map((issue) => issue.code);
-    assert.ok(errors.includes("source_html.files.partial"), "the manifest's missing partial still blocks");
     assert.ok(errors.includes("source_html.prep.document_wrapper"), "document wrappers under strip_document_wrappers still block");
+    assert.ok(errors.includes("source_html.pages.path"), "a mapped source file that is missing still blocks");
     assert.equal(doctor.status, "blocked");
+  });
+});
+
+test("per-page gates follow the campaign-wide gates, so 20 Figma pages never push theme_gate or polish_gate out of the first 16", () => {
+  inDir({ extraPages: 19 }, ({ packetPath }) => {
+    const next = nextStage(null, { packet: packetPath, _: [], "no-write": true });
+    const ids = next.gates.map((gate) => gate.id);
+    assert.equal(ids.filter((id) => id === SOURCE_PROVENANCE_SCOPE).length, 20);
+    const firstPerPage = ids.indexOf(SOURCE_PROVENANCE_SCOPE);
+    assert.ok(ids.slice(firstPerPage).every((id) => id === SOURCE_PROVENANCE_SCOPE), "per-page gates come last");
+    const projected = ids.slice(0, 16);
+    for (const id of ["doctor", "prepare_build", "theme_gate", "polish_gate", ...ids.slice(0, firstPerPage)]) {
+      assert.ok(projected.includes(id), `${id} is inside the 16-gate progress projection`);
+    }
   });
 });
 

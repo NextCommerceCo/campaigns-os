@@ -23,7 +23,7 @@ const REASONS = new Set([
   "built_output.script_syntax.missing_script", "source_html.producer_provenance",
   "source_html.producer_provenance.source_type", "source_html.producer_provenance.screenshot_fallback_used",
   "source_html.producer_provenance.semantic_section_count", "source_html.producer_provenance.material_fingerprint",
-  "source_html.producer_provenance.section_exports",
+  "source_html.producer_provenance.section_exports", "source_html.producer_provenance.waiver_inert",
 ]);
 const ACTIONS = new Set([
   "repair_target", "align_store_profile", "align_sdk_version", "repair_waiver", "waive_checkpoint",

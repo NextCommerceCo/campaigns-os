@@ -732,15 +732,20 @@ written at: replay a run from the same place, or expect doctor to report
 
 A saved Map page with `design_source.type: figma` (or a `figma.com` file URL)
 makes doctor demand figma-sections-export provenance from the source-html
-manifest: a semantic `producer_provenance` block, section exports, and a
-material fingerprint. When the approved source for that page is hand-written
-HTML and the Figma file only renders it, no export exists, and doctor reports
-the `source_html.producer_provenance*` errors. Leave `design_source` on the Map
-and take this route instead:
+manifest: a semantic `producer_provenance` block, section exports, a
+material fingerprint, and the export's section partials and assets in
+`files[]`. When the approved source for that page is hand-written HTML and the
+Figma file only renders it, no export exists, and doctor reports the
+`source_html.producer_provenance*`, `source_html.files.partial` and
+`source_html.files.asset` errors. Leave `design_source` on the Map and take
+this route instead:
 
 1. Write the source-html manifest by hand (the record shape and the
    `screenshots[]` proof are above). Give each page its `page_id` and `path`
-   and its desktop and mobile screenshot records.
+   and its desktop and mobile screenshot records, and list the page files in
+   `files[]` with `role: "page"`. Do not add `partial` or `asset` entries the
+   HTML does not have: the waiver covers their absence. Set `generator` to
+   the tool or person that wrote the HTML, never to `figma-sections-export`.
 2. If the HTML files are full documents (`<!doctype>`, `<html>`, `<head>`,
    `<body>`), set `"wrapper_policy": "preserve_document_wrappers"` in the
    manifest so the wrapper finding is a recorded decision, not a blocker (see
@@ -765,28 +770,34 @@ and take this route instead:
    validates the waiver and writes nothing. A value-taking flag given without
    a value is refused, never read as the text `true`.
 
-Doctor reports the `source_html.producer_provenance*` findings once for each
+Doctor reports the Figma-export findings (the `source_html.producer_provenance*`
+codes, `source_html.files.partial` and `source_html.files.asset`) once for each
 Figma-typed page, with the page in `detail.page_id`. While a page's waiver is
 active, its findings are reported as warnings carrying `waived: true`, its
 checkpoint gate reports `waived`, and doctor and `next` report
 `ready_with_waivers`, never clean. A waiver covers only its own page: another
 Figma-typed page without one still gets the findings as errors, and doctor
-stays blocked. A waiver never applies when the manifest's `generator` names
-`figma-sections-export` in any form (with or without an `@<version>`, in any
-case): the findings are then the manifest's own, and doctor reports them once,
-as errors.
+stays blocked.
 
-The waiver covers Figma provenance only. Manifest validation, the manifest's
-file inventory (`source_html.files.partial` and `source_html.files.asset`,
-which ask for at least one `partial` and one `asset` entry in `files[]`), the
-wrapper policy, source-preparation findings and the screenshot proof at
-`prepare-build` keep their own severity.
+When the manifest's `generator` names `figma-sections-export` in any form
+(with or without an `@<version>`, in any case), the manifest claims to be a
+real export, so the missing provenance is the export's own defect: doctor
+reports the findings once, manifest-wide, as errors, and each page's
+checkpoint gate reports `blocked` with the code
+`source_html.producer_provenance.exporter_claim` and the repair action.
+`checkpoint waive` refuses the gate in that state, and a waiver recorded
+before the generator changed is reported as inert.
+
+The waiver covers the Figma-export findings only. Manifest validation, the
+wrapper policy, source-preparation findings, page mappings and the screenshot
+proof at `prepare-build` keep their own severity.
 
 The waiver is recorded against the page's exact state: its design source and
 the provenance findings doctor reported when it was recorded. A change to either
 makes it stale, an expired waiver no longer applies, and doctor blocks again. A
 waiver for a page that no longer has a Figma design source (its `design_source`
-changed, or it left the spec) is reported as
+changed, or it left the spec), or one under a manifest whose generator claims
+figma-sections-export, is reported as
 `source_html.producer_provenance.waiver_inert`, a warning, like the other
 checkpoint gates' inert waiver history.
 

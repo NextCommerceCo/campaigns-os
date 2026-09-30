@@ -7809,8 +7809,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.3+agent.4",
-      "changelog_sha256": "aadedaca5b7de80d34935da3edf66912560ab7fd52c81ce8a9a01c67471e4db0",
-      "agent_impact": "checkpoint waive accepts source_html.producer_provenance, waived per page with --page <page_id>, for a Figma-typed page whose approved source is hand-written HTML. Doctor adds one source_html.producer_provenance gate per Figma-typed page to derived.checkpoint_gates and reports the source_html.producer_provenance* findings once per such page with detail.page_id: warnings carrying waived: true for a waived page, errors for an unwaived one. A manifest whose generator names figma-sections-export in any form (with or without @<version>, any case) keeps them as manifest-wide errors. Every other source check keeps its severity. checkpoint waive refuses any value-taking flag given bare or empty instead of reading it as \"true\".",
+      "changelog_sha256": "e2ffe6e5a70f40720d6675d1e6e7e466c70b7dddade2ba3649cab46c048f610a",
+      "agent_impact": "checkpoint waive accepts source_html.producer_provenance, waived per page with --page <page_id>, for a Figma-typed page whose approved source is hand-written HTML. Doctor adds one source_html.producer_provenance gate per Figma-typed page to derived.checkpoint_gates and reports the Figma-export findings (source_html.producer_provenance*, source_html.files.partial, source_html.files.asset) once per such page with detail.page_id: warnings carrying waived: true for a waived page, errors for an unwaived one. When the manifest generator names figma-sections-export in any form (with or without @<version>, any case), the findings stay manifest-wide errors, each page gate reports blocked with code source_html.producer_provenance.exporter_claim, checkpoint waive refuses the gate, and any recorded page waiver is inert. Every other source check keeps its severity. next lists the per-page gates after theme_gate and polish_gate. tooling diagnose exports the source_html.producer_provenance* codes, including .waiver_inert, as their own reason ids instead of diagnostic.unsupported_reason. checkpoint waive refuses any value-taking flag given bare or empty instead of reading it as \"true\".",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -7818,19 +7818,19 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "checkpoint",
-          "summary": "checkpoint waive registers source_html.producer_provenance with a required --page <page_id>; an unknown page, the <gate>:<page_id> form, and --page on a campaign-wide gate are refused. Every value-taking flag given bare or empty is refused by name."
+          "summary": "checkpoint waive registers source_html.producer_provenance with a required --page <page_id>; an unknown page, the <gate>:<page_id> form, --page on a campaign-wide gate, and a page under a manifest whose generator claims figma-sections-export are refused. Every value-taking flag given bare or empty is refused by name. next lists the per-page gates after theme_gate and polish_gate. tooling diagnose exports the source_html.producer_provenance* reason ids, including .waiver_inert, instead of diagnostic.unsupported_reason."
         },
         {
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": "doctor",
-          "summary": "Doctor publishes one source-provenance gate per Figma-typed page, reports the provenance findings per page, as warnings carrying waived: true for a waived page and errors for an unwaived one, keeps them as errors when the manifest generator names figma-sections-export in any form, adds source_html.producer_provenance.waiver_inert, and names the waiver route in the missing-mapping error for a Figma page."
+          "summary": "Doctor publishes one source-provenance gate per Figma-typed page, reports the Figma-export findings (source_html.producer_provenance*, source_html.files.partial, source_html.files.asset) per page, as warnings carrying waived: true for a waived page and errors for an unwaived one, keeps them as errors when the manifest generator names figma-sections-export in any form, adds source_html.producer_provenance.waiver_inert, and names the waiver route in the missing-mapping error for a Figma page."
         },
         {
           "class": "cli_surface",
           "path": "src/doctor/source-provenance.mjs",
           "surface_entry": "doctor",
-          "summary": "New per-page evaluator for the source-provenance gate and its waiver history, and the one predicate for a figma-sections-export generator claim."
+          "summary": "New per-page evaluator for the source-provenance gate and its waiver history, the one predicate for a figma-sections-export generator claim, and the blocked, non-waivable source_html.producer_provenance.exporter_claim gate state that makes a recorded page waiver inert."
         },
         {
           "class": "named_surface",
@@ -7842,7 +7842,7 @@
           "class": "named_surface",
           "path": "docs/design-source-package.md",
           "surface_entry": "docs/design-source-package.md",
-          "summary": "Document the hand-written HTML route for a Figma-typed page: a hand-written manifest, preserve_document_wrappers when needed, and the per-page waiver, which never applies to a manifest whose generator names figma-sections-export."
+          "summary": "Document the hand-written HTML route for a Figma-typed page: a hand-written manifest listing only its page files, preserve_document_wrappers when needed, and the per-page waiver, which covers the export's missing partials and assets and is refused for a manifest whose generator names figma-sections-export."
         },
         {
           "class": "named_surface",
@@ -7923,7 +7923,7 @@
           "summary": "Stamp bundle revision 1.43.3+skills.2 and advance the skill version one patch."
         }
       ],
-      "entry_sha256": "6f8efb359e14a32d0230309cb2272438506ffda6962a397423e3eff82a90c947"
+      "entry_sha256": "121b36746dc3fa9279569ef7893c466a63c69947aa616410e73d2b71fc00cd8e"
     }
   ]
 }

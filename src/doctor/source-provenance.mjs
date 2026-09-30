@@ -8,11 +8,15 @@
 //
 // A waiver never suppresses a finding. Doctor reports the provenance findings
 // once per Figma-typed page: as warnings carrying `waived: true` for a waived
-// page, and as errors for an unwaived one. When the manifest itself claims to
-// be a figma-sections-export output, the findings are the manifest's own and
-// stay manifest-wide errors that no page waiver clears. Every other source
-// check (manifest file inventory, wrapper policy, screenshot proof) is
-// evaluated elsewhere and is untouched by this gate.
+// page, and as errors for an unwaived one. The family is the
+// source_html.producer_provenance* codes plus source_html.files.partial and
+// source_html.files.asset, the export's own file-inventory shape, which only
+// a Figma-typed page is held to. When the manifest itself claims to be a
+// figma-sections-export output, the findings are the manifest's own: they
+// stay manifest-wide errors, the gate is not waivable, and any waiver
+// recorded for the page is inert. Every other source check (manifest
+// validity, wrapper policy, screenshot proof) is evaluated elsewhere and is
+// untouched by this gate.
 
 import {
   assessCheckpointWaivers,
@@ -45,6 +49,15 @@ export function isSourceProvenanceCode(code) {
   return value === SOURCE_PROVENANCE_SCOPE || value.startsWith(`${SOURCE_PROVENANCE_SCOPE}.`);
 }
 
+// The Figma-export file inventory: a manifest behind a Figma-typed page must
+// list section partials and exported assets. Hand-written HTML has neither, so
+// these two findings belong to the waivable family.
+export const FIGMA_EXPORT_FILE_CODES = Object.freeze(["source_html.files.partial", "source_html.files.asset"]);
+
+// The gate code when the manifest's generator claims figma-sections-export:
+// blocked, not waivable, and any waiver recorded for the page is inert.
+export const SOURCE_PROVENANCE_EXPORTER_CLAIM_CODE = `${SOURCE_PROVENANCE_SCOPE}.exporter_claim`;
+
 function waiveCommand(pageId) {
   return `campaigns-os checkpoint waive --packet <packet> --gate ${SOURCE_PROVENANCE_SCOPE} --page ${pageId} --reason "<reason>" --waived-by "<named human>" --expires-at <ISO>`;
 }
@@ -55,15 +68,17 @@ function waiveCommand(pageId) {
  * @param {{
  *   pages: Array<{ page_id: string, design_source: { type: string|null, file_url: string|null } }>,
  *   blockingCodes: string[],
+ *   generatorClaimsExport?: boolean,
  *   waivers?: unknown,
  *   now?: string,
  * }} input
  */
-export function evaluateSourceProvenanceGates({ pages = [], blockingCodes = [], waivers = null, now = new Date().toISOString() } = {}) {
+export function evaluateSourceProvenanceGates({ pages = [], blockingCodes = [], generatorClaimsExport = false, waivers = null, now = new Date().toISOString() } = {}) {
   const records = (Array.isArray(waivers) ? waivers : [])
     .filter((record) => isPlainObject(record) && record.scope === SOURCE_PROVENANCE_SCOPE);
   const figmaPageIds = new Set(pages.map((page) => page.page_id));
   const findings = [...new Set(blockingCodes)].sort();
+  let exporterClaimRecords = 0;
 
   const gates = pages.map((page) => {
     const subject = { page_id: page.page_id };
@@ -87,11 +102,32 @@ export function evaluateSourceProvenanceGates({ pages = [], blockingCodes = [], 
         required_actions: [],
       };
     }
-    const state_fingerprint = checkpointStateFingerprint({ scope: SOURCE_PROVENANCE_SCOPE, subject, state });
-    const checkpoint = { scope: SOURCE_PROVENANCE_SCOPE, subject, state_fingerprint };
     // Only this page's records are assessed here. Another page's waiver is
     // not "foreign" history for this page; it belongs to that page's gate.
     const pageRecords = records.filter((record) => isPlainObject(record.subject) && record.subject.page_id === page.page_id);
+    if (generatorClaimsExport) {
+      exporterClaimRecords += pageRecords.length;
+      return {
+        ...base,
+        status: "blocked",
+        code: SOURCE_PROVENANCE_EXPORTER_CLAIM_CODE,
+        reason: `Page "${page.page_id}" has a Figma design source and the source-html manifest's generator claims figma-sections-export, but the manifest lacks that export's provenance (${findings.join(", ")}). A real export carries it, so this is not waivable; re-run figma-sections-export, or, when the approved source is hand-written HTML, set the manifest's generator to name the real producer and record a page waiver.`,
+        waivable: false,
+        state_fingerprint: null,
+        waiver: null,
+        waiver_assessment: emptyWaiverAssessment(),
+        required_actions: [
+          {
+            id: "repair_target",
+            kind: "manual",
+            command: null,
+            description: "Re-run figma-sections-export so the source-html manifest carries semantic producer_provenance, or correct the manifest's generator when no export produced it, then re-run doctor.",
+          },
+        ],
+      };
+    }
+    const state_fingerprint = checkpointStateFingerprint({ scope: SOURCE_PROVENANCE_SCOPE, subject, state });
+    const checkpoint = { scope: SOURCE_PROVENANCE_SCOPE, subject, state_fingerprint };
     const waiver_assessment = projectCheckpointWaiverAssessment(
       assessCheckpointWaivers(pageRecords, checkpoint, { now }),
       checkpoint,
@@ -135,6 +171,7 @@ export function evaluateSourceProvenanceGates({ pages = [], blockingCodes = [], 
     for (const kind of Object.keys(counts)) counts[kind] += gate.waiver_assessment?.inert_counts?.[kind] || 0;
   }
   counts.no_figma_source = noFigmaSource.length;
+  counts.exporter_claim = exporterClaimRecords;
   const inertPages = [...new Set(noFigmaSource
     .map((record) => (isPlainObject(record.subject) && typeof record.subject.page_id === "string" ? record.subject.page_id : null))
     .filter(Boolean))].sort();
