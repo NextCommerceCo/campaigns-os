@@ -7641,7 +7641,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.2+agent.10",
-      "changelog_sha256": "e82bca3588e3fd74f37868f4fc26b57a911d0cc9895fc3b53ebca3d2b276991a",
+      "changelog_sha256": "163244d62bb881974e6d8264a8786e56186a02f741d411537172478c8c663356",
       "agent_impact": "qa install-browser, qa policy set and qa resolve no longer record deviations, and a deviation declared with --deviation-reason prints one confirming line. next quotes each ledger/artifact divergence inline. install-skills lists the SKILL.md files to read in the current session instead of asking for a restart. The Figma coverage error gives the manifest path, schema and a minimal entry. QA ignores the Netlify deploy-preview drawer loader script's failed request on *.netlify.app pages. Bundled skills move to 1.43.2+skills.2.",
       "compatibility": "compatible",
       "migration": "Refresh bundled skills to 1.43.2+skills.2 with install-skills, then read the SKILL.md files it lists.",
@@ -7650,7 +7650,7 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "next",
-          "summary": "The divergence_inspect action and the prepare-build recovery prompt quote each divergence (stage, ledger claim, artifact evidence) and say divergences[] is next --json output, not a file."
+          "summary": "The divergence_inspect action quotes each divergence (stage, ledger claim, artifact evidence) and says divergences[] is next --json output, not a file; the prepare-build recovery prompt quotes the same entries."
         },
         {
           "class": "cli_surface",
@@ -7737,7 +7737,7 @@
           "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
         }
       ],
-      "entry_sha256": "a00aa90fe675a51fee9f4761b8dcee74cd81a135c4808e728116bb4f23f4d8e0"
+      "entry_sha256": "5d55c0ee2fad05e2614bfa58f175cc428f068a9d230b31e41fa48170f434d9ee"
     }
   ]
 }

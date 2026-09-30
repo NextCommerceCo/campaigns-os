@@ -14,10 +14,10 @@ Notable supported-surface changes are recorded here.
   recommendation. A deviation recorded with `--deviation-reason` now prints one
   line confirming the reason instead of the warning that asks for one.
 - `next` (#535): when the assembly report and the repository's artifacts
-  disagree, the `divergence_inspect` action and the prepare-build recovery
-  prompt quote each divergence inline (stage, ledger claim, artifact evidence)
-  and say that `divergences[]` is part of `next --json` output and is not
-  written to any file. Text output previously stated a count and pointed at a
+  disagree, the `divergence_inspect` action quotes each divergence inline
+  (stage, ledger claim, artifact evidence) and says that `divergences[]` is
+  part of `next --json` output and is not written to any file; the
+  prepare-build recovery prompt quotes the same entries. Text output previously stated a count and pointed at a
   `divergences[]` it did not show.
 - Doctor's `source_html.pages.coverage` error for an unmapped Figma-sourced page
   (#535) names the manifest path
