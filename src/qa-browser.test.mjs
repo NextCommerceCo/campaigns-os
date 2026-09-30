@@ -943,6 +943,11 @@ test("only the catalog's family shell selectors are relaxable; SDK wiring select
   }
   assert.deepEqual([...seen].sort(), [...shell, ...wiring].sort(), "every catalog structure selector is classified here");
   assert.equal(statusWhenOnlyMissing(['[data-next-component="location"]']), "fail");
+  // A class the list does not name is SDK wiring, even one bare class: a
+  // catalog recorded in the packet cannot relax the hosted payment fields.
+  assert.equal(statusWhenOnlyMissing([".input-flds"]), "fail");
+  assert.equal(statusWhenOnlyMissing([".spreedly-field"]), "fail");
+  assert.equal(statusWhenOnlyMissing([".checkout-wrapper", ".input-flds"]), "fail");
   assert.equal(statusWhenOnlyMissing([".checkout-wrapper", "[data-next-cart-summary]"]), "fail");
   assert.equal(statusWhenOnlyMissing([]), "fail");
 });

@@ -453,20 +453,24 @@ catalog. If the family contract is silent, the assertion returns
 `manual_review`, not `pass`; if declared required structure is missing, it
 soft-fails with warning severity so the verdict becomes `ready_with_exceptions`.
 The checkout wrapper and page composition are source-owned, so QA checks what
-the checkout does rather than family class names. A selector made only of class
-names (`.checkout-wrapper`, `.checkout-layout__left`, `.checkout__column--right`)
-or the family include's `[data-next-component="shipping-field-row"]` marker is
-family shell. When family shell is all that is missing, the row is `warn` if the
-checkout also passes three behaviour checks: a `<form data-next-checkout="form">`
-exists; `email`, `fname`, `lname`, `country`, `address1`, `city`, `province` and
+the checkout does rather than family class names. Family shell is a fixed list:
+`.checkout-wrapper`, `.checkout-layout__left`, `.checkout-layout__right`,
+`.checkout__layout`, `.checkout__column--left`, `.checkout__column--right` and
+the family include's `[data-next-component="shipping-field-row"]` marker. When
+family shell is all that is missing, the row is `warn` if the checkout also
+passes three behaviour checks: a `<form data-next-checkout="form">` exists;
+`email`, `fname`, `lname`, `country`, `address1`, `city`, `province` and
 `postal` are each an input, select or textarea carrying that
-`data-next-checkout-field` inside the form; and a cart-summary total
+`data-next-checkout-field` inside the form, not a `type="hidden"` input or a
+disabled control (visibility is not required, so a field hidden until a country
+is chosen still counts); and a cart-summary total
 (`[data-next-display="cart.total"]` or
 `[data-next-cart-summary] .order-totals__value--total`) is visible with text.
 If any behaviour check fails, or no checkout form is found, the row stays
-`fail`. A missing SDK selector (`[data-next-checkout="form"]`,
-`[os-checkout-payment]`, `[data-next-cart-summary]`,
-`[data-next-bundle-slots-for]`) is always `fail`. `evidence.behaviour` records
+`fail`. Any other missing selector is always `fail`: the SDK selectors
+(`[data-next-checkout="form"]`, `[os-checkout-payment]`,
+`[data-next-cart-summary]`, `[data-next-bundle-slots-for]`) and any class the
+list does not name, such as a hosted payment field class. `evidence.behaviour` records
 the three checks and each `evidence.checks[]` entry carries `kind`
 (`family_shell` or `sdk_wiring`).
 The upsell and checkout bundle price checks count the SDK's

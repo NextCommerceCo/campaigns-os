@@ -8,18 +8,22 @@ Notable supported-surface changes are recorded here.
 
 - `qa run --browser` no longer fails a checkout for missing template-family
   shell classes when the checkout works (#532). In
-  `browser-commerce-structure:<page>`, a catalog selector made only of class
-  names (`.checkout-wrapper`, `.checkout-layout__left`,
-  `.checkout__column--right`) or the `[data-next-component="shipping-field-row"]`
-  include marker is family shell. When family shell is all that is missing, the
-  row reports status `warn` with severity `warn` if the checkout passes three
-  behaviour checks: a `<form data-next-checkout="form">` exists; `email`,
-  `fname`, `lname`, `country`, `address1`, `city`, `province` and `postal` are
-  each an input, select or textarea carrying that `data-next-checkout-field`
-  inside the form; and a cart-summary total is visible with text. If any check
-  fails, or no checkout form is found, the row stays status `fail`. A missing
-  SDK selector (`[data-next-checkout="form"]`, `[os-checkout-payment]`,
-  `[data-next-cart-summary]`, `[data-next-bundle-slots-for]`) always fails.
+  `browser-commerce-structure:<page>`, family shell is a fixed list:
+  `.checkout-wrapper`, `.checkout-layout__left`, `.checkout-layout__right`,
+  `.checkout__layout`, `.checkout__column--left`, `.checkout__column--right`
+  and the `[data-next-component="shipping-field-row"]` include marker. When
+  family shell is all that is missing, the row reports status `warn` with
+  severity `warn` if the checkout passes three behaviour checks: a
+  `<form data-next-checkout="form">` exists; `email`, `fname`, `lname`,
+  `country`, `address1`, `city`, `province` and `postal` are each an input,
+  select or textarea carrying that `data-next-checkout-field` inside the form,
+  not a `type="hidden"` input or a disabled control (a field hidden until a
+  country is chosen still counts); and a cart-summary total is visible with
+  text. If any check fails, or no checkout form is found, the row stays status
+  `fail`. Any other missing selector always fails, including an SDK selector
+  (`[data-next-checkout="form"]`, `[os-checkout-payment]`,
+  `[data-next-cart-summary]`, `[data-next-bundle-slots-for]`) and a class the
+  list does not name, such as a hosted payment field class.
   Evidence gains `behaviour` (`status`, `checkout_form`, `fields_bound`,
   `total_visible`) and a `kind` of `family_shell` or `sdk_wiring` on each
   `checks[]` entry.

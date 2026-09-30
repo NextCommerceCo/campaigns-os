@@ -108,6 +108,48 @@ test("an unbound required field keeps the missing family shell a failure", async
   assert.equal(row.evidence.behaviour?.total_visible?.status, "pass");
 });
 
+// A customer cannot fill a hidden input or a disabled control, so neither
+// binds the field even though it carries the attribute inside the form.
+test("a required field bound only on a hidden input keeps the missing family shell a failure", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  const row = await structureRow((source) => replaceOnce(
+    source,
+    '<input type="text" name="city" data-next-checkout-field="city">',
+    '<input type="hidden" name="city" data-next-checkout-field="city">',
+  ));
+  assert.deepEqual(failedSelectors(row), FAMILY_SHELL_SELECTORS);
+  assert.equal(row.status, "fail");
+  assert.deepEqual(row.evidence.behaviour?.fields_bound?.missing, ["city"]);
+  assert.equal(row.evidence.behaviour?.status, "fail");
+});
+
+test("a required field bound only on a disabled control keeps the missing family shell a failure", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  const row = await structureRow((source) => replaceOnce(
+    source,
+    '<select name="province" data-next-checkout-field="province">',
+    '<select name="province" data-next-checkout-field="province" disabled>',
+  ));
+  assert.deepEqual(failedSelectors(row), FAMILY_SHELL_SELECTORS);
+  assert.equal(row.status, "fail");
+  assert.deepEqual(row.evidence.behaviour?.fields_bound?.missing, ["province"]);
+  assert.equal(row.evidence.behaviour?.status, "fail");
+});
+
+// Visibility is not part of binding: a progressive-reveal checkout hides the
+// address fields until a country is chosen and still works.
+test("required fields hidden until a country is chosen still count as bound", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  const row = await structureRow((source) => replaceOnce(
+    replaceOnce(source, '<label class="field">Address', '<div style="display:none"><label class="field">Address'),
+    'data-next-checkout-field="postal"></label>',
+    'data-next-checkout-field="postal"></label></div>',
+  ));
+  assert.deepEqual(failedSelectors(row), FAMILY_SHELL_SELECTORS);
+  assert.equal(row.status, "warn");
+  assert.equal(row.evidence.behaviour?.fields_bound?.status, "pass");
+});
+
 test("a form without data-next-checkout keeps the missing family shell a failure", async (t) => {
   if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
   // The catalog's own form rule reads any visible `[data-next-checkout="form"]`,

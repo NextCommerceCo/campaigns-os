@@ -1497,19 +1497,25 @@ async function checkoutCommerceStructureAssertions(browserPage, page) {
 
 // The checkout's wrapper and page composition belong to the campaign source,
 // not the template family (#532). A catalog rule is family shell when every
-// selector it reads is a bare class name (`.checkout-wrapper`,
-// `.checkout-layout__left`) or a family-include composition marker. Every other
-// selector is SDK wiring the checkout needs to work (`[data-next-checkout]`,
-// `[os-checkout-payment]`, `[data-next-cart-summary]`,
-// `[data-next-bundle-slots-for]`) and is never relaxed; an unrecognised
-// selector defaults to that side.
-const FAMILY_SHELL_COMPONENT_MARKERS = Object.freeze([
+// selector it reads is on this list: the layout wrapper and column classes the
+// pinned catalog uses, and the family include's shipping field row marker.
+// Every other selector is SDK wiring the checkout needs to work
+// (`[data-next-checkout]`, `[os-checkout-payment]`, `[data-next-cart-summary]`,
+// `[data-next-bundle-slots-for]`) and is never relaxed. That includes any
+// selector not listed here, even a bare class such as the hosted payment
+// field's `.input-flds`, so a catalog recorded in the packet cannot widen it.
+const FAMILY_SHELL_SELECTORS = Object.freeze([
+  ".checkout-wrapper",
+  ".checkout-layout__left",
+  ".checkout-layout__right",
+  ".checkout__layout",
+  ".checkout__column--left",
+  ".checkout__column--right",
   '[data-next-component="shipping-field-row"]',
 ]);
 
 function isFamilyShellSelector(selector) {
-  const value = String(selector || "").trim();
-  return /^\.[A-Za-z_][\w-]*$/.test(value) || FAMILY_SHELL_COMPONENT_MARKERS.includes(value);
+  return FAMILY_SHELL_SELECTORS.includes(String(selector || "").trim());
 }
 
 function isFamilyShellCheck(check) {
@@ -1520,8 +1526,12 @@ function isFamilyShellCheck(check) {
 // What a checkout has to do, whoever composed it. The required fields are the
 // contact and shipping fields the test-order form fill types without the
 // optional flag (fillCheckoutFields): each must be a form control carrying
-// data-next-checkout-field inside a <form data-next-checkout="form">. The total
-// is the cart-summary total the order-total parity check reads.
+// data-next-checkout-field inside a <form data-next-checkout="form">, and not a
+// type="hidden" input or a disabled control (its own attribute or a disabled
+// fieldset), since a customer cannot fill either. Visibility is not required:
+// progressive-reveal checkouts hide the address fields until a country is
+// chosen. The total is the cart-summary total the order-total parity check
+// reads.
 const CHECKOUT_FORM_SELECTOR = 'form[data-next-checkout="form"]';
 const CHECKOUT_BEHAVIOUR_REQUIRED_FIELDS = Object.freeze([
   "email",
@@ -1555,9 +1565,12 @@ async function inspectCheckoutBehaviour(browserPage) {
     };
     const forms = Array.from(document.querySelectorAll(input.formSelector));
     const controls = new Set(["INPUT", "SELECT", "TEXTAREA"]);
+    const fillable = (field) => controls.has(field.tagName)
+      && !(field.tagName === "INPUT" && field.type === "hidden")
+      && !field.matches(":disabled");
     const missing = input.requiredFields.filter((name) => !forms.some((form) => Array
       .from(form.querySelectorAll("[data-next-checkout-field]"))
-      .some((field) => field.getAttribute("data-next-checkout-field") === name && controls.has(field.tagName))));
+      .some((field) => field.getAttribute("data-next-checkout-field") === name && fillable(field))));
     const totals = input.totalSelectors.flatMap((selector) => {
       try {
         return Array.from(document.querySelectorAll(selector));
