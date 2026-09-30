@@ -875,6 +875,87 @@ test("commerce structure assertion passes when contract checks pass", () => {
   assert.equal(result.severity, undefined);
 });
 
+const DESIGN_OWNED_SHELL_MISSES = [
+  { name: "Olympus checkout wrapper", status: "fail", selectors: [".checkout-wrapper"], count: 0, visible_count: 0 },
+  { name: "left checkout column", status: "fail", selectors: [".checkout-layout__left"], count: 0, visible_count: 0 },
+  { name: "shipping field row component", status: "fail", selectors: ['[data-next-component="shipping-field-row"]'], count: 0, visible_count: 0 },
+  { name: "checkout form", status: "pass", selectors: ['[data-next-checkout="form"]'], count: 1, visible_count: 1 },
+  { name: "rendered order summary", status: "pass", selectors: ["[data-next-cart-summary]"], count: 1, visible_count: 1 },
+];
+
+test("commerce structure assertion warns for missing family shell only when the behaviour probe passed", () => {
+  const { commerceStructureAssertionFromEvidence } = __qaBrowserTestHooks;
+  const page = { page_id: "checkout", page_type: "checkout" };
+  const evidence = { template_family: "olympus", contract_status: "loaded", checks: DESIGN_OWNED_SHELL_MISSES };
+
+  const works = commerceStructureAssertionFromEvidence(page, { ...evidence, behaviour: { status: "pass" } });
+  assert.equal(works.status, "warn");
+  assert.equal(works.severity, "warn");
+  assert.deepEqual(works.evidence.checks.map((check) => check.kind), ["family_shell", "family_shell", "family_shell", "sdk_wiring", "sdk_wiring"]);
+
+  // Never downgraded without evaluating behaviour: absent or failing evidence
+  // (including a probe that found no checkout form) keeps the failure.
+  assert.equal(commerceStructureAssertionFromEvidence(page, evidence).status, "fail");
+  const noForm = { status: "fail", checkout_form: { count: 0, status: "fail" }, fields_bound: { status: "fail" } };
+  assert.equal(commerceStructureAssertionFromEvidence(page, { ...evidence, behaviour: noForm }).status, "fail");
+
+  // An SDK wiring miss alongside the shell misses is never relaxed.
+  const withSubmitMissing = [...DESIGN_OWNED_SHELL_MISSES, { name: "checkout payment submit", status: "fail", selectors: ["[os-checkout-payment]"], count: 0, visible_count: 0 }];
+  const broken = commerceStructureAssertionFromEvidence(page, { ...evidence, checks: withSubmitMissing, behaviour: { status: "pass" } });
+  assert.equal(broken.status, "fail");
+  assert.equal(broken.severity, "warn");
+});
+
+test("only the catalog's family shell selectors are relaxable; SDK wiring selectors never are", () => {
+  const { commerceStructureAssertionFromEvidence } = __qaBrowserTestHooks;
+  // One failing rule on a checkout whose behaviour probe passed: the row warns
+  // only when that rule is family shell.
+  const statusWhenOnlyMissing = (selectors) => commerceStructureAssertionFromEvidence({ page_id: "checkout", page_type: "checkout" }, {
+    template_family: "olympus",
+    contract_status: "loaded",
+    checks: [{ name: "rule", status: "fail", selectors, count: 0, visible_count: 0 }],
+    behaviour: { status: "pass" },
+  }).status;
+  const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
+  const shell = [
+    ".checkout-wrapper",
+    ".checkout-layout__left",
+    ".checkout-layout__right",
+    ".checkout__layout",
+    ".checkout__column--left",
+    ".checkout__column--right",
+    '[data-next-component="shipping-field-row"]',
+  ];
+  const wiring = [
+    '[data-next-checkout="form"]',
+    "[os-checkout-payment]",
+    "[data-next-cart-summary]",
+    "[data-next-bundle-slots-for]",
+  ];
+  const seen = new Set();
+  for (const family of Object.values(catalog.families || {})) {
+    for (const contract of Object.values(family?.agentContract?.qaStructure || {})) {
+      for (const key of ["requiredSelectors", "requiredVisibleSelectors", "requiredNonEmptySelectors"]) {
+        for (const rule of contract[key] || []) {
+          const selectors = rule.selectors || [rule.selector];
+          selectors.forEach((selector) => seen.add(selector));
+          const expected = selectors.every((selector) => shell.includes(selector)) ? "warn" : "fail";
+          assert.equal(statusWhenOnlyMissing(selectors), expected, `${rule.name}: ${selectors.join(", ")}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual([...seen].sort(), [...shell, ...wiring].sort(), "every catalog structure selector is classified here");
+  assert.equal(statusWhenOnlyMissing(['[data-next-component="location"]']), "fail");
+  // A class the list does not name is SDK wiring, even one bare class: a
+  // catalog recorded in the packet cannot relax the hosted payment fields.
+  assert.equal(statusWhenOnlyMissing([".input-flds"]), "fail");
+  assert.equal(statusWhenOnlyMissing([".spreedly-field"]), "fail");
+  assert.equal(statusWhenOnlyMissing([".checkout-wrapper", ".input-flds"]), "fail");
+  assert.equal(statusWhenOnlyMissing([".checkout-wrapper", "[data-next-cart-summary]"]), "fail");
+  assert.equal(statusWhenOnlyMissing([]), "fail");
+});
+
 test("commerce structure assertion asks for manual review when contract has no selectors", () => {
   const { commerceStructureAssertionFromEvidence } = __qaBrowserTestHooks;
   const result = commerceStructureAssertionFromEvidence({ page_id: "checkout" }, {
