@@ -116,6 +116,46 @@ test("the gate reads next-page-type when the route name says nothing about the f
   });
 });
 
+test("#529: a checkout page with an embedded offer is not flagged because its route reads as an offer", () => {
+  // "checkout-oto-1" infers as an upsell from the route name alone; the page's
+  // own meta says checkout, which is what the SDK reads.
+  const offer = `<main><div data-next-upsell="offer">${UNSCOPED}</div></main>`;
+  withTempDir((repo) => {
+    writePage(repo, "checkout-oto-1", `<html><head><meta name="next-page-type" content="checkout"></head><body>${offer}</body></html>`);
+    const result = doctorBuiltOutput({ built: repo, slug: SLUG });
+    assert.equal(codes(result.errors).includes(UPSELL_SELECTOR_SCOPE), false);
+    assert.equal(gateOf(result).status, "not_applicable");
+  });
+  // Genuine post-purchase pages under the same route are still flagged: by
+  // the meta, and by the route guess when the page declares nothing.
+  for (const head of [UPSELL_HEAD, '<meta name="next-page-type" content="downsell">', ""]) {
+    withTempDir((repo) => {
+      writePage(repo, "checkout-oto-1", `<html><head>${head}</head><body>${offer}</body></html>`);
+      assert.equal(gateOf(doctorBuiltOutput({ built: repo, slug: SLUG })).status, "blocked", head || "(no meta)");
+    });
+  }
+});
+
+test("#529: a checkout meta the browser never reads does not lift an upsell page out of the gate", () => {
+  // Each head names checkout only in markup that is not the page's meta, or
+  // names it ambiguously; the upsell route's blocker stands, with or without
+  // a family.
+  const inert = [
+    `<!-- <meta name="next-page-type" content="checkout"> -->${UPSELL_HEAD}`,
+    '<!-- <meta name="next-page-type" content="checkout"> -->',
+    '<noscript><meta name="next-page-type" content="checkout"></noscript>',
+    '<meta name="next-page-type" content="checkout"><meta name="next-page-type" content="receipt">',
+  ];
+  for (const family of [undefined, "olympus"]) {
+    for (const head of inert) {
+      withTempDir((repo) => {
+        writePage(repo, "upsell-1", `<html><head>${head}</head><body>${UNSCOPED}</body></html>`);
+        assert.equal(gateOf(doctorBuiltOutput({ built: repo, slug: SLUG, family })).status, "blocked", `${family || "(no family)"} ${head}`);
+      });
+    }
+  }
+});
+
 test("a built campaign with no post-purchase page reports not_applicable, not pass", () => {
   withTempDir((repo) => {
     writePage(repo, "", "<html><body><h1>Landing</h1></body></html>");

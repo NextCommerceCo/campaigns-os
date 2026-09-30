@@ -39,6 +39,8 @@
 // filesystem, so both the packet doctor path and the built-site-only path
 // (`doctor --built`) can drive it with the same evaluator.
 
+import { parse } from "parse5";
+
 import {
   assessCheckpointWaivers,
   checkpointStateFingerprint,
@@ -131,15 +133,99 @@ export function isPostPurchasePageType(value) {
   return POST_PURCHASE_PAGE_TYPES.has(String(value || "").toLowerCase().trim());
 }
 
+const PAGE_TYPE_META = "next-page-type";
+// A `<meta>` tag anywhere in the source text, live or not, and its attributes.
+const META_TAG = /<meta\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi;
+const TAG_ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+// The looser pattern this reader replaced. Kept so `mentioned` is a superset
+// of what it read: its `\bname=` / `\bcontent=` also match `data-name=` /
+// `data-content=`, and it takes mismatched quotes.
+const LEGACY_PAGE_TYPE_META = /<meta\b(?=[^>]*\bname=["']next-page-type["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/gi;
+
+function liveMetaElements(node, found = []) {
+  // childNodes only: a <template>'s children live in `content`, a fragment
+  // outside the document, so they are skipped here as the browser skips them.
+  for (const child of node.childNodes || []) {
+    if (child.tagName === "meta") found.push(child);
+    liveMetaElements(child, found);
+  }
+  return found;
+}
+
+/**
+ * Every `next-page-type` value a built page carries, read two ways. This is
+ * the one reader both page-role decisions below share (#529).
+ *
+ *   live       the metas the browser puts in the document, in document order,
+ *              matched as `meta[name="next-page-type"]` matches (the name
+ *              exactly; attribute names in any case, attributes in any order,
+ *              any quoting). Parsed with parse5, so a meta in a comment, in
+ *              <template> content, or in the raw text of <script>, <noscript>
+ *              (scripting on, which the SDK needs), <style>, <textarea> or
+ *              <title> is not one. Values trimmed; "" when content is absent.
+ *   mentioned  every `<meta>`-shaped tag in the source text whose name is
+ *              next-page-type in any case or spacing, live or not, plus every
+ *              match of the looser pattern this replaced. Values trimmed and
+ *              deduplicated, first occurrence first. Wider than that pattern,
+ *              never narrower.
+ */
+export function readBuiltPageTypeMetas(content) {
+  const source = String(content || "");
+  const live = liveMetaElements(parse(source))
+    .map((element) => new Map(element.attrs.map((attr) => [attr.name, attr.value])))
+    .filter((attrs) => attrs.get("name") === PAGE_TYPE_META)
+    .map((attrs) => (attrs.get("content") ?? "").trim());
+  const mentioned = [];
+  for (const tag of source.matchAll(META_TAG)) {
+    const attrs = new Map();
+    for (const attr of tag[1].matchAll(TAG_ATTRIBUTE)) {
+      const name = attr[1].toLowerCase();
+      if (!attrs.has(name)) attrs.set(name, attr[2] ?? attr[3] ?? attr[4] ?? "");
+    }
+    if ((attrs.get("name") || "").trim().toLowerCase() === PAGE_TYPE_META) {
+      mentioned.push((attrs.get("content") ?? "").trim());
+    }
+  }
+  for (const tag of source.matchAll(LEGACY_PAGE_TYPE_META)) mentioned.push(tag[1].trim());
+  return { live, mentioned: [...new Set(mentioned)] };
+}
+
+// The role the page declares for itself, or null when it declares none or
+// declares it ambiguously. Only live metas count: markup the browser does not
+// put in the document is not a declaration. The first live meta is the one a
+// `querySelector` reads, so a blank first meta declares nothing; and every
+// live meta must agree (case aside), because a page carrying both `checkout`
+// and `receipt` has not said which it is.
+export function builtPageTypeMeta(content) {
+  const [first = "", ...rest] = readBuiltPageTypeMetas(content).live;
+  if (!first) return null;
+  return rest.every((value) => value.toLowerCase() === first.toLowerCase()) ? first : null;
+}
+
+// The type to hand in as `page_type` when the only other source is a guess
+// from the built route (resolveBuiltSiteScope's inferPageType). A route name
+// is not a declaration: "/checkout-oto/" infers as an upsell, but a checkout
+// page with an embedded one-time offer declares `checkout` in its meta, and
+// the meta is what the SDK reads (#529). So a declared meta replaces the
+// guess; the guess stands for a page that declares nothing, or declares it
+// only in inert or conflicting markup. A type declared by a spec is not a
+// guess and is passed through as before.
+export function builtPageTypeOverRouteGuess({ route_type = null, content = "" } = {}) {
+  return builtPageTypeMeta(content) ?? route_type;
+}
+
 // A built page's funnel role, from either signal that carries it. The declared
 // spec/scope type and the page's own `next-page-type` meta are both consulted
 // and either one is enough: the meta is what the SDK actually reads, the
 // declared type is what survives when a page ships without the meta, and
 // disagreement between them is a reason to check MORE carefully, not less.
+// Any next-page-type the page carries counts here, live or mentioned: saying
+// "post-purchase" can only add a check, so inert markup that says it errs
+// toward a visible, waivable blocker rather than a silent charge.
 export function builtPageIsPostPurchase({ page_type = null, content = "" } = {}) {
   if (isPostPurchasePageType(page_type)) return true;
-  const meta = /<meta\b(?=[^>]*\bname=["']next-page-type["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/i.exec(String(content || ""));
-  return meta ? isPostPurchasePageType(meta[1]) : false;
+  const { live, mentioned } = readBuiltPageTypeMetas(content);
+  return [...live, ...mentioned].some(isPostPurchasePageType);
 }
 
 function describeSelector(finding) {
