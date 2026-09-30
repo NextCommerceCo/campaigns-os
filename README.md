@@ -243,8 +243,10 @@ Standalone HTML mockups: keep them whole and set
 `--wrapper-policy preserve_document_wrappers` to `start`). Source screenshot
 proof must be of the standalone document, so a page kept whole needs no
 conversion; doctor reports its document wrappers as a warning that names the
-decision. No exporter is required: a hand-written manifest is enough, for
-example
+decision. For pages without a Figma `design_source`, no exporter is required:
+a hand-written manifest is enough (when any active page's `design_source` is
+Figma, the manifest must pass the Figma provenance gate, which needs the
+exporter's handoff manifest), for example
 `{"schema_version": "source-html-manifest/v0", "wrapper_policy": "preserve_document_wrappers", "pages": [{"page_id": "landing", "path": "landing.html"}]}`
 (schema: `schemas/source-html-manifest.v0.schema.json`; see
 [Selecting the wrapper policy at intake](docs/source-adapters.md#selecting-the-wrapper-policy-at-intake)).

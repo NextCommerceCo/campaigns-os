@@ -95,26 +95,35 @@ browserTest("the Netlify drawer loader's failed request is ignored on a *.netlif
   assert.deepEqual(await consoleErrorsFor("https://shop-example.netlify.app/offer/", [DRAWER_LOADER]), []);
 });
 
-browserTest("any other failed request on a Netlify host still counts on a preview page", async () => {
-  const messages = await consoleErrorsFor("https://deploy-preview-7--shop-example.netlify.app/offer/", [
-    DRAWER_LOADER,
-    "https://app.netlify.com/api/cart",
-    "https://netlify-cdp-loader.netlify.app/other-resource.js",
-    "https://deploy-preview-7--shop-example.netlify.app/api/cart",
-  ]);
-  assert.equal(messages.length, 3, JSON.stringify(messages));
-  for (const message of messages) assert.match(message, FAILED_428);
+browserTest("the Netlify drawer loader's failed request is ignored on a deploy-preview subdomain of a custom domain", async () => {
+  for (const pageUrl of ["https://deploy-preview-7.shop.example.com/offer/", "https://deploy-preview-7--shop.example.com/offer/"]) {
+    assert.deepEqual(await consoleErrorsFor(pageUrl, [DRAWER_LOADER]), [], pageUrl);
+  }
 });
 
-browserTest("the drawer loader's failed request still counts on a page not served from *.netlify.app", async () => {
-  for (const pageUrl of ["https://shop.example.com/offer/", "https://deploy-preview-7.shop.example.com/offer/"]) {
+browserTest("any other failed request on a Netlify host still counts on a preview page", async () => {
+  for (const pageUrl of ["https://deploy-preview-7--shop-example.netlify.app/offer/", "https://deploy-preview-7.shop.example.com/offer/"]) {
+    const origin = new URL(pageUrl).origin;
+    const messages = await consoleErrorsFor(pageUrl, [
+      DRAWER_LOADER,
+      "https://app.netlify.com/api/cart",
+      "https://netlify-cdp-loader.netlify.app/other-resource.js",
+      `${origin}/api/cart`,
+    ]);
+    assert.equal(messages.length, 3, `${pageUrl}: ${JSON.stringify(messages)}`);
+    for (const message of messages) assert.match(message, FAILED_428);
+  }
+});
+
+browserTest("the drawer loader's failed request still counts on a page that is not a Netlify preview host", async () => {
+  for (const pageUrl of ["https://shop.example.com/offer/", "https://preview-7.shop.example.com/offer/", "https://deploy-preview-next.shop.example.com/offer/"]) {
     const messages = await consoleErrorsFor(pageUrl, [DRAWER_LOADER]);
     assert.equal(messages.length, 1, `${pageUrl}: ${JSON.stringify(messages)}`);
     assert.match(messages[0], FAILED_428);
   }
 });
 
-browserTest("the drawer loader's failed request still counts when a preview URL redirects off *.netlify.app", async () => {
+browserTest("the drawer loader's failed request still counts when a preview URL redirects off the Netlify preview host", async () => {
   const preview = new URL("https://deploy-preview-7--shop-example.netlify.app/offer/");
   preview.searchParams.set("redirect", withScripts("https://shop.example.com/offer/", [DRAWER_LOADER]));
   const messages = await consoleErrorsAt(preview.href);

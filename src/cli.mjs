@@ -122,7 +122,7 @@ import {
   createStandardizationReport,
   formatStandardizationReportMarkdown,
 } from "./standardization-report.mjs";
-import { singleLineDetail, singleLineField } from "./text-safety.mjs";
+import { singleLineDetail, singleLineField, singleLineFragment } from "./text-safety.mjs";
 import { derivePackagePin, LOCAL_INVOCATION_PREFIX, localInstallStatus, resolveInvocation } from "./install-mode.mjs";
 import {
   campaignRouteRoot,
@@ -4288,9 +4288,14 @@ function themeStarterPaletteAdvisory(themeGate, packetPath, residueState) {
 // a stop-and-reconcile state, not a stage with a recommended command.
 // Each divergence inline, so the count is never stated without the entries it
 // counts: text output renders only the action description, not divergences[].
+// The evidence quotes values the toolkit did not write (a deploy URL from the
+// report or packet, a verdict file's campaign_slug and verdict), so each field
+// is folded to one line before it joins the sentence. singleLineFragment, not
+// singleLineDetail: a path or URL keeps its exact characters (no Markdown
+// escapes) and a list of verdict files is not cut at a length budget.
 function quoteDivergences(divergences) {
   return divergences
-    .map((divergence, index) => `(${index + 1}) ${divergence.stage}: ledger claims ${divergence.ledger_claim}; artifact evidence: ${String(divergence.artifact_evidence).replace(/\.?$/, ".")}`)
+    .map((divergence, index) => `(${index + 1}) ${singleLineFragment(divergence.stage)}: ledger claims ${singleLineFragment(divergence.ledger_claim)}; artifact evidence: ${singleLineFragment(divergence.artifact_evidence).replace(/\.?$/, ".")}`)
     .join(" ");
 }
 
@@ -5019,6 +5024,11 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
 // restart itself, so the session that ran install-skills is told to read the
 // written SKILL.md files directly. A restart is the secondary route: it only
 // matters to sessions started later.
+// The same instruction wherever an action hands the agent the install-skills
+// command (tooling status), so no action tells it to restart first. No
+// parentheses: the install action's command must stay runnable as printed.
+const SKILLS_READ_NOW_FOLLOW_UP = "Then read the SKILL.md files install-skills lists under Read now in this session, because a running session does not load skills installed after it started; restart the agent only if it cannot read them.";
+
 function skillsReadNowNote(readNow, sessionLabel) {
   if (!readNow.length) return "No skill files changed; nothing new to read.";
   return `Read these now in this session: the SKILL.md files listed under "Read now" (a running session does not load skills installed after it started). New ${sessionLabel} load them on their own.`;
@@ -5495,7 +5505,7 @@ function toolingCommand(args) {
     // Code, the documented install). The other platforms follow in a separate
     // sentence of prose: no `<a|b>` template or parenthesis a shell would read
     // as a redirect or a subshell if the command were copied with it.
-    actions.push(`Install bundled skills for the harness you use: ${cli.invocation_prefix} install-skills --platform claude. Use --platform codex for Codex, or --platform agents for shared agent skills such as Cursor's. Restart local agent sessions afterwards.`);
+    actions.push(`Install bundled skills for the harness you use: ${cli.invocation_prefix} install-skills --platform claude. Use --platform codex for Codex, or --platform agents for shared agent skills such as Cursor's. ${SKILLS_READ_NOW_FOLLOW_UP}`);
   } else if (staleSkills.length) {
     const stalePlatforms = SKILL_PLATFORMS.map((platform) => platform.id)
       .filter((id) => staleSkills.some((skill) => skill.platform === id));
@@ -5505,7 +5515,7 @@ function toolingCommand(args) {
         ? stalePlatforms.map((platform) => ["--platform", platform])
         : [["--platform", args.platform || "all"]];
     const commands = invocations.map((skillArgs) => `${cli.invocation_prefix} install-skills ${skillArgs.join(" ")}`);
-    actions.push(`Refresh installed skills: ${commands.join(" and ")}. Restart local agent sessions afterwards.`);
+    actions.push(`Refresh installed skills: ${commands.join(" and ")}. ${SKILLS_READ_NOW_FOLLOW_UP}`);
   }
 
   if (install.mode === "checkout" && cli.global_binary.status === "not_found") {

@@ -217,8 +217,11 @@ manifest at `<source>/.campaigns-os/source-html-manifest.json` (or pass
 `--wrapper-policy preserve_document_wrappers` to `start` / `prepare-build`).
 Source screenshot proof must be of the standalone document, so a page kept whole
 needs no conversion, and doctor reports its document wrappers as a warning that
-names the decision. No exporter is required: for hand-written HTML, write the
-manifest yourself. A minimal one (schema:
+names the decision. For pages without a Figma `design_source`, no exporter is
+required: for hand-written HTML, write the manifest yourself. When any active
+page's `design_source` is Figma, the manifest must pass the Figma provenance
+gate (`source_html.producer_provenance`), which needs the exporter's handoff
+manifest. A minimal one (schema:
 `schemas/source-html-manifest.v0.schema.json`):
 
 ```json

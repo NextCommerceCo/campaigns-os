@@ -31,7 +31,7 @@ const ACTIONS = new Set([
 ]);
 
 const RECOVERY = Object.freeze({
-  skills: { owner: "operator", action_id: "install-skills", input_needed: "Selected agent profile", instruction: "Refresh the bundled skills for that profile and restart the agent." },
+  skills: { owner: "operator", action_id: "install-skills", input_needed: "Selected agent profile", instruction: "Refresh the bundled skills for that profile, then read the SKILL.md files install-skills lists under Read now in the running session; restart the agent only if it cannot read them." },
   pin: { owner: "operator", action_id: "tooling.status", input_needed: "Reviewed toolkit version and lockfile", instruction: "Compare the installed package with the reviewed version; registry currency is not checked." },
   update: { owner: "operator", action_id: "tooling.status", input_needed: "Reviewed upstream revision", instruction: "Review and update the toolkit checkout using the existing worktree workflow." },
   doctor: { owner: "workflow_owner", action_id: "doctor", input_needed: "Local packet inputs and detailed doctor findings", instruction: "Inspect doctor locally and follow its existing owner, required inputs, and recovery actions." },

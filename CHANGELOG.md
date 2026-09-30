@@ -17,29 +17,42 @@ Notable supported-surface changes are recorded here.
   disagree, the `divergence_inspect` action quotes each divergence inline
   (stage, ledger claim, artifact evidence) and says that `divergences[]` is
   part of `next --json` output and is not written to any file; the
-  prepare-build recovery prompt quotes the same entries. Text output previously stated a count and pointed at a
-  `divergences[]` it did not show.
-- Doctor's `source_html.pages.coverage` error for an unmapped Figma-sourced page
-  (#535) names the manifest path
-  (`<source-root>/.campaigns-os/source-html-manifest.json`), the schema file,
-  and a minimal page entry, and says no exporter is required. It still notes
-  that a Figma-sourced page's manifest is checked for producer provenance.
+  prepare-build recovery prompt quotes the same entries. Text output previously
+  stated a count and pointed at a `divergences[]` it did not show. Quoted values
+  that come from the report, packet or QA verdict files (a deploy URL, a
+  verdict) are folded to one line, with control characters replaced, so they
+  cannot split or restyle the text.
+- Doctor's `source_html.pages.coverage` error (#535): for an unmapped page with
+  a Figma `design_source`, it says the Figma provenance gate
+  (`source_html.producer_provenance`) needs the exporter's handoff manifest at
+  `<source-root>/.campaigns-os/source-html-manifest.json`, instead of implying
+  the manifest is optional. For a page with no `design_source`, an
+  `ai-generated` one or another producer type, it names that manifest path, the
+  schema file, and a minimal page entry to write by hand, since no exporter is
+  needed there. When any active page's `design_source` is Figma, that hint
+  says the manifest must pass the Figma provenance gate instead.
 - `install-skills` (#535) lists each `SKILL.md` it wrote under `Read now` and
   says to read them in the current session, since a running agent does not load
   skills installed after it started; `--json` adds `read_now[]`. It no longer
   tells the agent to restart. When nothing changed it says there is nothing new
-  to read.
-- QA browser (#535): on a page whose final URL, after any redirect, is on a
-  `*.netlify.app` host (deploy previews included), `browser-console-errors`
-  ignores a "Failed to load resource" error for the Netlify deploy-preview
-  drawer's loader script, `https://netlify-cdp-loader.netlify.app/netlify.js`.
-  The same error for any other request, including any other path on a Netlify
-  host, or on a page that ends on any other host, still counts.
+  to read. The `tooling status` install and refresh actions and the
+  `tooling diagnose` stale-skills recovery give the same instruction, with a
+  restart only if the agent cannot read the files.
+- QA browser (#535): on a page whose final URL, after any redirect, is a
+  Netlify preview host (any `*.netlify.app` host, or a `deploy-preview-<n>` /
+  `deploy-preview-<n>--<site>` subdomain of a custom domain),
+  `browser-console-errors` ignores a "Failed to load resource" error for the
+  Netlify deploy-preview drawer's loader script,
+  `https://netlify-cdp-loader.netlify.app/netlify.js`. The same error for any
+  other request, including any other path on a Netlify host, or on a page that
+  ends on any other host, still counts.
 - README and quickstart (#535) install with `@<version>` instead of a pinned
   1.37.3, and say where the current release is listed (npm `latest`,
   `contracts/release-ledger.json`, this changelog). Their source-preparation
   guidance leads with standalone HTML mockups: keep them whole and set
-  `wrapper_policy: preserve_document_wrappers`.
+  `wrapper_policy: preserve_document_wrappers`, with a hand-written manifest
+  for pages without a Figma `design_source`. After a skills refresh they say to
+  read the listed `SKILL.md` files in the running session.
 - Bundled skills carry revision `1.43.3+skills.2`, with each skill version
   advanced one patch. `next-campaigns-build` gives the standalone-HTML route
   beside the wrapper-stripping conversion.

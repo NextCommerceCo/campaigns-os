@@ -733,7 +733,7 @@ test("a stale skill on the installed platform names only that platform in the re
     assert.equal(run.json.skills.scope, "installed_platforms");
     const [action, ...rest] = refreshActions(run);
     assert.deepEqual(rest, []);
-    assert.match(action, /install-skills --platform claude\. Restart/);
+    assert.match(action, /install-skills --platform claude\. Then read/);
     assert.doesNotMatch(action, /--platform (all|codex|agents)/);
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -753,7 +753,7 @@ test("two stale installed platforms get one refresh command each, never --platfo
     assert.equal(run.json.skills.stale_count, 2);
     assert.deepEqual(run.json.skills.not_installed_platforms.map((target) => target.platform), ["agents"]);
     const [action] = refreshActions(run);
-    assert.match(action, /install-skills --platform claude and .*install-skills --platform codex\. Restart/);
+    assert.match(action, /install-skills --platform claude and .*install-skills --platform codex\. Then read/);
     assert.doesNotMatch(action, /--platform (all|agents)/);
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -792,7 +792,7 @@ test("when every platform is installed and stale the refresh action is one --pla
     assert.deepEqual(run.json.skills.not_installed_platforms, []);
     const [action, ...rest] = refreshActions(run);
     assert.deepEqual(rest, []);
-    assert.match(action, /install-skills --platform all\. Restart/);
+    assert.match(action, /install-skills --platform all\. Then read/);
     assert.doesNotMatch(action, / and /);
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -824,7 +824,7 @@ test("an explicit --platform all still checks every platform, installed or not",
     assert.equal(run.status, 2);
     assert.equal(run.json.skills.scope, "requested");
     assert.ok(run.json.skills.status.skills.some((skill) => skill.platform === "codex" && skill.action === "created"));
-    assert.match(refreshActions(run)[0], /install-skills --platform all\. Restart/);
+    assert.match(refreshActions(run)[0], /install-skills --platform all\. Then read/);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -839,6 +839,28 @@ test("a retired slot another skill occupies does not count as an installed platf
     const run = runInHome(home, ["tooling", "status", "--json"]);
     assert.equal(run.json.skills.ok, true, JSON.stringify(run.json.actions));
     assert.deepEqual(run.json.skills.not_installed_platforms.map((target) => target.platform), ["codex", "agents"]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// #535: a running agent cannot restart itself, so every action that hands it
+// the install-skills command says to read the SKILL.md files that command
+// lists under "Read now" in this session, with a restart only as the fallback.
+test("the install and refresh skill actions say to read the Read now files in this session, not to restart", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-read-now-"));
+  try {
+    const fresh = runInHome(home, ["tooling", "status", "--json"]);
+    const install = fresh.json.actions.filter((action) => action.startsWith("Install bundled skills for the harness you use:"));
+    assert.equal(runInHome(home, ["install-skills", "--platform", "claude", "--json"]).status, 0);
+    writeFileSync(join(home, ".claude", "skills", "next-campaigns-qa", "SKILL.md"), "stale bundled skill\n");
+    const refresh = refreshActions(runInHome(home, ["tooling", "status", "--json"]));
+    assert.equal(install.length, 1, JSON.stringify(fresh.json.actions));
+    assert.equal(refresh.length, 1);
+    for (const action of [...install, ...refresh]) {
+      assert.match(action, /Then read the SKILL\.md files install-skills lists under Read now in this session, .*; restart the agent only if it cannot read them\.$/);
+      assert.doesNotMatch(action, /Restart local agent sessions/);
+    }
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

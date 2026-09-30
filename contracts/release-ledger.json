@@ -7809,8 +7809,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.3+agent.6",
-      "changelog_sha256": "f7a13f5e2d803c3c80d606ca714af535c3c19e3e30dded5be6d490c523e93751",
-      "agent_impact": "qa install-browser, qa policy set and qa resolve no longer record deviations, and a deviation declared with --deviation-reason prints one confirming line. next quotes each ledger/artifact divergence inline. install-skills lists the SKILL.md files to read in the current session instead of asking for a restart. The Figma coverage error gives the manifest path, schema and a minimal entry. QA ignores the Netlify deploy-preview drawer loader script's failed request on *.netlify.app pages. Bundled skills move to 1.43.3+skills.2.",
+      "changelog_sha256": "3d6de09316c64d9e60bf4bbff8431641518091a3a76261a0b76e2a4341cd4f39",
+      "agent_impact": "qa install-browser, qa policy set and qa resolve no longer record deviations, and a deviation declared with --deviation-reason prints one confirming line. next quotes each ledger/artifact divergence inline, folded to one line. install-skills, the tooling status skill actions and the tooling diagnose recovery say to read the listed SKILL.md files in the current session, with a restart only as a fallback. The coverage error for an unmapped Figma page says the provenance gate needs the exporter's handoff manifest; for other pages it gives the manifest path, schema and a minimal hand-written entry. QA ignores the Netlify deploy-preview drawer loader script's failed request on Netlify preview pages (*.netlify.app or a deploy-preview-<n> subdomain). Bundled skills move to 1.43.3+skills.2.",
       "compatibility": "compatible",
       "migration": "Refresh bundled skills to 1.43.3+skills.2 with install-skills, then read the SKILL.md files it lists.",
       "changes": [
@@ -7818,7 +7818,7 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "next",
-          "summary": "The divergence_inspect action quotes each divergence (stage, ledger claim, artifact evidence) and says divergences[] is next --json output, not a file; the prepare-build recovery prompt quotes the same entries."
+          "summary": "The divergence_inspect action quotes each divergence (stage, ledger claim, artifact evidence) and says divergences[] is next --json output, not a file; the prepare-build recovery prompt quotes the same entries. Each quoted value is folded to one line with control characters replaced."
         },
         {
           "class": "cli_surface",
@@ -7829,14 +7829,26 @@
         {
           "class": "cli_surface",
           "path": null,
+          "surface_entry": "tooling",
+          "summary": "The tooling status install and refresh skill actions, and the tooling diagnose stale-skills recovery, say to read the SKILL.md files install-skills lists under Read now in the running session, and to restart the agent only if it cannot read them."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
           "surface_entry": "qa",
-          "summary": "qa install-browser, qa policy set and qa resolve record no deviation; a deviation with --deviation-reason prints one confirming line instead of the warning; QA ignores a failed request for the Netlify deploy-preview drawer's loader script (netlify-cdp-loader.netlify.app/netlify.js) only on pages whose final URL, after any redirect, is on a *.netlify.app host."
+          "summary": "qa install-browser, qa policy set and qa resolve record no deviation; a deviation with --deviation-reason prints one confirming line instead of the warning; QA ignores a failed request for the Netlify deploy-preview drawer's loader script (netlify-cdp-loader.netlify.app/netlify.js) only on pages whose final URL, after any redirect, is a Netlify preview host: a *.netlify.app host, or a deploy-preview-<n> or deploy-preview-<n>--<site> subdomain of a custom domain."
         },
         {
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": "doctor",
-          "summary": "The source_html.pages.coverage error for an unmapped Figma-sourced page names the manifest path, schema file and a minimal page entry, and says no exporter is required."
+          "summary": "The source_html.pages.coverage error for an unmapped page with a Figma design_source says the Figma provenance gate needs the exporter's handoff manifest. For a page without one, it names the manifest path, schema file and a minimal hand-written page entry, unless another active page is Figma-sourced, when it names the provenance gate instead."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The design-source-aware coverage error section describes the Figma branch (provenance gate needs the exporter's handoff manifest) and the hand-written manifest hint for other pages."
         },
         {
           "class": "named_surface",
@@ -7905,7 +7917,7 @@
           "summary": "Stamp bundle revision 1.43.3+skills.2 and advance the skill version one patch."
         }
       ],
-      "entry_sha256": "996e8782f486b937e73007ae56d148cd3236d1c58b3b7f61939fc36b326be4b7"
+      "entry_sha256": "893a4deb56c87577d42b5aa2f64555df8a785e10e83460c0931a27570509dc83"
     }
   ]
 }

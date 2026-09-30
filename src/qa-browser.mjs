@@ -1042,23 +1042,31 @@ async function actionableRuntimeConsoleErrors(browserPage, messages) {
 }
 
 // Netlify injects its deploy-preview drawer (the collaboration toolbar) into
-// pages it serves from *.netlify.app preview hosts, and a failed drawer request
-// is logged as a "Failed to load resource" console error on every page (a 428
-// has been observed). That error is Netlify's, not the campaign's.
+// preview pages, and a failed drawer request is logged as a "Failed to load
+// resource" console error on every page (a 428 has been observed). That error
+// is Netlify's, not the campaign's.
 //
 // Each exempt request is an exact host plus an exact path:
 //   netlify-cdp-loader.netlify.app /netlify.js — the drawer's loader script,
 //     the one `<script src>` Netlify injects into preview HTML.
-// Nothing else is exempt: any other path on a Netlify host (app.netlify.com
-// included), and the drawer's own URL on a page whose final URL (after
-// redirects) is not on a *.netlify.app host, still counts. A "Failed to load resource" message names
-// its status but not the request; the request is the message's location URL.
+// It is exempt only on a page whose final URL (after redirects) is a Netlify
+// preview host: any *.netlify.app host, or a deploy-preview subdomain on a
+// custom domain (deploy-preview-7.shop.example.com, or
+// deploy-preview-7--shop.example.com). Nothing else is exempt: any other path
+// on a Netlify host (app.netlify.com included), and the drawer's own URL on any
+// other page host, still counts. A "Failed to load resource" message names its
+// status but not the request; the request is the message's location URL.
 const NETLIFY_PREVIEW_DRAWER_REQUESTS = Object.freeze([
   { hostname: "netlify-cdp-loader.netlify.app", pathname: "/netlify.js" },
 ]);
 
+// The first label of a deploy-preview host: `deploy-preview-<n>`, or
+// `deploy-preview-<n>--<site>` for a per-deploy host on a custom domain.
+const DEPLOY_PREVIEW_LABEL = /^deploy-preview-\d+(?:--[a-z0-9-]+)?$/;
+
 function isNetlifyPreviewHost(hostname) {
-  return hostname.endsWith(".netlify.app");
+  const labels = hostname.split(".");
+  return hostname.endsWith(".netlify.app") || (labels.length > 2 && DEPLOY_PREVIEW_LABEL.test(labels[0]));
 }
 
 function isNetlifyPreviewDrawerConsoleError(pageUrl, message) {

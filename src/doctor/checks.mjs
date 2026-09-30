@@ -2924,27 +2924,42 @@ function summarizeScopePages(pages) {
  * HTML for this page" message so unknown types don't crash the operator's UX.
  *
  * @param {object} page Active spec page (may carry `design_source`).
+ * @param {{ figmaGate?: boolean }} [options] figmaGate: some active page's design_source is
+ *   Figma, so the manifest must pass the Figma producer-provenance gate.
  * @returns {string}
  */
-function coverageErrorMessage(page) {
+function coverageErrorMessage(page, { figmaGate = false } = {}) {
   const designSource = page && isObject(page.design_source) ? page.design_source : null;
   if (designSource) {
     const fileUrl = optionalString(designSource.file_url);
     if (designSource.type === "figma" && fileUrl) {
-      // An exporter may write the manifest, but hand-written HTML has none, so
-      // the message gives the path, the schema and an entry to write by hand.
-      return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}. Map the page in the source-html manifest at <source-root>/.campaigns-os/source-html-manifest.json (schema: schemas/source-html-manifest.v0.schema.json; see docs/build-packet.md#source-html-manifest-auto-population). No exporter is required: for hand-written HTML, write the file yourself. A minimal entry: {"schema_version": "source-html-manifest/v0", "pages": [{"page_id": "${page.id}", "path": "<file>.html"}]}; for standalone HTML documents kept whole, add "wrapper_policy": "preserve_document_wrappers". Because this page's design_source is Figma, doctor also checks the manifest's producer_provenance (source_html.producer_provenance). Then rerun prepare-build.`;
+      // A Figma page's manifest must pass the producer-provenance gate
+      // (validateSourceProducerProvenance), which a hand-written manifest cannot.
+      return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}. The Figma provenance gate (source_html.producer_provenance) needs the exporter's handoff manifest: re-run the figma-sections-export handoff so it writes <source-root>/.campaigns-os/source-html-manifest.json with this page mapped (see docs/design-source-package.md), then rerun prepare-build.`;
     }
     if (designSource.type === "ai-generated") {
       const fileUrlHint = fileUrl ? ` (design reference: ${fileUrl})` : "";
-      return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="ai-generated"${fileUrlHint} — re-run the producing agent so the source HTML and source-html manifest land in the source root, then rerun prepare-build. See docs/entry-points.md for the AI-generated entry point contract.`;
+      return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="ai-generated"${fileUrlHint} — re-run the producing agent so the source HTML and source-html manifest land in the source root, then rerun prepare-build. ${sourceManifestHint(page, figmaGate)} See docs/entry-points.md for the AI-generated entry point contract.`;
     }
     if (!fileUrl) {
       return `Active CampaignSpec page "${page.id}" has no source mapping. design_source is set but file_url is missing — add file_url to the spec before requesting a build.`;
     }
-    return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="${designSource.type}" at ${fileUrl}; produce the source HTML for this page (or update design_source.type to a recognized producer — see docs/entry-points.md) before rerunning prepare-build.`;
+    return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="${designSource.type}" at ${fileUrl}; produce the source HTML for this page (or update design_source.type to a recognized producer — see docs/entry-points.md) before rerunning prepare-build. ${sourceManifestHint(page, figmaGate)}`;
   }
-  return `Active CampaignSpec page "${page.id}" has no source mapping.`;
+  return `Active CampaignSpec page "${page.id}" has no source mapping. ${sourceManifestHint(page, figmaGate)} Then rerun prepare-build.`;
+}
+
+// Where a page without a Figma design_source is mapped. Hand-written HTML has
+// no exporter, so the hint gives the path, the schema and an entry to write by
+// hand, unless an active page's design_source is Figma (hasFigmaDesignSource):
+// then the whole manifest is held to the Figma provenance gate, which a
+// hand-written manifest cannot pass.
+function sourceManifestHint(page, figmaGate) {
+  const location = "Map the page in the source-html manifest at <source-root>/.campaigns-os/source-html-manifest.json (schema: schemas/source-html-manifest.v0.schema.json; see docs/build-packet.md#source-html-manifest-auto-population).";
+  if (figmaGate) {
+    return `${location} The CampaignSpec has an active page whose design_source is Figma, so this manifest must also pass the Figma provenance gate (source_html.producer_provenance), which needs the exporter's handoff manifest.`;
+  }
+  return `${location} No exporter is required: for hand-written HTML, write the file yourself. A minimal one: {"schema_version": "source-html-manifest/v0", "pages": [{"page_id": "${page.id}", "path": "<file>.html"}]}; for standalone HTML documents kept whole, add "wrapper_policy": "preserve_document_wrappers".`;
 }
 
 /**
@@ -3097,9 +3112,10 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     ready.push(`Template-stock page(s) materialised by the build stage: ${materialisedTemplateStock.map((entry) => `${entry.page_id} (${entry.family})`).join(", ")}`);
   }
 
+  const figmaGate = active.some(hasFigmaDesignSource);
   for (const page of active) {
     if (!mappedIds.has(page.id)) {
-      addIssue(errors, "source_html.pages.coverage", coverageErrorMessage(page), coverageErrorDetail(page));
+      addIssue(errors, "source_html.pages.coverage", coverageErrorMessage(page, { figmaGate }), coverageErrorDetail(page));
     }
   }
 
