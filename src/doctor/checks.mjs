@@ -3269,8 +3269,6 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
   for (const finding of findings) {
     if (finding.severity === "warning") {
       addIssue(warnings, finding.code, finding.message);
-    } else if (finding.severity === "error") {
-      addIssue(errors, finding.code, finding.message);
     } else if (generatorClaimsFigma) {
       addIssue(errors, finding.code, finding.message, { generator, pages: figmaPages.map((page) => page.id) });
     } else {
@@ -3302,7 +3300,7 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
 
 // Returns every Figma-provenance finding in emission order, each tagged with
 // its severity: "provenance" (the waivable source_html.producer_provenance*
-// and source_html.files.partial/asset blockers), "error", or "warning".
+// and source_html.files.partial/asset blockers) or "warning".
 function collectFigmaProvenanceFindings(manifest, provenance, rawProvenance) {
   const findings = [];
   const add = (severity, code, message) => findings.push({ severity, code, message });

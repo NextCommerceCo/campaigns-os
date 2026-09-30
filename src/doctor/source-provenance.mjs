@@ -105,6 +105,10 @@ export function evaluateSourceProvenanceGates({ pages = [], blockingCodes = [], 
     // Only this page's records are assessed here. Another page's waiver is
     // not "foreign" history for this page; it belongs to that page's gate.
     const pageRecords = records.filter((record) => isPlainObject(record.subject) && record.subject.page_id === page.page_id);
+    // An exporter claim takes precedence over every other inert kind: it makes
+    // each of this page's records inert whatever else is true of it (stale,
+    // expired, malformed), so each is counted once, as exporter_claim, and
+    // never assessed.
     if (generatorClaimsExport) {
       exporterClaimRecords += pageRecords.length;
       return {

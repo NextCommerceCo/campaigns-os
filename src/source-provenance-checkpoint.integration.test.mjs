@@ -15,6 +15,8 @@ import test from "node:test";
 
 import { checkpointWaive, nextStage, parseArgs } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
+// A namespace import, so a base without the export still links this file.
+import * as progressNode from "./progress-node.mjs";
 
 const SOURCE_PROVENANCE_SCOPE = "source_html.producer_provenance";
 const EXAMPLES = new URL("../examples/", import.meta.url);
@@ -258,6 +260,23 @@ test("a waiver recorded before the manifest claimed figma-sections-export is ine
   });
 });
 
+test("under an exporter claim an expired waiver is counted once, as exporter_claim, not also as expired", () => {
+  inDir({}, ({ packetPath, sourceRoot, reportPath }) => {
+    waive(packetPath, "landing");
+    const report = readJson(reportPath);
+    report.waivers[0].waived_at = "2026-01-01T00:00:00.000Z";
+    report.waivers[0].expires_at = "2026-02-01T00:00:00.000Z";
+    writeJson(reportPath, report);
+    const manifestPath = join(sourceRoot, ".campaigns-os/source-html-manifest.json");
+    writeJson(manifestPath, { ...readJson(manifestPath), generator: "figma-sections-export@1.0.0" });
+    const doctor = doctorPacket(packetPath);
+    const inert = doctor.warnings.find((issue) => issue.code === `${SOURCE_PROVENANCE_SCOPE}.waiver_inert`);
+    assert.deepEqual(inert?.detail.counts, { stale: 0, foreign: 0, malformed: 0, expired: 0, no_figma_source: 0, exporter_claim: 1 });
+    assert.match(inert.message, /contains 1 inert record\(s\)/);
+    assert.deepEqual(gateFor(doctor, "landing")?.waiver_assessment.inert_counts, { stale: 0, foreign: 0, malformed: 0, expired: 0 });
+  });
+});
+
 test("a generator naming figma-sections-export in any form is an exporter claim no page waiver clears", () => {
   inDir({}, ({ packetPath, sourceRoot }) => {
     waive(packetPath, "landing");
@@ -356,16 +375,18 @@ test("while waived, wrapper-policy and page-file findings keep blocking", () => 
   });
 });
 
-test("per-page gates follow the campaign-wide gates, so 20 Figma pages never push theme_gate or polish_gate out of the first 16", () => {
+test("per-page gates follow the campaign-wide gates, so 20 Figma pages never push theme_gate or polish_gate out of the progress projection", () => {
   inDir({ extraPages: 19 }, ({ packetPath }) => {
     const next = nextStage(null, { packet: packetPath, _: [], "no-write": true });
     const ids = next.gates.map((gate) => gate.id);
     assert.equal(ids.filter((id) => id === SOURCE_PROVENANCE_SCOPE).length, 20);
     const firstPerPage = ids.indexOf(SOURCE_PROVENANCE_SCOPE);
     assert.ok(ids.slice(firstPerPage).every((id) => id === SOURCE_PROVENANCE_SCOPE), "per-page gates come last");
-    const projected = ids.slice(0, 16);
+    const limit = progressNode.PROGRESS_GATE_LIMIT;
+    assert.ok(Number.isInteger(limit) && limit > 0 && limit < ids.length, "the progress projection truncates this gate list");
+    const projected = ids.slice(0, limit);
     for (const id of ["doctor", "prepare_build", "theme_gate", "polish_gate", ...ids.slice(0, firstPerPage)]) {
-      assert.ok(projected.includes(id), `${id} is inside the 16-gate progress projection`);
+      assert.ok(projected.includes(id), `${id} is inside the ${limit}-gate progress projection`);
     }
   });
 });

@@ -4218,8 +4218,9 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
           required_actions: polishGate?.required_actions || [],
         }]),
     // Per-page gates last: one per page can outnumber the rest, and a
-    // truncated projection of this list (progress keeps 16) must still carry
-    // every campaign-wide gate.
+    // truncated projection of this list (progress keeps the first
+    // PROGRESS_GATE_LIMIT, src/progress-node.mjs) must still carry every
+    // campaign-wide gate.
     ...perPageGates.map((gate) => withPacketSubstituted(gate, packetPath)),
   ];
 }
