@@ -32,7 +32,7 @@ Notable supported-surface changes are recorded here.
 - The build and QA skills say the checkout wrapper and page composition are
   source-owned and that QA checks the checkout's behaviour, not family class
   names; `docs/qa-and-test-orders.md` and `docs/campaigns-os-build-flow.md`
-  say the same. Bundled skills carry revision `1.43.2+skills.2`, with each
+  say the same. Bundled skills carry revision `1.43.3+skills.2`, with each
   skill version advanced one patch; the examples in `docs/skills-revision.md`
   name that revision.
 

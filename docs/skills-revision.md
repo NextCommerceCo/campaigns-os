@@ -25,7 +25,7 @@ The spelling is `<package version>+skills.<n>`:
   skills ship with (`check-skill-versions.mjs` fails if the two disagree);
 - `<n>` is a plain counter, not a semver component. It says "this is the *n*th
   skill-text revision published against that package version" and it **resets
-  with the prefix**. `1.43.3+skills.2` is therefore ahead of `1.43.3+skills.2`.
+  with the prefix**. `1.43.3+skills.2` is therefore ahead of `1.40.0+skills.7`.
 
 It is one identity for the bundle as a whole, on purpose. Per-skill versions
 still exist and still gate per-skill changes, but an agent that loaded one skill
@@ -102,7 +102,7 @@ The text view prints one named line, as a header above the rest of the status:
 
 ```
 Skills revision: match (1.43.3+skills.2)
-Skills revision: mismatch: loaded 1.43.3+skills.2, on disk 1.43.3+skills.2 — start a fresh session
+Skills revision: mismatch: loaded 1.39.0+skills.1, on disk 1.43.3+skills.2 — start a fresh session
 Skills revision: unchecked (on disk 1.43.3+skills.2)
 ```
 

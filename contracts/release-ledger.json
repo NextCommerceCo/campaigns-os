@@ -7809,10 +7809,10 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.3+agent.5",
-      "changelog_sha256": "4ffe240850795cb154025d09cb43c8d4874de24bbb44a73ec91abbdafa2954b6",
+      "changelog_sha256": "0926d589a8eb2667264609e8a18bc2378e069086f3708ea10562b5c5ee8ccc09",
       "agent_impact": "browser-commerce-structure:<page> reports status warn, not fail, when only family shell selectors (class-only wrapper and column selectors, or the shipping-field-row include marker) are missing and the checkout passes its behaviour checks: a <form data-next-checkout=\"form\">, email/fname/lname/country/address1/city/province/postal bound with data-next-checkout-field inside it, and a visible cart-summary total. A failed behaviour check, no checkout form, or any missing SDK selector keeps status fail. Evidence gains behaviour and a kind (family_shell or sdk_wiring) on each checks[] entry. pricing.upsell_price_visible:<page> and pricing.checkout_price_visible count a visible, non-empty [data-next-bundle-display*=price] node; an empty one no longer counts on the checkout bundle surface either. The build and QA skills say the checkout wrapper is source-owned and QA checks behaviour; do not add family classes to clear the row.",
       "compatibility": "compatible",
-      "migration": "A consumer that reads browser-commerce-structure:<page> must accept status warn with severity warn; the disposition is ready_with_exceptions as before. Refresh bundled skills to 1.43.2+skills.2 before starting a new agent session.",
+      "migration": "A consumer that reads browser-commerce-structure:<page> must accept status warn with severity warn; the disposition is ready_with_exceptions as before. Refresh bundled skills to 1.43.3+skills.2 before starting a new agent session.",
       "changes": [
         {
           "class": "named_surface",
@@ -7830,70 +7830,70 @@
           "class": "named_surface",
           "path": "docs/skills-revision.md",
           "surface_entry": "docs/skills-revision.md",
-          "summary": "Update displayed bundle revision examples to 1.43.2+skills.2."
+          "summary": "Update displayed bundle revision examples to 1.43.3+skills.2."
         },
         {
           "class": "skill",
           "path": "skills.json",
           "surface_entry": "skills.json",
-          "summary": "Advance bundle revision to 1.43.2+skills.2 and every skill version one patch."
+          "summary": "Advance bundle revision to 1.43.3+skills.2 and every skill version one patch."
         },
         {
           "class": "skill",
           "path": "skills/campaign-lifecycle-orientation/SKILL.md",
           "surface_entry": null,
-          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+          "summary": "Stamp bundle revision 1.43.3+skills.2 and advance the skill version one patch."
         },
         {
           "class": "skill",
           "path": "skills/campaign-readback-classification/SKILL.md",
           "surface_entry": null,
-          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+          "summary": "Stamp bundle revision 1.43.3+skills.2 and advance the skill version one patch."
         },
         {
           "class": "skill",
           "path": "skills/campaign-run-evidence/SKILL.md",
           "surface_entry": null,
-          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+          "summary": "Stamp bundle revision 1.43.3+skills.2 and advance the skill version one patch."
         },
         {
           "class": "skill",
           "path": "skills/contribution-intake/SKILL.md",
           "surface_entry": null,
-          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+          "summary": "Stamp bundle revision 1.43.3+skills.2 and advance the skill version one patch."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-build/SKILL.md",
           "surface_entry": null,
-          "summary": "Say QA checks the checkout behaviour, not family class names, and not to add family shell classes to the source layout; stamp bundle revision 1.43.2+skills.2."
+          "summary": "Say QA checks the checkout behaviour, not family class names, and not to add family shell classes to the source layout; stamp bundle revision 1.43.3+skills.2."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-os/SKILL.md",
           "surface_entry": null,
-          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+          "summary": "Stamp bundle revision 1.43.3+skills.2 and advance the skill version one patch."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-os-setup/SKILL.md",
           "surface_entry": null,
-          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+          "summary": "Stamp bundle revision 1.43.3+skills.2 and advance the skill version one patch."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-polish/SKILL.md",
           "surface_entry": null,
-          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+          "summary": "Stamp bundle revision 1.43.3+skills.2 and advance the skill version one patch."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-qa/SKILL.md",
           "surface_entry": null,
-          "summary": "Describe the warn and fail rule for missing family shell selectors and the bundle-display price row; stamp bundle revision 1.43.2+skills.2."
+          "summary": "Describe the warn and fail rule for missing family shell selectors and the bundle-display price row; stamp bundle revision 1.43.3+skills.2."
         }
       ],
-      "entry_sha256": "7dd8ed1ae9f1b621528e6eac62ff14039db4813a1bdd57f2dc669385789e4d45"
+      "entry_sha256": "beadd468cbbca0eb71bdba8da7508732dc2b948657c93905c4379fd656fae60a"
     }
   ]
 }
