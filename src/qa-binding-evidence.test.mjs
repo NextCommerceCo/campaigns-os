@@ -78,7 +78,13 @@ test('canonical run emits real credential-free page evidence', async () => {
   const outputDir = mkdtempSync(join(tmpdir(), 'binding-run-'));
   const previous = globalThis.fetch;
   let calls = 0;
-  globalThis.fetch = async url => { calls++; return String(url).endsWith('/unavailable') ? new Response('', {status:503}) : new Response(inline(String(url).endsWith('/mismatch') ? 'different-synthetic-value' : key)); };
+  const campaignReads = [];
+  globalThis.fetch = async (url, init) => {
+    // The live campaign read (#533) goes to the fixture proxy; count it apart
+    // from the page fetches this test is about. The answer is the proxy's own
+    // not-found envelope.
+    if (new URL(String(url)).pathname === '/api/campaign') { campaignReads.push({ url: String(url), init }); return new Response(JSON.stringify({ ok: false, status: 404, upstream_shape: 'array', error: 'No campaign found for this key' }), { status: 404 }); }
+    calls++; return String(url).endsWith('/unavailable') ? new Response('', {status:503}) : new Response(inline(String(url).endsWith('/mismatch') ? 'different-synthetic-value' : key)); };
   const spec = { schema_version: '4.3', campaign: { slug: 'binding-fixture', campaigns_api_key: key }, funnels: [] };
   try {
     const result = await __qaNodeTestHooks.runResolvedQa({ _: ['qa', 'run'], 'output-dir': outputDir, 'no-post-verdict': true, 'no-remit': true }, {
@@ -92,6 +98,7 @@ test('canonical run emits real credential-free page evidence', async () => {
       commerceStructureContract: null, topologies: [{ funnel_id: 'default', pages: [page, {...page, page_id:'checkout-alternate/' + 'long-path/'.repeat(20), url:'https://fixture.example.test/mismatch'}, {...page, page_id:'receipt', url:'https://fixture.example.test/unavailable'}] }],
     });
     assert.equal(calls, 3);
+    assert.deepEqual(campaignReads.map(read => [read.url, read.init.method]), [['https://fixture.example.test/api/campaign', 'GET']]);
     assert.deepEqual(result.verdict.assertions.filter(a => a.id.startsWith("page-binding:")).map(a => a.evidence.outcome), ["match", "mismatch", "unknown"]);
     const binding = result.verdict.assertions.find(a => a.id === 'page-binding:checkout');
     assert.equal(binding.evidence.outcome, 'match');

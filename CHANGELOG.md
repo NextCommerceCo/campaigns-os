@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.44.0+agent.1] - 2026-09-30
+## [1.45.0+agent.3] - 2026-09-30
 
 ### Changed
 
@@ -37,9 +37,244 @@ Notable supported-surface changes are recorded here.
 - The build and QA skills say the checkout wrapper and page composition are
   source-owned and that QA checks the checkout's behaviour, not family class
   names; `docs/qa-and-test-orders.md` and `docs/campaigns-os-build-flow.md`
-  say the same. Bundled skills carry revision `1.44.0+skills.2`, with each
+  say the same. Bundled skills carry revision `1.45.0+skills.3`, with each
   skill version advanced one patch; the examples in `docs/skills-revision.md`
   name that revision.
+
+## [1.45.0+agent.2] - 2026-09-30
+
+### Added
+
+- `checkpoint waive` registers a fifth gate, `source_html.producer_provenance`,
+  waived one page at a time with `--page <page_id>` (#534). It is for a
+  CampaignSpec page whose `design_source` is Figma but whose approved source
+  is hand-written HTML, so no figma-sections-export provenance exists. The
+  usual rules apply: a named human, a reason, and an expiry or review
+  condition, and `--dry-run` writes nothing. `--page` must name an active page
+  with a Figma design source; any other id is refused, and the refusal lists
+  the pages that qualify. The `<gate>:<page_id>` form is refused with the
+  `--page` spelling to use instead.
+
+### Changed
+
+- Doctor reports one `source_html.producer_provenance` checkpoint gate per
+  Figma-typed page, and reports the Figma-export findings (the
+  `source_html.producer_provenance*` codes, `source_html.files.partial` and
+  `source_html.files.asset`) once per such page, naming it in
+  `detail.page_id`. A waived page's findings are warnings carrying
+  `waived: true`; an unwaived page's findings stay errors. When every blocker
+  is waived, doctor and `next` report `ready_with_waivers`. An expired, stale
+  or malformed waiver no longer applies. Manifest validation, wrapper-policy
+  and source-preparation findings, page mappings and screenshot proof keep
+  their severity.
+- When the manifest's generator names figma-sections-export in any form (with
+  or without an `@<version>`, in any case, with surrounding whitespace), the
+  findings stay manifest-wide errors, each page's gate reports `blocked` with
+  the code `source_html.producer_provenance.exporter_claim` and the repair
+  action, and `checkpoint waive` refuses the gate. Such a generator also makes
+  doctor check Figma provenance even when no page has a Figma design source;
+  before, only the `figma-sections-export@<version>` spelling did.
+- A waiver for a page that no longer has a Figma design source, or one under a
+  manifest whose generator claims figma-sections-export, is reported as the
+  warning `source_html.producer_provenance.waiver_inert`.
+- `next` lists the per-page `source_html.producer_provenance` gates after
+  `theme_gate` and `polish_gate`, so the progress snapshot, which keeps the
+  first 16 gates, always carries the campaign-wide gates.
+- `tooling diagnose` exports `source_html.producer_provenance`, its
+  `.source_type`, `.screenshot_fallback_used`, `.semantic_section_count`,
+  `.material_fingerprint`, `.section_exports` and `.waiver_inert` codes as
+  their own reason ids; before, each exported as
+  `diagnostic.unsupported_reason`.
+- The missing-mapping error for a Figma-typed page now also names the
+  hand-written HTML route and the `checkpoint waive` command.
+  `docs/design-source-package.md` documents the route: a hand-written
+  manifest, `wrapper_policy: preserve_document_wrappers` for full-document
+  HTML, and the per-page waiver.
+- Bundled skills carry revision `1.45.0+skills.2`, with each skill version
+  advanced one patch. The lifecycle skill lists the new gate.
+
+### Fixed
+
+- `checkpoint waive` refuses each value-taking flag (`--packet`, `--gate`,
+  `--page`, `--reason`, `--waived-by`, `--expires-at`, `--review-condition`,
+  `--report`) when it is given without a value or with an empty one, naming
+  the flag. Before, a bare `--review-condition` was recorded as the condition
+  `true`, supplying a bound nobody wrote, and a bare `--report` was read as a
+  report path named `true`.
+
+## [1.45.0+agent.1] - 2026-09-30
+
+### Changed
+
+- `prepare-build`, `start` and `build` strip a host from the front of a route
+  in a Map fetched with `--map-id` (#531). Some saved Maps stored `page_url`
+  values such as `shop.example.com/route/upsell/` instead of `/route/upsell/`,
+  and every URL built from them nested the host inside the campaign route, so
+  polish capture failed on every page. Intake now keeps the rooted path, with
+  any query and fragment, for each host-prefixed `page_url` and
+  `next-success-url`, `next-upsell-accept-url` or `next-upsell-decline-url`
+  meta tag value, before anything reads the spec. Once the Assembly Report is
+  published, it writes the rooted values to the fetched copy under
+  `.campaign-runtime/fetched-specs/`; the report's `evidence[]` records each
+  change as `routing_meta.host_stripped` with the value the Map returned in
+  `from`, and one line on stderr says so. The run first checks that the
+  fetched copy can be rewritten (it is not a symlink) and stops before
+  publishing the report if it cannot. If publishing fails, the copy is left
+  as fetched. If the rewrite itself fails after the report is published, one
+  line on stderr says the report records the stripped hosts but the cached
+  spec was not rewritten, and the run fails. A spec with no host-prefixed
+  value is handled exactly as before.
+- A dotted first segment ending in a page or script extension (`html`, `htm`,
+  `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi`), such as
+  `index.php/checkout/`, is a route, not a host.
+- A local `--spec` file and a copy reused with `--cached-spec` are never
+  rewritten. If either holds a host-prefixed route, intake prints one line
+  naming each value and its rooted form, saying the local file must be edited
+  or, for `--cached-spec`, to run again without it so the Map is fetched and
+  normalised, and doctor blocks until then.
+- A `--map-id` fetch stops with an error, before fetching and without writing
+  anything, when `.campaign-runtime/`, `fetched-specs/` or the cache file is a
+  symlink. The cache file is always replaced by a new file rather than written
+  in place, so a hard link to the old file keeps its bytes.
+- Doctor blocks a route with a bare (`shop.example.com/...`) or
+  protocol-relative (`//shop.example.com/...`) host in front of it with the
+  new `routing_meta.host_prefixed` error, naming each value and its rooted
+  form. An absolute `http(s)://` `page_url` or routing meta value is accepted
+  as before. Such values no longer appear in the `routing_meta.runtime_root`
+  warning; every other `runtime_root` finding keeps its warning and message.
+
+## [1.45.0] - 2026-09-30
+
+### Changed
+
+- Package and supported-surface version advance to 1.45.0.
+- `doctor --packet` checks every built page's shipping and package refs against
+  the live campaign as well as the CampaignSpec (#533). When the packet's built
+  `_site/<route>/` exists and a public Campaigns API key resolves (the packet,
+  its local CampaignSpec, or the declared campaign-key env var), doctor makes
+  one read-only `GET {proxy-base}/api/campaign` with the key in
+  `X-Campaign-Key`, adding `?ref_id=<id>` when the CampaignSpec's
+  `campaign.ref_id` names the campaign. No store or Admin credential is used
+  and nothing is written. `doctor` accepts `--proxy-base <url>` (https, or
+  loopback over http). `qa run` makes the same read when it has read at least
+  one served page and a key resolves, and records the result in the verdict
+  as `api-metadata` assertions with the same codes.
+- The campaign is read from the proxy envelope's `data`: one campaign, or an
+  array picked by `campaign.ref_id` or holding exactly one. A campaign not
+  carrying the asked-for ref (`ref_id`, else `id`), or none, is `not_run`
+  (`campaign_mismatch`).
+- A page ref the live campaign does not serve is a blocker,
+  `built_output.shipping_ref_live_missing` or
+  `built_output.package_ref_live_missing`, even when the CampaignSpec lists no
+  shipping methods. Doctor compares every built `.html` page in
+  `_site/<route>/` but `404.html` and `_`/`.` directories, naming unlisted
+  pages by path. CampaignSpec refs the live campaign lacks, or the reverse,
+  are the separate warning `spec.campaign_drift`, which never softens a page
+  blocker.
+- A read that is not made or fails is `not_run` with a reason, never a pass,
+  and never falls back to the CampaignSpec list. Doctor records it in
+  `derived.live_campaign_refs`. No key, no built page and `--no-live-refs`
+  (`disabled`) make no request and raise no warning. A failed read is the
+  warning `built_output.live_refs_not_run`: no response, a non-2xx, a
+  10-second timeout, an `ok: false` envelope or one with an `error` and no
+  campaign (`proxy_error`), several campaigns and no `campaign.ref_id`
+  (`ambiguous_campaign`), or a body that is not the envelope
+  (`unexpected_body`). The reason quotes the proxy's error as one line, never
+  the raw body. QA records a skipped `live-campaign-refs` assertion
+  (`pages_eligible` under `--no-live-refs`) or a warn
+  `built_output.live_refs_not_run` one.
+- `doctor --no-live-refs` and `qa run --no-live-refs` skip only the live
+  campaign read (`/api/campaign`); other declared sends are unchanged. Only
+  `doctor` and `qa run` read; `start`, `prepare-build`, `build`,
+  `theme waive`, `checkpoint`, `findings harvest`, `run-record`, `next` and
+  the doctor refresh after `qa run` records the QA stage record `not_read`.
+- An `api_key_source` env var whose name contains `ADMIN`, `TOKEN`, `SECRET`,
+  `PASSWORD`, `PRIVATE` or `STORE` is refused for this read, with no request
+  (`key_source_refused`).
+- Page refs are read from the parsed HTML for the live check and the existing
+  `built_output.shipping_ref` / `built_output.package_ref` check: any valid
+  attribute syntax, entity-encoded values and `<template>` content are read;
+  comments, `<noscript>` and visible text are not. Inline `packageId:` /
+  `shippingId:` config is read from scripts and attribute values.
+- `contracts/effects.v1.json` declares the `{proxy-base}/api/campaign` send on
+  the `doctor`, `doctor --no-write`, `doctor --write` and five existing
+  `qa run` rows; the first two leave `readOnlyHint` for tier A and still write
+  nothing. `--no-live-refs` is an effect-changing flag, with rows without the
+  read for `doctor` (read-only), `doctor --write` and `qa run` alone and with
+  `--no-remit`, `--no-post-verdict`, `--test-order` or `--browser`.
+  `docs/effects.md` says the same and describes the read.
+- QA commercial parity warns `commercial_parity.recurring_claim_absent`,
+  naming the package, when a page renders a subscription package (a recurring
+  price and interval) with no readable recurring claim, and reports
+  `incomplete` instead of passing.
+- The bundled skills that cite doctor inspection cite it at tier `A`. The local
+  setup install command pins 1.45.0. Bundled skills carry revision
+  `1.45.0+skills.1`, each skill version advanced one patch.
+
+## [1.44.0+agent.2] - 2026-09-30
+
+### Changed
+
+- `qa run --test-order common`, the default depth and what a bare
+  `--test-order` runs, now runs every actual terminal path in the selected
+  checkout topology when that count is at or under the flood cap
+  (`--max-test-orders`, 6 by default). Above the cap it keeps the checkout,
+  first-offer accept/decline and shortest-receipt sample, then adds the shortest
+  path that clicks the decline on each offer or downsell page that no planned
+  path declines yet, until the plan reaches the cap. Pages still left out are
+  named on stderr and in the verdict. Before this change, `common` never
+  reached a downsell's decline, so a broken decline link could pass QA (#530).
+  A default run can now create up to 6 test orders, or up to an explicit
+  `--max-test-orders`, where it created at most 4 before. Test cards create no
+  transactions.
+- Every browser test-order run whose funnels include offer pages now records a
+  `browser-test-order:upsell-action-coverage` verdict row, read from the clicks
+  the run's placed orders made, for the offer pages of every funnel in the run.
+  A click counts only for the funnel whose order made it, and clicking only a
+  page's accept does not count. The row is `pass` or `warn` only when coverage
+  is certain: orders were placed, every funnel lists its pages, every offer
+  page has its own absolute URL that no other page shares, every planned order
+  matches exactly one funnel's checkout and page list, and every recorded
+  click lands on a declared page of that order's funnel. Then it is `warn`
+  naming each upsell or downsell page whose decline no order clicked, or
+  `pass` when every decline was clicked. In every other case, including
+  `--test-order off`, no placed order, a shared or missing URL, an unmatched
+  plan or an undeclared click, it is `manual_review` naming the pages and the
+  reason. A `warn` or `manual_review` row makes the verdict
+  `ready_with_exceptions`, so a run that leaves a decline unproved, such as
+  `--test-order accept` or `--test-order off`, no longer reads as `ready`.
+- `--test-order full`, explicit paths, `tiers`, `tiers:common` and `tiers:full`
+  plan the same orders as before.
+- `qa help`, the per-platform agent instruction files under `agents/`, the
+  next-campaigns-qa and next-campaigns-os skills (including the session intake
+  reference) and the QA docs describe the new `common` depth and the coverage
+  row, in place of the old at-most-four-orders sample. The skills bundle
+  revision is now `1.44.0+skills.2`.
+
+## [1.44.0+agent.1] - 2026-09-30
+
+### Changed
+
+- Doctor's `built_output.upsell_selector_scope` check lets a page's own
+  `next-page-type` meta replace the route's upsell guess only when the meta
+  is `checkout` and the guess comes only from `oto` or `one-time-offer` in
+  the route (for example `/checkout-oto-1/` or `/oto-1/`), with no `upsell`
+  or `downsell` word (#529). Any other meta (`product`, `receipt`, `landing`
+  or anything else) leaves an oto page checked as an upsell, and a route with
+  an explicit `upsell` or `downsell` word (for example `/upsell-1/`,
+  `/checkout-downsell/`) keeps its role whatever its meta says. A meta copied
+  from another page no longer lifts a post-purchase page out of the check.
+  In 1.43.2+agent.4 any single live meta replaced the route guess.
+- The 1.43.2+agent.4 notes said a `next-page-type` of `upsell` or `downsell`
+  puts a page in scope beside a meta that says otherwise or when unquoted.
+  The same holds when the meta name is upper-case, or the tag is commented
+  out or inside `<template>`, `<script>` or `<noscript>`; those notes left
+  these cases out. Such a page can block under
+  `built_output.upsell_selector_scope` when it has a bundle selector without
+  `data-next-upsell-context`; `doctor --built` has no waivers. Doctor finds
+  these tags by scanning the page source, not only the live document, so a
+  tag inside a comment, `<template>`, `<script>` or `<noscript>` counts too:
+  delete the markup itself if the page is not post-purchase.
 
 ## [1.44.0] - 2026-09-30
 

@@ -246,11 +246,17 @@ before QA with the relevant gate ID:
 ```bash
 campaigns-os checkpoint waive \
   --packet campaign-runtime.build.json \
-  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media|built_output.upsell_selector_scope> \
+  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media|built_output.upsell_selector_scope|source_html.producer_provenance> \
+  [--page <page_id>] \
   --reason "<why>" \
   --waived-by "<named human>" \
   --review-condition "<specific re-evaluation trigger>"
 ```
+
+`--page` is required for `source_html.producer_provenance`, which is waived one
+Figma-typed page at a time (see the
+[Design Source Package](./design-source-package.md) hand-written HTML route),
+and refused for the other gates.
 
 Legacy source/theme/QA waiver commands and artifact lanes remain in place until
 those gates are registered. Store Profile evidence includes only the governed
@@ -432,7 +438,8 @@ work that lands with the receiver's connection contract. This section
 documents the semantics of the stamps the receiver already applies.
 
 Add `--browser --test-order common` for the normal proof pass: first-party
-Playwright browser checks plus the default typed-card order sample. If the
+Playwright browser checks plus the default `common` typed-card orders
+(described under "Test Orders" below). If the
 browser binary is missing, the CLI will prompt you to run
 `npm run qa:install-browser`:
 
@@ -1131,13 +1138,64 @@ npm run campaigns-os -- qa run \
   --test-order common
 ```
 
-The default mode is **`common`** (also what bare `--test-order` runs): at most
-four shapes from the selected checkout's declared topology — the checkout
-baseline, first-offer `accept` and `decline` when `expected_next_url` reaches an
-upsell/downsell, and the shortest declared path that actually reaches a
-receipt/thank-you page. The receipt path is deduplicated when it is already
-`accept` or `decline`; Campaigns OS never invents a receipt path from offer
-count alone. This is the everyday QA sample.
+The default mode is **`common`** (also what bare `--test-order` runs). It
+starts from the selected checkout's declared topology:
+
+- When every actual terminal path (the `full` set, checkout baseline included)
+  fits under the flood cap (`--max-test-orders`, default `6`), `common` runs
+  them all. The run says so on stderr, and on a funnel with offer pages the
+  coverage row below records
+  `order_path_depth_effective: "full"` with `order_path_depth_reason:
+  "under_cap"`.
+- Above the cap, or when the topology cannot be walked exhaustively, `common`
+  runs the sample: the checkout baseline, first-offer `accept` and `decline`
+  when `expected_next_url` reaches an upsell/downsell, and the shortest
+  declared path that actually reaches a receipt/thank-you page (deduplicated
+  when it is already `accept` or `decline`; Campaigns OS never invents a
+  receipt path from offer count alone). It then adds, for each offer or
+  downsell page whose decline no planned path clicks yet, the shortest actual
+  terminal path that clicks it, until the plan reaches the cap. Pages still
+  left out are named on stderr and in the coverage row. The sample itself is
+  never trimmed, so a `--max-test-orders` below it is refused before launch as
+  before.
+
+A page counts as covered only when a path clicks its **decline** control.
+Reaching a page, or clicking only its accept, does not count: a broken decline
+link strands the shopper even when accept works.
+
+Every browser test-order run whose funnels include offer pages records
+`browser-test-order:upsell-action-coverage`, read from the clicks the runner
+actually made in orders it placed, not from the plan. It lists the offer pages
+of every funnel in the run, including funnels the orders do not drive, and a
+click credits only the funnel whose order made it, never another funnel's page
+at the same URL. The row is conservative: it is `pass` or `warn` only when
+coverage is certain, and `manual_review` in every other case.
+
+Coverage is certain when all of these hold: at least one order was placed;
+every funnel lists its pages; every page is either a known non-offer type
+(checkout, landing, thank-you and the like) or an upsell/downsell page with its
+own absolute http(s) URL that no other page shares; every planned order belongs
+to exactly one funnel (its checkout is that funnel's checkout and it was
+planned over that funnel's page list); and every click an order recorded lands
+on a declared offer page of that order's own funnel. Then the row is `warn`
+(severity `warn`) naming each page whose decline no order of its funnel
+clicked, and each funnel no order ran through, or `pass` when every page's
+decline was clicked.
+
+Otherwise the row is `manual_review` (severity `warn`) naming the pages not
+proved clicked through, with `evidence.reason`: `test_orders_off` for a
+`--test-order off` run, `no_order_recorded` when no order was placed (an
+attempt that failed before an order reference counts as none), `no_topology`
+when no funnel topology reached the check, or `not_assessable` for the rest.
+`evidence.not_assessable[]` names each page that cannot be matched to a click,
+with a reason: `no_url` or `unresolvable_url`, `shared_url` (the URL belongs to
+another page too), `unknown_page_type` (neither an offer type nor a known
+non-offer type), or `no_pages` (a funnel with no page list).
+`evidence.uncertainty[]` lists the run-level reasons: `unattributed_plan` (a
+plan that does not match exactly one funnel's checkout and page list),
+`unattributed_click` (a click with no usable URL, or from such a plan's order)
+and `undeclared_click` (an order clicked a page its funnel does not declare).
+`evidence.pages[]` gives `accept_clicked` / `decline_clicked` per page.
 
 Other modes: `checkout` (base order redirect only), `accept`/`decline` (click the
 rendered control on the first upsell page), `both` (two fresh orders for those
@@ -1571,8 +1629,11 @@ npm run campaigns-os -- qa run \
 ```
 
 `--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
-gate**. A single checkout's `common` sample always stays under it, though tier
-expansion can exceed it. If `full` expands past the cap, the command stops before
+gate**. A single checkout's `common` plan always keeps its checkout,
+first-offer accept/decline and shortest-receipt sample. If that sample alone
+exceeds the cap (a `--max-test-orders` below it), the run is refused before
+browser launch, as before. Otherwise the added decline paths stop at the cap.
+Tier expansion can exceed it. If `full` expands past the cap, the command stops before
 browser launch, prints the planned count, lists the planned paths (up to 40 ids;
 past that the remainder is counted, never cut silently, and `--select-package
 <ref[:qty]>` lists one tier's paths), and names the exact `--max-test-orders <count>` raise. For example, a linear three-offer graph has
@@ -1753,8 +1814,9 @@ use the declared topology instead of a single happy path:
 
 1. Checkout-only with the base cart.
 2. Checkout-only with the base cart plus bump when the bump is in scope.
-3. Base cart through the checkout/first-action sample plus the shortest real
-   receipt path (`--test-order common` covers up to four deduplicated shapes).
+3. Base cart through `--test-order common`: every actual terminal path when
+   they fit under the cap, otherwise the checkout/first-action sample, the
+   shortest real receipt path and one decline path per uncovered offer page.
 4. Base plus bump cart through the same sample matrix when bump behavior is
    launch-relevant.
 5. Use `full` when you want every actual terminal path, raising the flood cap to
