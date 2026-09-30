@@ -85,7 +85,10 @@ declares `campaign.route_root: "/"`. Rules:
 - Doctor's routing-meta checks (`routing_meta.runtime_root`,
   `sdk_hints.meta_tags.route_mismatch`) and route displays validate against the
   declared route root instead of assuming slug-as-prefix, so a root-served
-  funnel's correct `/receipt`-style metas pass without waivers.
+  funnel's correct `/receipt`-style metas pass without waivers. A routing
+  meta value with a bare or `//` host in front of its path is not a
+  `runtime_root` warning; it is the `routing_meta.host_prefixed` blocker (see "Page Kit
+  Target Projection" below).
 - The CampaignSpec may carry the same declaration at `campaign.route_root` (or
   `spec_identity.route_root`); `prepare-build` copies it onto the packet and
   defaults `live_url_path` to `/`.
@@ -1071,9 +1074,11 @@ Design Source Package exists. The waiver must remain visible in Campaign
 Readiness Readback and downstream QA evidence; it is not a silent pass.
 In v0, write accepted Source Freshness Waivers directly into `waivers[]`.
 `campaigns-os checkpoint waive` is a staged generic registry and currently
-accepts four gates: `page_kit.store_profile`, `page_kit.sdk_version`,
-`polish.hidden_eager_media`, and `built_output.upsell_selector_scope`; an
-unregistered gate id is refused with that list. `theme waive` applies the same
+accepts five gates: `page_kit.store_profile`, `page_kit.sdk_version`,
+`polish.hidden_eager_media`, `built_output.upsell_selector_scope`, and
+`source_html.producer_provenance`, which is waived per page with
+`--page <page_id>` (see the [Design Source Package](./design-source-package.md)
+hand-written HTML route); an unregistered gate id is refused with that list. `theme waive` applies the same
 attribution rule (a named human, no placeholder, an optional future
 `--expires-at`) on its own lane. Within Polish, only the broader Source Freshness
 waiver retains its existing report path; theme and QA decisions retain their
@@ -1232,13 +1237,13 @@ and report proof policy fields above.
 | `--spec <path>` | Local JSON file | Agent-authored local specs, saved-Map exports, offline work or CI fixtures |
 | `--map-id <id>` | Map Builder proxy (KV-backed) | Saved-Map intake from the current KV revision |
 
-When `--map-id <id>` is set, the CLI fetches `GET <proxy>/api/spec/<id>` (default `<proxy>` is `https://campaign-map.nextcommerce.com`) and caches the response to `<target>/.campaign-runtime/fetched-specs/<id>.json`. The cached file is what downstream stages read, so the packet's `spec.local_path` always resolves to an on-disk artifact regardless of intake mode.
+When `--map-id <id>` is set, the CLI fetches `GET <proxy>/api/spec/<id>` (default `<proxy>` is `https://campaign-map.nextcommerce.com`) and caches the response to `<target>/.campaign-runtime/fetched-specs/<id>.json`. The cached file is what downstream stages read, so the packet's `spec.local_path` always resolves to an on-disk artifact regardless of intake mode. When the Map holds routes with a host in front of the path, the cached file holds the rooted routes and that run's Assembly Report `evidence[]` holds the values as fetched (see "Page Kit Target Projection" below). The cache is written only inside a real `fetched-specs/` directory: if `.campaign-runtime/`, `fetched-specs/` or the cache file is a symlink, the command stops with an error before fetching and writes nothing. Each write goes to a new file renamed over the cache file, so a hard link to the old file keeps its bytes.
 
 Saved-Map retrieval behavior (`--map-id`):
 
 - **Re-fetch by default.** Every `start` / `prepare-build` invocation re-fetches from KV. KV is the source of truth; the cache file is a debug/inspection artifact, not a performance optimization.
 - **One writer at a time.** The fetch happens first, but the fetched spec is written to the cache file only once the run holds the per-target prepare-build lock. A second run against the same target, fetching a newer Map revision, waits for the lock before replacing the cache, so the run holding it records the hash of the revision it actually parsed.
-- **`--cached-spec`** reuses the cache without a network call. Use for offline iteration or when the proxy is temporarily unreachable.
+- **`--cached-spec`** reuses the cache without a network call. Use for offline iteration or when the proxy is temporarily unreachable. The cached copy is read as it is and never rewritten.
 - **`--proxy-base <url>`** overrides the default origin. Use for staging environments or local Worker dev (`wrangler dev`). Spec retrieval carries no credential, so any reachable origin works here — but the same flag also aims the credential-bearing rails (Run Telemetry remit, QA verdict publish, `telemetry list`), and those require `https:` unless the host is loopback (`localhost`, `127.0.0.1`, `[::1]`), which is allowed over plain http with a stderr warning. A plain-http remote proxy is refused before the request. See docs/workflow-findings-sidecar.md (Remit Channel).
 - Failure modes (HTTP error, `{ok: false}` response, network timeout) surface as clean CLI errors before any packet is written.
 
@@ -1327,6 +1332,70 @@ CampaignSpec `page_url` and legacy `url` values are interpreted as Page Kit
 routes during projection. That normalization strips `.html`/`index.html`,
 removes query/fragment values, converts absolute preview URLs to their path, and
 normalizes trailing slashes before deriving target files and frontmatter routes.
+
+A route value with a host in front of its path (an older saved Map stored
+`shop.example.com/route/upsell/` where the route is `/route/upsell/`) is
+reduced to its rooted path before anything reads a spec that `prepare-build`,
+`start` or `build` fetched with `--map-id` in the same run. This covers every
+`page_url` and every `next-success-url`, `next-upsell-accept-url` and
+`next-upsell-decline-url` meta tag value in `funnels[].pages[]` and
+`funnel_pages[]`:
+
+- The host is removed and the path is kept with its query and fragment
+  (`shop.example.com/route/x/?v=b#top` becomes `/route/x/?v=b#top`). An
+  absolute `http(s)` `page_url` is rooted the same way; an absolute `http(s)`
+  routing meta value is a valid SDK target and is kept.
+- The fetched copy at `<target>/.campaign-runtime/fetched-specs/<map-id>.json`
+  then holds the rooted values, not the bytes as fetched. It is replaced only
+  after the Assembly Report recording the changes has been published, so if
+  publishing fails the copy is left exactly as fetched. The rooted spec is
+  written to a new file in `fetched-specs/` and renamed over the copy, so
+  another name for the old file (a hard link) is never changed. A spec with
+  no host-prefixed value is written exactly as fetched, as before.
+- Each changed value is recorded on that run's Assembly Report `evidence[]` as
+  `{ "code": "routing_meta.host_stripped", "page_id", "field", "from", "to" }`;
+  `from` is the value exactly as the Map returned it. The raw values are kept
+  only there and in the Map itself: a later run with `--cached-spec` reads the
+  rooted copy, finds nothing to strip, and records no evidence. One line on
+  stderr lists the changes.
+- `intake.saved_map_revision.local_spec_material_hash` in the Build Context is
+  the material hash of the rooted copy, while `hash` stays the fetched Map
+  revision. A progress snapshot's `saved_revision_alignment: "aligned"`
+  therefore means the local spec matches that Map revision after host
+  stripping, not byte for byte.
+
+A local `--spec` file and a copy reused with `--cached-spec` are never
+rewritten. When either holds a value doctor blocks on (below), intake reads it
+as it is and prints one line on stderr naming each value and its rooted form:
+for a local file, that the file must be edited; for `--cached-spec`, to re-run
+without `--cached-spec` so the Map is fetched and normalised.
+
+A value reads as host-prefixed when it is one of:
+
+- an `http://` or `https://` URL, with any host (stripped from a fresh fetch;
+  never blocked);
+- `//<host>/...`, where `<host>` is one of the bare host forms below;
+- `<host>/...`, where `<host>` is `localhost`, a valid IPv4 address (four
+  dot-separated numbers, each 0-255), any name with a `:port`
+  (`localhost:8080`, `shop.example.com:8443`), or a dotted name whose last
+  label is 2-63 letters and is not a page or script extension: `html`, `htm`,
+  `shtml`, `php`, `asp`, `aspx`, `jsp` or `cgi` (`shop.example.com`,
+  any case).
+
+Everything else stays a route for the existing checks: a rooted `/...` value,
+a first segment with no dot (`route/x/`), a dotted segment whose last label is
+not all letters (`v1.2/offer/`), a dotted quad with a number over 255
+(`300.1.2.3/offer/`), a page or script filename (`checkout.html`,
+`index.php/checkout/`, `upsell.aspx/`), `//` followed by something that is not
+a host (`//route/x/`), a bare host with no path, and an empty or missing value.
+
+If a bare or `//` host-prefixed value still reaches doctor (a local spec that
+holds one, a copy reused with `--cached-spec`, or a spec edited after intake),
+doctor blocks with `routing_meta.host_prefixed`, naming each value and its
+rooted form. An absolute `http(s)` value never raises it: projection converts
+an absolute `page_url` to its path, as above. `page_url` is checked whether or
+not the site is built; routing meta values follow the same built-output
+deferral as `routing_meta.runtime_root`.
 
 This prevents mixed-source manifests such as `checkout/index.html` from leaking producer folder structure into `src/<slug>/checkout/index.html`. Campaigns OS owns the Adapter from source/manifest/CampaignSpec into Page Kit shape; Page Kit remains the target.
 
@@ -1530,8 +1599,8 @@ The legacy form `campaigns-os next <stage>` (e.g. `next build`) still works and 
 
 CampaignSpec pages may carry an optional `design_source` block on `Page` — a pointer to the design artifact (Figma file + per-breakpoint selection URLs) that supplies prepared HTML for that page. When doctor detects an active spec page with no source mapping, the `source_html.pages.coverage` error now carries a hint that points the operator at the design source:
 
-- `design_source.type === "figma"` with `file_url`: doctor calls out the Figma file and the figma-sections-export handoff command (`npm run handoff -- <slug>`).
+- `design_source.type === "figma"` with `file_url`: doctor calls out the Figma file and says the Figma provenance gate (`source_html.producer_provenance`) needs the figma-sections-export handoff manifest (`npm run handoff -- <slug>`); a hand-written manifest cannot pass that gate.
 - `design_source` set without `file_url`: doctor flags the missing `file_url` so the spec can be corrected.
-- `design_source` unset: doctor keeps the original generic coverage error.
+- `design_source` unset, `ai-generated`, or another producer type: the message names the manifest path (`<source-root>/.campaigns-os/source-html-manifest.json`), the schema, and a minimal page entry to write by hand (no exporter is needed), plus `"wrapper_policy": "preserve_document_wrappers"` for standalone documents kept whole. When any active page's `design_source` is Figma, it instead says the manifest must pass the Figma provenance gate.
 
 The error code (`source_html.pages.coverage`) is unchanged so existing doctor consumers do not need to be updated; only the human-readable `message` and an optional `detail.design_source` payload are added.

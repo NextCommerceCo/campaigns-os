@@ -43,8 +43,7 @@
 //   CHECKOUT_BUMP_IS_UPSELL    data-next-is-upsell="true" on a checkout page
 //                              (#535). A checkout bump is a pre-purchase
 //                              add-on; the flag puts it on the initial order
-//                              as an upsell line. The page type is read as
-//                              upsell_selector_scope reads it (#529): a live,
+//                              as an upsell line. The page type is a live,
 //                              unambiguous next-page-type meta, since it is
 //                              what the SDK reads; otherwise the route type.
 //
@@ -71,7 +70,9 @@ import {
   isIndexedSdkAttribute,
   isKnownCheckoutFieldName,
 } from "./sdk-attribute-index.mjs";
-import { builtPageTypeMeta, builtPageTypeOverRouteGuess } from "./upsell-selector-scope.mjs";
+import { builtPageTypeMeta } from "./upsell-selector-scope.mjs";
+
+const normalizedPageTypeValue = (type) => (type == null ? null : String(type).trim().toLowerCase());
 
 export const SDK_MARKUP = "built_output.sdk_markup";
 
@@ -172,7 +173,7 @@ function describeBump(entry) {
  * Scan one built page. Returns findings with { code_name, code, severity,
  * page_id, file, message, detail } and the set of unknown data-next-* names.
  * `page_type` is the route-inferred type, used only when the page declares no
- * live, unambiguous next-page-type meta (builtPageTypeOverRouteGuess).
+ * live, unambiguous next-page-type meta (builtPageTypeMeta).
  */
 export function scanPageMarkup({ page_id, file = null, content = "", page_type = null }) {
   const document = parse(String(content || ""));
@@ -313,8 +314,11 @@ export function scanPageMarkup({ page_id, file = null, content = "", page_type =
   // The page type is read only when a flag is present, so a page without one
   // is not parsed a second time.
   const pageTypeMeta = upsellFlagged.length ? builtPageTypeMeta(content) : null;
+  // The live, unambiguous meta wins because it is what the SDK reads; the
+  // upsell gate's narrower oto-route rule (builtPageTypeOverRouteGuess) does
+  // not apply to a checkout bump.
   const effectivePageType = upsellFlagged.length
-    ? builtPageTypeOverRouteGuess({ route_type: page_type, content })
+    ? normalizedPageTypeValue(pageTypeMeta ?? page_type)
     : null;
   if (effectivePageType === "checkout") {
     const elements = upsellFlagged.map(describeBump);

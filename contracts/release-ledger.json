@@ -2927,14 +2927,14 @@
       "entry_sha256": "90abe34e9eab389f0b516a7b22d62c4dfe19a37025ede78410a1aeab188d47ac"
     },
     {
-      "id": "RL-0187",
+      "id": "RL-0180",
       "sequence": 172,
       "date": "2026-09-30",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.44.0+agent.1",
-      "changelog_sha256": "1386edaff40b355ab396b0f53c994301fb39597453e8ce4d797fa5816b3571d9",
-      "agent_impact": "doctor can report a new warning, built_output.sdk_markup.checkout_bump_is_upsell, when a checkout page carries data-next-is-upsell=\"true\" on an order bump; it does not block. The page type is read as built_output.upsell_selector_scope reads it: the live next-page-type meta, or the route when that meta is absent, blank, inside a <template> or conflicting. Several starter bump includes write the flag unconditionally, so starter checkouts with a bump show it; to clear it, remove data-next-is-upsell=\"true\" from the bump include in the campaign unless the line should be billed as an upsell. theme generate now keeps a declared CTA label colour that reaches 3:1 on the CTA (reported as theme.foreground.low_contrast when under 4.5:1). The label is read, in order, from the one colour every button rule on the CTA background agrees on, a :root inverse or on-colour text token whose name has a text or foreground part (for example --text-inverse or --text-on-primary, never --border-on-primary), or the one colour all other button rules agree on; a ; or : inside quotes or parentheses, as in a data: URL in a background shorthand, no longer splits a button rule declaration; the same inverse and on-colour names, and only those, are the source inverse text token when the source is compared with scaffold defaults; a button rule targets button, input[type=submit], or a btn, button or cta class, judged only on the selector's own element, class and attribute parts (not attribute values or the arguments of :not(), :is(), :where() or :has()) and with no other pseudo-class, so .order-summary, .cart-count, .order-summary[data-target=\".btn\"], .cart:has(.button), [type=submit] or div[type=submit] never supply it. Body text comes from the darkest declared text token that reaches 4.5:1 on the body background, even when the source has no primary text token; inverse and on-colour label tokens (for example --text-color-inverse or --text-on-dark) and link, status and state colours (for example --text-link or --text-error) are never body text. Declarations inside CSS comments are no longer read, and inline <style> sources are hashed as before, so an existing brand-theme.css is not reported stale. Sources that declare neither generate the same CSS as before. docs/brand-theme-bridge.md says to load next-core.css and the brand layer only on pages where family components render.",
+      "changelog_sha256": "9e1a45650b0d80a9195b08ebd30cc4570b3dd8732393a5e63c9c999934f2c70d",
+      "agent_impact": "doctor --built and the packet path keep an explicit upsell or downsell route in built_output.upsell_selector_scope whatever the page next-page-type meta says; on an oto / one-time-offer route with no upsell or downsell word, only a live checkout meta replaces the route upsell guess, and any other meta (product, receipt, landing or anything else) leaves the page checked as an upsell. Records what RL-0170 omitted: a page whose markup carries next-page-type upsell or downsell anywhere (conflicting, unquoted, upper-case name, commented out, or inside template/script/noscript) is treated as post-purchase and can block; remove the stray tag on non-post-purchase pages.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -2942,7 +2942,670 @@
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": "doctor",
-          "summary": "The SDK markup check now receives each built page type and resolves it with the same next-page-type helper as upsell_selector_scope, so doctor warns with built_output.sdk_markup.checkout_bump_is_upsell on a checkout page whose order bump carries data-next-is-upsell=\"true\"."
+          "summary": "The packet path passes the page route so an explicit upsell/downsell route keeps its role over a conflicting meta, and an oto route yields only to a checkout meta."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor --built passes the page route so an explicit upsell/downsell route keeps its role over a conflicting meta, and an oto route yields only to a checkout meta."
+        }
+      ],
+      "entry_sha256": "db37943b9ff1bb5158ee49280af32d6617514f8545a9c2d5e8ed34a74b123227"
+    },
+    {
+      "id": "RL-0181",
+      "sequence": 173,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.44.0+agent.2",
+      "changelog_sha256": "11bdd130e5e2f90c936fc1828b08225e519808c2f7bfb7368356de057fc077a7",
+      "agent_impact": "A default qa run --test-order common may now create more test orders than before: every actual terminal path when that count is at or under the flood cap (6 by default, or an explicit --max-test-orders), otherwise the old four-order sample plus one decline path per uncovered offer or downsell page, up to the cap. It previously created at most 4. Verdicts on funnels with offer pages, --test-order off runs included, gain a browser-test-order:upsell-action-coverage row. It is pass or warn only when coverage is certain (orders placed, every offer page listed with its own unshared URL, every plan matched to one funnel, every click on a declared page of the order's funnel) and manual_review otherwise; a warn or manual_review row makes the disposition ready_with_exceptions rather than ready.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "The seeded qa.test_order_policy_notes and the next QA-stage prompt describe the new common depth and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the common depth running full under the cap, the decline paths it adds above the cap, and the browser-test-order:upsell-action-coverage row, which is pass or warn only when coverage is certain and manual_review otherwise."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.44.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.44.0+skills.2 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe the new common depth and the upsell-action coverage row instead of an at-most-four-orders sample; stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/references/session-intake.md",
+          "surface_entry": null,
+          "summary": "Describe the new common depth and the upsell-action coverage row in the test-order coverage intake instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe the new common depth, decline-based page coverage attributed per funnel and the conservative upsell-action coverage row; stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "1ada871c0e5c5c511f92fe173349d2b99ea885894d6d18ba8815f6452ae26ff4"
+    },
+    {
+      "id": "RL-0182",
+      "sequence": 174,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": "1.45.0",
+      "changelog_section": "1.45.0",
+      "changelog_sha256": "e40161e87ca08935f33292fedb2885753e38afe481512bff44e589438c9c08e2",
+      "agent_impact": "doctor --packet may now make one read-only GET {proxy-base}/api/campaign with the public Campaigns API key in X-Campaign-Key (plus ?ref_id=<id> from the CampaignSpec's campaign.ref_id) when the built _site/<route>/ exists and the key resolves from the packet, its local CampaignSpec or the declared campaign-key env var; no store or Admin credential, nothing written; --proxy-base names the proxy. qa run makes the same read after reading a served page. The campaign comes from the proxy envelope's data field and must carry the asked-for ref (ref_id, else id). Doctor compares every built .html page in _site/<route>/ but 404.html and _/. directories, naming unlisted pages by path. --no-live-refs on doctor or qa run skips only that read; their other declared sends are unchanged. Only doctor and qa run read; other commands that run doctor record not_read. A page ref the live campaign does not serve blocks as built_output.shipping_ref_live_missing or built_output.package_ref_live_missing; spec.campaign_drift warns on CampaignSpec-vs-live differences and never softens a page blocker. An api_key_source env name containing ADMIN, TOKEN, SECRET, PASSWORD, PRIVATE or STORE is refused with no request. Page refs are read from parsed HTML for both ref checks. To see not_run: doctor's derived.live_campaign_refs has status not_run and a reason_code (no_key, no_built_pages, disabled, not_read); a failed or refused read (network_error, http_status, not_found, timeout, too_large, unparseable, unexpected_body, proxy_error, ambiguous_campaign, campaign_mismatch, unexpected_ref, key_source_refused) is also the warning built_output.live_refs_not_run; a QA verdict carries a skipped live-campaign-refs assertion (pages_eligible under --no-live-refs) or a warn built_output.live_refs_not_run assertion with the same reason_code. Read not_run as unchecked, never as a pass. The doctor and doctor --no-write effects rows are no longer readOnlyHint and sit at tier A. QA commercial parity warns commercial_parity.recurring_claim_absent, naming the package, when a page renders a subscription package with no readable recurring claim, and reports incomplete instead of pass.",
+      "compatibility": "additive",
+      "migration": "Update to the exact 1.45.0 package. To skip the live campaign read, pass --no-live-refs to doctor or qa run; only the /api/campaign request is skipped and the live ref check is recorded as not_run with reason disabled.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.45.0 and record the new effects.v1.json hash."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare the read-only {proxy-base}/api/campaign send on the doctor, doctor --no-write and doctor --write rows (the first two leave readOnlyHint and move to tier A) and on the five existing qa run rows; add --no-live-refs to the effect-changing flags with rows without the read for doctor, doctor --write, and qa run alone and with --no-remit, --no-post-verdict, --test-order or --browser."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Stop listing doctor inspection and doctor --no-write among the read-only invocations (they still skip the lifecycle journal but may send the one live campaign read), list doctor --no-live-refs inspection, add --no-live-refs to the effect-changing flags, and describe the live campaign read, its opt-out and the commands that record not_read."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the copy-paste local setup install command to the 1.45.0 package release."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Restamp the generated orientation reference for surface 1.45.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Restamp the generated runtime reference for surface 1.45.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.45.0+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Stamp package version 1.45.0 without changing dependency resolutions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release package version 1.45.0 without changing exports or dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.45.0+skills.1 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Make the live campaign read before doctor's packet inspection and document doctor --proxy-base, doctor --no-live-refs, qa run --no-live-refs and the read in the usage lines."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Add the live campaign ref check over built pages under _site/<route>/ with the blocker codes built_output.shipping_ref_live_missing and built_output.package_ref_live_missing, the spec.campaign_drift warning, the built_output.live_refs_not_run warning for a failed or refused read, and derived.live_campaign_refs; read page refs from parsed HTML for this check and the CampaignSpec ref check."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "Read the live campaign in packet mode when the built route exists and a public campaign key resolves, unless --no-live-refs is given, and pass the result to the inspection."
+        }
+      ],
+      "entry_sha256": "57a5b7502cf401d87e59e0ba957ddafc2d5b10d93f587d7982d019071b1ee563"
+    },
+    {
+      "id": "RL-0183",
+      "sequence": 175,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.1",
+      "changelog_sha256": "aaf60d7d921f0563b848e8ade18b1706b52492af081a7d2c054e7fe969a8b195",
+      "agent_impact": "Doctor now blocks with the new error routing_meta.host_prefixed when a page_url or SDK routing meta tag value has a bare or protocol-relative (//) host in front of its path, naming each value and its rooted form; an absolute http(s) page_url or routing meta value is accepted as before. Such values no longer appear in the routing_meta.runtime_root warning, whose other findings are unchanged. prepare-build, start and build strip those hosts, and the host of an absolute page_url, from a Map fetched with --map-id in the same run; once the Assembly Report is published they write the rooted values to the fetched copy under .campaign-runtime/fetched-specs/, and the report records each change as routing_meta.host_stripped on evidence[] with the value as fetched. The run checks that the fetched copy can be rewritten (it is not a symlink) before publishing the report and stops first if it cannot; a failed publish leaves the copy as fetched; if the rewrite fails after the report is published, one stderr line says the report records the stripped hosts but the cached spec was not rewritten, and the run fails. A dotted first segment ending in html, htm, shtml, php, asp, aspx, jsp or cgi is a route, not a host. A local --spec file and a copy reused with --cached-spec are never rewritten: intake prints a notice naming the values (edit the local file, or run again without --cached-spec so the Map is fetched and normalised), and doctor blocks until then. A --map-id fetch stops with an error, before fetching and without writing anything, when .campaign-runtime/, fetched-specs/ or the cache file is a symlink, and the cache file is always replaced by a new file rather than written in place, so a hard link to the old file keeps its bytes.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Strip a host from the front of each page_url and SDK routing meta tag value in a Map fetched by this run, record routing_meta.host_stripped evidence, check that the fetched copy can be rewritten before publishing the Assembly Report, write the rooted values to it only after the report is published, and print one notice line, or one line saying the copy was not rewritten if that write fails; leave a local --spec file and a --cached-spec copy unchanged and print a notice naming the values to edit or to re-fetch; refuse to write the fetch cache through a symlinked .campaign-runtime/, fetched-specs/ or cache file, and replace the cache file by rename rather than writing it in place."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Block a bare or protocol-relative host-prefixed route with routing_meta.host_prefixed, naming each value and its rooted form and, for a --cached-spec copy, a fresh fetch as the remedy; absolute http(s) values stay accepted and other routing_meta.runtime_root findings are unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document the host grammar and the page and script extensions read as routes, the fetched-copy rewrite after publication, the host_stripped evidence record, saved-revision alignment after host stripping, the unchanged local spec and --cached-spec copy, the host_prefixed blocker and the fetch-cache symlink refusal."
+        }
+      ],
+      "entry_sha256": "7210f6b4e7bf58a846c90714fa5cfa79cf36d9517b2a0c285cab8879b57aa207"
+    },
+    {
+      "id": "RL-0184",
+      "sequence": 176,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.2",
+      "changelog_sha256": "d1cfcf370b59fcb4a77084c4d80e48d59ec76bfb8edd726212fbc8cf2535605a",
+      "agent_impact": "checkpoint waive accepts source_html.producer_provenance, waived per page with --page <page_id>, for a Figma-typed page whose approved source is hand-written HTML. Doctor adds one source_html.producer_provenance gate per Figma-typed page to derived.checkpoint_gates and reports the Figma-export findings (source_html.producer_provenance*, source_html.files.partial, source_html.files.asset) once per such page with detail.page_id: warnings carrying waived: true for a waived page, errors for an unwaived one. When the manifest generator names figma-sections-export in any form (with or without @<version>, any case), the findings stay manifest-wide errors, each page gate reports blocked with code source_html.producer_provenance.exporter_claim, checkpoint waive refuses the gate, and any recorded page waiver is inert. Every other source check keeps its severity. next lists the per-page gates after theme_gate and polish_gate. tooling diagnose exports the source_html.producer_provenance* codes, including .waiver_inert, as their own reason ids instead of diagnostic.unsupported_reason. checkpoint waive refuses any value-taking flag given bare or empty instead of reading it as \"true\".",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "checkpoint",
+          "summary": "checkpoint waive registers source_html.producer_provenance with a required --page <page_id>; an unknown page, the <gate>:<page_id> form, --page on a campaign-wide gate, and a page under a manifest whose generator claims figma-sections-export are refused. Every value-taking flag given bare or empty is refused by name. next lists the per-page gates after theme_gate and polish_gate. tooling diagnose exports the source_html.producer_provenance* reason ids, including .waiver_inert, instead of diagnostic.unsupported_reason."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor publishes one source-provenance gate per Figma-typed page, reports the Figma-export findings (source_html.producer_provenance*, source_html.files.partial, source_html.files.asset) per page, as warnings carrying waived: true for a waived page and errors for an unwaived one, keeps them as errors when the manifest generator names figma-sections-export in any form, adds source_html.producer_provenance.waiver_inert, and names the waiver route in the missing-mapping error for a Figma page."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/source-provenance.mjs",
+          "surface_entry": "doctor",
+          "summary": "New per-page evaluator for the source-provenance gate and its waiver history, the one predicate for a figma-sections-export generator claim, and the blocked, non-waivable source_html.producer_provenance.exporter_claim gate state that makes a recorded page waiver inert."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "checkpoint waive accepts five gates, the fifth waived per page."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Document the hand-written HTML route for a Figma-typed page: a hand-written manifest listing only its page files, preserve_document_wrappers when needed, and the per-page waiver, which covers the export's missing partials and assets and is refused for a manifest whose generator names figma-sections-export."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The checkpoint waiver example lists source_html.producer_provenance in its --gate alternation and --page <page_id>, required for that gate only."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "checkpoint waive currently accepts five registered gates, including the per-page source_html.producer_provenance."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "State bundle revision 1.45.0+skills.2 in every example."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.45.0+skills.2 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "List source_html.producer_provenance among the registered checkpoint gates, stamp bundle revision 1.45.0+skills.2, and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "f654ec6da73399a3a8bf84804da225ee0ed8cfe3d8ace5284248b2ed041e4fd5"
+    },
+    {
+      "id": "RL-0185",
+      "sequence": 177,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.3",
+      "changelog_sha256": "4b4b9a2c4e771df3d03559ffe540a156592e4f7e476530162eaa14c666ab72ff",
+      "agent_impact": "browser-commerce-structure:<page> reports status warn, not fail, when only family shell selectors are missing (a fixed list: .checkout-wrapper, .checkout-layout__left/right, .checkout__layout, .checkout__column--left/right, and the shipping-field-row include marker) and the checkout passes its behaviour checks: a <form data-next-checkout=\"form\">, email/fname/lname/country/address1/city/province/postal bound with data-next-checkout-field on an input, select or textarea inside it that is not type=hidden, readonly, disabled or aria-disabled=true (visibility not required), and a visible cart-summary total. A failed behaviour check, no checkout form, or any other missing selector (SDK attributes, or a class not on the list such as a hosted payment field class) keeps status fail. Evidence gains behaviour and a kind (family_shell or sdk_wiring) on each checks[] entry. pricing.upsell_price_visible:<page> and pricing.checkout_price_visible count a visible, non-empty [data-next-bundle-display*=price] node; an empty one no longer counts on the checkout bundle surface either. The build and QA skills say the checkout wrapper is source-owned and QA checks behaviour; do not add family classes to clear the row.",
+      "compatibility": "compatible",
+      "migration": "A consumer that reads browser-commerce-structure:<page> must accept status warn with severity warn; the disposition is ready_with_exceptions as before. Refresh bundled skills to 1.45.0+skills.3 before starting a new agent session.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe the family shell and behaviour checks in browser-commerce-structure, and the bundle-display price row."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Say the checkout wrapper and composition stay source-owned and that QA checks behaviour, not family class names."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.45.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.45.0+skills.3 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.3 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.3 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.3 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.3 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Say QA checks the checkout behaviour, not family class names, and not to add family shell classes to the source layout; stamp bundle revision 1.45.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.3 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.3 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.3 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe the warn and fail rule for missing family shell selectors (a fixed list; hidden and disabled fields do not count as bound) and the bundle-display price row; stamp bundle revision 1.45.0+skills.3."
+        }
+      ],
+      "entry_sha256": "574683086b30857b1bddc9ff7af7c5f7f6faf804cd6e0e088d5b2c05b70cf847"
+    },
+    {
+      "id": "RL-0186",
+      "sequence": 178,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.4",
+      "changelog_sha256": "33b73c959086a63cc0b4b1b97ba21c66fc0631e9f856fa02a81a1f60bacf9b27",
+      "agent_impact": "qa install-browser, qa policy set and qa resolve no longer record deviations, and a deviation declared with --deviation-reason prints one confirming line. next quotes each ledger/artifact divergence inline, folded to one line. install-skills, the tooling status skill actions and the tooling diagnose recovery say to read the listed SKILL.md files in the current session, with a restart only as a fallback. The coverage error for an unmapped Figma page says the provenance gate needs the exporter's handoff manifest; for other pages it gives the manifest path, schema and a minimal hand-written entry. QA ignores the Netlify deploy-preview drawer loader script's failed request on Netlify preview pages (*.netlify.app or a deploy-preview-<n> subdomain). Bundled skills move to 1.45.0+skills.4.",
+      "compatibility": "compatible",
+      "migration": "Refresh bundled skills to 1.45.0+skills.4 with install-skills, then read the SKILL.md files it lists.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "The divergence_inspect action quotes each divergence (stage, ledger claim, artifact evidence) and says divergences[] is next --json output, not a file; the prepare-build recovery prompt quotes the same entries. Each quoted value is folded to one line with control characters replaced."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "install-skills",
+          "summary": "List each written SKILL.md under Read now (read_now[] in --json) with read-now-in-this-session guidance instead of a restart instruction."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "tooling",
+          "summary": "The tooling status install and refresh skill actions, and the tooling diagnose stale-skills recovery, say to read the SKILL.md files install-skills lists under Read now in the running session, and to restart the agent only if it cannot read them."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa install-browser, qa policy set and qa resolve record no deviation; a deviation with --deviation-reason prints one confirming line instead of the warning; QA ignores a failed request for the Netlify deploy-preview drawer's loader script (netlify-cdp-loader.netlify.app/netlify.js) only on pages whose final URL, after any redirect, is a Netlify preview host: a *.netlify.app host, or a deploy-preview-<n> or deploy-preview-<n>--<site> subdomain of a custom domain."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The source_html.pages.coverage error for an unmapped page with a Figma design_source says the Figma provenance gate needs the exporter's handoff manifest. For a page without one, it names the manifest path, schema file and a minimal hand-written page entry, unless another active page is Figma-sourced, when it names the provenance gate instead."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The design-source-aware coverage error section describes the Figma branch (provenance gate needs the exporter's handoff manifest) and the hand-written manifest hint for other pages."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.45.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.45.0+skills.4 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Give the standalone-HTML route (keep the document whole, wrapper_policy: preserve_document_wrappers) beside the wrapper-stripping conversion; stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "5f2e7b56e9659579272e02edf00a032e83a1e2917f56b28288ce9a13ab483361"
+    },
+    {
+      "id": "RL-0187",
+      "sequence": 179,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.5",
+      "changelog_sha256": "7dcc3c03c24eef015a9ebf621ce053b08e7447f10d3ffcfe2b063cbca58782aa",
+      "agent_impact": "doctor can report a new warning, built_output.sdk_markup.checkout_bump_is_upsell, when a checkout page carries data-next-is-upsell=\"true\" on an order bump; it does not block. The page type is the live next-page-type meta, or the route when that meta is absent, blank, inside a <template> or conflicting. Several starter bump includes write the flag unconditionally, so starter checkouts with a bump show it; to clear it, remove data-next-is-upsell=\"true\" from the bump include in the campaign unless the line should be billed as an upsell. theme generate now keeps a declared CTA label colour that reaches 3:1 on the CTA (reported as theme.foreground.low_contrast when under 4.5:1). The label is read, in order, from the one colour every button rule on the CTA background agrees on, a :root inverse or on-colour text token whose name has a text or foreground part (for example --text-inverse or --text-on-primary, never --border-on-primary), or the one colour all other button rules agree on; a ; or : inside quotes or parentheses, as in a data: URL in a background shorthand, no longer splits a button rule declaration; the same inverse and on-colour names, and only those, are the source inverse text token when the source is compared with scaffold defaults; a button rule targets button, input[type=submit], or a btn, button or cta class, judged only on the selector's own element, class and attribute parts (not attribute values or the arguments of :not(), :is(), :where() or :has()) and with no other pseudo-class, so .order-summary, .cart-count, .order-summary[data-target=\".btn\"], .cart:has(.button), [type=submit] or div[type=submit] never supply it. Body text comes from the darkest declared text token that reaches 4.5:1 on the body background, even when the source has no primary text token; inverse and on-colour label tokens (for example --text-color-inverse or --text-on-dark) and link, status and state colours (for example --text-link or --text-error) are never body text. Declarations inside CSS comments are no longer read, and inline <style> sources are hashed as before, so an existing brand-theme.css is not reported stale. Sources that declare neither generate the same CSS as before. docs/brand-theme-bridge.md says to load next-core.css and the brand layer only on pages where family components render.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The SDK markup check now receives each built page type and reads the live next-page-type meta first, so doctor warns with built_output.sdk_markup.checkout_bump_is_upsell on a checkout page whose order bump carries data-next-is-upsell=\"true\"."
         },
         {
           "class": "named_surface",
@@ -2951,7 +3614,7 @@
           "summary": "Document the declared CTA foreground order and which selectors count as button rules (judged on their own element, class and attribute parts, not attribute values or :not()/:is()/:where()/:has() arguments), the darkest-declared body text rule and the link, status and state names it excludes (commented-out declarations are not read), and that next-core.css and the brand layer belong only on pages where family components render, with report.theme.commerce_pages recording the scoped pages."
         }
       ],
-      "entry_sha256": "62a8aacb5d9899aa8e2abffcd36276fd183236689f01420dd1ece4a0ab55c5a1"
+      "entry_sha256": "5ab1528f5b3ac6596de5edccee6cdaea44aff19f27aea40ec5d9aced62087ce2"
     }
   ]
 }
