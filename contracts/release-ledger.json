@@ -2762,7 +2762,7 @@
       "kind": "release",
       "surface_version": "1.44.0",
       "changelog_section": "1.44.0",
-      "changelog_sha256": "439fc2b2d4c44d08065a4e9f09a7d7e2d80c470b837905a8eee32c3bb7ac4bcf",
+      "changelog_sha256": "b7d149524ff218e7f430eb44b8efa9ac409f868c3a3bd57d4c8be596c9426d1b",
       "agent_impact": "contracts/release-ledger.json now starts at a baseline floor: entries RL-0001 through RL-0124 moved unchanged to contracts/archive/release-ledger.2026-09-30.json, and every CHANGELOG.md section older than 1.37.0 moved verbatim to contracts/archive/CHANGELOG.2026-09-30.md. Those files hold that history and are not mandatory orientation reads. Read the live ledger's sequence from baseline_floor.last_archived_sequence + 1 (125), not from 1. A consumer whose reviewed baseline's newest ledger entry is older than RL-0124 must refuse with baseline_below_floor and adopt a newer reviewed baseline, at or after RL-0125; the archive holds the history.",
       "compatibility": "breaking",
       "migration": "Consumers: accept baseline_floor, start sequence checks at its last_archived_sequence + 1, and refuse with baseline_below_floor when the reviewed baseline's newest ledger entry is older than RL-0124; adopt a reviewed baseline at or after RL-0125. Update to the exact 1.44.0 package and refresh bundled skills to 1.44.0+skills.1 before starting a new agent session.",
@@ -2924,7 +2924,7 @@
           "summary": "Stamp bundle revision 1.44.0+skills.1 and advance the skill version one patch."
         }
       ],
-      "entry_sha256": "fae3d458ca1e1b463d7801f131b6f8ab16b163dd4f105f11b6ec3ad1b90f8bc5"
+      "entry_sha256": "90abe34e9eab389f0b516a7b22d62c4dfe19a37025ede78410a1aeab188d47ac"
     }
   ]
 }

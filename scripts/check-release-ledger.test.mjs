@@ -37,7 +37,8 @@ import {
   validateLedgerStructure,
   validateTwoWayGate,
 } from "./orientation-contract.mjs";
-import { measureRepositorySource, unionSurface } from "./check-release-ledger.mjs";
+import { measureRepositorySource, unionSurface, validateSectionHistory } from "./check-release-ledger.mjs";
+import { collectSectionIds } from "./check-changelog-structure.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const readJson = (path) => JSON.parse(readFileSync(join(root, path), "utf8"));
@@ -775,14 +776,15 @@ function fixtureEntry(sections, { id, sequence, date, section, surfaceVersion = 
 }
 
 function rotationBase(overrides = {}) {
-  const sections = parseChangelogSections(ROTATION_CHANGELOG);
+  const changelog = overrides.changelog ?? ROTATION_CHANGELOG;
+  const sections = parseChangelogSections(changelog);
   const entries = [
     fixtureEntry(sections, { id: "RL-0001", sequence: 1, date: "2026-02-01", section: "1.0.0", surfaceVersion: "1.0.0" }),
     fixtureEntry(sections, { id: "RL-0002", sequence: 2, date: "2026-02-02", section: "1.1.0", surfaceVersion: "1.1.0" }),
     fixtureEntry(sections, { id: "RL-0003", sequence: 3, date: "2026-02-03", section: "1.1.0+agent.1", ...(overrides.third ?? {}) }),
     fixtureEntry(sections, { id: "RL-0004", sequence: 4, date: "2026-02-04", section: "1.2.0", surfaceVersion: "1.2.0" }),
   ];
-  return { ledger: { schema_version: "campaigns-os-release-ledger/v1", entries }, changelog: ROTATION_CHANGELOG, files: new Map() };
+  return { ledger: { schema_version: "campaigns-os-release-ledger/v1", entries }, changelog, files: new Map() };
 }
 
 /** Rotate a fixture state at `cut` exactly the way a real rotation is authored. */
@@ -835,6 +837,8 @@ function rotationGate(base, head) {
       existedAtBase: (path) => base.files.has(path),
     }),
   );
+  const baseSectionIds = collectSectionIds(base.changelog, base.ledger, (path) => base.files.get(path) ?? null);
+  errors.push(...validateSectionHistory(baseSectionIds, parseChangelogSections(head.changelog), archive));
   return errors;
 }
 
@@ -1033,4 +1037,19 @@ test("the changelog cut takes the whole tail from the top of the first archived 
   });
   assert.deepEqual(parseChangelogSections(rotated.archiveChangelogText).map((section) => section.section_id), ["1.1.0+agent.1", "1.1.0", "1.0.0"]);
   assert.deepEqual(parseChangelogSections(rotated.liveChangelogText).map((section) => section.section_id), ["1.2.0"]);
+});
+
+test("an unlinked archived section moved back to the end of the live changelog fails, even with the floor re-hashed", () => {
+  const unlinked = "## [0.9.0] - 2026-01-31\n\n### Added\n\n- Unlinked fixture release.\n";
+  const base = rotationBase({ changelog: `${ROTATION_CHANGELOG}\n${unlinked}` });
+  const head = rotate(base);
+  assert.deepEqual(rotationGate(base, head), []);
+
+  const changelogPath = head.ledger.baseline_floor.archives[0].changelog_path;
+  const tampered = tamperArchive(head, changelogPath, (text) => text.replace(unlinked, ""));
+  const movedBack = { ...tampered, changelog: `${head.changelog}\n${unlinked}` };
+  assert.deepEqual(rotationGate(base, movedBack), [
+    `CHANGELOG.md: "0.9.0" is older than section "1.1.0+agent.1" in ${changelogPath} — every section in CHANGELOG.md is newer than every archived one, ` +
+      "and a newer archive's than an older one's: a rotation archives one contiguous tail through the end of the file, and a section never moves back out of an archive",
+  ]);
 });

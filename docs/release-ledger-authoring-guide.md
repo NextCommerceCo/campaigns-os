@@ -306,8 +306,12 @@ moved with a new rotation entry in the same range. Any other deletion, an
 archive copy that differs from base, a floor that moves without a rotation
 entry, a floor that moves back or is rewritten, and an edited archive file all
 fail. The live changelog and each archive changelog must each be well-formed on
-their own, a section id may appear in only one of them, and a section present
-at base must still be in one of them (`check-changelog-structure.mjs --base`
-and the `--base` release-ledger gate). The archive files are not mandatory
+their own, a section id may appear in only one of them, a section present
+at base must still be in one of them, and the live changelog followed by the
+archives, newest rotation first, must read as the base's sections in order
+with new sections only at the top of the live file. So every live section is
+newer than every archived one, and an archived section never moves back
+(`check-changelog-structure.mjs --base` and the `--base` release-ledger gate).
+The archive files are not mandatory
 orientation reads and are not measured; a consumer whose reviewed baseline is older than the floor refuses
 with `baseline_below_floor` and adopts a newer reviewed baseline.

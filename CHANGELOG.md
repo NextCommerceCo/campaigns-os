@@ -38,8 +38,12 @@ Notable supported-surface changes are recorded here.
   changelog as well-formed changelogs on their own, and refuses a section that
   appears in more than one of them. Given a base, it also refuses a section
   present at base that is in none of them, so a section can no longer be
-  deleted without a trace; the release-ledger gate's `--base` run applies the
-  same rule.
+  deleted without a trace. It also requires this file and the archives, read
+  newest first, to keep the base's section order with new sections only at the
+  top of this file: every section here must be newer than every archived one,
+  so a rotation archives one contiguous tail through the end of the file and an
+  archived section cannot move back. The release-ledger gate's `--base` run
+  applies the same rules.
 - Package and supported-surface version advance to 1.44.0 for the two schema
   hashes and the two new named archive files. The local setup install command
   pins 1.44.0. Bundled skills carry revision `1.44.0+skills.1`, with each skill

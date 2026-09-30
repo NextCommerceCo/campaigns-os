@@ -27,9 +27,12 @@
  * one of them. Invariant 4 holds for the live ledger against the live file;
  * archived entries' links are the release-ledger gate's job.
  *
- * With --base REF, one more invariant: every section present at the merge
+ * With --base REF, two more invariants: every section present at the merge
  * base (in its CHANGELOG.md or in an archive its floor names) is still in the
- * live file or an archive. A section is never deleted; a rotation moves it.
+ * live file or an archive, and the live file and the archives, read newest
+ * first, are the base's sequence with new sections only at the top. A section
+ * is never deleted; a rotation moves one contiguous tail, and nothing moves
+ * back out of an archive.
  *
  * Exit 1 with every violation listed; exit 0 otherwise.
  */
@@ -156,14 +159,76 @@ export function findDroppedSections(baseSectionIds, presentSectionIds) {
 }
 
 /**
- * Every section id in a tree: its CHANGELOG.md plus each archive changelog the
- * ledger's floor names. `readText(path)` returns a file's text or null.
+ * The contiguous-tail rule. Read newest first (CHANGELOG.md, then each archive
+ * changelog from the newest rotation back), the head's files must be the base
+ * reading with new sections only at the top of CHANGELOG.md. A rotation
+ * archives one contiguous tail through the end of the file, so every live
+ * section is newer at base than every archived one, and no section moves back
+ * out of an archive or changes place.
+ *
+ * `baseSectionIds` is the base's newest-first reading (collectSectionIds);
+ * `files` is the head's, newest first, as `{ path, ids }`. A section missing at
+ * head is findDroppedSections' to report, not this. Shared with
+ * check-release-ledger.mjs, like findDroppedSections.
+ */
+export function findSectionOrderViolations(baseSectionIds, files) {
+  const errors = [];
+  const baseIndex = new Map();
+  baseSectionIds.forEach((id, index) => {
+    if (!baseIndex.has(id)) baseIndex.set(id, index);
+  });
+  const rows = files.flatMap((file, rank) => file.ids.map((id) => ({ id, path: file.path, rank, index: baseIndex.get(id) })));
+  const known = rows.filter((row) => row.index !== undefined);
+
+  // New sections: in the live file, above everything base had.
+  const firstKnown = rows.findIndex((row) => row.index !== undefined);
+  rows.forEach((row, position) => {
+    if (row.index !== undefined) return;
+    if (row.rank !== 0) {
+      errors.push(`${row.path}: section "${row.id}" was not present at base — an archive holds moved history only`);
+    } else if (firstKnown !== -1 && position > firstKnown) {
+      errors.push(`${row.path}: section "${row.id}" is new since base but sits below "${rows[firstKnown].id}" — a new section goes at the top of ${CHANGELOG_PATH}`);
+    }
+  });
+
+  // Across files: every section in a newer file is newer at base than every
+  // section in an older one. This is what refuses an archived section moved
+  // back into CHANGELOG.md, and a cut that leaves a gap.
+  files.forEach((file, rank) => {
+    const older = known.filter((row) => row.rank > rank);
+    if (older.length === 0) return;
+    const newestOlder = older.reduce((newest, row) => (row.index < newest.index ? row : newest));
+    const misplaced = known.filter((row) => row.rank === rank && row.index > newestOlder.index);
+    if (misplaced.length === 0) return;
+    errors.push(
+      `${file.path}: ${misplaced.map((row) => `"${row.id}"`).join(", ")} ${misplaced.length === 1 ? "is" : "are"} older than section ` +
+        `"${newestOlder.id}" in ${newestOlder.path} — every section in ${CHANGELOG_PATH} is newer than every archived one, and a newer ` +
+        `archive's than an older one's: a rotation archives one contiguous tail through the end of the file, and a section never moves back out of an archive`,
+    );
+  });
+
+  // Within a file: base order holds.
+  files.forEach((file, rank) => {
+    const own = known.filter((row) => row.rank === rank);
+    for (let index = 1; index < own.length; index += 1) {
+      if (own[index].index < own[index - 1].index) {
+        errors.push(`${file.path}: section "${own[index].id}" sits below "${own[index - 1].id}" but was above it at base — sections keep their order`);
+      }
+    }
+  });
+  return errors;
+}
+
+/**
+ * Every section id in a tree, newest first: its CHANGELOG.md, then each archive
+ * changelog the ledger's floor names, newest rotation first. `readText(path)`
+ * returns a file's text or null.
  */
 export function collectSectionIds(changelogText, ledger, readText) {
   const { archive } = loadArchive(ledger, readText);
   return [
     ...parseChangelogSections(changelogText).map((section) => section.section_id),
-    ...(archive?.sections ?? []).map((section) => section.section_id),
+    ...[...(archive?.files ?? [])].reverse().flatMap((file) => file.sections.map((section) => section.section_id)),
   ];
 }
 
@@ -215,8 +280,14 @@ export function validateChangelogStructure({ changelogText, docs = [], ledgerEnt
     }
   }
 
-  // 5. Nothing present at base disappeared.
-  if (baseSectionIds) errors.push(...findDroppedSections(baseSectionIds, home.keys()));
+  // 5. Nothing present at base disappeared, and the files still read as base's
+  // sequence with new sections on top. `archives` is in floor order, oldest
+  // rotation first.
+  if (baseSectionIds) {
+    errors.push(...findDroppedSections(baseSectionIds, home.keys()));
+    const newestFirst = [files[0], ...files.slice(1).reverse()];
+    errors.push(...findSectionOrderViolations(baseSectionIds, newestFirst.map((file) => ({ path: file.path, ids: file.sections.map((section) => section.section_id) }))));
+  }
 
   return errors;
 }

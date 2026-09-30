@@ -64,7 +64,7 @@ import {
   validateLedgerStructure,
   validateTwoWayGate,
 } from "./orientation-contract.mjs";
-import { collectSectionIds, findDroppedSections } from "./check-changelog-structure.mjs";
+import { collectSectionIds, findDroppedSections, findSectionOrderViolations } from "./check-changelog-structure.mjs";
 import { ENVELOPE_FIXTURE_DIR } from "./generate-orientation-reference.mjs";
 
 // fileURLToPath, never URL.pathname — see check-supported-surface.mjs.
@@ -206,6 +206,23 @@ export function unionSurface(baseSurface, headSurface) {
     package_exports: merge("package_exports"),
     bin: merge("bin"),
   };
+}
+
+/**
+ * The head's changelog sections against the base's newest-first reading
+ * (collectSectionIds): none dropped, and live then archives, newest rotation
+ * first, still the base sequence with new sections on top. `archive` is the
+ * head's loadArchive result or null.
+ */
+export function validateSectionHistory(baseSectionIds, sections, archive) {
+  const headFiles = [
+    { path: CHANGELOG_PATH, ids: sections.map((section) => section.section_id) },
+    ...[...(archive?.files ?? [])].reverse().map((file) => ({ path: file.record.changelog_path, ids: file.sections.map((section) => section.section_id) })),
+  ];
+  return [
+    ...findDroppedSections(baseSectionIds, headFiles.flatMap((file) => file.ids)),
+    ...findSectionOrderViolations(baseSectionIds, headFiles),
+  ];
 }
 
 function ledgerAt(ref) {
@@ -368,11 +385,11 @@ async function validate(base) {
 
   // A changelog section present at base, live or archived, is never deleted:
   // the ledger only hashes the sections entries link, so this is what catches
-  // an unlinked one disappearing. Same rule as check-changelog-structure --base.
+  // an unlinked one disappearing. Nor does it place them, so the contiguous-tail
+  // rule is checked here too. Same rules as check-changelog-structure --base.
   if (gitSucceeds("cat-file", "-e", `${mergeBase}:${CHANGELOG_PATH}`)) {
     const readAtBase = (path) => (gitSucceeds("cat-file", "-e", `${mergeBase}:${path}`) ? git("show", `${mergeBase}:${path}`) : null);
-    const baseSectionIds = collectSectionIds(readAtBase(CHANGELOG_PATH), baseLedger, readAtBase);
-    errors.push(...findDroppedSections(baseSectionIds, [...sections, ...(archive?.sections ?? [])].map((section) => section.section_id)));
+    errors.push(...validateSectionHistory(collectSectionIds(readAtBase(CHANGELOG_PATH), baseLedger, readAtBase), sections, archive));
   }
 
   const surfaceBumped = Boolean(baseSurface?.surface_version) && baseSurface.surface_version !== surface.surface_version;

@@ -136,6 +136,40 @@ test("a section present at base must still be in the live file or an archive, li
   ]);
 });
 
+test("an archived section moved back into the live file is refused, even at the bottom of both files", () => {
+  // Rotation range: the base has no archive, the head archived the tail 1.1.0 .. 1.0.0.
+  const base = ["1.2.0", "1.1.0+agent.1", "1.1.0", "1.0.1", "1.0.0"];
+  const rotated = { changelogText: changelog("1.3.0", "1.2.0"), archives: [{ path: ARCHIVE, text: changelog("1.1.0+agent.1", "1.1.0", "1.0.1", "1.0.0") }] };
+  assert.deepEqual(validateChangelogStructure({ ...rotated, baseSectionIds: base }), []);
+
+  // The unlinked last section moved from the end of the archive to the end of the live file.
+  const movedBack = { changelogText: changelog("1.3.0", "1.2.0", "1.0.0"), archives: [{ path: ARCHIVE, text: changelog("1.1.0+agent.1", "1.1.0", "1.0.1") }] };
+  assert.deepEqual(validateChangelogStructure({ ...movedBack, baseSectionIds: base }), [
+    `CHANGELOG.md: "1.0.0" is older than section "1.1.0+agent.1" in ${ARCHIVE} — every section in CHANGELOG.md is newer than every archived one, ` +
+      "and a newer archive's than an older one's: a rotation archives one contiguous tail through the end of the file, and a section never moves back out of an archive",
+  ]);
+});
+
+test("the live file and the archives read as the base sequence with new sections on top", () => {
+  const base = ["1.3.0", "1.2.0", "1.1.0", "1.0.0"];
+  // A cut that leaves a gap: 1.2.0 archived, 1.1.0 kept.
+  const gap = validateChangelogStructure({ changelogText: changelog("1.3.0", "1.1.0"), archives: [{ path: ARCHIVE, text: changelog("1.2.0", "1.0.0") }], baseSectionIds: base });
+  assert.equal(gap.length, 1, gap.join("\n"));
+  assert.match(gap[0], /^CHANGELOG\.md: "1\.1\.0" is older than section "1\.2\.0" in contracts\/archive\/CHANGELOG\.2026-03-01\.md/);
+  // A new section below one that was there at base, and one written straight into an archive.
+  assert.deepEqual(
+    validateChangelogStructure({ changelogText: changelog("1.3.0", "1.2.1", "1.2.0"), archives: [{ path: ARCHIVE, text: changelog("1.1.1", "1.1.0", "1.0.0") }], baseSectionIds: base }),
+    [
+      'CHANGELOG.md: section "1.2.1" is new since base but sits below "1.3.0" — a new section goes at the top of CHANGELOG.md',
+      `${ARCHIVE}: section "1.1.1" was not present at base — an archive holds moved history only`,
+    ],
+  );
+  // Two sections swapped in place.
+  assert.deepEqual(validateChangelogStructure({ changelogText: changelog("1.4.0", "1.2.0", "1.3.0", "1.1.0", "1.0.0"), baseSectionIds: base }), [
+    'CHANGELOG.md: section "1.3.0" sits below "1.2.0" but was above it at base — sections keep their order',
+  ]);
+});
+
 test("--base refuses an unlinked section deleted since the merge base", () => {
   const dir = mkdtempSync(join(tmpdir(), "changelog-structure-base-"));
   const git = (...args) => execFileSync("git", ["-C", dir, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", ...args], { encoding: "utf8" });
