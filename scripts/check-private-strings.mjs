@@ -79,9 +79,11 @@ const forbidden = [
 // Real merchant, partner and product names must not appear in the public
 // package. They are listed as SHA-256 digests of the lowercased name, spaces
 // removed, so this public file does not itself publish them. Each file is
-// split into lowercase alphanumeric tokens; every token and every pair of
-// adjacent tokens joined together (for two-word names) is hashed and compared.
-// To add a name: printf %s "<name>" | tr -d ' ' | tr A-Z a-z | shasum -a 256
+// split into lowercase alphanumeric tokens; every run of 1 to
+// MAX_NAME_TOKENS adjacent tokens, joined, is hashed and compared, so a name
+// of up to four words matches however it is spaced or punctuated.
+// To add a name (up to four words):
+//   printf %s "<name>" | tr -cd '[:alnum:]' | tr A-Z a-z | shasum -a 256
 const forbiddenNameDigests = new Set([
   "c2c3ea48cb89889662a1b6cd117f2b3f143f355c775a0c79bcd46abbe0da8880",
   "c1d055b43d41642c66c2e36351d1091c0fe48c4e92d87b2bb747792928066a96",
@@ -99,18 +101,22 @@ const forbiddenNameDigests = new Set([
   "c8e02b6b4ace04008590c7928711319a558ddecfc53873b29ae494e6ca8430a7",
 ]);
 
-function sha256(value) {
+export function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function hasForbiddenName(text) {
-  const tokens = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+export const MAX_NAME_TOKENS = 4;
+
+export function hasForbiddenName(text, digests = forbiddenNameDigests) {
+  const tokens = String(text).toLowerCase().match(/[a-z0-9]+/g) ?? [];
   const seen = new Set();
   for (let i = 0; i < tokens.length; i += 1) {
-    for (const candidate of [tokens[i], i + 1 < tokens.length ? tokens[i] + tokens[i + 1] : null]) {
-      if (candidate === null || seen.has(candidate)) continue;
+    let candidate = "";
+    for (let n = 0; n < MAX_NAME_TOKENS && i + n < tokens.length; n += 1) {
+      candidate += tokens[i + n];
+      if (seen.has(candidate)) continue;
       seen.add(candidate);
-      if (forbiddenNameDigests.has(sha256(candidate))) return true;
+      if (digests.has(sha256(candidate))) return true;
     }
   }
   return false;
@@ -178,12 +184,17 @@ function walk(dir) {
   }
 }
 
-walk(root);
+function main() {
+  walk(root);
 
-if (hits.length) {
-  console.error("Forbidden private/internal strings found:");
-  for (const hit of hits) console.error(`- ${hit}`);
-  process.exit(1);
+  if (hits.length) {
+    console.error("Forbidden private/internal strings found:");
+    for (const hit of hits) console.error(`- ${hit}`);
+    process.exit(1);
+  }
+
+  console.log("Private string check passed");
 }
 
-console.log("Private string check passed");
+const invokedDirectly = process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname);
+if (invokedDirectly) main();
