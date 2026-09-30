@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-os
-version: 1.0.33
+version: 1.0.34
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
-Bundle revision: 1.45.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.45.0+skills.1`
+Bundle revision: 1.45.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.45.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -147,7 +147,7 @@ Rules:
 - Build Packet, Build Context, and Assembly Report paths should be repo-relative when possible so handoff artifacts can be committed without machine-local absolute paths.
 - Preserve Build Context `theme` inspection state and Assembly Report `theme` application state when present; they are public v0 contract fields and should not be dropped by wrappers, setup reruns, or repair passes.
 - Store Profile fields are operator-entered storefront/legal metadata for page-kit `campaigns.json`; they do not come from the Campaigns API and should be collected in the CampaignSpec before build.
-- Treat `campaigns-os checkpoint waive` as a staged generic registry, not a universal waiver command. This release registers Store Profile, the Page Kit SDK pin, `polish.hidden_eager_media`, and `built_output.upsell_selector_scope`. The broad Polish Source Freshness gate remains on its existing artifact handling, and theme/QA keep their existing `theme waive` / `qa waive` lanes until those gates are explicitly registered. A checkpoint waiver needs a named human, non-empty reason, and at least one future expiry or non-empty review condition; a waiver remains visible, applies only to its exact checkpoint state, and never turns the checkpoint into a clean pass. Hidden eager-media measurement completeness is never waivable.
+- Treat `campaigns-os checkpoint waive` as a staged generic registry, not a universal waiver command. This release registers Store Profile, the Page Kit SDK pin, `polish.hidden_eager_media`, `built_output.upsell_selector_scope`, and `source_html.producer_provenance`. The last is per page: `--gate source_html.producer_provenance --page <page_id>`, for a page whose `design_source` is Figma but whose approved source is hand-written HTML; its Figma-provenance errors drop to warnings marked `waived: true` while the manifest, wrapper-policy and screenshot-proof checks still apply. The broad Polish Source Freshness gate remains on its existing artifact handling, and theme/QA keep their existing `theme waive` / `qa waive` lanes until those gates are explicitly registered. A checkpoint waiver needs a named human, non-empty reason, and at least one future expiry or non-empty review condition; a waiver remains visible, applies only to its exact checkpoint state, and never turns the checkpoint into a clean pass. Hidden eager-media measurement completeness is never waivable.
 - Keep the lifecycle in a tight sequence. Pause only for missing inputs, doctor blockers, deploy blockers, out-of-scope runtime pages, or merchant-specific uncertainty.
 - `campaigns-os standardize` (tier `B`: it writes no artifact of its own, but the command-lifecycle journal append makes it a write) audits the campaign ecosystem read-only: it recognizes Page Kit roots and non-Page-Kit Campaign Cart applications (Vite/React/Express apps, static HTML funnels) via portable evidence, classifies each root (`implementation.kind`), validates checkout field bindings against the Campaign Cart field contract, and evaluates loader versions against the SDK support policy contract. Findings carry `confidence` (`static_contract`, `static_inference`, `runtime_proof_required`); treat `runtime_proof_required` findings as missing proof, never as confirmed defects, and route them to browser QA rather than static repair.
 - Launch readiness is separate from Campaigns OS proof. Surface production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration as real-shopper readiness items, not Campaigns OS build blockers.

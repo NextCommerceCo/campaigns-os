@@ -11,6 +11,8 @@ import {resolveConsent,CANONICAL_REMIT_SCOPE,normalizeConsentScope,announceDefau
 import {boundedResponseText,isLoopbackHostname} from './remit.mjs';
 export const PROGRESS_OBSERVATION = Symbol('canonical progress observation');
 export const PROGRESS_ENDPOINT = '/api/progress';
+// A projection keeps the first PROGRESS_GATE_LIMIT continuation gates (the snapshot schema's gates maxItems).
+export const PROGRESS_GATE_LIMIT = 16;
 const accepted = (value,values,fallback='unknown')=>values.includes(value)?value:fallback;
 const hash = value=>typeof value==='string'&&/^(?:sha256:)?[0-9a-f]{64}$/i.test(value)?`sha256:${value.replace(/^sha256:/i,'').toLowerCase()}`:null;
 const id = value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(value)?value:null;
@@ -56,7 +58,7 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
     binding:reportBound&&id(verdict.run_id)&&id(verdict.run_id)===id(report?.stages?.qa?.verdict_run_id)&&build&&qaSource===build&&doctor?.derived?.build_output_fingerprint?.status==='pass'&&hash(verdict.spec_hash)===localHash?'matching':'unconfirmed',
     publish_state:accepted(qaResult?.qa_verdict_publish?.state,['skipped','ok','failed']),
   }:null;
-  const gates=(Array.isArray(continuation?.gates)?continuation.gates:[]).slice(0,16).map(gate=>({id:accepted(gate?.id,PROGRESS_GATE_IDS),state:PROGRESS_GATE_IDS.includes(gate?.id)?accepted(gate?.status,['pass','blocked','waived','not_applicable']):'unknown'}));
+  const gates=(Array.isArray(continuation?.gates)?continuation.gates:[]).slice(0,PROGRESS_GATE_LIMIT).map(gate=>({id:accepted(gate?.id,PROGRESS_GATE_IDS),state:PROGRESS_GATE_IDS.includes(gate?.id)?accepted(gate?.status,['pass','blocked','waived','not_applicable']):'unknown'}));
   const actions=[...new Set((Array.isArray(continuation?.next_actions)?continuation.next_actions:[]).slice(0,64).map(action=>accepted(action?.id,PROGRESS_ACTION_IDS)))];
   const stage=accepted(continuation?.stage,PROGRESS_CONTINUATIONS);
   const preview=typeof packet?.deploy?.preview_url==='string'&&packet.deploy.preview_url?packet.deploy.preview_url:null;

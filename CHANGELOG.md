@@ -2,6 +2,67 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.45.0+agent.2] - 2026-09-30
+
+### Added
+
+- `checkpoint waive` registers a fifth gate, `source_html.producer_provenance`,
+  waived one page at a time with `--page <page_id>` (#534). It is for a
+  CampaignSpec page whose `design_source` is Figma but whose approved source
+  is hand-written HTML, so no figma-sections-export provenance exists. The
+  usual rules apply: a named human, a reason, and an expiry or review
+  condition, and `--dry-run` writes nothing. `--page` must name an active page
+  with a Figma design source; any other id is refused, and the refusal lists
+  the pages that qualify. The `<gate>:<page_id>` form is refused with the
+  `--page` spelling to use instead.
+
+### Changed
+
+- Doctor reports one `source_html.producer_provenance` checkpoint gate per
+  Figma-typed page, and reports the Figma-export findings (the
+  `source_html.producer_provenance*` codes, `source_html.files.partial` and
+  `source_html.files.asset`) once per such page, naming it in
+  `detail.page_id`. A waived page's findings are warnings carrying
+  `waived: true`; an unwaived page's findings stay errors. When every blocker
+  is waived, doctor and `next` report `ready_with_waivers`. An expired, stale
+  or malformed waiver no longer applies. Manifest validation, wrapper-policy
+  and source-preparation findings, page mappings and screenshot proof keep
+  their severity.
+- When the manifest's generator names figma-sections-export in any form (with
+  or without an `@<version>`, in any case, with surrounding whitespace), the
+  findings stay manifest-wide errors, each page's gate reports `blocked` with
+  the code `source_html.producer_provenance.exporter_claim` and the repair
+  action, and `checkpoint waive` refuses the gate. Such a generator also makes
+  doctor check Figma provenance even when no page has a Figma design source;
+  before, only the `figma-sections-export@<version>` spelling did.
+- A waiver for a page that no longer has a Figma design source, or one under a
+  manifest whose generator claims figma-sections-export, is reported as the
+  warning `source_html.producer_provenance.waiver_inert`.
+- `next` lists the per-page `source_html.producer_provenance` gates after
+  `theme_gate` and `polish_gate`, so the progress snapshot, which keeps the
+  first 16 gates, always carries the campaign-wide gates.
+- `tooling diagnose` exports `source_html.producer_provenance`, its
+  `.source_type`, `.screenshot_fallback_used`, `.semantic_section_count`,
+  `.material_fingerprint`, `.section_exports` and `.waiver_inert` codes as
+  their own reason ids; before, each exported as
+  `diagnostic.unsupported_reason`.
+- The missing-mapping error for a Figma-typed page now also names the
+  hand-written HTML route and the `checkpoint waive` command.
+  `docs/design-source-package.md` documents the route: a hand-written
+  manifest, `wrapper_policy: preserve_document_wrappers` for full-document
+  HTML, and the per-page waiver.
+- Bundled skills carry revision `1.45.0+skills.2`, with each skill version
+  advanced one patch. The lifecycle skill lists the new gate.
+
+### Fixed
+
+- `checkpoint waive` refuses each value-taking flag (`--packet`, `--gate`,
+  `--page`, `--reason`, `--waived-by`, `--expires-at`, `--review-condition`,
+  `--report`) when it is given without a value or with an empty one, naming
+  the flag. Before, a bare `--review-condition` was recorded as the condition
+  `true`, supplying a bound nobody wrote, and a bare `--report` was read as a
+  report path named `true`.
+
 ## [1.45.0+agent.1] - 2026-09-30
 
 ### Changed
