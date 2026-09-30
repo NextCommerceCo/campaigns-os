@@ -18,6 +18,18 @@ import { basename, join, relative, sep } from "node:path";
 
 const HTML_EXT = ".html";
 
+// The route tokens inferPageType reads for the funnel roles, exported so a
+// caller can tell which token produced a guess (#529: an explicit "upsell"
+// word is a stronger signal than "oto"). Tested against the lower-cased,
+// trimmed route.
+export const ROUTE_TOKENS = Object.freeze({
+  downsell: /down[\s_/-]*sell/,
+  upsell: /up[\s_/-]*sell/,
+  one_time_offer: /(^|[\s_/-])oto([\s_/-]|\d|$)|one[\s_/-]*time[\s_/-]*offer/,
+  receipt: /thank|receipt|confirm(ation)?|order[\s_/-]*complete/,
+  checkout: /checkout|\bcart\b|\border\b/,
+});
+
 // Funnel page-type inference from a built route or filename. Order matters:
 // downsell is tested before upsell, and the broad fallbacks (landing/page) run
 // last. Returns one of the page types QA understands; "page" for generic
@@ -25,10 +37,10 @@ const HTML_EXT = ".html";
 export function inferPageType(routeOrName) {
   const value = String(routeOrName || "").toLowerCase().trim();
   if (value === "" || value === "/" || value === "index") return "landing";
-  if (/down[\s_/-]*sell/.test(value)) return "downsell";
-  if (/up[\s_/-]*sell|(^|[\s_/-])oto([\s_/-]|\d|$)|one[\s_/-]*time[\s_/-]*offer/.test(value)) return "upsell";
-  if (/thank|receipt|confirm(ation)?|order[\s_/-]*complete/.test(value)) return "receipt";
-  if (/checkout|\bcart\b|\border\b/.test(value)) return "checkout";
+  if (ROUTE_TOKENS.downsell.test(value)) return "downsell";
+  if (ROUTE_TOKENS.upsell.test(value) || ROUTE_TOKENS.one_time_offer.test(value)) return "upsell";
+  if (ROUTE_TOKENS.receipt.test(value)) return "receipt";
+  if (ROUTE_TOKENS.checkout.test(value)) return "checkout";
   // The two-step bundle-selection step. Deliberately narrow, and anchored on
   // BOTH ends: the route must *be* about choosing a bundle, not merely contain
   // the words. An editorial "/our-choose-bundle-guide/" stays generic rather
