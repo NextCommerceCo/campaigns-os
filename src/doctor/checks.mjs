@@ -1545,7 +1545,7 @@ export function validateSpecHostPrefixedRoutes(spec, packet, errors, ready, deri
     errors,
     "routing_meta.host_prefixed",
     `CampaignSpec route value(s) carry a host in front of the path, so every page URL built from them nests the host inside the campaign route: ${sample}${more}. `
-      + `Use the rooted form shown after each arrow: edit a local CampaignSpec file to that value (intake never rewrites it); for a saved Map, --cached-spec reuses the fetched copy as it is, so re-run prepare-build (or start) with --map-id: re-run without --cached-spec so the Map is fetched and normalised (the host is stripped and recorded as ${HOST_STRIPPED_CODE} on the assembly report), or correct the value in the Map.`,
+      + `Use the rooted form shown after each arrow: edit a local CampaignSpec file to that value (intake never rewrites it); for a saved Map, re-run prepare-build (or start) with --map-id and without --cached-spec so the Map is fetched and normalised (the host is stripped and recorded as ${HOST_STRIPPED_CODE} on the assembly report), or correct the value in the Map.`,
     { routes: hits }
   );
 }

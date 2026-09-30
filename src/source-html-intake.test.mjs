@@ -1028,7 +1028,7 @@ for (const [label, link] of [
       const blocker = (result.json.doctor?.errors || []).find((issue) => issue.code === "routing_meta.host_prefixed");
       assert.ok(blocker, JSON.stringify((result.json.doctor?.errors || []).map((issue) => issue.code)));
       assert.match(blocker.message, /upsell:page_url "shop\.example\.com\/runtime-packet-demo\/upsell\/" -> "\/runtime-packet-demo\/upsell\/"/);
-      assert.match(blocker.message, /re-run without --cached-spec so the Map is fetched and normalised/);
+      assert.match(blocker.message, /re-run prepare-build \(or start\) with --map-id and without --cached-spec so the Map is fetched and normalised/);
     });
   });
 }
@@ -1076,6 +1076,103 @@ syncBuiltinESMExports();
     assert.notEqual(result.status, 0, result.stderr);
     assert.match(result.stderr, /simulated assembly report publish failure/);
     assert.deepEqual(readJson(cachedSpecPath(targetRepo, mapId)), served, "the copy holds the values as fetched");
+    assert.equal(result.stderr.includes("rewrote the fetched copy"), false, result.stderr);
+  });
+});
+
+// A preload whose fs.renameSync runs `hook(from, to, renameSync)` before each
+// rename; a hook that returns true has made the rename itself.
+function renameHookPreload(dir, name, hook, prefix = "") {
+  const preload = join(dir, name);
+  writeFileSync(preload, `${prefix}
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const renameSync = fs.renameSync;
+const hook = ${hook};
+fs.renameSync = (from, to) => {
+  if (hook(String(from), String(to), renameSync) === true) return undefined;
+  return renameSync(from, to);
+};
+syncBuiltinESMExports();
+`);
+  return preload;
+}
+
+function assemblyReportsUnder(dir) {
+  return readdirSync(dir, { recursive: true }).filter((path) => String(path).endsWith("assembly-report.json"));
+}
+
+test("start prints no host-prefixed notice for a local spec when publishing the assembly report fails", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    writeJson(specPath, hostPrefixSpec(specPath));
+    const preload = renameHookPreload(dir, "publish-fails.mjs", `(from, to) => {
+  if (to.endsWith("assembly-report.json")) throw Object.assign(new Error("simulated assembly report publish failure"), { code: "EIO" });
+}`);
+    const result = runCliRaw(["start", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session"], { preload });
+
+    assert.notEqual(result.status, 0, result.stderr);
+    assert.match(result.stderr, /simulated assembly report publish failure/);
+    assert.equal(result.stderr.includes("host-prefixed route"), false, result.stderr);
+  });
+});
+
+// The cache entry turns into a symlink after the fetch is cached but before
+// prepare-build rewrites it: the check runs before the report is published,
+// so no report records hosts as stripped from a copy that was never rewritten.
+test("start --map-id stops before publishing the assembly report when the cached copy cannot be rewritten", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const served = hostPrefixSpec(specPath);
+    const mapId = served.spec_identity.map_id;
+    const cachePath = cachedSpecPath(targetRepo, mapId);
+    const external = join(dir, "operator-spec.json");
+    const fetchPreload = mapFetchPreload(dir, served);
+    const preload = renameHookPreload(dir, "swap-cache.mjs", `(() => {
+  let swapped = false;
+  return (from, to, renameSync) => {
+    if (swapped || to !== ${JSON.stringify(cachePath)}) return;
+    swapped = true;
+    // The fetch lands outside the target, and the entry becomes a link to it.
+    renameSync(from, ${JSON.stringify(external)});
+    fs.symlinkSync(${JSON.stringify(external)}, to);
+    return true;
+  };
+})()`, readFileSync(fetchPreload, "utf8"));
+    const result = runCliRaw(["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session"], { preload });
+
+    assert.notEqual(result.status, 0, result.stderr);
+    assert.match(result.stderr, /Refusing to write the fetched CampaignSpec: .* is a symlink/);
+    assert.deepEqual(assemblyReportsUnder(dir), [], "no assembly report records routing_meta.host_stripped");
+    assert.equal(result.stderr.includes("rewrote the fetched copy"), false, result.stderr);
+    assert.deepEqual(readJson(external), served, "the linked file holds the values as fetched");
+  });
+});
+
+// The rewrite itself fails after the report is out (the residual race): one
+// line says the report and the cached copy disagree, and the run fails.
+test("start --map-id says the report records stripped hosts the cached copy lacks when the rewrite fails after publishing", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const served = hostPrefixSpec(specPath);
+    const mapId = served.spec_identity.map_id;
+    const cachePath = cachedSpecPath(targetRepo, mapId);
+    const fetchPreload = mapFetchPreload(dir, served);
+    const preload = renameHookPreload(dir, "rewrite-fails.mjs", `(() => {
+  let published = false;
+  return (from, to) => {
+    if (to.endsWith("assembly-report.json")) published = true;
+    else if (published && to === ${JSON.stringify(cachePath)}) throw Object.assign(new Error("simulated cache rewrite failure"), { code: "EIO" });
+    return false;
+  };
+})()`, readFileSync(fetchPreload, "utf8"));
+    const result = runCliRaw(["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session"], { preload });
+
+    assert.notEqual(result.status, 0, result.stderr);
+    const lines = result.stderr.split("\n").filter((line) => line.includes("was not rewritten"));
+    assert.equal(lines.length, 1, result.stderr);
+    assert.match(lines[0], /records the stripped host\(s\) as routing_meta\.host_stripped, but the cached spec .* was not rewritten.*simulated cache rewrite failure/);
+    assert.deepEqual(readJson(cachePath), served, "the copy holds the values as fetched");
+    const [reportFile] = assemblyReportsUnder(dir);
+    assert.ok(reportFile, "the assembly report was published");
+    assert.equal(readJson(join(dir, reportFile)).evidence.length, 2);
     assert.equal(result.stderr.includes("rewrote the fetched copy"), false, result.stderr);
   });
 });

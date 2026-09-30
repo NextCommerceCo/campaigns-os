@@ -17,9 +17,13 @@ Notable supported-surface changes are recorded here.
   published, it writes the rooted values to the fetched copy under
   `.campaign-runtime/fetched-specs/`; the report's `evidence[]` records each
   change as `routing_meta.host_stripped` with the value the Map returned in
-  `from`, and one line on stderr says so. If publishing fails, the copy is
-  left as fetched. A spec with no host-prefixed value is handled exactly as
-  before.
+  `from`, and one line on stderr says so. The run first checks that the
+  fetched copy can be rewritten (it is not a symlink) and stops before
+  publishing the report if it cannot. If publishing fails, the copy is left
+  as fetched. If the rewrite itself fails after the report is published, one
+  line on stderr says the report records the stripped hosts but the cached
+  spec was not rewritten, and the run fails. A spec with no host-prefixed
+  value is handled exactly as before.
 - A dotted first segment ending in a page or script extension (`html`, `htm`,
   `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi`), such as
   `index.php/checkout/`, is a route, not a host.

@@ -2027,8 +2027,12 @@ function prepareBuildUnderLock({
   // Values a spec left as it is still holds that doctor blocks on. An
   // absolute http(s) page_url is not among them: projection takes its path.
   const unstrippedHostRoutes = strippedSpecBytes == null
-    ? hostStripped.evidence.filter((entry) => parseHostPrefixedRoute(entry.from, { keepAbsolute: true }))
+    ? hostStripped.evidence.filter((entry) => parseHostPrefixedRoute(entry.from.trim(), { keepAbsolute: true }))
     : [];
+  // A cache that cannot be rewritten stops the run before the report that
+  // records the stripped hosts is published.
+  if (strippedSpecBytes != null) assertFetchedSpecCacheWritable(targetRepo, specPath);
+  publication.publish({ packet, brief: buildBrief.artifact, context, report });
   if (unstrippedHostRoutes.length) {
     const changes = unstrippedHostRoutes.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
     console.warn(specSource === "cache"
@@ -2037,13 +2041,19 @@ function prepareBuildUnderLock({
       : `[campaigns-os prepare-build] the spec file ${specPath} holds ${unstrippedHostRoutes.length} host-prefixed route value(s) and must be edited to the rooted form: ${changes}; `
         + "it was not changed, and doctor blocks with routing_meta.host_prefixed until it is edited.");
   }
-  publication.publish({ packet, brief: buildBrief.artifact, context, report });
   // Only now that the report holding the evidence is out: a failed publish
   // leaves the copy exactly as fetched, so the rooted copy never exists
   // without the record of what it replaced.
   if (strippedSpecBytes != null) {
-    assertFetchedSpecCacheWritable(targetRepo, specPath);
-    replaceFetchedSpec(specPath, strippedSpecBytes);
+    try {
+      replaceFetchedSpec(specPath, strippedSpecBytes);
+    } catch (error) {
+      console.warn(
+        `[campaigns-os prepare-build] the assembly report ${reportPath} records the stripped host(s) as ${HOST_STRIPPED_CODE}, `
+        + `but the cached spec ${specPath} was not rewritten and still holds the values as fetched: ${error.message}`,
+      );
+      throw error;
+    }
     const changes = hostStripped.evidence.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
     console.warn(
       `[campaigns-os prepare-build] removed the host from ${hostStripped.evidence.length} CampaignSpec route value(s) and rewrote the fetched copy ${specPath}: ${changes}; `
