@@ -3,7 +3,8 @@
  * profile fields introduced in Slice 4f.
  *
  * 1. campaign.store_phone_tel must be a `tel:`-prefixed URI containing
- *    a digit-shaped number when present. An empty (or whitespace-only)
+ *    a digit-shaped number when present. Absent or null means "not
+ *    provided" and is silent. An empty (or whitespace-only)
  *    string is not a defect: for the nine Store Profile fields an explicit
  *    "" says the merchant has no such value, and `page-kit sync` blanks
  *    the starter's demo value with it. The build wires this value
@@ -52,8 +53,8 @@ export const StoreProfileShape: Rule = {
     const violations: Violation[] = []
     const campaign = spec.campaign
 
-    // 1. tel: prefix on store_phone_tel.
-    if (campaign?.store_phone_tel !== undefined) {
+    // 1. tel: prefix on store_phone_tel. Absent or null means "not provided".
+    if (campaign?.store_phone_tel !== undefined && campaign?.store_phone_tel !== null) {
       const value = campaign.store_phone_tel
       if (typeof value !== 'string') {
         violations.push({

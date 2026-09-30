@@ -403,3 +403,40 @@ test("a whitespace-only spec value is authoritative-empty, the same as an empty 
   const filled = evaluate(spec, profile());
   assert.equal(filled.matrix.find((row) => row.field === "store_privacy").kind, "target_only");
 });
+
+test("the gate names intentionally empty fields and a spec \"\" it did not apply in a target_only state too", () => {
+  const spec = { ...profile(), store_terms: "", store_phone: "" };
+  const target = { ...profile(), store_phone: "" };
+  const gate = evaluate(spec, target);
+  assert.equal(gate.code, "page_kit.store_profile.target_only");
+  assert.deepEqual(gate.warning_fields, ["store_terms"]);
+  assert.match(gate.reason, /target-only value\(s\): store_terms\./);
+  assert.match(gate.reason, /sets campaign\.store_terms to "" \(none\), but the target holds a real, non-demo value there; page-kit sync blanks only a recognised starter demo value, so it did not apply the ""\. Remove the value from _data\/campaigns\.json\[merchant\] by hand/);
+  assert.match(gate.reason, /Intentionally empty per the CampaignSpec: store_phone\./);
+
+  // A target_only value the spec does not carry at all gets no such note.
+  const absent = evaluate({ ...profile(), store_terms: null }, profile());
+  assert.equal(absent.reason, "Target Store Profile has target-only value(s): store_terms.");
+});
+
+test("a spec \"\" over a malformed target value repairs by hand, not by adding the field to the spec", () => {
+  const gate = evaluate({ ...profile(), store_returns: "" }, { ...profile(), store_returns: 42 });
+  assert.equal(gate.status, "blocked");
+  const repair = gate.required_actions.find((action) => action.id === "repair_target");
+  assert.equal(repair.kind, "edit");
+  assert.doesNotMatch(repair.description, /does not carry/);
+  assert.doesNotMatch(repair.description, /add campaign\.store_returns to the spec/);
+  assert.match(repair.description, /Remove or correct _data\/campaigns\.json\[merchant\]\.store_returns by hand: the CampaignSpec sets campaign\.store_returns to "" \(none\), but page-kit sync blanks only a recognised starter demo value/);
+
+  // An absent spec field keeps the base wording.
+  const absent = evaluate({ ...profile(), store_returns: null }, { ...profile(), store_returns: 42 });
+  assert.match(absent.required_actions.find((action) => action.id === "repair_target").description, /the CampaignSpec does not carry this field/);
+});
+
+test("an intentionally empty store_url is named as still required", () => {
+  const gate = evaluate({ ...profile(), store_url: "" }, { ...profile(), store_url: "" });
+  assert.equal(gate.matrix.find((row) => row.field === "store_url").kind, "intentionally_empty");
+  assert.match(gate.reason, /Intentionally empty per the CampaignSpec: store_url\. campaign\.store_url is still required, so doctor's spec\.store_profile check blocks on an empty store_url\./);
+  const optional = evaluate({ ...profile(), store_terms: "" }, { ...profile(), store_terms: "" });
+  assert.doesNotMatch(optional.reason, /still required/);
+});

@@ -86,7 +86,7 @@ import {
   currentBuildFingerprint,
 } from "../polish-gate.mjs";
 import { loadPageKitCampaignEntry, projectPageKitCampaignLoad } from "../page-kit-campaign-config.mjs";
-import { evaluatePageKitStoreProfile, PAGE_KIT_STORE_PROFILE_SCOPE } from "../page-kit-store-profile.mjs";
+import { evaluatePageKitStoreProfile, PAGE_KIT_STORE_PROFILE_SCOPE, storeProfileIntentionallyEmptyNote } from "../page-kit-store-profile.mjs";
 import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-kit-sdk-version.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
@@ -884,7 +884,10 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready, { packet
     addIssue(
       errors,
       "spec.store_profile",
-      `CampaignSpec campaign is missing required Store Profile field for page-kit campaigns.json: ${missing.join(", ")}. Add ${missing.map((field) => `campaign.${field}`).join(", ")} to the CampaignSpec Store Profile, then rerun start/prepare-build. Campaigns OS does not infer or silently mutate these storefront/legal values.`,
+      `CampaignSpec campaign is missing required Store Profile field for page-kit campaigns.json: ${missing.join(", ")}. Add ${missing.map((field) => `campaign.${field}`).join(", ")} to the CampaignSpec Store Profile, then rerun start/prepare-build. Campaigns OS does not infer or silently mutate these storefront/legal values.`
+        + (missing.some((field) => typeof campaign[field] === "string")
+          ? ` An explicit "" does not mark a required field as having none; it does so only for the eight optional Store Profile fields.`
+          : ""),
       {
         missing_fields: missing.map((field) => `campaign.${field}`),
         repair: {
@@ -1231,7 +1234,7 @@ function validateTargetStoreProfile(spec, errors, warnings, ready, derived, buil
   }
   const intentionallyEmpty = gate.matrix.filter((row) => row.kind === "intentionally_empty").map((row) => row.field);
   ready.push("Target campaigns.json Store Profile matches the CampaignSpec across all nine governed fields."
-    + (intentionallyEmpty.length ? ` Intentionally empty per the CampaignSpec: ${intentionallyEmpty.join(", ")}.` : ""));
+    + storeProfileIntentionallyEmptyNote(intentionallyEmpty));
 }
 
 function validateSpecShippingCountries(spec, warnings, ready) {

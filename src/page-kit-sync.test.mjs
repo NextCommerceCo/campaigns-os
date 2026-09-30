@@ -887,6 +887,7 @@ test("planPageKitSync blanks only demo values in fields the spec sets to an empt
   assert.equal(change(configured, "store_terms"), undefined);
   assert.equal(change(configured, "store_contact"), undefined);
   assert.deepEqual(configured.not_in_spec, ["store_terms", "store_privacy", "store_contact", "store_returns"]);
+  assert.deepEqual(configured.spec_empty_not_applied, ["store_terms", "store_contact"]);
   const entry = { ...NON_DEMO_ENTRY };
   applyPageKitSync({ route: entry }, "route", configured);
   for (const field of ["store_terms", "store_privacy", "store_contact", "store_returns"]) {
@@ -929,6 +930,34 @@ test("page-kit sync leaves a real target value the spec sets to \"\" in place, a
     assert.ok(synced.not_in_spec.includes("store_terms"));
     assert.equal(readJson(campaignsPath)[slug].store_terms, "https://shop.example.com/terms");
     assertTargetOnly();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("page-kit sync and doctor say a spec \"\" over a real target value was not applied, and still name the intentionally empty fields", () => {
+  const { dir, packetPath } = fixture({
+    entry: { ...SCAFFOLD_ENTRY, ...SPEC_TARGET_MATCH, sdk_version: "0.4.36", store_terms: "https://shop.example.com/terms", store_privacy: "" },
+    spec: (spec) => {
+      spec.campaign.store_terms = "";
+      spec.campaign.store_privacy = "";
+    },
+  });
+  try {
+    const synced = pageKitSyncCommand({ _: ["page-kit", "sync"], packet: packetPath });
+    assert.equal(synced.status, "unchanged");
+    // The machine list keeps its base contents; the new list names why.
+    assert.ok(synced.not_in_spec.includes("store_terms"));
+    assert.deepEqual(synced.spec_empty_not_applied, ["store_terms"]);
+    const lines = pageKitSyncTextLines(synced);
+    assert.equal(lines.some((line) => line.startsWith("Not in spec") && line.includes("store_terms")), false, lines.join("\n"));
+    assert.ok(lines.includes('Spec "" not applied (the target holds a real, non-demo value; sync blanks only a starter demo value, so remove it by hand if the merchant has none): store_terms'), lines.join("\n"));
+
+    // Doctor's target_only warning carries both notes, not just the warning.
+    const result = doctorPacket(packetPath);
+    const warning = result.warnings.find((issue) => issue.code === "page_kit.store_profile.target_only");
+    assert.match(warning.message, /sets campaign\.store_terms to "" \(none\), but the target holds a real, non-demo value there; page-kit sync blanks only a recognised starter demo value, so it did not apply the ""/);
+    assert.match(warning.message, /Intentionally empty per the CampaignSpec: store_privacy\./);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -26,19 +26,23 @@ export const PAGE_KIT_SYNC_FIELDS = Object.freeze([...PAGE_KIT_STORE_PROFILE_FIE
 
 // The field-by-field plan: what the entry holds, what the spec says, and
 // whether a write is owed. `changes` are the fields whose value will move,
-// `unchanged` already match, `not_in_spec` are governed fields the spec does
-// not carry (left as they are; doctor's `target_only` warning still applies),
-// and `not_synced` are fields the target cannot be made authoritative for: an
-// invalid or conflicting spec SDK pin, a spec value of the wrong type or
-// shape (or the demo value itself), or starter demo residue in a field the
-// spec does not carry. Absent and null spec values are "not carried"; an
-// explicit empty (or whitespace-only) string blanks the starter demo value and
-// otherwise leaves the target as it is.
+// `unchanged` already match, `not_in_spec` are governed fields left as they
+// are because the spec does not carry them or because its "" was not applied
+// (doctor's `target_only` warning still applies), and `not_synced` are fields
+// the target cannot be made authoritative for: an invalid or conflicting spec
+// SDK pin, a spec value of the wrong type or shape (or the demo value itself),
+// or starter demo residue in a field the spec does not carry. Absent and null
+// spec values are "not carried"; an explicit empty (or whitespace-only) string
+// blanks the starter demo value and otherwise leaves the target as it is.
+// `spec_empty_not_applied` names that last case, the not_in_spec fields the
+// spec sets to "" over a real, non-demo target value, which only a hand edit
+// removes.
 export function planPageKitSync({ spec, entry, waivedGates = [] } = {}) {
   const target = entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {};
   const changes = [];
   const unchanged = [];
   const notInSpec = [];
+  const specEmptyNotApplied = [];
   const notSynced = [];
   // A gate under an ACTIVE named-human waiver recorded a human accepting the
   // target's current values; sync must not silently reverse that decision.
@@ -85,6 +89,7 @@ export function planPageKitSync({ spec, entry, waivedGates = [] } = {}) {
         });
       } else {
         notInSpec.push(field);
+        if (authoritativeEmpty) specEmptyNotApplied.push(field);
       }
       continue;
     }
@@ -144,7 +149,7 @@ export function planPageKitSync({ spec, entry, waivedGates = [] } = {}) {
     });
   }
 
-  return { changes, unchanged, not_in_spec: notInSpec, not_synced: notSynced };
+  return { changes, unchanged, not_in_spec: notInSpec, spec_empty_not_applied: specEmptyNotApplied, not_synced: notSynced };
 }
 
 // Apply a plan to the parsed campaigns.json document. Mutates ONLY the

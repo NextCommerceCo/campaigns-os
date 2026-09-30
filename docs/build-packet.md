@@ -113,13 +113,21 @@ assembly is terminal, or the target output already exists, missing or malformed
 target evidence is a non-waivable blocker. Target-only values remain warnings.
 Mismatches, missing required target values, and known demo residue block.
 An absent or null spec field means "not provided". An explicit empty (or
-whitespace-only) string in one of the nine fields means the merchant has no
-such value: `page-kit sync` blanks a recognised starter demo value (the placeholder storefront URLs and phone number; the starter's demo store name is not recognised and stays a `target_only` warning) with it, and a
-blank or absent target field then reads as `intentionally_empty` (clean, and
-named in the pass reason). A real, non-demo target value against a spec `""`
-is left as it is and stays a `target_only` warning, because Maps saved `""`
-for every cleared store field before it meant empty. An empty string outside
-these nine fields carries no such meaning.
+whitespace-only) string in one of the eight optional fields (`store_name`,
+`store_terms`, `store_privacy`, `store_contact`, `store_returns`,
+`store_shipping`, `store_phone`, `store_phone_tel`) means the merchant has no
+such value: `page-kit sync` blanks a recognised starter demo value with it
+(the placeholder storefront URLs and phone number; the starter's demo store
+name is not recognised and stays a `target_only` warning), and a blank or
+absent target field then reads as `intentionally_empty` (clean, and named in
+the gate reason and the doctor line). `campaign.store_url` stays required: a
+`""` there still raises doctor's `spec.store_profile` error, and the gate
+reason says so. A real, non-demo target value against a spec `""` is left as
+it is and stays a `target_only` warning, because Maps saved `""` for every
+cleared store field before it meant empty; the warning and the sync output
+(`spec_empty_not_applied[]`) say the `""` was not applied, so remove that value
+by hand if the merchant has none. An empty string outside these fields
+carries no such meaning.
 Demo residue (a `demo.29next.com` URL or the demo phone number still in the
 target) is never waivable: the gate names the residue fields, offers no waive
 command for them, and `checkpoint waive` refuses with those fields until the
@@ -152,9 +160,13 @@ the SDK version checkpoint below). Both go into `_data/campaigns.json[public_rou
 prints a field-by-field before/after diff, and touches nothing else: a
 governed field the spec does not carry (absent or null) is left as it is
 (doctor's `target_only` warning still applies), a field the spec sets to `""`
-(or whitespace only) blanks a recognised starter demo value (the placeholder storefront URLs and phone number; the starter's demo store name is not recognised and stays a `target_only` warning) and otherwise leaves the
-target value as it is, non-governed keys keep their values and
-order, other routes and other files are not written. The file is edited in
+(or whitespace only) blanks a recognised starter demo value (the placeholder
+storefront URLs and phone number; the starter's demo store name is not
+recognised and stays a `target_only` warning) and otherwise leaves the target
+value as it is (listed in `not_in_spec[]` as before and also in
+`spec_empty_not_applied[]`, printed as `Spec "" not applied`), non-governed
+keys keep their values and order, other routes and other files are not
+written. The file is edited in
 place and re-serialized with its own top-level indentation, line ending and
 trailing newline; when that round trip would not have reproduced the file
 byte for byte (a minified file, mixed indentation), a

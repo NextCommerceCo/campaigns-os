@@ -82,6 +82,12 @@ describe('StoreProfileShape rule', () => {
     expect(violations[0].data?.check).toBe('allowed-domain-bad-entry')
   })
 
+  test('a null store_phone_tel is "not provided" and passes silently, like an absent one', () => {
+    const spec = baseSpec()
+    ;(spec.campaign as Record<string, unknown>).store_phone_tel = null
+    expect(StoreProfileShape.check(normalize(spec))).toEqual([])
+  })
+
   test('flags non-string store_phone_tel', () => {
     const spec = baseSpec()
     ;(spec.campaign as Record<string, unknown>).store_phone_tel = 18005551234
