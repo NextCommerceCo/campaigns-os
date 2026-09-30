@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-os-setup
-version: 2.0.19
+version: 2.0.20
 description: Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring. Formerly installed as next-campaigns-setup; renamed 2026-08 to stop colliding with the published NextCommerceCo/skills scaffolder of that name.
 ---
 
-Bundle revision: 1.45.0+skills.4
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.45.0+skills.4`
+Bundle revision: 1.46.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.46.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -52,7 +52,7 @@ Responsibilities:
 - When copying a selected starter template family, copy the family as an atomic page-kit slice: pages plus required `_includes/`, `_layouts/`, `assets/css/`, and `assets/js/`. Do not copy only `checkout.html` and `receipt.html`.
 - Public families resolve from the default `public` starter-templates source. A **private** family (one whose source lives in an access-controlled repo, e.g. a certified family not present in the public picker) is scaffolded via page-kit's template-source mechanism (`next-campaign-page-kit` >= 0.2.0): add a named source to the target repo's `_data/template-sources.json` (a `git` source with the SSH `url` + optional `ref`, or a `local` source `path`), then `campaign-init --source <name> --template <slug>`. The source repo must expose a root `templates.json` catalog + `src/<slug>/` tree. page-kit holds no family→repo mapping; the source config lives in the (private) consuming repo, and this skill (plus the family's certified contract) is where that source is known.
 - Install or reference `.campaign-runtime/agent-context` without overwriting existing root agent files.
-- Record setup status in both `.campaign-runtime/build-context.json` (`scaffold.required`, `scaffold.mode`, handoff fields) and `.campaign-runtime/assembly-report.json` (`stages.setup`).
+- Record setup with `campaigns-os record setup --packet <packet>` once the campaign output directory exists (tier `C`: it overwrites `stages.setup` in `.campaign-runtime/assembly-report.json` and the `scaffold` block of `.campaign-runtime/build-context.json`, and stamps the doctor output stale; `--dry-run` is tier `none`). It sets `scaffold.required` to false and `stages.setup` to completed, validates both files against their schemas, and writes nothing when a check fails. Do not hand-edit either file.
 - Preserve existing Build Context `theme` inspection data and Assembly Report `theme` application data when setup is rerun against an existing campaign directory.
 - Hand off to `next-campaigns-build`.
 

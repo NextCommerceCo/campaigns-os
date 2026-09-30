@@ -59,6 +59,10 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { buildPageLoadCapture } from "./polish-capture.mjs";
+import { planPolishCapture } from "./polish-node.mjs";
+import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 import { createVerdict, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { buildRunSession, writeRunSession } from "./run-session.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
@@ -308,6 +312,77 @@ function seedBuiltSite(seed) {
   writeFileSync(join(seed.targetRepo, "_site", slug, "checkout", "index.html"), page("Checkout"));
 }
 
+/** A Build Context that still owes setup, over the example's existing output directory: what `record setup` records. */
+function seedSetupContext(seed) {
+  const context = readJson(join(EXAMPLES, "build-context.html-funnel.example.json"));
+  const packet = readJson(seed.packetPath);
+  context.scaffold = { ...context.scaffold, target_repo: ".", output_dir: `./${packet.assembly.output_dir}` };
+  writeJson(join(seed.targetRepo, ".campaign-runtime/build-context.json"), context);
+}
+
+/** A built `_site/` with setup recorded: the state `record build` records from. */
+function seedBuildReady(seed) {
+  seedBuiltSite(seed);
+  const report = readJson(seed.reportPath);
+  report.stages.setup = { ...report.stages.setup, status: "completed" };
+  writeJson(seed.reportPath, report);
+}
+
+/**
+ * A recorded build over the seeded `_site/`, package page-load evidence for
+ * every planned route with nothing blocking, and a complete --evidence file:
+ * the state `record polish` records from.
+ */
+function seedPolishReady(seed) {
+  seedBuildReady(seed);
+  const packet = readJson(seed.packetPath);
+  const slug = packet.campaign.public_route_slug;
+  const buildFingerprint = computeBuildFingerprint(join(seed.targetRepo, "_site", slug)).fingerprint;
+  const plan = planPolishCapture({ packet, baseUrl: "https://preview.example.test" });
+  const captures = plan.routes.flatMap((route) => plan.viewports.map((viewport) => buildPageLoadCapture({
+    buildFingerprint,
+    slug,
+    requestedRoute: route.requested_route,
+    viewport: viewport.key,
+    requestedDocumentUrl: route.url,
+    finalDocumentUrl: route.url,
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 10 },
+    mediaElements: [],
+    responses: [{
+      request_id: `document-${route.requested_route}-${viewport.key}`, url: route.url, resource_type: "Document", status: 200,
+      mime_type: "text/html", is_final_main_document: true, document_context_fingerprint: `sha256:${"d".repeat(64)}`, encoded_data_length: 1_024,
+    }],
+  })));
+  const report = readJson(seed.reportPath);
+  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: buildFingerprint };
+  report.stages.polish = {
+    ...report.stages.polish,
+    status: "required",
+    evidence: { visual_review: { page_load: buildPolishPageLoadEvidence({
+      buildFingerprint, slug, routeScope: plan.route_scope,
+      routes: plan.routes.map((route) => route.requested_route), viewports: plan.viewports.map((viewport) => viewport.key), captures,
+    }) } },
+  };
+  writeJson(seed.reportPath, report);
+  cpSync(join(ROOT, "fixtures/stage-record/polish-evidence.json"), join(seed.dir, "polish-evidence.json"));
+}
+
+/**
+ * What a `record <stage> --dry-run` row must print besides writing nothing:
+ * exit 0 and the dry-run result naming the files a real record would write.
+ */
+function recordDryRunSucceeded(stage, wouldWrite) {
+  return (result, seed, label) => {
+    assert.equal(result.code, 0, `${label}: record ${stage} --dry-run exited ${result.code}\n${result.stderr.split("\n").slice(0, 3).join("\n")}`);
+    const out = JSON.parse(result.stdout);
+    assert.equal(out.status, "dry_run", label);
+    assert.equal(out.dry_run, true, label);
+    assert.equal(out.stage, stage, label);
+    assert.deepEqual(out.would_write.map((path) => relative(seed.dir, path)), wouldWrite, label);
+  };
+}
+
 /** A target with no prior stage evidence, which the intake commands demand. */
 function seedCleanIntake(seed) {
   rmSync(join(seed.targetRepo, ".campaign-runtime"), { recursive: true, force: true });
@@ -436,6 +511,12 @@ const INVOCATIONS = {
   "spec derive|--from-store": { prepare: seedDerivablePin, argv: (s) => ["spec", "derive", "--packet", s.packetPath, "--from-store", "examplestore", "--json"] },
   "spec derive|--write-map": { prepare: seedDerivablePin, argv: (s, receiver) => ["spec", "derive", "--packet", s.packetPath, "--write-map", "--proxy-base", receiver, "--json"] },
   "polish capture": { argv: (s, receiver) => ["polish", "capture", "--packet", s.packetPath, "--base-url", receiver, "--json"] },
+  "record setup": { prepare: seedSetupContext, argv: (s) => ["record", "setup", "--packet", s.packetPath, "--json"] },
+  "record setup|--dry-run": { prepare: seedSetupContext, expect: recordDryRunSucceeded("setup", ["target-page-kit/.campaign-runtime/build-context.json", "target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "setup", "--packet", s.packetPath, "--dry-run", "--json"] },
+  "record build": { prepare: seedBuildReady, argv: (s) => ["record", "build", "--packet", s.packetPath, "--json"] },
+  "record build|--dry-run": { prepare: seedBuildReady, expect: recordDryRunSucceeded("build", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "build", "--packet", s.packetPath, "--dry-run", "--json"] },
+  "record polish": { prepare: seedPolishReady, argv: (s) => ["record", "polish", "--packet", s.packetPath, "--evidence", join(s.dir, "polish-evidence.json"), "--json"] },
+  "record polish|--dry-run": { prepare: seedPolishReady, expect: recordDryRunSucceeded("polish", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "polish", "--packet", s.packetPath, "--evidence", join(s.dir, "polish-evidence.json"), "--dry-run", "--json"] },
   "validate-assembly-report": { argv: (s) => ["validate-assembly-report", "--report", s.reportPath, "--json"] },
   "install-skills": { argv: () => ["install-skills", "--platform", "claude", "--json"], target: () => "home" },
   "install-skills|--dry-run": { argv: () => ["install-skills", "--platform", "claude", "--dry-run", "--json"], target: () => "home" },
@@ -633,6 +714,10 @@ async function runCondition(row, invocation, condition) {
       [],
       `${row.effect_test} [${condition}]: the invocation opened a connection off this machine`,
     );
+    // A row whose claim is "writes nothing" also proves a refusal, so a dry
+    // run states what it must print: without this, a command the CLI refuses
+    // as unknown passes the same row.
+    invocation.expect?.(result, seed, `${row.effect_test} [${condition}]`);
     const changed = changedPaths(before, snapshot(seed.dir));
 
     const tokens = {

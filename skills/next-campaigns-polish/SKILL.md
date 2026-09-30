@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-polish
-version: 1.1.20
+version: 1.1.21
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
-Bundle revision: 1.45.0+skills.4
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.45.0+skills.4`
+Bundle revision: 1.46.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.46.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -77,8 +77,11 @@ Responsibilities:
   The package captures every mapped route at fixed desktop/mobile viewports and
   attaches `stages.polish.evidence.visual_review.page_load`. Never hand-author,
   copy, or repair that object directly.
-- Record polish as `completed`, `skipped`, or `blocked` in the assembly report.
-  A nonzero capture result keeps Polish blocked until repair and recapture. The
+- Record Polish as `completed`, `skipped`, or `blocked` with
+  `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`
+  (tier `C`: it overwrites `stages.polish` in the assembly report and stamps the
+  doctor output stale; `--dry-run` is tier `none`). A nonzero capture result keeps
+  Polish blocked until repair and recapture. The
   producer persists bounded incomplete evidence for diagnosis and does not mark
   the stage complete.
 - Use `npm run smoke:polish-capture` only as an optional local producer smoke
@@ -115,10 +118,26 @@ schema reference; this section is the recording guidance.
 - `commands` — non-empty array of the commands polish actually ran; never
   include build commands (that reads as self-certification).
 
-The stage record itself must carry `performed_by: "next-campaigns-polish"`,
-`source_build_fingerprint` equal to the current
-`stages.assembly.build_fingerprint`, `completed_at`, and — when the report
-fingerprints a Design Source Package — `source_package_material_fingerprint`.
+Write the seven fields under `evidence` in a JSON file and record it with
+`campaigns-os record polish --packet <packet> --evidence <file>`. The file
+holds `status` (`completed` or `completed_with_warnings`, default
+`completed`), `evidence`, and optionally `repair_loop_defect` (null or an
+object, written to `report.theme.repair_loop_defect`); any other key but the
+two below is refused. The command stamps `performed_by: "next-campaigns-polish"`,
+`source_build_fingerprint` (doctor's current output fingerprint, which must
+equal the recorded `stages.assembly.build_fingerprint`), `completed_at`, and —
+when the report fingerprints a Design Source Package —
+`source_package_material_fingerprint`. It keeps the captured `page_load`,
+names any shape error by field (for example `repair_loop_defect` given as a
+string), and writes nothing unless the polish gate doctor evaluates would pass
+on the result. `docs/polish-evidence.md` ("Recording with `record polish`")
+has a complete example file. Do not hand-edit `stages.polish`.
+
+A Polish that cannot complete is recorded with the same command: a file with
+`"status": "blocked"` and `blockers` (a non-empty array of `{"code", "message"}`
+objects), or `"status": "skipped"` and a `skip_reason` string. `evidence` is
+optional for both; the captured evidence stays. Either keeps `next` at Polish
+and QA blocked until a completed Polish is recorded.
 
 The `polish.hidden_eager_media` checkpoint blocks on nonwaivable missing,
 malformed, stale, integrity-invalid, route-mismatched, or incomplete package
