@@ -10,7 +10,7 @@ Notable supported-surface changes are recorded here.
   Profile fields (`campaign.store_name`, `store_url`, `store_terms`,
   `store_privacy`, `store_contact`, `store_returns`, `store_shipping`,
   `store_phone`, `store_phone_tel`) now means the merchant has no such value
-  (#535). `page-kit sync` blanks the starter's demo value in such a field,
+  (#535). `page-kit sync` blanks a recognised starter demo value (the placeholder storefront URLs and phone number; the starter's demo store name is not recognised and stays a `target_only` warning) in such a field,
   where it previously left the demo value in place and reported it as not
   synced, and doctor offers `page-kit sync` as the repair for that demo
   residue. Doctor reads a blank or absent target field as

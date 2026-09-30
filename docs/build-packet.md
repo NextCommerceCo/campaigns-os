@@ -114,7 +114,7 @@ target evidence is a non-waivable blocker. Target-only values remain warnings.
 Mismatches, missing required target values, and known demo residue block.
 An absent or null spec field means "not provided". An explicit empty (or
 whitespace-only) string in one of the nine fields means the merchant has no
-such value: `page-kit sync` blanks the starter's demo value with it, and a
+such value: `page-kit sync` blanks a recognised starter demo value (the placeholder storefront URLs and phone number; the starter's demo store name is not recognised and stays a `target_only` warning) with it, and a
 blank or absent target field then reads as `intentionally_empty` (clean, and
 named in the pass reason). A real, non-demo target value against a spec `""`
 is left as it is and stays a `target_only` warning, because Maps saved `""`
@@ -152,7 +152,7 @@ the SDK version checkpoint below). Both go into `_data/campaigns.json[public_rou
 prints a field-by-field before/after diff, and touches nothing else: a
 governed field the spec does not carry (absent or null) is left as it is
 (doctor's `target_only` warning still applies), a field the spec sets to `""`
-(or whitespace only) blanks the starter's demo value and otherwise leaves the
+(or whitespace only) blanks a recognised starter demo value (the placeholder storefront URLs and phone number; the starter's demo store name is not recognised and stays a `target_only` warning) and otherwise leaves the
 target value as it is, non-governed keys keep their values and
 order, other routes and other files are not written. The file is edited in
 place and re-serialized with its own top-level indentation, line ending and
