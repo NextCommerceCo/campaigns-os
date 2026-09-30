@@ -161,7 +161,8 @@ export const HOST_STRIPPED_CODE = "routing_meta.host_stripped";
 //     `localhost`, a valid IPv4 address (each octet 0-255), any name with a
 //     `:port`, or a dotted name whose last label is 2-63 letters and not a
 //     page or script extension (ROUTE_FILE_EXTENSION: `html`, `htm`,
-//     `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi`, `pl`), such as
+//     `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi`; not `pl`, which is also
+//     Poland's country-code domain), such as
 //     `shop.example.com`. `//<host>/...` takes the same hosts.
 // Everything else is a route and is left to the existing route checks: a
 // rooted `/...` value, a first segment with no dot (`route/x/`), a dotted
@@ -198,7 +199,7 @@ function splitHostPrefix(from, rest, { requireHostShape, requirePath = false }) 
 
 // A dotted first segment ending in one of these is a page or script filename
 // (`index.php/checkout/`), not a host.
-const ROUTE_FILE_EXTENSION = /^(?:html?|shtml|php|aspx?|jsp|cgi|pl)$/i;
+const ROUTE_FILE_EXTENSION = /^(?:html?|shtml|php|aspx?|jsp|cgi)$/i;
 
 function looksLikeHost(segment) {
   if (/^localhost(?::\d+)?$/i.test(segment)) return true;

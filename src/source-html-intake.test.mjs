@@ -774,6 +774,8 @@ const HOST_ROUTE_CASES = [
   ["shop.example.com/route/x/?variant=b#offer", "/route/x/?variant=b#offer"],
   ["https://shop.example.com?variant=b", "/?variant=b"],
   ["https://shop.example.com", "/"],
+  // `pl` is a country-code domain, not only a script extension.
+  ["shop.example.pl/route/x/", "/route/x/"],
 ];
 const NOT_HOST_ROUTE_CASES = [
   "/route/x/",
@@ -797,7 +799,6 @@ const NOT_HOST_ROUTE_CASES = [
   "promo.shtml/",
   "promo.htm/",
   "run.cgi/x/",
-  "form.pl/",
   "//index.php/checkout/",
   "shop.example.com",
   "ftp://shop.example.com/route/x/",

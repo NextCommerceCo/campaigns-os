@@ -7809,8 +7809,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.3+agent.3",
-      "changelog_sha256": "becdf5d13fdf77df96984eb6936a8ee317ce21837dd76e7e3f7a9e55263c60bd",
-      "agent_impact": "Doctor now blocks with the new error routing_meta.host_prefixed when a page_url or SDK routing meta tag value has a bare or protocol-relative (//) host in front of its path, naming each value and its rooted form; an absolute http(s) page_url or routing meta value is accepted as before. Such values no longer appear in the routing_meta.runtime_root warning, whose other findings are unchanged. prepare-build, start and build strip those hosts, and the host of an absolute page_url, from a Map fetched with --map-id in the same run; once the Assembly Report is published they write the rooted values to the fetched copy under .campaign-runtime/fetched-specs/, and the report records each change as routing_meta.host_stripped on evidence[] with the value as fetched. A failed publish leaves the copy as fetched. A dotted first segment ending in html, htm, shtml, php, asp, aspx, jsp, cgi or pl is a route, not a host. A local --spec file and a copy reused with --cached-spec are never rewritten: intake prints a notice naming the values (edit the local file, or run again without --cached-spec so the Map is fetched and normalised), and doctor blocks until then. A --map-id fetch stops with an error, before fetching and without writing anything, when .campaign-runtime/, fetched-specs/ or the cache file is a symlink, and the cache file is always replaced by a new file rather than written in place, so a hard link to the old file keeps its bytes.",
+      "changelog_sha256": "9f26c1fb5986deaa9a97b02baf4ac887b347deef98c9feb8a16edb5e7157836c",
+      "agent_impact": "Doctor now blocks with the new error routing_meta.host_prefixed when a page_url or SDK routing meta tag value has a bare or protocol-relative (//) host in front of its path, naming each value and its rooted form; an absolute http(s) page_url or routing meta value is accepted as before. Such values no longer appear in the routing_meta.runtime_root warning, whose other findings are unchanged. prepare-build, start and build strip those hosts, and the host of an absolute page_url, from a Map fetched with --map-id in the same run; once the Assembly Report is published they write the rooted values to the fetched copy under .campaign-runtime/fetched-specs/, and the report records each change as routing_meta.host_stripped on evidence[] with the value as fetched. A failed publish leaves the copy as fetched. A dotted first segment ending in html, htm, shtml, php, asp, aspx, jsp or cgi is a route, not a host. A local --spec file and a copy reused with --cached-spec are never rewritten: intake prints a notice naming the values (edit the local file, or run again without --cached-spec so the Map is fetched and normalised), and doctor blocks until then. A --map-id fetch stops with an error, before fetching and without writing anything, when .campaign-runtime/, fetched-specs/ or the cache file is a symlink, and the cache file is always replaced by a new file rather than written in place, so a hard link to the old file keeps its bytes.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -7833,7 +7833,7 @@
           "summary": "Document the host grammar and the page and script extensions read as routes, the fetched-copy rewrite after publication, the host_stripped evidence record, saved-revision alignment after host stripping, the unchanged local spec and --cached-spec copy, the host_prefixed blocker and the fetch-cache symlink refusal."
         }
       ],
-      "entry_sha256": "6156b5f766acce726f811557e99eaae76ae7bda6fd2e7f1f03719ae95ab99ee7"
+      "entry_sha256": "68a4a4d10bdc4fc32127b78e253ec95076cdaeb83df393915e9d14ca354f0c96"
     }
   ]
 }

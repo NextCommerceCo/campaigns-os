@@ -21,7 +21,7 @@ Notable supported-surface changes are recorded here.
   left as fetched. A spec with no host-prefixed value is handled exactly as
   before.
 - A dotted first segment ending in a page or script extension (`html`, `htm`,
-  `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi`, `pl`), such as
+  `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi`), such as
   `index.php/checkout/`, is a route, not a host.
 - A local `--spec` file and a copy reused with `--cached-spec` are never
   rewritten. If either holds a host-prefixed route, intake prints one line

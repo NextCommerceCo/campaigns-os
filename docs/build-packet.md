@@ -1377,7 +1377,7 @@ A value reads as host-prefixed when it is one of:
   dot-separated numbers, each 0-255), any name with a `:port`
   (`localhost:8080`, `shop.example.com:8443`), or a dotted name whose last
   label is 2-63 letters and is not a page or script extension: `html`, `htm`,
-  `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi` or `pl` (`shop.example.com`,
+  `shtml`, `php`, `asp`, `aspx`, `jsp` or `cgi` (`shop.example.com`,
   any case).
 
 Everything else stays a route for the existing checks: a rooted `/...` value,
