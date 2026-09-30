@@ -264,7 +264,7 @@ test("test order email resolves to ONE stable address (reused customer, not per-
   }
 });
 
-test("test-order 'common' preset = checkout + accept/decline sample plus a shortest real receipt path", () => {
+test("test-order 'common' preset = checkout + accept/decline sample, or every terminal path when that fits the cap", () => {
   const { testOrderPaths } = __qaBrowserTestHooks;
   const base = "https://campaign.example/";
   const route = (name) => new URL(name, base).toString();
@@ -294,8 +294,9 @@ test("test-order 'common' preset = checkout + accept/decline sample plus a short
   assert.deepEqual(testOrderPaths("common", topo(0)), ["checkout"]);
   // one upsell → checkout + first-upsell accept + decline (3 shapes)
   assert.deepEqual(testOrderPaths("common", topo(1)), ["checkout", "accept", "decline"]);
-  // A deeper topology adds the deduped shortest real receipt path (still under the flood cap).
-  assert.deepEqual(testOrderPaths("common", topo(2)), ["checkout", "accept", "decline", "accept-decline"]);
+  // Two offers plan 5 terminal paths, under the flood cap of 6: common runs them
+  // all, the sample's surviving path first.
+  assert.deepEqual(testOrderPaths("common", topo(2)), ["checkout", "accept-decline", "decline-decline", "decline-accept", "accept-accept"]);
   // bare `--test-order` parses to boolean true → same default preset
   assert.deepEqual(testOrderPaths(true, topo(1)), ["checkout", "accept", "decline"]);
 });
@@ -323,7 +324,7 @@ test("test-order 'full' emits only actual terminal paths for shortcutting branch
   ]);
 });
 
-test("test-order 'common' adds the shortest real receipt path for a shortcutting funnel", () => {
+test("test-order 'common' over the cap keeps the sample and adds the decline path through the uncovered offers", () => {
   const { testOrderPaths } = __qaBrowserTestHooks;
   const base = "https://campaign.example/";
   const route = (name) => new URL(name, base).toString();
@@ -335,11 +336,14 @@ test("test-order 'common' adds the shortest real receipt path for a shortcutting
     { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
   ] }];
 
+  // full plans 7, above the cap of 6. The sample declines upsell-1 only; one
+  // shortest path declines upsell-2 and the downsell together.
   assert.deepEqual(testOrderPaths("common", topology), [
     "checkout",
     "accept",
     "decline",
     "accept-accept",
+    "accept-decline-decline",
   ]);
 });
 

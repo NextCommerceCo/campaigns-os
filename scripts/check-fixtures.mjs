@@ -557,7 +557,13 @@ try {
   const outputPacketPath = resolve(builtOutputTmp, "campaign-runtime.build.json");
   writeJson(outputPacketPath, outputPacket);
 
-  const outputDoctor = runCliJson(["doctor", "--packet", outputPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  // The built page and the spec's key make doctor read the live campaign
+  // (#533); a refused loopback proxy keeps that read on this machine, and
+  // doctor must record it not_run rather than pass it.
+  const outputDoctor = runCliJson(["doctor", "--packet", outputPacketPath, "--proxy-base", "http://127.0.0.1:1", "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (outputDoctor.derived?.live_campaign_refs?.status !== "not_run") {
+    throw new Error(`Doctor should record the unreachable live campaign read as not_run: ${JSON.stringify(outputDoctor.derived?.live_campaign_refs)}`);
+  }
   for (const code of ["built_output.script_missing", "built_output.package_ref", "built_output.shipping_ref", "spec.package_unavailable"]) {
     if (!outputDoctor.warnings?.some((issue) => issue.code === code)) {
       throw new Error(`Doctor should warn for ${code}.`);
