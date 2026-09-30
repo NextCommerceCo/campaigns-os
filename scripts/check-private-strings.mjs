@@ -77,8 +77,9 @@ const forbidden = [
 ];
 
 // Real merchant, partner and product names must not appear in the public
-// package. They are listed as SHA-256 digests of the lowercased name, spaces
-// removed, so this public file does not itself publish them. Each file is
+// package. They are listed as SHA-256 digests of the lowercased name with
+// all non-alphanumerics removed, so this public file does not itself publish
+// them. Each file is
 // split into lowercase alphanumeric tokens; every run of 1 to
 // MAX_NAME_TOKENS adjacent tokens, joined, is hashed and compared, so a name
 // of up to four words matches however it is spaced or punctuated.
