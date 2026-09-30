@@ -58,12 +58,34 @@ describe('StoreProfileShape rule', () => {
     expect(violations[0].data?.check).toBe('store-phone-tel-missing-scheme')
   })
 
-  test('flags empty store_phone_tel string', () => {
+  test('accepts an empty or whitespace-only store_phone_tel as intentionally empty', () => {
+    for (const value of ['', '  ']) {
+      const spec = baseSpec()
+      spec.campaign!.store_phone_tel = value
+      expect(StoreProfileShape.check(normalize(spec))).toEqual([])
+    }
+  })
+
+  test('an explicit empty value is intentionally empty for the nine Store Profile fields only', () => {
     const spec = baseSpec()
-    spec.campaign!.store_phone_tel = ''
+    for (const field of [
+      'store_name', 'store_url', 'store_terms', 'store_privacy', 'store_contact',
+      'store_returns', 'store_shipping', 'store_phone', 'store_phone_tel',
+    ] as const) {
+      spec.campaign![field] = ''
+    }
+    expect(StoreProfileShape.check(normalize(spec))).toEqual([])
+    // An empty string anywhere else keeps its warning.
+    spec.campaign!.allowed_domains = ['']
     const violations = StoreProfileShape.check(normalize(spec))
     expect(violations).toHaveLength(1)
-    expect(violations[0].data?.check).toBe('store-phone-tel-empty')
+    expect(violations[0].data?.check).toBe('allowed-domain-bad-entry')
+  })
+
+  test('a null store_phone_tel is "not provided" and passes silently, like an absent one', () => {
+    const spec = baseSpec()
+    ;(spec.campaign as Record<string, unknown>).store_phone_tel = null
+    expect(StoreProfileShape.check(normalize(spec))).toEqual([])
   })
 
   test('flags non-string store_phone_tel', () => {

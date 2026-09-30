@@ -7,6 +7,7 @@ import {
   isStoreProfileDiscrepancyWaivable,
   storeProfileDemoResidueFields,
   PAGE_KIT_STORE_PROFILE_FIELDS,
+  PAGE_KIT_SYNC_COMMAND,
 } from "./page-kit-store-profile.mjs";
 
 const FIELDS = [
@@ -63,7 +64,7 @@ test("store-profile evaluator classifies missing, mismatch, target-only, and bot
   target.store_privacy = "https://merchant.test/wrong-privacy";
   spec.store_contact = "";
   target.store_contact = "https://merchant.test/contact-only";
-  spec.store_returns = "";
+  spec.store_returns = null;
   target.store_returns = "";
   const gate = evaluate(spec, target);
   const byField = Object.fromEntries(gate.matrix.map((row) => [row.field, row.kind]));
@@ -352,4 +353,90 @@ test("demo residue is never waivable and the gate names the residue fields", () 
   assert.equal(mismatchOnly.waivable, true);
   assert.deepEqual(storeProfileDemoResidueFields(mismatchOnly), []);
   assert.doesNotMatch(mismatchOnly.reason, /demo residue/);
+});
+
+test("an explicit empty spec value routes demo residue to sync and reads a blank target as intentionally_empty", () => {
+  const spec = { ...profile(), store_terms: "", store_phone: "" };
+  const scaffold = { ...profile(), store_terms: "https://demo.29next.com/terms-conditions/", store_phone: "1 (888) 831-6810" };
+  const blocked = evaluate(spec, scaffold);
+  assert.equal(blocked.status, "blocked");
+  assert.deepEqual(storeProfileDemoResidueFields(blocked), ["store_terms", "store_phone"]);
+  assert.equal(blocked.waivable, false, "the demo value itself is still never waivable");
+  const repair = blocked.required_actions.find((action) => action.id === "repair_target");
+  assert.equal(repair.kind, "command");
+  assert.equal(repair.command, PAGE_KIT_SYNC_COMMAND);
+
+  // After sync writes "" (or the target never had the key), the field is
+  // intentionally empty: clean, and named as such rather than both_empty.
+  const target = { ...profile(), store_terms: "" };
+  delete target.store_phone;
+  const gate = evaluate(spec, target);
+  assert.equal(gate.status, "pass");
+  assert.equal(gate.code, "page_kit.store_profile.pass");
+  const kinds = Object.fromEntries(gate.matrix.map((row) => [row.field, [row.kind, row.severity]]));
+  assert.deepEqual(kinds.store_terms, ["intentionally_empty", "clean"]);
+  assert.deepEqual(kinds.store_phone, ["intentionally_empty", "clean"]);
+  assert.match(gate.reason, /Intentionally empty per the CampaignSpec: store_terms, store_phone\./);
+});
+
+test("an explicit empty spec value over a real non-demo target value keeps the base target_only warning", () => {
+  // Maps saved "" for every cleared store field before "" meant empty, so the
+  // gate does not trust it over a value someone entered: no blocker, no sync.
+  const target = profile();
+  for (const specValue of ["", null, undefined]) {
+    const gate = evaluate({ ...profile(), store_returns: specValue }, target);
+    assert.equal(gate.status, "pass", JSON.stringify(specValue));
+    assert.equal(gate.code, "page_kit.store_profile.target_only");
+    assert.deepEqual(gate.blocker_fields, []);
+    assert.deepEqual(gate.warning_fields, ["store_returns"]);
+    assert.deepEqual(gate.required_actions, []);
+    const row = gate.matrix.find((entry) => entry.field === "store_returns");
+    assert.deepEqual([row.kind, row.severity], ["target_only", "warning"]);
+  }
+});
+
+test("a whitespace-only spec value is authoritative-empty, the same as an empty string", () => {
+  const spec = { ...profile(), store_privacy: " \t " };
+  const blank = evaluate(spec, { ...profile(), store_privacy: "" });
+  assert.equal(blank.status, "pass");
+  assert.equal(blank.matrix.find((row) => row.field === "store_privacy").kind, "intentionally_empty");
+  const filled = evaluate(spec, profile());
+  assert.equal(filled.matrix.find((row) => row.field === "store_privacy").kind, "target_only");
+});
+
+test("the gate names intentionally empty fields and a spec \"\" it did not apply in a target_only state too", () => {
+  const spec = { ...profile(), store_terms: "", store_phone: "" };
+  const target = { ...profile(), store_phone: "" };
+  const gate = evaluate(spec, target);
+  assert.equal(gate.code, "page_kit.store_profile.target_only");
+  assert.deepEqual(gate.warning_fields, ["store_terms"]);
+  assert.match(gate.reason, /target-only value\(s\): store_terms\./);
+  assert.match(gate.reason, /sets campaign\.store_terms to "" \(none\), but the target holds a real, non-demo value there; page-kit sync blanks only a recognised starter demo value, so it did not apply the ""\. Remove the value from _data\/campaigns\.json\[merchant\] by hand/);
+  assert.match(gate.reason, /Intentionally empty per the CampaignSpec: store_phone\./);
+
+  // A target_only value the spec does not carry at all gets no such note.
+  const absent = evaluate({ ...profile(), store_terms: null }, profile());
+  assert.equal(absent.reason, "Target Store Profile has target-only value(s): store_terms.");
+});
+
+test("a spec \"\" over a malformed target value repairs by hand, not by adding the field to the spec", () => {
+  const gate = evaluate({ ...profile(), store_returns: "" }, { ...profile(), store_returns: 42 });
+  assert.equal(gate.status, "blocked");
+  const repair = gate.required_actions.find((action) => action.id === "repair_target");
+  assert.equal(repair.kind, "edit");
+  assert.doesNotMatch(repair.description, /does not carry/);
+  assert.doesNotMatch(repair.description, /add campaign\.store_returns to the spec/);
+  assert.match(repair.description, /Remove or correct _data\/campaigns\.json\[merchant\]\.store_returns by hand: the CampaignSpec sets campaign\.store_returns to "" \(none\), but page-kit sync blanks only a recognised starter demo value/);
+
+  // An absent spec field keeps the base wording.
+  const absent = evaluate({ ...profile(), store_returns: null }, { ...profile(), store_returns: 42 });
+  assert.match(absent.required_actions.find((action) => action.id === "repair_target").description, /the CampaignSpec does not carry this field/);
+});
+
+test("an intentionally empty store_url is named as still required", () => {
+  const gate = evaluate({ ...profile(), store_url: "" }, { ...profile(), store_url: "" });
+  assert.equal(gate.matrix.find((row) => row.field === "store_url").kind, "intentionally_empty");
+  assert.match(gate.reason, /Intentionally empty per the CampaignSpec: store_url\. campaign\.store_url is still required, so doctor's spec\.store_profile check blocks on an empty store_url\./);
+  const optional = evaluate({ ...profile(), store_terms: "" }, { ...profile(), store_terms: "" });
+  assert.doesNotMatch(optional.reason, /still required/);
 });
