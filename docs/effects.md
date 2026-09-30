@@ -331,9 +331,10 @@ loopback receiver only stands in for (`{base-url}`, the login gateway) matched
   refuses the contradiction rather than letting the test find it.
 
 A `full` row may still carry an individual effect the offline fixture cannot
-reach — the `codex` and `agents` destinations of `install-skills`. Each such entry has an empty `observed_in`
-**and** a `not_observed_reason`, and `check-effects.mjs` refuses one without the
-reason. What it may not be is silent.
+reach — the `codex` and `agents` destinations of `install-skills`. Each such
+entry has an empty `observed_in` **and** a `not_observed_reason`, and
+`check-effects.mjs` refuses one without the reason. What it may not be is
+silent.
 
 ## The rule
 
