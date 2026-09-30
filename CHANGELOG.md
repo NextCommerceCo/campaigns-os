@@ -2,6 +2,52 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.11] - 2026-09-30
+
+### Added
+
+- `doctor` warns with `built_output.sdk_markup.checkout_bump_is_upsell` when a
+  checkout page carries `data-next-is-upsell="true"` on an order bump (#535).
+  A checkout bump is a pre-purchase add-on, and the flag puts it on the
+  initial order as an upsell line. The warning names the page and each flagged
+  element. The page type comes from the page's `next-page-type` meta, or from
+  its route when the meta is absent. Upsell, downsell and receipt pages, and
+  bumps without the flag, get no warning. The flag comes from the bump
+  include's markup, and several starter bump includes write it
+  unconditionally, so a canonical starter checkout with a bump shows this
+  warning. To clear it, remove `data-next-is-upsell="true"` from the bump
+  include in the campaign, unless the line really should be billed as an
+  upsell. It is a warning, not a blocker.
+
+### Fixed
+
+- `theme generate` keeps the CTA label colour the source declares (#535).
+  When the source declares a CTA foreground (`--text-inverse`, `--on-primary`,
+  `--on-cta`, or a `color:` on a button selector) that reaches 3:1 on the CTA
+  background (WCAG AA for large text), `--brand--color--text-inverse` and
+  `--brand--color--cta-foreground` use it instead of the higher-contrast
+  black or white pick. A declared white label on `#dd4249` (4.24:1) now stays
+  white where it used to become black. A declared colour under 3:1 is ignored.
+  One under 4.5:1 is used and reported with `theme.foreground.low_contrast`,
+  so the theme status reads `ready_with_warnings`. Sources that declare no CTA
+  foreground generate the same CSS as before.
+- `theme generate` takes body text from the darkest declared text token
+  (#535). When a source declares `:root` text colour tokens and a body
+  background, `--brand--color--text-primary` and
+  `--brand--color--foreground` use the darkest one that is darker than the
+  background and reaches 4.5:1 on it, instead of a lighter grey. This applies
+  even when the source has no primary text token of its own. Sources with no
+  qualifying token generate the same CSS as before.
+
+### Changed
+
+- `docs/brand-theme-bridge.md` says `next-core.css` and the brand layer belong
+  only on pages where the template family's components render. It says its
+  element resets break design-owned upsell, downsell and receipt markup, and
+  how to record the scoped pages in `report.theme.commerce_pages`, which the
+  theme gate does not compare with the funnel. It also documents the declared
+  CTA foreground and body-text rules above.
+
 ## [1.43.2+agent.3] - 2026-09-28
 
 ### Changed

@@ -7633,6 +7633,33 @@
         }
       ],
       "entry_sha256": "b04ee701fcb95fce30ddb6c19291320187a92cb16563c58c951217ddc5543e9b"
+    },
+    {
+      "id": "RL-0177",
+      "sequence": 169,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.2+agent.11",
+      "changelog_sha256": "7687bd85ecfc2385183668b46499fa8f0186ae47e56efdb54930cd6abd0f877e",
+      "agent_impact": "doctor can report a new warning, built_output.sdk_markup.checkout_bump_is_upsell, when a checkout page carries data-next-is-upsell=\"true\" on an order bump; it does not block. Several starter bump includes write the flag unconditionally, so starter checkouts with a bump show it; to clear it, remove data-next-is-upsell=\"true\" from the bump include in the campaign unless the line should be billed as an upsell. theme generate now keeps a declared CTA label colour that reaches 3:1 on the CTA (reported as theme.foreground.low_contrast when under 4.5:1) and takes body text from the darkest declared text token that reaches 4.5:1 on the body background, even when the source has no primary text token; sources that declare neither generate the same CSS as before. docs/brand-theme-bridge.md says to load next-core.css and the brand layer only on pages where family components render.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The SDK markup check now receives each built page type, so doctor warns with built_output.sdk_markup.checkout_bump_is_upsell on a checkout page whose order bump carries data-next-is-upsell=\"true\"."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "Document the declared CTA foreground and darkest-declared body text rules, and that next-core.css and the brand layer belong only on pages where family components render, with report.theme.commerce_pages recording the scoped pages."
+        }
+      ],
+      "entry_sha256": "ee9f4cde43666be00f05a000f9588aca432363999e5f7489d4169d75f300c292"
     }
   ]
 }

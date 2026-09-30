@@ -336,6 +336,7 @@ function candidateFromFile(path, role, source = "css_file", referencedBy = []) {
     role,
     hash: sha256File(path),
     tokens: { ...inferred, ...parsed.tokens },
+    root_tokens: parsed.tokens,
     warnings: parsed.warnings,
     referenced_by: referencedBy,
   };
@@ -356,6 +357,7 @@ function inlineCandidatesFromHtml(path, role) {
         hash: sha256(`${path}:${styleBlock.index}:${block.index}:${block.body}`),
         inline_block_index: styleBlock.index,
         tokens: { ...inferred, ...parsed.tokens },
+        root_tokens: parsed.tokens,
         warnings: parsed.warnings,
         referenced_by: [],
       });
@@ -488,7 +490,8 @@ function contrastRatio(luminanceA, luminanceB) {
 // brand background (yellow/white/pastel) yields a dark foreground; a dark or
 // saturated background yields a light one. This is the fix for white-on-light
 // CTA text: never trust a copied source --text-inverse (which defaults to
-// white), always derive from the background's luminance.
+// white) unless it is readable on the CTA (declaredForeground below);
+// otherwise derive from the background's luminance.
 function readableForeground(bgValue, choices = {}) {
   const bgRgb = colorToRgb(bgValue);
   if (!bgRgb) return null;
@@ -507,12 +510,39 @@ function readableForeground(bgValue, choices = {}) {
   };
 }
 
+// The CTA label colour the source declares (#535). A light scaffold default
+// (white --text-inverse on a yellow CTA) must still lose to the luminance pick,
+// so the declared colour is used only when it clears WCAG AA for large text
+// (3:1) on the CTA background. CTA labels are short, semibold button text, and
+// the design's own pairing is the stronger signal than a marginally higher
+// black/white score (white on #dd4249 is 4.24:1, black 4.67:1). Anything under
+// the contract's normal-text min_contrast_ratio still gets the low-contrast
+// warning below.
+const DECLARED_CTA_FOREGROUND_MIN_CONTRAST = 3;
+const CTA_BACKGROUND_TARGET = "--brand--color--cta-primary";
+
+function declaredForeground(bgValue, declaredValue) {
+  const bgRgb = colorToRgb(bgValue);
+  const declared = normalizeColor(declaredValue);
+  if (!bgRgb || !declared) return null;
+  const bgLuminance = relativeLuminance(bgRgb);
+  const declaredLuminance = relativeLuminance(colorToRgb(declared));
+  const contrast = contrastRatio(bgLuminance, declaredLuminance);
+  if (contrast < DECLARED_CTA_FOREGROUND_MIN_CONTRAST) return null;
+  return {
+    value: declared,
+    contrast: Math.round(contrast * 100) / 100,
+    on: declaredLuminance < bgLuminance ? "dark" : "light",
+  };
+}
+
 // Emit foreground/on-color tokens derived from the luminance of the background
 // each sits on. Pairing comes from the contract's foreground_derivations so the
 // generator stays data-driven. A foreground target already mapped from a source
 // token is left untouched; one whose paired backgrounds are all unmapped is
-// skipped (no background to read).
-function deriveForegroundMappings(existingMappings, targetTokens) {
+// skipped (no background to read). A foreground paired with the CTA background
+// takes the source's declared CTA foreground when it is readable there.
+function deriveForegroundMappings(existingMappings, targetTokens, { ctaForeground = null } = {}) {
   const config = targetTokens.foreground_derivations;
   if (!isObject(config) || !isObject(config.derivations)) return { mappings: [], warnings: [] };
   const allowedTargets = new Set(targetTokens.tokens || []);
@@ -530,12 +560,15 @@ function deriveForegroundMappings(existingMappings, targetTokens) {
     const backgroundTarget = candidates.find((target) => valueByTarget.has(target));
     if (!backgroundTarget) continue;
     const backgroundValue = valueByTarget.get(backgroundTarget);
-    const readable = readableForeground(backgroundValue, choices);
+    const declared = backgroundTarget === CTA_BACKGROUND_TARGET ? declaredForeground(backgroundValue, ctaForeground) : null;
+    const readable = declared || readableForeground(backgroundValue, choices);
     if (!readable) continue;
     if (minContrast && readable.contrast < minContrast) {
       warnings.push(issue(
         "theme.foreground.low_contrast",
-        `Derived ${foregroundTarget} on ${backgroundTarget} (${backgroundValue}) only reaches ${readable.contrast}:1 contrast (< ${minContrast}:1). Confirm the brand background or supply an explicit foreground.`,
+        declared
+          ? `Declared CTA foreground ${declared.value} for ${foregroundTarget} on ${backgroundTarget} (${backgroundValue}) reaches ${readable.contrast}:1 contrast: it clears ${DECLARED_CTA_FOREGROUND_MIN_CONTRAST}:1 for large text but not ${minContrast}:1 for normal text. Confirm the CTA label is large or bold text.`
+          : `Derived ${foregroundTarget} on ${backgroundTarget} (${backgroundValue}) only reaches ${readable.contrast}:1 contrast (< ${minContrast}:1). Confirm the brand background or supply an explicit foreground.`,
         { foreground: foregroundTarget, background: backgroundTarget, background_value: backgroundValue, contrast: readable.contrast },
       ));
     }
@@ -547,7 +580,9 @@ function deriveForegroundMappings(existingMappings, targetTokens) {
       target: foregroundTarget,
       value: readable.value,
       confidence,
-      derivation: { method: "foreground-from-luminance", background: backgroundTarget, background_value: backgroundValue, on: readable.on, contrast: readable.contrast },
+      derivation: declared
+        ? { method: "declared-cta-foreground", background: backgroundTarget, background_value: backgroundValue, declared_value: declared.value, on: readable.on, contrast: readable.contrast }
+        : { method: "foreground-from-luminance", background: backgroundTarget, background_value: backgroundValue, on: readable.on, contrast: readable.contrast },
     });
   }
   return { mappings, warnings };
@@ -618,7 +653,46 @@ function collectTokenConflicts(candidates) {
   return conflicts;
 }
 
-function mapTokens(tokens, targetTokens) {
+// A declared text token (#535) is a :root custom property in the selected
+// source whose name has a "text" part and whose value is a solid colour,
+// minus the names with another job: inverse / on-colour labels, secondary or
+// muted copy, CTA/button labels, and text shadows, borders and backgrounds.
+const BODY_TEXT_MIN_CONTRAST = 4.5;
+
+function isDeclaredTextToken(name) {
+  if (isTargetContractToken(name)) return false;
+  const parts = tokenNameParts(name);
+  if (!hasTokenPart(parts, ["text"]) || isTextInverseToken(parts)) return false;
+  return !hasTokenPart(parts, [
+    "secondary", "muted", "subtle", "cta", "button", "btn",
+    "shadow", "border", "outline", "stroke", "bg", "background",
+  ]);
+}
+
+// Body text takes the darkest declared text token that is darker than the body
+// background and reaches WCAG AA for normal text (4.5:1) on it, whether or not
+// a --text-primary was otherwise found. With no solid body background, or no
+// token that qualifies, the caller keeps its existing --text-primary pick (or
+// none).
+function darkestDeclaredBodyText(rootTokens, bodyBackground) {
+  const bgRgb = colorToRgb(bodyBackground);
+  if (!bgRgb) return null;
+  const bgLuminance = relativeLuminance(bgRgb);
+  let best = null;
+  for (const [name, rawValue] of Object.entries(rootTokens || {})) {
+    if (!isDeclaredTextToken(name)) continue;
+    const value = normalizeColor(rawValue);
+    if (!value) continue;
+    const luminance = relativeLuminance(colorToRgb(value));
+    if (luminance >= bgLuminance) continue;
+    const contrast = contrastRatio(bgLuminance, luminance);
+    if (contrast < BODY_TEXT_MIN_CONTRAST) continue;
+    if (!best || luminance < best.luminance) best = { name, value, luminance, contrast: Math.round(contrast * 100) / 100 };
+  }
+  return best;
+}
+
+function mapTokens(tokens, targetTokens, { rootTokens = {} } = {}) {
   const allowedTargets = new Set(targetTokens.tokens || []);
   const mappings = [];
   const warnings = [];
@@ -632,9 +706,27 @@ function mapTokens(tokens, targetTokens) {
     mappings.push({ source, target, value, confidence, derivation });
   }
 
+  // Applies whether or not the source yields a --text-primary; a --text-primary
+  // of the same colour keeps its plain mapping.
+  const textPrimary = isNonEmptyString(tokens["--text-primary"]) ? tokens["--text-primary"].trim() : null;
+  const bodyText = darkestDeclaredBodyText(rootTokens, tokens["--surface-bg"]);
+  const replaceBodyText = Boolean(bodyText) && bodyText.value !== normalizeColor(textPrimary);
+
   for (const [source, targets] of Object.entries(sourceMappings)) {
-    if (!isNonEmptyString(tokens[source])) continue;
-    for (const target of targets) addMapping(source, target, tokens[source].trim());
+    const declaredBodyText = source === "--text-primary" && replaceBodyText;
+    if (!declaredBodyText && !isNonEmptyString(tokens[source])) continue;
+    for (const target of targets) {
+      if (declaredBodyText) {
+        addMapping(bodyText.name, target, bodyText.value, "high", {
+          method: "darkest-declared-text-token",
+          replaced_value: textPrimary,
+          background_value: normalizeColor(tokens["--surface-bg"]),
+          contrast: bodyText.contrast,
+        });
+      } else {
+        addMapping(source, target, tokens[source].trim());
+      }
+    }
   }
 
   const derived = targetTokens.derived_mappings?.["--brand-primary"] || {};
@@ -671,7 +763,7 @@ function mapTokens(tokens, targetTokens) {
 
   // Foreground/on-color tokens derive from the luminance of the background they
   // sit on (CTA, primary, accent), after all backgrounds are mapped above.
-  const foreground = deriveForegroundMappings(mappings, targetTokens);
+  const foreground = deriveForegroundMappings(mappings, targetTokens, { ctaForeground: tokens["--text-inverse"] });
   for (const mapping of foreground.mappings) {
     addMapping(mapping.source, mapping.target, mapping.value, mapping.confidence, mapping.derivation);
   }
@@ -891,7 +983,7 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
     warnings.push(issue("theme.source_tokens.unresolved", `Source token ${token} uses an unresolved value; it cannot be compared to producer defaults.`));
   }
 
-  const mapped = selected ? mapTokens(selected.tokens, contracts.targetTokens) : { mappings: [], warnings: [] };
+  const mapped = selected ? mapTokens(selected.tokens, contracts.targetTokens, { rootTokens: selected.root_tokens }) : { mappings: [], warnings: [] };
   warnings.push(...mapped.warnings);
   const confidence = confidenceFor({ selected, defaultMatch, mappings: mapped.mappings, conflicts });
   const css = selected && mapped.mappings.length > 0 ? renderBrandThemeCss({ selected, mappings: mapped.mappings, confidence }) : null;

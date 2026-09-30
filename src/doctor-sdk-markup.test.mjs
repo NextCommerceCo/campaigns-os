@@ -41,8 +41,10 @@ const codeNames = (gate) => [...gate.findings, ...gate.warned].map((item) => ite
 // --- The committed bad/good pairs, one per code ---------------------------------
 
 const BLOCKERS = ["swap-with-add-to-cart", "checkout-not-form", "wrong-field-name", "missing-selector-id-match"];
-const ADVISORIES = ["double-selected", "template-double-brace"];
-const codeFor = (name) => SDK_MARKUP_CODES[name.toUpperCase().replace(/-/g, "_")].code;
+const ADVISORIES = ["double-selected", "template-double-brace", "checkout-bump-is-upsell"];
+// The literal code string, not a SDK_MARKUP_CODES lookup, so a fixture whose
+// code is missing fails on its behavioural assertion rather than a TypeError.
+const codeFor = (name) => `${SDK_MARKUP}.${name.replace(/-/g, "_")}`;
 
 for (const name of BLOCKERS) {
   test(`${name}: the bad tree blocks under its own code and the good tree is clean`, () => {
@@ -145,6 +147,30 @@ test("MISSING_SELECTOR_ID_MATCH is not satisfied by a non-selector element echoi
   assert.match(echoed.findings[0].message, /2 add-to-cart buttons/);
   const real = evaluateSdkMarkup({ pages: [page('<div data-next-package-selector data-next-selector-id="main" data-next-selection-mode="select"></div><button data-next-action="add-to-cart" data-next-selector-id="main"></button>')] });
   assert.equal(real.status, "pass");
+});
+
+test("CHECKOUT_BUMP_IS_UPSELL reads the page type from next-page-type, falls back to the route type, and names the page and every flagged element", () => {
+  const bump = (flag, pkg) => `<div data-next-package-toggle><div data-next-toggle-card${flag} data-next-package-id="${pkg}"></div></div>`;
+  const typed = (type, body) => ({ page_id: "p", file: "p.html", content: `<html><head><meta name="next-page-type" content="${type}"></head><body>${body}</body></html>` });
+
+  const checkout = evaluateSdkMarkup({ pages: [typed("checkout", bump(' data-next-is-upsell="true"', 7) + bump(' data-next-is-upsell="TRUE "', 9))] });
+  assert.deepEqual(codeNames(checkout), ["CHECKOUT_BUMP_IS_UPSELL"]);
+  assert.equal(checkout.warned[0].severity, "warning");
+  assert.deepEqual(checkout.warned[0].detail.elements, ['<div data-next-package-id="7">', '<div data-next-package-id="9">']);
+  assert.match(checkout.warned[0].message, /2 order bumps on checkout page p\.html/);
+  // Several starter includes hardcode the flag, so the advice is to edit the markup.
+  assert.match(checkout.warned[0].message, /remove data-next-is-upsell="true" from the include/);
+  assert.doesNotMatch(checkout.warned[0].message, /is_upsell=false/);
+
+  for (const type of ["upsell", "downsell", "receipt", "product"]) {
+    assert.deepEqual(codeNames(evaluateSdkMarkup({ pages: [typed(type, bump(' data-next-is-upsell="true"', 7))] })), [], `${type} page`);
+  }
+  assert.deepEqual(codeNames(evaluateSdkMarkup({ pages: [typed("checkout", bump("", 7) + bump(' data-next-is-upsell="false"', 9))] })), []);
+
+  const routeOnly = { ...page(bump(' data-next-is-upsell="true"', 7)), page_type: "checkout" };
+  assert.deepEqual(codeNames(evaluateSdkMarkup({ pages: [routeOnly] })), ["CHECKOUT_BUMP_IS_UPSELL"]);
+  assert.equal(evaluateSdkMarkup({ pages: [routeOnly] }).warned[0].detail.page_type_source, "route");
+  assert.deepEqual(codeNames(evaluateSdkMarkup({ pages: [{ ...typed("upsell", bump(' data-next-is-upsell="true"', 7)), page_type: "checkout" }] })), [], "the meta outranks the route");
 });
 
 test("markup inside an SDK <template> is scanned, because the SDK clones it into the live DOM", () => {

@@ -132,7 +132,10 @@ test("brand theme infers safe CTA tokens from linked button CSS when root tokens
 
     const result = inspectBrandTheme({ packet, packetPath });
 
-    assert.equal(result.status, "ready");
+    // The declared white label (3.68:1 on #e4572e) is kept (#535) and flagged
+    // for being under 4.5:1.
+    assert.equal(result.status, "ready_with_warnings");
+    assert.deepEqual([...new Set(result.warnings.map((warning) => warning.code))], ["theme.foreground.low_contrast"]);
     assert.equal(result.confidence, "medium");
     assert.equal(result.context_theme.selected_source.source, "mapped_html_reference");
     assert.ok(result.context_theme.mappings.some((mapping) => (
@@ -312,6 +315,130 @@ test("brand theme keeps white foregrounds on a dark brand", () => {
     assert.ok(textInverse);
     assert.equal(textInverse.value, "#ffffff");
     assert.equal(textInverse.derivation?.on, "light");
+  });
+});
+
+// #535 item 8: on a red CTA (#dd4249) black scores 4.67:1 and white 4.24:1, so
+// the luminance pick is black. A declared white label clears 3:1 (AA large)
+// and is the design's intent.
+function inspectCtaSource(dir, css) {
+  const { source, packet, packetPath } = makePacket(dir);
+  mkdirSync(join(source, "styles"), { recursive: true });
+  writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="styles/brand.css"><main>Landing</main>`);
+  writeFileSync(join(source, "styles/brand.css"), css);
+  const result = inspectBrandTheme({ packet, packetPath });
+  return { result, byTarget: new Map(result.context_theme.mappings.map((mapping) => [mapping.target, mapping])) };
+}
+
+const RED_CTA_ROOT = `
+  --brand-primary: #dd4249;
+  --brand-cta: #dd4249;
+  --surface-bg: #ffffff;
+  --text-primary: #111111;`;
+
+test("brand theme uses the CTA foreground the source declares when it clears 3:1, and the luminance pick otherwise", () => {
+  withTempDir((dir) => {
+    const { result, byTarget } = inspectCtaSource(join(dir, "declared"), `:root {${RED_CTA_ROOT}\n  --text-inverse: #ffffff;\n}\n`);
+    for (const target of ["--brand--color--text-inverse", "--brand--color--cta-foreground"]) {
+      assert.equal(byTarget.get(target).value, "#ffffff", `${target} keeps the declared white label`);
+      assert.equal(byTarget.get(target).derivation.method, "declared-cta-foreground");
+      assert.equal(byTarget.get(target).derivation.contrast, 4.24);
+    }
+    assert.match(result.css, /--brand--color--text-inverse: #ffffff;/);
+    // Under 4.5:1 it is still reported, now as a declared colour.
+    assert.ok(result.warnings.some((warning) => warning.code === "theme.foreground.low_contrast" && /Declared CTA foreground #ffffff/.test(warning.message)));
+    // Only CTA-paired foregrounds take the declared colour.
+    assert.equal(byTarget.get("--brand--color--primary-foreground").derivation.method, "foreground-from-luminance");
+  });
+  withTempDir((dir) => {
+    // A declared label under 3:1 on the CTA is not used.
+    const { byTarget } = inspectCtaSource(join(dir, "unreadable"), `:root {${RED_CTA_ROOT}\n  --text-inverse: #f4b6b8;\n}\n`);
+    assert.equal(byTarget.get("--brand--color--text-inverse").value, "#0a0a0a");
+    assert.equal(byTarget.get("--brand--color--text-inverse").derivation.method, "foreground-from-luminance");
+  });
+  withTempDir((dir) => {
+    // Nothing declared: the pre-#535 output, byte for byte.
+    const { result } = inspectCtaSource(join(dir, "none"), `:root {${RED_CTA_ROOT}\n}\n`);
+    assert.equal(result.css.split("\n").slice(6).join("\n"), [
+      ":root {",
+      "  --brand--color--accent: #dd4249;",
+      "  --brand--color--accent-foreground: #0a0a0a;",
+      "  --brand--color--background: #ffffff;",
+      "  --brand--color--cta-foreground: #0a0a0a;",
+      "  --brand--color--cta-primary: #dd4249;",
+      "  --brand--color--foreground: #111111;",
+      "  --brand--color--primary: #dd4249;",
+      "  --brand--color--primary-dark: #b5363c;",
+      "  --brand--color--primary-foreground: #0a0a0a;",
+      "  --brand--color--primary-light: #e4686d;",
+      "  --brand--color--primary-lighter: #fae5e6;",
+      "  --brand--color--rating-star: #dd4249;",
+      "  --brand--color--surface: #ffffff;",
+      "  --brand--color--text-inverse: #0a0a0a;",
+      "  --brand--color--text-primary: #111111;",
+      "}",
+      "",
+    ].join("\n"));
+  });
+});
+
+test("brand theme takes the darkest declared text token that passes AA on the body background for body text", () => {
+  withTempDir((dir) => {
+    const { byTarget } = inspectCtaSource(join(dir, "declared"), `:root {
+  --brand-cta: #0b1f3a;
+  --surface-bg: #ffffff;
+  --text-primary: #6b6b6b;
+  --text-body: #333333;
+  --text-heading: #1a1a1a;
+  --text-muted: #000000;
+  --text-inverse: #000000;
+  --text-shadow: #000000;
+}
+`);
+    for (const target of ["--brand--color--text-primary", "--brand--color--foreground"]) {
+      const mapping = byTarget.get(target);
+      assert.equal(mapping.value, "#1a1a1a", `${target} takes the darkest declared text token`);
+      assert.equal(mapping.source, "--text-heading");
+      assert.equal(mapping.derivation.method, "darkest-declared-text-token");
+      assert.equal(mapping.derivation.replaced_value, "#6b6b6b");
+    }
+  });
+  withTempDir((dir) => {
+    // No --text-primary in the source: the declared tokens still set body text.
+    const { byTarget } = inspectCtaSource(join(dir, "no-primary"), `:root {\n  --brand-cta: #0b1f3a;\n  --surface-bg: #ffffff;\n  --text-body: #333333;\n  --text-heading: #1a1a1a;\n}\n`);
+    for (const target of ["--brand--color--text-primary", "--brand--color--foreground"]) {
+      assert.equal(byTarget.get(target)?.value, "#1a1a1a", `${target} takes the darkest declared text token`);
+      assert.equal(byTarget.get(target).source, "--text-heading");
+      assert.equal(byTarget.get(target).derivation.replaced_value, null);
+    }
+  });
+  withTempDir((dir) => {
+    // Declared text tokens that all fail AA on the background leave the pick alone.
+    const { byTarget } = inspectCtaSource(join(dir, "failing"), `:root {\n  --brand-cta: #0b1f3a;\n  --surface-bg: #ffffff;\n  --text-primary: #9a9a9a;\n  --text-caption: #b0b0b0;\n}\n`);
+    assert.equal(byTarget.get("--brand--color--text-primary").value, "#9a9a9a");
+    assert.equal(byTarget.get("--brand--color--text-primary").source, "--text-primary");
+  });
+  withTempDir((dir) => {
+    // No declared text token: body text still comes from the rule-inferred
+    // colour, and the CSS is the pre-#535 output byte for byte.
+    const { result, byTarget } = inspectCtaSource(join(dir, "none"), `:root {\n  --brand-cta: #0b1f3a;\n  --surface-bg: #ffffff;\n}\np { color: #6b6b6b; }\n`);
+    assert.equal(byTarget.get("--brand--color--text-primary").value, "#6b6b6b");
+    assert.equal(byTarget.get("--brand--color--text-primary").derivation, null);
+    assert.equal(result.css.split("\n").slice(6).join("\n"), [
+      ":root {",
+      "  --brand--color--accent: #0b1f3a;",
+      "  --brand--color--accent-foreground: #ffffff;",
+      "  --brand--color--background: #ffffff;",
+      "  --brand--color--cta-foreground: #ffffff;",
+      "  --brand--color--cta-primary: #0b1f3a;",
+      "  --brand--color--foreground: #6b6b6b;",
+      "  --brand--color--rating-star: #0b1f3a;",
+      "  --brand--color--surface: #ffffff;",
+      "  --brand--color--text-inverse: #ffffff;",
+      "  --brand--color--text-primary: #6b6b6b;",
+      "}",
+      "",
+    ].join("\n"));
   });
 });
 

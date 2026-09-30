@@ -54,6 +54,34 @@ that still falls below the contract's `min_contrast_ratio` is emitted with a
 confirmed. Derived-foreground confidence scales with the achieved contrast
 (`>= 7:1` high, `>= 4.5:1` medium, otherwise low).
 
+One exception keeps the design's own CTA label. When the source declares a CTA
+foreground (a `--text-inverse`-style token such as `--text-inverse`,
+`--on-primary` or `--on-cta`, or a `color:` on a button/CTA selector) and that
+colour reaches at least 3:1 on the CTA background (WCAG AA for large text),
+`--brand--color--text-inverse` and `--brand--color--cta-foreground` use it
+(`derivation.method: declared-cta-foreground`). White on `#dd4249` is 4.24:1,
+so a design that declares white CTA text keeps white, although black scores
+higher there. A declared colour under 3:1 is ignored and the luminance pick
+applies, so a white scaffold default on a yellow CTA still resolves dark. A
+declared colour between 3:1 and the contract's `min_contrast_ratio` (4.5:1) is
+used and reported with `theme.foreground.low_contrast`. With no declared CTA
+foreground, the output is unchanged.
+
+### Body text prefers the darkest declared text token
+
+A declared text token is a `:root` custom property in the selected source whose
+name has a `text` part and whose value is a solid colour. Names that carry
+another job are not counted: inverse/on-colour labels, `secondary`, `muted` or
+`subtle` copy, `cta`/`button`/`btn` labels, and text `shadow`, `border`,
+`outline`, `stroke`, `bg` or `background` values. When the source has a solid
+body background (`--surface-bg`), `--brand--color--text-primary` and
+`--brand--color--foreground` take the darkest declared text token that is
+darker than that background and reaches 4.5:1 on it
+(`derivation.method: darkest-declared-text-token`, with the replaced value
+recorded, or `null` when the source yielded no `--text-primary`). This applies
+whether or not the source yields a `--text-primary` of its own. If no token
+qualifies, the existing pick (or its absence) stands.
+
 > **Contract change (PR #117):** `--text-inverse` and the three `*-foreground`
 > targets are no longer entries under `source_mappings` — they moved to
 > `foreground_derivations`. A source `--text-inverse` token (or anything that
@@ -140,6 +168,28 @@ If a fresh `brand-theme.css` exists:
    and SDK JavaScript.
 4. Record `report.theme.status`, `css_path`, `commerce_pages`, `load_order`,
    and evidence.
+
+### Where next-core.css belongs
+
+`next-core.css` and the brand layer are needed only on pages where the
+starter-template family's components render, because those components read
+the `--brand--*` tokens. `next-core.css` also carries element resets (`li`,
+`a`, headings, body letter-spacing) that restyle any markup on the page. On a
+page whose upsell, downsell or receipt markup comes from the design rather
+than from family components, loading it breaks that markup. Leave both
+stylesheets off those pages and list them only in the frontmatter styles of
+the pages that render family components, often just checkout.
+
+`report.theme.commerce_pages` is the list of pages where the brand layer was
+applied, recorded by the build. Record the pages you actually scoped, for
+example `commerce_pages: ["checkout"]`. The theme gate does not compare this
+list with the funnel. It passes on `report.theme.status: applied` with
+`load_order: after-next-core`. The gate's own `commerce_pages` output is a
+different field: every checkout, upsell, downsell, receipt or thank-you page
+the campaign builds or declares. It decides whether the gate applies, not
+which pages must load the brand layer. No check reads each built page's
+stylesheet order, so the recorded list and the evidence are what a reviewer
+sees.
 
 Polish should verify token parity, load order after next-core, starter-logo
 replacement when source assets expose a real brand mark, and SDK safety. If the
