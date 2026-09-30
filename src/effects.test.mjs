@@ -118,6 +118,10 @@ function changedPaths(before, after) {
 
 async function startReceiver() {
   const hits = [];
+  // Request path -> JSON body, for the one read a row needs a real answer to:
+  // the Map Builder spec fetch behind `--map-id`. Everything else gets the
+  // generic acknowledgement.
+  const routes = new Map();
   const server = createServer((request, response) => {
     let body = "";
     request.on("data", (chunk) => {
@@ -125,12 +129,13 @@ async function startReceiver() {
     });
     request.on("end", () => {
       hits.push({ method: request.method, url: request.url });
-      response.writeHead(201, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ ok: true, results: [], items: [], records: [] }));
+      const routed = routes.get(requestPath(request.url));
+      response.writeHead(routed ? 200 : 201, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(routed ?? { ok: true, results: [], items: [], records: [] }));
     });
   });
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
-  return { hits, base: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((done) => server.close(done)) };
+  return { hits, routes, base: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((done) => server.close(done)) };
 }
 
 async function runCli(argv, { cwd, home, telemetry, lifecycleLog = "", campaignKey = "", traceNetwork = false, extraEnv = {}, cli = CLI }) {
@@ -425,8 +430,11 @@ const WAIVE = ["--reason", "Pin held for a compatibility window", "--waived-by",
 const WAIVABLE_QA_ASSERTION = "analytics-correctness:purchase-fires";
 const PARITY_SCENARIO = "root-accessory-oto50";
 const CHECKPOINT_WAIVE = [...WAIVE, "--review-condition", "Re-evaluate before launch"];
+// An intake names its spec by `--spec`, or by `--map-id` when runCondition has
+// set `seed.fetchMapId` (see `fetchSpec` below).
 const intake = (command, seed, extra = []) => [
-  command, "--spec", seed.specPath, "--source", seed.sourceDir, "--target", seed.targetRepo,
+  command, ...(seed.fetchMapId ? ["--map-id", seed.fetchMapId] : ["--spec", seed.specPath]),
+  "--source", seed.sourceDir, "--target", seed.targetRepo,
   "--template-family", "olympus", ...extra, "--json",
 ];
 
@@ -443,6 +451,12 @@ const intake = (command, seed, extra = []) => [
  * receiver rather than the canonical fallback. A command that does not take the
  * flag is left alone: under that condition its consent resolves off by scope
  * mismatch, which is itself part of what the condition proves.
+ * `fetchSpec: true` marks an intake that takes `--map-id`. Under
+ * persisted_consent — the one condition whose --proxy-base is the loopback
+ * receiver — it names the packet's Map ID instead of `--spec`, and the
+ * receiver serves the seeded spec at `/api/spec/<map-id>`, so the fetch and the
+ * fetched copy it writes are observed rather than declared on trust. The other
+ * four conditions keep `--spec`, so both spec sources are proved per row.
  */
 const INVOCATIONS = {
   "help": { argv: () => ["help"] },
@@ -548,15 +562,15 @@ const INVOCATIONS = {
   "telemetry on": { argv: (s, receiver) => ["telemetry", "on", "--proxy-base", receiver, "--json"], target: () => "home" },
   "telemetry off": { argv: () => ["telemetry", "off", "--json"], target: () => "home" },
   "telemetry list": { argv: (s, receiver) => ["telemetry", "list", "--packet", s.packetPath, "--proxy-base", receiver, "--json"] },
-  "start": { prepare: seedCleanIntake, proxyBase: true, argv: (s) => intake("start", s) },
-  "start|--force": { prepare: seedCleanIntake, proxyBase: true, argv: (s) => intake("start", s, ["--force"]) },
-  "start|--no-run-session": { prepare: seedCleanIntake, proxyBase: true, argv: (s) => intake("start", s, ["--no-run-session"]) },
-  "prepare-build": { prepare: seedCleanIntake, proxyBase: true, argv: (s) => intake("prepare-build", s) },
-  "prepare-build|--force": { prepare: seedCleanIntake, proxyBase: true, argv: (s) => intake("prepare-build", s, ["--force"]) },
-  "prepare-build|--no-run-session": { prepare: seedCleanIntake, proxyBase: true, argv: (s) => intake("prepare-build", s, ["--no-run-session"]) },
-  "build": { prepare: seedCleanIntake, proxyBase: true, argv: (s) => intake("build", s) },
-  "build|--force": { prepare: seedCleanIntake, proxyBase: true, argv: (s) => intake("build", s, ["--force"]) },
-  "build|--no-run-session": { prepare: seedCleanIntake, proxyBase: true, argv: (s) => intake("build", s, ["--no-run-session"]) },
+  "start": { prepare: seedCleanIntake, proxyBase: true, fetchSpec: true, argv: (s) => intake("start", s) },
+  "start|--force": { prepare: seedCleanIntake, proxyBase: true, fetchSpec: true, argv: (s) => intake("start", s, ["--force"]) },
+  "start|--no-run-session": { prepare: seedCleanIntake, proxyBase: true, fetchSpec: true, argv: (s) => intake("start", s, ["--no-run-session"]) },
+  "prepare-build": { prepare: seedCleanIntake, proxyBase: true, fetchSpec: true, argv: (s) => intake("prepare-build", s) },
+  "prepare-build|--force": { prepare: seedCleanIntake, proxyBase: true, fetchSpec: true, argv: (s) => intake("prepare-build", s, ["--force"]) },
+  "prepare-build|--no-run-session": { prepare: seedCleanIntake, proxyBase: true, fetchSpec: true, argv: (s) => intake("prepare-build", s, ["--no-run-session"]) },
+  "build": { prepare: seedCleanIntake, proxyBase: true, fetchSpec: true, argv: (s) => intake("build", s) },
+  "build|--force": { prepare: seedCleanIntake, proxyBase: true, fetchSpec: true, argv: (s) => intake("build", s, ["--force"]) },
+  "build|--no-run-session": { prepare: seedCleanIntake, proxyBase: true, fetchSpec: true, argv: (s) => intake("build", s, ["--no-run-session"]) },
 };
 
 const rowKey = (row) => [
@@ -616,6 +630,10 @@ async function runCondition(row, invocation, condition) {
   const persisted = condition === "persisted_consent";
   try {
     invocation.prepare?.(seed);
+    if (persisted && invocation.fetchSpec) {
+      seed.fetchMapId = readJson(seed.packetPath).spec.map_id;
+      receiver.routes.set(`/api/spec/${seed.fetchMapId}`, { ok: true, data: readJson(seed.specPath) });
+    }
     if (persisted) {
       // The grant the operator would make: consent recorded on the machine for
       // ONE endpoint, this receiver. Made through the CLI rather than by
