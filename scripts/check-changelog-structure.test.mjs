@@ -98,6 +98,78 @@ test("a ledger entry linking a section that does not exist is refused", () => {
   assert.deepEqual(errors, ['contracts/release-ledger.json RL-0002: changelog_section "1.0.0+agent.2" names no section in CHANGELOG.md']);
 });
 
+const ARCHIVE = "contracts/archive/CHANGELOG.2026-03-01.md";
+
+test("after a rotation the live file and each archive are checked as changelogs of their own", () => {
+  // A rotation moved the whole tail from 1.1.0's group down; both halves are well-formed.
+  const live = changelog("1.2.0+agent.1", "1.2.0");
+  const archive = changelog("1.1.0+agent.2", "1.1.0+agent.1", "1.1.0", "1.0.0");
+  assert.deepEqual(validateChangelogStructure({ changelogText: live, archives: [{ path: ARCHIVE, text: archive }] }), []);
+
+  // A malformed archive is refused under its own path.
+  const disordered = validateChangelogStructure({
+    changelogText: live,
+    archives: [{ path: ARCHIVE, text: `${changelog("1.1.0+agent.1", "1.1.0+agent.2", "1.1.0")}=======\n` }],
+  });
+  assert.ok(disordered.includes(`${ARCHIVE}: section "1.1.0+agent.2" follows "1.1.0+agent.1" — +agent.N sections under one release are ordered by N descending (newest first)`), disordered.join("\n"));
+  assert.ok(disordered.some((error) => /^contracts\/archive\/CHANGELOG\.2026-03-01\.md:\d+: merge-conflict marker line "======="/.test(error)), disordered.join("\n"));
+
+  // +agent.N sections left in the live file with their release archived are orphans.
+  const orphaned = validateChangelogStructure({ changelogText: changelog("1.2.0", "1.1.0+agent.1", "1.0.0"), archives: [{ path: ARCHIVE, text: changelog("1.1.0") }] });
+  assert.ok(orphaned.includes('CHANGELOG.md: section "1.1.0+agent.1" sits above release 1.0.0 — a +agent.N section belongs directly above its own release section'), orphaned.join("\n"));
+});
+
+test("a section lives in exactly one changelog file", () => {
+  const errors = validateChangelogStructure({ changelogText: changelog("1.1.0", "1.0.0"), archives: [{ path: ARCHIVE, text: changelog("1.0.0") }] });
+  assert.deepEqual(errors, [`${ARCHIVE}: section "1.0.0" is also in CHANGELOG.md — a section lives in exactly one changelog file`]);
+});
+
+test("a section present at base must still be in the live file or an archive, linked or not", () => {
+  const base = ["1.2.0", "1.1.0+agent.1", "1.1.0", "1.0.0"];
+  // Moving sections into an archive keeps them.
+  const moved = { changelogText: changelog("1.2.0"), archives: [{ path: ARCHIVE, text: changelog("1.1.0+agent.1", "1.1.0", "1.0.0") }] };
+  assert.deepEqual(validateChangelogStructure({ ...moved, baseSectionIds: base }), []);
+  // Deleting one no ledger entry links, without archiving it, is refused.
+  const deleted = validateChangelogStructure({ changelogText: changelog("1.2.0", "1.1.0", "1.0.0"), baseSectionIds: base });
+  assert.deepEqual(deleted, [
+    'CHANGELOG.md: section "1.1.0+agent.1" was present at base but is in neither CHANGELOG.md nor an archive changelog — a section is never deleted; a baseline rotation moves it into a new archive file',
+  ]);
+});
+
+test("--base refuses an unlinked section deleted since the merge base", () => {
+  const dir = mkdtempSync(join(tmpdir(), "changelog-structure-base-"));
+  const git = (...args) => execFileSync("git", ["-C", dir, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", ...args], { encoding: "utf8" });
+  try {
+    mkdirSync(join(dir, "docs"));
+    mkdirSync(join(dir, "contracts"));
+    writeFileSync(join(dir, "docs", "page.md"), "fine\n");
+    writeFileSync(join(dir, "contracts", "release-ledger.json"), JSON.stringify({ entries: [{ id: "RL-0001", changelog_section: "1.1.0" }] }));
+    writeFileSync(join(dir, "CHANGELOG.md"), changelog("1.1.0", "1.0.0+agent.1", "1.0.0"));
+    git("init", "--quiet");
+    git("add", ".");
+    git("commit", "--quiet", "-m", "base");
+    writeFileSync(join(dir, "CHANGELOG.md"), changelog("1.1.0", "1.0.0"));
+
+    const script = join(root, "scripts", "check-changelog-structure.mjs");
+    const runner = `import { loadBaseSectionIds, loadInputs, validateChangelogStructure } from ${JSON.stringify(script)};\n` +
+      `const dir = process.argv[1];\n` +
+      `const errors = validateChangelogStructure({ ...loadInputs(dir), baseSectionIds: loadBaseSectionIds("HEAD", dir) });\n` +
+      `console.log(errors.join("\\n")); process.exit(errors.length ? 1 : 0);`;
+    let status = 0;
+    let stdout = "";
+    try {
+      stdout = execFileSync(process.execPath, ["--input-type=module", "-e", runner, dir], { encoding: "utf8" });
+    } catch (error) {
+      status = error.status;
+      stdout = error.stdout;
+    }
+    assert.equal(status, 1, stdout);
+    assert.match(stdout, /section "1\.0\.0\+agent\.1" was present at base but is in neither CHANGELOG\.md nor an archive changelog/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the command exits 1 and names every violation on a broken tree", () => {
   const dir = mkdtempSync(join(tmpdir(), "changelog-structure-"));
   try {

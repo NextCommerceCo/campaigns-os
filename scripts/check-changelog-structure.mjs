@@ -19,14 +19,27 @@
  *      directly above `## [X.Y.Z]`, with N strictly descending.
  *   4. Every ledger `changelog_section` names a section that exists.
  *
+ * After a baseline rotation (the ledger's `baseline_floor`) the history
+ * older than the floor lives in dated archive changelogs under
+ * contracts/archive/. A rotation moves one contiguous tail of CHANGELOG.md, so
+ * the live file and every archive file are each checked as a well-formed
+ * changelog on their own (invariants 1-3), and a section id may appear in only
+ * one of them. Invariant 4 holds for the live ledger against the live file;
+ * archived entries' links are the release-ledger gate's job.
+ *
+ * With --base REF, one more invariant: every section present at the merge
+ * base (in its CHANGELOG.md or in an archive its floor names) is still in the
+ * live file or an archive. A section is never deleted; a rotation moves it.
+ *
  * Exit 1 with every violation listed; exit 0 otherwise.
  */
 
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { CHANGELOG_PATH, LEDGER_PATH, parseChangelogSections } from "./orientation-contract.mjs";
+import { CHANGELOG_PATH, LEDGER_PATH, loadArchive, parseChangelogSections } from "./orientation-contract.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 
@@ -70,28 +83,19 @@ export function listFiles(dir, base = root) {
 }
 
 /**
- * Pure validator over already-read inputs so the tests need no filesystem.
- *
- * @param {object} inputs
- * @param {string} inputs.changelogText          CHANGELOG.md contents
- * @param {Array<{path: string, text: string}>} [inputs.docs]   docs/** files
- * @param {Array<{id?: string, changelog_section?: string}>} [inputs.ledgerEntries]
+ * Invariants 2 and 3 for one changelog file: unique, well-formed section ids,
+ * and each release's +agent.N sections as one descending run directly above it.
  */
-export function validateChangelogStructure({ changelogText, docs = [], ledgerEntries = [] }) {
+function validateSectionOrder(sections, path) {
   const errors = [];
 
-  errors.push(...findConflictMarkers(changelogText, CHANGELOG_PATH));
-  for (const doc of docs) errors.push(...findConflictMarkers(doc.text, doc.path));
-
-  const sections = parseChangelogSections(changelogText);
-
   // 2. Unique identifiers.
-  const seen = new Map();
+  const seen = new Set();
   for (const section of sections) {
     if (seen.has(section.section_id)) {
-      errors.push(`${CHANGELOG_PATH}: section "${section.section_id}" appears more than once — section identifiers must be unique`);
+      errors.push(`${path}: section "${section.section_id}" appears more than once — section identifiers must be unique`);
     }
-    seen.set(section.section_id, true);
+    seen.add(section.section_id);
   }
 
   // 3. Ordering under each release. Walk top to bottom collecting the +agent.N
@@ -104,7 +108,7 @@ export function validateChangelogStructure({ changelogText, docs = [], ledgerEnt
   for (const section of sections) {
     const match = SECTION_ID.exec(section.section_id);
     if (!match) {
-      errors.push(`${CHANGELOG_PATH}: section "${section.section_id}" is neither X.Y.Z nor X.Y.Z+agent.N`);
+      errors.push(`${path}: section "${section.section_id}" is neither X.Y.Z nor X.Y.Z+agent.N`);
       continue;
     }
     const [, release, agent] = match;
@@ -116,7 +120,7 @@ export function validateChangelogStructure({ changelogText, docs = [], ledgerEnt
       if (item.release !== release && !item.stray) {
         item.stray = true;
         errors.push(
-          `${CHANGELOG_PATH}: section "${item.id}" sits above release ${release} — a +agent.N section belongs directly above its own release section`,
+          `${path}: section "${item.id}" sits above release ${release} — a +agent.N section belongs directly above its own release section`,
         );
       }
     }
@@ -124,25 +128,95 @@ export function validateChangelogStructure({ changelogText, docs = [], ledgerEnt
     for (let index = 1; index < own.length; index += 1) {
       if (own[index].n >= own[index - 1].n) {
         errors.push(
-          `${CHANGELOG_PATH}: section "${own[index].id}" follows "${own[index - 1].id}" — +agent.N sections under one release are ordered by N descending (newest first)`,
+          `${path}: section "${own[index].id}" follows "${own[index - 1].id}" — +agent.N sections under one release are ordered by N descending (newest first)`,
         );
       }
     }
     run = run.filter((item) => item.release !== release);
   }
   for (const item of run) {
-    errors.push(`${CHANGELOG_PATH}: section "${item.id}" has no release section ${item.release} below it`);
+    errors.push(`${path}: section "${item.id}" has no release section ${item.release} below it`);
+  }
+  return errors;
+}
+
+/**
+ * Every section id present at base that is now in no changelog file. Shared
+ * with check-release-ledger.mjs, whose --base run is the one CI performs.
+ */
+export function findDroppedSections(baseSectionIds, presentSectionIds) {
+  const present = new Set(presentSectionIds);
+  return [...new Set(baseSectionIds)]
+    .filter((id) => !present.has(id))
+    .map(
+      (id) =>
+        `${CHANGELOG_PATH}: section "${id}" was present at base but is in neither ${CHANGELOG_PATH} nor an archive changelog — ` +
+        `a section is never deleted; a baseline rotation moves it into a new archive file`,
+    );
+}
+
+/**
+ * Every section id in a tree: its CHANGELOG.md plus each archive changelog the
+ * ledger's floor names. `readText(path)` returns a file's text or null.
+ */
+export function collectSectionIds(changelogText, ledger, readText) {
+  const { archive } = loadArchive(ledger, readText);
+  return [
+    ...parseChangelogSections(changelogText).map((section) => section.section_id),
+    ...(archive?.sections ?? []).map((section) => section.section_id),
+  ];
+}
+
+/**
+ * Pure validator over already-read inputs so the tests need no filesystem.
+ *
+ * @param {object} inputs
+ * @param {string} inputs.changelogText          CHANGELOG.md contents
+ * @param {Array<{path: string, text: string}>} [inputs.docs]   docs/** files
+ * @param {Array<{id?: string, changelog_section?: string}>} [inputs.ledgerEntries]
+ * @param {Array<{path: string, text: string}>} [inputs.archives]  archive changelogs the ledger's floor names
+ * @param {string[] | null} [inputs.baseSectionIds]  every section id at the merge base; null skips that check
+ * @param {string[]} [inputs.loadErrors]  failures reading the archive the floor names
+ */
+export function validateChangelogStructure({ changelogText, docs = [], ledgerEntries = [], archives = [], baseSectionIds = null, loadErrors = [] }) {
+  const errors = [...loadErrors];
+
+  errors.push(...findConflictMarkers(changelogText, CHANGELOG_PATH));
+  for (const doc of docs) errors.push(...findConflictMarkers(doc.text, doc.path));
+  for (const file of archives) errors.push(...findConflictMarkers(file.text, file.path));
+
+  // 2 and 3, for the live file and each archive on its own.
+  const files = [
+    { path: CHANGELOG_PATH, sections: parseChangelogSections(changelogText) },
+    ...archives.map((file) => ({ path: file.path, sections: parseChangelogSections(file.text) })),
+  ];
+  for (const file of files) errors.push(...validateSectionOrder(file.sections, file.path));
+
+  // A section lives in exactly one file.
+  const home = new Map();
+  for (const file of files) {
+    for (const id of new Set(file.sections.map((section) => section.section_id))) {
+      if (home.has(id)) {
+        errors.push(`${file.path}: section "${id}" is also in ${home.get(id)} — a section lives in exactly one changelog file`);
+      } else {
+        home.set(id, file.path);
+      }
+    }
   }
 
-  // 4. Every ledger link resolves.
+  // 4. Every live ledger link resolves in the live file.
+  const live = new Set(files[0].sections.map((section) => section.section_id));
   for (const entry of ledgerEntries) {
     if (typeof entry?.changelog_section !== "string") continue;
-    if (!seen.has(entry.changelog_section)) {
+    if (!live.has(entry.changelog_section)) {
       errors.push(
         `${LEDGER_PATH} ${entry.id ?? "<entry with no id>"}: changelog_section "${entry.changelog_section}" names no section in ${CHANGELOG_PATH}`,
       );
     }
   }
+
+  // 5. Nothing present at base disappeared.
+  if (baseSectionIds) errors.push(...findDroppedSections(baseSectionIds, home.keys()));
 
   return errors;
 }
@@ -151,11 +225,49 @@ export function loadInputs(base = root) {
   const changelogText = readFileSync(join(base, CHANGELOG_PATH), "utf8");
   const docs = listFiles(join(base, DOCS_DIR), base).map((path) => ({ path, text: readFileSync(join(base, path), "utf8") }));
   const ledger = JSON.parse(readFileSync(join(base, LEDGER_PATH), "utf8"));
-  return { changelogText, docs, ledgerEntries: Array.isArray(ledger?.entries) ? ledger.entries : [] };
+  // The archive's hashes and entries are the release-ledger gate's job; here
+  // it supplies the archive changelogs, each checked as a changelog of its own.
+  const { archive, errors: loadErrors } = loadArchive(ledger, (path) => {
+    try {
+      return readFileSync(join(base, path), "utf8");
+    } catch {
+      return null;
+    }
+  });
+  return {
+    changelogText,
+    docs,
+    ledgerEntries: Array.isArray(ledger?.entries) ? ledger.entries : [],
+    archives: (archive?.files ?? []).map((file) => ({ path: file.record.changelog_path, text: file.changelogText })),
+    loadErrors,
+  };
 }
 
-function main() {
-  const errors = validateChangelogStructure(loadInputs());
+/** Every section id at the merge base of `ref` and HEAD, live and archived. */
+export function loadBaseSectionIds(ref, base = root) {
+  const git = (...args) => execFileSync("git", ["-C", base, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+  const mergeBase = git("merge-base", ref, "HEAD").trim();
+  const readAtBase = (path) => {
+    try {
+      return git("show", `${mergeBase}:${path}`);
+    } catch {
+      return null;
+    }
+  };
+  const changelogText = readAtBase(CHANGELOG_PATH);
+  if (changelogText === null) return [];
+  const ledgerText = readAtBase(LEDGER_PATH);
+  return collectSectionIds(changelogText, ledgerText === null ? null : JSON.parse(ledgerText), readAtBase);
+}
+
+function main(argv = process.argv.slice(2)) {
+  const baseIndex = argv.indexOf("--base");
+  const ref = baseIndex === -1 ? null : argv[baseIndex + 1];
+  if (baseIndex !== -1 && !ref) {
+    console.error("--base requires a commit or ref");
+    process.exit(2);
+  }
+  const errors = validateChangelogStructure({ ...loadInputs(), baseSectionIds: ref ? loadBaseSectionIds(ref) : null });
   if (errors.length > 0) {
     console.error(`check-changelog-structure: ${errors.length} error(s):`);
     for (const error of errors) console.error(`  - ${error}`);

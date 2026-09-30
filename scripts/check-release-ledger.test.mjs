@@ -18,21 +18,26 @@ import {
   LEDGER_SCHEMA_PATH,
   ORIENTATION_SCHEMA_PATH,
   LIMIT_MEASUREMENTS,
+  ORIENTATION_SOURCE_PATHS,
   canonicalJson,
   classifyPath,
   classifyPaths,
   deriveIntroducingCommits,
   entryHash,
+  evaluateBaselineFloor,
   evaluateLimits,
+  loadArchive,
   newEntriesSince,
   parseChangelogSections,
+  rotateLedger,
+  sha256Hex,
   validateAppendOnly,
   validateConsumerDependencies,
   validateContractConsistency,
   validateLedgerStructure,
   validateTwoWayGate,
 } from "./orientation-contract.mjs";
-import { unionSurface } from "./check-release-ledger.mjs";
+import { measureRepositorySource, unionSurface } from "./check-release-ledger.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const readJson = (path) => JSON.parse(readFileSync(join(root, path), "utf8"));
@@ -593,11 +598,22 @@ for (const mutation of CONSISTENCY_MUTATIONS) {
   });
 }
 
+const readTextOrNull = (path) => {
+  try {
+    return readFileSync(join(root, path), "utf8");
+  } catch {
+    return null;
+  }
+};
+
 test("the shipped release ledger validates, is structurally intact, and links its changelog sections", () => {
   const ledger = readJson(LEDGER_PATH);
   assert.ok(validateLedgerDocument(ledger), JSON.stringify(validateLedgerDocument.errors));
   const sections = parseChangelogSections(readFileSync(join(root, "CHANGELOG.md"), "utf8"));
-  assert.deepEqual(validateLedgerStructure(ledger, { policy, surface, sections }), []);
+  const { archive, errors } = loadArchive(ledger, readTextOrNull);
+  assert.deepEqual(errors, []);
+  for (const file of archive?.files ?? []) assert.ok(validateLedgerDocument(file.document), JSON.stringify(validateLedgerDocument.errors));
+  assert.deepEqual(validateLedgerStructure(ledger, { policy, surface, sections, archive }), []);
 });
 
 test("every consumer-facing orientation artifact is on the supported surface", () => {
@@ -705,4 +721,316 @@ test("canonical JSON is key-order independent, so reformatting an entry is not m
   const b = { a: [1, { x: 3, y: 2 }], b: 1 };
   assert.equal(canonicalJson(a), canonicalJson(b));
   assert.equal(entryHash({ ...a, entry_sha256: "ignored" }), entryHash(b));
+});
+
+/* ------------------------------------------------------------------ */
+/* Baseline rotation                                                   */
+/* ------------------------------------------------------------------ */
+
+const ROTATION_CHANGELOG = [
+  "# Changelog",
+  "",
+  "## [1.2.0] - 2026-02-04",
+  "",
+  "### Added",
+  "",
+  "- Fourth fixture release.",
+  "",
+  "## [1.1.0+agent.1] - 2026-02-03",
+  "",
+  "### Fixed",
+  "",
+  "- Third fixture change.",
+  "",
+  "## [1.1.0] - 2026-02-02",
+  "",
+  "### Added",
+  "",
+  "- Second fixture release.",
+  "",
+  "## [1.0.0] - 2026-02-01",
+  "",
+  "### Added",
+  "",
+  "- First fixture release.",
+  "",
+].join("\n");
+
+function fixtureEntry(sections, { id, sequence, date, section, surfaceVersion = null, extra = {}, changes = null }) {
+  const entry = {
+    id,
+    sequence,
+    date,
+    kind: "release",
+    surface_version: surfaceVersion,
+    changelog_section: section,
+    changelog_sha256: sections.find((candidate) => candidate.section_id === section).body_sha256,
+    agent_impact: `Fixture impact for ${id}.`,
+    compatibility: "compatible",
+    migration: "none",
+    changes: changes ?? [{ class: "named_surface", path: "docs/build-packet.md", surface_entry: "docs/build-packet.md", summary: `Fixture change for ${id}.` }],
+    ...extra,
+  };
+  return { ...entry, entry_sha256: entryHash(entry) };
+}
+
+function rotationBase(overrides = {}) {
+  const sections = parseChangelogSections(ROTATION_CHANGELOG);
+  const entries = [
+    fixtureEntry(sections, { id: "RL-0001", sequence: 1, date: "2026-02-01", section: "1.0.0", surfaceVersion: "1.0.0" }),
+    fixtureEntry(sections, { id: "RL-0002", sequence: 2, date: "2026-02-02", section: "1.1.0", surfaceVersion: "1.1.0" }),
+    fixtureEntry(sections, { id: "RL-0003", sequence: 3, date: "2026-02-03", section: "1.1.0+agent.1", ...(overrides.third ?? {}) }),
+    fixtureEntry(sections, { id: "RL-0004", sequence: 4, date: "2026-02-04", section: "1.2.0", surfaceVersion: "1.2.0" }),
+  ];
+  return { ledger: { schema_version: "campaigns-os-release-ledger/v1", entries }, changelog: ROTATION_CHANGELOG, files: new Map() };
+}
+
+/** Rotate a fixture state at `cut` exactly the way a real rotation is authored. */
+function rotate(state, { cut = "RL-0003", date = "2026-03-01", rotationId = "RL-0005", sectionId = "1.3.0" } = {}) {
+  const ledgerArchivePath = `contracts/archive/release-ledger.${date}.json`;
+  const changelogArchivePath = `contracts/archive/CHANGELOG.${date}.md`;
+  const rotated = rotateLedger({
+    ledger: state.ledger,
+    changelogText: state.changelog,
+    lastArchivedId: cut,
+    ledgerArchivePath,
+    changelogArchivePath,
+    rotationEntryId: rotationId,
+    refusalReasonCode: "baseline_below_floor",
+    archiveNote: "Fixture archive.",
+    changelogPreamble: "# Changelog archive",
+  });
+  const changelog = rotated.liveChangelogText.replace("## [", `## [${sectionId}] - ${date}\n\n### Changed\n\n- Rotate the fixture baseline.\n\n## [`);
+  const sections = parseChangelogSections(changelog);
+  const rotation = fixtureEntry(sections, {
+    id: rotationId,
+    sequence: rotated.liveLedger.entries.at(-1).sequence + 1,
+    date,
+    section: sectionId,
+    changes: [ledgerArchivePath, changelogArchivePath].map((path) => ({ class: "named_surface", path, surface_entry: path, summary: "Archive rotated history." })),
+  });
+  const files = new Map([...state.files, [ledgerArchivePath, rotated.archiveLedgerText], [changelogArchivePath, rotated.archiveChangelogText]]);
+  return { ledger: { ...rotated.liveLedger, entries: [...rotated.liveLedger.entries, rotation] }, changelog, files };
+}
+
+/** Everything the real checker runs over a base..head range, from fixture states. */
+function rotationGate(base, head) {
+  const { archive, errors } = loadArchive(head.ledger, (path) => head.files.get(path) ?? null);
+  if (!validateLedgerDocument(head.ledger)) errors.push(...validateLedgerDocument.errors.map((error) => `schema ${error.instancePath} ${error.message}`));
+  errors.push(
+    ...validateLedgerStructure(head.ledger, {
+      policy,
+      surface,
+      sections: parseChangelogSections(head.changelog),
+      archive,
+      classifiableEntryIds: new Set(),
+    }),
+  );
+  errors.push(
+    ...validateAppendOnly(base.ledger.entries, head.ledger.entries, {
+      baseFloor: base.ledger.baseline_floor ?? null,
+      headFloor: head.ledger.baseline_floor ?? null,
+      headArchive: archive,
+      baseSections: parseChangelogSections(base.changelog),
+      existedAtBase: (path) => base.files.has(path),
+    }),
+  );
+  return errors;
+}
+
+/** Rewrite an archive file and re-record its hash in the floor, so only the identity checks can catch it. */
+function tamperArchive(state, path, edit, { rehash = true } = {}) {
+  const files = new Map(state.files);
+  files.set(path, edit(files.get(path)));
+  const floor = structuredClone(state.ledger.baseline_floor);
+  if (rehash) {
+    for (const record of floor.archives) {
+      if (record.ledger_path === path) record.ledger_sha256 = sha256Hex(files.get(path));
+      if (record.changelog_path === path) record.changelog_sha256 = sha256Hex(files.get(path));
+    }
+  }
+  return { ...state, ledger: { ...state.ledger, baseline_floor: floor }, files };
+}
+
+const expectError = (errors, pattern) =>
+  assert.ok(errors.some((error) => pattern.test(error)), `expected an error matching ${pattern}; got:\n  ${errors.join("\n  ") || "(none)"}`);
+
+test("a baseline rotation moves entries and the changelog tail byte-for-byte and passes every gate, twice", () => {
+  const base = rotationBase();
+  const head = rotate(base);
+  assert.deepEqual(rotationGate(base, head), []);
+
+  const floor = head.ledger.baseline_floor;
+  assert.equal(floor.last_archived_id, "RL-0003");
+  assert.equal(floor.last_archived_sequence, 3);
+  assert.equal(floor.first_kept_id, "RL-0004");
+  assert.equal(head.ledger.entries[0].sequence, 4, "nothing is renumbered: the live file starts at floor + 1");
+  const archived = JSON.parse(head.files.get(floor.archives[0].ledger_path)).entries;
+  assert.deepEqual(archived.map(canonicalJson), base.ledger.entries.slice(0, 3).map(canonicalJson));
+  const archiveText = head.files.get(floor.archives[0].changelog_path);
+  assert.deepEqual(parseChangelogSections(archiveText).map((section) => section.section_id), ["1.1.0+agent.1", "1.1.0", "1.0.0"]);
+  assert.ok(base.changelog.endsWith(archiveText.slice(archiveText.indexOf("## ["))), "the archive changelog is the base file's tail, verbatim");
+  assert.deepEqual(parseChangelogSections(head.changelog).map((section) => section.section_id), ["1.3.0", "1.2.0"]);
+  assert.ok(Object.prototype.hasOwnProperty.call(reasonCodes.codes, floor.refusal_reason_code));
+
+  // A second rotation appends a new dated pair and leaves the first untouched.
+  const second = rotate(head, { cut: "RL-0004", date: "2026-04-01", rotationId: "RL-0006", sectionId: "1.4.0" });
+  assert.deepEqual(rotationGate(head, second), []);
+  assert.equal(second.ledger.baseline_floor.archives.length, 2);
+  assert.deepEqual(second.ledger.baseline_floor.archives[0], floor.archives[0]);
+  assert.equal(second.files.get(floor.archives[0].ledger_path), head.files.get(floor.archives[0].ledger_path));
+});
+
+test("deleting entries without a floor and an archive that holds them still fails", () => {
+  const base = rotationBase();
+  const bare = { ...base, ledger: { ...base.ledger, entries: base.ledger.entries.slice(2) } };
+  expectError(rotationGate(base, bare), /RL-0001: historical entry was deleted — the ledger is append-only/);
+
+  // A floor that claims the entries while the archive does not hold one of them.
+  const head = rotate(base);
+  const archivePath = head.ledger.baseline_floor.archives[0].ledger_path;
+  const dropped = tamperArchive(head, archivePath, (text) => {
+    const document = JSON.parse(text);
+    document.entries = document.entries.slice(1);
+    return `${JSON.stringify(document, null, 2)}\n`;
+  });
+  expectError(rotationGate(base, dropped), /RL-0001: historical entry was deleted — the floor covers it but no archive file holds it/);
+});
+
+test("an archived copy that differs from the base entry fails, even with its own hashes recomputed", () => {
+  const base = rotationBase();
+  const head = rotate(base);
+  const archivePath = head.ledger.baseline_floor.archives[0].ledger_path;
+  const rewritten = tamperArchive(head, archivePath, (text) => {
+    const document = JSON.parse(text);
+    const { entry_sha256: _drop, ...entry } = { ...document.entries[0], agent_impact: "Quietly rewritten history." };
+    document.entries[0] = { ...entry, entry_sha256: entryHash(entry) };
+    return `${JSON.stringify(document, null, 2)}\n`;
+  });
+  const errors = rotationGate(base, rewritten);
+  expectError(errors, /RL-0001: archived copy differs from the base entry/);
+  expectError(errors, /RL-0001: historical entry was deleted — its archived copy differs from the base entry/);
+});
+
+test("a floor moved without a new rotation entry fails, and so does a floor removed or rewritten in place", () => {
+  const base = rotationBase();
+  const head = rotate(base);
+
+  const oldEntryAsRotation = { ...head, ledger: { ...head.ledger, baseline_floor: { ...head.ledger.baseline_floor, rotation_entry: "RL-0004" } } };
+  expectError(rotationGate(base, oldEntryAsRotation), /floor moved to RL-0003 without a new rotation entry/);
+
+  const noRotationEntry = { ...head, ledger: { ...head.ledger, entries: head.ledger.entries.slice(0, -1) } };
+  const errors = rotationGate(base, noRotationEntry);
+  expectError(errors, /without a new rotation entry/);
+  expectError(errors, /rotation_entry "RL-0005" names no live entry/);
+
+  const removed = { ...head, ledger: { schema_version: head.ledger.schema_version, entries: head.ledger.entries } };
+  expectError(rotationGate(head, removed), /the floor was removed/);
+
+  const rewritten = { ...head, ledger: { ...head.ledger, baseline_floor: { ...head.ledger.baseline_floor, refusal_reason_code: "history_incomplete" } } };
+  expectError(rotationGate(head, rewritten), /the floor was rewritten without moving/);
+});
+
+test("an existing archive file never changes: not in place, not re-hashed, not rewritten by a later rotation", () => {
+  const base = rotationBase();
+  const head = rotate(base);
+  const changelogPath = head.ledger.baseline_floor.archives[0].changelog_path;
+  const append = (text) => text.replace("- First fixture release.", "- First fixture release, amended later.");
+
+  expectError(rotationGate(head, tamperArchive(head, changelogPath, append, { rehash: false })), /CHANGELOG\.2026-03-01\.md does not match its recorded sha256/);
+  const rehashed = rotationGate(head, tamperArchive(head, changelogPath, append));
+  expectError(rehashed, /archive record "contracts\/archive\/release-ledger\.2026-03-01\.json" changed or moved/);
+  expectError(rehashed, /RL-0001: changelog_sha256 does not match the body of contracts\/archive\/CHANGELOG\.2026-03-01\.md/);
+
+  // A second rotation that reuses the first one's dated path overwrites it.
+  const reused = rotate(head, { cut: "RL-0004", date: "2026-03-01", rotationId: "RL-0006", sectionId: "1.4.0" });
+  expectError(rotationGate(head, reused), /2026-03-01\.json already existed at base/);
+});
+
+test("archived entries' changelog hashes verify against the archive changelog, in the fixture and in the shipped archive", () => {
+  const base = rotationBase();
+  const head = rotate(base);
+  const changelogPath = head.ledger.baseline_floor.archives[0].changelog_path;
+  const errors = rotationGate(base, tamperArchive(head, changelogPath, (text) => text.replace("- Second fixture release.", "- Second fixture release, edited.")));
+  expectError(errors, /RL-0002: changelog_sha256 does not match the body of contracts\/archive\/CHANGELOG\.2026-03-01\.md section "1\.1\.0"/);
+  expectError(errors, /section "1\.1\.0" differs from the base CHANGELOG\.md/);
+
+  const ledger = readJson(LEDGER_PATH);
+  const { archive } = loadArchive(ledger, readTextOrNull);
+  assert.ok(archive, "the shipped ledger declares a floor with a loadable archive");
+  const archiveSections = new Map(archive.sections.map((section) => [section.section_id, section]));
+  const liveSectionIds = new Set(parseChangelogSections(readFileSync(join(root, "CHANGELOG.md"), "utf8")).map((section) => section.section_id));
+  const supersededBySameSection = new Set(
+    archive.entries.map((row) => row.entry).filter((entry) => entry.kind === "amendment").map((entry) => `${entry.amends}|${entry.changelog_section}`),
+  );
+  for (const { entry } of archive.entries) {
+    assert.ok(!liveSectionIds.has(entry.changelog_section), `${entry.changelog_section} must live only in the archive`);
+    const section = archiveSections.get(entry.changelog_section);
+    assert.ok(section, `${entry.id} links ${entry.changelog_section}, which the archive changelog must hold`);
+    if (!supersededBySameSection.has(`${entry.id}|${entry.changelog_section}`)) assert.equal(section.body_sha256, entry.changelog_sha256, entry.id);
+  }
+});
+
+test("source_bytes after rotation measures the mandatory reads only, never the archive", () => {
+  const ledger = readJson(LEDGER_PATH);
+  const archivePaths = ledger.baseline_floor.archives.flatMap((record) => [record.ledger_path, record.changelog_path]);
+  for (const path of archivePaths) assert.ok(!ORIENTATION_SOURCE_PATHS.includes(path), `${path} must not be a mandatory read`);
+
+  const bytes = (path) => readFileSync(join(root, path)).byteLength;
+  const measured = measureRepositorySource();
+  assert.equal(measured.source_bytes, ORIENTATION_SOURCE_PATHS.reduce((total, path) => total + bytes(path), 0));
+  assert.equal(measured.ledger_entries, ledger.entries.length);
+  assert.equal(measured.section_count, parseChangelogSections(readFileSync(join(root, "CHANGELOG.md"), "utf8")).length);
+  assert.ok(evaluateLimits(measured, limits).within_limits, "the live orientation source fits the unchanged limits");
+  const withArchive = measured.source_bytes + archivePaths.reduce((total, path) => total + bytes(path), 0);
+  assert.ok(withArchive > limits.limits.max_source_bytes.value, "the archive is what would not have fit");
+});
+
+test("A1-baseline-below-floor: a reviewed baseline older than the floor refuses with the floor's code and a newer-baseline remedy", () => {
+  const floor = readJson(LEDGER_PATH).baseline_floor;
+  const definition = reasonCodes.codes[floor.refusal_reason_code];
+  assert.equal(definition.owner, "campaigns-os");
+  assert.deepEqual(definition.outcomes, ["refused"]);
+  assert.match(definition.remedy, /^Adopt a newer reviewed baseline/);
+
+  const below = evaluateBaselineFloor(floor, floor.last_archived_sequence - 1);
+  assert.equal(below.within_floor, false);
+  assert.equal(below.reason_code, floor.refusal_reason_code);
+  assert.match(below.detail, new RegExp(`adopt a newer reviewed baseline.*${floor.first_kept_id}`));
+  for (const unmeasured of [undefined, null, Number.NaN, "124"]) assert.equal(evaluateBaselineFloor(floor, unmeasured).within_floor, false);
+
+  assert.equal(evaluateBaselineFloor(floor, floor.last_archived_sequence).within_floor, true, "a window starting at the first kept entry reads from the live ledger");
+  assert.equal(evaluateBaselineFloor(floor, readJson(LEDGER_PATH).entries.at(-1).sequence).within_floor, true);
+  assert.equal(evaluateBaselineFloor(null, 1).within_floor, true);
+});
+
+test("a rotation refuses to split an amendment from the entry it amends, or a section from its entries", () => {
+  const amendment = rotationBase({ third: { extra: { kind: "amendment", amends: "RL-0002", amendment_reason: "Fixture correction." } } });
+  assert.throws(() => rotate(amendment, { cut: "RL-0002" }), /would split a pair \(RL-0003 amends archived RL-0002; .*\); move the cut earlier/);
+
+  const relink = rotationBase({ third: { section: "1.1.0", extra: { kind: "amendment", amends: "RL-0002", amendment_reason: "Fixture re-hash." } } });
+  assert.throws(() => rotate(relink, { cut: "RL-0002" }), /RL-0003 links archived section 1\.1\.0\b/);
+});
+
+test("the changelog cut takes the whole tail from the top of the first archived release group, linked or not", () => {
+  // Cutting at RL-0002 archives release 1.1.0, so 1.1.0+agent.1 above it moves
+  // too; RL-0003 still links it, so the cut must move earlier.
+  assert.throws(() => rotate(rotationBase(), { cut: "RL-0002" }), /RL-0003 links archived section 1\.1\.0\+agent\.1\); move the cut earlier/);
+
+  // With no entry linking 1.1.0+agent.1 it simply moves with its release.
+  const base = rotationBase();
+  const unlinked = { ...base, ledger: { ...base.ledger, entries: base.ledger.entries.filter((entry) => entry.id !== "RL-0003") } };
+  const rotated = rotateLedger({
+    ledger: unlinked.ledger,
+    changelogText: unlinked.changelog,
+    lastArchivedId: "RL-0002",
+    ledgerArchivePath: "contracts/archive/release-ledger.2026-03-01.json",
+    changelogArchivePath: "contracts/archive/CHANGELOG.2026-03-01.md",
+    rotationEntryId: "RL-0005",
+    refusalReasonCode: "baseline_below_floor",
+    archiveNote: "Fixture archive.",
+    changelogPreamble: "# Changelog archive",
+  });
+  assert.deepEqual(parseChangelogSections(rotated.archiveChangelogText).map((section) => section.section_id), ["1.1.0+agent.1", "1.1.0", "1.0.0"]);
+  assert.deepEqual(parseChangelogSections(rotated.liveChangelogText).map((section) => section.section_id), ["1.2.0"]);
 });

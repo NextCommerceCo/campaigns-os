@@ -27,7 +27,9 @@
  *   - --base REF:     the two-way gate. Every agent-relevant changed path has
  *                     exactly one ledger change item, every new change item
  *                     maps to a classified change or a reviewed amendment, and
- *                     historical entries are byte-identical to base.
+ *                     historical entries are byte-identical to base, or were
+ *                     moved byte-identical into a new dated archive by a
+ *                     baseline rotation (see validateAppendOnly).
  *
  * Without --base this validates the ledger as it stands. The completeness gate
  * needs a comparison point, so CI must pass --base; `npm run check` runs the
@@ -47,12 +49,14 @@ import {
   LEDGER_SCHEMA_PATH,
   LIMITS_PATH,
   ORIENTATION_SCHEMA_PATH,
+  ORIENTATION_SOURCE_PATHS,
   POLICY_PATH,
   REASON_CODES_PATH,
   SURFACE_PATH,
   classifyPaths,
   deriveIntroducingCommits,
   evaluateLimits,
+  loadArchive,
   newEntriesSince,
   parseChangelogSections,
   validateAppendOnly,
@@ -60,6 +64,7 @@ import {
   validateLedgerStructure,
   validateTwoWayGate,
 } from "./orientation-contract.mjs";
+import { collectSectionIds, findDroppedSections } from "./check-changelog-structure.mjs";
 import { ENVELOPE_FIXTURE_DIR } from "./generate-orientation-reference.mjs";
 
 // fileURLToPath, never URL.pathname — see check-supported-surface.mjs.
@@ -67,6 +72,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const readText = (path) => readFileSync(join(root, path), "utf8");
 const readJson = (path) => JSON.parse(readText(path));
+const readTextOrNull = (path) => (existsSync(join(root, path)) ? readText(path) : null);
 
 function git(...args) {
   return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -95,10 +101,10 @@ export function loadContracts(read = readJson, readRaw = readText) {
 }
 
 /** Validate the ledger document against schemas/campaigns-os-release-ledger.v1.schema.json. */
-export function validateAgainstSchema(ledger, ledgerSchema) {
+export function validateAgainstSchema(ledger, ledgerSchema, label = LEDGER_PATH) {
   const validate = new Ajv2020({ strict: true, allErrors: true }).compile(ledgerSchema);
   if (validate(ledger)) return [];
-  return validate.errors.map((error) => `${LEDGER_PATH}${error.instancePath}: ${error.message}${error.params?.additionalProperty ? ` (${error.params.additionalProperty})` : ""}`);
+  return validate.errors.map((error) => `${label}${error.instancePath}: ${error.message}${error.params?.additionalProperty ? ` (${error.params.additionalProperty})` : ""}`);
 }
 
 /**
@@ -117,6 +123,11 @@ export function validateAgainstSchema(ledger, ledgerSchema) {
  * here, so the shipped examples are the only honest local stand-in. It is
  * deliberately NOT the serialized ledger: the ledger is source, not envelope,
  * and measuring one against the other's bound would be a bound on nothing.
+ *
+ * After a baseline rotation the archive files are NOT measured and their
+ * sections and entries are NOT counted: they are not mandatory reads (see
+ * ORIENTATION_SOURCE_PATHS). `changelogText`, `sections` and `ledger` are the
+ * live files only.
  */
 export function measureOrientationSource({ changelogText, sections, ledger, contractBytes, envelopeBytes }) {
   return {
@@ -126,6 +137,19 @@ export function measureOrientationSource({ changelogText, sections, ledger, cont
     envelope_bytes: envelopeBytes,
     ledger_entries: (ledger.entries ?? []).length,
   };
+}
+
+/**
+ * `source_bytes` for the repository as it stands: the changelog plus every
+ * other mandatory orientation read, and nothing else. `readBytes(path)` returns
+ * the file's byte length or 0 when it is absent.
+ */
+export function measureRepositorySource(readBytes = (path) => (existsSync(join(root, path)) ? readFileSync(join(root, path)).byteLength : 0)) {
+  const changelogText = readText(CHANGELOG_PATH);
+  const ledger = readJson(LEDGER_PATH);
+  const sections = parseChangelogSections(changelogText);
+  const contractBytes = ORIENTATION_SOURCE_PATHS.filter((path) => path !== CHANGELOG_PATH).reduce((total, path) => total + readBytes(path), 0);
+  return measureOrientationSource({ changelogText, sections, ledger, contractBytes, envelopeBytes: largestEnvelopeFixtureBytes() });
 }
 
 /** Largest shipped example envelope, in bytes. */
@@ -233,6 +257,20 @@ async function validate(base) {
   errors.push(...validateContractConsistency({ orientationSchema, ledgerSchema, policy, reasonCodes, limits }));
   errors.push(...validateAgainstSchema(ledger, ledgerSchema));
 
+  // A declared floor is only as good as the archive it names: load it here so
+  // the structural check validates archived entries against the archive
+  // changelog, and so the append-only check can prove every moved entry
+  // identical to base.
+  const { archive, errors: archiveErrors } = loadArchive(ledger, readTextOrNull);
+  errors.push(...archiveErrors);
+  for (const file of archive?.files ?? []) {
+    errors.push(...validateAgainstSchema(file.document, ledgerSchema, file.record.ledger_path));
+  }
+  const floorCode = ledger.baseline_floor?.refusal_reason_code;
+  if (ledger.baseline_floor && !Object.prototype.hasOwnProperty.call(reasonCodes.codes ?? {}, floorCode)) {
+    errors.push(`${LEDGER_PATH} baseline_floor: refusal_reason_code ${JSON.stringify(floorCode)} is not in ${REASON_CODES_PATH}`);
+  }
+
   const sections = parseChangelogSections(changelogText);
   const duplicateSections = sections
     .map((section) => section.section_id)
@@ -257,6 +295,9 @@ async function validate(base) {
     const baseSurface = gitSucceeds("cat-file", "-e", `${mergeBase}:${SURFACE_PATH}`)
       ? JSON.parse(git("show", `${mergeBase}:${SURFACE_PATH}`))
       : null;
+    const baseSections = gitSucceeds("cat-file", "-e", `${mergeBase}:${CHANGELOG_PATH}`)
+      ? parseChangelogSections(git("show", `${mergeBase}:${CHANGELOG_PATH}`))
+      : [];
     comparison = {
       mergeBase,
       paths,
@@ -264,6 +305,7 @@ async function validate(base) {
       baseEntries,
       headEntries,
       baseSurface,
+      baseSections,
       classifyingSurface: unionSurface(baseSurface, surface),
       newEntries: newEntriesSince(baseEntries, headEntries),
     };
@@ -278,10 +320,12 @@ async function validate(base) {
       // one, so nothing is path-classified. Classification coverage comes from
       // the --base run CI performs and from the fixture matrix.
       classifiableEntryIds: comparison ? new Set(comparison.newEntries.map((entry) => entry.id)) : new Set(),
+      archive,
     }),
   );
 
-  const contractBytes = [LEDGER_PATH, POLICY_PATH, LIMITS_PATH, REASON_CODES_PATH, SURFACE_PATH, ORIENTATION_SCHEMA_PATH, LEDGER_SCHEMA_PATH]
+  // Mandatory reads only. The archive files are deliberately absent.
+  const contractBytes = ORIENTATION_SOURCE_PATHS.filter((path) => path !== CHANGELOG_PATH)
     .reduce((total, path) => total + (existsSync(join(root, path)) ? readFileSync(join(root, path)).byteLength : 0), 0);
   const measured = measureOrientationSource({
     changelogText,
@@ -307,10 +351,29 @@ async function validate(base) {
     return errors;
   }
 
-  const { mergeBase, paths, baseLedger, baseEntries, headEntries, baseSurface, classifyingSurface, newEntries } = comparison;
+  const { mergeBase, paths, baseLedger, baseEntries, headEntries, baseSurface, baseSections, classifyingSurface, newEntries } = comparison;
   const classified = classifyPaths(paths, { policy, surface: classifyingSurface });
 
-  if (baseLedger) errors.push(...validateAppendOnly(baseEntries, headEntries));
+  if (baseLedger) {
+    errors.push(
+      ...validateAppendOnly(baseEntries, headEntries, {
+        baseFloor: baseLedger.baseline_floor ?? null,
+        headFloor: ledger.baseline_floor ?? null,
+        headArchive: archive,
+        baseSections,
+        existedAtBase: (path) => gitSucceeds("cat-file", "-e", `${mergeBase}:${path}`),
+      }),
+    );
+  }
+
+  // A changelog section present at base, live or archived, is never deleted:
+  // the ledger only hashes the sections entries link, so this is what catches
+  // an unlinked one disappearing. Same rule as check-changelog-structure --base.
+  if (gitSucceeds("cat-file", "-e", `${mergeBase}:${CHANGELOG_PATH}`)) {
+    const readAtBase = (path) => (gitSucceeds("cat-file", "-e", `${mergeBase}:${path}`) ? git("show", `${mergeBase}:${path}`) : null);
+    const baseSectionIds = collectSectionIds(readAtBase(CHANGELOG_PATH), baseLedger, readAtBase);
+    errors.push(...findDroppedSections(baseSectionIds, [...sections, ...(archive?.sections ?? [])].map((section) => section.section_id)));
+  }
 
   const surfaceBumped = Boolean(baseSurface?.surface_version) && baseSurface.surface_version !== surface.surface_version;
 

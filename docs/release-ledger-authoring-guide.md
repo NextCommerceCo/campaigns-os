@@ -274,3 +274,40 @@ a quiet raise.
 
 Raising a limit is a reviewed policy change: advance `limits_version`, and the
 change owes its own ledger entry like anything else.
+
+## Rotating the baseline
+
+When the live ledger and changelog approach a bound, rotate them at a reviewed
+cut instead of raising a limit. The first rotation (2026-09-30, `RL-0190`)
+moved `RL-0001` through `RL-0124`; the ledger's `baseline_floor` records it.
+
+1. Pick the cut: the last entry to archive. Everything up to it moves, and so
+   does the changelog from the first section those entries link down to the end
+   of the file, including sections no entry links. If a kept entry amends an
+   archived one, or links a section in that tail, move the cut earlier until the
+   pair is on one side. Never later.
+2. Run the rotation through `rotateLedger` in `scripts/orientation-contract.mjs`
+   with a new dated pair under `contracts/archive/`, e.g.
+   `release-ledger.<date>.json` and `CHANGELOG.<date>.md`. It writes the entries
+   byte-for-byte (original `sequence` and hashes kept) and the changelog tail
+   verbatim, appends the pair and its SHA-256 to `baseline_floor.archives`, and
+   moves `last_archived_id`, `last_archived_sequence` and `first_kept_id`. It
+   refuses a cut that splits a pair.
+3. Never edit an existing archive file, and never reuse a date: each rotation
+   adds a new pair. Add both new files to `named` in
+   `contracts/supported-surface.json`.
+4. Record the rotation as its own entry, named in `baseline_floor.rotation_entry`,
+   with a change item for each new archive file and a CHANGELOG section of its
+   own. Its `agent_impact` tells consumers which baseline is now too old.
+
+The gate accepts a base entry missing from the live ledger only when the head
+floor covers it, the new archive holds it canonical-JSON-identical, and the floor
+moved with a new rotation entry in the same range. Any other deletion, an
+archive copy that differs from base, a floor that moves without a rotation
+entry, a floor that moves back or is rewritten, and an edited archive file all
+fail. The live changelog and each archive changelog must each be well-formed on
+their own, a section id may appear in only one of them, and a section present
+at base must still be in one of them (`check-changelog-structure.mjs --base`
+and the `--base` release-ledger gate). The archive files are not mandatory
+orientation reads and are not measured; a consumer whose reviewed baseline is older than the floor refuses
+with `baseline_below_floor` and adopts a newer reviewed baseline.
