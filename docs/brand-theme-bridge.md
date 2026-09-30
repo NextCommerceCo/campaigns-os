@@ -56,7 +56,8 @@ confirmed. Derived-foreground confidence scales with the achieved contrast
 
 One exception keeps the design's own CTA label. When the source declares a CTA
 foreground (a `--text-inverse`-style token such as `--text-inverse`,
-`--on-primary` or `--on-cta`, or a `color:` on a button/CTA selector) and that
+`--text-color-inverse`, `--on-primary`, `--on-cta` or `--text-on-dark`, or a
+`color:` on a button/CTA selector) and that
 colour reaches at least 3:1 on the CTA background (WCAG AA for large text),
 `--brand--color--text-inverse` and `--brand--color--cta-foreground` use it
 (`derivation.method: declared-cta-foreground`). White on `#dd4249` is 4.24:1,
@@ -65,13 +66,16 @@ higher there. A declared colour under 3:1 is ignored and the luminance pick
 applies, so a white scaffold default on a yellow CTA still resolves dark. A
 declared colour between 3:1 and the contract's `min_contrast_ratio` (4.5:1) is
 used and reported with `theme.foreground.low_contrast`. With no declared CTA
-foreground, the output is unchanged.
+foreground, the output is unchanged. Declarations inside CSS comments are not
+read, so a commented-out token or rule never supplies a CTA or body text colour.
 
 ### Body text prefers the darkest declared text token
 
 A declared text token is a `:root` custom property in the selected source whose
 name has a `text` part and whose value is a solid colour. Names that carry
-another job are not counted: inverse/on-colour labels, `secondary`, `muted` or
+another job are not counted: inverse/on-colour labels (`text` or `foreground`
+with `inverse` in any order, or `on` followed by `primary`, `cta`, `brand`,
+`accent` or `dark`; `--text-on-light` is ordinary copy), `secondary`, `muted` or
 `subtle` copy, `cta`/`button`/`btn` labels, and text `shadow`, `border`,
 `outline`, `stroke`, `bg` or `background` values. When the source has a solid
 body background (`--surface-bg`), `--brand--color--text-primary` and

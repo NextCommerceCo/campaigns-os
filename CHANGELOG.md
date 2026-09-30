@@ -22,8 +22,9 @@ Notable supported-surface changes are recorded here.
 ### Fixed
 
 - `theme generate` keeps the CTA label colour the source declares (#535).
-  When the source declares a CTA foreground (`--text-inverse`, `--on-primary`,
-  `--on-cta`, or a `color:` on a button selector) that reaches 3:1 on the CTA
+  When the source declares a CTA foreground (`--text-inverse`,
+  `--text-color-inverse`, `--on-primary`, `--on-cta`, `--text-on-dark`, or a
+  `color:` on a button selector) that reaches 3:1 on the CTA
   background (WCAG AA for large text), `--brand--color--text-inverse` and
   `--brand--color--cta-foreground` use it instead of the higher-contrast
   black or white pick. A declared white label on `#dd4249` (4.24:1) now stays
@@ -36,8 +37,15 @@ Notable supported-surface changes are recorded here.
   background, `--brand--color--text-primary` and
   `--brand--color--foreground` use the darkest one that is darker than the
   background and reaches 4.5:1 on it, instead of a lighter grey. This applies
-  even when the source has no primary text token of its own. Sources with no
-  qualifying token generate the same CSS as before.
+  even when the source has no primary text token of its own. Inverse and
+  on-colour label tokens such as `--text-color-inverse` or `--text-on-dark`
+  are not body text, whatever the word order. Sources with no qualifying token
+  generate the same CSS as before.
+- `theme generate` no longer reads declarations inside CSS comments. A
+  commented-out token or rule used to count as a source colour, so it could
+  set the CTA label or body text; now it is skipped. A comment inside a rule
+  also no longer hides the declaration after it. Sources without comments
+  generate the same CSS as before.
 
 ### Changed
 

@@ -7641,8 +7641,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.2+agent.11",
-      "changelog_sha256": "7687bd85ecfc2385183668b46499fa8f0186ae47e56efdb54930cd6abd0f877e",
-      "agent_impact": "doctor can report a new warning, built_output.sdk_markup.checkout_bump_is_upsell, when a checkout page carries data-next-is-upsell=\"true\" on an order bump; it does not block. Several starter bump includes write the flag unconditionally, so starter checkouts with a bump show it; to clear it, remove data-next-is-upsell=\"true\" from the bump include in the campaign unless the line should be billed as an upsell. theme generate now keeps a declared CTA label colour that reaches 3:1 on the CTA (reported as theme.foreground.low_contrast when under 4.5:1) and takes body text from the darkest declared text token that reaches 4.5:1 on the body background, even when the source has no primary text token; sources that declare neither generate the same CSS as before. docs/brand-theme-bridge.md says to load next-core.css and the brand layer only on pages where family components render.",
+      "changelog_sha256": "6b4aa5ad65488d33b82c57fa22c4d8f47e744a3e99a9ffe90bb1876143a9dbad",
+      "agent_impact": "doctor can report a new warning, built_output.sdk_markup.checkout_bump_is_upsell, when a checkout page carries data-next-is-upsell=\"true\" on an order bump; it does not block. Several starter bump includes write the flag unconditionally, so starter checkouts with a bump show it; to clear it, remove data-next-is-upsell=\"true\" from the bump include in the campaign unless the line should be billed as an upsell. theme generate now keeps a declared CTA label colour that reaches 3:1 on the CTA (reported as theme.foreground.low_contrast when under 4.5:1) and takes body text from the darkest declared text token that reaches 4.5:1 on the body background, even when the source has no primary text token; inverse and on-colour label tokens (for example --text-color-inverse or --text-on-dark) are never body text, and declarations inside CSS comments are no longer read; sources that declare neither generate the same CSS as before. docs/brand-theme-bridge.md says to load next-core.css and the brand layer only on pages where family components render.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -7656,10 +7656,10 @@
           "class": "named_surface",
           "path": "docs/brand-theme-bridge.md",
           "surface_entry": "docs/brand-theme-bridge.md",
-          "summary": "Document the declared CTA foreground and darkest-declared body text rules, and that next-core.css and the brand layer belong only on pages where family components render, with report.theme.commerce_pages recording the scoped pages."
+          "summary": "Document the declared CTA foreground and darkest-declared body text rules (commented-out declarations are not read), and that next-core.css and the brand layer belong only on pages where family components render, with report.theme.commerce_pages recording the scoped pages."
         }
       ],
-      "entry_sha256": "ee9f4cde43666be00f05a000f9588aca432363999e5f7489d4169d75f300c292"
+      "entry_sha256": "6a38ae50120b74a183d91d1938203aa8fbaf9082017e15e6e00b8fa962234b83"
     }
   ]
 }

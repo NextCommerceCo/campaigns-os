@@ -169,16 +169,21 @@ function extractStyleBlocks(content) {
   return blocks;
 }
 
+// A commented-out declaration is not part of the design (#535): every token
+// and rule extraction below reads the CSS with comments removed first.
+function stripCssComments(content) {
+  return String(content || "").replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 export function parseRootCustomProperties(content) {
   const tokens = {};
   const warnings = [];
-  for (const block of extractRootBlocks(content)) {
+  for (const block of extractRootBlocks(stripCssComments(content))) {
     const declarationPattern = /(--[A-Za-z0-9_-]+)\s*:\s*([^;{}]+);/g;
     for (const match of block.body.matchAll(declarationPattern)) {
       tokens[match[1].trim()] = match[2].trim();
     }
     const bodyWithoutMatches = block.body
-      .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(declarationPattern, "")
       .trim();
     if (bodyWithoutMatches) {
@@ -207,10 +212,13 @@ function isSurfaceBgToken(parts) {
     || hasTokenSequence(parts, ["bg"], ["page", "body", "site"]);
 }
 
+// Inverse / on-colour label tokens, whatever the word order (#535):
+// --text-inverse, --inverse-text, --text-color-inverse, --on-primary-text,
+// --text-on-dark. "on" must be followed by a coloured or dark background word;
+// --text-on-light is ordinary dark copy and is not matched.
 function isTextInverseToken(parts) {
-  return hasTokenSequence(parts, ["text", "foreground"], ["inverse"])
-    || hasTokenSequence(parts, ["inverse"], ["text", "foreground"])
-    || hasTokenSequence(parts, ["on"], ["primary", "cta", "brand", "accent"]);
+  return (hasTokenPart(parts, ["text", "foreground"]) && hasTokenPart(parts, ["inverse"]))
+    || hasTokenSequence(parts, ["on"], ["primary", "cta", "brand", "accent", "dark"]);
 }
 
 function isTargetContractToken(name) {
@@ -257,7 +265,7 @@ function inferDesignIntentTokens(content, rootTokens = {}) {
   }
 
   const rulePattern = /([^{}]+)\{([^{}]+)\}/g;
-  for (const match of content.matchAll(rulePattern)) {
+  for (const match of stripCssComments(content).matchAll(rulePattern)) {
     const selector = match[1] || "";
     for (const declaration of match[2].split(";")) {
       const [rawName, ...rawValueParts] = declaration.split(":");
@@ -346,10 +354,11 @@ function inlineCandidatesFromHtml(path, role) {
   const content = readFileSync(path, "utf8");
   const candidates = [];
   for (const styleBlock of extractStyleBlocks(content)) {
-    for (const block of extractRootBlocks(styleBlock.body)) {
+    const styleBody = stripCssComments(styleBlock.body);
+    for (const block of extractRootBlocks(styleBody)) {
       const parsed = parseRootCustomProperties(`:root {${block.body}}`);
       if (Object.keys(parsed.tokens).length === 0) continue;
-      const inferred = inferDesignIntentTokens(styleBlock.body, parsed.tokens);
+      const inferred = inferDesignIntentTokens(styleBody, parsed.tokens);
       candidates.push({
         source: "html_inline_root",
         path,
