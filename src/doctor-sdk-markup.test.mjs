@@ -215,6 +215,25 @@ test("CHECKOUT_BUMP_IS_UPSELL reads the page type from next-page-type, falls bac
   assert.deepEqual(codeNames(evaluateSdkMarkup({ pages: [{ ...typed("upsell", bump(' data-next-is-upsell="true"', 7)), page_type: "checkout" }] })), [], "the meta outranks the route");
 });
 
+test("CHECKOUT_BUMP_IS_UPSELL reads the page type as upsell_selector_scope does: blank, inert and conflicting metas fall back to the route", () => {
+  const flagged = '<div data-next-toggle-card data-next-is-upsell="true" data-next-package-id="7"></div>';
+  const withHead = (head, route) => ({ page_id: "p", file: "p.html", page_type: route, content: `<html><head>${head}</head><body>${flagged}</body></html>` });
+  const meta = (type) => `<meta name="next-page-type" content="${type}">`;
+  const warned = (input) => evaluateSdkMarkup({ pages: [input] }).warned;
+
+  // A blank first meta declares nothing, so the checkout route stands.
+  const blank = warned(withHead(meta("") + meta("checkout"), "checkout"));
+  assert.deepEqual(blank.map((item) => item.code_name), ["CHECKOUT_BUMP_IS_UPSELL"], "blank meta");
+  assert.equal(blank[0].detail.page_type_source, "route");
+  // A meta inside <template> content is not in the document; the live one is.
+  const templated = warned(withHead(`<template>${meta("upsell")}</template>${meta("checkout")}`, "upsell"));
+  assert.deepEqual(templated.map((item) => item.code_name), ["CHECKOUT_BUMP_IS_UPSELL"], "templated meta");
+  assert.equal(templated[0].detail.page_type_source, "next-page-type");
+  // Metas that disagree declare nothing, so the route decides either way.
+  assert.deepEqual(warned(withHead(meta("upsell") + meta("checkout"), "checkout")).map((item) => item.code_name), ["CHECKOUT_BUMP_IS_UPSELL"], "conflicting metas on a checkout route");
+  assert.deepEqual(warned(withHead(meta("checkout") + meta("upsell"), "upsell")), [], "conflicting metas on an upsell route");
+});
+
 test("markup inside an SDK <template> is scanned, because the SDK clones it into the live DOM", () => {
   const gate = evaluateSdkMarkup({ pages: [page('<div data-next-cart-summary><template><div data-next-checkout><input data-next-checkout-field="zip"></div></template></div>')] });
   assert.deepEqual(codeNames(gate), ["CHECKOUT_NOT_FORM", "WRONG_FIELD_NAME"]);

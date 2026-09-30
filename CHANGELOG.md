@@ -10,25 +10,38 @@ Notable supported-surface changes are recorded here.
   checkout page carries `data-next-is-upsell="true"` on an order bump (#535).
   A checkout bump is a pre-purchase add-on, and the flag puts it on the
   initial order as an upsell line. The warning names the page and each flagged
-  element. The page type comes from the page's `next-page-type` meta, or from
-  its route when the meta is absent. Upsell, downsell and receipt pages, and
-  bumps without the flag, get no warning. The flag comes from the bump
-  include's markup, and several starter bump includes write it
-  unconditionally, so a canonical starter checkout with a bump shows this
-  warning. To clear it, remove `data-next-is-upsell="true"` from the bump
+  element. The page type is read as `built_output.upsell_selector_scope` reads
+  it: from the page's live `next-page-type` meta, or from its route when that
+  meta is absent, blank, inside a `<template>` or conflicting. Upsell,
+  downsell and receipt pages, and bumps without the flag, get no warning. The
+  flag comes from the bump include's markup, and several starter bump includes
+  write it unconditionally, so a canonical starter checkout with a bump shows
+  this warning. To clear it, remove `data-next-is-upsell="true"` from the bump
   include in the campaign, unless the line really should be billed as an
   upsell. It is a warning, not a blocker.
 
 ### Fixed
 
 - `theme generate` keeps the CTA label colour the source declares (#535).
-  When the source declares a CTA foreground (`--text-inverse`,
-  `--text-color-inverse`, `--on-primary`, `--on-cta`, `--text-on-dark`, or a
-  `color:` on a button selector) that reaches 3:1 on the CTA
+  When the source declares a CTA foreground that reaches 3:1 on the CTA
   background (WCAG AA for large text), `--brand--color--text-inverse` and
   `--brand--color--cta-foreground` use it instead of the higher-contrast
-  black or white pick. A declared white label on `#dd4249` (4.24:1) now stays
-  white where it used to become black. A declared colour under 3:1 is ignored.
+  black or white pick. The declared foreground is, in order: the `color:` of
+  a button rule whose background is the CTA background; a `:root` inverse or
+  on-colour text token such as `--text-inverse`, `--text-color-inverse`,
+  `--text-on-primary` or `--foreground-on-dark` (the name needs a `text` or
+  `foreground` part, so `--border-on-primary` does not count); or the one
+  colour every other button rule agrees on. A button rule targets `button`,
+  `input[type=submit]`, or a class starting with `btn`, `button` or `cta` or
+  having a `cta` part. Only the selector's own element, class and attribute
+  parts count, not the text inside an attribute value or inside `:not()`,
+  `:is()`, `:where()` or `:has()`, and any other pseudo-class disqualifies
+  it. So `button:not(.order-summary)` supplies the label, while
+  `.order-summary`, `.cart-count`, `.order-summary[data-target=".btn"]`,
+  `.cart:has(.button)`, `[type=submit]` and `div[type="submit"]` never do.
+  A declared white label on `#dd4249`
+  (4.24:1) now stays white where it used to become black. A declared colour
+  under 3:1 is ignored.
   One under 4.5:1 is used and reported with `theme.foreground.low_contrast`,
   so the theme status reads `ready_with_warnings`. Sources that declare no CTA
   foreground generate the same CSS as before.
@@ -39,13 +52,17 @@ Notable supported-surface changes are recorded here.
   background and reaches 4.5:1 on it, instead of a lighter grey. This applies
   even when the source has no primary text token of its own. Inverse and
   on-colour label tokens such as `--text-color-inverse` or `--text-on-dark`
-  are not body text, whatever the word order. Sources with no qualifying token
-  generate the same CSS as before.
+  are not body text, whatever the word order, and neither are link, status and
+  state colours (names with `link`, `error`, `danger`, `success`, `warning`,
+  `info`, `highlight`, `accent`, `placeholder`, `disabled` or `selection`).
+  Sources with no qualifying token generate the same CSS as before.
 - `theme generate` no longer reads declarations inside CSS comments. A
   commented-out token or rule used to count as a source colour, so it could
   set the CTA label or body text; now it is skipped. A comment inside a rule
   also no longer hides the declaration after it. Sources without comments
-  generate the same CSS as before.
+  generate the same CSS as before. An inline `<style>` source is hashed as
+  before, so an existing `brand-theme.css` is not reported stale after
+  upgrading.
 
 ### Changed
 

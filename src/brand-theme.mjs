@@ -212,12 +212,23 @@ function isSurfaceBgToken(parts) {
     || hasTokenSequence(parts, ["bg"], ["page", "body", "site"]);
 }
 
-// Inverse / on-colour label tokens, whatever the word order (#535):
-// --text-inverse, --inverse-text, --text-color-inverse, --on-primary-text,
-// --text-on-dark. "on" must be followed by a coloured or dark background word;
-// --text-on-light is ordinary dark copy and is not matched.
+// Feeds token inference only; the declared CTA label and body text use
+// isTextLabelToken below.
 function isTextInverseToken(parts) {
-  return (hasTokenPart(parts, ["text", "foreground"]) && hasTokenPart(parts, ["inverse"]))
+  return hasTokenSequence(parts, ["text", "foreground"], ["inverse"])
+    || hasTokenSequence(parts, ["inverse"], ["text", "foreground"])
+    || hasTokenSequence(parts, ["on"], ["primary", "cta", "brand", "accent"]);
+}
+
+// Inverse / on-colour label tokens, whatever the word order (#535). The name
+// needs a text or foreground part, plus either "inverse" or "on" followed by a
+// coloured or dark background word: --text-inverse, --inverse-text,
+// --text-color-inverse, --on-primary-text, --text-on-dark, --foreground-on-cta.
+// --border-on-primary and --overlay-on-dark are not text; --text-on-light is
+// ordinary dark copy.
+function isTextLabelToken(parts) {
+  if (!hasTokenPart(parts, ["text", "foreground"])) return false;
+  return hasTokenPart(parts, ["inverse"])
     || hasTokenSequence(parts, ["on"], ["primary", "cta", "brand", "accent", "dark"]);
 }
 
@@ -306,6 +317,137 @@ function isCtaLikeSelector(selector) {
   return /(?:^|[.#\s:_-])(?:cta|button|btn|submit|cart|buy|order)(?:$|[.#\s:_-])/i.test(String(selector || ""));
 }
 
+// Functional pseudo-classes whose arguments are other selectors. They are
+// read past whole: `button:not(.order-summary)` is still the button, and
+// `.cart:has(.button)` is still the cart.
+const SELECTOR_ARGUMENT_PSEUDOS = new Set(["not", "is", "where", "has"]);
+
+// Tokenises a selector list into the rightmost compound selector of each
+// selector, as { type, classes, attributes, pseudos } (#535). Strings,
+// escapes, [attribute] selectors and pseudo-class arguments are consumed
+// whole, so class-like text inside them (`[data-target=".btn"]`, `:not(.btn)`)
+// is never read as the compound's own class. null when the list is empty or
+// has anything this reader does not understand.
+function rightmostCompounds(selectorList) {
+  const text = String(selectorList || "");
+  const compounds = [];
+  const fresh = () => ({ type: null, classes: [], attributes: [], pseudos: [] });
+  const isEmpty = (compound) => !compound.type && !compound.classes.length && !compound.attributes.length && !compound.pseudos.length;
+  let current = fresh();
+  let afterCombinator = false;
+  let i = 0;
+  const readName = () => {
+    const start = i;
+    while (i < text.length && (/[A-Za-z0-9_\- -￿]/.test(text[i]) || text[i] === "\\")) i += text[i] === "\\" ? 2 : 1;
+    return text.slice(start, i);
+  };
+  // Consumes a balanced [...] or (...) group from text[i], strings included.
+  const readGroup = (open, close) => {
+    const start = i;
+    let depth = 0;
+    while (i < text.length) {
+      const ch = text[i];
+      if (ch === "\\") { i += 2; continue; }
+      if (ch === "\"" || ch === "'") {
+        i += 1;
+        while (i < text.length && text[i] !== ch) i += text[i] === "\\" ? 2 : 1;
+        i += 1;
+        continue;
+      }
+      if (ch === open) depth += 1;
+      if (ch === close && --depth === 0) return text.slice(start + 1, i++);
+      i += 1;
+    }
+    return null;
+  };
+  while (i < text.length) {
+    const ch = text[i];
+    if (/[\s>+~]/.test(ch)) { afterCombinator = true; i += 1; continue; }
+    if (ch === ",") {
+      if (isEmpty(current)) return null;
+      compounds.push(current);
+      current = fresh();
+      afterCombinator = false;
+      i += 1;
+      continue;
+    }
+    if (afterCombinator) { current = fresh(); afterCombinator = false; }
+    if (ch === "." || ch === "#") {
+      i += 1;
+      const name = readName();
+      if (!name) return null;
+      if (ch === ".") current.classes.push(name);
+    } else if (ch === "[") {
+      const attribute = readGroup("[", "]");
+      if (attribute === null) return null;
+      current.attributes.push(attribute);
+    } else if (ch === ":") {
+      i += text[i + 1] === ":" ? 2 : 1;
+      const name = readName().toLowerCase();
+      if (!name) return null;
+      const hasArguments = text[i] === "(";
+      if (hasArguments && readGroup("(", ")") === null) return null;
+      if (!(hasArguments && SELECTOR_ARGUMENT_PSEUDOS.has(name))) current.pseudos.push(name);
+    } else if (ch === "*") {
+      i += 1;
+      current.type = "*";
+    } else {
+      const name = readName();
+      if (!name) return null;
+      current.type = name.toLowerCase();
+    }
+  }
+  if (isEmpty(current)) return null;
+  compounds.push(current);
+  return compounds;
+}
+
+// A selector that is unambiguously a button or CTA, for reading the CTA label
+// colour (#535). isCtaLikeSelector is too broad for that (.order-summary,
+// .cart-count). Every selector in the list must qualify, judged on its
+// rightmost compound selector's own parts (rightmostCompounds): it carries no
+// state pseudo-class or pseudo-element (:hover, :disabled, ::before) and is
+// one of: the `button` element; `input[type=submit]`; or a class that
+// starts with `btn`, `button` or `cta`, or has a `cta` part (.cta, .hero-cta,
+// .cta-primary, .ctaButton). An attribute alone never qualifies:
+// `[type=submit]`, `div[type=submit]` and `.order-summary[type=submit]` are
+// not buttons.
+function isButtonSelector(selector) {
+  const compounds = rightmostCompounds(selector);
+  if (!compounds) return false;
+  return compounds.every((compound) => {
+    if (compound.pseudos.length) return false;
+    if (compound.type === "button") return true;
+    if (compound.type === "input" && compound.attributes.some((attribute) => /^\s*type\s*=\s*(["']?)submit\1\s*(?:i\s*)?$/i.test(attribute))) return true;
+    return compound.classes.some((name) => (
+      /^(?:btn|button|cta)/i.test(name) || name.toLowerCase().split(/[-_]+/).includes("cta")
+    ));
+  });
+}
+
+// The colour rules that can supply the CTA label (#535): each button-selector
+// rule that declares `color:`, with the background it declares beside it, if
+// any. The CTA background is known only after mapping, so pairing happens in
+// declaredCtaForegroundValue.
+function collectCtaLabelRules(content, rootTokens = {}) {
+  const rules = [];
+  for (const match of stripCssComments(content).matchAll(/([^{}]+)\{([^{}]+)\}/g)) {
+    if (!isButtonSelector(match[1])) continue;
+    let color = null;
+    let background = null;
+    for (const declaration of match[2].split(";")) {
+      const [rawName, ...rawValueParts] = declaration.split(":");
+      const name = String(rawName || "").trim().toLowerCase();
+      const value = resolveDeclarationColor(rawValueParts.join(":"), rootTokens);
+      if (!value) continue;
+      if (name === "color") color = value;
+      if (["background", "background-color"].includes(name)) background = value;
+    }
+    if (color) rules.push({ color, background });
+  }
+  return rules;
+}
+
 function extractDeclarationColor(value) {
   const cleaned = String(value || "").replace(/!important/gi, "").trim();
   const exact = normalizeColor(cleaned);
@@ -345,6 +487,7 @@ function candidateFromFile(path, role, source = "css_file", referencedBy = []) {
     hash: sha256File(path),
     tokens: { ...inferred, ...parsed.tokens },
     root_tokens: parsed.tokens,
+    cta_label_rules: collectCtaLabelRules(content, parsed.tokens),
     warnings: parsed.warnings,
     referenced_by: referencedBy,
   };
@@ -355,7 +498,12 @@ function inlineCandidatesFromHtml(path, role) {
   const candidates = [];
   for (const styleBlock of extractStyleBlocks(content)) {
     const styleBody = stripCssComments(styleBlock.body);
-    for (const block of extractRootBlocks(styleBody)) {
+    // Blocks are read from the raw style body so each candidate's index and
+    // hash match earlier releases (an unchanged source is not reported stale);
+    // a :root block that starts inside a comment is skipped.
+    const comments = [...styleBlock.body.matchAll(/\/\*[\s\S]*?\*\//g)].map((match) => [match.index, match.index + match[0].length]);
+    for (const block of extractRootBlocks(styleBlock.body)) {
+      if (comments.some(([start, end]) => block.offset >= start && block.offset < end)) continue;
       const parsed = parseRootCustomProperties(`:root {${block.body}}`);
       if (Object.keys(parsed.tokens).length === 0) continue;
       const inferred = inferDesignIntentTokens(styleBody, parsed.tokens);
@@ -367,6 +515,7 @@ function inlineCandidatesFromHtml(path, role) {
         inline_block_index: styleBlock.index,
         tokens: { ...inferred, ...parsed.tokens },
         root_tokens: parsed.tokens,
+        cta_label_rules: collectCtaLabelRules(styleBody, parsed.tokens),
         warnings: parsed.warnings,
         referenced_by: [],
       });
@@ -664,16 +813,19 @@ function collectTokenConflicts(candidates) {
 
 // A declared text token (#535) is a :root custom property in the selected
 // source whose name has a "text" part and whose value is a solid colour,
-// minus the names with another job: inverse / on-colour labels, secondary or
-// muted copy, CTA/button labels, and text shadows, borders and backgrounds.
+// minus the names with another job: inverse / on-colour labels, secondary,
+// muted or state copy (links, status colours, placeholders, selections),
+// CTA/button labels, and text shadows, borders and backgrounds.
 const BODY_TEXT_MIN_CONTRAST = 4.5;
 
 function isDeclaredTextToken(name) {
   if (isTargetContractToken(name)) return false;
   const parts = tokenNameParts(name);
-  if (!hasTokenPart(parts, ["text"]) || isTextInverseToken(parts)) return false;
+  if (!hasTokenPart(parts, ["text"]) || isTextLabelToken(parts)) return false;
   return !hasTokenPart(parts, [
     "secondary", "muted", "subtle", "cta", "button", "btn",
+    "link", "error", "danger", "success", "warning", "info", "highlight", "accent",
+    "placeholder", "disabled", "selection",
     "shadow", "border", "outline", "stroke", "bg", "background",
   ]);
 }
@@ -701,7 +853,27 @@ function darkestDeclaredBodyText(rootTokens, bodyBackground) {
   return best;
 }
 
-function mapTokens(tokens, targetTokens, { rootTokens = {} } = {}) {
+// The CTA label colour the source declares (#535), in this order: the colour
+// of a button-selector rule whose background is the CTA background (the
+// design's own pairing); a :root inverse / on-colour text token (--text-inverse
+// first); the colour every other button-selector rule agrees on. Button rules
+// that disagree declare nothing. null when none applies, so the luminance
+// pick stands.
+function declaredCtaForegroundValue({ rootTokens = {}, ctaLabelRules = [], ctaBackground = null }) {
+  const background = normalizeColor(ctaBackground);
+  if (!background) return null;
+  const paired = ctaLabelRules.find((rule) => rule.background === background);
+  if (paired) return paired.color;
+  const labelNames = Object.keys(rootTokens || {}).filter((name) => (
+    !isTargetContractToken(name) && isTextLabelToken(tokenNameParts(name)) && normalizeColor(rootTokens[name])
+  ));
+  const labelName = labelNames.includes("--text-inverse") ? "--text-inverse" : labelNames[0];
+  if (labelName) return normalizeColor(rootTokens[labelName]);
+  const unpaired = [...new Set(ctaLabelRules.filter((rule) => !rule.background).map((rule) => rule.color))];
+  return unpaired.length === 1 ? unpaired[0] : null;
+}
+
+function mapTokens(tokens, targetTokens, { rootTokens = {}, ctaLabelRules = [] } = {}) {
   const allowedTargets = new Set(targetTokens.tokens || []);
   const mappings = [];
   const warnings = [];
@@ -772,7 +944,9 @@ function mapTokens(tokens, targetTokens, { rootTokens = {} } = {}) {
 
   // Foreground/on-color tokens derive from the luminance of the background they
   // sit on (CTA, primary, accent), after all backgrounds are mapped above.
-  const foreground = deriveForegroundMappings(mappings, targetTokens, { ctaForeground: tokens["--text-inverse"] });
+  const ctaBackground = mappings.find((mapping) => mapping.target === CTA_BACKGROUND_TARGET)?.value;
+  const ctaForeground = declaredCtaForegroundValue({ rootTokens, ctaLabelRules, ctaBackground });
+  const foreground = deriveForegroundMappings(mappings, targetTokens, { ctaForeground });
   for (const mapping of foreground.mappings) {
     addMapping(mapping.source, mapping.target, mapping.value, mapping.confidence, mapping.derivation);
   }
@@ -992,7 +1166,7 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
     warnings.push(issue("theme.source_tokens.unresolved", `Source token ${token} uses an unresolved value; it cannot be compared to producer defaults.`));
   }
 
-  const mapped = selected ? mapTokens(selected.tokens, contracts.targetTokens, { rootTokens: selected.root_tokens }) : { mappings: [], warnings: [] };
+  const mapped = selected ? mapTokens(selected.tokens, contracts.targetTokens, { rootTokens: selected.root_tokens, ctaLabelRules: selected.cta_label_rules }) : { mappings: [], warnings: [] };
   warnings.push(...mapped.warnings);
   const confidence = confidenceFor({ selected, defaultMatch, mappings: mapped.mappings, conflicts });
   const css = selected && mapped.mappings.length > 0 ? renderBrandThemeCss({ selected, mappings: mapped.mappings, confidence }) : null;

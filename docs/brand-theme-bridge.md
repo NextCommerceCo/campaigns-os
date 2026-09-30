@@ -54,10 +54,33 @@ that still falls below the contract's `min_contrast_ratio` is emitted with a
 confirmed. Derived-foreground confidence scales with the achieved contrast
 (`>= 7:1` high, `>= 4.5:1` medium, otherwise low).
 
-One exception keeps the design's own CTA label. When the source declares a CTA
-foreground (a `--text-inverse`-style token such as `--text-inverse`,
-`--text-color-inverse`, `--on-primary`, `--on-cta` or `--text-on-dark`, or a
-`color:` on a button/CTA selector) and that
+One exception keeps the design's own CTA label. The declared CTA foreground is
+read from the selected source in this order:
+
+1. the `color:` of a button rule whose `background` or `background-color` is
+   the CTA background (the design's own pairing);
+2. a `:root` inverse/on-colour text token: the name needs a `text` or
+   `foreground` part plus `inverse`, or `on` followed by `primary`, `cta`,
+   `brand`, `accent` or `dark` (`--text-inverse` first, then for example
+   `--text-color-inverse`, `--text-on-primary`, `--on-primary-text` or
+   `--foreground-on-dark`). `--border-on-primary`, `--overlay-on-dark` and a
+   bare `--on-primary` are not text and never qualify;
+3. the `color:` of the other button rules that declare no background, only when
+   they all agree on one colour.
+
+A button rule is one whose every selector ends in a compound selector that is
+the `button` element, `input[type=submit]`, or a class starting with
+`btn`, `button` or `cta` or having a `cta` part (`.btn-primary`, `.button`,
+`.cta`, `.hero-cta`). An attribute alone does not make a button:
+`[type=submit]`, `div[type="submit"]` and `.order-summary[type=submit]` do not
+qualify. Only the compound's own element, class and attribute
+selectors count: the value inside an attribute selector and the arguments of
+`:not()`, `:is()`, `:where()` and `:has()` are not read, so
+`.btn-primary[data-x]` and `button:not(.order-summary)` qualify while
+`.order-summary[data-target=".btn"]`, `.order-summary:not(.btn)` and
+`.cart:has(.button)` do not. Any other pseudo-class or pseudo-element
+(`:hover`, `:disabled`, `::before`) disqualifies the selector. Selectors such
+as `.order-summary` or `.cart-count`, and `.btn .icon`, never qualify. When that
 colour reaches at least 3:1 on the CTA background (WCAG AA for large text),
 `--brand--color--text-inverse` and `--brand--color--cta-foreground` use it
 (`derivation.method: declared-cta-foreground`). White on `#dd4249` is 4.24:1,
@@ -76,7 +99,9 @@ name has a `text` part and whose value is a solid colour. Names that carry
 another job are not counted: inverse/on-colour labels (`text` or `foreground`
 with `inverse` in any order, or `on` followed by `primary`, `cta`, `brand`,
 `accent` or `dark`; `--text-on-light` is ordinary copy), `secondary`, `muted` or
-`subtle` copy, `cta`/`button`/`btn` labels, and text `shadow`, `border`,
+`subtle` copy, link, status and state colours (`link`, `error`, `danger`,
+`success`, `warning`, `info`, `highlight`, `accent`, `placeholder`, `disabled`,
+`selection`), `cta`/`button`/`btn` labels, and text `shadow`, `border`,
 `outline`, `stroke`, `bg` or `background` values. When the source has a solid
 body background (`--surface-bg`), `--brand--color--text-primary` and
 `--brand--color--foreground` take the darkest declared text token that is

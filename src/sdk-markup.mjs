@@ -43,10 +43,10 @@
 //   CHECKOUT_BUMP_IS_UPSELL    data-next-is-upsell="true" on a checkout page
 //                              (#535). A checkout bump is a pre-purchase
 //                              add-on; the flag puts it on the initial order
-//                              as an upsell line. The page's next-page-type
-//                              meta decides the page type, since it is what
-//                              the SDK reads; the route-inferred type stands
-//                              in only when the meta is absent.
+//                              as an upsell line. The page type is read as
+//                              upsell_selector_scope reads it (#529): a live,
+//                              unambiguous next-page-type meta, since it is
+//                              what the SDK reads; otherwise the route type.
 //
 //   Info (advisory, one note per campaign, no code)
 //   unknown_attributes[]       a data-next-* name the pinned SDK's attribute
@@ -71,6 +71,7 @@ import {
   isIndexedSdkAttribute,
   isKnownCheckoutFieldName,
 } from "./sdk-attribute-index.mjs";
+import { builtPageTypeMeta, builtPageTypeOverRouteGuess } from "./upsell-selector-scope.mjs";
 
 export const SDK_MARKUP = "built_output.sdk_markup";
 
@@ -170,8 +171,8 @@ function describeBump(entry) {
 /**
  * Scan one built page. Returns findings with { code_name, code, severity,
  * page_id, file, message, detail } and the set of unknown data-next-* names.
- * `page_type` is the route-inferred type, used only when the page carries no
- * next-page-type meta.
+ * `page_type` is the route-inferred type, used only when the page declares no
+ * live, unambiguous next-page-type meta (builtPageTypeOverRouteGuess).
  */
 export function scanPageMarkup({ page_id, file = null, content = "", page_type = null }) {
   const document = parse(String(content || ""));
@@ -185,14 +186,10 @@ export function scanPageMarkup({ page_id, file = null, content = "", page_type =
   const templates = []; // { entry, sdkOwned }
   const referencedTemplateIds = new Set();
   const upsellFlagged = []; // entries carrying data-next-is-upsell="true"
-  let pageTypeMeta = null;
 
   walkElements(document, (entry) => {
     const { tag, attrs: a, ancestors } = entry;
 
-    if (tag === "meta" && pageTypeMeta === null && (a.get("name") || "").trim().toLowerCase() === "next-page-type") {
-      pageTypeMeta = (a.get("content") || "").trim().toLowerCase();
-    }
     if ((a.get("data-next-is-upsell") || "").trim().toLowerCase() === "true") upsellFlagged.push(entry);
 
     for (const [name] of a) {
@@ -313,8 +310,13 @@ export function scanPageMarkup({ page_id, file = null, content = "", page_type =
   // same for each (drop the flag from the bump include's markup; several
   // starter includes write it unconditionally, so an is_upsell=false argument
   // does not always clear it).
-  const effectivePageType = pageTypeMeta !== null ? pageTypeMeta : String(page_type || "").trim().toLowerCase();
-  if (effectivePageType === "checkout" && upsellFlagged.length) {
+  // The page type is read only when a flag is present, so a page without one
+  // is not parsed a second time.
+  const pageTypeMeta = upsellFlagged.length ? builtPageTypeMeta(content) : null;
+  const effectivePageType = upsellFlagged.length
+    ? String(builtPageTypeOverRouteGuess({ route_type: page_type, content }) || "").trim().toLowerCase()
+    : null;
+  if (effectivePageType === "checkout") {
     const elements = upsellFlagged.map(describeBump);
     findings.push(finding("CHECKOUT_BUMP_IS_UPSELL", page_id, where,
       `${elements.length > 1 ? `${elements.length} order bumps` : "An order bump"} on checkout page ${where} (${elements.join(", ")}) ${elements.length > 1 ? "carry" : "carries"} data-next-is-upsell="true". A checkout bump is a pre-purchase add-on; the flag puts it on the initial order as an upsell line. The flag comes from the bump include's markup, and several starter bump includes write it unconditionally, so remove data-next-is-upsell="true" from the include in this campaign unless the line really should be billed as an upsell.`,
