@@ -24,7 +24,11 @@ Notable supported-surface changes are recorded here.
   findings are warnings carrying `waived: true`; an unwaived page's findings
   stay errors. When every blocker is waived, doctor and `next` report
   `ready_with_waivers`. A waiver never applies when the manifest's generator
-  is figma-sections-export; those findings stay manifest-wide errors. An
+  names figma-sections-export in any form (with or without an `@<version>`,
+  in any case, with surrounding whitespace); those findings stay
+  manifest-wide errors. Such a generator also makes doctor check Figma
+  provenance even when no page has a Figma design source; before, only the
+  `figma-sections-export@<version>` spelling did. An
   expired, stale or malformed waiver no longer applies. Manifest validation,
   the manifest's file inventory (`source_html.files.partial`,
   `source_html.files.asset`), wrapper-policy and source-preparation findings,
@@ -38,6 +42,15 @@ Notable supported-surface changes are recorded here.
   HTML, and the per-page waiver.
 - Bundled skills carry revision `1.43.2+skills.2`, with each skill version
   advanced one patch. The lifecycle skill lists the new gate.
+
+### Fixed
+
+- `checkpoint waive` refuses each value-taking flag (`--packet`, `--gate`,
+  `--page`, `--reason`, `--waived-by`, `--expires-at`, `--review-condition`,
+  `--report`) when it is given without a value or with an empty one, naming
+  the flag. Before, a bare `--review-condition` was recorded as the condition
+  `true`, supplying a bound nobody wrote, and a bare `--report` was read as a
+  report path named `true`.
 
 ## [1.43.2+agent.3] - 2026-09-28
 

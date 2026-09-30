@@ -78,7 +78,7 @@ import {
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "../campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
-import { SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, isSourceProvenanceCode } from "./source-provenance.mjs";
+import { SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
 import {
@@ -3224,7 +3224,7 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
   const generator = optionalString(manifest?.generator) || "";
   const rawProvenance = manifest?.producer_provenance;
   const provenance = isObject(rawProvenance) ? rawProvenance : {};
-  const generatorClaimsFigma = generator.startsWith("figma-sections-export@");
+  const generatorClaimsFigma = generatorClaimsFigmaExport(generator);
   const figmaPages = activeSpecPages(spec).filter(hasFigmaDesignSource);
   const expectsFigma = generatorClaimsFigma || figmaPages.length > 0;
   const findings = expectsFigma ? collectFigmaProvenanceFindings(manifest, provenance, rawProvenance) : [];

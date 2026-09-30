@@ -7641,8 +7641,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.2+agent.8",
-      "changelog_sha256": "51dca49f975423672d4cbbbf2d4272b65621e491c3f9d3d5cf7169081769e684",
-      "agent_impact": "checkpoint waive accepts source_html.producer_provenance, waived per page with --page <page_id>, for a Figma-typed page whose approved source is hand-written HTML. Doctor adds one source_html.producer_provenance gate per Figma-typed page to derived.checkpoint_gates and reports the source_html.producer_provenance* findings once per such page with detail.page_id: warnings carrying waived: true for a waived page, errors for an unwaived one. A manifest whose generator claims figma-sections-export keeps them as manifest-wide errors. Every other source check keeps its severity.",
+      "changelog_sha256": "adbea63aab48a2310215e2486c5a34e2a34c00a94213f4db2bbde4509efc4f59",
+      "agent_impact": "checkpoint waive accepts source_html.producer_provenance, waived per page with --page <page_id>, for a Figma-typed page whose approved source is hand-written HTML. Doctor adds one source_html.producer_provenance gate per Figma-typed page to derived.checkpoint_gates and reports the source_html.producer_provenance* findings once per such page with detail.page_id: warnings carrying waived: true for a waived page, errors for an unwaived one. A manifest whose generator names figma-sections-export in any form (with or without @<version>, any case) keeps them as manifest-wide errors. Every other source check keeps its severity. checkpoint waive refuses any value-taking flag given bare or empty instead of reading it as \"true\".",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -7650,19 +7650,19 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "checkpoint",
-          "summary": "checkpoint waive registers source_html.producer_provenance with a required --page <page_id>; an unknown page, the <gate>:<page_id> form, and --page on a campaign-wide gate are refused."
+          "summary": "checkpoint waive registers source_html.producer_provenance with a required --page <page_id>; an unknown page, the <gate>:<page_id> form, and --page on a campaign-wide gate are refused. Every value-taking flag given bare or empty is refused by name."
         },
         {
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": "doctor",
-          "summary": "Doctor publishes one source-provenance gate per Figma-typed page, reports the provenance findings per page, as warnings carrying waived: true for a waived page and errors for an unwaived one, adds source_html.producer_provenance.waiver_inert, and names the waiver route in the missing-mapping error for a Figma page."
+          "summary": "Doctor publishes one source-provenance gate per Figma-typed page, reports the provenance findings per page, as warnings carrying waived: true for a waived page and errors for an unwaived one, keeps them as errors when the manifest generator names figma-sections-export in any form, adds source_html.producer_provenance.waiver_inert, and names the waiver route in the missing-mapping error for a Figma page."
         },
         {
           "class": "cli_surface",
           "path": "src/doctor/source-provenance.mjs",
           "surface_entry": "doctor",
-          "summary": "New per-page evaluator for the source-provenance gate and its waiver history."
+          "summary": "New per-page evaluator for the source-provenance gate and its waiver history, and the one predicate for a figma-sections-export generator claim."
         },
         {
           "class": "named_surface",
@@ -7674,7 +7674,7 @@
           "class": "named_surface",
           "path": "docs/design-source-package.md",
           "surface_entry": "docs/design-source-package.md",
-          "summary": "Document the hand-written HTML route for a Figma-typed page: a hand-written manifest, preserve_document_wrappers when needed, and the per-page waiver."
+          "summary": "Document the hand-written HTML route for a Figma-typed page: a hand-written manifest, preserve_document_wrappers when needed, and the per-page waiver, which never applies to a manifest whose generator names figma-sections-export."
         },
         {
           "class": "named_surface",
@@ -7755,7 +7755,7 @@
           "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
         }
       ],
-      "entry_sha256": "afcd1e607158ff0d3e981a9c5378bec17f976e4ff829040538b3a802efdc9347"
+      "entry_sha256": "7f1abaec7f816ecc7e38f57ddf24e001c32949deccec93bb2f121963cd5d814a"
     }
   ]
 }

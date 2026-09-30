@@ -762,7 +762,8 @@ and take this route instead:
    that qualify. The `<gate>:<page_id>` spelling is refused too. As with every
    `checkpoint waive` gate, a placeholder name is refused, one bound
    (`--expires-at` or `--review-condition`) is required, and `--dry-run`
-   validates the waiver and writes nothing.
+   validates the waiver and writes nothing. A value-taking flag given without
+   a value is refused, never read as the text `true`.
 
 Doctor reports the `source_html.producer_provenance*` findings once for each
 Figma-typed page, with the page in `detail.page_id`. While a page's waiver is
@@ -770,9 +771,10 @@ active, its findings are reported as warnings carrying `waived: true`, its
 checkpoint gate reports `waived`, and doctor and `next` report
 `ready_with_waivers`, never clean. A waiver covers only its own page: another
 Figma-typed page without one still gets the findings as errors, and doctor
-stays blocked. A waiver never applies when the manifest's `generator` claims
-to be `figma-sections-export`: the findings are then the manifest's own, and
-doctor reports them once, as errors.
+stays blocked. A waiver never applies when the manifest's `generator` names
+`figma-sections-export` in any form (with or without an `@<version>`, in any
+case): the findings are then the manifest's own, and doctor reports them once,
+as errors.
 
 The waiver covers Figma provenance only. Manifest validation, the manifest's
 file inventory (`source_html.files.partial` and `source_html.files.asset`,

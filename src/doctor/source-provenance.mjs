@@ -30,6 +30,16 @@ function emptyWaiverAssessment() {
   return { active: null, inert_counts: { stale: 0, foreign: 0, malformed: 0, expired: 0 } };
 }
 
+// True when a source-html manifest's generator names figma-sections-export in
+// any form: bare, `@<version>` or another suffix, any case, surrounding
+// whitespace. Such a manifest claims to be a real export, so its provenance
+// findings are its own and no page waiver clears them. Every reader of the
+// generator claim uses this one predicate.
+export function generatorClaimsFigmaExport(generator) {
+  if (typeof generator !== "string") return false;
+  return /(^|[^a-z0-9_-])figma-sections-export(?![a-z0-9_-])/i.test(generator.trim());
+}
+
 export function isSourceProvenanceCode(code) {
   const value = String(code || "");
   return value === SOURCE_PROVENANCE_SCOPE || value.startsWith(`${SOURCE_PROVENANCE_SCOPE}.`);

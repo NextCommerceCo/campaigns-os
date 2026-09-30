@@ -2692,13 +2692,35 @@ function checkpointCommand(args) {
   return checkpointWaive(args);
 }
 
+// Every value-taking flag of `checkpoint waive`. Given bare (the parser reads
+// it as boolean true) or with an empty value, each is refused by name rather
+// than coerced to the string "true" or "" — a bare --review-condition must not
+// supply a bound, nor a bare --report a report path.
+const CHECKPOINT_WAIVE_VALUE_FLAGS = Object.freeze({
+  packet: "<campaign-runtime.build.json>",
+  gate: "<checkpoint-id>",
+  page: "<page_id>",
+  reason: "\"<why>\"",
+  "waived-by": "\"<named human>\"",
+  "expires-at": "<ISO>",
+  "review-condition": "\"<trigger>\"",
+  report: "<json>",
+});
+
+function refuseBareCheckpointWaiveFlags(args) {
+  for (const [key, placeholder] of Object.entries(CHECKPOINT_WAIVE_VALUE_FLAGS)) {
+    if (!Object.hasOwn(args, key) || args[key] == null) continue;
+    if (!isNonEmptyString(args[key])) {
+      throw refused(`--${key} needs a value: pass --${key} ${placeholder}.`);
+    }
+  }
+}
+
 export function checkpointWaive(args) {
+  refuseBareCheckpointWaiveFlags(args);
   const packetPath = resolve(requireArg(args, "packet"));
   const dryRun = isDryRun(args);
   const gateId = requireArg(args, "gate").trim();
-  if (args.page != null && (typeof args.page !== "string" || !args.page.trim())) {
-    throw new Error("--page needs a page id: pass --page <page_id>.");
-  }
   const pageId = args.page == null ? null : args.page.trim();
   // One spelling for the page scope: --page. The <gate>:<page_id> form is
   // refused by name rather than falling through to "unknown gate".
@@ -2714,12 +2736,12 @@ export function checkpointWaive(args) {
   }
   const reason = requireArg(args, "reason");
   const waivedBy = requireArg(args, "waived-by");
-  const expiresAt = args["expires-at"] == null ? null : String(args["expires-at"]);
-  const reviewCondition = args["review-condition"] == null ? null : String(args["review-condition"]);
+  const expiresAt = args["expires-at"] ?? null;
+  const reviewCondition = args["review-condition"] ?? null;
   const packet = readJson(packetPath);
   const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
-    reportPath: args.report ? resolve(String(args.report)) : undefined,
+    reportPath: args.report == null ? undefined : resolve(args.report),
     followContextPointer: false,
   });
   const { reportPath } = workspace;

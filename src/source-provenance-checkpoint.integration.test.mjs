@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { checkpointWaive } from "./cli.mjs";
+import { checkpointWaive, parseArgs } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
 
 const SOURCE_PROVENANCE_SCOPE = "source_html.producer_provenance";
@@ -192,6 +192,50 @@ test("a manifest whose generator claims figma-sections-export keeps its provenan
   });
 });
 
+test("a generator naming figma-sections-export in any form is an exporter claim no page waiver clears", () => {
+  inDir({}, ({ packetPath, sourceRoot }) => {
+    waive(packetPath, "landing");
+    const manifestPath = join(sourceRoot, ".campaigns-os/source-html-manifest.json");
+    const manifest = readJson(manifestPath);
+    for (const generator of [
+      "figma-sections-export",
+      "figma-sections-export@1.0.0",
+      "  figma-sections-export@2.1.0  ",
+      "Figma-Sections-Export",
+      "FIGMA-SECTIONS-EXPORT@3",
+    ]) {
+      writeJson(manifestPath, { ...manifest, generator });
+      const doctor = doctorPacket(packetPath);
+      assert.ok(provenanceErrors(doctor).length > 0, `generator=${JSON.stringify(generator)}: the provenance family blocks`);
+      assert.ok(provenanceErrors(doctor).every((issue) => issue.detail?.generator === generator.trim()), `generator=${JSON.stringify(generator)}`);
+      assert.deepEqual(provenanceWarnings(doctor), [], `generator=${JSON.stringify(generator)}: nothing is waived`);
+      assert.equal(doctor.status, "blocked", `generator=${JSON.stringify(generator)}`);
+    }
+  });
+});
+
+test("every value-taking flag refuses a bare or empty value instead of coercing it", () => {
+  inDir({}, ({ packetPath, reportPath }) => {
+    const before = readFileSync(reportPath, "utf8");
+    // The CLI parser reads a flag followed by another flag as boolean true; a
+    // bare --review-condition must not become the waiver's only bound.
+    const argv = ["checkpoint", "waive", "--packet", packetPath, "--gate", SOURCE_PROVENANCE_SCOPE, "--page", "landing",
+      "--reason", "hand-written", "--waived-by", "Jordan Lee", "--review-condition", "--json"];
+    assert.throws(() => checkpointWaive(parseArgs(argv)), /--review-condition needs a value/);
+    for (const flag of ["review-condition", "report", "expires-at", "page", "packet", "gate", "reason", "waived-by"]) {
+      for (const value of [true, "", "   "]) {
+        const extra = flag === "review-condition" ? { "expires-at": undefined } : {};
+        assert.throws(
+          () => checkpointWaive(waiveArgs(packetPath, "landing", { ...extra, [flag]: value })),
+          new RegExp(`--${flag}\\b`),
+          `--${flag}=${JSON.stringify(value)} is refused by name`,
+        );
+      }
+    }
+    assert.equal(readFileSync(reportPath, "utf8"), before, "no refusal writes the report");
+  });
+});
+
 test("the page scope is --page only: unknown pages, the <gate>:<page_id> form and a missing --page are refused", () => {
   inDir({}, ({ packetPath, reportPath }) => {
     const base = { _: ["checkpoint", "waive"], packet: packetPath, reason: "hand-written", "waived-by": "Jordan Lee", "review-condition": "a real export exists" };
@@ -217,7 +261,7 @@ test("the page scope is --page only: unknown pages, the <gate>:<page_id> form an
     for (const page of [true, "", "   "]) {
       assert.throws(
         () => checkpointWaive({ ...base, gate: SOURCE_PROVENANCE_SCOPE, page }),
-        /--page needs a page id/,
+        /--page needs a value: pass --page <page_id>/,
         `page=${JSON.stringify(page)}`,
       );
     }
