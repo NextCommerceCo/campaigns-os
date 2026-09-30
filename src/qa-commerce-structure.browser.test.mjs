@@ -108,8 +108,9 @@ test("an unbound required field keeps the missing family shell a failure", async
   assert.equal(row.evidence.behaviour?.total_visible?.status, "pass");
 });
 
-// A customer cannot fill a hidden input or a disabled control, so neither
-// binds the field even though it carries the attribute inside the form.
+// A customer cannot fill a hidden input, a disabled or aria-disabled control,
+// or a readonly input, so none binds the field even though it carries the
+// attribute inside the form.
 test("a required field bound only on a hidden input keeps the missing family shell a failure", async (t) => {
   if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
   const row = await structureRow((source) => replaceOnce(
@@ -133,6 +134,32 @@ test("a required field bound only on a disabled control keeps the missing family
   assert.deepEqual(failedSelectors(row), FAMILY_SHELL_SELECTORS);
   assert.equal(row.status, "fail");
   assert.deepEqual(row.evidence.behaviour?.fields_bound?.missing, ["province"]);
+  assert.equal(row.evidence.behaviour?.status, "fail");
+});
+
+test("a required field bound only on a readonly input keeps the missing family shell a failure", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  const row = await structureRow((source) => replaceOnce(
+    source,
+    '<input type="text" name="postal" data-next-checkout-field="postal">',
+    '<input type="text" name="postal" data-next-checkout-field="postal" readonly>',
+  ));
+  assert.deepEqual(failedSelectors(row), FAMILY_SHELL_SELECTORS);
+  assert.equal(row.status, "fail");
+  assert.deepEqual(row.evidence.behaviour?.fields_bound?.missing, ["postal"]);
+  assert.equal(row.evidence.behaviour?.status, "fail");
+});
+
+test("a required field bound only on an aria-disabled control keeps the missing family shell a failure", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  const row = await structureRow((source) => replaceOnce(
+    source,
+    '<select name="country" data-next-checkout-field="country">',
+    '<select name="country" data-next-checkout-field="country" aria-disabled="true">',
+  ));
+  assert.deepEqual(failedSelectors(row), FAMILY_SHELL_SELECTORS);
+  assert.equal(row.status, "fail");
+  assert.deepEqual(row.evidence.behaviour?.fields_bound?.missing, ["country"]);
   assert.equal(row.evidence.behaviour?.status, "fail");
 });
 

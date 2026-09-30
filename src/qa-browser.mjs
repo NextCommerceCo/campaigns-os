@@ -1565,9 +1565,12 @@ async function inspectCheckoutBehaviour(browserPage) {
     };
     const forms = Array.from(document.querySelectorAll(input.formSelector));
     const controls = new Set(["INPUT", "SELECT", "TEXTAREA"]);
+    // readonly has no effect on a select, so only an input or textarea loses it.
     const fillable = (field) => controls.has(field.tagName)
       && !(field.tagName === "INPUT" && field.type === "hidden")
-      && !field.matches(":disabled");
+      && !field.matches(":disabled")
+      && !(field.tagName !== "SELECT" && field.hasAttribute("readonly"))
+      && field.getAttribute("aria-disabled") !== "true";
     const missing = input.requiredFields.filter((name) => !forms.some((form) => Array
       .from(form.querySelectorAll("[data-next-checkout-field]"))
       .some((field) => field.getAttribute("data-next-checkout-field") === name && fillable(field))));
@@ -2756,9 +2759,8 @@ function withSdkPriceDisplaySelectors(selectors) {
 // first, so a bundle-display node that also carries `.price-wrapper` still
 // needs text.
 async function countVisiblePriceRows(browserPage, selectors) {
-  return browserPage.evaluate((targets) => {
-    // Runs in the page, so it cannot read SDK_BUNDLE_PRICE_DISPLAY_SELECTOR.
-    const textRequired = (element) => element.matches("[data-next-bundle-display*='price']");
+  return browserPage.evaluate(({ targets, bundlePriceSelector }) => {
+    const textRequired = (element) => element.matches(bundlePriceSelector);
     const visible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -2780,7 +2782,7 @@ async function countVisiblePriceRows(browserPage, selectors) {
       }
     }
     return count;
-  }, selectors).catch(() => 0);
+  }, { targets: selectors, bundlePriceSelector: SDK_BUNDLE_PRICE_DISPLAY_SELECTOR }).catch(() => 0);
 }
 
 // Page-scoped like every other per-page row (`template-residue:<page>:…`,

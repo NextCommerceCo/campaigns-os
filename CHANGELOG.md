@@ -17,10 +17,11 @@ Notable supported-surface changes are recorded here.
   `<form data-next-checkout="form">` exists; `email`, `fname`, `lname`,
   `country`, `address1`, `city`, `province` and `postal` are each an input,
   select or textarea carrying that `data-next-checkout-field` inside the form,
-  not a `type="hidden"` input or a disabled control (a field hidden until a
-  country is chosen still counts); and a cart-summary total is visible with
-  text. If any check fails, or no checkout form is found, the row stays status
-  `fail`. Any other missing selector always fails, including an SDK selector
+  not a `type="hidden"` input, a `readonly` input or textarea, or a control
+  that is disabled or `aria-disabled="true"` (a field hidden until a country
+  is chosen still counts); and a cart-summary total is visible with text. If
+  any check fails, or no checkout form is found, the row stays status `fail`.
+  Any other missing selector always fails, including an SDK selector
   (`[data-next-checkout="form"]`, `[os-checkout-payment]`,
   `[data-next-cart-summary]`, `[data-next-bundle-slots-for]`) and a class the
   list does not name, such as a hosted payment field class.

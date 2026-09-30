@@ -248,7 +248,7 @@ test("checkout pricing visibility: the cart-summary total is still checked when 
   // A page whose only price surface is the cart-summary total: the total
   // selectors match one visible element, anything else matches nothing.
   const browserPage = {
-    evaluate: async (_fn, targets) => {
+    evaluate: async (_fn, { targets }) => {
       evaluated.push(targets);
       return JSON.stringify(targets) === JSON.stringify(totalSelectors) ? 1 : 0;
     },
@@ -279,7 +279,7 @@ test("pricing visibility: the SDK's data-next-bundle-display price counts on ups
   const bundleDisplay = "[data-next-bundle-display*='price']";
   // A page whose only price is the SDK's bundle-display node: the probe finds
   // one visible element only when that selector is among the targets.
-  const browserPage = { evaluate: async (_fn, targets) => (targets.includes(bundleDisplay) ? 1 : 0) };
+  const browserPage = { evaluate: async (_fn, { targets }) => (targets.includes(bundleDisplay) ? 1 : 0) };
 
   const [upsell] = await pricingVisibilityAssertions(browserPage, upsellPage, { brandContract: demeter });
   assert.equal(upsell.id, "pricing.upsell_price_visible:upsell-1");
