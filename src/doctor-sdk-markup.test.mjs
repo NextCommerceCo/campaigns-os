@@ -1,4 +1,4 @@
-// Static SDK markup checks (#303): the six codes through the real
+// Static SDK markup checks (#303, #529): the seven codes through the real
 // `doctor --built` entry point over the committed bad/good fixture pairs,
 // plus the evaluator edge cases the fixtures do not isolate (default swap
 // mode, upsell-context exemption, template ownership, unknown attributes,
@@ -29,10 +29,10 @@ function withTempDir(run) {
   }
 }
 
-function writePage(repo, route, body) {
+function writePage(repo, route, body, pageType = "product") {
   const dir = join(repo, "_site", SLUG, route);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "index.html"), `<html><head><meta name="next-funnel" content="Example"><meta name="next-page-type" content="product"></head><body>${body}</body></html>`);
+  writeFileSync(join(dir, "index.html"), `<html><head><meta name="next-funnel" content="Example"><meta name="next-page-type" content="${pageType}"></head><body>${body}</body></html>`);
 }
 
 const page = (body) => ({ page_id: "p", file: "p.html", content: `<html><body>${body}</body></html>` });
@@ -40,7 +40,7 @@ const codeNames = (gate) => [...gate.findings, ...gate.warned].map((item) => ite
 
 // --- The committed bad/good pairs, one per code ---------------------------------
 
-const BLOCKERS = ["swap-with-add-to-cart", "checkout-not-form", "wrong-field-name", "missing-selector-id-match"];
+const BLOCKERS = ["swap-with-add-to-cart", "checkout-not-form", "wrong-field-name", "missing-selector-id-match", "orphaned-upsell-action"];
 const ADVISORIES = ["double-selected", "template-double-brace", "checkout-bump-is-upsell"];
 // The literal code string, not a SDK_MARKUP_CODES lookup, so a fixture whose
 // code is missing fails on its behavioural assertion rather than a TypeError.
@@ -88,6 +88,21 @@ test("wrong-field-name names the SDK spelling for the usual offenders", () => {
   assert.match(messages, new RegExp(`SDK ${SDK_ATTRIBUTE_INDEX_VERSION.replace(/\\./g, "\\\\.")} maps`));
 });
 
+// #529 negative control: a downsell's "No thanks" link beside its offer
+// container, not inside it. The SDK never bound it, decline went to "#", and
+// every earlier check passed.
+test("orphaned-upsell-action: the skip link beside its offer container blocks doctor --built, naming page, action and fix", () => {
+  const bad = fixture("orphaned-upsell-action", "bad");
+  assert.equal(bad.ok, false);
+  const gate = gateOf(bad);
+  assert.equal(gate.status, "blocked");
+  assert.deepEqual(gate.findings.map((item) => [item.code_name, item.detail.action]), [["ORPHANED_UPSELL_ACTION", "skip"]]);
+  const issue = bad.errors.find((error) => error.code === SDK_MARKUP_CODES.ORPHANED_UPSELL_ACTION.code);
+  assert.match(issue.message, /downsell-1/);
+  assert.match(issue.message, /data-next-upsell-action="skip"/);
+  assert.match(issue.message, /Move it inside the data-next-upsell container/);
+});
+
 // --- Evaluator edges ---------------------------------------------------------------
 
 test("SWAP_WITH_ADD_TO_CART also fires on the SDK default (no selection-mode), and says so", () => {
@@ -104,6 +119,33 @@ test("an upsell-context selector is select mode by construction and is exempt fr
 
 test("an add-to-cart button with no selector link owes nothing to MISSING_SELECTOR_ID_MATCH", () => {
   const gate = evaluateSdkMarkup({ pages: [page('<button data-next-action="add-to-cart" data-next-package-id="12"></button>')] });
+  assert.equal(gate.status, "pass");
+});
+
+test("ORPHANED_UPSELL_ACTION blocks on every page type, not only upsell pages, and an action inside its container passes", () => {
+  for (const pageType of ["checkout", "upsell", "downsell", "receipt", "product"]) {
+    withTempDir((repo) => {
+      writePage(repo, "offer", '<div data-next-upsell="offer"></div><button data-next-upsell-action="add">Yes</button>', pageType);
+      const result = doctorBuiltOutput({ built: repo, slug: SLUG });
+      assert.equal(result.ok, false, `${pageType} page must block`);
+      assert.deepEqual(markupCodes(result.errors), [SDK_MARKUP_CODES.ORPHANED_UPSELL_ACTION.code], pageType);
+    });
+  }
+  // Inside its container it passes however deep it sits, including inside a
+  // template the SDK clones.
+  const gate = evaluateSdkMarkup({ pages: [page('<div data-next-upsell="offer"><div><p><a data-next-upsell-action="skip" href="#">No</a></p></div><template><button data-next-upsell-action="add">Yes</button></template></div>')] });
+  assert.equal(gate.status, "pass");
+});
+
+test("ORPHANED_UPSELL_ACTION names what the shopper cannot do: accept for add/accept, decline for skip/decline; an empty container still counts", () => {
+  const cases = [["add", "cannot accept"], ["accept", "cannot accept"], ["skip", "cannot decline"], ["DECLINE", "cannot decline"], ["other", "cannot act on"]];
+  for (const [value, phrase] of cases) {
+    const gate = evaluateSdkMarkup({ pages: [page(`<div data-next-upsell="offer"></div><button data-next-upsell-action="${value}">x</button>`)] });
+    assert.equal(gate.findings.length, 1, value);
+    assert.match(gate.findings[0].message, new RegExp(phrase), value);
+  }
+  // The SDK creates the upsell enhancer for data-next-upsell with any value or none.
+  const gate = evaluateSdkMarkup({ pages: [page('<div data-next-upsell=""><button data-next-upsell-action="add">Yes</button></div>')] });
   assert.equal(gate.status, "pass");
 });
 
