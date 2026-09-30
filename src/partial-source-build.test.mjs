@@ -21,6 +21,9 @@ import { validateSourceHtmlManifest } from "./source-html-manifest.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
+// Nothing listens here, so doctor's live campaign read (#533) fails on this
+// machine and is recorded not_run; no test request leaves it.
+const OFFLINE_PROXY_BASE = "http://127.0.0.1:1";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -349,7 +352,9 @@ test("post-assembly doctor does not error on declared out-of-scope pages; the la
   completeAssemblyWithInScopeBuild(fixture);
 
   const packetPath = join(fixture.target, "campaign-runtime.build.json");
-  const doctor = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  // A built page and the spec's key make doctor read the live campaign
+  // (#533); a refused loopback proxy keeps the read on this machine.
+  const doctor = runCli(["doctor", "--packet", packetPath, "--proxy-base", OFFLINE_PROXY_BASE], fixture.dir);
 
   // The declared pages must not surface under any built_output escalation.
   const scopeBlindCodes = new Set([
@@ -391,7 +396,7 @@ test("post-assembly doctor still errors on in-scope pages with no built HTML", (
   completeAssemblyWithInScopeBuild(fixture);
 
   const packetPath = join(fixture.target, "campaign-runtime.build.json");
-  const doctor = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  const doctor = runCli(["doctor", "--packet", packetPath, "--proxy-base", OFFLINE_PROXY_BASE], fixture.dir);
   assert.notEqual(doctor.status, 0);
 
   const missingPages = doctor.json.errors

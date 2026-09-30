@@ -2952,6 +2952,276 @@
         }
       ],
       "entry_sha256": "db37943b9ff1bb5158ee49280af32d6617514f8545a9c2d5e8ed34a74b123227"
+    },
+    {
+      "id": "RL-0181",
+      "sequence": 173,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.44.0+agent.2",
+      "changelog_sha256": "11bdd130e5e2f90c936fc1828b08225e519808c2f7bfb7368356de057fc077a7",
+      "agent_impact": "A default qa run --test-order common may now create more test orders than before: every actual terminal path when that count is at or under the flood cap (6 by default, or an explicit --max-test-orders), otherwise the old four-order sample plus one decline path per uncovered offer or downsell page, up to the cap. It previously created at most 4. Verdicts on funnels with offer pages, --test-order off runs included, gain a browser-test-order:upsell-action-coverage row. It is pass or warn only when coverage is certain (orders placed, every offer page listed with its own unshared URL, every plan matched to one funnel, every click on a declared page of the order's funnel) and manual_review otherwise; a warn or manual_review row makes the disposition ready_with_exceptions rather than ready.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "The seeded qa.test_order_policy_notes and the next QA-stage prompt describe the new common depth and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the common depth running full under the cap, the decline paths it adds above the cap, and the browser-test-order:upsell-action-coverage row, which is pass or warn only when coverage is certain and manual_review otherwise."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.44.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.44.0+skills.2 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe the new common depth and the upsell-action coverage row instead of an at-most-four-orders sample; stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/references/session-intake.md",
+          "surface_entry": null,
+          "summary": "Describe the new common depth and the upsell-action coverage row in the test-order coverage intake instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe the new common depth, decline-based page coverage attributed per funnel and the conservative upsell-action coverage row; stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "1ada871c0e5c5c511f92fe173349d2b99ea885894d6d18ba8815f6452ae26ff4"
+    },
+    {
+      "id": "RL-0182",
+      "sequence": 174,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": "1.45.0",
+      "changelog_section": "1.45.0",
+      "changelog_sha256": "e40161e87ca08935f33292fedb2885753e38afe481512bff44e589438c9c08e2",
+      "agent_impact": "doctor --packet may now make one read-only GET {proxy-base}/api/campaign with the public Campaigns API key in X-Campaign-Key (plus ?ref_id=<id> from the CampaignSpec's campaign.ref_id) when the built _site/<route>/ exists and the key resolves from the packet, its local CampaignSpec or the declared campaign-key env var; no store or Admin credential, nothing written; --proxy-base names the proxy. qa run makes the same read after reading a served page. The campaign comes from the proxy envelope's data field and must carry the asked-for ref (ref_id, else id). Doctor compares every built .html page in _site/<route>/ but 404.html and _/. directories, naming unlisted pages by path. --no-live-refs on doctor or qa run skips only that read; their other declared sends are unchanged. Only doctor and qa run read; other commands that run doctor record not_read. A page ref the live campaign does not serve blocks as built_output.shipping_ref_live_missing or built_output.package_ref_live_missing; spec.campaign_drift warns on CampaignSpec-vs-live differences and never softens a page blocker. An api_key_source env name containing ADMIN, TOKEN, SECRET, PASSWORD, PRIVATE or STORE is refused with no request. Page refs are read from parsed HTML for both ref checks. To see not_run: doctor's derived.live_campaign_refs has status not_run and a reason_code (no_key, no_built_pages, disabled, not_read); a failed or refused read (network_error, http_status, not_found, timeout, too_large, unparseable, unexpected_body, proxy_error, ambiguous_campaign, campaign_mismatch, unexpected_ref, key_source_refused) is also the warning built_output.live_refs_not_run; a QA verdict carries a skipped live-campaign-refs assertion (pages_eligible under --no-live-refs) or a warn built_output.live_refs_not_run assertion with the same reason_code. Read not_run as unchecked, never as a pass. The doctor and doctor --no-write effects rows are no longer readOnlyHint and sit at tier A. QA commercial parity warns commercial_parity.recurring_claim_absent, naming the package, when a page renders a subscription package with no readable recurring claim, and reports incomplete instead of pass.",
+      "compatibility": "additive",
+      "migration": "Update to the exact 1.45.0 package. To skip the live campaign read, pass --no-live-refs to doctor or qa run; only the /api/campaign request is skipped and the live ref check is recorded as not_run with reason disabled.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.45.0 and record the new effects.v1.json hash."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare the read-only {proxy-base}/api/campaign send on the doctor, doctor --no-write and doctor --write rows (the first two leave readOnlyHint and move to tier A) and on the five existing qa run rows; add --no-live-refs to the effect-changing flags with rows without the read for doctor, doctor --write, and qa run alone and with --no-remit, --no-post-verdict, --test-order or --browser."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Stop listing doctor inspection and doctor --no-write among the read-only invocations (they still skip the lifecycle journal but may send the one live campaign read), list doctor --no-live-refs inspection, add --no-live-refs to the effect-changing flags, and describe the live campaign read, its opt-out and the commands that record not_read."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the copy-paste local setup install command to the 1.45.0 package release."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Restamp the generated orientation reference for surface 1.45.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Restamp the generated runtime reference for surface 1.45.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.45.0+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Stamp package version 1.45.0 without changing dependency resolutions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release package version 1.45.0 without changing exports or dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.45.0+skills.1 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Cite doctor inspection at tier A, since it may make one read-only live campaign request; stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Make the live campaign read before doctor's packet inspection and document doctor --proxy-base, doctor --no-live-refs, qa run --no-live-refs and the read in the usage lines."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Add the live campaign ref check over built pages under _site/<route>/ with the blocker codes built_output.shipping_ref_live_missing and built_output.package_ref_live_missing, the spec.campaign_drift warning, the built_output.live_refs_not_run warning for a failed or refused read, and derived.live_campaign_refs; read page refs from parsed HTML for this check and the CampaignSpec ref check."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "Read the live campaign in packet mode when the built route exists and a public campaign key resolves, unless --no-live-refs is given, and pass the result to the inspection."
+        }
+      ],
+      "entry_sha256": "57a5b7502cf401d87e59e0ba957ddafc2d5b10d93f587d7982d019071b1ee563"
     }
   ]
 }

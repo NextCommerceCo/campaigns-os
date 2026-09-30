@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-os-setup
-version: 2.0.14
+version: 2.0.16
 description: Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring. Formerly installed as next-campaigns-setup; renamed 2026-08 to stop colliding with the published NextCommerceCo/skills scaffolder of that name.
 ---
 
-Bundle revision: 1.44.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.44.0+skills.1`
+Bundle revision: 1.45.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.45.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -43,7 +43,7 @@ The effect class in each parenthetical below is the declared row of
 Read that file, not this text, when an exact path or endpoint matters.
 
 
-Use this skill when the Build Packet doctor (tier `none`: read-only inspection) says setup is required before assembly. Setup follows `campaigns-os start` or `campaigns-os prepare-build` (tier `A`: they write the Build Packet, Build Context, assembly report and run session under the target and contact the Map and run endpoints).
+Use this skill when the Build Packet doctor (tier `A`: inspection that writes nothing, plus one read-only live campaign request once the site is built and a public campaign key resolves) says setup is required before assembly. Setup follows `campaigns-os start` or `campaigns-os prepare-build` (tier `A`: they write the Build Packet, Build Context, assembly report and run session under the target and contact the Map and run endpoints).
 
 Responsibilities:
 
