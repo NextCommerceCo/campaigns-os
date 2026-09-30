@@ -67,6 +67,7 @@ import { createVerdict, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { buildRunSession, writeRunSession } from "./run-session.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { stageRealPackageInstall } from "./package-install-fixture.mjs";
+import { GATEWAY } from "./login.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -138,9 +139,9 @@ async function startReceiver() {
   return { hits, routes, base: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((done) => server.close(done)) };
 }
 
-async function runCli(argv, { cwd, home, telemetry, lifecycleLog = "", campaignKey = "", traceNetwork = false, extraEnv = {}, cli = CLI }) {
+async function runCli(argv, { cwd, home, telemetry, lifecycleLog = "", campaignKey = "", traceNetwork = false, extraEnv = {}, nodeArgs = [], cli = CLI }) {
   try {
-    const { stdout, stderr } = await execFileAsync(process.execPath, [cli, ...argv], {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [...nodeArgs, cli, ...argv], {
       cwd,
       encoding: "utf8",
       timeout: 120_000,
@@ -170,6 +171,31 @@ async function runCli(argv, { cwd, home, telemetry, lifecycleLog = "", campaignK
   } catch (error) {
     return { code: error.code ?? "spawn-error", stdout: error.stdout || "", stderr: error.stderr || "" };
   }
+}
+
+/**
+ * Node's own flags that make the login gateway unreachable, the way it is
+ * offline: a preload answers the DNS lookup for the gateway's host, and that
+ * host only, with ENOTFOUND. The login row declares the gateway exchange with
+ * `observed_in: []` because the fixture has no gateway to reach, but the host
+ * is hard-coded with no override (src/login.mjs GATEWAY) and it resolves on
+ * the public internet, so without this every run would POST a real device
+ * authorization to it. Any other host is still looked up normally, so a
+ * connection the row does not declare still shows in the NODE_DEBUG=net trace
+ * and fails the case. A data: URL, so there is no file to seed or clean up.
+ */
+function gatewayUnreachable() {
+  const host = new URL(GATEWAY).hostname;
+  const preload = [
+    `import dns from "node:dns";`,
+    `const lookup = dns.lookup;`,
+    `dns.lookup = function (hostname, options, callback) {`,
+    `  if (hostname !== ${JSON.stringify(host)}) return lookup.apply(this, arguments);`,
+    `  const error = Object.assign(new Error("getaddrinfo ENOTFOUND " + hostname), { code: "ENOTFOUND", syscall: "getaddrinfo", hostname });`,
+    `  process.nextTick(typeof options === "function" ? options : callback, error);`,
+    `};`,
+  ].join("\n");
+  return ["--import", `data:text/javascript,${encodeURIComponent(preload)}`];
 }
 
 /**
@@ -522,7 +548,7 @@ const INVOCATIONS = {
   "install-skills|--dry-run": { argv: () => ["install-skills", "--platform", "claude", "--dry-run", "--json"], target: () => "home" },
   "install-agent-context": { argv: (s) => ["install-agent-context", "--target", s.targetRepo] },
   "install-agent-context|--dry-run": { argv: (s) => ["install-agent-context", "--target", s.targetRepo, "--dry-run"] },
-  "login": { argv: () => ["login", "--store", "examplestore"] },
+  "login": { argv: () => ["login", "--store", "examplestore"], nodeArgs: gatewayUnreachable },
   "logout": { argv: () => ["logout", "--store", "examplestore"] },
   "next": { proxyBase: true, argv: (s) => ["next", "--packet", s.packetPath, "--json"] },
   "next|--no-write": { proxyBase: true, argv: (s) => ["next", "--packet", s.packetPath, "--no-write", "--json"] },
@@ -703,6 +729,7 @@ async function runCondition(row, invocation, condition) {
       ...(invocation.cli ? { cli: invocation.cli(seed) } : {}),
       cwd: seed.dir, home: seed.home, telemetry, lifecycleLog, traceNetwork: true,
       ...(invocation.env ? { extraEnv: invocation.env(seed) } : {}),
+      ...(invocation.nodeArgs ? { nodeArgs: invocation.nodeArgs(seed) } : {}),
       ...(persisted ? { campaignKey: SYNTHETIC_CAMPAIGN_KEY } : {}),
     });
     // Every run, not only the consented ones: "no test in this repository
