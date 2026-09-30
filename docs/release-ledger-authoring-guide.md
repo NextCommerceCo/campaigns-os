@@ -146,13 +146,17 @@ incomplete, append a correction:
   "amends": "RL-0007",
   "amendment_reason": "RL-0007 was recorded as compatible; it removed a documented guarantee.",
   "surface_version": null,
-  "changelog_section": "1.15.0+agent.1",
+  "changelog_section": "1.16.0+agent.1",
   "compatibility": "breaking",
   "migration": "Stop relying on the removed guarantee; see docs/build-packet.md.",
   "agent_impact": "Treat the 1.15.0 packet doc change as breaking, not compatible.",
   "changes": [ /* … */ ]
 }
 ```
+
+The amendment corrects a 1.15.0 entry, but its own section is a new one at the
+very top of `CHANGELOG.md`, numbered on the release on top when it is written
+(`1.16.0` here). It is never inserted under the older release it corrects.
 
 An amendment is the only entry kind whose change items may map to no changed
 path in its own range, because it corrects meaning rather than moving bytes.
@@ -171,13 +175,25 @@ entry currently holding the link, may re-link a section; any other second link
 still fails the one-to-one rule. Say in `amendment_reason` what changed in the
 section and why.
 
+This works only for a section still in the live `CHANGELOG.md`. An archived
+section cannot be corrected in place: archive files are never edited, and each
+is pinned by its SHA-256 in `baseline_floor.archives`, so any change to one
+fails the gate. Correct archived history with a new live amendment entry that
+links its own new section at the top of `CHANGELOG.md`, and say in
+`amendment_reason` what is wrong in the archived section.
+
 `scripts/check-changelog-structure.mjs` (part of `npm run check`) refuses the
 marker lines outright, in `CHANGELOG.md` and under `docs/`, and also holds the
 section layout: identifiers unique, `+agent.N` sections in one run directly
 above their release with N descending (newest first), and every ledger
-`changelog_section` naming a section that exists. Insert a new `+agent.N`
-section at the top of its release's run, not directly above the release
-heading.
+`changelog_section` naming a section that exists.
+
+A new section always goes at the very top of `CHANGELOG.md`: either a new
+release, or a `+agent.N` section numbered on the current top release (one above
+its highest N, or `+agent.1` if it has none). Never add a `+agent.N` section
+under an older release. Given `--base`, both `check-changelog-structure.mjs` and
+the release-ledger gate refuse any new section that sits below a section base
+already had.
 
 ## Running the gate
 

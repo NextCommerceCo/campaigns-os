@@ -342,15 +342,7 @@ async function validate(base) {
   );
 
   // Mandatory reads only. The archive files are deliberately absent.
-  const contractBytes = ORIENTATION_SOURCE_PATHS.filter((path) => path !== CHANGELOG_PATH)
-    .reduce((total, path) => total + (existsSync(join(root, path)) ? readFileSync(join(root, path)).byteLength : 0), 0);
-  const measured = measureOrientationSource({
-    changelogText,
-    sections,
-    ledger,
-    contractBytes,
-    envelopeBytes: largestEnvelopeFixtureBytes(),
-  });
+  const measured = measureRepositorySource();
   const limitResult = evaluateLimits(measured, limits);
   if (!limitResult.within_limits) {
     errors.push(

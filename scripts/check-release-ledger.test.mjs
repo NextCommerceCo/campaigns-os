@@ -988,6 +988,12 @@ test("source_bytes after rotation measures the mandatory reads only, never the a
   assert.ok(evaluateLimits(measured, limits).within_limits, "the live orientation source fits the unchanged limits");
   const withArchive = measured.source_bytes + archivePaths.reduce((total, path) => total + bytes(path), 0);
   assert.ok(withArchive > limits.limits.max_source_bytes.value, "the archive is what would not have fit");
+
+  // The gate reports the figure it enforced; it must be this same measurement.
+  const output = execFileSync(process.execPath, [join(root, "scripts/check-release-ledger.mjs")], { encoding: "utf8" });
+  const reported = output.match(/(\d+) source bytes within limits/);
+  assert.ok(reported, `the gate reports its source bytes: ${output}`);
+  assert.equal(Number(reported[1]), measured.source_bytes, "the gate measures source_bytes with measureRepositorySource");
 });
 
 test("A1-baseline-below-floor: a reviewed baseline older than the floor refuses with the floor's code and a newer-baseline remedy", () => {
