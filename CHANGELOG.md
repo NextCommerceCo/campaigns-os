@@ -2,6 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.12] - 2026-09-30
+
+### Changed
+
+- An explicit `""` (or whitespace-only string) in one of the nine Store
+  Profile fields (`campaign.store_name`, `store_url`, `store_terms`,
+  `store_privacy`, `store_contact`, `store_returns`, `store_shipping`,
+  `store_phone`, `store_phone_tel`) now means the merchant has no such value
+  (#535). `page-kit sync` blanks the starter's demo value in such a field,
+  where it previously left the demo value in place and reported it as not
+  synced, and doctor offers `page-kit sync` as the repair for that demo
+  residue. Doctor reads a blank or absent target field as
+  `intentionally_empty`, a clean status named in the pass reason and the
+  ready line. A real, non-demo target value is left as it is and still warns
+  as `target_only`, so a spec `""` never wipes or newly blocks a value
+  entered in the target. An absent or null field still means "not provided",
+  and `""` in any other field carries no such meaning.
+- The CampaignSpec validator no longer warns `store-phone-tel-empty` for
+  `campaign.store_phone_tel: ""`. Empty strings elsewhere keep their
+  warnings.
+
 ## [1.43.2+agent.3] - 2026-09-28
 
 ### Changed

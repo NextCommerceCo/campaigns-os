@@ -52,6 +52,19 @@ function normalizeFieldValue(value) {
   return { valid: true, value: normalizeStoreProfileValue(value) };
 }
 
+// An explicit empty spec value for one of the nine governed fields (`""`, or
+// whitespace only, which the gate compares as `""`) says the merchant has no
+// such value: sync blanks a starter demo value with it and the gate reads a
+// blank target as `intentionally_empty`. A real (non-demo) target value is
+// left as it is and still warns `target_only`. An absent or null key still
+// means "not provided", and an empty string outside the nine carries no such
+// meaning.
+export function isAuthoritativeEmptyStoreProfileValue(field, value) {
+  return PAGE_KIT_STORE_PROFILE_FIELDS.includes(field)
+    && typeof value === "string"
+    && normalizeStoreProfileValue(value) === "";
+}
+
 export function isDemoResidue(field, value) {
   if (!value) return false;
   if (URL_FIELDS.has(field)) {
@@ -141,10 +154,14 @@ function repairDescriptionForUnsyncableRows(rows, subject) {
 
 // Sync repairs a row by writing the spec's value over the target's, so it
 // needs a usable spec value: present, well-shaped for its field, and not the
-// starter demo value itself. matrixRow puts demo_residue ahead of the spec
-// comparison, so a residue row may have an empty (or itself demo) spec value.
-function syncRepairsRow(row) {
-  return SYNC_REPAIRABLE_KINDS.has(row.kind) && storeProfileSpecValueProblem(row.field, row.spec) === null;
+// starter demo value itself; or, for demo residue only, an explicit empty
+// value, which sync writes as "". matrixRow puts demo_residue ahead of the
+// spec comparison, so a residue row may have an absent (or itself demo) spec
+// value.
+function syncRepairsRow(row, authoritativeEmptyFields) {
+  return SYNC_REPAIRABLE_KINDS.has(row.kind)
+    && ((row.kind === "demo_residue" && authoritativeEmptyFields.has(row.field))
+      || storeProfileSpecValueProblem(row.field, row.spec) === null);
 }
 
 export function storeProfileDemoResidueFields(gate) {
@@ -170,6 +187,13 @@ function matrixRow(field, rawSpec, rawTarget) {
   }
   if (isDemoResidue(field, target.value)) {
     return { field, kind: "demo_residue", spec: spec.value, target: target.value, severity: "blocker" };
+  }
+  // The spec says the field is empty and a blank (or absent) target agrees. A
+  // real target value against a spec "" stays a target_only warning below:
+  // Maps saved "" for every cleared store field before "" meant empty, so it
+  // is not trusted over a value someone entered.
+  if (isAuthoritativeEmptyStoreProfileValue(field, rawSpec) && !target.value) {
+    return { field, kind: "intentionally_empty", spec: spec.value, target: target.value, severity: "clean" };
   }
   if (spec.value && !target.value) {
     return { field, kind: "target_missing", spec: spec.value, target: target.value, severity: "blocker" };
@@ -292,6 +316,8 @@ export function evaluatePageKitStoreProfile({
   const blocker_fields = matrix.filter((row) => row.severity === "blocker").map((row) => row.field);
   const warning_fields = matrix.filter((row) => row.severity === "warning").map((row) => row.field);
   const blockerRows = matrix.filter((row) => row.severity === "blocker");
+  const authoritativeEmptyFields = new Set(PAGE_KIT_STORE_PROFILE_FIELDS.filter((field) => isAuthoritativeEmptyStoreProfileValue(field, specCampaign?.[field])));
+  const intentionallyEmptyFields = matrix.filter((row) => row.kind === "intentionally_empty").map((row) => row.field);
   const waivable = blockerRows.length > 0
     && blockerRows.every((row) => isStoreProfileDiscrepancyWaivable(row.kind));
   // Waiver history matters only while this exact checkpoint is blocked. Once
@@ -328,7 +354,10 @@ export function evaluatePageKitStoreProfile({
       ? `Target Store Profile has an active named-human waiver for blocking field(s): ${blocker_fields.join(", ")}.`
       : warning_fields.length
         ? `Target Store Profile has target-only value(s): ${warning_fields.join(", ")}.`
-        : "Target Store Profile exactly matches the CampaignSpec for all nine governed fields.";
+        : "Target Store Profile exactly matches the CampaignSpec for all nine governed fields."
+          + (intentionallyEmptyFields.length
+            ? ` Intentionally empty per the CampaignSpec: ${intentionallyEmptyFields.join(", ")}.`
+            : "");
   return {
     id: PAGE_KIT_STORE_PROFILE_SCOPE,
     scope: PAGE_KIT_STORE_PROFILE_SCOPE,
@@ -345,7 +374,7 @@ export function evaluatePageKitStoreProfile({
     waiver,
     waiver_assessment,
     required_actions: status === "blocked" ? [
-      blockerRows.every(syncRepairsRow)
+      blockerRows.every((row) => syncRepairsRow(row, authoritativeEmptyFields))
         ? {
           id: "repair_target",
           kind: "command",
@@ -356,7 +385,7 @@ export function evaluatePageKitStoreProfile({
           id: "repair_target",
           kind: "edit",
           command: null,
-          description: repairDescriptionForUnsyncableRows(blockerRows.filter((row) => !syncRepairsRow(row)), subject),
+          description: repairDescriptionForUnsyncableRows(blockerRows.filter((row) => !syncRepairsRow(row, authoritativeEmptyFields)), subject),
         },
       ...(waivable ? [{
         id: "waive_checkpoint",

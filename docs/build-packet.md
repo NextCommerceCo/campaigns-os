@@ -112,6 +112,14 @@ Before scaffold, a missing target entry is `not_applicable`; once setup or
 assembly is terminal, or the target output already exists, missing or malformed
 target evidence is a non-waivable blocker. Target-only values remain warnings.
 Mismatches, missing required target values, and known demo residue block.
+An absent or null spec field means "not provided". An explicit empty (or
+whitespace-only) string in one of the nine fields means the merchant has no
+such value: `page-kit sync` blanks the starter's demo value with it, and a
+blank or absent target field then reads as `intentionally_empty` (clean, and
+named in the pass reason). A real, non-demo target value against a spec `""`
+is left as it is and stays a `target_only` warning, because Maps saved `""`
+for every cleared store field before it meant empty. An empty string outside
+these nine fields carries no such meaning.
 Demo residue (a `demo.29next.com` URL or the demo phone number still in the
 target) is never waivable: the gate names the residue fields, offers no waive
 command for them, and `checkpoint waive` refuses with those fields until the
@@ -142,8 +150,10 @@ re-saving the Map). The repo pin is the authority for what ships and the Map
 field is a build hint, so that state is a doctor warning, not a blocker (see
 the SDK version checkpoint below). Both go into `_data/campaigns.json[public_route_slug]`,
 prints a field-by-field before/after diff, and touches nothing else: a
-governed field the spec does not carry is left as it is (doctor's
-`target_only` warning still applies), non-governed keys keep their values and
+governed field the spec does not carry (absent or null) is left as it is
+(doctor's `target_only` warning still applies), a field the spec sets to `""`
+(or whitespace only) blanks the starter's demo value and otherwise leaves the
+target value as it is, non-governed keys keep their values and
 order, other routes and other files are not written. The file is edited in
 place and re-serialized with its own top-level indentation, line ending and
 trailing newline; when that round trip would not have reproduced the file

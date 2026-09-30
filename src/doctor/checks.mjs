@@ -1229,7 +1229,9 @@ function validateTargetStoreProfile(spec, errors, warnings, ready, derived, buil
     addIssue(warnings, gate.code, gate.reason, { checkpoint_gate: gate });
     return;
   }
-  ready.push("Target campaigns.json Store Profile matches the CampaignSpec across all nine governed fields.");
+  const intentionallyEmpty = gate.matrix.filter((row) => row.kind === "intentionally_empty").map((row) => row.field);
+  ready.push("Target campaigns.json Store Profile matches the CampaignSpec across all nine governed fields."
+    + (intentionallyEmpty.length ? ` Intentionally empty per the CampaignSpec: ${intentionallyEmpty.join(", ")}.` : ""));
 }
 
 function validateSpecShippingCountries(spec, warnings, ready) {

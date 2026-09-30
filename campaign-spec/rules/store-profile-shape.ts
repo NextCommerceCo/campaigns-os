@@ -3,7 +3,10 @@
  * profile fields introduced in Slice 4f.
  *
  * 1. campaign.store_phone_tel must be a `tel:`-prefixed URI containing
- *    a digit-shaped number when present. The build wires this value
+ *    a digit-shaped number when present. An empty (or whitespace-only)
+ *    string is not a defect: for the nine Store Profile fields an explicit
+ *    "" says the merchant has no such value, and `page-kit sync` blanks
+ *    the starter's demo value with it. The build wires this value
  *    into `<a href="tel:...">` attributes; a value without the scheme
  *    renders a broken link, and a value containing HTML metacharacters
  *    or alternative schemes (javascript:, data:) is rejected as a
@@ -61,13 +64,7 @@ export const StoreProfileShape: Rule = {
           data: { check: 'store-phone-tel-bad-type' },
         })
       } else if (!isNonEmptyString(value)) {
-        violations.push({
-          ruleId: 'StoreProfileShape',
-          severity: 'warning',
-          message: 'campaign.store_phone_tel is set but empty; remove the field or set a tel:-prefixed value (e.g. "tel:+18005551234").',
-          path: '/campaign/store_phone_tel',
-          data: { check: 'store-phone-tel-empty' },
-        })
+        // Intentionally empty: the merchant has no phone yet.
       } else {
         const trimmed = value.trim()
         if (!trimmed.toLowerCase().startsWith('tel:')) {
