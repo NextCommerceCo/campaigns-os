@@ -94,9 +94,11 @@ of leaving demo bump refs in copied frontmatter.
 
 For more than one post-purchase page, keep each upsell/downsell page explicit in
 `funnels[].pages[]` and wire `on_accept` / `on_decline` to the next page. QA
-then derives typed-card proof coverage from topology. `common` runs checkout,
-first-offer accept and decline, and a deduplicated shortest real receipt path
-when that adds coverage (at most four orders). Explicit paths support targeted
+then derives typed-card proof coverage from topology. `common` runs every
+actual terminal path when they fit under the flood cap; above it, it runs
+checkout, first-offer accept and decline, and a deduplicated shortest real
+receipt path, then adds the shortest path that clicks the decline on each offer
+or downsell page not yet declined, up to the cap. Explicit paths support targeted
 repair, while `full` walks every actual terminal path in the selected checkout
 topology. Cycles, missing routes, and reachable nonterminals block exhaustive
 proof before browser launch. The accidental-flood cap remains `6`; when the

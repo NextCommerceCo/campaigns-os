@@ -145,15 +145,21 @@ Treat test orders as cheap, repeatable proof: global test cards bypass the
 gateway and create no transactions, so they need no permission or approval. The
 only real choice is coverage. Record:
 
-- Coverage: `common` (checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when needed; at most four orders), `off`, `checkout`, `decline`, `accept`, `both`, `full`, or explicit paths such as `decline-decline-accept`.
+- Coverage: `common` (every actual terminal path when they fit under the flood cap; above it, checkout, first-offer accept/decline, a deduplicated shortest real receipt path, and one decline path per offer or downsell page not yet declined, up to the cap), `off`, `checkout`, `decline`, `accept`, `both`, `full`, or explicit paths such as `decline-decline-accept`.
 - Cart matrix: base cart, base plus bump, specific package refs/quantities.
 - SDK origin state (so the SDK loads): localhost Development domain, non-localhost allowlisted, or unknown — separate from test-order permission.
 - Max order cap: the accidental-flood guard; raise `--max-test-orders` for exhaustive proof.
 - Market coverage: default market only or at least one non-default country/currency path.
 - Customer email: reuse one inbox via `--test-email`/`CAMPAIGNS_OS_QA_TEST_EMAIL` (the customer record is not deletable).
 
-`--test-order common` covers checkout, the first-offer actions, and a shortest
-real receipt path when that adds coverage. Use `full` for every actual terminal
+`--test-order common` runs every actual terminal path when they fit under the
+flood cap (`--max-test-orders`, 6 by default). Above the cap it covers checkout,
+the first-offer actions, and a shortest real receipt path when that adds
+coverage, then adds the shortest path that clicks the decline on each offer or
+downsell page no planned path declines yet, until the cap is reached, and names
+any page left out. A page counts as covered only when an order clicks its
+decline; `browser-test-order:upsell-action-coverage` warns naming each page
+whose decline no order clicked. Use `full` for every actual terminal
 path in the selected checkout topology. Cycles, missing routes, and reachable
 nonterminals block exhaustive proof before browser launch. The default
 `--max-test-orders 6` cap remains in place; an overflow names the exact explicit

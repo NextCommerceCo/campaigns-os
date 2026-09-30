@@ -6,6 +6,7 @@ import {
   createCommercialParityReport,
   diffCommercialParity,
   extractCommercialClaims,
+  recurringClaimAbsences,
   serializeCommercialFindings,
 } from "./commercial-parity.mjs";
 
@@ -324,4 +325,16 @@ test("commercial findings collapse deterministically to the remaining verdict as
 test("supported self-referencing commercial parity export resolves", async () => {
   const exported = await import("@nextcommerce/campaigns-os/commercial-parity");
   assert.equal(exported.extractCommercialClaims, extractCommercialClaims);
+});
+
+test("recurring claim absences skip a capture with no page id instead of keying it as null", () => {
+  const rendered = (pageId) => ({
+    ...extractCommercialClaims(`<div data-next-package-toggle><strong data-next-package-id="5">Club</strong></div>`, pageId === undefined ? {} : { pageId }),
+    rendered_package_refs: ["5"],
+  });
+  const subscriptions = new Map([["null", new Set(["5"])], ["checkout", new Set(["5"])]]);
+  assert.deepEqual(recurringClaimAbsences([rendered(undefined)], subscriptions), []);
+  assert.deepEqual(recurringClaimAbsences([{ ...rendered(undefined), page_id: "" }], subscriptions), []);
+  // The page-keyed capture is still read.
+  assert.deepEqual(recurringClaimAbsences([rendered("checkout")], subscriptions).map((entry) => [entry.page_id, entry.package_id]), [["checkout", "5"]]);
 });
