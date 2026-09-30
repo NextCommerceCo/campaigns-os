@@ -1,0 +1,501 @@
+// `campaigns-os record <setup|build|polish>`: record a stage's completion on
+// the Build Context and Assembly Report through one validated command instead
+// of hand-edited JSON.
+//
+// Every value a record stamps is read from the doctor result the `next` ladder
+// itself reads (doctorPacket over the same packet and sidecars), so a record
+// can never carry a fingerprint doctor did not compute. The target lock is
+// taken first; the report binding, the report, the Build Context and doctor's
+// result are all read under it, and the record is composed on that report,
+// validated against the existing schemas and doctor's own report checks, and
+// refused whole (nothing written) when any of those fails. --dry-run takes the
+// same path, without the lock, and writes nothing.
+//
+// The Build Context holds setup state only (`scaffold`); build and polish
+// completion live on the Assembly Report alone, so `record build` and `record
+// polish` validate the context they read but write only the report.
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import Ajv2020 from "ajv/dist/2020.js";
+
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import { isObject, optionalString, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
+import { writeJsonAtomic } from "./doctor-sidecar.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
+import { validateAssemblyReport } from "./doctor/checks.mjs";
+import { cmd } from "./install-invocation.mjs";
+import { refused } from "./lifecycle.mjs";
+import { stageIsTerminal } from "./orchestration-stage-contract.mjs";
+import {
+  POLISH_GATE_REQUIRED_EVIDENCE,
+  POLISH_PRODUCER,
+  currentSourcePackageMaterialFingerprint,
+  evaluatePolishGate,
+} from "./polish-gate.mjs";
+import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
+import { applyDerivedAssemblyReportSummary, assemblyReportMatchesPacket, commitAssemblyReport } from "./stage-ledger.mjs";
+import { withTargetLockSync } from "./target-lock.mjs";
+
+export const RECORD_STAGES = Object.freeze(["setup", "build", "polish"]);
+
+// Every flag `record` reads, plus the two any command accepts (run id and
+// lifecycle journal). Anything else is refused before a file is read.
+const RECORD_FLAGS = Object.freeze(["packet", "context", "report", "dry-run", "json", "run-id", "lifecycle-journal"]);
+const POLISH_RECORD_FLAGS = Object.freeze(["evidence"]);
+
+// The keys a --evidence file may carry. `evidence` is stages.polish.evidence;
+// `repair_loop_defect` is report.theme.repair_loop_defect.
+const POLISH_EVIDENCE_FILE_KEYS = Object.freeze(["status", "evidence", "repair_loop_defect"]);
+const POLISH_RECORD_STATUSES = Object.freeze(["completed", "completed_with_warnings"]);
+
+const SCHEMA_DIR = fileURLToPath(new URL("../schemas/", import.meta.url));
+const validators = new Map();
+function schemaValidator(file) {
+  if (!validators.has(file)) {
+    const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: false });
+    validators.set(file, ajv.compile(JSON.parse(readFileSync(resolve(SCHEMA_DIR, file), "utf8"))));
+  }
+  return validators.get(file);
+}
+
+// Ajv's instancePath (`/theme/repair_loop_defect`) as the dotted field name
+// the rest of the toolkit prints (`theme.repair_loop_defect`).
+function schemaProblems(file, value, label) {
+  const validate = schemaValidator(file);
+  if (validate(value)) return [];
+  const seen = new Set();
+  const problems = [];
+  for (const error of validate.errors || []) {
+    const field = error.instancePath.split("/").filter(Boolean).join(".") || "(root)";
+    const line = `${label} ${field} ${error.message}`;
+    if (seen.has(line)) continue;
+    seen.add(line);
+    problems.push(line);
+  }
+  return problems;
+}
+
+function typeName(value) {
+  if (value === null) return "null";
+  return Array.isArray(value) ? "array" : typeof value;
+}
+
+function refuseRecord(stage, problems) {
+  return new Error(`record ${stage} refused; nothing was written:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
+}
+
+export function parseRecordArgs(args) {
+  const stage = args._[1];
+  if (!RECORD_STAGES.includes(stage) || args._.length !== 2) {
+    throw refused(`Use: ${cmd("record")} <${RECORD_STAGES.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>.`);
+  }
+  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : [])]);
+  const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
+  if (unknown.length) {
+    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for record ${stage}: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${[...known].map((key) => `--${key}`).join(", ")}.`);
+  }
+  for (const flag of ["context", "report", "run-id", "lifecycle-journal"]) {
+    if (Object.hasOwn(args, flag)) requireArg(args, flag);
+  }
+  if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
+    throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
+  }
+  if (Object.hasOwn(args, "json") && args.json !== true) throw refused("--json is a boolean flag and takes no value.");
+  return {
+    stage,
+    packetPath: resolve(requireArg(args, "packet")),
+    evidencePath: stage === "polish" ? resolve(requireArg(args, "evidence")) : null,
+    dryRun: args["dry-run"] === true,
+  };
+}
+
+// The --evidence file: the polish status, stages.polish.evidence, and the
+// optional theme repair-loop defect. Shape errors name the field and the type
+// that was given; the polish gate names the fields it still finds incomplete.
+export function readPolishEvidenceFile(path) {
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (error) {
+    throw new Error(`record polish could not read --evidence ${path}: ${error.message}`);
+  }
+  let input;
+  try {
+    input = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`record polish could not parse --evidence ${path} as JSON: ${error.message}`);
+  }
+  const problems = [];
+  if (!isObject(input)) {
+    throw refuseRecord("polish", [`--evidence must hold a JSON object with ${POLISH_EVIDENCE_FILE_KEYS.join(", ")} (got ${typeName(input)}).`]);
+  }
+  for (const key of Object.keys(input)) {
+    if (!POLISH_EVIDENCE_FILE_KEYS.includes(key)) problems.push(`--evidence has unknown key "${key}"; accepted keys: ${POLISH_EVIDENCE_FILE_KEYS.join(", ")}.`);
+  }
+  const status = input.status === undefined ? "completed" : input.status;
+  if (!POLISH_RECORD_STATUSES.includes(status)) {
+    problems.push(`status must be one of ${POLISH_RECORD_STATUSES.join(", ")} (got ${JSON.stringify(input.status)}).`);
+  }
+  const evidence = input.evidence;
+  if (!isObject(evidence)) {
+    problems.push(`evidence must be an object carrying ${POLISH_GATE_REQUIRED_EVIDENCE.join(", ")} (got ${typeName(evidence)}).`);
+  } else {
+    if (evidence.issues !== undefined && !Array.isArray(evidence.issues)) {
+      problems.push(`evidence.issues must be an array ([] when polish found none) (got ${typeName(evidence.issues)}).`);
+    }
+    if (evidence.commands !== undefined && !Array.isArray(evidence.commands)) {
+      problems.push(`evidence.commands must be an array of the commands polish ran (got ${typeName(evidence.commands)}).`);
+    }
+    if (evidence.visual_review !== undefined && !isObject(evidence.visual_review)) {
+      problems.push(`evidence.visual_review must be an object with a screenshots array (got ${typeName(evidence.visual_review)}).`);
+    } else if (isObject(evidence.visual_review) && Object.hasOwn(evidence.visual_review, "page_load")) {
+      problems.push(`evidence.visual_review.page_load is written only by ${cmd("polish")} capture; remove it from the file (the captured value on the report is kept).`);
+    }
+  }
+  if (Object.hasOwn(input, "repair_loop_defect") && input.repair_loop_defect !== null && !isObject(input.repair_loop_defect)) {
+    problems.push(`repair_loop_defect must be null or an object such as {"code": "...", "message": "..."} (got ${typeName(input.repair_loop_defect)}).`);
+  }
+  if (problems.length) throw refuseRecord("polish", problems);
+  return {
+    status,
+    evidence,
+    hasRepairLoopDefect: Object.hasOwn(input, "repair_loop_defect"),
+    repairLoopDefect: input.repair_loop_defect ?? null,
+  };
+}
+
+function withoutKeys(object, keys) {
+  const copy = { ...object };
+  for (const key of keys) delete copy[key];
+  return copy;
+}
+
+function stageObject(report, key) {
+  return isObject(report?.stages?.[key]) ? report.stages[key] : {};
+}
+
+// Each composer returns the next report (a copy) and, for setup, the next
+// Build Context, from what doctor computed under the same target lock.
+function composeSetup(report, context, { now, recordedBy }) {
+  const setup = {
+    ...stageObject(report, "setup"),
+    stage: "setup",
+    status: "completed",
+    completed_at: now,
+    recorded_by: recordedBy,
+    blockers: [],
+  };
+  const nextReport = { ...report, stages: { ...report.stages, setup } };
+  const scaffold = context.scaffold;
+  const nextContext = {
+    ...context,
+    scaffold: {
+      ...scaffold,
+      required: false,
+      mode: scaffold.mode === "blocked" ? "existing" : scaffold.mode,
+      handoff_skill: "next-campaigns-build",
+      reason: `Setup recorded by ${recordedBy} at ${now}; the campaign output directory exists.`,
+    },
+  };
+  return { report: nextReport, context: nextContext };
+}
+
+function composeBuild(report, { now, recordedBy, fingerprint }) {
+  const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
+  const assembly = {
+    ...withoutKeys(stageObject(report, "assembly"), ["source_package_material_fingerprint"]),
+    stage: "assembly",
+    status: "completed",
+    build_fingerprint: fingerprint,
+    ...(sourcePackageFingerprint ? { source_package_material_fingerprint: sourcePackageFingerprint } : {}),
+    completed_at: now,
+    recorded_by: recordedBy,
+    blockers: [],
+  };
+  // Polish evidence bound to this exact output stays; anything else is owed
+  // again. The evidence object is kept so `polish capture` has somewhere to
+  // attach page_load, and its stale identity fields are removed.
+  const previousPolish = stageObject(report, "polish");
+  const polishStillCurrent = stageIsTerminal(String(previousPolish.status || ""))
+    && optionalString(previousPolish.source_build_fingerprint) === fingerprint;
+  const polish = polishStillCurrent
+    ? previousPolish
+    : {
+        ...withoutKeys(previousPolish, ["performed_by", "source_build_fingerprint", "source_package_material_fingerprint", "completed_at", "recorded_by"]),
+        stage: "polish",
+        status: "required",
+        required_by: "build",
+        required_for: ["qa"],
+      };
+  return { report: { ...report, stages: { ...report.stages, assembly, polish } }, context: null };
+}
+
+function composePolish(report, { now, recordedBy, fingerprint, input }) {
+  const previous = stageObject(report, "polish");
+  const previousVisual = isObject(previous.evidence?.visual_review) ? previous.evidence.visual_review : {};
+  const visualReview = {
+    ...input.evidence.visual_review,
+    ...(Object.hasOwn(previousVisual, "page_load") ? { page_load: previousVisual.page_load } : {}),
+  };
+  const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
+  const polish = {
+    ...withoutKeys(previous, ["source_package_material_fingerprint"]),
+    stage: "polish",
+    status: input.status,
+    performed_by: POLISH_PRODUCER,
+    source_build_fingerprint: fingerprint,
+    ...(sourcePackageFingerprint ? { source_package_material_fingerprint: sourcePackageFingerprint } : {}),
+    completed_at: now,
+    recorded_by: recordedBy,
+    evidence: { ...input.evidence, visual_review: visualReview },
+    blockers: [],
+  };
+  const nextReport = { ...report, stages: { ...report.stages, polish } };
+  // A null defect on a report with no theme block says nothing to record.
+  if (input.hasRepairLoopDefect && (isObject(report.theme) || input.repairLoopDefect !== null)) {
+    if (!isObject(report.theme)) {
+      throw refuseRecord("polish", ["repair_loop_defect was given but the report records no theme; omit it, or record the theme first."]);
+    }
+    nextReport.theme = { ...report.theme, repair_loop_defect: input.repairLoopDefect };
+  }
+  return { report: nextReport, context: null };
+}
+
+// Every check a written record must pass, over exactly what would be written.
+function validateRecord(stage, { report, context, packet, fingerprint }) {
+  const problems = [
+    ...schemaProblems("campaign-runtime-assembly-report.v0.schema.json", report, "Assembly Report"),
+    ...(context ? schemaProblems("campaign-runtime-build-context.v0.schema.json", context, "Build Context") : []),
+  ];
+  for (const issue of validateAssemblyReport(report).errors) problems.push(`Assembly Report ${issue.code}: ${issue.message}`);
+  if (stage === "polish" && !problems.length) {
+    // The two gates doctor evaluates over the report it reads, evaluated here
+    // over the report this record would write.
+    const hiddenEagerMediaGate = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report });
+    const gate = evaluatePolishGate({ report, hiddenEagerMediaGate, currentOutputFingerprint: fingerprint });
+    if (gate.status === "blocked") {
+      problems.push(`${gate.code}: ${gate.reason}`);
+      for (const problem of gate.problems || []) problems.push(problem);
+      for (const action of gate.required_actions || []) {
+        if (action?.command) problems.push(`required action: ${action.command}${action.description ? ` (${action.description})` : ""}`);
+      }
+    }
+  }
+  if (problems.length) throw refuseRecord(stage, problems);
+}
+
+// The report must be this packet's before any stage is recorded on it. Two
+// checks, both the ones the toolkit already applies: the prepare-build binding
+// gate doctor evaluates and `next` consumes (derived.prepare_build_gate; its
+// codes are next.prepare_build.context_missing, context_packet_mismatch,
+// context_dsp_mismatch, context_report_missing, report_packet_mismatch,
+// report_context_mismatch, report_campaign_mismatch and report_dsp_mismatch),
+// and the identity match every stage producer requires before it restates an
+// outcome into a report (assemblyReportMatchesPacket), which also covers a
+// packet with no Design Source Package, where the binding gate is not
+// evaluated.
+function bindingProblems(doctor, report, packet) {
+  const problems = [];
+  const gate = doctor.derived?.prepare_build_gate;
+  if (gate?.binding_failure === true) {
+    for (const issue of gate.issues || []) problems.push(`${issue.code}: ${issue.message}`);
+    if (!problems.length) problems.push(gate.reason);
+  }
+  if (!assemblyReportMatchesPacket(report, packet) && !problems.some((problem) => problem.startsWith("next.prepare_build.report_campaign_mismatch:"))) {
+    problems.push("next.prepare_build.report_campaign_mismatch: Assembly Report campaign identity does not match the current Build Packet.");
+  }
+  if (problems.length) {
+    problems.push("Restore or rebind the Build Context and Assembly Report to this Build Packet; a record never lands on another campaign's report.");
+  }
+  return problems;
+}
+
+// What doctor computed that the record depends on, checked before anything is
+// composed: the packet/report binding (every stage), the output fingerprint
+// (build, polish), the scaffold (setup, build), and the stage the ladder must
+// already have reached (polish).
+function doctorFacts(stage, doctor, report, packet) {
+  const derived = doctor.derived || {};
+  const binding = bindingProblems(doctor, report, packet);
+  if (binding.length) throw refuseRecord(stage, binding);
+  if (stage === "setup") {
+    const outputDir = optionalString(derived.target_output_dir);
+    if (!outputDir || !existsSync(outputDir)) {
+      throw refuseRecord(stage, [`The campaign output directory ${outputDir || "(unresolved: packet.assembly.target_repo/output_dir)"} does not exist; scaffold it (next-campaigns-os-setup) before recording setup.`]);
+    }
+    return {};
+  }
+  const fingerprint = optionalString(derived.build_output_fingerprint?.value);
+  if (!fingerprint) {
+    const slug = optionalString(derived.public_route_slug) || "<public_route_slug>";
+    throw refuseRecord(stage, [`Doctor cannot compute the build output fingerprint: no built output under _site/${slug}/ in the target repo. Run the page-kit build first.`]);
+  }
+  if (stage === "build" && derived.scaffold_required === true) {
+    throw refuseRecord(stage, [`Setup is still required (${derived.scaffold_reason || "Build Context scaffold.required is true"}); run ${cmd("record")} setup first.`]);
+  }
+  if (stage === "polish") {
+    const recorded = optionalString(report?.stages?.assembly?.build_fingerprint);
+    if (!String(report?.stages?.assembly?.status || "").startsWith("completed") || !recorded) {
+      throw refuseRecord(stage, [`Build is not recorded (stages.assembly needs a completed status and build_fingerprint); run ${cmd("record")} build first.`]);
+    }
+    if (recorded !== fingerprint) {
+      throw refuseRecord(stage, [`The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then ${cmd("polish")} capture, then record polish again.`]);
+    }
+  }
+  return {
+    fingerprint,
+    fingerprintRoot: optionalString(derived.target_repo) && optionalString(derived.build_output_fingerprint?.root)
+      ? join(derived.target_repo, derived.build_output_fingerprint.root)
+      : null,
+  };
+}
+
+// The last check before the write: the output doctor fingerprinted is still
+// the output on disk. The target lock keeps campaigns-os writers out, but a
+// page-kit build does not take it, so the fingerprint is recomputed here with
+// doctor's own function over doctor's own root, and a change refuses the
+// record instead of stamping a value doctor would then call stale.
+function assertOutputUnchanged(stage, facts) {
+  if (!facts.fingerprint) return;
+  const current = facts.fingerprintRoot ? computeBuildFingerprint(facts.fingerprintRoot) : { ok: false };
+  if (!current.ok || current.fingerprint !== facts.fingerprint) {
+    throw refuseRecord(stage, [`The built output changed while recording (doctor read ${facts.fingerprint}, now ${current.ok ? current.fingerprint : "no output"}); let the build finish, then run ${cmd("record")} ${stage} again.`]);
+  }
+}
+
+function readPacketFile(stage, packetPath) {
+  try {
+    return JSON.parse(readFileSync(packetPath, "utf8"));
+  } catch (error) {
+    throw new Error(`record ${stage}: could not read the Build Packet at ${packetPath}: ${error.message}`);
+  }
+}
+
+/**
+ * Run one `record <stage>` invocation. Returns the result object the CLI
+ * prints; throws a refusal for bad argv and an Error, before anything is
+ * written, for every other reason a record cannot be made.
+ *
+ * Test seams: `beforeLock` runs after argv and the --evidence file are read
+ * and before the target lock is requested; `afterDoctorRead` runs under the
+ * target lock, after doctor has read the target and before anything is
+ * composed or written.
+ */
+export function recordStageCommand(args, { now = () => new Date(), beforeLock = null, afterDoctorRead = null } = {}) {
+  const { stage, packetPath, evidencePath, dryRun } = parseRecordArgs(args);
+  if (!existsSync(packetPath)) throw new Error(`record ${stage}: Build Packet not found at ${packetPath}; run ${cmd("start")} or ${cmd("prepare-build")} first.`);
+  // Operator input, not target state: no campaigns-os writer produces it.
+  const input = stage === "polish" ? readPolishEvidenceFile(evidencePath) : null;
+  const sidecars = {
+    contextPath: args.context ? resolve(args.context) : undefined,
+    reportPath: args.report ? resolve(args.report) : undefined,
+  };
+  // The one read before the lock, and only to name the lock: the target repo
+  // the packet builds into. Everything the record depends on is read again
+  // under it.
+  const lockedTarget = targetRepoFor(packetPath, readPacketFile(stage, packetPath));
+  if (typeof beforeLock === "function") beforeLock();
+  const timestamp = now().toISOString();
+  const recordedBy = `campaigns-os record ${stage}`;
+
+  // A dry run writes nothing, so it takes no lock and creates no lock files
+  // (the commitAssemblyReport preview convention); it reads in the same order.
+  const run = () => recordUnderLock({
+    stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead,
+  });
+  const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
+  const { composed, facts, reportPath, contextPath, after } = recorded;
+
+  const stageKey = stage === "build" ? "assembly" : stage;
+  const writes = [...(composed.context ? [contextPath] : []), reportPath];
+  const ready = [
+    `stages.${stageKey}.status = ${composed.report.stages[stageKey].status}`,
+    ...(facts.fingerprint ? [`build output fingerprint ${facts.fingerprint} (doctor derived.build_output_fingerprint.value)`] : []),
+    ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
+    ...(composed.context ? ["Build Context scaffold.required = false"] : []),
+  ];
+  return {
+    ok: true,
+    status: dryRun ? "dry_run" : "recorded",
+    action: "record",
+    stage,
+    dry_run: dryRun,
+    report_path: reportPath,
+    ...(composed.context ? { context_path: contextPath } : {}),
+    ...(dryRun ? { would_write: writes } : { written: writes }),
+    build_fingerprint: facts.fingerprint || null,
+    record: composed.report.stages[stageKey],
+    ...(stage === "build" ? { polish: composed.report.stages.polish } : {}),
+    ...(composed.context ? { scaffold: composed.context.scaffold } : {}),
+    ...(stage === "polish" && input.hasRepairLoopDefect ? { repair_loop_defect: input.repairLoopDefect } : {}),
+    ...(after ? { next_stage: after.next?.stage || null, next_stage_reason: after.next?.reason || null } : {}),
+    ready,
+    note: dryRun
+      ? "Dry run: every check passed and nothing was written. Re-run without --dry-run to record."
+      : `Recorded. Run ${cmd("next")} --packet <packet> for the next stage.`,
+  };
+}
+
+// Everything a record reads from the target, in order, all under the target
+// lock (except a dry run, which writes nothing): the packet and the Build
+// Context's report pointer (the workspace), the report, the Build Context
+// (setup), doctor over the same packet and sidecars, the output fingerprint
+// re-check, and the post-write doctor read for `next_stage`. No campaigns-os
+// writer can rebind, rewrite or republish any of them between the read and
+// the write.
+function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead }) {
+  // The same workspace `next` resolves, so the record lands in the report
+  // `next` reads now, not the one it read before the lock was free.
+  const workspace = resolveCampaignWorkspace(packetPath, { ...sidecars, followContextPointer: true });
+  const { packet, contextPath, reportPath } = workspace;
+  if (workspace.targetRepo !== lockedTarget) {
+    throw refuseRecord(stage, [`The Build Packet was retargeted while this record waited for the target lock (${lockedTarget} is now ${workspace.targetRepo}); run ${cmd("record")} ${stage} again.`]);
+  }
+  if (!existsSync(reportPath)) throw new Error(`record ${stage}: no Assembly Report at ${reportPath}; run ${cmd("start")} or ${cmd("prepare-build")} first.`);
+
+  let composed = null;
+  let facts = null;
+  const compose = (report) => {
+    if (!isObject(report) || !isObject(report.stages)) throw refuseRecord(stage, [`Assembly Report at ${reportPath} has no stages object.`]);
+    const context = stage === "setup" ? readJsonIfExists(contextPath) : null;
+    if (stage === "setup" && !isObject(context?.scaffold)) {
+      throw new Error(`record setup: no Build Context with a scaffold block at ${contextPath}; run ${cmd("start")} or ${cmd("prepare-build")} first.`);
+    }
+    // The same doctor call `next` makes, so the record stamps the value
+    // doctor computes and refuses whatever binding `next` refuses. Doctor
+    // resolves the report binding itself; it must be the report this record
+    // is about to write.
+    const doctor = doctorPacket(packetPath, sidecars);
+    const inspected = optionalString(doctor.derived?.assembly_report_path);
+    if (!inspected || resolve(inspected) !== resolve(reportPath)) {
+      throw refuseRecord(stage, [`The Build Context rebound the Assembly Report while recording (this record read ${reportPath}, doctor now reads ${inspected || "no report"}); run ${cmd("record")} ${stage} again.`]);
+    }
+    facts = doctorFacts(stage, doctor, report, packet);
+    if (typeof afterDoctorRead === "function") afterDoctorRead();
+    const next = stage === "setup"
+      ? composeSetup(report, context, { now: timestamp, recordedBy })
+      : stage === "build"
+        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint })
+        : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input });
+    applyDerivedAssemblyReportSummary(next.report);
+    validateRecord(stage, { report: next.report, context: next.context, packet, fingerprint: facts.fingerprint });
+    assertOutputUnchanged(stage, facts);
+    composed = next;
+    if (dryRun) return null;
+    // Written inside the report's critical section, after every check and
+    // before the report itself, so the two files move together.
+    if (next.context) writeJsonAtomic(contextPath, next.context);
+    return next.report;
+  };
+  // Already inside the target lock, which commitAssemblyReport re-enters.
+  commitAssemblyReport(workspace, compose, {
+    command: `record ${stage}`,
+    staleReason: `stages.${stage === "build" ? "assembly" : stage} was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+    ...(dryRun ? { lock: false } : {}),
+  });
+  const after = dryRun ? null : doctorPacket(packetPath, sidecars);
+  return { composed, facts, reportPath, contextPath, after };
+}

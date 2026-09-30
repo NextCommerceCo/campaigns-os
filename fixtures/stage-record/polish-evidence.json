@@ -1,0 +1,29 @@
+{
+  "status": "completed",
+  "evidence": {
+    "visual_review": {
+      "screenshots": ["qa-output/polish/landing-desktop.png", "qa-output/polish/landing-mobile.png"]
+    },
+    "brand_review": {
+      "logo_checked": true,
+      "favicon": { "status": "confirmed_non_template" },
+      "colors": ["#1f4d3a"],
+      "brand_bleed": { "cleared": true }
+    },
+    "checkout_review": {
+      "field_labels": "initial field labels and placeholders are legible on desktop and mobile",
+      "phone_alignment": "checked",
+      "payment_display": "checked",
+      "bump_compare_price_rule": "no equal or no-discount compare price renders"
+    },
+    "template_residue_review": {
+      "next_blue": "not found",
+      "starter_favicon": { "status": "confirmed_non_template" },
+      "lorem": "not found"
+    },
+    "commerce_flow_review": "direct-entry package selection reviewed",
+    "issues": [],
+    "commands": ["next-campaigns-polish", "campaigns-os polish capture"]
+  },
+  "repair_loop_defect": null
+}

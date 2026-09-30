@@ -25,7 +25,7 @@ Ledger schema id: `campaigns-os-release-ledger/v1`
 Change policy version: `1.0.0`  
 Reason-code vocabulary version: `1.0.0`  
 Limits version: `1.0.0`  
-Supported surface at generation time: `1.43.2`
+Supported surface at generation time: `1.44.0`
 
 ## Forward compatibility
 
@@ -225,6 +225,7 @@ so a renamed command fails here as well as at the supported-surface gate.
 - `campaigns-os prepare-build`
 - `campaigns-os build`
 - `campaigns-os polish`
+- `campaigns-os record`
 - `campaigns-os checkpoint`
 - `campaigns-os page-kit`
 - `campaigns-os spec`

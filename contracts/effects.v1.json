@@ -4754,6 +4754,218 @@
       }
     },
     {
+      "command": "record",
+      "subcommand": "setup",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "the record passes every check — scaffold.required becomes false (handoff to build)",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the record passes every check — stages.setup becomes completed",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: record setup",
+      "test_scope": "full",
+      "notes": "Destructive: it replaces stages.setup and the Build Context scaffold block, which changes the stage next recommends. Refused, writing nothing, when the campaign output directory does not exist, when there is no Build Context or Assembly Report, or when either file would fail its schema. Both files are written together, the Build Context first."
+    },
+    {
+      "command": "record",
+      "subcommand": "setup",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: record setup --dry-run",
+      "test_scope": "full",
+      "notes": "record setup --dry-run runs every check the real invocation runs and prints what it would write; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+    },
+    {
+      "command": "record",
+      "subcommand": "build",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the record passes every check — stages.assembly becomes completed with build_fingerprint set to doctor's derived.build_output_fingerprint.value, and stages.polish becomes required unless its evidence is bound to that exact output",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: record build",
+      "test_scope": "full",
+      "notes": "Destructive: it replaces stages.assembly and, when the output changed, resets stages.polish to required. The fingerprint is doctor's, never typed. Refused, writing nothing, when doctor cannot compute the fingerprint (no built output), when setup is still required, or when the report would fail its schema. The Build Context is read, not written."
+    },
+    {
+      "command": "record",
+      "subcommand": "build",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: record build --dry-run",
+      "test_scope": "full",
+      "notes": "record build --dry-run runs every check the real invocation runs and prints what it would write; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+    },
+    {
+      "command": "record",
+      "subcommand": "polish",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the record passes every check — stages.polish becomes the file's completed status and evidence, bound to doctor's current fingerprint; theme.repair_loop_defect when the file sets it",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: record polish",
+      "test_scope": "full",
+      "notes": "Destructive: it replaces stages.polish (the captured page_load is kept). Refused, writing nothing, when build is not recorded for the current output, when the --evidence file has a shape error (named by field), or when the polish gate doctor evaluates would not pass on the report it would write. The Build Context is read, not written."
+    },
+    {
+      "command": "record",
+      "subcommand": "polish",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: record polish --dry-run",
+      "test_scope": "full",
+      "notes": "record polish --dry-run runs every check the real invocation runs and prints what it would write; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+    },
+    {
       "command": "login",
       "subcommand": null,
       "flags": [],

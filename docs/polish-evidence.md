@@ -21,6 +21,11 @@ Three layers must all be satisfied:
    `campaigns-os polish capture` from the current packet, report, served build,
    mapped routes, and fixed desktop/mobile viewports.
 
+Record all three with `campaigns-os record polish` (§7) rather than editing
+the report by hand: it stamps the stage-record fields from doctor's current
+state, keeps the captured `page_load`, and writes nothing unless this gate would
+pass on the result.
+
 ## 1. Stage-record requirements
 
 The gate only applies once assembly is complete
@@ -500,3 +505,68 @@ current value.
 Polish evidence certifies the polish pass only — it is not QA and does not
 certify launch readiness (`docs/qa-and-test-orders.md` owns the QA proof
 stack).
+
+## 7. Recording with `record polish`
+
+```bash
+campaigns-os record polish --packet <campaign-runtime.build.json> --evidence <polish-evidence.json> [--report <json>] [--dry-run] [--json]
+```
+
+Run it after `campaigns-os polish capture`, against the build `campaigns-os
+record build` recorded. The `--evidence` file is a JSON object with three keys;
+any other key is refused:
+
+| Key | Required | Written to |
+|---|---|---|
+| `status` | no (default `completed`) | `stages.polish.status`; `completed` or `completed_with_warnings` |
+| `evidence` | yes | `stages.polish.evidence`, the seven categories of §2. Leave out `visual_review.page_load`: the value `polish capture` recorded is kept, and a file that carries one is refused. |
+| `repair_loop_defect` | no | `report.theme.repair_loop_defect`: `null`, or the first brand-layer repair-loop defect as an object (`code`, `message`, `path`, `detail`). A non-null defect needs a recorded `report.theme`. |
+
+The command itself stamps `performed_by: "next-campaigns-polish"`,
+`source_build_fingerprint` (doctor's `derived.build_output_fingerprint.value`,
+which must equal the recorded `stages.assembly.build_fingerprint`),
+`source_package_material_fingerprint` when the report fingerprints a Design
+Source Package, and `completed_at`. It then validates the report it would write
+against `schemas/campaign-runtime-assembly-report.v0.schema.json` and doctor's
+report checks, and evaluates this gate and the hidden eager-media checkpoint
+over it exactly as doctor does. Any failure is printed by field or gate code
+(for example `repair_loop_defect must be null or an object ... (got string)`, or
+`polish.evidence_incomplete` with its per-field problems), the command exits
+non-zero, and nothing is written. `--dry-run` runs every check and writes
+nothing. Like `record setup` and `record build`, it refuses a report that is not
+bound to the packet (`docs/build-packet.md`, "Recording stage completion") and
+output that changes while it records.
+
+A complete file:
+
+```json
+{
+  "status": "completed",
+  "evidence": {
+    "visual_review": {
+      "screenshots": ["qa-output/polish/landing-desktop.png", "qa-output/polish/landing-mobile.png"]
+    },
+    "brand_review": {
+      "logo_checked": true,
+      "favicon": { "status": "confirmed_non_template" },
+      "colors": ["#1f4d3a"],
+      "brand_bleed": { "cleared": true }
+    },
+    "checkout_review": {
+      "field_labels": "initial field labels and placeholders are legible on desktop and mobile",
+      "phone_alignment": "checked",
+      "payment_display": "checked",
+      "bump_compare_price_rule": "no equal or no-discount compare price renders"
+    },
+    "template_residue_review": {
+      "next_blue": "not found",
+      "starter_favicon": { "status": "confirmed_non_template" },
+      "lorem": "not found"
+    },
+    "commerce_flow_review": "direct-entry package selection reviewed",
+    "issues": [],
+    "commands": ["next-campaigns-polish", "campaigns-os polish capture"]
+  },
+  "repair_loop_defect": null
+}
+```

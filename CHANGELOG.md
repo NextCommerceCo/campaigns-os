@@ -2,6 +2,48 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.44.0] - 2026-09-30
+
+### Added
+
+- `campaigns-os record setup`, `record build` and `record polish` record a
+  stage's completion so agents no longer hand-edit
+  `.campaign-runtime/build-context.json` or
+  `.campaign-runtime/assembly-report.json` (#535). `record setup` sets
+  `scaffold.required` to false and `stages.setup` to completed once the
+  campaign output directory exists, so `next` moves on to build. `record build`
+  stamps `stages.assembly.build_fingerprint` with the fingerprint doctor
+  computes from `_site/<slug>/`, adds the Design Source Package material
+  fingerprint when the report has one, and marks Polish required. Re-run it
+  after every rebuild. `record polish --evidence <file>` reads the status, the
+  seven evidence fields and an optional `repair_loop_defect` from a JSON file,
+  binds them to the current build and keeps the captured `page_load`.
+- Each command validates what it would write against the existing Build
+  Context and Assembly Report schemas and doctor's report checks. `record
+  polish` also requires that the polish gate would pass. On any failure the
+  command exits non-zero, lists each problem by field (for example
+  `repair_loop_defect` given as a string), and writes nothing. It also writes
+  nothing when the Build Packet or report is missing, or when doctor cannot
+  compute the build fingerprint. Each command also refuses a report bound to
+  another packet or campaign, with the binding code `next` reports (for
+  example `next.prepare_build.report_campaign_mismatch`). Each command takes
+  the target lock before it reads anything from the target, so the report the
+  Build Context binds, the report itself and doctor's fingerprint are all read
+  under the same lock as the write. Output that changes before the write is
+  refused rather than recorded with the old fingerprint.
+  `--dry-run` runs every check and writes nothing. Unknown flags are refused
+  before anything is read.
+- The commands are `record <stage>` rather than the `<stage> record` spelling
+  #535 proposed: `build` is already the intake alias and ignores extra words,
+  so `build record` already runs an intake. `build` and `polish` behave
+  exactly as before.
+- `next`, the setup, build and polish prompts, the bundled skills,
+  `docs/build-packet.md` and `docs/polish-evidence.md` now name these commands
+  instead of describing hand edits. `contracts/effects.v1.json` declares each
+  command and its `--dry-run` form. Bundled skills carry revision
+  `1.44.0+skills.1`, with each skill version advanced one patch, and the local
+  setup install command pins the 1.44.0 package.
+
 ## [1.43.2+agent.3] - 2026-09-28
 
 ### Changed
