@@ -3615,6 +3615,45 @@
         }
       ],
       "entry_sha256": "5ab1528f5b3ac6596de5edccee6cdaea44aff19f27aea40ec5d9aced62087ce2"
+    },
+    {
+      "id": "RL-0188",
+      "sequence": 180,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.6",
+      "changelog_sha256": "d2b29b0c32b80e5cfc43277fccb9a8c14db5af29ce5c175f4f15824de119fcdb",
+      "agent_impact": "An explicit \"\" (or whitespace-only string) in one of the eight optional CampaignSpec Store Profile fields (campaign.store_name, store_terms, store_privacy, store_contact, store_returns, store_shipping, store_phone, store_phone_tel) now blanks a recognised starter demo value (placeholder storefront URLs and phone; not the demo store name) on sync: where the target still holds the starter demo value, page-kit sync writes \"\" and lists the field in changes[] instead of not_synced[] (reason demo_residue_not_in_spec), and the page_kit.store_profile gate names the page-kit sync command as the repair_target action for that demo_residue blocker (still non-waivable). A target that is blank or lacks the key is unchanged by sync and reads as the new matrix kind intentionally_empty (severity clean, outside discrepancies and the state fingerprint, named in the gate reason and the doctor line, also alongside target_only warnings). campaign.store_url stays required: store_url \"\" still raises spec.store_profile (its message now says so) and the gate reason notes it is still required. A real, non-demo target value under a spec \"\" is left as it is and keeps the target_only warning: sync keeps the field in not_in_spec[] and also lists it in the new result array spec_empty_not_applied[] (printed as Spec \"\" not applied, not Not in spec), and the target_only reason and the repair text for a malformed target value under a spec \"\" say the \"\" was not applied and the value must be removed by hand. An absent or null spec field still means not provided, and \"\" outside the eight fields carries no such meaning. The CampaignSpec validator no longer emits StoreProfileShape store-phone-tel-empty for \"\" or store-phone-tel-bad-type for null.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "page-kit",
+          "summary": "page-kit sync results carry spec_empty_not_applied[] (Store Profile fields the spec sets to \"\" over a real, non-demo target value, which stay in not_in_spec[]); the text output prints them as Spec \"\" not applied instead of Not in spec."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The Store Profile ready line names the fields the CampaignSpec leaves intentionally empty and notes that store_url is still required; the spec.store_profile error says an explicit \"\" does not mark a required field as having none."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/store-profile-shape.ts",
+          "surface_entry": null,
+          "summary": "StoreProfileShape no longer warns store-phone-tel-empty for an empty or whitespace-only campaign.store_phone_tel, nor store-phone-tel-bad-type for a null one."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The Store Profile checkpoint and page-kit sync sections say an explicit empty value in one of the eight optional fields blanks the starter demo value on sync and reads as intentionally_empty, that store_url stays required, and that a real target value stays a target_only warning reported as spec_empty_not_applied."
+        }
+      ],
+      "entry_sha256": "6c86b242bdc817127b64e4c1efbc933921b71d9bc0be9aebca8e3d8c0cfe9b7f"
     }
   ]
 }

@@ -167,6 +167,15 @@ test("R2-B5: a missing store_url is still a hard error (existing behavior)", () 
   assert.ok(error.message.includes("campaign.store_url"));
   assert.deepEqual(error.detail.missing_fields, ["campaign.store_url"]);
   assert.equal(error.detail.repair.owner, "operator");
+  assert.doesNotMatch(error.message, /explicit ""/);
+});
+
+test("an explicit empty store_url is still a hard error, and says \"\" does not mark a required field as having none", () => {
+  const { errors } = run({ store_url: "  ", available_payment_methods: ["card"] });
+  const error = errors.find((issue) => issue.code === "spec.store_profile");
+  assert.ok(error);
+  assert.deepEqual(error.detail.missing_fields, ["campaign.store_url"]);
+  assert.match(error.message, /An explicit "" does not mark a required field as having none; it does so only for the eight optional Store Profile fields\./);
 });
 
 test("localhost URLs are globally allowed Development origins for SDK QA", () => {

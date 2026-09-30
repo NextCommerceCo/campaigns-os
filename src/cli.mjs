@@ -2960,6 +2960,7 @@ export function pageKitSyncCommand(args) {
     changes: [],
     unchanged: [],
     not_in_spec: [],
+    spec_empty_not_applied: [],
     not_synced: [],
     errors: [],
     warnings: [],
@@ -3102,6 +3103,7 @@ export function pageKitSyncCommand(args) {
   result.changes = plan.changes;
   result.unchanged = plan.unchanged;
   result.not_in_spec = plan.not_in_spec;
+  result.spec_empty_not_applied = plan.spec_empty_not_applied;
   result.not_synced = plan.not_synced;
   for (const row of plan.not_synced) {
     addIssue(result.warnings, `page_kit.sync.${row.field}_not_synced`, `${row.field} was not written: ${row.detail}`, { reason: row.reason });
@@ -3910,7 +3912,12 @@ export function pageKitSyncTextLines(result) {
     lines.push("Changes: none (every governed field the spec carries already matches)");
   }
   if (result.unchanged?.length) lines.push(`Unchanged: ${result.unchanged.map((row) => row.field).join(", ")}`);
-  if (result.not_in_spec?.length) lines.push(`Not in spec (left as they are): ${result.not_in_spec.join(", ")}`);
+  const specEmptyNotApplied = result.spec_empty_not_applied || [];
+  const notCarried = (result.not_in_spec || []).filter((field) => !specEmptyNotApplied.includes(field));
+  if (notCarried.length) lines.push(`Not in spec (left as they are): ${notCarried.join(", ")}`);
+  if (specEmptyNotApplied.length) {
+    lines.push(`Spec "" not applied (the target holds a real, non-demo value; sync blanks only a starter demo value, so remove it by hand if the merchant has none): ${specEmptyNotApplied.join(", ")}`);
+  }
   if (result.warnings?.length) {
     lines.push("Warnings:");
     for (const issue of result.warnings) lines.push(`- ${formatIssueSummary(issue)}`);
