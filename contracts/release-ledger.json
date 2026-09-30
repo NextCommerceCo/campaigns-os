@@ -2927,8 +2927,158 @@
       "entry_sha256": "90abe34e9eab389f0b516a7b22d62c4dfe19a37025ede78410a1aeab188d47ac"
     },
     {
-      "id": "RL-0182",
+      "id": "RL-0180",
       "sequence": 172,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.44.0+agent.1",
+      "changelog_sha256": "9e1a45650b0d80a9195b08ebd30cc4570b3dd8732393a5e63c9c999934f2c70d",
+      "agent_impact": "doctor --built and the packet path keep an explicit upsell or downsell route in built_output.upsell_selector_scope whatever the page next-page-type meta says; on an oto / one-time-offer route with no upsell or downsell word, only a live checkout meta replaces the route upsell guess, and any other meta (product, receipt, landing or anything else) leaves the page checked as an upsell. Records what RL-0170 omitted: a page whose markup carries next-page-type upsell or downsell anywhere (conflicting, unquoted, upper-case name, commented out, or inside template/script/noscript) is treated as post-purchase and can block; remove the stray tag on non-post-purchase pages.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The packet path passes the page route so an explicit upsell/downsell route keeps its role over a conflicting meta, and an oto route yields only to a checkout meta."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor --built passes the page route so an explicit upsell/downsell route keeps its role over a conflicting meta, and an oto route yields only to a checkout meta."
+        }
+      ],
+      "entry_sha256": "db37943b9ff1bb5158ee49280af32d6617514f8545a9c2d5e8ed34a74b123227"
+    },
+    {
+      "id": "RL-0181",
+      "sequence": 173,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.44.0+agent.2",
+      "changelog_sha256": "11bdd130e5e2f90c936fc1828b08225e519808c2f7bfb7368356de057fc077a7",
+      "agent_impact": "A default qa run --test-order common may now create more test orders than before: every actual terminal path when that count is at or under the flood cap (6 by default, or an explicit --max-test-orders), otherwise the old four-order sample plus one decline path per uncovered offer or downsell page, up to the cap. It previously created at most 4. Verdicts on funnels with offer pages, --test-order off runs included, gain a browser-test-order:upsell-action-coverage row. It is pass or warn only when coverage is certain (orders placed, every offer page listed with its own unshared URL, every plan matched to one funnel, every click on a declared page of the order's funnel) and manual_review otherwise; a warn or manual_review row makes the disposition ready_with_exceptions rather than ready.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "The seeded qa.test_order_policy_notes and the next QA-stage prompt describe the new common depth and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "Describe the new common depth (every terminal path under the cap, otherwise the sample plus one decline path per offer or downsell page not yet declined) and the upsell-action coverage row instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the common depth running full under the cap, the decline paths it adds above the cap, and the browser-test-order:upsell-action-coverage row, which is pass or warn only when coverage is certain and manual_review otherwise."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.44.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.44.0+skills.2 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe the new common depth and the upsell-action coverage row instead of an at-most-four-orders sample; stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/references/session-intake.md",
+          "surface_entry": null,
+          "summary": "Describe the new common depth and the upsell-action coverage row in the test-order coverage intake instead of an at-most-four-orders sample."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe the new common depth, decline-based page coverage attributed per funnel and the conservative upsell-action coverage row; stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "1ada871c0e5c5c511f92fe173349d2b99ea885894d6d18ba8815f6452ae26ff4"
+    },
+    {
+      "id": "RL-0182",
+      "sequence": 174,
       "date": "2026-09-30",
       "kind": "release",
       "surface_version": "1.45.0",
@@ -3071,7 +3221,7 @@
           "summary": "Read the live campaign in packet mode when the built route exists and a public campaign key resolves, unless --no-live-refs is given, and pass the result to the inspection."
         }
       ],
-      "entry_sha256": "f4f50d164f977ea76502faddbb7e88edfd7c1d0cf0fefd458aea0857c922552e"
+      "entry_sha256": "57a5b7502cf401d87e59e0ba957ddafc2d5b10d93f587d7982d019071b1ee563"
     }
   ]
 }

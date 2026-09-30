@@ -30,7 +30,7 @@ const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(im
 function cmd(verb, rest = "") {
   return `${invocationPrefixFor(PACKAGE_ROOT)} ${verb}${rest ? ` ${rest}` : ""}`;
 }
-import { isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
+import { isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, upsellActionCoverageWithoutOrders, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
@@ -193,8 +193,11 @@ Options:
                                   Create Playwright typed-card test orders through the tested checkout page.
                                   Test cards bypass the gateway and create no transactions, so no permission
                                   flags or packet policy are needed — just pick a mode. Default mode (bare
-                                  --test-order, or "common") runs checkout, first-offer accept/decline, and a
-                                  deduplicated shortest real receipt path when needed (at most 4 orders). "full" walks
+                                  --test-order, or "common") runs every actual terminal path when they fit under
+                                  the cap (--max-test-orders, default 6). Above the cap it runs checkout,
+                                  first-offer accept/decline, and a deduplicated shortest real receipt path, then
+                                  adds one decline path per offer/downsell page not yet declined, up to the cap,
+                                  and names any page left out. "full" walks
                                   every actual terminal path; cycles, missing routes, and reachable nonterminals
                                   block before browser launch. The default cap is 6; overflow names the exact raise.
                                   "tiers" is spec-driven: one strict-selection order per selector tier the
@@ -3004,6 +3007,12 @@ async function maybeRunTestOrders(
   const mode = String(args["test-order"] || "off").toLowerCase();
   const legacyMode = String(args["legacy-api-test-order"] || "off").toLowerCase();
   const emptyReceiptAnalytics = () => ({ plannedPlanIds: [], attempts: [] });
+  if (!mode || mode === "off") {
+    // No browser order clicks an upsell control, legacy API orders included,
+    // so the coverage row says so instead of going missing (#530).
+    const coverage = upsellActionCoverageWithoutOrders(resolved.topologies);
+    if (coverage) assertions.push(coverage);
+  }
   if ((!mode || mode === "off") && (!legacyMode || legacyMode === "off")) {
     return { orders: [], receiptAnalytics: emptyReceiptAnalytics() };
   }

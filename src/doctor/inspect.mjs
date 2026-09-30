@@ -271,10 +271,11 @@ export function doctorBuiltOutput(args) {
   // branch above: the defect is family-independent, and this mode is reached
   // without --family more often than with it. Page roles come from the built
   // route (resolveBuiltSiteScope infers them) and from each page's own
-  // next-page-type meta, so no packet or spec is needed; a meta the browser
-  // reads, declared unambiguously, replaces the route guess (#529). No assembly report
-  // exists on this path, so there are no waivers to assess — a blocker here is
-  // repaired in the source, or waived through the packet path.
+  // next-page-type meta, so no packet or spec is needed; a `checkout` meta the
+  // browser reads, declared unambiguously, replaces an ambiguous route guess
+  // such as "/checkout-oto-1/", never an explicit upsell or downsell route (#529). No
+  // assembly report exists on this path, so there are no waivers to assess — a
+  // blocker here is repaired in the source, or waived through the packet path.
   recordUpsellSelectorScopeGate({
     subject: {
       public_route_slug: scope.slug || null,
@@ -284,7 +285,7 @@ export function doctorBuiltOutput(args) {
       const content = readFileSync(page.built_path, "utf8");
       return {
         page_id: page.page_id,
-        page_type: builtPageTypeOverRouteGuess({ route_type: page.page_type, content }),
+        page_type: builtPageTypeOverRouteGuess({ route: page.route, route_type: page.page_type, content }),
         file: relFromDir(targetRepo, page.built_path),
         content,
       };
