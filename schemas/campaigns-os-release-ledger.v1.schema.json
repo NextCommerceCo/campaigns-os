@@ -16,11 +16,41 @@
     },
     "entries": {
       "type": "array",
-      "description": "Ordered oldest to newest. sequence is strictly increasing by 1 from 1, and date is non-decreasing.",
+      "description": "Ordered oldest to newest. sequence is strictly increasing by 1 from 1, and date is non-decreasing. When baseline_floor is present, the entries up to the floor live in the archive it names and this array starts at baseline_floor.last_archived_sequence + 1.",
       "items": { "$ref": "#/$defs/entry" }
-    }
+    },
+    "baseline_floor": { "$ref": "#/$defs/baseline_floor" }
   },
   "$defs": {
+    "baseline_floor": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Present after a baseline rotation. Entries up to and including last_archived_id moved byte-for-byte, and the changelog from the first section they link to the end of the file moved verbatim, into the dated archive files listed in archives; they keep their original sequence and hashes, so each archived entry's changelog_sha256 verifies against the archive changelog. The archive files are not mandatory orientation reads and count against no orientation limit. A consumer whose reviewed baseline's newest entry is older than last_archived_id refuses with refusal_reason_code and adopts a newer reviewed baseline. The floor only moves forward, only with a new rotation entry, and an archive file never changes once merged; a later rotation appends a new archive pair.",
+      "required": ["archives", "last_archived_id", "last_archived_sequence", "first_kept_id", "rotation_entry", "refusal_reason_code"],
+      "properties": {
+        "archives": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Every archive pair, oldest rotation first. Append-only.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["ledger_path", "ledger_sha256", "changelog_path", "changelog_sha256"],
+            "properties": {
+              "ledger_path": { "type": "string", "pattern": "^contracts/archive/[^/]+\\.json$", "description": "Archived entries, same schema_version and shape as this file." },
+              "ledger_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 over the exact bytes of ledger_path." },
+              "changelog_path": { "type": "string", "pattern": "^contracts/archive/[^/]+\\.md$", "description": "The changelog tail that starts at the first section the archived entries link, verbatim and in order, same heading format." },
+              "changelog_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 over the exact bytes of changelog_path." }
+            }
+          }
+        },
+        "last_archived_id": { "type": "string", "pattern": "^RL-[0-9]{4}$", "description": "The newest archived entry." },
+        "last_archived_sequence": { "type": "integer", "minimum": 1, "description": "Its sequence. The first live entry's sequence is this plus one." },
+        "first_kept_id": { "type": "string", "pattern": "^RL-[0-9]{4}$", "description": "The first entry still in this file." },
+        "rotation_entry": { "type": "string", "pattern": "^RL-[0-9]{4}$", "description": "The live entry that recorded the rotation which set this floor." },
+        "refusal_reason_code": { "type": "string", "minLength": 1, "description": "The reason code, from contracts/orientation-reason-codes.v1.json, a consumer refuses with when its reviewed baseline is below the floor." }
+      }
+    },
     "entry": {
       "type": "object",
       "additionalProperties": true,
