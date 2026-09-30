@@ -40,6 +40,12 @@
 //   TEMPLATE_DOUBLE_BRACE      `{{` inside an SDK-owned <template>. SDK tokens
 //                              are single-brace and conditions are no-brace;
 //                              a double brace renders literally.
+//   CHECKOUT_BUMP_IS_UPSELL    data-next-is-upsell="true" on a checkout page
+//                              (#535). A checkout bump is a pre-purchase
+//                              add-on; the flag puts it on the initial order
+//                              as an upsell line. The page type is a live,
+//                              unambiguous next-page-type meta, since it is
+//                              what the SDK reads; otherwise the route type.
 //
 //   Info (advisory, one note per campaign, no code)
 //   unknown_attributes[]       a data-next-* name the pinned SDK's attribute
@@ -64,6 +70,9 @@ import {
   isIndexedSdkAttribute,
   isKnownCheckoutFieldName,
 } from "./sdk-attribute-index.mjs";
+import { builtPageTypeMeta } from "./upsell-selector-scope.mjs";
+
+const normalizedPageTypeValue = (type) => (type == null ? null : String(type).trim().toLowerCase());
 
 export const SDK_MARKUP = "built_output.sdk_markup";
 
@@ -75,6 +84,7 @@ export const SDK_MARKUP_CODES = Object.freeze({
   ORPHANED_UPSELL_ACTION: { code: `${SDK_MARKUP}.orphaned_upsell_action`, severity: "error" },
   DOUBLE_SELECTED: { code: `${SDK_MARKUP}.double_selected`, severity: "warning" },
   TEMPLATE_DOUBLE_BRACE: { code: `${SDK_MARKUP}.template_double_brace`, severity: "warning" },
+  CHECKOUT_BUMP_IS_UPSELL: { code: `${SDK_MARKUP}.checkout_bump_is_upsell`, severity: "warning" },
   // Unknown data-next-* names are not a finding and carry no code: they are
   // information on the gate (unknown_attributes[]) and one advisory ready line.
 });
@@ -150,11 +160,22 @@ function describe(entry) {
   return `${bits.join("")}>`;
 }
 
+function describeBump(entry) {
+  const id = entry.attrs.get("id");
+  const packageId = entry.attrs.get("data-next-package-id");
+  const bits = [`<${entry.tag}`];
+  if (id) bits.push(` id="${id}"`);
+  if (packageId) bits.push(` data-next-package-id="${packageId}"`);
+  return `${bits.join("")}>`;
+}
+
 /**
  * Scan one built page. Returns findings with { code_name, code, severity,
  * page_id, file, message, detail } and the set of unknown data-next-* names.
+ * `page_type` is the route-inferred type, used only when the page declares no
+ * live, unambiguous next-page-type meta (builtPageTypeMeta).
  */
-export function scanPageMarkup({ page_id, file = null, content = "" }) {
+export function scanPageMarkup({ page_id, file = null, content = "", page_type = null }) {
   const document = parse(String(content || ""));
   const where = file || page_id;
   const findings = [];
@@ -165,9 +186,12 @@ export function scanPageMarkup({ page_id, file = null, content = "" }) {
   const selectorIds = new Set(); // ids of elements that are themselves a selector
   const templates = []; // { entry, sdkOwned }
   const referencedTemplateIds = new Set();
+  const upsellFlagged = []; // entries carrying data-next-is-upsell="true"
 
   walkElements(document, (entry) => {
     const { tag, attrs: a, ancestors } = entry;
+
+    if ((a.get("data-next-is-upsell") || "").trim().toLowerCase() === "true") upsellFlagged.push(entry);
 
     for (const [name] of a) {
       if (name.startsWith("data-next-") && !isIndexedSdkAttribute(name)) unknown.add(name);
@@ -281,6 +305,26 @@ export function scanPageMarkup({ page_id, file = null, content = "" }) {
     findings.push(finding("TEMPLATE_DOUBLE_BRACE", page_id, where,
       `SDK template ${id ? `id="${id}"` : "(no id)"} on ${where} contains "${snippet}". SDK template tokens are single-brace ({${inner}}) and conditions are no-brace; a double brace renders literally to the shopper.`,
       { template_id: id || null, snippet }));
+  }
+
+  // One finding per page, naming every flagged element: the repair is the
+  // same for each (drop the flag from the bump include's markup; several
+  // starter includes write it unconditionally, so an is_upsell=false argument
+  // does not always clear it).
+  // The page type is read only when a flag is present, so a page without one
+  // is not parsed a second time.
+  const pageTypeMeta = upsellFlagged.length ? builtPageTypeMeta(content) : null;
+  // The live, unambiguous meta wins because it is what the SDK reads; the
+  // upsell gate's narrower oto-route rule (builtPageTypeOverRouteGuess) does
+  // not apply to a checkout bump.
+  const effectivePageType = upsellFlagged.length
+    ? normalizedPageTypeValue(pageTypeMeta ?? page_type)
+    : null;
+  if (effectivePageType === "checkout") {
+    const elements = upsellFlagged.map(describeBump);
+    findings.push(finding("CHECKOUT_BUMP_IS_UPSELL", page_id, where,
+      `${elements.length > 1 ? `${elements.length} order bumps` : "An order bump"} on checkout page ${where} (${elements.join(", ")}) ${elements.length > 1 ? "carry" : "carries"} data-next-is-upsell="true". A checkout bump is a pre-purchase add-on; the flag puts it on the initial order as an upsell line. The flag comes from the bump include's markup, and several starter bump includes write it unconditionally, so remove data-next-is-upsell="true" from the include in this campaign unless the line really should be billed as an upsell.`,
+      { page_type: effectivePageType, page_type_source: pageTypeMeta !== null ? "next-page-type" : "route", elements }));
   }
 
   return { page_id, file, findings, unknown_attributes: [...unknown].sort() };

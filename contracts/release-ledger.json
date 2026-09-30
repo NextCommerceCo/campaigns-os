@@ -3590,8 +3590,35 @@
       "entry_sha256": "5f2e7b56e9659579272e02edf00a032e83a1e2917f56b28288ce9a13ab483361"
     },
     {
-      "id": "RL-0172",
+      "id": "RL-0187",
       "sequence": 179,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.5",
+      "changelog_sha256": "7dcc3c03c24eef015a9ebf621ce053b08e7447f10d3ffcfe2b063cbca58782aa",
+      "agent_impact": "doctor can report a new warning, built_output.sdk_markup.checkout_bump_is_upsell, when a checkout page carries data-next-is-upsell=\"true\" on an order bump; it does not block. The page type is the live next-page-type meta, or the route when that meta is absent, blank, inside a <template> or conflicting. Several starter bump includes write the flag unconditionally, so starter checkouts with a bump show it; to clear it, remove data-next-is-upsell=\"true\" from the bump include in the campaign unless the line should be billed as an upsell. theme generate now keeps a declared CTA label colour that reaches 3:1 on the CTA (reported as theme.foreground.low_contrast when under 4.5:1). The label is read, in order, from the one colour every button rule on the CTA background agrees on, a :root inverse or on-colour text token whose name has a text or foreground part (for example --text-inverse or --text-on-primary, never --border-on-primary), or the one colour all other button rules agree on; a ; or : inside quotes or parentheses, as in a data: URL in a background shorthand, no longer splits a button rule declaration; the same inverse and on-colour names, and only those, are the source inverse text token when the source is compared with scaffold defaults; a button rule targets button, input[type=submit], or a btn, button or cta class, judged only on the selector's own element, class and attribute parts (not attribute values or the arguments of :not(), :is(), :where() or :has()) and with no other pseudo-class, so .order-summary, .cart-count, .order-summary[data-target=\".btn\"], .cart:has(.button), [type=submit] or div[type=submit] never supply it. Body text comes from the darkest declared text token that reaches 4.5:1 on the body background, even when the source has no primary text token; inverse and on-colour label tokens (for example --text-color-inverse or --text-on-dark) and link, status and state colours (for example --text-link or --text-error) are never body text. Declarations inside CSS comments are no longer read, and inline <style> sources are hashed as before, so an existing brand-theme.css is not reported stale. Sources that declare neither generate the same CSS as before. docs/brand-theme-bridge.md says to load next-core.css and the brand layer only on pages where family components render.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The SDK markup check now receives each built page type and reads the live next-page-type meta first, so doctor warns with built_output.sdk_markup.checkout_bump_is_upsell on a checkout page whose order bump carries data-next-is-upsell=\"true\"."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "Document the declared CTA foreground order and which selectors count as button rules (judged on their own element, class and attribute parts, not attribute values or :not()/:is()/:where()/:has() arguments), the darkest-declared body text rule and the link, status and state names it excludes (commented-out declarations are not read), and that next-core.css and the brand layer belong only on pages where family components render, with report.theme.commerce_pages recording the scoped pages."
+        }
+      ],
+      "entry_sha256": "5ab1528f5b3ac6596de5edccee6cdaea44aff19f27aea40ec5d9aced62087ce2"
+    },
+    {
+      "id": "RL-0172",
+      "sequence": 180,
       "date": "2026-09-30",
       "kind": "release",
       "surface_version": null,
@@ -3626,7 +3653,7 @@
           "summary": "Drop the build reference from the analytics_contract.content_param_no_handler message; code and detail fields unchanged."
         }
       ],
-      "entry_sha256": "c1fa9a0cebca81126264c6c8bce18bc29e50412e821c289c50c12a0e2aaa7366"
+      "entry_sha256": "c3eafebd8e628faaaf3c46565126c54e7b7d89c5bb2d365f34d1001c91b8ae07"
     }
   ]
 }
