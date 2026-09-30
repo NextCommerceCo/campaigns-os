@@ -1,11 +1,11 @@
 ---
 name: campaign-run-evidence
-version: 1.0.12
+version: 1.0.13
 description: Interpret existing Campaigns OS doctor, QA and proof-depth evidence without claiming more proof than the artifacts contain.
 ---
 
-Bundle revision: 1.44.0+skills.2
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.44.0+skills.2`
+Bundle revision: 1.45.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.45.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -35,9 +35,10 @@ authorities for those decisions (`docs/qa-and-test-orders.md`).
 Read what is already recorded before producing anything.
 `campaigns-os readback <target-repo-root> --json` (tier `none`: writes nothing,
 starts no process, touches no network) projects the artifact set and its
-freshness; `campaigns-os doctor --packet <packet> --json` (tier `none`:
-inspection is the default and leaves the target byte-identical) re-reads a
-packet without recording anything.
+freshness; `campaigns-os doctor --packet <packet> --json` (tier `A`:
+inspection is the default and leaves the target byte-identical, but once the
+site is built and a public campaign key resolves it makes one read-only
+request for the live campaign) re-reads a packet without recording anything.
 
 ## Read evidence depth in order
 

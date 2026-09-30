@@ -2,6 +2,74 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.45.0] - 2026-09-30
+
+### Changed
+
+- Package and supported-surface version advance to 1.45.0.
+- `doctor --packet` checks every built page's shipping and package refs against
+  the live campaign as well as the CampaignSpec (#533). When the packet's built
+  `_site/<route>/` exists and a public Campaigns API key resolves (the packet,
+  its local CampaignSpec, or the declared campaign-key env var), doctor makes
+  one read-only `GET {proxy-base}/api/campaign` with the key in
+  `X-Campaign-Key`, adding `?ref_id=<id>` when the CampaignSpec's
+  `campaign.ref_id` names the campaign. No store or Admin credential is used
+  and nothing is written. `doctor` accepts `--proxy-base <url>` (https, or
+  loopback over http). `qa run` makes the same read when it has read at least
+  one served page and a key resolves, and records the result in the verdict
+  as `api-metadata` assertions with the same codes.
+- The campaign is read from the proxy envelope's `data`: one campaign, or an
+  array picked by `campaign.ref_id` or holding exactly one. A campaign not
+  carrying the asked-for ref (`ref_id`, else `id`), or none, is `not_run`
+  (`campaign_mismatch`).
+- A page ref the live campaign does not serve is a blocker,
+  `built_output.shipping_ref_live_missing` or
+  `built_output.package_ref_live_missing`, even when the CampaignSpec lists no
+  shipping methods. Doctor compares every built `.html` page in
+  `_site/<route>/` but `404.html` and `_`/`.` directories, naming unlisted
+  pages by path. CampaignSpec refs the live campaign lacks, or the reverse,
+  are the separate warning `spec.campaign_drift`, which never softens a page
+  blocker.
+- A read that is not made or fails is `not_run` with a reason, never a pass,
+  and never falls back to the CampaignSpec list. Doctor records it in
+  `derived.live_campaign_refs`. No key, no built page and `--no-live-refs`
+  (`disabled`) make no request and raise no warning. A failed read is the
+  warning `built_output.live_refs_not_run`: no response, a non-2xx, a
+  10-second timeout, an `ok: false` envelope or one with an `error` and no
+  campaign (`proxy_error`), several campaigns and no `campaign.ref_id`
+  (`ambiguous_campaign`), or a body that is not the envelope
+  (`unexpected_body`). The reason quotes the proxy's error as one line, never
+  the raw body. QA records a skipped `live-campaign-refs` assertion
+  (`pages_eligible` under `--no-live-refs`) or a warn
+  `built_output.live_refs_not_run` one.
+- `doctor --no-live-refs` and `qa run --no-live-refs` skip only the live
+  campaign read (`/api/campaign`); other declared sends are unchanged. Only
+  `doctor` and `qa run` read; `start`, `prepare-build`, `build`,
+  `theme waive`, `checkpoint`, `findings harvest`, `run-record`, `next` and
+  the doctor refresh after `qa run` records the QA stage record `not_read`.
+- An `api_key_source` env var whose name contains `ADMIN`, `TOKEN`, `SECRET`,
+  `PASSWORD`, `PRIVATE` or `STORE` is refused for this read, with no request
+  (`key_source_refused`).
+- Page refs are read from the parsed HTML for the live check and the existing
+  `built_output.shipping_ref` / `built_output.package_ref` check: any valid
+  attribute syntax, entity-encoded values and `<template>` content are read;
+  comments, `<noscript>` and visible text are not. Inline `packageId:` /
+  `shippingId:` config is read from scripts and attribute values.
+- `contracts/effects.v1.json` declares the `{proxy-base}/api/campaign` send on
+  the `doctor`, `doctor --no-write`, `doctor --write` and five existing
+  `qa run` rows; the first two leave `readOnlyHint` for tier A and still write
+  nothing. `--no-live-refs` is an effect-changing flag, with rows without the
+  read for `doctor` (read-only), `doctor --write` and `qa run` alone and with
+  `--no-remit`, `--no-post-verdict`, `--test-order` or `--browser`.
+  `docs/effects.md` says the same and describes the read.
+- QA commercial parity warns `commercial_parity.recurring_claim_absent`,
+  naming the package, when a page renders a subscription package (a recurring
+  price and interval) with no readable recurring claim, and reports
+  `incomplete` instead of passing.
+- The bundled skills that cite doctor inspection cite it at tier `A`. The local
+  setup install command pins 1.45.0. Bundled skills carry revision
+  `1.45.0+skills.1`, each skill version advanced one patch.
+
 ## [1.44.0+agent.2] - 2026-09-30
 
 ### Changed

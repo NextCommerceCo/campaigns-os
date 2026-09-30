@@ -37,6 +37,7 @@ const DRY_RUN_IMPLEMENTERS = [
 const PREREQUISITES = {
   doctor: { packet: "campaign-runtime.build.json" },
   "doctor|--no-write": { packet: "campaign-runtime.build.json", write: true },
+  "doctor|--no-live-refs": { packet: "campaign-runtime.build.json" },
 };
 
 const pairOf = (row) => [row.command, row.subcommand].filter(Boolean).join(" ");

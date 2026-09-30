@@ -11,7 +11,10 @@ import {
   CommercialParityLimitError,
   createCommercialParityReport,
   extractCommercialClaims,
+  recurringClaimAbsences,
+  recurringClaimAbsentAssertions,
 } from "./commercial-parity.mjs";
+import { extractRenderedPackageRefs } from "./live-campaign-refs.mjs";
 
 export const COMMERCIAL_QA_LIMITS = Object.freeze({
   max_html_bytes: 2 * 1024 * 1024,
@@ -171,10 +174,15 @@ function captureFailure(page, code, error) {
 
 export function captureCommercialClaims(page, html) {
   try {
-    return extractCommercialClaims(html, {
-      pageId: present(page?.page_id) ? String(page.page_id) : null,
-      url: page?.url,
-    });
+    return {
+      ...extractCommercialClaims(html, {
+        pageId: present(page?.page_id) ? String(page.page_id) : null,
+        url: page?.url,
+      }),
+      // Every package the page renders, by the refs doctor reads, so a
+      // subscription whose rebill copy yielded no claim is still seen (#533).
+      rendered_package_refs: [...extractRenderedPackageRefs(html)],
+    };
   } catch (error) {
     const code = error instanceof CommercialParityLimitError
       ? error.code
@@ -398,6 +406,29 @@ export function planCommercialParity(spec, { maxScenarios = COMMERCIAL_QA_LIMITS
   };
 }
 
+// A package recurs when the spec says so, or carries a recurring price and a
+// cadence. Page rows override the campaign catalog per ref, as the journey does.
+function isSubscriptionPackage(pkg) {
+  return pkg?.is_recurring === true
+    || (present(pkg?.price_recurring) && (present(pkg?.interval_count) || present(pkg?.interval)));
+}
+
+export function subscriptionPackageRefsByPage(spec, pages) {
+  const packageRef = (pkg) => (present(pkg?.ref_id) ? String(pkg.ref_id) : present(pkg?.package_id) ? String(pkg.package_id) : null);
+  const catalog = new Map(array(spec?.packages).map((pkg) => [packageRef(pkg), pkg]).filter(([ref]) => ref));
+  const byPage = new Map();
+  array(pages).forEach((page) => {
+    if (!present(page?.id)) return;
+    const refs = new Set();
+    array(page.packages).forEach((pkg) => {
+      const ref = packageRef(pkg);
+      if (ref && isSubscriptionPackage({ ...(catalog.get(ref) || {}), ...pkg })) refs.add(ref);
+    });
+    if (refs.size) byPage.set(String(page.id), refs);
+  });
+  return byPage;
+}
+
 function countBy(values, keyFor) {
   const counts = {};
   values.forEach((value) => {
@@ -473,6 +504,7 @@ function compactReport(report, journey, plan, executed, issues, observedClaims, 
     unresolved_voucher_claims: report.unresolved_voucher_claims,
     serialized_assertion_count: report.serialized_assertion_count,
     omitted_assertion_count: report.omitted_assertion_count,
+    recurring_claim_absences: array(report.recurring_claim_absences),
     observed_claims: observedClaims,
     claim_limit: claimLimit,
     finding_count: report.findings.length,
@@ -539,6 +571,7 @@ export function unavailableCommercialReport(code, { status = "not_run" } = {}) {
     unresolved_voucher_claims: 0,
     serialized_assertion_count: 0,
     omitted_assertion_count: 0,
+    recurring_claim_absences: [],
     observed_claims: 0,
     claim_limit: COMMERCIAL_QA_LIMITS.max_aggregate_claims,
     finding_count: 0,
@@ -625,8 +658,18 @@ export async function runCommercialParity({
     maxAssertions,
     countsOnly: aggregateClaimOverflow,
   });
+  // Subscription packages a page renders with no recurring claim read for
+  // them: incomplete evidence (an issue), and a warning naming the package.
+  const absences = aggregateClaimOverflow
+    ? []
+    : recurringClaimAbsences(captures, subscriptionPackageRefsByPage(planningSpec, commercialPlanning.pages));
+  absences.forEach(() => issues.push({ code: "recurring_claim_absent" }));
+  const absentAssertions = recurringClaimAbsentAssertions(absences, {
+    maxAssertions: Math.max(0, maxAssertions - parity.assertions.length),
+  });
+  parity.recurring_claim_absences = absences;
   return {
-    assertions: parity.assertions,
+    assertions: [...parity.assertions, ...absentAssertions],
     commercial: compactReport(
       parity,
       parityJourney,

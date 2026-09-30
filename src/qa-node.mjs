@@ -98,6 +98,18 @@ import {
   unavailableCommercialCapture,
   unavailableCommercialReport,
 } from "./qa-commercial-parity.mjs";
+import {
+  LIVE_REF_CODES,
+  campaignDriftMessage,
+  disabledLiveRead,
+  evaluateLiveCampaignRefs,
+  extractRenderedRefs,
+  liveRefsDisabled,
+  liveRefFindingMessage,
+  liveRefsNotRunMessage,
+  readLiveCampaignForPacket,
+} from "./live-campaign-refs.mjs";
+import { specPackageRefs, specShippingRefs } from "./doctor/checks.mjs";
 
 // The producing runtime identity on every verdict. Read from package.json so
 // a verdict names the release that made it; a literal here outlived three
@@ -110,7 +122,7 @@ const HELP = `campaigns-os qa — Node/npm spec-aware QA
 Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
-  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--json]
+  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--no-live-refs] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
@@ -130,7 +142,7 @@ Options:
                                   Requires --base-url and --family. No Map ID / CampaignSpec needed.
   --spec <path>                   Local exported CampaignSpec JSON for the non-packet Map ID flow.
                                   Packet QA always uses packet.spec.local_path and rejects this override.
-  --proxy-base <url>              Campaign Map proxy base for /api/spec, /api/price-preview, and verdict publishing.
+  --proxy-base <url>              Campaign Map proxy base for /api/spec, /api/price-preview, /api/campaign, and verdict publishing.
   --base-url <url>                Deployed campaign root. Packet deploy URL is used when omitted.
                                   Commercial pages are checked automatically against /api/price-preview;
                                   no commercial sidecar or extra catalog flag is required.
@@ -166,6 +178,9 @@ Options:
                                   Record is not stamped; a refusal still exits 2, a clean dry run exits 0
                                   (--json: dry_run, would_publish, would_post).
   --no-remit                     When an ambient run session is active, write the local Run Record but skip Run Telemetry remit.
+  --no-live-refs                  qa run: skip the one read-only GET of <proxy-base>/api/campaign that checks each
+                                  served page's shipping and package refs against the live campaign; the verdict
+                                  records the check not_run with reason disabled, never a pass.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
                                   Requires one-time setup: campaigns-os qa install-browser
@@ -2168,7 +2183,7 @@ async function runQa(args, options = {}) {
 // `runSessionActive` is threaded in from the CLI's single ambient-session read
 // rather than re-discovered here, so the closeout command this run prints and
 // the run_id the session will close under come from the same observation.
-async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) {
+async function runResolvedQa(args, resolved, { runSessionActive = false, liveCampaign = undefined, liveCampaignFetch = globalThis.fetch } = {}) {
   const startedAt = new Date().toISOString();
   const runId = generateRunId();
   const gate = resolved.themeGate;
@@ -2261,13 +2276,33 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
   const pages = resolved.topologies.flatMap(topology => topology.pages);
   const pageResults = await mapConcurrent(pages, COMMERCIAL_QA_LIMITS.concurrency, page =>
     runPageChecks(page, args, { sourceLoader, bindingExpected, bindingScriptLoader, captureCommercial: commercialIds.has(String(page.page_id)) }));
+  const livePages = new Map();
   for (const [index, page] of pages.entries()) {
     const pageResult = pageResults[index];
     assertions.push(...pageResult.assertions);
+    if (pageResult.renderedRefs && !livePages.has(String(page.page_id))) {
+      livePages.set(String(page.page_id), { ...page, page_id: String(page.page_id), ...pageResult.renderedRefs });
+    }
     if (commercialIds.has(String(page.page_id)) && pageResult.commercialCapture && !capturesByPageId.has(String(page.page_id))) {
       capturesByPageId.set(String(page.page_id), pageResult.commercialCapture);
     }
   }
+  // The live campaign read (#533): one GET of {proxy-base}/api/campaign under
+  // the public campaign key, made only when a served page was read to compare;
+  // --no-live-refs sends nothing and records the check not_run (`disabled`).
+  const liveSpec = resolved.rawSpec || resolved.spec;
+  const liveRead = liveRefsDisabled(args)
+    ? disabledLiveRead()
+    : liveCampaign !== undefined || livePages.size === 0
+    ? liveCampaign
+    : await readLiveCampaignForPacket({
+      packet: resolved.packet,
+      packetPath: resolved.packetPath || null,
+      spec: liveSpec,
+      fetchImpl: liveCampaignFetch,
+      proxyBase: resolved.proxyBase,
+    });
+  assertions.push(...liveCampaignRefAssertions({ pages: [...livePages.values()], spec: liveSpec, liveCampaign: liveRead }));
   if (args.browser === true) {
     assertions.push(...await runBrowserChecks(resolved.topologies, args, {
       brandContract: resolved.brandContract,
@@ -2887,7 +2922,77 @@ async function runPageChecks(page, args, {
     }));
   }
 
-  return { assertions, commercialCapture };
+  const rendered = extractRenderedRefs(html);
+  return {
+    assertions,
+    commercialCapture,
+    renderedRefs: { package_refs: [...rendered.package_refs], shipping_refs: [...rendered.shipping_refs] },
+  };
+}
+
+// The live campaign ref check (#533) as QA assertions: the comparison doctor
+// runs over built pages, run here over the served pages this attempt read,
+// under the same codes. `liveCampaign` is a readLiveCampaign result the
+// caller made; absent or failed, the check is not_run with its reason.
+function liveCampaignRefAssertions({ pages, spec, liveCampaign }) {
+  const campaignAssertion = (fields) => assertion({ family: "api-metadata", page: { page_id: "campaign" }, ...fields });
+  if (!pages.length && liveCampaign?.reason_code !== "disabled") {
+    return [campaignAssertion({
+      id: "live-campaign-refs",
+      status: STATUS.SKIPPED,
+      expected: "every served page's shipping and package refs are served by the live campaign",
+      actual: "not_run",
+      evidence: { code: LIVE_REF_CODES.notRun, reason_code: "no_pages", reason: "No served page source was read to compare against the live campaign." },
+    })];
+  }
+  const result = evaluateLiveCampaignRefs({
+    pages,
+    map: { package_refs: specPackageRefs(spec), shipping_refs: specShippingRefs(spec) },
+    live: liveCampaign,
+  });
+  const keySource = liveCampaign?.key_source ? { key_source: liveCampaign.key_source } : {};
+  if (result.status === "not_run") {
+    // --no-live-refs: the verdict says how many served pages went unchecked.
+    const eligible = result.reason_code === "disabled" ? { pages_eligible: result.checked_pages } : {};
+    return [campaignAssertion({
+      id: result.attempted ? LIVE_REF_CODES.notRun : "live-campaign-refs",
+      status: result.attempted ? STATUS.WARN : STATUS.SKIPPED,
+      ...(result.attempted ? { severity: SEVERITY.WARN } : {}),
+      expected: "every served page's shipping and package refs are served by the live campaign",
+      actual: "not_run",
+      evidence: { code: LIVE_REF_CODES.notRun, reason_code: result.reason_code, reason: result.attempted ? liveRefsNotRunMessage(result) : result.reason, ...eligible, ...keySource },
+    })];
+  }
+  const out = result.page_findings.map((finding) => assertion({
+    id: `${finding.code}:${finding.page_id}`,
+    family: "api-metadata",
+    page: pages.find((page) => String(page.page_id) === finding.page_id) || { page_id: finding.page_id },
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+    expected: `every rendered ${finding.kind} ref is served by the live campaign`,
+    actual: finding.refs.join(", "),
+    evidence: { code: finding.code, refs: finding.refs, message: liveRefFindingMessage(finding) },
+  }));
+  if (result.drift) {
+    out.push(campaignAssertion({
+      id: LIVE_REF_CODES.drift,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: "the CampaignSpec lists the refs the live campaign serves",
+      actual: "drift",
+      evidence: { code: LIVE_REF_CODES.drift, drift: result.drift, message: campaignDriftMessage(result.drift) },
+    }));
+  }
+  if (result.status === "pass") {
+    out.push(campaignAssertion({
+      id: "live-campaign-refs",
+      status: STATUS.PASS,
+      expected: "every served page's shipping and package refs are served by the live campaign",
+      actual: `${result.checked_pages} page(s) checked`,
+      evidence: { ...keySource },
+    }));
+  }
+  return out;
 }
 
 async function maybeRunTestOrders(
@@ -3897,6 +4002,7 @@ export const __qaNodeTestHooks = Object.freeze({
   isRoutingMetaTag,
   unsupportedSdkMetaHint,
   reportCommercialRunnerError,
+  liveCampaignRefAssertions,
   browserSkippedByGate,
   reportBrowserSkippedByGate,
   gateClearingHint,
