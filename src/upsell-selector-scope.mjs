@@ -226,11 +226,16 @@ function routeGuessIsAmbiguous(route) {
 // upsell or downsell route keeps its type whatever it declares. The guess also
 // stands for a page that declares nothing, or declares it only in inert or
 // conflicting markup, and when no route is given. A type declared by a spec
-// is not a guess and is passed through as before.
+// is not a guess and is passed through as before. Either way the type
+// comes back trimmed and lower-cased (" Checkout " is "checkout"), or null.
 export function builtPageTypeOverRouteGuess({ route = null, route_type = null, content = "" } = {}) {
-  if (!routeGuessIsAmbiguous(route)) return route_type;
-  const declared = builtPageTypeMeta(content);
-  return declared?.toLowerCase() === "checkout" ? declared : route_type;
+  const declared = routeGuessIsAmbiguous(route) ? builtPageTypeMeta(content) : null;
+  const type = normalizedPageType(declared) === "checkout" ? declared : route_type;
+  return normalizedPageType(type);
+}
+
+function normalizedPageType(type) {
+  return type == null ? null : String(type).trim().toLowerCase();
 }
 
 // A built page's funnel role, from either signal that carries it. The declared

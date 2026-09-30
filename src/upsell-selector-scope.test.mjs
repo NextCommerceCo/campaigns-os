@@ -263,7 +263,7 @@ const DECLARATIONS = [
   ["single quotes", META("name='next-page-type' content='checkout'"), "checkout"],
   ["no quotes", META("name=next-page-type content=checkout"), "checkout"],
   ["upper-case attribute names", META('NAME="next-page-type" CONTENT="checkout"'), "checkout"],
-  ["value case and padding", META('name="next-page-type" content="  Checkout "'), "Checkout"],
+  ["value case and padding", META('name="next-page-type" content="  Checkout "'), "checkout"],
   ["a meta in the body", `</head><body>${CHECKOUT}`, "checkout"],
   ["agreeing duplicates", `${CHECKOUT}${META('name="next-page-type" content="CHECKOUT"')}`, "checkout"],
   ["commented out", `<!-- ${CHECKOUT} -->`, "upsell"],
@@ -292,6 +292,11 @@ test("only a live, unambiguous next-page-type meta replaces the route guess", ()
     const gate = gateFor([upsellPage(content, { page_type })]);
     assert.equal(gate.status, role === "upsell" ? "blocked" : "not_applicable", label);
   }
+});
+
+test("the page type over the route guess comes back trimmed and lower-cased from either source", () => {
+  assert.equal(builtPageTypeOverRouteGuess({ route_type: " Checkout ", content: "<html></html>" }), "checkout");
+  assert.equal(builtPageTypeOverRouteGuess({ route_type: null, content: "<html></html>" }), null);
 });
 
 // Route x meta -> flagged, over a page with an unscoped bundle selector inside
