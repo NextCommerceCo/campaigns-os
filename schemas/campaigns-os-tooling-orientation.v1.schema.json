@@ -350,6 +350,7 @@
       "enum": [
         "already_current",
         "ahead_of_upstream",
+        "baseline_below_floor",
         "checkout_acquisition_failed",
         "checkout_already_exists",
         "checkout_missing",
