@@ -906,7 +906,10 @@ test("(i') QA auto-end preserves a prior handler failure and closes on blank inh
   const session = JSON.parse(started.stdout).session;
   const before = existsSync(session.lifecycle_journal) ? readJournalEntries(session.lifecycle_journal).length : 0;
   const baseUrl = `http://127.0.0.1:${server.address().port}/runtime-packet-demo/`;
-  const { stderr } = await execFileAsync(process.execPath, [CLI, "qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-post-verdict", "--no-remit", "--agent-input-tokens", "bogus", "--json"], {
+  // A refused loopback proxy keeps QA's proxy reads (the live campaign read,
+  // #533, and price preview) on this machine.
+  const proxyBase = "http://127.0.0.1:1";
+  const { stderr } = await execFileAsync(process.execPath, [CLI, "qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", proxyBase, "--no-post-verdict", "--no-remit", "--agent-input-tokens", "bogus", "--json"], {
     cwd: dir,
     env: childEnv(),
   });
@@ -918,7 +921,7 @@ test("(i') QA auto-end preserves a prior handler failure and closes on blank inh
 
   // QA passes whitespace-only --context to terminal auto-end. Run Record
   // resolves the spaces as a literal path and still closes this run.
-  const second = await execFileAsync(process.execPath, [CLI, "qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-post-verdict", "--no-remit", "--context", "   ", "--json"], {
+  const second = await execFileAsync(process.execPath, [CLI, "qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", proxyBase, "--no-post-verdict", "--no-remit", "--context", "   ", "--json"], {
     cwd: dir,
     env: childEnv(),
   });

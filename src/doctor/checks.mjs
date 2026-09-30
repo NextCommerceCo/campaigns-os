@@ -14,7 +14,12 @@ import {
 import { createDoctorCheckRegistry, runDoctorCheckRegistry } from "../doctor-check-registry.mjs";
 import { evaluateSourcePreparation } from "../source-prep.mjs";
 import { isLoopbackHostname } from "../remit.mjs";
-import { publicRouteForPage } from "../source-html-intake.mjs";
+import {
+  HOST_STRIPPED_CODE,
+  parseHostPrefixedRoute,
+  publicRouteForPage,
+  SDK_ROUTING_META_TAGS,
+} from "../source-html-intake.mjs";
 import {
   readSourceHtmlManifestFile,
   SOURCE_HASH_PATTERN,
@@ -112,6 +117,16 @@ import {
   addIssue,
 } from "../cli-helpers.mjs";
 import { resolveCampaignsApiKeySource, describeCampaignKeyRejection } from "../campaigns-api-key.mjs";
+import {
+  LIVE_REF_CODES,
+  campaignDriftMessage,
+  evaluateLiveCampaignRefs,
+  extractRenderedPackageRefs,
+  extractRenderedRefs,
+  extractRenderedShippingRefs,
+  liveRefFindingMessage,
+  liveRefsNotRunMessage,
+} from "../live-campaign-refs.mjs";
 
 const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
 const CONTEXT_SCHEMA = "campaign-runtime-build-context/v0";
@@ -214,12 +229,6 @@ const US_MARKET_COPY_PATTERNS = [
 
 const HARDCODED_CURRENCY_REGEX = /\$\s?\d[\d,]*(?:\.\d+)?(?:\/[A-Za-z]+)?/g;
 const HARDCODED_PHONE_REGEX = /\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
-
-const SDK_ROUTING_META_TAGS = [
-  "next-success-url",
-  "next-upsell-accept-url",
-  "next-upsell-decline-url",
-];
 
 function normalizeFunnels(spec) {
   if (Array.isArray(spec?.funnels)) return spec.funnels;
@@ -372,6 +381,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ spec, packet, warnings, ready, derived, buildState }) => validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived, buildState),
   },
   {
+    id: "spec.routing_host_prefix",
+    phase: "spec",
+    run: ({ spec, packet, errors, ready, derived, buildState }) => validateSpecHostPrefixedRoutes(spec, packet, errors, ready, derived, buildState),
+  },
+  {
     id: "source_html.coverage",
     phase: "source",
     run: ({ packet, packetPath, spec, errors, warnings, ready, derived, buildState }) => validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived, buildState),
@@ -400,6 +414,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "built_output.pages",
     phase: "built-output",
     run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: "built_output.live_campaign_refs",
+    phase: "built-output",
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, derived, buildState),
   },
   {
     id: UPSELL_SELECTOR_SCOPE,
@@ -1286,11 +1305,11 @@ function specPackageRecords(spec) {
   return records;
 }
 
-function specPackageRefs(spec) {
+export function specPackageRefs(spec) {
   return new Set(specPackageRecords(spec).map((record) => String(record.ref)));
 }
 
-function specShippingRefs(spec) {
+export function specShippingRefs(spec) {
   const refs = new Set();
   const add = (method) => {
     const ref = firstCommerceRef(method?.ref_id, method?.id, method?.shipping_method_id);
@@ -1451,26 +1470,31 @@ export function validateBuiltOutputTargetRoot(packet, errors, warnings, ready, d
   );
 }
 
+// R2-B2: the spec only carries unrooted routing-meta *hints*; the page-kit
+// build roots them when it renders _site/<slug>/. Once that built output
+// exists and assembly is complete, validateBuiltSdkMetaTags checks the actual
+// rendered values authoritatively. Re-warning on the spec literal would just
+// repeat a "fix before QA" message the build already satisfied (browser QA
+// later proved the deployed output correct), so the spec-literal checks defer
+// to the built-output check instead of double-flagging.
+function specRoutingMetaDeferred(publicRouteSlug, derived, buildState) {
+  const targetRepo = derived.target_repo;
+  const siteRoot = targetRepo ? join(targetRepo, "_site", publicRouteSlug) : null;
+  return Boolean(isStageComplete(buildState.report, "assembly") && siteRoot && existsSync(siteRoot));
+}
+
 export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived = {}, buildState = {}) {
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!publicRouteSlug) return;
   const routeRoot = campaignRouteRoot(packet);
 
-  // R2-B2: the spec only carries unrooted routing-meta *hints*; the
-  // page-kit build roots them when it renders _site/<slug>/. Once that built
-  // output exists and assembly is complete, validateBuiltSdkMetaTags checks the
-  // actual rendered values authoritatively. Re-warning on the spec literal here
-  // would just repeat a "fix before QA" message the build already satisfied
-  // (browser QA later proved the deployed output correct), so defer to the
-  // built-output check instead of double-flagging.
-  const targetRepo = derived.target_repo;
-  const siteRoot = targetRepo ? join(targetRepo, "_site", publicRouteSlug) : null;
-  if (isStageComplete(buildState.report, "assembly") && siteRoot && existsSync(siteRoot)) {
+  if (specRoutingMetaDeferred(publicRouteSlug, derived, buildState)) {
     ready.push(`CampaignSpec routing meta deferred to built-output verification (_site/${publicRouteSlug}/).`);
     return;
   }
 
   const hits = [];
+  let hostPrefixed = 0;
   for (const page of activeSpecPages(spec)) {
     const metaTags = page.sdk_hints?.meta_tags;
     if (!isObject(metaTags)) continue;
@@ -1480,11 +1504,18 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
       if (!isNonEmptyString(value)) continue;
       const route = value.trim();
       if (isRuntimeRootedRoutingMeta(route, publicRouteSlug, routeRoot)) continue;
+      // A host in front of the path is validateSpecHostPrefixedRoutes'
+      // blocker, not this warning.
+      if (parseHostPrefixedRoute(route, { keepAbsolute: true })) {
+        hostPrefixed += 1;
+        continue;
+      }
       hits.push(`${page.id}:${tag}=${route}`);
     }
   }
 
   if (!hits.length) {
+    if (hostPrefixed) return;
     ready.push(`CampaignSpec SDK routing meta tags are runtime-rooted for ${routeRoot}`);
     return;
   }
@@ -1495,6 +1526,43 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
     warnings,
     "routing_meta.runtime_root",
     `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "${routeRoot}upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
+  );
+}
+
+// #531: a route with a host in front of its path ("shop.example.com/route/x/")
+// is nested under the campaign root by every stage that composes a URL
+// (polish capture requested "/route/shop.example.com/route/x/"), so it blocks.
+// prepare-build strips the host from a fresh --map-id fetch at intake but
+// never rewrites a local --spec file or a copy reused with --cached-spec; this
+// catches one that still reaches doctor. An absolute http(s) URL is accepted
+// as before (projection converts a page_url to its path; it is a valid SDK
+// target), so only the bare and protocol-relative forms block. page_url is
+// read by polish and QA whether or not the site is built, so it is always
+// checked; routing meta values follow the spec-literal deferral above.
+export function validateSpecHostPrefixedRoutes(spec, packet, errors, ready, derived = {}, buildState = {}) {
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const metaDeferred = publicRouteSlug ? specRoutingMetaDeferred(publicRouteSlug, derived, buildState) : false;
+  const hits = [];
+  for (const page of activeSpecPages(spec)) {
+    const pageUrl = parseHostPrefixedRoute(page.page_url, { keepAbsolute: true });
+    if (pageUrl) hits.push({ page_id: page.id, field: "page_url", value: pageUrl.from, rooted: pageUrl.to });
+    const metaTags = page.sdk_hints?.meta_tags;
+    if (metaDeferred || !isObject(metaTags)) continue;
+    for (const tag of SDK_ROUTING_META_TAGS) {
+      const meta = parseHostPrefixedRoute(metaTags[tag], { keepAbsolute: true });
+      if (meta) hits.push({ page_id: page.id, field: `sdk_hints.meta_tags.${tag}`, value: meta.from, rooted: meta.to });
+    }
+  }
+  if (!hits.length) return;
+
+  const sample = hits.slice(0, 5).map((hit) => `${hit.page_id}:${hit.field} ${JSON.stringify(hit.value)} -> ${JSON.stringify(hit.rooted)}`).join("; ");
+  const more = hits.length > 5 ? `; plus ${hits.length - 5} more` : "";
+  addIssue(
+    errors,
+    "routing_meta.host_prefixed",
+    `CampaignSpec route value(s) carry a host in front of the path, so every page URL built from them nests the host inside the campaign route: ${sample}${more}. `
+      + `Use the rooted form shown after each arrow: edit a local CampaignSpec file to that value (intake never rewrites it); for a saved Map, re-run prepare-build (or start) with --map-id and without --cached-spec so the Map is fetched and normalised (the host is stripped and recorded as ${HOST_STRIPPED_CODE} on the assembly report), or correct the value in the Map.`,
+    { routes: hits }
   );
 }
 
@@ -1705,6 +1773,94 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
   if (checked > 0) ready.push(`Built HTML structure and commerce refs checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
 }
 
+// A path from path.relative as the "/"-separated form findings name: on
+// Windows path.relative answers with backslashes, and a page id or file must
+// read the same whichever machine ran doctor. A no-op on POSIX.
+function posixPath(path) {
+  return path.split(sep).join("/");
+}
+
+// Built output under _site/<route>/ that is not a funnel page: the route's
+// 404.html, and anything under a directory whose name starts with "_" or "."
+// (build scratch, hidden directories). The route-root index.html is the
+// landing page and is kept.
+function isLiveRefBuildNoise(routePath) {
+  const segments = routePath.split("/");
+  if (segments.length === 1 && segments[0].toLowerCase() === "404.html") return true;
+  return segments.slice(0, -1).some((segment) => segment.startsWith("_") || segment.startsWith("."));
+}
+
+// Built page refs against the live campaign (#533). The CampaignSpec check
+// above cannot see a campaign that changed after the Map was saved, and skips
+// entirely when the spec lists no shipping methods; this one compares every
+// built page's rendered refs with what the live campaign serves, whatever the
+// spec lists. The read itself happens before doctor runs (it is async and
+// leaves the machine) and arrives as buildState.liveCampaign; without it the
+// check is recorded not_run with its reason, never passed. Page-level misses
+// block at any stage — a page pointing at a method the campaign no longer
+// serves charges the wrong price whether or not assembly is recorded.
+// Unlike the CampaignSpec check, whose scope stays the spec's pages, this one
+// covers every built .html page under _site/<route>/ except build noise that
+// never serves a funnel step: the route's 404.html and anything under a path
+// directory starting with "_" or "." (node_modules is never walked). A page the
+// Map does not list still ships, so it is compared too and named by its path.
+function validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  const pages = [];
+  if (siteRoot && existsSync(siteRoot)) {
+    const covered = new Set();
+    for (const page of activeSpecPages(spec)) {
+      const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
+      if (!builtPath || !existsSync(builtPath)) continue;
+      covered.add(resolve(builtPath));
+      pages.push({
+        page_id: page.id,
+        file: posixPath(relFromDir(targetRepo, builtPath)),
+        ...extractRenderedRefs(readFileSync(builtPath, "utf8")),
+      });
+    }
+    for (const html of collectHtmlFiles(siteRoot)) {
+      const builtPath = resolve(siteRoot, html.path);
+      const routePath = posixPath(html.path);
+      if (covered.has(builtPath) || isLiveRefBuildNoise(routePath)) continue;
+      pages.push({
+        page_id: routePath,
+        file: posixPath(relFromDir(targetRepo, builtPath)),
+        in_spec: false,
+        ...extractRenderedRefs(readFileSync(builtPath, "utf8")),
+      });
+    }
+  }
+  if (pages.length === 0) {
+    derived.live_campaign_refs = { status: "not_run", reason_code: "no_built_pages", reason: "No built page to compare against the live campaign.", checked_pages: 0 };
+    return;
+  }
+  const result = evaluateLiveCampaignRefs({
+    pages,
+    map: { package_refs: specPackageRefs(spec), shipping_refs: specShippingRefs(spec) },
+    live: buildState.liveCampaign,
+  });
+  derived.live_campaign_refs = {
+    status: result.status,
+    ...(result.reason_code ? { reason_code: result.reason_code, reason: result.reason } : {}),
+    ...(buildState.liveCampaign?.key_source ? { key_source: buildState.liveCampaign.key_source } : {}),
+    checked_pages: result.checked_pages,
+    page_findings: result.page_findings,
+    drift: result.drift,
+  };
+  if (result.status === "not_run") {
+    if (result.attempted) addIssue(warnings, LIVE_REF_CODES.notRun, liveRefsNotRunMessage(result), { reason_code: result.reason_code, ...(result.http_status !== undefined ? { http_status: result.http_status } : {}) });
+    return;
+  }
+  for (const finding of result.page_findings) {
+    addIssue(errors, finding.code, liveRefFindingMessage(finding), { page_id: finding.page_id, file: finding.file, ...(finding.in_spec === false ? { in_spec: false } : {}), refs: finding.refs });
+  }
+  if (result.drift) addIssue(warnings, LIVE_REF_CODES.drift, campaignDriftMessage(result.drift), { drift: result.drift });
+  if (result.status === "pass") ready.push(`Built page shipping and package refs are served by the live campaign (${result.checked_pages} page(s))`);
+}
+
 // Upsell selector scope (#270). Every doctor invocation, deliberately — not
 // only the one that follows assembly. The real-world instance was introduced by
 // a LATER human review round that layered a correctly-scoped selector on top of
@@ -1735,15 +1891,19 @@ function validateUpsellSelectorScope(spec, packet, errors, warnings, ready, deri
     for (const builtPage of (scope.ok ? scope.pages : [])) {
       const declared = declaredByPath.get(resolve(builtPage.built_path)) || null;
       // Declared type wins only when it is the post-purchase answer; otherwise
-      // the route-inferred type stands, unless the page's own next-page-type
-      // meta declares its role (#529). Same fail-closed rule the evaluator
-      // applies between a declared type and the page's own next-page-type meta:
-      // any declaration saying "post-purchase" is enough.
+      // the route-inferred type stands, unless the route is ambiguous (an
+      // "oto" route, never an explicit upsell/downsell one) and the page's
+      // own next-page-type meta declares it a checkout (#529). Same
+      // fail-closed rule the evaluator applies between a declared type and the
+      // page's own next-page-type meta: any declaration saying "post-purchase"
+      // is enough.
       const declaredType = declared?.type || null;
       const content = readFileSync(builtPage.built_path, "utf8");
       pages.push({
         page_id: declared?.id || builtPage.page_id,
-        page_type: isPostPurchasePageType(declaredType) ? declaredType : builtPageTypeOverRouteGuess({ route_type: builtPage.page_type, content }),
+        page_type: isPostPurchasePageType(declaredType)
+          ? declaredType
+          : builtPageTypeOverRouteGuess({ route: builtPage.route, route_type: builtPage.page_type, content }),
         file: relFromDir(targetRepo, builtPage.built_path),
         content,
       });
@@ -2428,30 +2588,6 @@ function validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, i
       { page_id: page.id, file: relPath }
     );
   }
-}
-
-function extractRenderedPackageRefs(content) {
-  const refs = new Set();
-  for (const match of content.matchAll(/\bdata-next-package-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
-  for (const match of content.matchAll(/\bdata-package-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
-  for (const match of content.matchAll(/["']?packageId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi)) {
-    addRenderedRef(refs, match[1] || match[2] || match[3]);
-  }
-  return refs;
-}
-
-function extractRenderedShippingRefs(content) {
-  const refs = new Set();
-  for (const match of content.matchAll(/\bdata-next-shipping-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
-  for (const match of content.matchAll(/["']?shippingId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi)) {
-    addRenderedRef(refs, match[1] || match[2] || match[3]);
-  }
-  return refs;
-}
-
-function addRenderedRef(refs, value) {
-  const ref = String(value || "").trim();
-  if (/^[A-Za-z0-9_-]+$/.test(ref)) refs.add(ref);
 }
 
 function builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived = {}) {

@@ -950,7 +950,9 @@ test("CLI: an auto-ended Run Record's argv_shape is run-record's, not qa run's",
   };
 
   const start = JSON.parse(await run(["run", "start", "--packet", packetPath, "--json"]));
-  const qa = JSON.parse(await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-post-verdict", "--no-remit", "--json"]));
+  // A refused loopback proxy keeps QA's proxy reads (the live campaign read,
+  // #533, and price preview) on this machine.
+  const qa = JSON.parse(await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", "http://127.0.0.1:1", "--no-post-verdict", "--no-remit", "--json"]));
   assert.ok(SESSION_ENDING_DISPOSITIONS.has(qa.verdict.disposition), `the fixture must end the session: ${qa.verdict.disposition}`);
   assert.equal(findRunSession(dir), null, "a session-ending verdict closes the session");
 

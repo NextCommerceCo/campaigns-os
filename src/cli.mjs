@@ -7,6 +7,7 @@ import {
   chmodSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -106,7 +107,10 @@ import {
 import { ensureRuntimeStateIgnored } from "./runtime-state-ignore.mjs";
 import {
   createSourceHtmlIntake,
+  HOST_STRIPPED_CODE,
+  parseHostPrefixedRoute,
   publicRouteForPage,
+  stripHostPrefixedRoutes,
 } from "./source-html-intake.mjs";
 import {
   SOURCE_HTML_MANIFEST_REL_PATH,
@@ -254,7 +258,7 @@ import {
   addIssue,
 } from "./cli-helpers.mjs";
 import { resolveCampaignsApiKeySource, describeCampaignKeyRejection } from "./campaigns-api-key.mjs";
-import { doctorCommand, doctorBuiltOutput, doctorPacket } from "./doctor/inspect.mjs";
+import { doctorCommand, doctorBuiltOutput, doctorPacket, readDoctorLiveCampaign } from "./doctor/inspect.mjs";
 import {
   PACKET_SCHEMA,
   CONTEXT_SCHEMA,
@@ -301,7 +305,7 @@ Usage:
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
-  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins
+  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--proxy-base <url>] [--no-live-refs] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves (packet, its local CampaignSpec, or the declared campaign-key env var), doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign; --proxy-base overrides the canonical proxy (https, or a loopback host over http). --no-live-refs skips the read and records not_run with reason disabled. No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason. Only doctor and qa run make this read; other commands that run doctor record not_read
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json]
@@ -331,7 +335,7 @@ Usage:
   campaigns-os next deploy --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
-  campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
+  campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--no-live-refs] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa publish --packet <json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--dry-run] [--json]   # post an already-stored verdict (the sidecar's run, or --verdict) to the QA portal without a re-run or an order; refuses a stale spec_hash or an already-published verdict. --dry-run runs every one of those refusal checks and prints what would be posted (endpoint, verdict run id, payload bytes) without the POST
   campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]   # --order-path-depth writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror
@@ -981,7 +985,10 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   }
 
   if (command === "doctor") {
-    const result = doctorCommand(args);
+    // The live campaign ref check's one read (#533), made before the
+    // synchronous inspection; see readDoctorLiveCampaign.
+    const liveCampaign = await readDoctorLiveCampaign(args);
+    const result = doctorCommand(args, { liveCampaign });
     writeResult(result, args, result.ok ? 0 : 2);
     printDoctorTinyPrompt(result, args);
     return;
@@ -1268,10 +1275,14 @@ async function resolveSpecPath(args, opts = {}) {
       }
       return { specPath: cachePath, source: "cache", mapId, proxyBase };
     }
+    // Refuse a symlinked cache before fetching, and again at the write, which
+    // may run later under the prepare-build lock.
+    assertFetchedSpecCacheWritable(targetRepo, cachePath);
     const spec = await fetchSpecByMapId(mapId, { proxyBase, fetchImpl: opts.fetchImpl });
     const publishSpec = () => {
+      assertFetchedSpecCacheWritable(targetRepo, cachePath);
       mkdirSync(cacheDir, { recursive: true });
-      writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
+      replaceFetchedSpec(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
     };
     // deferCacheWrite hands the cache write back to the caller, which makes it
     // under the prepare-build lock.
@@ -1287,6 +1298,45 @@ async function resolveSpecPath(args, opts = {}) {
       "Pass a local CampaignSpec (--spec <path-to-campaignspec.json>) " +
       "or fetch one from Map Builder (--map-id <id> --target <page-kit-dir>).",
   );
+}
+
+// The fetch cache is written only inside a real
+// <target>/.campaign-runtime/fetched-specs/ directory. Throws when
+// .campaign-runtime/, fetched-specs/ or the cache entry exists as a symlink or
+// as the wrong kind of file, so a cache write cannot follow a link out of the
+// target. Missing entries are fine; the caller creates them.
+function assertFetchedSpecCacheWritable(targetRepo, cachePath) {
+  const checks = [
+    [join(targetRepo, ".campaign-runtime"), "directory"],
+    [dirname(cachePath), "directory"],
+    [cachePath, "regular file"],
+  ];
+  for (const [path, kind] of checks) {
+    let stat;
+    try {
+      stat = lstatSync(path);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (kind === "directory" ? stat.isDirectory() : stat.isFile()) continue;
+    throw new Error(
+      `Refusing to write the fetched CampaignSpec: ${path} is ${stat.isSymbolicLink() ? "a symlink" : `not a ${kind}`}. `
+      + "The fetch cache is written only inside a real <target>/.campaign-runtime/fetched-specs/ directory; remove the link and run again.",
+    );
+  }
+}
+
+// Writes `bytes` to a temp file beside the cache entry and renames it over the
+// entry, so another name for the old file (a hard link) is never written.
+function replaceFetchedSpec(cachePath, bytes) {
+  const tmpPath = join(dirname(cachePath), `.${basename(cachePath)}.${randomUUID()}.tmp`);
+  try {
+    writeFileSync(tmpPath, bytes, { flag: "wx" });
+    renameSync(tmpPath, cachePath);
+  } finally {
+    rmSync(tmpPath, { force: true });
+  }
 }
 
 function relFromFile(filePath, targetPath) {
@@ -1518,7 +1568,22 @@ function prepareBuildUnderLock({
   publication,
 }) {
   const { packetPath, contextPath, reportPath, doctorOutPath, briefPath, designSourcePackagePath } = publication.paths;
-  const spec = readJson(specPath);
+  // #531: a host-prefixed route ("shop.example.com/route/upsell/") in a Map
+  // fetched by this run is reduced to its rooted path before anything reads
+  // the spec. The fresh fetch is intake's own file under
+  // .campaign-runtime/fetched-specs/, so the rooted spec replaces it once the
+  // Assembly Report recording each change (with the value as fetched) is
+  // published, and doctor, polish and QA read what intake read. A local --spec
+  // file and a copy reused with --cached-spec are never rewritten: they are
+  // read as they are, and doctor blocks on routing_meta.host_prefixed.
+  const specOnDisk = readJson(specPath);
+  const hostStripped = stripHostPrefixedRoutes(specOnDisk);
+  const specSource = options.specInput?.source || "local";
+  const strippedSpecBytes = specSource === "remote" && hostStripped.evidence.length
+    ? `${JSON.stringify(hostStripped.spec, null, 2)}\n`
+    : null;
+  const spec = strippedSpecBytes == null ? specOnDisk : hostStripped.spec;
+  const specFileHash = strippedSpecBytes == null ? sha256File(specPath) : createHash("sha256").update(strippedSpecBytes).digest("hex");
   const { mapId, publicRouteSlug, localSpecId } = campaignIdentity(spec, args);
   if (!resolveCampaignIdentity({ map_id: mapId, local_spec_id: localSpecId })) {
     throw new Error("CampaignSpec requires exactly one identity: a saved spec_identity.map_id, or an agent-authored spec_identity.local_spec_id (1–64 letters, digits, underscores or hyphens). Keep the local ID stable across revisions; do not invent a Map ID.");
@@ -1810,7 +1875,7 @@ function prepareBuildUnderLock({
     },
     qa: {
       proof_policy: proofPolicy,
-      test_order_policy_notes: "Test Orders use global test cards that bypass the gateway and create no transactions. Run them any time with `qa run --test-order common` for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when needed (at most four orders). Use `--test-order full` for every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. Use `--test-order tiers` (or `tiers:common` / `tiers:full`) to drive one strict-selection order per selector tier the CampaignSpec declares on the checkout page, crossed with those path shapes; order-bump rows marked `is_upsell` are add-ons, not tiers, so a three-tier checkout with one bump plans 3 tiers, and `--select-package <ref[:qty],...>` narrows a tiers run to the listed tiers. The default accidental-flood cap is 6, and an overflow names the exact explicit `--max-test-orders` raise and lists the planned paths (up to 40 ids, the remainder counted). That cap bounds planned paths; `--max-order-creations` bounds actual order creations, defaults to the planned path count, and is reserved before each submit. Localhost on any port is a globally allowed Development domain; non-localhost preview/production origins still need SDK origin allowlist confirmation. There is no permission flag: depth is the only control.",
+      test_order_policy_notes: "Test Orders use global test cards that bypass the gateway and create no transactions. Run them any time with `qa run --test-order common`: when every actual terminal path in the selected checkout topology fits under the flood cap, common runs them all (effective depth `full`, reason `under_cap`); above the cap it runs checkout, first-offer accept/decline and a deduplicated shortest real receipt path, then adds the shortest path that clicks the decline on each offer or downsell page no planned path declines yet, up to the cap, and names any page left out. The `browser-test-order:upsell-action-coverage` verdict row warns naming each offer page whose decline no executed order clicked. Use `--test-order full` for every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. Use `--test-order tiers` (or `tiers:common` / `tiers:full`) to drive one strict-selection order per selector tier the CampaignSpec declares on the checkout page, crossed with those path shapes; order-bump rows marked `is_upsell` are add-ons, not tiers, so a three-tier checkout with one bump plans 3 tiers, and `--select-package <ref[:qty],...>` narrows a tiers run to the listed tiers. The default accidental-flood cap is 6, and an overflow names the exact explicit `--max-test-orders` raise and lists the planned paths (up to 40 ids, the remainder counted). That cap bounds planned paths; `--max-order-creations` bounds actual order creations, defaults to the planned path count, and is reserved before each submit. Localhost on any port is a globally allowed Development domain; non-localhost preview/production origins still need SDK origin allowlist confirmation. There is no permission flag: depth is the only control.",
     },
     notes: "Generated by campaigns-os prepare-build. Replace demo refs from CampaignSpec/API before launch.",
   };
@@ -1827,7 +1892,11 @@ function prepareBuildUnderLock({
       : null,
     map_id: specInput?.mapId || null,
     proxy_base: specInput?.proxyBase || null,
-    saved_map_revision: specInput?.savedMapRevision || null,
+    // The Map revision stays the one fetched; the local material hash is the
+    // spec as written after host stripping, so the two still read as aligned.
+    saved_map_revision: specInput?.savedMapRevision
+      ? (strippedSpecBytes == null ? specInput.savedMapRevision : { ...specInput.savedMapRevision, local_spec_material_hash: specMaterialHash(spec) })
+      : null,
     source_root: portable(sourceRoot),
     target_repo: portable(targetRepo),
     template_family: explicitTemplateFamily || null,
@@ -1848,7 +1917,7 @@ function prepareBuildUnderLock({
     design_source_package: designSourcePackage.referenceFor(contextPath),
     spec: {
       path: portable(specPath),
-      hash: sha256File(specPath),
+      hash: specFileHash,
       material_hash: specMaterialHash(spec),
       active_pages: activePages.map((page) => ({
         id: page.id,
@@ -1956,9 +2025,45 @@ function prepareBuildUnderLock({
     declaredScopeSkips,
     buildScopeReasonsInvalid,
     templateSelection,
+    evidence: strippedSpecBytes == null ? [] : hostStripped.evidence,
   }));
 
+  // Values a spec left as it is still holds that doctor blocks on. An
+  // absolute http(s) page_url is not among them: projection takes its path.
+  const unstrippedHostRoutes = strippedSpecBytes == null
+    ? hostStripped.evidence.filter((entry) => parseHostPrefixedRoute(entry.from.trim(), { keepAbsolute: true }))
+    : [];
+  // A cache that cannot be rewritten stops the run before the report that
+  // records the stripped hosts is published.
+  if (strippedSpecBytes != null) assertFetchedSpecCacheWritable(targetRepo, specPath);
   publication.publish({ packet, brief: buildBrief.artifact, context, report });
+  if (unstrippedHostRoutes.length) {
+    const changes = unstrippedHostRoutes.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
+    console.warn(specSource === "cache"
+      ? `[campaigns-os prepare-build] the cached spec copy ${specPath} holds ${unstrippedHostRoutes.length} host-prefixed route value(s): ${changes}; `
+        + "--cached-spec reuses the copy as it is, so it was not changed, and doctor blocks with routing_meta.host_prefixed; re-run without --cached-spec so the Map is fetched and normalised."
+      : `[campaigns-os prepare-build] the spec file ${specPath} holds ${unstrippedHostRoutes.length} host-prefixed route value(s) and must be edited to the rooted form: ${changes}; `
+        + "it was not changed, and doctor blocks with routing_meta.host_prefixed until it is edited.");
+  }
+  // Only now that the report holding the evidence is out: a failed publish
+  // leaves the copy exactly as fetched, so the rooted copy never exists
+  // without the record of what it replaced.
+  if (strippedSpecBytes != null) {
+    try {
+      replaceFetchedSpec(specPath, strippedSpecBytes);
+    } catch (error) {
+      console.warn(
+        `[campaigns-os prepare-build] the assembly report ${reportPath} records the stripped host(s) as ${HOST_STRIPPED_CODE}, `
+        + `but the cached spec ${specPath} was not rewritten and still holds the values as fetched: ${error.message}`,
+      );
+      throw error;
+    }
+    const changes = hostStripped.evidence.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
+    console.warn(
+      `[campaigns-os prepare-build] removed the host from ${hostStripped.evidence.length} CampaignSpec route value(s) and rewrote the fetched copy ${specPath}: ${changes}; `
+      + `recorded as ${HOST_STRIPPED_CODE} on the assembly report evidence[].`,
+    );
+  }
 
   let doctor = null;
   // Housekeeping for the target's git history: the machine-local half of
@@ -2088,6 +2193,7 @@ function createAssemblyReport({
   declaredScopeSkips = [],
   buildScopeReasonsInvalid = false,
   templateSelection = null,
+  evidence = [],
 }) {
   const scaffoldRequired = context.scaffold.required;
   const portable = (path) => relFromDir(targetRepo, path);
@@ -2105,7 +2211,7 @@ function createAssemblyReport({
       public_route_slug: packet.campaign.public_route_slug,
       campaign_directory: packet.campaign.campaign_directory,
       live_url_path: packet.campaign.live_url_path,
-      spec_hash: sha256File(specPath),
+      spec_hash: context.spec.hash,
       spec_material_hash: context.spec.material_hash,
     },
     inputs: {
@@ -2146,7 +2252,7 @@ function createAssemblyReport({
     adapter_decisions: cloneJson(context.adapter_decisions || createAdapterDecisions()),
     proof_policy: cloneJson(packet.qa?.proof_policy || createProofPolicy()),
     theme: assemblyThemeFromContext(context.theme),
-    evidence: [],
+    evidence: cloneJson(evidence),
     blockers,
     warnings: [
       ...(templateSelection?.overridden
@@ -4827,7 +4933,7 @@ ${cmd("qa")} install-browser
 Node QA command:
 ${cmd("qa")} run --packet ${packetPath} --base-url ${url} --browser --test-order common
 
-Run the browser install once after install/update before --browser or --test-order. Test-order proof must exercise the campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Compare visible placeholders, payment methods, variant media, promo/urgency copy, pricing presentation, and trust/guarantee claims against the Campaign Build Brief. Test Orders use global test cards that bypass the payment gateway and create no transactions, so they are safe to run any time and need no permission flags, packet policy, or merchant setup. Localhost on any port is a globally allowed Development domain for SDK initialization and suppresses Campaigns analytics events; non-localhost preview/production origins still need the SDK origin allowlist. Use --test-order common for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when that adds coverage (at most four orders); use an explicit path such as accept-decline-accept for a targeted matrix; or use --test-order full for every actual terminal path in the selected checkout topology. Cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The default accidental-flood cap is 6, and an overflow names the exact explicit --max-test-orders raise. That cap bounds planned paths; --max-order-creations bounds actual order creations and is reserved before each submit click, defaulting to the planned path count. A path whose failure is classified as created (the order is already placed) is inspected read-only and never resubmitted. A not_created failure may be re-run once, if the creation budget has a slot no still-unrun planned path needs; an ambiguous failure stops that path with an explicit operator check instead of buying again. Read evidence.recovery to tell a recovered pass from a first-attempt pass. Click rendered SDK upsell accept/decline controls for upsell proof. For multi-tier package selectors, drive a specific card with --select-package <ref[:qty],...> (strict: the path fails if the requested card cannot be found or selected, unlike best-effort --cart), or use --test-order tiers / tiers:common / tiers:full to drive every selector tier the CampaignSpec declares on the checkout page in one run (order-bump rows marked is_upsell are add-ons, not tiers; --select-package narrows a tiers run to the listed tiers); prove coupon-bearing orders with --apply-coupon <code> (typed into the rendered promo input, verified against the persisted-order voucher read-back). Reuse one test customer email via --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL (a real monitored inbox in internal runs) so repeated QA does not litter the customer list.
+Run the browser install once after install/update before --browser or --test-order. Test-order proof must exercise the campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Compare visible placeholders, payment methods, variant media, promo/urgency copy, pricing presentation, and trust/guarantee claims against the Campaign Build Brief. Test Orders use global test cards that bypass the payment gateway and create no transactions, so they are safe to run any time and need no permission flags, packet policy, or merchant setup. Localhost on any port is a globally allowed Development domain for SDK initialization and suppresses Campaigns analytics events; non-localhost preview/production origins still need the SDK origin allowlist. Use --test-order common for the default depth: every actual terminal path when they fit under the flood cap, otherwise checkout, first-offer accept/decline and a deduplicated shortest real receipt path plus the shortest path that clicks the decline on each offer or downsell page not yet declined, up to the cap (the verdict row browser-test-order:upsell-action-coverage warns naming each offer page whose decline no order clicked); use an explicit path such as accept-decline-accept for a targeted matrix; or use --test-order full for every actual terminal path in the selected checkout topology. Cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The default accidental-flood cap is 6, and an overflow names the exact explicit --max-test-orders raise. That cap bounds planned paths; --max-order-creations bounds actual order creations and is reserved before each submit click, defaulting to the planned path count. A path whose failure is classified as created (the order is already placed) is inspected read-only and never resubmitted. A not_created failure may be re-run once, if the creation budget has a slot no still-unrun planned path needs; an ambiguous failure stops that path with an explicit operator check instead of buying again. Read evidence.recovery to tell a recovered pass from a first-attempt pass. Click rendered SDK upsell accept/decline controls for upsell proof. For multi-tier package selectors, drive a specific card with --select-package <ref[:qty],...> (strict: the path fails if the requested card cannot be found or selected, unlike best-effort --cart), or use --test-order tiers / tiers:common / tiers:full to drive every selector tier the CampaignSpec declares on the checkout page in one run (order-bump rows marked is_upsell are add-ons, not tiers; --select-package narrows a tiers run to the listed tiers); prove coupon-bearing orders with --apply-coupon <code> (typed into the rendered promo input, verified against the persisted-order voucher read-back). Reuse one test customer email via --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL (a real monitored inbox in internal runs) so repeated QA does not litter the customer list.
 
 Launch readiness note: Campaigns OS can prove the campaign build, SDK wiring, browser behavior, and typed-card order paths. It does not prove the merchant is ready for real shoppers. Before launch, confirm the production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and any merchant-side configuration. Treat those as real-shopper readiness items, not Campaigns OS build blockers.
 
