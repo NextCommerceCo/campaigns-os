@@ -2,6 +2,40 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.9] - 2026-09-30
+
+### Changed
+
+- `qa run --browser` no longer fails a checkout for missing template-family
+  shell classes when the checkout works (#532). In
+  `browser-commerce-structure:<page>`, a catalog selector made only of class
+  names (`.checkout-wrapper`, `.checkout-layout__left`,
+  `.checkout__column--right`) or the `[data-next-component="shipping-field-row"]`
+  include marker is family shell. When family shell is all that is missing, the
+  row reports status `warn` with severity `warn` if the checkout passes three
+  behaviour checks: a `<form data-next-checkout="form">` exists; `email`,
+  `fname`, `lname`, `country`, `address1`, `city`, `province` and `postal` are
+  each an input, select or textarea carrying that `data-next-checkout-field`
+  inside the form; and a cart-summary total is visible with text. If any check
+  fails, or no checkout form is found, the row stays status `fail`. A missing
+  SDK selector (`[data-next-checkout="form"]`, `[os-checkout-payment]`,
+  `[data-next-cart-summary]`, `[data-next-bundle-slots-for]`) always fails.
+  Evidence gains `behaviour` (`status`, `checkout_form`, `fields_bound`,
+  `total_visible`) and a `kind` of `family_shell` or `sdk_wiring` on each
+  `checks[]` entry.
+- `pricing.upsell_price_visible:<page>` and `pricing.checkout_price_visible`
+  count a visible `[data-next-bundle-display*='price']` node as a price row,
+  so an upsell priced only through the SDK's bundle display passes. Hidden or
+  zero-size nodes still do not count, and a bundle-display node also needs
+  text: an empty one no longer counts on the checkout bundle surface either,
+  where the shared contract already listed that selector.
+- The build and QA skills say the checkout wrapper and page composition are
+  source-owned and that QA checks the checkout's behaviour, not family class
+  names; `docs/qa-and-test-orders.md` and `docs/campaigns-os-build-flow.md`
+  say the same. Bundled skills carry revision `1.43.2+skills.2`, with each
+  skill version advanced one patch; the examples in `docs/skills-revision.md`
+  name that revision.
+
 ## [1.43.2+agent.3] - 2026-09-28
 
 ### Changed

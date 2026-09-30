@@ -7633,6 +7633,99 @@
         }
       ],
       "entry_sha256": "b04ee701fcb95fce30ddb6c19291320187a92cb16563c58c951217ddc5543e9b"
+    },
+    {
+      "id": "RL-0175",
+      "sequence": 169,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.2+agent.9",
+      "changelog_sha256": "48dec2fe09fa4585b0fe11620bd9750ce5a7bc9869dd62849b4e1ccade7f4b90",
+      "agent_impact": "browser-commerce-structure:<page> reports status warn, not fail, when only family shell selectors (class-only wrapper and column selectors, or the shipping-field-row include marker) are missing and the checkout passes its behaviour checks: a <form data-next-checkout=\"form\">, email/fname/lname/country/address1/city/province/postal bound with data-next-checkout-field inside it, and a visible cart-summary total. A failed behaviour check, no checkout form, or any missing SDK selector keeps status fail. Evidence gains behaviour and a kind (family_shell or sdk_wiring) on each checks[] entry. pricing.upsell_price_visible:<page> and pricing.checkout_price_visible count a visible, non-empty [data-next-bundle-display*=price] node; an empty one no longer counts on the checkout bundle surface either. The build and QA skills say the checkout wrapper is source-owned and QA checks behaviour; do not add family classes to clear the row.",
+      "compatibility": "compatible",
+      "migration": "A consumer that reads browser-commerce-structure:<page> must accept status warn with severity warn; the disposition is ready_with_exceptions as before. Refresh bundled skills to 1.43.2+skills.2 before starting a new agent session.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe the family shell and behaviour checks in browser-commerce-structure, and the bundle-display price row."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Say the checkout wrapper and composition stay source-owned and that QA checks behaviour, not family class names."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.43.2+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.43.2+skills.2 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Say QA checks the checkout behaviour, not family class names, and not to add family shell classes to the source layout; stamp bundle revision 1.43.2+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe the warn and fail rule for missing family shell selectors and the bundle-display price row; stamp bundle revision 1.43.2+skills.2."
+        }
+      ],
+      "entry_sha256": "272029cd79c3a47e95b16aac7eea41e9a27044922d3bb24a9f21369a1b1976b4"
     }
   ]
 }

@@ -275,6 +275,29 @@ test("checkout pricing visibility: the cart-summary total is still checked when 
   assert.equal(absent.actual, "0 visible price row(s); 0 visible cart-summary total(s)");
 });
 
+test("pricing visibility: the SDK's data-next-bundle-display price counts on upsell and checkout bundle surfaces", async () => {
+  const bundleDisplay = "[data-next-bundle-display*='price']";
+  // A page whose only price is the SDK's bundle-display node: the probe finds
+  // one visible element only when that selector is among the targets.
+  const browserPage = { evaluate: async (_fn, targets) => (targets.includes(bundleDisplay) ? 1 : 0) };
+
+  const [upsell] = await pricingVisibilityAssertions(browserPage, upsellPage, { brandContract: demeter });
+  assert.equal(upsell.id, "pricing.upsell_price_visible:upsell-1");
+  assert.equal(upsell.status, "pass");
+  assert.deepEqual(upsell.evidence.selectors, [...demeter.pricing_surfaces.surfaces.upsell.price_row_selectors, bundleDisplay]);
+
+  // A checkout bundle surface that omits the attribute still reads it; the
+  // total selectors match nothing here, so only the bundle row can pass it.
+  const brandContract = { pricing_surfaces: { surfaces: { checkout_bundle: { price_row_selectors: [".price-wrapper"] } } } };
+  const [checkout] = await pricingVisibilityAssertions(browserPage, checkoutPage, { brandContract });
+  assert.equal(checkout.status, "pass");
+  assert.equal(checkout.evidence.visible_count, 1);
+  assert.deepEqual(checkout.evidence.selectors, [".price-wrapper", bundleDisplay]);
+  // The shipped surface already lists it once; it is not added twice.
+  const [shipped] = await pricingVisibilityAssertions(browserPage, checkoutPage, { brandContract: demeter });
+  assert.deepEqual(shipped.evidence.selectors, demeter.pricing_surfaces.surfaces.checkout_bundle.price_row_selectors);
+});
+
 test("checkout pricing visibility: total evidence is omitted when the cart-summary total was not read", () => {
   const selectors = demeter.pricing_surfaces.surfaces.checkout_bundle.price_row_selectors;
   const bundleOnly = checkoutPriceVisibilityAssertion({ page: checkoutPage, selectors, visibleCount: 1 });
