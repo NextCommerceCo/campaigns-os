@@ -2,6 +2,32 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.7] - 2026-09-30
+
+### Changed
+
+- `prepare-build`, `start` and `build` strip a host from the front of a route
+  in a Map fetched with `--map-id` (#531). Some saved Maps stored `page_url`
+  values such as `shop.example.com/route/upsell/` instead of `/route/upsell/`,
+  and every URL built from them nested the host inside the campaign route, so
+  polish capture failed on every page. Intake now keeps the rooted path, with
+  any query and fragment, for each host-prefixed `page_url` and
+  `next-success-url`, `next-upsell-accept-url` or `next-upsell-decline-url`
+  meta tag value, before anything reads the spec. It writes the rooted values
+  to the fetched copy under `.campaign-runtime/fetched-specs/`, records each
+  change on the Assembly Report `evidence[]` as `routing_meta.host_stripped`
+  with the value the Map returned in `from`, and prints one line saying so. A
+  spec with no host-prefixed value is handled exactly as before.
+- A local `--spec` file is never rewritten. If it holds host-prefixed routes,
+  intake prints one line naming each value and its rooted form and saying the
+  file must be edited, and doctor blocks until it is. The same applies to a
+  fetched copy that is a symlink or resolves outside
+  `.campaign-runtime/fetched-specs/`: it is left unchanged and doctor blocks.
+- Doctor blocks a host-prefixed route that reaches it with the new
+  `routing_meta.host_prefixed` error, naming each value and its rooted form.
+  Such values no longer appear in the `routing_meta.runtime_root` warning;
+  every other `runtime_root` finding keeps its warning and message.
+
 ## [1.43.2+agent.3] - 2026-09-28
 
 ### Changed

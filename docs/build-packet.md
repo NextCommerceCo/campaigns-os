@@ -85,7 +85,10 @@ declares `campaign.route_root: "/"`. Rules:
 - Doctor's routing-meta checks (`routing_meta.runtime_root`,
   `sdk_hints.meta_tags.route_mismatch`) and route displays validate against the
   declared route root instead of assuming slug-as-prefix, so a root-served
-  funnel's correct `/receipt`-style metas pass without waivers.
+  funnel's correct `/receipt`-style metas pass without waivers. A routing
+  meta value with a host in front of its path is not a `runtime_root`
+  warning; it is the `routing_meta.host_prefixed` blocker (see "Page Kit
+  Target Projection" below).
 - The CampaignSpec may carry the same declaration at `campaign.route_root` (or
   `spec_identity.route_root`); `prepare-build` copies it onto the packet and
   defaults `live_url_path` to `/`.
@@ -1320,6 +1323,56 @@ CampaignSpec `page_url` and legacy `url` values are interpreted as Page Kit
 routes during projection. That normalization strips `.html`/`index.html`,
 removes query/fragment values, converts absolute preview URLs to their path, and
 normalizes trailing slashes before deriving target files and frontmatter routes.
+
+A route value with a host in front of its path (an older saved Map stored
+`shop.example.com/route/upsell/` where the route is `/route/upsell/`) is
+reduced to its rooted path before anything reads a spec fetched with
+`--map-id`. `prepare-build`, `start` and `build` do this for every `page_url` and every
+`next-success-url`, `next-upsell-accept-url` and `next-upsell-decline-url` meta
+tag value in `funnels[].pages[]` and `funnel_pages[]`:
+
+- The host is removed and the path is kept with its query and fragment
+  (`shop.example.com/route/x/?v=b#top` becomes `/route/x/?v=b#top`).
+- The fetched copy at `<target>/.campaign-runtime/fetched-specs/<map-id>.json`
+  (also when reused with `--cached-spec`) is written with the rooted values,
+  so it is not left exactly as fetched. A spec with no host-prefixed value is
+  written exactly as before. Only a regular file whose real path is in that
+  directory is rewritten; if the copy or any directory under
+  `.campaign-runtime/` is a symlink, or the copy resolves outside
+  `fetched-specs/`, nothing is written, one line on stderr says the copy could
+  not be normalised in place, and doctor blocks as for a local spec.
+- Each changed value is recorded on the Assembly Report `evidence[]` as
+  `{ "code": "routing_meta.host_stripped", "page_id", "field", "from", "to" }`;
+  `from` is the value exactly as the Map returned it. One line on stderr lists
+  the changes.
+
+A local `--spec` file is never rewritten. When it holds host-prefixed values,
+intake reads it as it is, prints one line on stderr naming each value
+and its rooted form and saying the file must be edited, and doctor blocks
+until it is.
+
+A value reads as host-prefixed when it is one of:
+
+- an `http://` or `https://` URL, with any host;
+- `//<host>/...`, where `<host>` is one of the bare host forms below;
+- `<host>/...`, where `<host>` is `localhost`, a valid IPv4 address (four
+  dot-separated numbers, each 0-255), any name with a `:port`
+  (`localhost:8080`, `shop.example.com:8443`), or a dotted name whose last
+  label is 2-63 letters and not `html` or `htm` (`shop.example.com`, any case).
+
+Everything else stays a route for the existing checks: a rooted `/...` value,
+a first segment with no dot (`route/x/`), a dotted segment whose last label is
+not all letters (`v1.2/offer/`), a dotted quad with a number over 255
+(`300.1.2.3/offer/`), a `.html` filename, `//` followed by something that is
+not a host (`//route/x/`), a bare host with no path, and an empty or missing
+value. An absolute `http(s)` URL in a routing meta tag is a valid SDK target
+and is kept.
+
+If a host-prefixed value still reaches doctor (a local spec that holds one,
+or a spec edited after intake), doctor blocks with
+`routing_meta.host_prefixed`, naming each value and its rooted form. `page_url` is checked whether or not the site
+is built; routing meta values follow the same built-output deferral as
+`routing_meta.runtime_root`.
 
 This prevents mixed-source manifests such as `checkout/index.html` from leaking producer folder structure into `src/<slug>/checkout/index.html`. Campaigns OS owns the Adapter from source/manifest/CampaignSpec into Page Kit shape; Page Kit remains the target.
 

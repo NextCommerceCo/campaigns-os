@@ -138,6 +138,113 @@ function pageRouteForPageKit(value) {
   }
 }
 
+// The SDK meta tags whose content is a route. Doctor checks the same three.
+export const SDK_ROUTING_META_TAGS = [
+  "next-success-url",
+  "next-upsell-accept-url",
+  "next-upsell-decline-url",
+];
+
+export const HOST_STRIPPED_CODE = "routing_meta.host_stripped";
+
+// A route value that carries a host in front of its path (#531): an older
+// saved Map stored `shop.example.com/route/upsell/` where the route is
+// `/route/upsell/`, and every stage that roots a route then nested the host
+// inside the campaign path. Returns `{ host, from, to }` — `to` is the rooted
+// path with any query and fragment kept — or null when the value is not
+// host-prefixed.
+//
+// Read as host-prefixed:
+//   - `http://` or `https://` URLs (any host);
+//   - protocol-relative `//<host>/...`;
+//   - bare `<host>/...`, where the first segment is followed by "/" and is
+//     `localhost`, a valid IPv4 address (each octet 0-255), any name with a
+//     `:port`, or a dotted name whose last label is 2-63 letters and not
+//     `html`/`htm` (`shop.example.com`). `//<host>/...` takes the same hosts.
+// Everything else is a route and is left to the existing route checks: a
+// rooted `/...` value, a first segment with no dot (`route/x/`), a dotted
+// segment whose last label is not all letters (`v1.2/offer/`), a dotted
+// quad with an octet over 255 (`300.1.2.3/offer/`), a legacy `.html`/`.htm`
+// filename, and a bare host with no path after it.
+// `routing: true` reads a routing meta tag value, where an absolute http(s)
+// URL is a valid SDK target that doctor already accepts, so only the bare and
+// protocol-relative forms count.
+export function parseHostPrefixedRoute(value, { routing = false } = {}) {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw || (raw.startsWith("/") && !raw.startsWith("//"))) return null;
+  const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(raw);
+  if (scheme) {
+    if (routing || !/^https?$/i.test(scheme[1])) return null;
+    return splitHostPrefix(value, raw.slice(scheme[0].length), { requireHostShape: false });
+  }
+  if (raw.startsWith("//")) return splitHostPrefix(value, raw.slice(2), { requireHostShape: true });
+  return splitHostPrefix(value, raw, { requireHostShape: true, requirePath: true });
+}
+
+function splitHostPrefix(from, rest, { requireHostShape, requirePath = false }) {
+  const end = rest.search(/[/?#]/);
+  const host = end === -1 ? rest : rest.slice(0, end);
+  const tail = end === -1 ? "" : rest.slice(end);
+  if (!host || /\s/.test(host)) return null;
+  if (requirePath && !tail.startsWith("/")) return null;
+  if (requireHostShape && !looksLikeHost(host)) return null;
+  return { host, from, to: tail.startsWith("/") ? tail : `/${tail}` };
+}
+
+function looksLikeHost(segment) {
+  if (/^localhost(?::\d+)?$/i.test(segment)) return true;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(segment) && segment.split(".").every((octet) => Number(octet) <= 255)) return true;
+  if (/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*:\d+$/.test(segment)) return true;
+  const labels = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(segment)
+    ? segment.split(".")
+    : null;
+  if (!labels) return false;
+  const last = labels[labels.length - 1];
+  return /^[A-Za-z]{2,63}$/.test(last) && !/^html?$/i.test(last);
+}
+
+// Intake normalisation (#531): every host-prefixed page_url, and every
+// host-prefixed SDK routing meta tag value, in funnels[].pages[] and the
+// funnel_pages[] mirror, reduced to its rooted path before anything reads the
+// spec. Returns the spec unchanged (the same object) with no evidence when
+// nothing carries a host; otherwise a copy and one evidence record per changed
+// value, `{ code, page_id, field, from, to }`, where `from` is the value
+// exactly as the Map or file held it.
+export function stripHostPrefixedRoutes(spec) {
+  const evidence = [];
+  if (!spec || typeof spec !== "object") return { spec, evidence };
+  const copy = JSON.parse(JSON.stringify(spec));
+  const lists = [];
+  if (Array.isArray(copy.funnels)) {
+    copy.funnels.forEach((funnel, funnelIndex) => {
+      if (Array.isArray(funnel?.pages)) lists.push([`funnels[${funnelIndex}].pages`, funnel.pages]);
+    });
+  }
+  if (Array.isArray(copy.funnel_pages)) lists.push(["funnel_pages", copy.funnel_pages]);
+  for (const [label, pages] of lists) {
+    pages.forEach((page, pageIndex) => {
+      if (!page || typeof page !== "object") return;
+      const at = `${label}[${pageIndex}]`;
+      const pageId = typeof page.id === "string" ? page.id : null;
+      const stripped = parseHostPrefixedRoute(page.page_url);
+      if (stripped) {
+        page.page_url = stripped.to;
+        evidence.push({ code: HOST_STRIPPED_CODE, page_id: pageId, field: `${at}.page_url`, from: stripped.from, to: stripped.to });
+      }
+      const metaTags = page.sdk_hints?.meta_tags;
+      if (!metaTags || typeof metaTags !== "object" || Array.isArray(metaTags)) return;
+      for (const tag of SDK_ROUTING_META_TAGS) {
+        const meta = parseHostPrefixedRoute(metaTags[tag], { routing: true });
+        if (!meta) continue;
+        metaTags[tag] = meta.to;
+        evidence.push({ code: HOST_STRIPPED_CODE, page_id: pageId, field: `${at}.sdk_hints.meta_tags.${tag}`, from: meta.from, to: meta.to });
+      }
+    });
+  }
+  return evidence.length ? { spec: copy, evidence } : { spec, evidence };
+}
+
 function applyManifestToPages(specPages, manifest, manifestPath, { buildScope = null, templateFamily = null } = {}) {
   const mappings = [];
   const prompts = [];
