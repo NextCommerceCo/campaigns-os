@@ -1734,15 +1734,19 @@ function validateUpsellSelectorScope(spec, packet, errors, warnings, ready, deri
     for (const builtPage of (scope.ok ? scope.pages : [])) {
       const declared = declaredByPath.get(resolve(builtPage.built_path)) || null;
       // Declared type wins only when it is the post-purchase answer; otherwise
-      // the route-inferred type stands, unless the page's own next-page-type
-      // meta declares its role (#529). Same fail-closed rule the evaluator
-      // applies between a declared type and the page's own next-page-type meta:
-      // any declaration saying "post-purchase" is enough.
+      // the route-inferred type stands, unless the route is ambiguous (an
+      // "oto" route, never an explicit upsell/downsell one) and the page's
+      // own next-page-type meta declares it a checkout (#529). Same
+      // fail-closed rule the evaluator applies between a declared type and the
+      // page's own next-page-type meta: any declaration saying "post-purchase"
+      // is enough.
       const declaredType = declared?.type || null;
       const content = readFileSync(builtPage.built_path, "utf8");
       pages.push({
         page_id: declared?.id || builtPage.page_id,
-        page_type: isPostPurchasePageType(declaredType) ? declaredType : builtPageTypeOverRouteGuess({ route_type: builtPage.page_type, content }),
+        page_type: isPostPurchasePageType(declaredType)
+          ? declaredType
+          : builtPageTypeOverRouteGuess({ route: builtPage.route, route_type: builtPage.page_type, content }),
         file: relFromDir(targetRepo, builtPage.built_path),
         content,
       });

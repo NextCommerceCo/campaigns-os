@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.44.0+agent.1] - 2026-09-30
+## [1.44.0+agent.2] - 2026-09-30
 
 ### Changed
 
@@ -41,6 +41,31 @@ Notable supported-surface changes are recorded here.
   reference) and the QA docs describe the new `common` depth and the coverage
   row, in place of the old at-most-four-orders sample. The skills bundle
   revision is now `1.44.0+skills.2`.
+
+## [1.44.0+agent.1] - 2026-09-30
+
+### Changed
+
+- Doctor's `built_output.upsell_selector_scope` check lets a page's own
+  `next-page-type` meta replace the route's upsell guess only when the meta
+  is `checkout` and the guess comes only from `oto` or `one-time-offer` in
+  the route (for example `/checkout-oto-1/` or `/oto-1/`), with no `upsell`
+  or `downsell` word (#529). Any other meta (`product`, `receipt`, `landing`
+  or anything else) leaves an oto page checked as an upsell, and a route with
+  an explicit `upsell` or `downsell` word (for example `/upsell-1/`,
+  `/checkout-downsell/`) keeps its role whatever its meta says. A meta copied
+  from another page no longer lifts a post-purchase page out of the check.
+  In 1.43.2+agent.4 any single live meta replaced the route guess.
+- The 1.43.2+agent.4 notes said a `next-page-type` of `upsell` or `downsell`
+  puts a page in scope beside a meta that says otherwise or when unquoted.
+  The same holds when the meta name is upper-case, or the tag is commented
+  out or inside `<template>`, `<script>` or `<noscript>`; those notes left
+  these cases out. Such a page can block under
+  `built_output.upsell_selector_scope` when it has a bundle selector without
+  `data-next-upsell-context`; `doctor --built` has no waivers. Doctor finds
+  these tags by scanning the page source, not only the live document, so a
+  tag inside a comment, `<template>`, `<script>` or `<noscript>` counts too:
+  delete the markup itself if the page is not post-purchase.
 
 ## [1.44.0] - 2026-09-30
 

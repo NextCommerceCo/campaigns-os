@@ -2927,13 +2927,40 @@
       "entry_sha256": "90abe34e9eab389f0b516a7b22d62c4dfe19a37025ede78410a1aeab188d47ac"
     },
     {
-      "id": "RL-0181",
+      "id": "RL-0180",
       "sequence": 172,
       "date": "2026-09-30",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.44.0+agent.1",
-      "changelog_sha256": "c24a98791ca75888b9225018f9a0bb51774ea5c743cc4acc6a58cb769646ba23",
+      "changelog_sha256": "9e1a45650b0d80a9195b08ebd30cc4570b3dd8732393a5e63c9c999934f2c70d",
+      "agent_impact": "doctor --built and the packet path keep an explicit upsell or downsell route in built_output.upsell_selector_scope whatever the page next-page-type meta says; on an oto / one-time-offer route with no upsell or downsell word, only a live checkout meta replaces the route upsell guess, and any other meta (product, receipt, landing or anything else) leaves the page checked as an upsell. Records what RL-0170 omitted: a page whose markup carries next-page-type upsell or downsell anywhere (conflicting, unquoted, upper-case name, commented out, or inside template/script/noscript) is treated as post-purchase and can block; remove the stray tag on non-post-purchase pages.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The packet path passes the page route so an explicit upsell/downsell route keeps its role over a conflicting meta, and an oto route yields only to a checkout meta."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor --built passes the page route so an explicit upsell/downsell route keeps its role over a conflicting meta, and an oto route yields only to a checkout meta."
+        }
+      ],
+      "entry_sha256": "db37943b9ff1bb5158ee49280af32d6617514f8545a9c2d5e8ed34a74b123227"
+    },
+    {
+      "id": "RL-0181",
+      "sequence": 173,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.44.0+agent.2",
+      "changelog_sha256": "11bdd130e5e2f90c936fc1828b08225e519808c2f7bfb7368356de057fc077a7",
       "agent_impact": "A default qa run --test-order common may now create more test orders than before: every actual terminal path when that count is at or under the flood cap (6 by default, or an explicit --max-test-orders), otherwise the old four-order sample plus one decline path per uncovered offer or downsell page, up to the cap. It previously created at most 4. Verdicts on funnels with offer pages, --test-order off runs included, gain a browser-test-order:upsell-action-coverage row. It is pass or warn only when coverage is certain (orders placed, every offer page listed with its own unshared URL, every plan matched to one funnel, every click on a declared page of the order's funnel) and manual_review otherwise; a warn or manual_review row makes the disposition ready_with_exceptions rather than ready.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3047,7 +3074,7 @@
           "summary": "Describe the new common depth, decline-based page coverage attributed per funnel and the conservative upsell-action coverage row; stamp bundle revision 1.44.0+skills.2 and advance the skill version one patch."
         }
       ],
-      "entry_sha256": "3f48704ed3403667f7dcd620f904d441ae7577704d2830af9e240d628fe157ba"
+      "entry_sha256": "1ada871c0e5c5c511f92fe173349d2b99ea885894d6d18ba8815f6452ae26ff4"
     }
   ]
 }
