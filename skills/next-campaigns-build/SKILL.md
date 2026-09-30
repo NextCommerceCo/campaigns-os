@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-build
-version: 1.0.15
+version: 1.0.16
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
 

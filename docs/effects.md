@@ -83,6 +83,18 @@ writes your **home** directory, not the campaign. `telemetry on` writes your
 **machine** config. `run-record` writes beside the **working directory**, not the
 target repo. A row that said "writes the target" would be wrong about all three.
 
+### The Map Builder fetch
+
+`start`, `prepare-build` and `build` take their CampaignSpec from `--spec` or
+from `--map-id`. With `--map-id` (and no `--cached-spec`) the invocation sends
+`{proxy-base}/api/spec/{map-id}` and writes what comes back to
+`{target}/.campaign-runtime/fetched-specs/<map-id>.json`, replacing any earlier
+copy of that Map; the intake then reads the spec from that file. Both effects
+are on every row for those three commands. The effect test runs each row with
+`--spec` under four conditions and with `--map-id` under `persisted_consent`,
+the one condition whose `--proxy-base` is the loopback receiver, so the fetch
+and the write are observed rather than taken on trust.
+
 ## How to read a row
 
 ```jsonc
@@ -219,7 +231,7 @@ sha256) before and after while a loopback `node:http` receiver counts requests.
 | `ambient_session` | An active ambient run session opened by `run start` at the target. |
 | `stale_session` | A run session idle past the 12 h TTL, at the target and at the working directory. |
 | `lifecycle_log` | `CAMPAIGNS_OS_LIFECYCLE_LOG` names a journal outside the runtime directory. |
-| `persisted_consent` | Run Telemetry consent **persisted on the machine for the loopback receiver's scope**, a synthetic campaign key in the environment, no run session, and `--proxy-base <loopback>` wherever the command takes it. |
+| `persisted_consent` | Run Telemetry consent **persisted on the machine for the loopback receiver's scope**, a synthetic campaign key in the environment, no run session, and `--proxy-base <loopback>` wherever the command takes it. `start`, `prepare-build` and `build` name their spec by `--map-id` here, and the receiver serves it. |
 
 Five conditions rather than one, because the CLI's effects are not a function of
 argv alone: an ambient session redirects the journal and is itself touched by
@@ -321,10 +333,10 @@ loopback receiver only stands in for (`{base-url}`, the login gateway) matched
   refuses the contradiction rather than letting the test find it.
 
 A `full` row may still carry an individual effect the offline fixture cannot
-reach — the Map Builder spec fetch behind `--map-id`, the `codex` and `agents`
-destinations of `install-skills`. Each such entry has an empty `observed_in`
-**and** a `not_observed_reason`, and `check-effects.mjs` refuses one without the
-reason. What it may not be is silent.
+reach — the `codex` and `agents` destinations of `install-skills`. Each such
+entry has an empty `observed_in` **and** a `not_observed_reason`, and
+`check-effects.mjs` refuses one without the reason. What it may not be is
+silent.
 
 ## The rule
 

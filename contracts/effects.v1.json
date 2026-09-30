@@ -3532,6 +3532,13 @@
           ]
         },
         {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec — the fetched Map copy, named for the sanitized Map ID and replacing any earlier copy of that Map; the intake reads the spec from this path",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
           "path": "{target}/.campaign-runtime/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
@@ -3606,10 +3613,11 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--map-id is given instead of --spec",
+          "when": "--map-id is given instead of --spec, without --cached-spec",
           "requires_consent": false,
-          "observed_in": [],
-          "not_observed_reason": "the effect test seeds a local --spec, so the Map Builder fetch is declared and not exercised"
+          "observed_in": [
+            "persisted_consent"
+          ]
         },
         {
           "destination": "{proxy-base}/api/runs",
@@ -3683,6 +3691,13 @@
           ]
         },
         {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec — the fetched Map copy, named for the sanitized Map ID and replacing any earlier copy of that Map; the intake reads the spec from this path",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
           "path": "{target}/.campaign-runtime/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
@@ -3757,10 +3772,11 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--map-id is given instead of --spec",
+          "when": "--map-id is given instead of --spec, without --cached-spec",
           "requires_consent": false,
-          "observed_in": [],
-          "not_observed_reason": "the effect test seeds a local --spec"
+          "observed_in": [
+            "persisted_consent"
+          ]
         },
         {
           "destination": "{proxy-base}/api/runs",
@@ -3834,6 +3850,13 @@
           ]
         },
         {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec — the fetched Map copy, named for the sanitized Map ID and replacing any earlier copy of that Map; the intake reads the spec from this path",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
           "path": "{target}/.campaign-runtime/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
@@ -3888,10 +3911,11 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--map-id is given instead of --spec",
+          "when": "--map-id is given instead of --spec, without --cached-spec",
           "requires_consent": false,
-          "observed_in": [],
-          "not_observed_reason": "the effect test seeds a local --spec"
+          "observed_in": [
+            "persisted_consent"
+          ]
         }
       ],
       "effect_test": "effects: start --no-run-session",
@@ -3955,6 +3979,13 @@
           ]
         },
         {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec — the fetched Map copy, named for the sanitized Map ID and replacing any earlier copy of that Map; the intake reads the spec from this path",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
           "path": "{target}/.campaign-runtime/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
@@ -4007,10 +4038,11 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--map-id is given instead of --spec",
+          "when": "--map-id is given instead of --spec, without --cached-spec",
           "requires_consent": false,
-          "observed_in": [],
-          "not_observed_reason": "the effect test seeds a local --spec"
+          "observed_in": [
+            "persisted_consent"
+          ]
         },
         {
           "destination": "{proxy-base}/api/runs",
@@ -4084,6 +4116,13 @@
           ]
         },
         {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec — the fetched Map copy, named for the sanitized Map ID and replacing any earlier copy of that Map; the intake reads the spec from this path",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
           "path": "{target}/.campaign-runtime/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
@@ -4116,10 +4155,11 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--map-id is given instead of --spec",
+          "when": "--map-id is given instead of --spec, without --cached-spec",
           "requires_consent": false,
-          "observed_in": [],
-          "not_observed_reason": "the effect test seeds a local --spec"
+          "observed_in": [
+            "persisted_consent"
+          ]
         }
       ],
       "effect_test": "effects: prepare-build --no-run-session",
@@ -4185,6 +4225,13 @@
           ]
         },
         {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec — the fetched Map copy, named for the sanitized Map ID and replacing any earlier copy of that Map; the intake reads the spec from this path",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
           "path": "{target}/.campaign-runtime/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
@@ -4237,10 +4284,11 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--map-id is given instead of --spec",
+          "when": "--map-id is given instead of --spec, without --cached-spec",
           "requires_consent": false,
-          "observed_in": [],
-          "not_observed_reason": "the effect test seeds a local --spec"
+          "observed_in": [
+            "persisted_consent"
+          ]
         },
         {
           "destination": "{proxy-base}/api/runs",
@@ -4312,6 +4360,13 @@
           ]
         },
         {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec — the fetched Map copy, named for the sanitized Map ID and replacing any earlier copy of that Map; the intake reads the spec from this path",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
           "path": "{target}/.campaign-runtime/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
@@ -4375,10 +4430,11 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--map-id is given instead of --spec",
+          "when": "--map-id is given instead of --spec, without --cached-spec",
           "requires_consent": false,
-          "observed_in": [],
-          "not_observed_reason": "the effect test seeds a local --spec"
+          "observed_in": [
+            "persisted_consent"
+          ]
         },
         {
           "destination": "{proxy-base}/api/runs",
@@ -4452,6 +4508,13 @@
           ]
         },
         {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec — the fetched Map copy, named for the sanitized Map ID and replacing any earlier copy of that Map; the intake reads the spec from this path",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
           "path": "{target}/.campaign-runtime/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
@@ -4495,10 +4558,11 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--map-id is given instead of --spec",
+          "when": "--map-id is given instead of --spec, without --cached-spec",
           "requires_consent": false,
-          "observed_in": [],
-          "not_observed_reason": "the effect test seeds a local --spec"
+          "observed_in": [
+            "persisted_consent"
+          ]
         }
       ],
       "effect_test": "effects: build --no-run-session",
@@ -4560,6 +4624,13 @@
             "ambient_session",
             "stale_session",
             "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec — the fetched Map copy, named for the sanitized Map ID and replacing any earlier copy of that Map; the intake reads the spec from this path",
+          "observed_in": [
             "persisted_consent"
           ]
         },
@@ -4627,10 +4698,11 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--map-id is given instead of --spec",
+          "when": "--map-id is given instead of --spec, without --cached-spec",
           "requires_consent": false,
-          "observed_in": [],
-          "not_observed_reason": "the effect test seeds a local --spec"
+          "observed_in": [
+            "persisted_consent"
+          ]
         },
         {
           "destination": "{proxy-base}/api/runs",

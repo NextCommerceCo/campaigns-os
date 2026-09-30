@@ -254,3 +254,22 @@ test("a built post-purchase page keeps its route-inferred role when the spec cal
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("#529: the packet path takes a built page's checkout meta over an offer-sounding route", () => {
+  const { dir, packetPath, targetRepo } = fixture();
+  try {
+    const built = join(targetRepo, "_site", SLUG, "checkout-oto-1", "index.html");
+    mkdirSync(dirname(built), { recursive: true });
+    writeFileSync(
+      built,
+      '<html><head><meta name="next-page-type" content="checkout"></head><body>'
+        + '<div data-next-upsell="offer"><div data-next-bundle-selector data-next-selector-id="embedded"></div></div>'
+        + "</body></html>",
+    );
+    const gate = gateOf(doctorPacket(packetPath));
+    // The fixture's own upsell page still blocks; the checkout page does not.
+    assert.deepEqual(gate.findings.map((finding) => finding.selector_id), ["upsell-bundle-1x"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
