@@ -7,6 +7,7 @@ import {
   chmodSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -106,7 +107,10 @@ import {
 import { ensureRuntimeStateIgnored } from "./runtime-state-ignore.mjs";
 import {
   createSourceHtmlIntake,
+  HOST_STRIPPED_CODE,
+  parseHostPrefixedRoute,
   publicRouteForPage,
+  stripHostPrefixedRoutes,
 } from "./source-html-intake.mjs";
 import {
   SOURCE_HTML_MANIFEST_REL_PATH,
@@ -195,6 +199,7 @@ import {
 } from "./polish-node.mjs";
 import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
 import { POLISH_BEACON_RESOURCE_TYPES, captureOrigin, redactCaptureUrl } from "./polish-capture.mjs";
+import { SOURCE_PROVENANCE_EXPORTER_CLAIM_CODE, SOURCE_PROVENANCE_SCOPE } from "./doctor/source-provenance.mjs";
 import {
   appendCheckpointWaiver,
   createCheckpointRegistry,
@@ -308,7 +313,7 @@ Usage:
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--dry-run] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused. --dry-run validates the same way and prints the waiver it would write, without touching the report
-  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope. --dry-run runs every check (named human, bounds, registered and waivable gate) and prints the waiver it would write, without touching the report
+  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> [--page <page_id>] --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope, source_html.producer_provenance (per page: --page <page_id> is required, for a Figma-typed page whose approved source is hand-written HTML). --dry-run runs every check (named human, bounds, registered and waivable gate) and prints the waiver it would write, without touching the report
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
   campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads through campaigns-os login gateway credentials (--store-token-source env:<VAR> explicitly selects the warned break-glass Admin path; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
@@ -1270,10 +1275,14 @@ async function resolveSpecPath(args, opts = {}) {
       }
       return { specPath: cachePath, source: "cache", mapId, proxyBase };
     }
+    // Refuse a symlinked cache before fetching, and again at the write, which
+    // may run later under the prepare-build lock.
+    assertFetchedSpecCacheWritable(targetRepo, cachePath);
     const spec = await fetchSpecByMapId(mapId, { proxyBase, fetchImpl: opts.fetchImpl });
     const publishSpec = () => {
+      assertFetchedSpecCacheWritable(targetRepo, cachePath);
       mkdirSync(cacheDir, { recursive: true });
-      writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
+      replaceFetchedSpec(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
     };
     // deferCacheWrite hands the cache write back to the caller, which makes it
     // under the prepare-build lock.
@@ -1289,6 +1298,45 @@ async function resolveSpecPath(args, opts = {}) {
       "Pass a local CampaignSpec (--spec <path-to-campaignspec.json>) " +
       "or fetch one from Map Builder (--map-id <id> --target <page-kit-dir>).",
   );
+}
+
+// The fetch cache is written only inside a real
+// <target>/.campaign-runtime/fetched-specs/ directory. Throws when
+// .campaign-runtime/, fetched-specs/ or the cache entry exists as a symlink or
+// as the wrong kind of file, so a cache write cannot follow a link out of the
+// target. Missing entries are fine; the caller creates them.
+function assertFetchedSpecCacheWritable(targetRepo, cachePath) {
+  const checks = [
+    [join(targetRepo, ".campaign-runtime"), "directory"],
+    [dirname(cachePath), "directory"],
+    [cachePath, "regular file"],
+  ];
+  for (const [path, kind] of checks) {
+    let stat;
+    try {
+      stat = lstatSync(path);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (kind === "directory" ? stat.isDirectory() : stat.isFile()) continue;
+    throw new Error(
+      `Refusing to write the fetched CampaignSpec: ${path} is ${stat.isSymbolicLink() ? "a symlink" : `not a ${kind}`}. `
+      + "The fetch cache is written only inside a real <target>/.campaign-runtime/fetched-specs/ directory; remove the link and run again.",
+    );
+  }
+}
+
+// Writes `bytes` to a temp file beside the cache entry and renames it over the
+// entry, so another name for the old file (a hard link) is never written.
+function replaceFetchedSpec(cachePath, bytes) {
+  const tmpPath = join(dirname(cachePath), `.${basename(cachePath)}.${randomUUID()}.tmp`);
+  try {
+    writeFileSync(tmpPath, bytes, { flag: "wx" });
+    renameSync(tmpPath, cachePath);
+  } finally {
+    rmSync(tmpPath, { force: true });
+  }
 }
 
 function relFromFile(filePath, targetPath) {
@@ -1520,7 +1568,22 @@ function prepareBuildUnderLock({
   publication,
 }) {
   const { packetPath, contextPath, reportPath, doctorOutPath, briefPath, designSourcePackagePath } = publication.paths;
-  const spec = readJson(specPath);
+  // #531: a host-prefixed route ("shop.example.com/route/upsell/") in a Map
+  // fetched by this run is reduced to its rooted path before anything reads
+  // the spec. The fresh fetch is intake's own file under
+  // .campaign-runtime/fetched-specs/, so the rooted spec replaces it once the
+  // Assembly Report recording each change (with the value as fetched) is
+  // published, and doctor, polish and QA read what intake read. A local --spec
+  // file and a copy reused with --cached-spec are never rewritten: they are
+  // read as they are, and doctor blocks on routing_meta.host_prefixed.
+  const specOnDisk = readJson(specPath);
+  const hostStripped = stripHostPrefixedRoutes(specOnDisk);
+  const specSource = options.specInput?.source || "local";
+  const strippedSpecBytes = specSource === "remote" && hostStripped.evidence.length
+    ? `${JSON.stringify(hostStripped.spec, null, 2)}\n`
+    : null;
+  const spec = strippedSpecBytes == null ? specOnDisk : hostStripped.spec;
+  const specFileHash = strippedSpecBytes == null ? sha256File(specPath) : createHash("sha256").update(strippedSpecBytes).digest("hex");
   const { mapId, publicRouteSlug, localSpecId } = campaignIdentity(spec, args);
   if (!resolveCampaignIdentity({ map_id: mapId, local_spec_id: localSpecId })) {
     throw new Error("CampaignSpec requires exactly one identity: a saved spec_identity.map_id, or an agent-authored spec_identity.local_spec_id (1–64 letters, digits, underscores or hyphens). Keep the local ID stable across revisions; do not invent a Map ID.");
@@ -1829,7 +1892,11 @@ function prepareBuildUnderLock({
       : null,
     map_id: specInput?.mapId || null,
     proxy_base: specInput?.proxyBase || null,
-    saved_map_revision: specInput?.savedMapRevision || null,
+    // The Map revision stays the one fetched; the local material hash is the
+    // spec as written after host stripping, so the two still read as aligned.
+    saved_map_revision: specInput?.savedMapRevision
+      ? (strippedSpecBytes == null ? specInput.savedMapRevision : { ...specInput.savedMapRevision, local_spec_material_hash: specMaterialHash(spec) })
+      : null,
     source_root: portable(sourceRoot),
     target_repo: portable(targetRepo),
     template_family: explicitTemplateFamily || null,
@@ -1850,7 +1917,7 @@ function prepareBuildUnderLock({
     design_source_package: designSourcePackage.referenceFor(contextPath),
     spec: {
       path: portable(specPath),
-      hash: sha256File(specPath),
+      hash: specFileHash,
       material_hash: specMaterialHash(spec),
       active_pages: activePages.map((page) => ({
         id: page.id,
@@ -1958,9 +2025,45 @@ function prepareBuildUnderLock({
     declaredScopeSkips,
     buildScopeReasonsInvalid,
     templateSelection,
+    evidence: strippedSpecBytes == null ? [] : hostStripped.evidence,
   }));
 
+  // Values a spec left as it is still holds that doctor blocks on. An
+  // absolute http(s) page_url is not among them: projection takes its path.
+  const unstrippedHostRoutes = strippedSpecBytes == null
+    ? hostStripped.evidence.filter((entry) => parseHostPrefixedRoute(entry.from.trim(), { keepAbsolute: true }))
+    : [];
+  // A cache that cannot be rewritten stops the run before the report that
+  // records the stripped hosts is published.
+  if (strippedSpecBytes != null) assertFetchedSpecCacheWritable(targetRepo, specPath);
   publication.publish({ packet, brief: buildBrief.artifact, context, report });
+  if (unstrippedHostRoutes.length) {
+    const changes = unstrippedHostRoutes.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
+    console.warn(specSource === "cache"
+      ? `[campaigns-os prepare-build] the cached spec copy ${specPath} holds ${unstrippedHostRoutes.length} host-prefixed route value(s): ${changes}; `
+        + "--cached-spec reuses the copy as it is, so it was not changed, and doctor blocks with routing_meta.host_prefixed; re-run without --cached-spec so the Map is fetched and normalised."
+      : `[campaigns-os prepare-build] the spec file ${specPath} holds ${unstrippedHostRoutes.length} host-prefixed route value(s) and must be edited to the rooted form: ${changes}; `
+        + "it was not changed, and doctor blocks with routing_meta.host_prefixed until it is edited.");
+  }
+  // Only now that the report holding the evidence is out: a failed publish
+  // leaves the copy exactly as fetched, so the rooted copy never exists
+  // without the record of what it replaced.
+  if (strippedSpecBytes != null) {
+    try {
+      replaceFetchedSpec(specPath, strippedSpecBytes);
+    } catch (error) {
+      console.warn(
+        `[campaigns-os prepare-build] the assembly report ${reportPath} records the stripped host(s) as ${HOST_STRIPPED_CODE}, `
+        + `but the cached spec ${specPath} was not rewritten and still holds the values as fetched: ${error.message}`,
+      );
+      throw error;
+    }
+    const changes = hostStripped.evidence.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
+    console.warn(
+      `[campaigns-os prepare-build] removed the host from ${hostStripped.evidence.length} CampaignSpec route value(s) and rewrote the fetched copy ${specPath}: ${changes}; `
+      + `recorded as ${HOST_STRIPPED_CODE} on the assembly report evidence[].`,
+    );
+  }
 
   let doctor = null;
   // Housekeeping for the target's git history: the machine-local half of
@@ -2090,6 +2193,7 @@ function createAssemblyReport({
   declaredScopeSkips = [],
   buildScopeReasonsInvalid = false,
   templateSelection = null,
+  evidence = [],
 }) {
   const scaffoldRequired = context.scaffold.required;
   const portable = (path) => relFromDir(targetRepo, path);
@@ -2107,7 +2211,7 @@ function createAssemblyReport({
       public_route_slug: packet.campaign.public_route_slug,
       campaign_directory: packet.campaign.campaign_directory,
       live_url_path: packet.campaign.live_url_path,
-      spec_hash: sha256File(specPath),
+      spec_hash: context.spec.hash,
       spec_material_hash: context.spec.material_hash,
     },
     inputs: {
@@ -2148,7 +2252,7 @@ function createAssemblyReport({
     adapter_decisions: cloneJson(context.adapter_decisions || createAdapterDecisions()),
     proof_policy: cloneJson(packet.qa?.proof_policy || createProofPolicy()),
     theme: assemblyThemeFromContext(context.theme),
-    evidence: [],
+    evidence: cloneJson(evidence),
     blockers,
     warnings: [
       ...(templateSelection?.overridden
@@ -2645,7 +2749,25 @@ const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
     id: HIDDEN_EAGER_MEDIA_SCOPE,
     evaluate: ({ packet, report }) => evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
   },
+  {
+    // Per page (#534): one gate per Figma-typed CampaignSpec page, selected
+    // with --page. An id that names no such page is refused here rather than
+    // reported as missing evidence, so the operator learns which ids exist.
+    id: SOURCE_PROVENANCE_SCOPE,
+    evaluate: ({ doctor, pageId }) => {
+      const gates = Array.isArray(doctor?.derived?.checkpoint_gates)
+        ? doctor.derived.checkpoint_gates.filter((gate) => gate?.id === SOURCE_PROVENANCE_SCOPE)
+        : [];
+      const gate = gates.find((candidate) => candidate?.subject?.page_id === pageId);
+      if (gate) return gate;
+      const known = gates.map((candidate) => candidate.subject.page_id);
+      throw new Error(`Page "${pageId}" has no ${SOURCE_PROVENANCE_SCOPE} checkpoint: it is not an active CampaignSpec page with a Figma design_source, or doctor found no valid source-html manifest to check. Pages with this checkpoint now: ${known.length ? known.join(", ") : "(none)"}.`);
+    },
+  },
 ]);
+
+// Registered gates that are waived one CampaignSpec page at a time.
+const PER_PAGE_CHECKPOINT_GATES = new Set([SOURCE_PROVENANCE_SCOPE]);
 
 // A waive refusal under --json is a JSON envelope on stdout, exit 1 — the same
 // channel the success shape uses — so a caller parsing the output learns why
@@ -2671,23 +2793,61 @@ function waiveOrRefuse(args, run, { gate = null, registeredGates = [] } = {}) {
 function checkpointCommand(args) {
   const subcommand = args._[1] || "help";
   if (subcommand !== "waive") {
-    throw refused(`Unknown checkpoint subcommand. Use: ${cmd("checkpoint")} waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: ${Object.keys(CHECKPOINT_EVALUATORS).join(", ")}.`);
+    throw refused(`Unknown checkpoint subcommand. Use: ${cmd("checkpoint")} waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> [--page <page_id>] --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: ${Object.keys(CHECKPOINT_EVALUATORS).join(", ")}.`);
   }
   return checkpointWaive(args);
 }
 
+// Every value-taking flag of `checkpoint waive`. Given bare (the parser reads
+// it as boolean true) or with an empty value, each is refused by name rather
+// than coerced to the string "true" or "" — a bare --review-condition must not
+// supply a bound, nor a bare --report a report path.
+const CHECKPOINT_WAIVE_VALUE_FLAGS = Object.freeze({
+  packet: "<campaign-runtime.build.json>",
+  gate: "<checkpoint-id>",
+  page: "<page_id>",
+  reason: "\"<why>\"",
+  "waived-by": "\"<named human>\"",
+  "expires-at": "<ISO>",
+  "review-condition": "\"<trigger>\"",
+  report: "<json>",
+});
+
+function refuseBareCheckpointWaiveFlags(args) {
+  for (const [key, placeholder] of Object.entries(CHECKPOINT_WAIVE_VALUE_FLAGS)) {
+    if (!Object.hasOwn(args, key) || args[key] == null) continue;
+    if (!isNonEmptyString(args[key])) {
+      throw refused(`--${key} needs a value: pass --${key} ${placeholder}.`);
+    }
+  }
+}
+
 export function checkpointWaive(args) {
+  refuseBareCheckpointWaiveFlags(args);
   const packetPath = resolve(requireArg(args, "packet"));
   const dryRun = isDryRun(args);
   const gateId = requireArg(args, "gate").trim();
+  const pageId = args.page == null ? null : args.page.trim();
+  // One spelling for the page scope: --page. The <gate>:<page_id> form is
+  // refused by name rather than falling through to "unknown gate".
+  const colon = gateId.indexOf(":");
+  if (colon > 0 && PER_PAGE_CHECKPOINT_GATES.has(gateId.slice(0, colon))) {
+    throw new Error(`Checkpoint gate "${gateId}" uses the <gate>:<page_id> form, which is not accepted; pass --gate ${gateId.slice(0, colon)} --page ${gateId.slice(colon + 1) || "<page_id>"} instead.`);
+  }
+  if (PER_PAGE_CHECKPOINT_GATES.has(gateId) && !pageId) {
+    throw new Error(`Checkpoint gate "${gateId}" is waived per page; pass --page <page_id> naming the CampaignSpec page.`);
+  }
+  if (pageId != null && Object.hasOwn(CHECKPOINT_EVALUATORS, gateId) && !PER_PAGE_CHECKPOINT_GATES.has(gateId)) {
+    throw new Error(`--page applies only to per-page checkpoint gates (${[...PER_PAGE_CHECKPOINT_GATES].join(", ")}); "${gateId}" is waived for the whole campaign.`);
+  }
   const reason = requireArg(args, "reason");
   const waivedBy = requireArg(args, "waived-by");
-  const expiresAt = args["expires-at"] == null ? null : String(args["expires-at"]);
-  const reviewCondition = args["review-condition"] == null ? null : String(args["review-condition"]);
+  const expiresAt = args["expires-at"] ?? null;
+  const reviewCondition = args["review-condition"] ?? null;
   const packet = readJson(packetPath);
   const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
-    reportPath: args.report ? resolve(String(args.report)) : undefined,
+    reportPath: args.report == null ? undefined : resolve(args.report),
     followContextPointer: false,
   });
   const { reportPath } = workspace;
@@ -2696,12 +2856,15 @@ export function checkpointWaive(args) {
   const doctor = doctorPacket(packetPath, { reportPath });
   let waiver = null;
   const recordWaiver = (report) => {
-    const gate = evaluateCheckpointRegistry(CHECKPOINT_EVALUATORS, gateId, { doctor, packet, report });
+    const gate = evaluateCheckpointRegistry(CHECKPOINT_EVALUATORS, gateId, { doctor, packet, report, pageId });
     if (!gate) throw new Error(`Checkpoint gate "${gateId}" has no current evidence; repair the packet/spec/target and re-run doctor.`);
     if (gate.status !== "blocked") {
       throw new Error(`Checkpoint gate "${gateId}" is not blocked (status=${gate.status}); no waiver was recorded.`);
     }
     if (gate.waivable !== true) {
+      if (gate.code === SOURCE_PROVENANCE_EXPORTER_CLAIM_CODE) {
+        throw new Error(`Checkpoint gate "${gateId}" cannot be waived for page "${pageId}": the source-html manifest's generator claims figma-sections-export, so its missing provenance is the export's own defect. Re-run figma-sections-export, or, when the approved source is hand-written HTML, set the manifest's generator to name the real producer and waive again.`);
+      }
       const residueFields = gateId === PAGE_KIT_STORE_PROFILE_SCOPE ? storeProfileDemoResidueFields(gate) : [];
       if (residueFields.length) {
         throw new Error(`Checkpoint gate "${gateId}" cannot be waived: ${residueFields.join(", ")} still carr${residueFields.length === 1 ? "ies" : "y"} starter demo residue (a demo storefront URL or phone). Replace the demo value(s) in ${gate.subject?.target_path || "_data/campaigns.json"}[${gate.subject?.public_route_slug || "<public-route-slug>"}]; only spec mismatches and missing values are waivable.`);
@@ -2713,7 +2876,7 @@ export function checkpointWaive(args) {
     const updated = appendCheckpointWaiver(report, waiver);
     updated.evidence = [
       ...(Array.isArray(report.evidence) ? report.evidence : []),
-      `Checkpoint waiver: ${gateId} waived by ${waiver.waived_by} at ${waiver.waived_at}: ${waiver.reason}`,
+      `Checkpoint waiver: ${gateId}${pageId ? ` (page ${pageId})` : ""} waived by ${waiver.waived_by} at ${waiver.waived_at}: ${waiver.reason}`,
     ];
     return updated;
   };
@@ -2734,6 +2897,7 @@ export function checkpointWaive(args) {
       dry_run: true,
       action: "checkpoint-waive",
       gate: gateId,
+      ...(pageId ? { page: pageId } : {}),
       waiver,
       report_path: reportPath,
       would_write: reportPath,
@@ -2745,6 +2909,7 @@ export function checkpointWaive(args) {
     ...waiveReadiness(packetPath, reportPath),
     action: "checkpoint-waive",
     gate: gateId,
+    ...(pageId ? { page: pageId } : {}),
     waiver,
     report_path: reportPath,
     note: "The exact checkpoint state is accepted under a bounded named-human exception and will report ready_with_waivers, never clean. Any state change makes this waiver stale and inert.",
@@ -4122,6 +4287,9 @@ function withPacketSubstitutedIssue(issue, packetPath) {
 }
 
 function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate = prepareBuildGateIssue(report), packetPath = null }) {
+  const checkpointGates = Array.isArray(doctor?.derived?.checkpoint_gates) ? doctor.derived.checkpoint_gates : [];
+  const campaignCheckpointGates = checkpointGates.filter((gate) => !PER_PAGE_CHECKPOINT_GATES.has(gate?.id));
+  const perPageGates = checkpointGates.filter((gate) => PER_PAGE_CHECKPOINT_GATES.has(gate?.id));
   return [
     {
       id: "doctor",
@@ -4133,9 +4301,7 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
       status: prepareBuildGate ? "blocked" : "pass",
       reason: prepareBuildGate ? prepareBuildGate.reason : "prepare_build stage is terminal.",
     },
-    ...(Array.isArray(doctor?.derived?.checkpoint_gates)
-      ? doctor.derived.checkpoint_gates.map((gate) => withPacketSubstituted(gate, packetPath))
-      : []),
+    ...campaignCheckpointGates.map((gate) => withPacketSubstituted(gate, packetPath)),
     ...(doctor?.derived?.polish_checkpoint_gate
       ? [withPacketSubstituted(doctor.derived.polish_checkpoint_gate, packetPath)]
       : []),
@@ -4157,6 +4323,11 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
           waiver: polishGate?.waiver || null,
           required_actions: polishGate?.required_actions || [],
         }]),
+    // Per-page gates last: one per page can outnumber the rest, and a
+    // truncated projection of this list (progress keeps the first
+    // PROGRESS_GATE_LIMIT, src/progress-node.mjs) must still carry every
+    // campaign-wide gate.
+    ...perPageGates.map((gate) => withPacketSubstituted(gate, packetPath)),
   ];
 }
 

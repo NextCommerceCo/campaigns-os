@@ -14,7 +14,12 @@ import {
 import { createDoctorCheckRegistry, runDoctorCheckRegistry } from "../doctor-check-registry.mjs";
 import { evaluateSourcePreparation } from "../source-prep.mjs";
 import { isLoopbackHostname } from "../remit.mjs";
-import { publicRouteForPage } from "../source-html-intake.mjs";
+import {
+  HOST_STRIPPED_CODE,
+  parseHostPrefixedRoute,
+  publicRouteForPage,
+  SDK_ROUTING_META_TAGS,
+} from "../source-html-intake.mjs";
 import {
   readSourceHtmlManifestFile,
   SOURCE_HASH_PATTERN,
@@ -79,6 +84,7 @@ import {
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "../campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
+import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
 import {
@@ -223,12 +229,6 @@ const US_MARKET_COPY_PATTERNS = [
 
 const HARDCODED_CURRENCY_REGEX = /\$\s?\d[\d,]*(?:\.\d+)?(?:\/[A-Za-z]+)?/g;
 const HARDCODED_PHONE_REGEX = /\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
-
-const SDK_ROUTING_META_TAGS = [
-  "next-success-url",
-  "next-upsell-accept-url",
-  "next-upsell-decline-url",
-];
 
 function normalizeFunnels(spec) {
   if (Array.isArray(spec?.funnels)) return spec.funnels;
@@ -379,6 +379,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "spec.routing_meta_tags",
     phase: "spec",
     run: ({ spec, packet, warnings, ready, derived, buildState }) => validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived, buildState),
+  },
+  {
+    id: "spec.routing_host_prefix",
+    phase: "spec",
+    run: ({ spec, packet, errors, ready, derived, buildState }) => validateSpecHostPrefixedRoutes(spec, packet, errors, ready, derived, buildState),
   },
   {
     id: "source_html.coverage",
@@ -1465,26 +1470,31 @@ export function validateBuiltOutputTargetRoot(packet, errors, warnings, ready, d
   );
 }
 
+// R2-B2: the spec only carries unrooted routing-meta *hints*; the page-kit
+// build roots them when it renders _site/<slug>/. Once that built output
+// exists and assembly is complete, validateBuiltSdkMetaTags checks the actual
+// rendered values authoritatively. Re-warning on the spec literal would just
+// repeat a "fix before QA" message the build already satisfied (browser QA
+// later proved the deployed output correct), so the spec-literal checks defer
+// to the built-output check instead of double-flagging.
+function specRoutingMetaDeferred(publicRouteSlug, derived, buildState) {
+  const targetRepo = derived.target_repo;
+  const siteRoot = targetRepo ? join(targetRepo, "_site", publicRouteSlug) : null;
+  return Boolean(isStageComplete(buildState.report, "assembly") && siteRoot && existsSync(siteRoot));
+}
+
 export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived = {}, buildState = {}) {
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!publicRouteSlug) return;
   const routeRoot = campaignRouteRoot(packet);
 
-  // R2-B2: the spec only carries unrooted routing-meta *hints*; the
-  // page-kit build roots them when it renders _site/<slug>/. Once that built
-  // output exists and assembly is complete, validateBuiltSdkMetaTags checks the
-  // actual rendered values authoritatively. Re-warning on the spec literal here
-  // would just repeat a "fix before QA" message the build already satisfied
-  // (browser QA later proved the deployed output correct), so defer to the
-  // built-output check instead of double-flagging.
-  const targetRepo = derived.target_repo;
-  const siteRoot = targetRepo ? join(targetRepo, "_site", publicRouteSlug) : null;
-  if (isStageComplete(buildState.report, "assembly") && siteRoot && existsSync(siteRoot)) {
+  if (specRoutingMetaDeferred(publicRouteSlug, derived, buildState)) {
     ready.push(`CampaignSpec routing meta deferred to built-output verification (_site/${publicRouteSlug}/).`);
     return;
   }
 
   const hits = [];
+  let hostPrefixed = 0;
   for (const page of activeSpecPages(spec)) {
     const metaTags = page.sdk_hints?.meta_tags;
     if (!isObject(metaTags)) continue;
@@ -1494,11 +1504,18 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
       if (!isNonEmptyString(value)) continue;
       const route = value.trim();
       if (isRuntimeRootedRoutingMeta(route, publicRouteSlug, routeRoot)) continue;
+      // A host in front of the path is validateSpecHostPrefixedRoutes'
+      // blocker, not this warning.
+      if (parseHostPrefixedRoute(route, { keepAbsolute: true })) {
+        hostPrefixed += 1;
+        continue;
+      }
       hits.push(`${page.id}:${tag}=${route}`);
     }
   }
 
   if (!hits.length) {
+    if (hostPrefixed) return;
     ready.push(`CampaignSpec SDK routing meta tags are runtime-rooted for ${routeRoot}`);
     return;
   }
@@ -1509,6 +1526,43 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
     warnings,
     "routing_meta.runtime_root",
     `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "${routeRoot}upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
+  );
+}
+
+// #531: a route with a host in front of its path ("shop.example.com/route/x/")
+// is nested under the campaign root by every stage that composes a URL
+// (polish capture requested "/route/shop.example.com/route/x/"), so it blocks.
+// prepare-build strips the host from a fresh --map-id fetch at intake but
+// never rewrites a local --spec file or a copy reused with --cached-spec; this
+// catches one that still reaches doctor. An absolute http(s) URL is accepted
+// as before (projection converts a page_url to its path; it is a valid SDK
+// target), so only the bare and protocol-relative forms block. page_url is
+// read by polish and QA whether or not the site is built, so it is always
+// checked; routing meta values follow the spec-literal deferral above.
+export function validateSpecHostPrefixedRoutes(spec, packet, errors, ready, derived = {}, buildState = {}) {
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const metaDeferred = publicRouteSlug ? specRoutingMetaDeferred(publicRouteSlug, derived, buildState) : false;
+  const hits = [];
+  for (const page of activeSpecPages(spec)) {
+    const pageUrl = parseHostPrefixedRoute(page.page_url, { keepAbsolute: true });
+    if (pageUrl) hits.push({ page_id: page.id, field: "page_url", value: pageUrl.from, rooted: pageUrl.to });
+    const metaTags = page.sdk_hints?.meta_tags;
+    if (metaDeferred || !isObject(metaTags)) continue;
+    for (const tag of SDK_ROUTING_META_TAGS) {
+      const meta = parseHostPrefixedRoute(metaTags[tag], { keepAbsolute: true });
+      if (meta) hits.push({ page_id: page.id, field: `sdk_hints.meta_tags.${tag}`, value: meta.from, rooted: meta.to });
+    }
+  }
+  if (!hits.length) return;
+
+  const sample = hits.slice(0, 5).map((hit) => `${hit.page_id}:${hit.field} ${JSON.stringify(hit.value)} -> ${JSON.stringify(hit.rooted)}`).join("; ");
+  const more = hits.length > 5 ? `; plus ${hits.length - 5} more` : "";
+  addIssue(
+    errors,
+    "routing_meta.host_prefixed",
+    `CampaignSpec route value(s) carry a host in front of the path, so every page URL built from them nests the host inside the campaign route: ${sample}${more}. `
+      + `Use the rooted form shown after each arrow: edit a local CampaignSpec file to that value (intake never rewrites it); for a saved Map, re-run prepare-build (or start) with --map-id and without --cached-spec so the Map is fetched and normalised (the host is stripped and recorded as ${HOST_STRIPPED_CODE} on the assembly report), or correct the value in the Map.`,
+    { routes: hits }
   );
 }
 
@@ -3014,7 +3068,7 @@ function coverageErrorMessage(page) {
   if (designSource) {
     const fileUrl = optionalString(designSource.file_url);
     if (designSource.type === "figma" && fileUrl) {
-      return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}; supply the source-html manifest for the page (see docs/design-source-package.md) — the exporter that produced the design emits it — then rerun prepare-build.`;
+      return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}; supply the source-html manifest for the page (see docs/design-source-package.md) — the exporter that produced the design emits it — then rerun prepare-build. If the approved source is hand-written HTML and the Figma file only renders it, write the manifest by hand and record a named-human waiver for the Figma provenance check: campaigns-os checkpoint waive --packet <packet> --gate ${SOURCE_PROVENANCE_SCOPE} --page ${page.id} --reason "<reason>" --waived-by "<named human>" --expires-at <ISO>.`;
     }
     if (designSource.type === "ai-generated") {
       const fileUrlHint = fileUrl ? ` (design reference: ${fileUrl})` : "";
@@ -3078,6 +3132,8 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     warnings,
     ready,
     manifestPath: recordedDesignManifestPath(packet, packetPath),
+    waivers: buildState?.report?.waivers,
+    derived,
   });
   const active = activeSpecPages(spec);
   const specPartialScope = spec?.build_scope?.mode === "partial";
@@ -3283,7 +3339,7 @@ function recordedDesignManifestPath(packet, packetPath) {
   return recorded ? resolve(dirname(packagePath), recorded) : null;
 }
 
-function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready, manifestPath = null } = {}) {
+function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready, manifestPath = null, waivers = null, derived = null } = {}) {
   if (!isNonEmptyString(sourceRoot) || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
   const result = readSourceHtmlManifestFile(sourceRoot, { manifestPath });
   if (!result.path) return;
@@ -3299,49 +3355,123 @@ function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, 
   for (const warning of result.warnings || []) {
     addIssue(warnings, "source_html.manifest", warning);
   }
-  validateSourceProducerProvenance(result.manifest, { spec, errors, warnings, ready });
+  validateSourceProducerProvenance(result.manifest, { spec, errors, warnings, ready, waivers, derived });
   ready.push(`Source-html manifest ${SOURCE_HTML_MANIFEST_SCHEMA} validated`);
 }
 
-function validateSourceProducerProvenance(manifest, { spec, errors, warnings, ready }) {
+function validateSourceProducerProvenance(manifest, { spec, errors, warnings, ready, waivers = null, derived = null }) {
   const generator = optionalString(manifest?.generator) || "";
   const rawProvenance = manifest?.producer_provenance;
   const provenance = isObject(rawProvenance) ? rawProvenance : {};
-  const expectsFigma = generator.startsWith("figma-sections-export@") || activeSpecPages(spec).some(hasFigmaDesignSource);
+  const generatorClaimsFigma = generatorClaimsFigmaExport(generator);
+  const figmaPages = activeSpecPages(spec).filter(hasFigmaDesignSource);
+  const expectsFigma = generatorClaimsFigma || figmaPages.length > 0;
+  const findings = expectsFigma ? collectFigmaProvenanceFindings(manifest, provenance, rawProvenance) : [];
+  const provenanceBlockers = findings.filter((finding) => finding.severity === "provenance");
+
+  // One source-provenance checkpoint per Figma-typed page (#534).
+  const { gates, inert } = evaluateSourceProvenanceGates({
+    pages: figmaPages.map((page) => ({
+      page_id: page.id,
+      design_source: {
+        type: optionalString(page.design_source?.type) || null,
+        file_url: optionalString(page.design_source?.file_url) || null,
+      },
+    })),
+    blockingCodes: provenanceBlockers.map((finding) => finding.code),
+    generatorClaimsExport: generatorClaimsFigma,
+    waivers,
+  });
+  if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(...gates);
+  const inertTotal = Object.values(inert.counts).reduce((sum, count) => sum + count, 0);
+  if (inertTotal > 0) {
+    addIssue(
+      warnings,
+      `${SOURCE_PROVENANCE_SCOPE}.waiver_inert`,
+      `Source-provenance waiver history contains ${inertTotal} inert record(s); stale, foreign, malformed, and expired decisions, decisions for pages that no longer have a Figma design source${inert.pages.length ? ` (${inert.pages.join(", ")})` : ""}, and decisions under a manifest whose generator claims figma-sections-export never satisfy the current checkpoint.`,
+      { counts: inert.counts, pages: inert.pages },
+    );
+  }
   if (!expectsFigma) return;
 
+  // The waivable family (source_html.producer_provenance* and the export's
+  // file inventory) is reported once per Figma-typed page that demands it:
+  // as errors naming an unwaived page, and as warnings carrying `waived: true`
+  // naming a waived page. When the manifest's own generator claims
+  // figma-sections-export, the manifest demands them itself, so they are
+  // reported once, manifest-wide, as errors no page waiver can clear. Every
+  // other finding keeps its severity.
+  const waived = gates.filter((gate) => gate.status === "waived");
+  for (const finding of findings) {
+    if (finding.severity === "warning") {
+      addIssue(warnings, finding.code, finding.message);
+    } else if (generatorClaimsFigma) {
+      addIssue(errors, finding.code, finding.message, { generator, pages: figmaPages.map((page) => page.id) });
+    } else {
+      for (const gate of gates) {
+        const pageId = gate.subject.page_id;
+        if (gate.status === "waived") {
+          addIssue(
+            warnings,
+            finding.code,
+            `Page "${pageId}": ${finding.message} Waived by ${gate.waiver.waived_by}: the approved source is hand-written HTML.`,
+            { waived: true, page_id: pageId, waiver: gate.waiver },
+          );
+        } else {
+          addIssue(errors, finding.code, `Page "${pageId}" has a Figma design source: ${finding.message}`, { page_id: pageId });
+        }
+      }
+    }
+  }
+
+  if (!generatorClaimsFigma && waived.length > 0) {
+    const waivedPageIds = waived.map((gate) => gate.subject.page_id);
+    const waivedBy = [...new Set(waived.map((gate) => gate.waiver.waived_by))].join(", ");
+    ready.push(`Figma producer provenance accepted under named-human exception for page(s) ${waivedPageIds.join(", ")} (${waivedBy}).`);
+  }
+  if (errors.every((issue) => !isSourceProvenanceCode(issue.code) && !FIGMA_EXPORT_FILE_CODES.includes(issue.code)) && waived.length === 0) {
+    ready.push("Figma producer provenance gate passed: semantic_figma_export with package fingerprint");
+  }
+}
+
+// Returns every Figma-provenance finding in emission order, each tagged with
+// its severity: "provenance" (the waivable source_html.producer_provenance*
+// and source_html.files.partial/asset blockers) or "warning".
+function collectFigmaProvenanceFindings(manifest, provenance, rawProvenance) {
+  const findings = [];
+  const add = (severity, code, message) => findings.push({ severity, code, message });
   if (!rawProvenance) {
-    addIssue(
-      errors,
+    add(
+      "provenance",
       "source_html.producer_provenance",
       "Figma source manifest is missing producer_provenance. Re-run figma-sections-export handoff so Campaigns OS can gate semantic exporter provenance before assembly."
     );
   }
 
   if (provenance.source_type !== "semantic_figma_export") {
-    addIssue(
-      errors,
+    add(
+      "provenance",
       "source_html.producer_provenance.source_type",
       `Figma source manifest source_type is "${provenance.source_type || "missing"}"; expected "semantic_figma_export". Screenshot or hand-authored fallback output cannot satisfy the Figma provenance gate.`
     );
   }
   if (provenance.screenshot_fallback_used !== false) {
-    addIssue(
-      errors,
+    add(
+      "provenance",
       "source_html.producer_provenance.screenshot_fallback_used",
       "Figma source manifest reports screenshot_fallback_used=true. Re-run semantic figma-sections-export before assembly."
     );
   }
   if (!Number.isInteger(provenance.semantic_section_count) || provenance.semantic_section_count <= 0) {
-    addIssue(
-      errors,
+    add(
+      "provenance",
       "source_html.producer_provenance.semantic_section_count",
       "Figma source manifest must report semantic_section_count > 0."
     );
   }
   if (!SOURCE_HASH_PATTERN.test(String(provenance.material_fingerprint || ""))) {
-    addIssue(
-      errors,
+    add(
+      "provenance",
       "source_html.producer_provenance.material_fingerprint",
       "Figma source manifest must include a 64-character material_fingerprint over the handed-off source package."
     );
@@ -3349,15 +3479,15 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
 
   const files = Array.isArray(manifest?.files) ? manifest.files : [];
   if (!files.some((entry) => entry.role === "partial")) {
-    addIssue(errors, "source_html.files.partial", "Figma source manifest files[] must include section partials.");
+    add("provenance", "source_html.files.partial", "Figma source manifest files[] must include section partials.");
   }
   if (!files.some((entry) => entry.role === "asset")) {
-    addIssue(errors, "source_html.files.asset", "Figma source manifest files[] must include exported assets.");
+    add("provenance", "source_html.files.asset", "Figma source manifest files[] must include exported assets.");
   }
 
   const sectionExports = Array.isArray(provenance.section_exports) ? provenance.section_exports : [];
   if (!sectionExports.length) {
-    addIssue(errors, "source_html.producer_provenance.section_exports", "Figma source manifest must include section_exports with Figma node IDs and extraction commands.");
+    add("provenance", "source_html.producer_provenance.section_exports", "Figma source manifest must include section_exports with Figma node IDs and extraction commands.");
   } else {
     const withoutNodeIds = sectionExports
       .filter((entry) => {
@@ -3366,17 +3496,15 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
       })
       .map((entry) => entry?.section || "unknown");
     if (withoutNodeIds.length) {
-      addIssue(
-        warnings,
+      add(
+        "warning",
         "source_html.producer_provenance.section_exports.node_ids",
         `Some Figma section exports do not list node_ids: ${withoutNodeIds.slice(0, 6).join(", ")}${withoutNodeIds.length > 6 ? ", ..." : ""}.`
       );
     }
   }
 
-  if (errors.every((issue) => !String(issue.code || "").startsWith("source_html.producer_provenance") && !["source_html.files.partial", "source_html.files.asset"].includes(issue.code))) {
-    ready.push("Figma producer provenance gate passed: semantic_figma_export with package fingerprint");
-  }
+  return findings;
 }
 
 function hasFigmaDesignSource(page) {

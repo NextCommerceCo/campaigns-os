@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.45.0+agent.2] - 2026-09-30
+## [1.45.0+agent.3] - 2026-09-30
 
 ### Fixed
 
@@ -14,6 +14,108 @@ Notable supported-surface changes are recorded here.
   and header knobs are template-owned. The manifest may declare slots the
   pinned templates do not carry yet, so against the currently pinned templates
   this only adds notes.
+
+## [1.45.0+agent.2] - 2026-09-30
+
+### Added
+
+- `checkpoint waive` registers a fifth gate, `source_html.producer_provenance`,
+  waived one page at a time with `--page <page_id>` (#534). It is for a
+  CampaignSpec page whose `design_source` is Figma but whose approved source
+  is hand-written HTML, so no figma-sections-export provenance exists. The
+  usual rules apply: a named human, a reason, and an expiry or review
+  condition, and `--dry-run` writes nothing. `--page` must name an active page
+  with a Figma design source; any other id is refused, and the refusal lists
+  the pages that qualify. The `<gate>:<page_id>` form is refused with the
+  `--page` spelling to use instead.
+
+### Changed
+
+- Doctor reports one `source_html.producer_provenance` checkpoint gate per
+  Figma-typed page, and reports the Figma-export findings (the
+  `source_html.producer_provenance*` codes, `source_html.files.partial` and
+  `source_html.files.asset`) once per such page, naming it in
+  `detail.page_id`. A waived page's findings are warnings carrying
+  `waived: true`; an unwaived page's findings stay errors. When every blocker
+  is waived, doctor and `next` report `ready_with_waivers`. An expired, stale
+  or malformed waiver no longer applies. Manifest validation, wrapper-policy
+  and source-preparation findings, page mappings and screenshot proof keep
+  their severity.
+- When the manifest's generator names figma-sections-export in any form (with
+  or without an `@<version>`, in any case, with surrounding whitespace), the
+  findings stay manifest-wide errors, each page's gate reports `blocked` with
+  the code `source_html.producer_provenance.exporter_claim` and the repair
+  action, and `checkpoint waive` refuses the gate. Such a generator also makes
+  doctor check Figma provenance even when no page has a Figma design source;
+  before, only the `figma-sections-export@<version>` spelling did.
+- A waiver for a page that no longer has a Figma design source, or one under a
+  manifest whose generator claims figma-sections-export, is reported as the
+  warning `source_html.producer_provenance.waiver_inert`.
+- `next` lists the per-page `source_html.producer_provenance` gates after
+  `theme_gate` and `polish_gate`, so the progress snapshot, which keeps the
+  first 16 gates, always carries the campaign-wide gates.
+- `tooling diagnose` exports `source_html.producer_provenance`, its
+  `.source_type`, `.screenshot_fallback_used`, `.semantic_section_count`,
+  `.material_fingerprint`, `.section_exports` and `.waiver_inert` codes as
+  their own reason ids; before, each exported as
+  `diagnostic.unsupported_reason`.
+- The missing-mapping error for a Figma-typed page now also names the
+  hand-written HTML route and the `checkpoint waive` command.
+  `docs/design-source-package.md` documents the route: a hand-written
+  manifest, `wrapper_policy: preserve_document_wrappers` for full-document
+  HTML, and the per-page waiver.
+- Bundled skills carry revision `1.45.0+skills.2`, with each skill version
+  advanced one patch. The lifecycle skill lists the new gate.
+
+### Fixed
+
+- `checkpoint waive` refuses each value-taking flag (`--packet`, `--gate`,
+  `--page`, `--reason`, `--waived-by`, `--expires-at`, `--review-condition`,
+  `--report`) when it is given without a value or with an empty one, naming
+  the flag. Before, a bare `--review-condition` was recorded as the condition
+  `true`, supplying a bound nobody wrote, and a bare `--report` was read as a
+  report path named `true`.
+
+## [1.45.0+agent.1] - 2026-09-30
+
+### Changed
+
+- `prepare-build`, `start` and `build` strip a host from the front of a route
+  in a Map fetched with `--map-id` (#531). Some saved Maps stored `page_url`
+  values such as `shop.example.com/route/upsell/` instead of `/route/upsell/`,
+  and every URL built from them nested the host inside the campaign route, so
+  polish capture failed on every page. Intake now keeps the rooted path, with
+  any query and fragment, for each host-prefixed `page_url` and
+  `next-success-url`, `next-upsell-accept-url` or `next-upsell-decline-url`
+  meta tag value, before anything reads the spec. Once the Assembly Report is
+  published, it writes the rooted values to the fetched copy under
+  `.campaign-runtime/fetched-specs/`; the report's `evidence[]` records each
+  change as `routing_meta.host_stripped` with the value the Map returned in
+  `from`, and one line on stderr says so. The run first checks that the
+  fetched copy can be rewritten (it is not a symlink) and stops before
+  publishing the report if it cannot. If publishing fails, the copy is left
+  as fetched. If the rewrite itself fails after the report is published, one
+  line on stderr says the report records the stripped hosts but the cached
+  spec was not rewritten, and the run fails. A spec with no host-prefixed
+  value is handled exactly as before.
+- A dotted first segment ending in a page or script extension (`html`, `htm`,
+  `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi`), such as
+  `index.php/checkout/`, is a route, not a host.
+- A local `--spec` file and a copy reused with `--cached-spec` are never
+  rewritten. If either holds a host-prefixed route, intake prints one line
+  naming each value and its rooted form, saying the local file must be edited
+  or, for `--cached-spec`, to run again without it so the Map is fetched and
+  normalised, and doctor blocks until then.
+- A `--map-id` fetch stops with an error, before fetching and without writing
+  anything, when `.campaign-runtime/`, `fetched-specs/` or the cache file is a
+  symlink. The cache file is always replaced by a new file rather than written
+  in place, so a hard link to the old file keeps its bytes.
+- Doctor blocks a route with a bare (`shop.example.com/...`) or
+  protocol-relative (`//shop.example.com/...`) host in front of it with the
+  new `routing_meta.host_prefixed` error, naming each value and its rooted
+  form. An absolute `http(s)://` `page_url` or routing meta value is accepted
+  as before. Such values no longer appear in the `routing_meta.runtime_root`
+  warning; every other `runtime_root` finding keeps its warning and message.
 
 ## [1.45.0] - 2026-09-30
 
