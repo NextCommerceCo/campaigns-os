@@ -7,6 +7,7 @@ import {
   builtPageTypeOverRouteGuess,
   collectBundleSelectors,
   evaluateUpsellSelectorScope,
+  readBuiltPageTypeMetas,
 } from "./upsell-selector-scope.mjs";
 
 const SUBJECT = { public_route_slug: "example-campaign", site_root: "_site/example-campaign" };
@@ -305,4 +306,10 @@ test("any next-page-type saying post-purchase, live or inert, still makes the pa
     assert.equal(builtPageIsPostPurchase({ page_type: "checkout", content: `<html><head>${head}</head></html>` }), true, head);
   }
   assert.equal(builtPageIsPostPurchase({ page_type: null, content: `<html><head>${CHECKOUT}</head></html>` }), false);
+});
+
+test("readBuiltPageTypeMetas lists each mentioned value once, first occurrence first", () => {
+  const { live, mentioned } = readBuiltPageTypeMetas('<meta name="next-page-type" content="checkout"><meta name="next-page-type" content="checkout"><!-- <meta name="next-page-type" content="upsell"> -->');
+  assert.deepEqual(live, ["checkout", "checkout"]);
+  assert.deepEqual(mentioned, ["checkout", "upsell"]);
 });

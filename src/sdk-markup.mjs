@@ -193,8 +193,11 @@ export function scanPageMarkup({ page_id, file = null, content = "" }) {
     // inside the container it binds.
     if (a.has("data-next-upsell-action") && !ancestors.some((anc) => anc.attrs.has("data-next-upsell"))) {
       const value = a.get("data-next-upsell-action") ?? "";
+      // The SDK reads add/accept as accepting the offer and skip/decline as
+      // declining it; any other value does nothing even inside a container.
+      const verb = { add: "accept", accept: "accept", skip: "decline", decline: "decline" }[value.trim().toLowerCase()] || "act on";
       findings.push(finding("ORPHANED_UPSELL_ACTION", page_id, where,
-        `${describe(entry)} data-next-upsell-action="${value}" on ${where} has no ancestor carrying data-next-upsell. The SDK binds upsell actions only inside that container, so this one never fires and the shopper cannot ${value.trim().toLowerCase() === "skip" ? "decline" : "act on"} the offer. Move it inside the data-next-upsell container it belongs to.`,
+        `${describe(entry)} data-next-upsell-action="${value}" on ${where} has no ancestor carrying data-next-upsell. The SDK binds upsell actions only inside that container, so this one never fires and the shopper cannot ${verb} the offer. Move it inside the data-next-upsell container it belongs to.`,
         { tag, action: value }));
     }
 

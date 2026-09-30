@@ -135,6 +135,18 @@ test("ORPHANED_UPSELL_ACTION blocks on every page type, not only upsell pages, a
   assert.equal(gate.status, "pass");
 });
 
+test("ORPHANED_UPSELL_ACTION names what the shopper cannot do: accept for add/accept, decline for skip/decline; an empty container still counts", () => {
+  const cases = [["add", "cannot accept"], ["accept", "cannot accept"], ["skip", "cannot decline"], ["DECLINE", "cannot decline"], ["other", "cannot act on"]];
+  for (const [value, phrase] of cases) {
+    const gate = evaluateSdkMarkup({ pages: [page(`<div data-next-upsell="offer"></div><button data-next-upsell-action="${value}">x</button>`)] });
+    assert.equal(gate.findings.length, 1, value);
+    assert.match(gate.findings[0].message, new RegExp(phrase), value);
+  }
+  // The SDK creates the upsell enhancer for data-next-upsell with any value or none.
+  const gate = evaluateSdkMarkup({ pages: [page('<div data-next-upsell=""><button data-next-upsell-action="add">Yes</button></div>')] });
+  assert.equal(gate.status, "pass");
+});
+
 test("CHECKOUT_NOT_FORM is about data-next-checkout exactly, not the checkout-field / -review / -step attributes", () => {
   const gate = evaluateSdkMarkup({ pages: [page('<form data-next-checkout><div data-next-checkout-step="1"><input data-next-checkout-field="email"><span data-next-checkout-review="email"></span></div></form>')] });
   assert.equal(gate.status, "pass");

@@ -165,8 +165,9 @@ function liveMetaElements(node, found = []) {
  *              <title> is not one. Values trimmed; "" when content is absent.
  *   mentioned  every `<meta>`-shaped tag in the source text whose name is
  *              next-page-type in any case or spacing, live or not, plus every
- *              match of the looser pattern this replaced. Values trimmed.
- *              Wider than that pattern, never narrower.
+ *              match of the looser pattern this replaced. Values trimmed and
+ *              deduplicated, first occurrence first. Wider than that pattern,
+ *              never narrower.
  */
 export function readBuiltPageTypeMetas(content) {
   const source = String(content || "");
@@ -186,7 +187,7 @@ export function readBuiltPageTypeMetas(content) {
     }
   }
   for (const tag of source.matchAll(LEGACY_PAGE_TYPE_META)) mentioned.push(tag[1].trim());
-  return { live, mentioned };
+  return { live, mentioned: [...new Set(mentioned)] };
 }
 
 // The role the page declares for itself, or null when it declares none or
