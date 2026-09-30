@@ -191,6 +191,13 @@
       "outcomes": ["orientation_available", "updated", "restart_required", "legacy_baseline"],
       "owner": "campaigns-agent",
       "test_id": "TP-B3-orientation-rendered"
+    },
+    "baseline_below_floor": {
+      "meaning": "The target ledger declares a baseline_floor, and the reviewed baseline's newest ledger entry is older than the floor's last archived entry. Part of the baseline-to-target window was rotated into the archive files the floor names, which are not mandatory orientation reads, so the window cannot be read from the live ledger and changelog.",
+      "remedy": "Adopt a newer reviewed baseline whose ledger reaches the floor's last_archived_id; every commit at or after the floor's first_kept_id qualifies. Do not orient on the partial live window, and do not stitch the archive in as a substitute: the archive holds the history for reference, not for this read.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-os",
+      "test_id": "A1-baseline-below-floor"
     }
   }
 }

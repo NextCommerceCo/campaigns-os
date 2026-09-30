@@ -146,13 +146,17 @@ incomplete, append a correction:
   "amends": "RL-0007",
   "amendment_reason": "RL-0007 was recorded as compatible; it removed a documented guarantee.",
   "surface_version": null,
-  "changelog_section": "1.15.0+agent.1",
+  "changelog_section": "1.16.0+agent.1",
   "compatibility": "breaking",
   "migration": "Stop relying on the removed guarantee; see docs/build-packet.md.",
   "agent_impact": "Treat the 1.15.0 packet doc change as breaking, not compatible.",
   "changes": [ /* … */ ]
 }
 ```
+
+The amendment corrects a 1.15.0 entry, but its own section is a new one at the
+very top of `CHANGELOG.md`, numbered on the release on top when it is written
+(`1.16.0` here). It is never inserted under the older release it corrects.
 
 An amendment is the only entry kind whose change items may map to no changed
 path in its own range, because it corrects meaning rather than moving bytes.
@@ -171,13 +175,25 @@ entry currently holding the link, may re-link a section; any other second link
 still fails the one-to-one rule. Say in `amendment_reason` what changed in the
 section and why.
 
+This works only for a section still in the live `CHANGELOG.md`. An archived
+section cannot be corrected in place: archive files are never edited, and each
+is pinned by its SHA-256 in `baseline_floor.archives`, so any change to one
+fails the gate. Correct archived history with a new live amendment entry that
+links its own new section at the top of `CHANGELOG.md`, and say in
+`amendment_reason` what is wrong in the archived section.
+
 `scripts/check-changelog-structure.mjs` (part of `npm run check`) refuses the
 marker lines outright, in `CHANGELOG.md` and under `docs/`, and also holds the
 section layout: identifiers unique, `+agent.N` sections in one run directly
 above their release with N descending (newest first), and every ledger
-`changelog_section` naming a section that exists. Insert a new `+agent.N`
-section at the top of its release's run, not directly above the release
-heading.
+`changelog_section` naming a section that exists.
+
+A new section always goes at the very top of `CHANGELOG.md`: either a new
+release, or a `+agent.N` section numbered on the current top release (one above
+its highest N, or `+agent.1` if it has none). Never add a `+agent.N` section
+under an older release. Given `--base`, both `check-changelog-structure.mjs` and
+the release-ledger gate refuse any new section that sits below a section base
+already had.
 
 ## Running the gate
 
@@ -274,3 +290,47 @@ a quiet raise.
 
 Raising a limit is a reviewed policy change: advance `limits_version`, and the
 change owes its own ledger entry like anything else.
+
+## Rotating the baseline
+
+When the live ledger and changelog approach a bound, rotate them at a reviewed
+cut instead of raising a limit. The first rotation (2026-09-30, `RL-0190`)
+moved `RL-0001` through `RL-0124`; the ledger's `baseline_floor` records it.
+
+1. Pick the cut: the last entry to archive. Everything up to it moves, and so
+   does the changelog from the first section those entries link down to the end
+   of the file, including sections no entry links. If a kept entry amends an
+   archived one, or links a section in that tail, move the cut earlier until the
+   pair is on one side. Never later.
+2. Run the rotation through `rotateLedger` in `scripts/orientation-contract.mjs`
+   with a new dated pair under `contracts/archive/`, e.g.
+   `release-ledger.<date>.json` and `CHANGELOG.<date>.md`. It writes the entries
+   byte-for-byte (original `sequence` and hashes kept) and the changelog tail
+   verbatim, appends the pair and its SHA-256 to `baseline_floor.archives`, and
+   moves `last_archived_id`, `last_archived_sequence` and `first_kept_id`. It
+   refuses a cut that splits a pair.
+3. Never edit an existing archive file, and never reuse a date: each rotation
+   adds a new pair. Add both new files to `named` in
+   `contracts/supported-surface.json`.
+4. Record the rotation as its own entry, named in `baseline_floor.rotation_entry`,
+   with a change item for each new archive file and a CHANGELOG section of its
+   own. Its `agent_impact` tells consumers which baseline is now too old.
+
+The gate accepts a base entry missing from the live ledger only when the head
+floor covers it, the new archive holds it canonical-JSON-identical, and the floor
+moved with a new rotation entry in the same range. Any other deletion, an
+archive copy that differs from base, a floor that moves without a rotation
+entry, a floor that moves back or is rewritten, an edited archive file, and a
+cut that archives an entry while an entry that was live at base stays live and
+amends it (the same refusal `rotateLedger` gives) all fail. A new entry added
+after the rotation may still amend an archived entry, linking its own section
+in the live changelog: that is how archived history is corrected. The live changelog and each archive changelog must each be well-formed on
+their own, a section id may appear in only one of them, a section present
+at base must still be in one of them, and the live changelog followed by the
+archives, newest rotation first, must read as the base's sections in order
+with new sections only at the top of the live file. So every live section is
+newer than every archived one, and an archived section never moves back
+(`check-changelog-structure.mjs --base` and the `--base` release-ledger gate).
+The archive files are not mandatory
+orientation reads and are not measured; a consumer whose reviewed baseline is older than the floor refuses
+with `baseline_below_floor` and adopts a newer reviewed baseline.
