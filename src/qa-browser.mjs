@@ -1062,6 +1062,8 @@ const NETLIFY_PREVIEW_DRAWER_REQUESTS = Object.freeze([
 
 // The first label of a deploy-preview host: `deploy-preview-<n>`, or
 // `deploy-preview-<n>--<site>` for a per-deploy host on a custom domain.
+// Only numeric ids match, deliberately: Netlify issues numeric deploy-preview
+// ids, and widening would hide real errors on any host named deploy-preview-*.
 const DEPLOY_PREVIEW_LABEL = /^deploy-preview-\d+(?:--[a-z0-9-]+)?$/;
 
 function isNetlifyPreviewHost(hostname) {

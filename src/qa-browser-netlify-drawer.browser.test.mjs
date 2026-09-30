@@ -123,6 +123,16 @@ browserTest("the drawer loader's failed request still counts on a page that is n
   }
 });
 
+// Locked decision: only numeric deploy-preview ids are preview hosts on a
+// custom domain, so a non-numeric id is an ordinary host whose errors count.
+browserTest("the drawer loader's failed request still counts on a custom-domain deploy-preview host with a non-numeric id", async () => {
+  for (const pageUrl of ["https://deploy-preview-staging.shop.example.com/offer/", "https://deploy-preview-abc--shop.shop.example.com/offer/"]) {
+    const messages = await consoleErrorsFor(pageUrl, [DRAWER_LOADER]);
+    assert.equal(messages.length, 1, `${pageUrl}: ${JSON.stringify(messages)}`);
+    assert.match(messages[0], FAILED_428);
+  }
+});
+
 browserTest("the drawer loader's failed request still counts when a preview URL redirects off the Netlify preview host", async () => {
   const preview = new URL("https://deploy-preview-7--shop-example.netlify.app/offer/");
   preview.searchParams.set("redirect", withScripts("https://shop.example.com/offer/", [DRAWER_LOADER]));
