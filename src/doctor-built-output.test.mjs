@@ -57,22 +57,22 @@ test("R2-B2 routing: defers to built output once assembly is complete and _site 
   });
 });
 
-// --- Root-served campaigns (ruggie root-funnel contract gap, 2026-08) ---
-// A campaign served from the SITE ROOT (pages at /checkout-v2, /oto-ruggie,
+// --- Root-served campaigns (root-funnel contract gap, 2026-08) ---
+// A campaign served from the SITE ROOT (pages at /checkout-v2, /oto-rootfunnel,
 // /receipt with no slug prefix) declares campaign.route_root "/". Doctor must
 // validate routing metas against that declared root instead of assuming
 // slug-as-prefix; public_route_slug stays required identity.
 
 import { validateBuiltSdkMetaTags, validateRouteRootDeclaration } from "./doctor/checks.mjs";
 
-const ROOT_SERVED_PACKET = { campaign: { public_route_slug: "ruggie", route_root: "/" } };
+const ROOT_SERVED_PACKET = { campaign: { public_route_slug: "rootfunnel", route_root: "/" } };
 const ROOT_ROUTING_SPEC = {
   funnel_pages: [
     {
       id: "checkout",
       type: "checkout",
       enabled: true,
-      sdk_hints: { meta_tags: { "next-success-url": "/oto-ruggie" } },
+      sdk_hints: { meta_tags: { "next-success-url": "/oto-rootfunnel" } },
     },
     {
       id: "oto",
@@ -94,10 +94,10 @@ test("root-served: correct site-root routing metas pass under route_root '/'", (
 test("root-served: the same metas WITHOUT route_root still warn (slug-prefixed default preserved)", () => {
   const warnings = [];
   const ready = [];
-  validateSpecRoutingMetaTags(ROOT_ROUTING_SPEC, { campaign: { public_route_slug: "ruggie" } }, warnings, ready);
+  validateSpecRoutingMetaTags(ROOT_ROUTING_SPEC, { campaign: { public_route_slug: "rootfunnel" } }, warnings, ready);
   assert.ok(codes(warnings).includes("routing_meta.runtime_root"));
   const msg = warnings.find((w) => w.code === "routing_meta.runtime_root").message;
-  assert.match(msg, /\/ruggie\/upsell\//);
+  assert.match(msg, /\/rootfunnel\/upsell\//);
 });
 
 test("root-served: unrooted and foreign-prefix metas still warn under route_root '/'", () => {
@@ -105,7 +105,7 @@ test("root-served: unrooted and foreign-prefix metas still warn under route_root
   const ready = [];
   const spec = {
     funnel_pages: [
-      { id: "checkout", type: "checkout", enabled: true, sdk_hints: { meta_tags: { "next-success-url": "oto-ruggie" } } },
+      { id: "checkout", type: "checkout", enabled: true, sdk_hints: { meta_tags: { "next-success-url": "oto-rootfunnel" } } },
     ],
   };
   validateSpecRoutingMetaTags(spec, ROOT_SERVED_PACKET, warnings, ready);
@@ -121,33 +121,33 @@ test("route_root declaration: '/' and '/<slug>/' pass with ready lines; anything
   }
   {
     const errors = [], ready = [];
-    validateRouteRootDeclaration({ campaign: { public_route_slug: "ruggie", route_root: "/ruggie/" } }, errors, ready);
+    validateRouteRootDeclaration({ campaign: { public_route_slug: "rootfunnel", route_root: "/rootfunnel/" } }, errors, ready);
     assert.deepEqual(errors, []);
     assert.ok(ready.some((note) => note.includes("matches public_route_slug")));
   }
   {
     const errors = [], ready = [];
-    validateRouteRootDeclaration({ campaign: { public_route_slug: "ruggie", route_root: "/other/" } }, errors, ready);
+    validateRouteRootDeclaration({ campaign: { public_route_slug: "rootfunnel", route_root: "/other/" } }, errors, ready);
     assert.deepEqual(codes(errors), ["campaign.route_root"]);
   }
   {
     // Near-miss shapes the JSON schema rejects must be blockers here too —
     // accepting them at runtime would recreate the schema/runtime split.
-    for (const nearMiss of ["/ruggie", "//ruggie//", "ruggie/", "//"]) {
+    for (const nearMiss of ["/rootfunnel", "//rootfunnel//", "rootfunnel/", "//"]) {
       const errors = [], ready = [];
-      validateRouteRootDeclaration({ campaign: { public_route_slug: "ruggie", route_root: nearMiss } }, errors, ready);
+      validateRouteRootDeclaration({ campaign: { public_route_slug: "rootfunnel", route_root: nearMiss } }, errors, ready);
       assert.deepEqual(codes(errors), ["campaign.route_root"], `expected blocker for ${JSON.stringify(nearMiss)}`);
     }
   }
   {
     const errors = [], ready = [];
-    validateRouteRootDeclaration({ campaign: { public_route_slug: "ruggie", route_root: 42 } }, errors, ready);
+    validateRouteRootDeclaration({ campaign: { public_route_slug: "rootfunnel", route_root: 42 } }, errors, ready);
     assert.deepEqual(codes(errors), ["campaign.route_root"]);
   }
   {
     // Absent route_root is the default slug-prefixed contract: silent.
     const errors = [], ready = [];
-    validateRouteRootDeclaration({ campaign: { public_route_slug: "ruggie" } }, errors, ready);
+    validateRouteRootDeclaration({ campaign: { public_route_slug: "rootfunnel" } }, errors, ready);
     assert.deepEqual(errors, []);
     assert.deepEqual(ready, []);
   }
@@ -157,7 +157,7 @@ test("root-served: a malformed route_root never roots a check — campaignRouteR
   // "/foo" fails the schema; the runtime must not normalize-and-accept it.
   // Routing metas rooted at the site root therefore still warn (slug default),
   // and validateRouteRootDeclaration raises the named blocker alongside.
-  const malformed = { campaign: { public_route_slug: "ruggie", route_root: "/foo" } };
+  const malformed = { campaign: { public_route_slug: "rootfunnel", route_root: "/foo" } };
   const warnings = [], ready = [];
   validateSpecRoutingMetaTags(ROOT_ROUTING_SPEC, malformed, warnings, ready);
   assert.ok(codes(warnings).includes("routing_meta.runtime_root"));
@@ -191,7 +191,7 @@ test("root-served: built meta expectation composes against '/' (no phantom /<slu
   withTempDir((dir) => {
     // Built output still nests at _site/<slug>/ — route_root describes the
     // SERVED path shape, not the build directory.
-    const builtPath = join(dir, "_site", "ruggie", "checkout", "index.html");
+    const builtPath = join(dir, "_site", "rootfunnel", "checkout", "index.html");
     mkdirSync(dirname(builtPath), { recursive: true });
     writeFileSync(builtPath, `<html><head><meta name="next-success-url" content="/receipt"></head><body data-next-checkout>x</body></html>`);
     const spec = {
@@ -206,9 +206,9 @@ test("root-served: built meta expectation composes against '/' (no phantom /<slu
       assert.equal(codes(errors).concat(codes(warnings)).includes("sdk_hints.meta_tags.route_mismatch"), false);
     }
     {
-      // Same rendered value without route_root: doctor expects /ruggie/receipt/ and flags it.
+      // Same rendered value without route_root: doctor expects /rootfunnel/receipt/ and flags it.
       const errors = [], warnings = [], ready = [];
-      validateBuiltSdkMetaTags(spec, { campaign: { public_route_slug: "ruggie" } }, errors, warnings, ready, { target_repo: dir });
+      validateBuiltSdkMetaTags(spec, { campaign: { public_route_slug: "rootfunnel" } }, errors, warnings, ready, { target_repo: dir });
       assert.ok(codes(errors).concat(codes(warnings)).includes("sdk_hints.meta_tags.route_mismatch"));
     }
   });
@@ -621,7 +621,7 @@ test("#5 logo residue: built page referencing next-logo.png is flagged", () => {
 
 test("#5 logo residue: a branded logo passes", () => {
   const issues = [];
-  validateBuiltStarterLogoResidue(`<img src="/shield/images/chamelo-logo.svg" class="brand-logo">`, "/repo/_site/shield/receipt/index.html", "/repo", { id: "receipt", type: "thankyou" }, issues);
+  validateBuiltStarterLogoResidue(`<img src="/shield/images/brand-logo.svg" class="brand-logo">`, "/repo/_site/shield/receipt/index.html", "/repo", { id: "receipt", type: "thankyou" }, issues);
   assert.equal(issues.length, 0);
 });
 

@@ -2140,7 +2140,7 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, 
 // leg: where QA confirms a content param FIRES on a live page, this confirms the
 // built page even HAS a handler for it — catching the gap before QA runs.
 //
-// Specifically the "?reviews=n with no handler" case from the Chamelo Shield
+// Specifically the "?reviews=n with no handler" case from a production
 // build: the spec (or a synthesized one) declares a content param, but the
 // built page never wired `data-next-hide="param.<name>=='n'"`, so the param
 // silently no-ops. Only fires when the spec declares `analytics.params.content`;
@@ -2171,7 +2171,7 @@ export function validateBuiltAnalyticsContract(content, builtPath, targetRepo, p
       addIssue(
         issueTarget,
         "analytics_contract.content_param_no_handler",
-        `Built page "${page.id}" declares analytics content param "?${name}" but has no data-next-hide/show="param.${name}…" handler. The param will silently no-op — the Chamelo Shield "?reviews=n with no handler" gap.`,
+        `Built page "${page.id}" declares analytics content param "?${name}" but has no data-next-hide/show="param.${name}…" handler. The param will silently no-op — the "?reviews=n with no handler" gap.`,
         { page_id: page.id, file: relPath, param: name },
       );
     }

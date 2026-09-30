@@ -1163,8 +1163,8 @@ try {
 
 // Slice 5a: template-stock entry point. No design_source on the spec,
 // no manifest, no figma involvement. Just spec + a source directory
-// of HTML files matching standard page-type names. This is Sam's
-// nanosocks scaffold pass — clone a starter template, fill the spec,
+// of HTML files matching standard page-type names. This is the
+// template-stock scaffold pass — clone a starter template, fill the spec,
 // ship. See docs/entry-points.md "Template-stock".
 //
 // The relativePathsTmp fixture earlier in this file already exercises

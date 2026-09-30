@@ -389,7 +389,7 @@ test("built residue scan ignores source partial and layout directories", () => {
     targetFiles: {
       "_includes/checkout.html": '<span data-next-display="package.name">Package Title</span>',
       "_layouts/base.html": "const fallback = { promoCode: 'XXCODE' };",
-      "index.html": "<h1>ArcticClip Checkout</h1>",
+      "index.html": "<h1>Brand Checkout</h1>",
     },
   });
 

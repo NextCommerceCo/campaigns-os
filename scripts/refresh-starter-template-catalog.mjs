@@ -202,7 +202,7 @@ export function preserveLocalOnlyFamilies(adaptedCatalog, existingCatalog) {
 }
 
 // A family is "private" (local-only, never sourced from the public catalog) when its
-// description says so — e.g. arjuna's "Private family — source lives in the Adsbranded
+// description says so — e.g. arjuna's "Private family — source lives in a
 // private template repo". Used to guard against a public refresh clobbering it.
 function isPrivateFamily(family) {
   // Prefer the machine-checkable flag; fall back to the description for older

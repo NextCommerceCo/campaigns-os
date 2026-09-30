@@ -652,8 +652,8 @@ function recurrenceEquivalent(claim, truth) {
   if (moneyToCents(claim.amount) !== moneyToCents(truth.amount)) return false;
   if (claim.interval_count === truth.interval_count && claim.interval === truth.interval) return true;
 
-  // Uzzle's accepted monthly disclosure is the one narrow proven equivalence:
-  // its API cadence is expressed as 30 days. Do not generalize rate math.
+  // One merchant's accepted monthly disclosure is the one narrow proven
+  // equivalence: its API cadence is expressed as 30 days. Do not generalize rate math.
   return (claim.interval_count === 1 && claim.interval === "month"
       && truth.interval_count === 30 && truth.interval === "day")
     || (truth.interval_count === 1 && truth.interval === "month"

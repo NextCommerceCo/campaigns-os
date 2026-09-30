@@ -252,7 +252,7 @@ test("brand theme avoids broad root-token role inference for layout and foregrou
 
 test("brand theme derives dark foregrounds for a light brand (no white-on-yellow CTAs)", () => {
   withTempDir((dir) => {
-    // Regression for the Chamelo Shield build: a yellow brand (#ffe100) whose
+    // Regression for a yellow-brand build: a brand (#ffe100) whose
     // generated foregrounds were all white, so next-core .button text
     // (color: var(--brand--color--text-inverse)) was illegible on the CTA.
     const { source, packet, packetPath } = makePacket(dir);

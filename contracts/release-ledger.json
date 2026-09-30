@@ -7801,6 +7801,45 @@
         }
       ],
       "entry_sha256": "ac6a18d8321d7b41e70d44504cb22a789ed21c10633d23ba43c1fd5a8a3abacb"
+    },
+    {
+      "id": "RL-0172",
+      "sequence": 171,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.3+agent.1",
+      "changelog_sha256": "286d409d64a4fba7c8fc2f878c6683ea209ce07562275f88b5a1d49777e8af00",
+      "agent_impact": "None. Wording-only: provenance comments, one doctor message and a documentation example no longer name real merchants. Finding codes, triggers and detail fields are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/analytics-contract-shape.ts",
+          "surface_entry": null,
+          "summary": "Replace a merchant-named provenance comment with a neutral description."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/types.ts",
+          "surface_entry": null,
+          "summary": "Replace a merchant-named provenance comment on the analytics block with a neutral description."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Use a synthetic slug in the root-served route example."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Drop the build reference from the analytics_contract.content_param_no_handler message; code and detail fields unchanged."
+        }
+      ],
+      "entry_sha256": "b3dee9632f24f1308239288daa4eb59e205c57a05861fa38dc77fec2b844d43d"
     }
   ]
 }

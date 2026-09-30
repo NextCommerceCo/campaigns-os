@@ -75,7 +75,7 @@ test("reachability: a branded selector page PASSES every newly scoped style chec
         selector: check.selector,
         optional: check.optional,
         found: true,
-        // A real brand's selected-card treatment — arcticclip's palette.
+        // A real brand's selected-card treatment — a production palette.
         properties: { "border-color": "rgb(11, 32, 24)", "outline-color": "rgb(232, 255, 105)" },
       }],
       forbidden,
@@ -95,7 +95,7 @@ test("reachability: a branded selector-page logo PASSES the newly scoped logo ch
   const result = logoResidueAssertion({
     page: selectPage,
     logo,
-    sources: ["https://cdn.example.test/arcticclip/logo.svg"],
+    sources: ["https://cdn.example.test/brand/logo.svg"],
     severity: "blocker",
   });
   assert.equal(result.status, "pass");

@@ -1,7 +1,7 @@
 # Campaign Standardization Report
 
 Status: READY_WITH_WARNINGS
-Target: samples/wundercool-cpk
+Target: samples/example-subfolder-cpk
 Generated: 2026-07-06T15:50:56.353Z
 
 ## Summary
@@ -9,11 +9,11 @@ Generated: 2026-07-06T15:50:56.353Z
 - Findings: 0 blocker(s), 1 warning(s), 3 operator-readiness item(s)
 - Home recommendation: staged_split - Keep the read-only source/runtime scanner in public campaigns-os first; layer private repo discovery, issue creation, and merchant ops context in an internal campaign-ops wrapper.
 
-## arcticclip
+## product-d
 
 ### Identity
 - Status: READY_WITH_WARNINGS
-- Slug(s): arcticclip
+- Slug(s): product-d
 - SDK: 0.4.25
 - Page Kit: next-campaign-page-kit ^0.1.1
 - Template family: (unknown) (unknown)
@@ -50,4 +50,4 @@ Clarification needed:
 Product or merchant risks:
 - none
 Proof commands:
-- campaigns-os standardize --target samples/wundercool-cpk/arcticclip --json
+- campaigns-os standardize --target samples/example-subfolder-cpk/product-d --json

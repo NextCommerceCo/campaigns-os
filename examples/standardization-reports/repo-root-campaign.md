@@ -1,7 +1,7 @@
 # Campaign Standardization Report
 
 Status: READY_WITH_WARNINGS
-Target: samples/uvbrite-cpk
+Target: samples/example-root-cpk
 Generated: 2026-07-06T15:50:50.819Z
 
 ## Summary
@@ -9,11 +9,11 @@ Generated: 2026-07-06T15:50:50.819Z
 - Findings: 0 blocker(s), 1 warning(s), 0 operator-readiness item(s)
 - Home recommendation: staged_split - Keep the read-only source/runtime scanner in public campaigns-os first; layer private repo discovery, issue creation, and merchant ops context in an internal campaign-ops wrapper.
 
-## uvbrite-cpk (repo root)
+## example-root-cpk (repo root)
 
 ### Identity
 - Status: READY_WITH_WARNINGS
-- Slug(s): beamplus
+- Slug(s): product-c
 - SDK: 0.4.24
 - Page Kit: next-campaign-page-kit ^0.0.9
 - Template family: olympus-mv-single-step (operator_flag)
@@ -46,5 +46,5 @@ Clarification needed:
 Product or merchant risks:
 - Version bumps can affect SDK/Page Kit runtime behavior; confirm against campaign QA scope before changing.
 Proof commands:
-- campaigns-os standardize --target samples/uvbrite-cpk --json
-- campaigns-os doctor --built samples/uvbrite-cpk --family olympus-mv-single-step --slug beamplus --json
+- campaigns-os standardize --target samples/example-root-cpk --json
+- campaigns-os doctor --built samples/example-root-cpk --family olympus-mv-single-step --slug product-c --json

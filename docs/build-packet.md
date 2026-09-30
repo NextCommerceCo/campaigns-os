@@ -69,7 +69,7 @@ localhost readiness is not production approval.
 
 Most campaigns are served under a slug prefix (`/<public_route_slug>/...`), and
 that stays the default. A campaign whose whole funnel is served from the **site
-root** — pages at `/checkout-v2`, `/oto-ruggie`, `/receipt` with no slug prefix,
+root** — pages at `/checkout-v2`, `/oto-rootfunnel`, `/receipt` with no slug prefix,
 the normal shape for a single-campaign site or an in-place static deploy —
 declares `campaign.route_root: "/"`. Rules:
 
