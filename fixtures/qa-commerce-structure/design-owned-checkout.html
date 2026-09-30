@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Design-owned checkout fixture</title>
+<style>
+  body { margin: 0; font: 16px/1.4 system-ui, sans-serif; }
+  /* The campaign's own grid: no template-family wrapper or column classes. */
+  .page-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; padding: 24px; }
+  .field { display: block; margin-bottom: 12px; }
+  .field input, .field select { display: block; width: 100%; height: 40px; }
+  .summary { padding: 12px; border: 1px solid #ccc; }
+  .card-mount { height: 40px; margin-bottom: 12px; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+<main class="page-grid">
+  <section class="page-grid__form">
+    <form data-next-checkout="form">
+      <label class="field">Email <input type="email" name="email" data-next-checkout-field="email"></label>
+      <label class="field">First name <input type="text" name="first_name" data-next-checkout-field="fname"></label>
+      <label class="field">Last name <input type="text" name="last_name" data-next-checkout-field="lname"></label>
+      <label class="field">Country
+        <select name="country" data-next-checkout-field="country"><option value="US">United States</option></select>
+      </label>
+      <label class="field">Address <input type="text" name="address1" data-next-checkout-field="address1"></label>
+      <label class="field">City <input type="text" name="city" data-next-checkout-field="city"></label>
+      <label class="field">State <select name="province" data-next-checkout-field="province"><option value="CA">CA</option></select></label>
+      <label class="field">Postal code <input type="text" name="postal" data-next-checkout-field="postal"></label>
+      <div class="card-mount" data-next-checkout-field="cc-number"></div>
+      <div class="card-mount" data-next-checkout-field="cvv"></div>
+      <button type="submit" data-action="submit" os-checkout-payment="combo">Complete purchase</button>
+    </form>
+  </section>
+  <aside class="page-grid__summary">
+    <div class="summary" data-next-cart-summary>
+      <p>Offer x1</p>
+      <p>Total <span data-next-display="cart.total">$49.00</span></p>
+    </div>
+  </aside>
+</main>
+</body>
+</html>
