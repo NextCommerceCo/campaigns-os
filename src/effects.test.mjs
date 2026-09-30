@@ -472,9 +472,16 @@ const INVOCATIONS = {
   "readback": { argv: (s) => ["readback", s.targetRepo, "--json"] },
   "readback|--example": { argv: () => ["readback", "--example", "--json"] },
   "run status": { argv: () => ["run", "status", "--json"] },
-  "doctor": { argv: (s) => ["doctor", "--packet", s.packetPath, "--json"] },
-  "doctor|--no-write": { argv: (s) => ["doctor", "--packet", s.packetPath, "--write", "--no-write", "--json"] },
-  "doctor|--write": { argv: (s) => ["doctor", "--packet", s.packetPath, "--write", "--json"] },
+  // The packet forms read the live campaign when a built page exists and a
+  // key resolves; the seeded spec carries one in every condition, so the
+  // proxy is the loopback receiver in every condition, not only the fifth.
+  "doctor": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--proxy-base", receiver, "--json"] },
+  "doctor|--no-write": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--write", "--no-write", "--proxy-base", receiver, "--json"] },
+  "doctor|--write": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--write", "--proxy-base", receiver, "--json"] },
+  // The same built page and key, with the read switched off: the receiver
+  // must see no /api/campaign request in any condition.
+  "doctor|--no-live-refs": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--proxy-base", receiver, "--no-live-refs", "--json"] },
+  "doctor|--write --no-live-refs": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--write", "--proxy-base", receiver, "--no-live-refs", "--json"] },
   "doctor|--built": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--json"] },
   "doctor|--built --emit-packet": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--emit-packet", "--json"] },
   "sdk storage-check": {
@@ -532,6 +539,11 @@ const INVOCATIONS = {
   "qa run|--no-remit": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-remit", "--json"] },
   "qa run|--test-order": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--json"] },
   "qa run|--browser": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--browser", "--json"] },
+  "qa run|--no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-live-refs", "--json"] },
+  "qa run|--no-remit --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-remit", "--no-live-refs", "--json"] },
+  "qa run|--no-post-verdict --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-post-verdict", "--no-live-refs", "--json"] },
+  "qa run|--test-order --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--no-live-refs", "--json"] },
+  "qa run|--browser --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--browser", "--no-live-refs", "--json"] },
   "qa parity": {
     prepare: seedParityFixture, env: playwrightEnv,
     argv: (s, receiver) => ["qa", "parity", "--fixture", join(s.dir, "parity-fixture.json"), "--scenario", PARITY_SCENARIO, "--base-url", receiver, "--json"],

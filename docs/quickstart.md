@@ -43,13 +43,14 @@ Existing page-kit campaign: `cd` into it (its `package.json` declares
 `next-campaign-page-kit`). Then, in the campaign folder:
 
 ```bash
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.37.3
+npm install --save-dev --save-exact @nextcommerce/campaigns-os@<version>
 npx --no-install campaigns-os tooling status --platform claude
 ```
 
-`1.37.3` is an exact published example. Select the release you reviewed and
-verify its tag/provenance against the source commit; do not use a floating
-dist-tag. Commit both `package.json` and `package-lock.json`. An unreleased
+`<version>` is the exact release you reviewed. The newest published release is
+npm's `latest` (`npm view @nextcommerce/campaigns-os version`), and
+`contracts/release-ledger.json` and `CHANGELOG.md` list every release. Verify
+its tag/provenance against the source commit; do not use a floating dist-tag. Commit both `package.json` and `package-lock.json`. An unreleased
 reviewed commit may instead be pinned with
 `npm install --save-dev --save-exact "github:NextCommerceCo/campaigns-os#<full-sha>"`.
 The package install runs its own lifecycle build; it is separate from the
@@ -67,7 +68,7 @@ real campaign. See [offline sample preview](demo-preview.md).
 Global use is also supported, with an exact release:
 
 ```bash
-npm install -g @nextcommerce/campaigns-os@1.37.3
+npm install -g @nextcommerce/campaigns-os@<version>
 campaigns-os tooling status --platform claude
 campaigns-os install-skills --platform claude
 ```
@@ -142,7 +143,7 @@ After installing or updating the CLI, refresh the Campaigns OS skills in Claude 
 npx --no-install campaigns-os install-skills --platform claude
 ```
 
-This syncs bundled `skills/*` directories from the installed package into `~/.claude/skills/<skill-name>/` (`--platform codex` writes `~/.codex/skills`), replacing same-name folders, and reports which skills were created, updated, or unchanged. Restart the agent afterwards. Preview changes without writing files:
+This syncs bundled `skills/*` directories from the installed package into `~/.claude/skills/<skill-name>/` (`--platform codex` writes `~/.codex/skills`), replacing same-name folders, and reports which skills were created, updated, or unchanged. It lists each `SKILL.md` it wrote under `Read now`: read those files now in the same session, because a running agent does not load skills installed after it started (a new session loads them on its own). Preview changes without writing files:
 
 ```bash
 npx --no-install campaigns-os install-skills --dry-run
@@ -157,8 +158,9 @@ npx --no-install campaigns-os install-skills --platform all --dry-run
 ```
 
 If `tooling status` reports stale skills, run the refresh command it prints —
-it names each stale platform, through the same prefix — and restart local
-agent sessions so the new instructions are loaded. The build after `start` is
+it names each stale platform, through the same prefix — and read the
+`SKILL.md` files it lists under `Read now` in the running session so the new
+instructions are loaded (new sessions load them on their own). The build after `start` is
 agent-driven — `next` names the skill for each stage — so install skills before
 the first `start`.
 
@@ -184,7 +186,7 @@ the mapped `exit_intent.offer_ref_id` / `exit_intent.offer_code` or
 
 Campaigns API keys are public, browser-side, domain-allowlisted keys. If your CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
 
-The Store Profile is campaign metadata entered by the operator or derived from the store with `spec derive --from-store` (see "Create The Packet" below), not Campaigns API data. Before the target is scaffolded, `doctor` requires only `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present. Once the target's `campaigns.json` entry exists, `page_kit.store_profile` checks every one of those fields the CampaignSpec provides against the target: a field the spec carries that the target lacks, or carries with a different value, blocks (the spec is the authority; run `npx --no-install campaigns-os page-kit sync --packet <campaign-runtime.build.json>` to write the spec's values into the target entry, or fix the spec, then re-run `doctor`), a field present only in the target warns as `target_only` — unless the value is starter demo residue (a placeholder storefront URL or phone number), which blocks as `demo_residue` whatever the spec says — and a field absent from both is clean. So a spec that fills all nine fields makes all nine required after scaffold. A discrepancy the spec cannot yet resolve can be recorded with `campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <ISO timestamp>` instead of the review condition; see [docs/build-packet.md](./build-packet.md), "Page Kit Store Profile checkpoint").
+The Store Profile is campaign metadata entered by the operator or derived from the store with `spec derive --from-store` (see "Create The Packet" below), not Campaigns API data. Before the target is scaffolded, `doctor` requires only `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present. Once the target's `campaigns.json` entry exists, `page_kit.store_profile` checks every one of those fields the CampaignSpec provides against the target: a field the spec carries that the target lacks, or carries with a different value, blocks (the spec is the authority; run `npx --no-install campaigns-os page-kit sync --packet <campaign-runtime.build.json>` to write the spec's values into the target entry, or fix the spec, then re-run `doctor`), a field present only in the target warns as `target_only` — unless the value is starter demo residue (a placeholder storefront URL or phone number), which blocks as `demo_residue` whatever the spec says — and a field absent from both is clean. An optional field (any of the eight besides `store_url`) the spec sets to `""` says the merchant has none: `page-kit sync` blanks a recognised starter demo value (the placeholder storefront URLs and phone number; the starter's demo store name is not recognised and stays a `target_only` warning) and doctor reads the blank field as `intentionally_empty`, while a real, non-demo target value is left as it is (still a `target_only` warning, and sync reports the `""` as not applied; remove the value by hand if the merchant has none); an absent or null field still means "not provided". `campaign.store_url` stays required: `store_url: ""` still fails doctor's `spec.store_profile` check. So a spec that fills all nine fields makes all nine required after scaffold. A discrepancy the spec cannot yet resolve can be recorded with `campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <ISO timestamp>` instead of the review condition; see [docs/build-packet.md](./build-packet.md), "Page Kit Store Profile checkpoint").
 
 Packages should identify products or variants, while Offers set the customer's final price. Do not create separate `1x` / `2x` / `3x` packages just to express tier pricing, and do not rely on package Retail Price/Quantity fields unless the campaign explicitly uses that older compatibility setup.
 
@@ -209,7 +211,31 @@ producer path such as `checkout/index.html` should still target
 
 ## Prepare Raw HTML Source
 
-`html_funnel` source files should be page-kit-ready source, not full browser
+**Standalone HTML mockups: keep them whole, set
+`wrapper_policy: preserve_document_wrappers`.** Put it in the source-html
+manifest at `<source>/.campaigns-os/source-html-manifest.json` (or pass
+`--wrapper-policy preserve_document_wrappers` to `start` / `prepare-build`).
+Source screenshot proof must be of the standalone document, so a page kept whole
+needs no conversion, and doctor reports its document wrappers as a warning that
+names the decision. For pages without a Figma `design_source`, no exporter is
+required: for hand-written HTML, write the manifest yourself. When any active
+page's `design_source` is Figma, the manifest must pass the Figma provenance
+gate (`source_html.producer_provenance`), which needs the exporter's handoff
+manifest. A minimal one (schema:
+`schemas/source-html-manifest.v0.schema.json`):
+
+```json
+{
+  "schema_version": "source-html-manifest/v0",
+  "wrapper_policy": "preserve_document_wrappers",
+  "pages": [{ "page_id": "landing", "path": "landing.html" }]
+}
+```
+
+Decide this before capturing screenshots or computing `source_hash`; the rest
+of this section is the conversion for source that is not kept whole.
+
+Otherwise, `html_funnel` source files should be page-kit-ready source, not full browser
 documents copied verbatim from an AI tool. This is not a wholesale Liquid
 rewrite. Use Liquid only for page-kit helpers such as `campaign_link`,
 `campaign_asset`, and `campaign_include`.

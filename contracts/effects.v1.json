@@ -49,6 +49,7 @@
       "--force",
       "--from-store",
       "--list",
+      "--no-live-refs",
       "--no-post-verdict",
       "--no-probe",
       "--no-remit",
@@ -137,23 +138,70 @@
       "subcommand": null,
       "flags": [],
       "annotations": {
-        "readOnlyHint": true,
+        "readOnlyHint": false,
         "destructiveHint": false,
-        "openWorldHint": false,
+        "openWorldHint": true,
         "idempotentHint": true
       },
-      "tier": "none",
+      "tier": "A",
       "writes": [],
-      "sends": [],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "packet mode, the packet's built _site/<route>/ exists, and a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
       "effect_test": "effects: doctor",
       "test_scope": "full",
-      "notes": "Inspection is the default. With --packet and without --write, doctor writes no sidecar AND appends no lifecycle entry, so an inspection of a delivered campaign leaves the target byte-identical."
+      "notes": "Inspection is the default. With --packet and without --write, doctor writes no sidecar AND appends no lifecycle entry, so an inspection of a delivered campaign leaves the target byte-identical; it is not readOnlyHint because of the one read it may send. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves, doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign (#533); --proxy-base names the proxy, else the canonical one. No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason and sends nothing more. --no-live-refs skips that read (its own row)."
     },
     {
       "command": "doctor",
       "subcommand": null,
       "flags": [
         "--no-write"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "packet mode, the packet's built _site/<route>/ exists, and a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: doctor --no-write",
+      "test_scope": "full",
+      "notes": "--no-write wins over --write: no doctor sidecar, no assembly-report update, no journal entry. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves, doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign (#533); --proxy-base names the proxy, else the canonical one. No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason and sends nothing more. --no-live-refs skips that read (its own row)."
+    },
+    {
+      "command": "doctor",
+      "subcommand": null,
+      "flags": [
+        "--no-live-refs"
       ],
       "annotations": {
         "readOnlyHint": true,
@@ -164,9 +212,9 @@
       "tier": "none",
       "writes": [],
       "sends": [],
-      "effect_test": "effects: doctor --no-write",
+      "effect_test": "effects: doctor --no-live-refs",
       "test_scope": "full",
-      "notes": "--no-write wins over --write: no doctor sidecar, no assembly-report update, no journal entry."
+      "notes": "Inspection with the live campaign read switched off: with --packet and without --write, doctor writes no sidecar, appends no lifecycle entry and sends nothing, even when the packet's built _site/<route>/ exists and a public Campaigns API key resolves. derived.live_campaign_refs records the check as not_run with reason disabled, never as a pass; the CampaignSpec ref check still runs."
     },
     {
       "command": "sdk",
@@ -883,6 +931,71 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "always under --write — the doctor sidecar is (re)written",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the run's doctor evidence on the assembly report changes",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "packet mode, the packet's built _site/<route>/ exists, and a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: doctor --write",
+      "test_scope": "full",
+      "notes": "--write turns the inspection into a recording run: the doctor sidecar and the report's doctor evidence are rewritten, and the lifecycle exemption for the read-only form no longer applies. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves, doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign (#533); --proxy-base names the proxy, else the canonical one. No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason and sends nothing more. --no-live-refs skips that read (its own row)."
+    },
+    {
+      "command": "doctor",
+      "subcommand": null,
+      "flags": [
+        "--write",
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
         "openWorldHint": false,
         "idempotentHint": true
       },
@@ -920,9 +1033,9 @@
         }
       ],
       "sends": [],
-      "effect_test": "effects: doctor --write",
+      "effect_test": "effects: doctor --write --no-live-refs",
       "test_scope": "full",
-      "notes": "--write turns the inspection into a recording run: the doctor sidecar and the report's doctor evidence are rewritten, and the lifecycle exemption for the read-only form no longer applies."
+      "notes": "The doctor --write row's writes without the live campaign read: no request to {proxy-base}/api/campaign even when the built _site/<route>/ exists and a public Campaigns API key resolves, and derived.live_campaign_refs records not_run with reason disabled, never a pass."
     },
     {
       "command": "theme",
@@ -2096,11 +2209,19 @@
           "observed_in": [
             "persisted_consent"
           ]
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "at least one served page was read and a public Campaigns API key resolves from the packet, the CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before a served page is read, so there is no page to compare and the live campaign is not read"
         }
       ],
       "effect_test": "effects: qa run",
       "test_scope": "full",
-      "notes": "Destructive and not idempotent: each attempt overwrites the committed verdict sidecar and the report's QA stage, and a ready verdict clears the ambient run session. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict."
+      "notes": "Destructive and not idempotent: each attempt overwrites the committed verdict sidecar and the report's QA stage, and a ready verdict clears the ambient run session. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
     },
     {
       "command": "qa",
@@ -2212,11 +2333,19 @@
           "requires_consent": true,
           "observed_in": [],
           "not_observed_reason": "a blocked attempt keeps the session open and assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "at least one served page was read and a public Campaigns API key resolves from the packet, the CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before a served page is read, so there is no page to compare and the live campaign is not read"
         }
       ],
       "effect_test": "effects: qa run --no-remit",
       "test_scope": "full",
-      "notes": "The base `qa run` row's writes, without any remit: --no-remit stops the progress observation and the Run Record remit. The verdict publish is NOT a remit and is not gated by the flag — it still posts to the QA portal under the consent seam, which --no-post-verdict is the opt-out from. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict."
+      "notes": "The base `qa run` row's writes, without any remit: --no-remit stops the progress observation and the Run Record remit. The verdict publish is NOT a remit and is not gated by the flag — it still posts to the QA portal under the consent seam, which --no-post-verdict is the opt-out from. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
     },
     {
       "command": "qa",
@@ -2328,11 +2457,19 @@
           "observed_in": [
             "persisted_consent"
           ]
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "at least one served page was read and a public Campaigns API key resolves from the packet, the CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before a served page is read, so there is no page to compare and the live campaign is not read"
         }
       ],
       "effect_test": "effects: qa run --no-post-verdict",
       "test_scope": "full",
-      "notes": "The base `qa run` row's writes, without the verdict publish: --no-post-verdict is the opt-out from posting the verdict to the QA portal. The progress observation is a separate delivery and still leaves under persisted consent; --no-remit is the flag that stops that one. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict."
+      "notes": "The base `qa run` row's writes, without the verdict publish: --no-post-verdict is the opt-out from posting the verdict to the QA portal. The progress observation is a separate delivery and still leaves under persisted consent; --no-remit is the flag that stops that one. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
     },
     {
       "command": "qa",
@@ -2453,11 +2590,19 @@
           "observed_in": [
             "persisted_consent"
           ]
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "at least one served page was read and a public Campaigns API key resolves from the packet, the CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before a served page is read, so there is no page to compare and the live campaign is not read"
         }
       ],
       "effect_test": "effects: qa run --test-order",
       "test_scope": "full",
-      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict."
+      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
     },
     {
       "command": "qa",
@@ -2578,11 +2723,645 @@
           "observed_in": [
             "persisted_consent"
           ]
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "at least one served page was read and a public Campaigns API key resolves from the packet, the CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before a served page is read, so there is no page to compare and the live campaign is not read"
         }
       ],
       "effect_test": "effects: qa run --browser (preflight)",
       "test_scope": "preflight",
-      "notes": "PREFLIGHT-PROVED: --browser needs an installed Chromium and a reachable campaign, neither of which exists offline. The case proves the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict.",
+      "notes": "PREFLIGHT-PROVED: --browser needs an installed Chromium and a reachable campaign, neither of which exists offline. The case proves the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row).",
+      "preflight": {
+        "may_write": [
+          "{target}/qa-output/**",
+          "{cwd}/.campaign-runtime/qa-verdict.json",
+          "{target}/.campaign-runtime/assembly-report.json",
+          "{target}/.campaign-runtime/progress/**",
+          "{target}/.campaign-runtime/doctor-output.json",
+          "{target}/.campaign-runtime/run-session.json",
+          "{lifecycle-journal}"
+        ],
+        "may_contact": [
+          "/api/qa/verdicts",
+          "/api/progress"
+        ]
+      }
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before the campaign is reached, so no request leaves for the base URL"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt keeps the session open and assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa run --no-live-refs",
+      "test_scope": "full",
+      "notes": "The base `qa run` row's writes and sends, without the live campaign read: --no-live-refs makes no request to {proxy-base}/api/campaign even when a served page was read and a public Campaigns API key resolves, and the verdict records the check as a skipped live-campaign-refs assertion with reason disabled, never a pass. The verdict publish, the progress observation and the Run Record remit are unchanged and keep their own opt-outs (--no-post-verdict, --no-remit). Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--no-remit",
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before the campaign is reached, so no request leaves for the base URL"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt keeps the session open and assembles no Run Record, so nothing is remitted"
+        }
+      ],
+      "effect_test": "effects: qa run --no-remit --no-live-refs",
+      "test_scope": "full",
+      "notes": "The `qa run --no-remit` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--no-post-verdict",
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before the campaign is reached, so no request leaves for the base URL"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt keeps the session open and assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa run --no-post-verdict --no-live-refs",
+      "test_scope": "full",
+      "notes": "The `qa run --no-post-verdict` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--test-order",
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test, INCLUDING order creation against the live store",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before the order ladder is reached; the mode is proved by the gate refusing without placing an order"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa run --test-order --no-live-refs",
+      "test_scope": "full",
+      "notes": "The `qa run --test-order` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--browser",
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{base-url}",
+          "what": "browser navigation and HTTP requests against the campaign under test",
+          "when": "a browser is installed and the gates pass",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the browser run cannot execute offline; the case proves the gate refusal"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt assembles no Run Record"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: qa run --browser --no-live-refs (preflight)",
+      "test_scope": "preflight",
+      "notes": "PREFLIGHT-PROVED like `qa run --browser`: no installed Chromium or reachable campaign offline. The `qa run --browser` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs.",
       "preflight": {
         "may_write": [
           "{target}/qa-output/**",

@@ -54,6 +54,65 @@ that still falls below the contract's `min_contrast_ratio` is emitted with a
 confirmed. Derived-foreground confidence scales with the achieved contrast
 (`>= 7:1` high, `>= 4.5:1` medium, otherwise low).
 
+One exception keeps the design's own CTA label. The declared CTA foreground is
+read from the selected source in this order:
+
+1. the `color:` of the button rules whose `background` or `background-color`
+   is the CTA background (the design's own pairing), only when they all agree
+   on one colour; when they disagree, this step declares nothing and the next
+   step applies;
+2. a `:root` inverse/on-colour text token: the name needs a `text` or
+   `foreground` part plus `inverse`, or `on` followed by `primary`, `cta`,
+   `brand`, `accent` or `dark` (`--text-inverse` first, then for example
+   `--text-color-inverse`, `--text-on-primary`, `--on-primary-text` or
+   `--foreground-on-dark`). `--border-on-primary`, `--overlay-on-dark` and a
+   bare `--on-primary` are not text and never qualify;
+3. the `color:` of the other button rules that declare no background, only when
+   they all agree on one colour.
+
+A button rule is one whose every selector ends in a compound selector that is
+the `button` element, `input[type=submit]`, or a class starting with
+`btn`, `button` or `cta` or having a `cta` part (`.btn-primary`, `.button`,
+`.cta`, `.hero-cta`). An attribute alone does not make a button:
+`[type=submit]`, `div[type="submit"]` and `.order-summary[type=submit]` do not
+qualify. Only the compound's own element, class and attribute
+selectors count: the value inside an attribute selector and the arguments of
+`:not()`, `:is()`, `:where()` and `:has()` are not read, so
+`.btn-primary[data-x]` and `button:not(.order-summary)` qualify while
+`.order-summary[data-target=".btn"]`, `.order-summary:not(.btn)` and
+`.cart:has(.button)` do not. Any other pseudo-class or pseudo-element
+(`:hover`, `:disabled`, `::before`) disqualifies the selector. Selectors such
+as `.order-summary` or `.cart-count`, and `.btn .icon`, never qualify. When that
+colour reaches at least 3:1 on the CTA background (WCAG AA for large text),
+`--brand--color--text-inverse` and `--brand--color--cta-foreground` use it
+(`derivation.method: declared-cta-foreground`). White on `#dd4249` is 4.24:1,
+so a design that declares white CTA text keeps white, although black scores
+higher there. A declared colour under 3:1 is ignored and the luminance pick
+applies, so a white scaffold default on a yellow CTA still resolves dark. A
+declared colour between 3:1 and the contract's `min_contrast_ratio` (4.5:1) is
+used and reported with `theme.foreground.low_contrast`. With no declared CTA
+foreground, the output is unchanged. Declarations inside CSS comments are not
+read, so a commented-out token or rule never supplies a CTA or body text colour.
+
+### Body text prefers the darkest declared text token
+
+A declared text token is a `:root` custom property in the selected source whose
+name has a `text` part and whose value is a solid colour. Names that carry
+another job are not counted: inverse/on-colour labels (`text` or `foreground`
+with `inverse` in any order, or `on` followed by `primary`, `cta`, `brand`,
+`accent` or `dark`; `--text-on-light` is ordinary copy), `secondary`, `muted` or
+`subtle` copy, link, status and state colours (`link`, `error`, `danger`,
+`success`, `warning`, `info`, `highlight`, `accent`, `placeholder`, `disabled`,
+`selection`), `cta`/`button`/`btn` labels, and text `shadow`, `border`,
+`outline`, `stroke`, `bg` or `background` values. When the source has a solid
+body background (`--surface-bg`), `--brand--color--text-primary` and
+`--brand--color--foreground` take the darkest declared text token that is
+darker than that background and reaches 4.5:1 on it
+(`derivation.method: darkest-declared-text-token`, with the replaced value
+recorded, or `null` when the source yielded no `--text-primary`). This applies
+whether or not the source yields a `--text-primary` of its own. If no token
+qualifies, the existing pick (or its absence) stands.
+
 > **Contract change (PR #117):** `--text-inverse` and the three `*-foreground`
 > targets are no longer entries under `source_mappings` — they moved to
 > `foreground_derivations`. A source `--text-inverse` token (or anything that
@@ -140,6 +199,28 @@ If a fresh `brand-theme.css` exists:
    and SDK JavaScript.
 4. Record `report.theme.status`, `css_path`, `commerce_pages`, `load_order`,
    and evidence.
+
+### Where next-core.css belongs
+
+`next-core.css` and the brand layer are needed only on pages where the
+starter-template family's components render, because those components read
+the `--brand--*` tokens. `next-core.css` also carries element resets (`li`,
+`a`, headings, body letter-spacing) that restyle any markup on the page. On a
+page whose upsell, downsell or receipt markup comes from the design rather
+than from family components, loading it breaks that markup. Leave both
+stylesheets off those pages and list them only in the frontmatter styles of
+the pages that render family components, often just checkout.
+
+`report.theme.commerce_pages` is the list of pages where the brand layer was
+applied, recorded by the build. Record the pages you actually scoped, for
+example `commerce_pages: ["checkout"]`. The theme gate does not compare this
+list with the funnel. It passes on `report.theme.status: applied` with
+`load_order: after-next-core`. The gate's own `commerce_pages` output is a
+different field: every checkout, upsell, downsell, receipt or thank-you page
+the campaign builds or declares. It decides whether the gate applies, not
+which pages must load the brand layer. No check reads each built page's
+stylesheet order, so the recorded list and the evidence are what a reviewer
+sees.
 
 Polish should verify token parity, load order after next-core, starter-logo
 replacement when source assets expose a real brand mark, and SDK safety. If the
