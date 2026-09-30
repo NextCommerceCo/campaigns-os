@@ -108,6 +108,7 @@ import { ensureRuntimeStateIgnored } from "./runtime-state-ignore.mjs";
 import {
   createSourceHtmlIntake,
   HOST_STRIPPED_CODE,
+  parseHostPrefixedRoute,
   publicRouteForPage,
   stripHostPrefixedRoutes,
 } from "./source-html-intake.mjs";
@@ -1295,24 +1296,6 @@ async function resolveSpecPath(args, opts = {}) {
   );
 }
 
-// #531: whether intake may rewrite the fetched spec copy at `specPath` with
-// rooted routes. Only a regular file directly in
-// <target>/.campaign-runtime/fetched-specs/, reached through no symlink under
-// .campaign-runtime/, whose real path is still in that directory, counts;
-// anything else is left as it is.
-function fetchedSpecRewritable(targetRepo, specPath) {
-  const runtimeDir = join(targetRepo, ".campaign-runtime");
-  const cacheDir = join(runtimeDir, "fetched-specs");
-  if (dirname(specPath) !== cacheDir) return false;
-  try {
-    if (!lstatSync(runtimeDir).isDirectory() || !lstatSync(cacheDir).isDirectory()) return false;
-    if (!lstatSync(specPath).isFile()) return false;
-    return dirname(realpathSync(specPath)) === join(realpathSync(targetRepo), ".campaign-runtime", "fetched-specs");
-  } catch {
-    return false;
-  }
-}
-
 // The fetch cache is written only inside a real
 // <target>/.campaign-runtime/fetched-specs/ directory. Throws when
 // .campaign-runtime/, fetched-specs/ or the cache entry exists as a symlink or
@@ -1581,22 +1564,21 @@ function prepareBuildUnderLock({
   publication,
 }) {
   const { packetPath, contextPath, reportPath, doctorOutPath, briefPath, designSourcePackagePath } = publication.paths;
-  // #531: a host-prefixed route ("shop.example.com/route/upsell/") in a
-  // fetched Map is reduced to its rooted path before anything reads the spec.
-  // The fetched copy under .campaign-runtime/fetched-specs/ is intake's own
-  // file, so it is rewritten with the rooted values just before the outputs
-  // are published, and doctor, polish and QA read what intake read; each
-  // changed value is recorded on the Assembly Report evidence[] with the value
-  // as it was. An operator's local --spec file is never rewritten: it is read
-  // as it is, and doctor blocks on routing_meta.host_prefixed until it is
-  // edited. A fetched copy that is a symlink, or resolves outside
-  // fetched-specs/, is treated the same way.
+  // #531: a host-prefixed route ("shop.example.com/route/upsell/") in a Map
+  // fetched by this run is reduced to its rooted path before anything reads
+  // the spec. The fresh fetch is intake's own file under
+  // .campaign-runtime/fetched-specs/, so the rooted spec replaces it once the
+  // Assembly Report recording each change (with the value as fetched) is
+  // published, and doctor, polish and QA read what intake read. A local --spec
+  // file and a copy reused with --cached-spec are never rewritten: they are
+  // read as they are, and doctor blocks on routing_meta.host_prefixed.
   const specOnDisk = readJson(specPath);
   const hostStripped = stripHostPrefixedRoutes(specOnDisk);
-  const fetchedSpec = options.specInput?.source === "remote" || options.specInput?.source === "cache";
-  const intakeOwnedSpec = fetchedSpec && hostStripped.evidence.length > 0 && fetchedSpecRewritable(targetRepo, specPath);
-  const spec = intakeOwnedSpec ? hostStripped.spec : specOnDisk;
-  const strippedSpecBytes = intakeOwnedSpec && hostStripped.evidence.length ? `${JSON.stringify(spec, null, 2)}\n` : null;
+  const specSource = options.specInput?.source || "local";
+  const strippedSpecBytes = specSource === "remote" && hostStripped.evidence.length
+    ? `${JSON.stringify(hostStripped.spec, null, 2)}\n`
+    : null;
+  const spec = strippedSpecBytes == null ? specOnDisk : hostStripped.spec;
   const specFileHash = strippedSpecBytes == null ? sha256File(specPath) : createHash("sha256").update(strippedSpecBytes).digest("hex");
   const { mapId, publicRouteSlug, localSpecId } = campaignIdentity(spec, args);
   if (!resolveCampaignIdentity({ map_id: mapId, local_spec_id: localSpecId })) {
@@ -2042,27 +2024,32 @@ function prepareBuildUnderLock({
     evidence: strippedSpecBytes == null ? [] : hostStripped.evidence,
   }));
 
-  if (hostStripped.evidence.length) {
-    const changes = hostStripped.evidence.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
-    if (strippedSpecBytes != null) {
-      replaceFetchedSpec(specPath, strippedSpecBytes);
-      console.warn(
-        `[campaigns-os prepare-build] removed the host from ${hostStripped.evidence.length} CampaignSpec route value(s) and rewrote the fetched copy ${specPath}: ${changes}; `
-        + `recorded as ${HOST_STRIPPED_CODE} on the assembly report evidence[].`,
-      );
-    } else if (fetchedSpec) {
-      console.warn(
-        `[campaigns-os prepare-build] the fetched spec copy ${specPath} holds ${hostStripped.evidence.length} host-prefixed route value(s) but could not be normalised in place (it is a symlink or not a regular file inside .campaign-runtime/fetched-specs/): ${changes}; `
-        + "it was not changed, and doctor blocks with routing_meta.host_prefixed until the values are rooted.",
-      );
-    } else {
-      console.warn(
-        `[campaigns-os prepare-build] the spec file ${specPath} holds ${hostStripped.evidence.length} host-prefixed route value(s) and must be edited to the rooted form: ${changes}; `
-        + "it was not changed, and doctor blocks with routing_meta.host_prefixed until it is edited.",
-      );
-    }
+  // Values a spec left as it is still holds that doctor blocks on. An
+  // absolute http(s) page_url is not among them: projection takes its path.
+  const unstrippedHostRoutes = strippedSpecBytes == null
+    ? hostStripped.evidence.filter((entry) => parseHostPrefixedRoute(entry.from, { keepAbsolute: true }))
+    : [];
+  if (unstrippedHostRoutes.length) {
+    const changes = unstrippedHostRoutes.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
+    console.warn(specSource === "cache"
+      ? `[campaigns-os prepare-build] the cached spec copy ${specPath} holds ${unstrippedHostRoutes.length} host-prefixed route value(s): ${changes}; `
+        + "--cached-spec reuses the copy as it is, so it was not changed, and doctor blocks with routing_meta.host_prefixed; re-run without --cached-spec so the Map is fetched and normalised."
+      : `[campaigns-os prepare-build] the spec file ${specPath} holds ${unstrippedHostRoutes.length} host-prefixed route value(s) and must be edited to the rooted form: ${changes}; `
+        + "it was not changed, and doctor blocks with routing_meta.host_prefixed until it is edited.");
   }
   publication.publish({ packet, brief: buildBrief.artifact, context, report });
+  // Only now that the report holding the evidence is out: a failed publish
+  // leaves the copy exactly as fetched, so the rooted copy never exists
+  // without the record of what it replaced.
+  if (strippedSpecBytes != null) {
+    assertFetchedSpecCacheWritable(targetRepo, specPath);
+    replaceFetchedSpec(specPath, strippedSpecBytes);
+    const changes = hostStripped.evidence.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
+    console.warn(
+      `[campaigns-os prepare-build] removed the host from ${hostStripped.evidence.length} CampaignSpec route value(s) and rewrote the fetched copy ${specPath}: ${changes}; `
+      + `recorded as ${HOST_STRIPPED_CODE} on the assembly report evidence[].`,
+    );
+  }
 
   let doctor = null;
   // Housekeeping for the target's git history: the machine-local half of

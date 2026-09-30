@@ -786,6 +786,19 @@ const NOT_HOST_ROUTE_CASES = [
   "checkout.html",
   "landing/index.html",
   "//route/x/",
+  // A dotted first segment ending in a page or script extension is a
+  // filename, not a host.
+  "index.php/checkout/",
+  "upsell.php/",
+  "INDEX.PHP/checkout/",
+  "offer.asp/x/",
+  "offer.aspx/x/",
+  "order.jsp/",
+  "promo.shtml/",
+  "promo.htm/",
+  "run.cgi/x/",
+  "form.pl/",
+  "//index.php/checkout/",
   "shop.example.com",
   "ftp://shop.example.com/route/x/",
   "",
@@ -806,8 +819,9 @@ test("parseHostPrefixedRoute keeps the rooted path of a host-prefixed route and 
   }
   // An absolute URL is a valid SDK routing target doctor already accepts;
   // only the bare and protocol-relative forms count there.
-  assert.equal(parseHostPrefixedRoute("https://shop.example.com/route/x/", { routing: true }), null);
-  assert.equal(parseHostPrefixedRoute("shop.example.com/route/x/", { routing: true }).to, "/route/x/");
+  assert.equal(parseHostPrefixedRoute("https://shop.example.com/route/x/", { keepAbsolute: true }), null);
+  assert.equal(parseHostPrefixedRoute("shop.example.com/route/x/", { keepAbsolute: true }).to, "/route/x/");
+  assert.equal(parseHostPrefixedRoute("//shop.example.com/route/x/", { keepAbsolute: true }).to, "/route/x/");
 });
 
 test("stripHostPrefixedRoutes records one evidence entry per changed value and returns a clean spec unchanged", () => {
@@ -899,6 +913,26 @@ test("prepare-build leaves a spec with no host-prefixed route byte-identical and
   });
 });
 
+test("start accepts an absolute page_url in a local spec as before: no notice, no blocker, projected to its path", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    const spec = readJson(specPath);
+    spec.funnels[0].pages[2].page_url = "https://shop.example.com/runtime-packet-demo/upsell/";
+    writeJson(specPath, spec);
+    const bytes = readFileSync(specPath);
+    const result = runCliRaw(["start", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
+    assert.ok(result.json, result.stderr);
+
+    assert.deepEqual(readFileSync(specPath), bytes);
+    assert.equal(result.stderr.includes("host-prefixed route"), false, result.stderr);
+    const report = readJson(resolve(targetRepo, result.json.context.report_path));
+    assert.deepEqual(report.evidence, []);
+    const upsell = result.json.packet.source_html.pages.find((page) => page.page_id === "upsell");
+    assert.equal(upsell.page_kit.public_route, "/runtime-packet-demo/upsell/");
+    const codes = (result.json.doctor?.errors || []).map((issue) => issue.code);
+    assert.equal(codes.includes("routing_meta.host_prefixed"), false, JSON.stringify(codes));
+  });
+});
+
 // A preload that stands in for the Map store: globalThis.fetch answers every
 // request with `served`, so --map-id runs with no network.
 function mapFetchPreload(dir, served) {
@@ -946,17 +980,21 @@ test("start --map-id strips the host at intake, caches the rooted spec, records 
   });
 });
 
-// The rewrite writes only a regular file whose real path is in
-// <target>/.campaign-runtime/fetched-specs/. A symlinked cache entry or
-// fetched-specs directory is left as it is, and doctor blocks instead.
+// --cached-spec reuses the copy as it is: a host-prefixed copy, wherever it
+// resolves, is never rewritten, and doctor blocks with a remedy naming a
+// fresh fetch.
 for (const [label, link] of [
-  ["the cache entry is a symlink to a file outside the target", ({ dir, targetRepo, mapId }) => {
+  ["a regular file in fetched-specs/", ({ targetRepo, mapId }) => {
+    mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
+    return cachedSpecPath(targetRepo, mapId);
+  }],
+  ["a symlink to a file outside the target", ({ dir, targetRepo, mapId }) => {
     const external = join(dir, "operator-spec.json");
     mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
     symlinkSync(external, cachedSpecPath(targetRepo, mapId));
     return external;
   }],
-  ["fetched-specs is a symlinked directory", ({ dir, targetRepo, mapId }) => {
+  ["in a symlinked fetched-specs directory", ({ dir, targetRepo, mapId }) => {
     const externalDir = join(dir, "elsewhere");
     mkdirSync(externalDir, { recursive: true });
     mkdirSync(join(targetRepo, ".campaign-runtime"), { recursive: true });
@@ -964,70 +1002,82 @@ for (const [label, link] of [
     return join(externalDir, `${mapId}.json`);
   }],
 ]) {
-  test(`start --cached-spec leaves a host-prefixed spec unchanged when ${label}, and doctor blocks`, () => {
+  test(`start --cached-spec leaves a host-prefixed copy that is ${label} unchanged, and doctor blocks naming a fresh fetch`, () => {
     withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
       const spec = hostPrefixSpec(specPath);
       const mapId = spec.spec_identity.map_id;
-      const external = link({ dir, targetRepo, mapId });
-      writeJson(external, spec);
-      const bytes = readFileSync(external);
+      const file = link({ dir, targetRepo, mapId });
+      writeJson(file, spec);
+      const bytes = readFileSync(file);
+      const mtime = statSync(file).mtimeMs;
       const result = runCliRaw(["start", "--map-id", mapId, "--cached-spec", "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
       assert.ok(result.json, result.stderr);
       // The fixture has no design-source package, so doctor already blocks and
       // start exits 2 on the base commit as well; the exit is unchanged.
       assert.equal(result.status, 2, result.stderr);
 
-      assert.deepEqual(readFileSync(external), bytes, "a file outside fetched-specs/ is never rewritten");
+      assert.deepEqual(readFileSync(file), bytes, "--cached-spec never rewrites the copy");
+      assert.equal(statSync(file).mtimeMs, mtime);
       assert.equal(result.json.context.spec.hash, createHash("sha256").update(bytes).digest("hex"));
       const report = readJson(resolve(targetRepo, result.json.context.report_path));
       assert.deepEqual(report.evidence, []);
       const notices = result.stderr.split("\n").filter((line) => line.includes("host-prefixed route"));
       assert.equal(notices.length, 1, result.stderr);
-      assert.match(notices[0], /could not be normalised in place/);
+      assert.match(notices[0], /re-run without --cached-spec so the Map is fetched and normalised/);
       const blocker = (result.json.doctor?.errors || []).find((issue) => issue.code === "routing_meta.host_prefixed");
       assert.ok(blocker, JSON.stringify((result.json.doctor?.errors || []).map((issue) => issue.code)));
       assert.match(blocker.message, /upsell:page_url "shop\.example\.com\/runtime-packet-demo\/upsell\/" -> "\/runtime-packet-demo\/upsell\/"/);
+      assert.match(blocker.message, /re-run without --cached-spec so the Map is fetched and normalised/);
     });
   });
 }
-
-test("start --cached-spec still rewrites a regular cached copy in fetched-specs/", () => {
-  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
-    const spec = hostPrefixSpec(specPath);
-    const cachePath = cachedSpecPath(targetRepo, spec.spec_identity.map_id);
-    mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
-    writeJson(cachePath, spec);
-    const result = runCliRaw(["start", "--map-id", spec.spec_identity.map_id, "--cached-spec", "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
-    assert.ok(result.json, result.stderr);
-    assert.equal(readJson(cachePath).funnels[0].pages[2].page_url, "/runtime-packet-demo/upsell/");
-    const report = readJson(resolve(targetRepo, result.json.context.report_path));
-    assert.deepEqual(report.evidence.map((entry) => entry.field), ["funnels[0].pages[1].sdk_hints.meta_tags.next-success-url", "funnels[0].pages[2].page_url"]);
-    assert.equal((result.json.doctor?.errors || []).some((issue) => issue.code === "routing_meta.host_prefixed"), false);
-  });
-});
 
 // A cache entry hard-linked to an operator file outside the target: the
 // rewrite replaces the entry by rename, so the other name keeps its bytes.
-for (const [label, cached] of [["a fresh --map-id fetch", false], ["--cached-spec", true]]) {
-  test(`start with ${label} never writes an operator file hard-linked to the cache entry`, () => {
-    withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
-      const spec = hostPrefixSpec(specPath);
-      const mapId = spec.spec_identity.map_id;
-      const operatorFile = join(dir, "operator-notes.json");
-      writeJson(operatorFile, spec);
-      const bytes = readFileSync(operatorFile);
-      mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
-      linkSync(operatorFile, cachedSpecPath(targetRepo, mapId));
-      const args = ["start", "--map-id", mapId, ...(cached ? ["--cached-spec"] : []), "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"];
-      const result = runCliRaw(args, { preload: cached ? null : mapFetchPreload(dir, spec) });
-      assert.ok(result.json, result.stderr);
+test("start --map-id never writes an operator file hard-linked to the cache entry", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const spec = hostPrefixSpec(specPath);
+    const mapId = spec.spec_identity.map_id;
+    const operatorFile = join(dir, "operator-notes.json");
+    writeJson(operatorFile, spec);
+    const bytes = readFileSync(operatorFile);
+    mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
+    linkSync(operatorFile, cachedSpecPath(targetRepo, mapId));
+    const args = ["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"];
+    const result = runCliRaw(args, { preload: mapFetchPreload(dir, spec) });
+    assert.ok(result.json, result.stderr);
 
-      assert.deepEqual(readFileSync(operatorFile), bytes, "the operator file keeps its bytes");
-      assert.equal(readJson(cachedSpecPath(targetRepo, mapId)).funnels[0].pages[2].page_url, "/runtime-packet-demo/upsell/");
-      assert.notEqual(statSync(cachedSpecPath(targetRepo, mapId)).ino, statSync(operatorFile).ino, "the cache entry is its own file now");
-    });
+    assert.deepEqual(readFileSync(operatorFile), bytes, "the operator file keeps its bytes");
+    assert.equal(readJson(cachedSpecPath(targetRepo, mapId)).funnels[0].pages[2].page_url, "/runtime-packet-demo/upsell/");
+    assert.notEqual(statSync(cachedSpecPath(targetRepo, mapId)).ino, statSync(operatorFile).ino, "the cache entry is its own file now");
   });
-}
+});
+
+// The rooted copy is written only after the Assembly Report that records the
+// change is published: a publish that fails leaves the copy as fetched.
+test("start --map-id leaves the fetched copy as fetched when publishing the assembly report fails", () => {
+  withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const served = hostPrefixSpec(specPath);
+    const mapId = served.spec_identity.map_id;
+    const preload = mapFetchPreload(dir, served);
+    writeFileSync(preload, `${readFileSync(preload, "utf8")}
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const renameSync = fs.renameSync;
+fs.renameSync = (from, to) => {
+  if (String(to).endsWith("assembly-report.json")) throw Object.assign(new Error("simulated assembly report publish failure"), { code: "EIO" });
+  return renameSync(from, to);
+};
+syncBuiltinESMExports();
+`);
+    const result = runCliRaw(["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session"], { preload });
+
+    assert.notEqual(result.status, 0, result.stderr);
+    assert.match(result.stderr, /simulated assembly report publish failure/);
+    assert.deepEqual(readJson(cachedSpecPath(targetRepo, mapId)), served, "the copy holds the values as fetched");
+    assert.equal(result.stderr.includes("rewrote the fetched copy"), false, result.stderr);
+  });
+});
 
 // A fresh fetch refuses a symlinked .campaign-runtime/, fetched-specs/ or
 // cache entry, and writes nothing through the link.

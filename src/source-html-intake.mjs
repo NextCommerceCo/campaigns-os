@@ -159,23 +159,27 @@ export const HOST_STRIPPED_CODE = "routing_meta.host_stripped";
 //   - protocol-relative `//<host>/...`;
 //   - bare `<host>/...`, where the first segment is followed by "/" and is
 //     `localhost`, a valid IPv4 address (each octet 0-255), any name with a
-//     `:port`, or a dotted name whose last label is 2-63 letters and not
-//     `html`/`htm` (`shop.example.com`). `//<host>/...` takes the same hosts.
+//     `:port`, or a dotted name whose last label is 2-63 letters and not a
+//     page or script extension (ROUTE_FILE_EXTENSION: `html`, `htm`,
+//     `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi`, `pl`), such as
+//     `shop.example.com`. `//<host>/...` takes the same hosts.
 // Everything else is a route and is left to the existing route checks: a
 // rooted `/...` value, a first segment with no dot (`route/x/`), a dotted
 // segment whose last label is not all letters (`v1.2/offer/`), a dotted
-// quad with an octet over 255 (`300.1.2.3/offer/`), a legacy `.html`/`.htm`
-// filename, and a bare host with no path after it.
-// `routing: true` reads a routing meta tag value, where an absolute http(s)
-// URL is a valid SDK target that doctor already accepts, so only the bare and
+// quad with an octet over 255 (`300.1.2.3/offer/`), a page or script
+// filename (`checkout.html`, `index.php/checkout/`), and a bare host with no
+// path after it.
+// `keepAbsolute: true` leaves an absolute http(s) URL alone: it is a valid
+// SDK routing meta target, and projection already converts an absolute
+// page_url to its path, so doctor accepts both; only the bare and
 // protocol-relative forms count.
-export function parseHostPrefixedRoute(value, { routing = false } = {}) {
+export function parseHostPrefixedRoute(value, { keepAbsolute = false } = {}) {
   if (typeof value !== "string") return null;
   const raw = value.trim();
   if (!raw || (raw.startsWith("/") && !raw.startsWith("//"))) return null;
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(raw);
   if (scheme) {
-    if (routing || !/^https?$/i.test(scheme[1])) return null;
+    if (keepAbsolute || !/^https?$/i.test(scheme[1])) return null;
     return splitHostPrefix(value, raw.slice(scheme[0].length), { requireHostShape: false });
   }
   if (raw.startsWith("//")) return splitHostPrefix(value, raw.slice(2), { requireHostShape: true });
@@ -192,6 +196,10 @@ function splitHostPrefix(from, rest, { requireHostShape, requirePath = false }) 
   return { host, from, to: tail.startsWith("/") ? tail : `/${tail}` };
 }
 
+// A dotted first segment ending in one of these is a page or script filename
+// (`index.php/checkout/`), not a host.
+const ROUTE_FILE_EXTENSION = /^(?:html?|shtml|php|aspx?|jsp|cgi|pl)$/i;
+
 function looksLikeHost(segment) {
   if (/^localhost(?::\d+)?$/i.test(segment)) return true;
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(segment) && segment.split(".").every((octet) => Number(octet) <= 255)) return true;
@@ -201,7 +209,7 @@ function looksLikeHost(segment) {
     : null;
   if (!labels) return false;
   const last = labels[labels.length - 1];
-  return /^[A-Za-z]{2,63}$/.test(last) && !/^html?$/i.test(last);
+  return /^[A-Za-z]{2,63}$/.test(last) && !ROUTE_FILE_EXTENSION.test(last);
 }
 
 // Intake normalisation (#531): every host-prefixed page_url, and every
@@ -235,7 +243,7 @@ export function stripHostPrefixedRoutes(spec) {
       const metaTags = page.sdk_hints?.meta_tags;
       if (!metaTags || typeof metaTags !== "object" || Array.isArray(metaTags)) return;
       for (const tag of SDK_ROUTING_META_TAGS) {
-        const meta = parseHostPrefixedRoute(metaTags[tag], { routing: true });
+        const meta = parseHostPrefixedRoute(metaTags[tag], { keepAbsolute: true });
         if (!meta) continue;
         metaTags[tag] = meta.to;
         evidence.push({ code: HOST_STRIPPED_CODE, page_id: pageId, field: `${at}.sdk_hints.meta_tags.${tag}`, from: meta.from, to: meta.to });

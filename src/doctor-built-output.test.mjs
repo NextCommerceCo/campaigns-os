@@ -91,6 +91,21 @@ test("host-prefixed routes block as routing_meta.host_prefixed; other unrooted m
   assert.deepEqual(cleanErrors, []);
 });
 
+test("an absolute http(s) page_url stays accepted; only bare and //host forms block", () => {
+  const spec = {
+    funnel_pages: [
+      { id: "checkout", type: "checkout", enabled: true, page_url: "https://shop.example.com/test-campaign/checkout/" },
+      { id: "upsell", type: "upsell", enabled: true, page_url: "http://shop.example.com/test-campaign/upsell/" },
+      { id: "receipt", type: "receipt", enabled: true, page_url: "//shop.example.com/test-campaign/receipt/" },
+    ],
+  };
+  const errors = [];
+  validateSpecHostPrefixedRoutes(spec, PACKET, errors, []);
+  assert.deepEqual(errors[0].detail.routes, [
+    { page_id: "receipt", field: "page_url", value: "//shop.example.com/test-campaign/receipt/", rooted: "/test-campaign/receipt/" },
+  ]);
+});
+
 test("host-prefixed page_url still blocks after the build; routing metas defer to built output", () => {
   withTempDir((dir) => {
     mkdirSync(join(dir, "_site", SLUG), { recursive: true });

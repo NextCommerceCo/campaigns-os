@@ -1490,7 +1490,7 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
       if (isRuntimeRootedRoutingMeta(route, publicRouteSlug, routeRoot)) continue;
       // A host in front of the path is validateSpecHostPrefixedRoutes'
       // blocker, not this warning.
-      if (parseHostPrefixedRoute(route, { routing: true })) {
+      if (parseHostPrefixedRoute(route, { keepAbsolute: true })) {
         hostPrefixed += 1;
         continue;
       }
@@ -1516,22 +1516,24 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
 // #531: a route with a host in front of its path ("shop.example.com/route/x/")
 // is nested under the campaign root by every stage that composes a URL
 // (polish capture requested "/route/shop.example.com/route/x/"), so it blocks.
-// prepare-build strips the host from a fetched Map at intake but never
-// rewrites a local --spec file; this catches one that still reaches doctor.
-// page_url is read by polish and QA whether or not the site is
-// built, so it is always checked; routing meta values follow the spec-literal
-// deferral above.
+// prepare-build strips the host from a fresh --map-id fetch at intake but
+// never rewrites a local --spec file or a copy reused with --cached-spec; this
+// catches one that still reaches doctor. An absolute http(s) URL is accepted
+// as before (projection converts a page_url to its path; it is a valid SDK
+// target), so only the bare and protocol-relative forms block. page_url is
+// read by polish and QA whether or not the site is built, so it is always
+// checked; routing meta values follow the spec-literal deferral above.
 export function validateSpecHostPrefixedRoutes(spec, packet, errors, ready, derived = {}, buildState = {}) {
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const metaDeferred = publicRouteSlug ? specRoutingMetaDeferred(publicRouteSlug, derived, buildState) : false;
   const hits = [];
   for (const page of activeSpecPages(spec)) {
-    const pageUrl = parseHostPrefixedRoute(page.page_url);
+    const pageUrl = parseHostPrefixedRoute(page.page_url, { keepAbsolute: true });
     if (pageUrl) hits.push({ page_id: page.id, field: "page_url", value: pageUrl.from, rooted: pageUrl.to });
     const metaTags = page.sdk_hints?.meta_tags;
     if (metaDeferred || !isObject(metaTags)) continue;
     for (const tag of SDK_ROUTING_META_TAGS) {
-      const meta = parseHostPrefixedRoute(metaTags[tag], { routing: true });
+      const meta = parseHostPrefixedRoute(metaTags[tag], { keepAbsolute: true });
       if (meta) hits.push({ page_id: page.id, field: `sdk_hints.meta_tags.${tag}`, value: meta.from, rooted: meta.to });
     }
   }
@@ -1543,7 +1545,7 @@ export function validateSpecHostPrefixedRoutes(spec, packet, errors, ready, deri
     errors,
     "routing_meta.host_prefixed",
     `CampaignSpec route value(s) carry a host in front of the path, so every page URL built from them nests the host inside the campaign route: ${sample}${more}. `
-      + `Use the rooted form shown after each arrow: edit a local CampaignSpec file to that value (intake never rewrites it), or for a saved Map re-run prepare-build (or start) with --map-id, which strips the host and records ${HOST_STRIPPED_CODE} on the assembly report, or correct the value in the Map.`,
+      + `Use the rooted form shown after each arrow: edit a local CampaignSpec file to that value (intake never rewrites it); for a saved Map, --cached-spec reuses the fetched copy as it is, so re-run prepare-build (or start) with --map-id: re-run without --cached-spec so the Map is fetched and normalised (the host is stripped and recorded as ${HOST_STRIPPED_CODE} on the assembly report), or correct the value in the Map.`,
     { routes: hits }
   );
 }
