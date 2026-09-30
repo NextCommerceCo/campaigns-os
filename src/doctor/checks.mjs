@@ -14,7 +14,12 @@ import {
 import { createDoctorCheckRegistry, runDoctorCheckRegistry } from "../doctor-check-registry.mjs";
 import { evaluateSourcePreparation } from "../source-prep.mjs";
 import { isLoopbackHostname } from "../remit.mjs";
-import { publicRouteForPage } from "../source-html-intake.mjs";
+import {
+  HOST_STRIPPED_CODE,
+  parseHostPrefixedRoute,
+  publicRouteForPage,
+  SDK_ROUTING_META_TAGS,
+} from "../source-html-intake.mjs";
 import {
   readSourceHtmlManifestFile,
   SOURCE_HASH_PATTERN,
@@ -224,12 +229,6 @@ const US_MARKET_COPY_PATTERNS = [
 const HARDCODED_CURRENCY_REGEX = /\$\s?\d[\d,]*(?:\.\d+)?(?:\/[A-Za-z]+)?/g;
 const HARDCODED_PHONE_REGEX = /\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
 
-const SDK_ROUTING_META_TAGS = [
-  "next-success-url",
-  "next-upsell-accept-url",
-  "next-upsell-decline-url",
-];
-
 function normalizeFunnels(spec) {
   if (Array.isArray(spec?.funnels)) return spec.funnels;
   if (Array.isArray(spec?.funnel_pages)) {
@@ -379,6 +378,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "spec.routing_meta_tags",
     phase: "spec",
     run: ({ spec, packet, warnings, ready, derived, buildState }) => validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived, buildState),
+  },
+  {
+    id: "spec.routing_host_prefix",
+    phase: "spec",
+    run: ({ spec, packet, errors, ready, derived, buildState }) => validateSpecHostPrefixedRoutes(spec, packet, errors, ready, derived, buildState),
   },
   {
     id: "source_html.coverage",
@@ -1465,26 +1469,31 @@ export function validateBuiltOutputTargetRoot(packet, errors, warnings, ready, d
   );
 }
 
+// R2-B2: the spec only carries unrooted routing-meta *hints*; the page-kit
+// build roots them when it renders _site/<slug>/. Once that built output
+// exists and assembly is complete, validateBuiltSdkMetaTags checks the actual
+// rendered values authoritatively. Re-warning on the spec literal would just
+// repeat a "fix before QA" message the build already satisfied (browser QA
+// later proved the deployed output correct), so the spec-literal checks defer
+// to the built-output check instead of double-flagging.
+function specRoutingMetaDeferred(publicRouteSlug, derived, buildState) {
+  const targetRepo = derived.target_repo;
+  const siteRoot = targetRepo ? join(targetRepo, "_site", publicRouteSlug) : null;
+  return Boolean(isStageComplete(buildState.report, "assembly") && siteRoot && existsSync(siteRoot));
+}
+
 export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived = {}, buildState = {}) {
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!publicRouteSlug) return;
   const routeRoot = campaignRouteRoot(packet);
 
-  // R2-B2: the spec only carries unrooted routing-meta *hints*; the
-  // page-kit build roots them when it renders _site/<slug>/. Once that built
-  // output exists and assembly is complete, validateBuiltSdkMetaTags checks the
-  // actual rendered values authoritatively. Re-warning on the spec literal here
-  // would just repeat a "fix before QA" message the build already satisfied
-  // (browser QA later proved the deployed output correct), so defer to the
-  // built-output check instead of double-flagging.
-  const targetRepo = derived.target_repo;
-  const siteRoot = targetRepo ? join(targetRepo, "_site", publicRouteSlug) : null;
-  if (isStageComplete(buildState.report, "assembly") && siteRoot && existsSync(siteRoot)) {
+  if (specRoutingMetaDeferred(publicRouteSlug, derived, buildState)) {
     ready.push(`CampaignSpec routing meta deferred to built-output verification (_site/${publicRouteSlug}/).`);
     return;
   }
 
   const hits = [];
+  let hostPrefixed = 0;
   for (const page of activeSpecPages(spec)) {
     const metaTags = page.sdk_hints?.meta_tags;
     if (!isObject(metaTags)) continue;
@@ -1494,11 +1503,18 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
       if (!isNonEmptyString(value)) continue;
       const route = value.trim();
       if (isRuntimeRootedRoutingMeta(route, publicRouteSlug, routeRoot)) continue;
+      // A host in front of the path is validateSpecHostPrefixedRoutes'
+      // blocker, not this warning.
+      if (parseHostPrefixedRoute(route, { keepAbsolute: true })) {
+        hostPrefixed += 1;
+        continue;
+      }
       hits.push(`${page.id}:${tag}=${route}`);
     }
   }
 
   if (!hits.length) {
+    if (hostPrefixed) return;
     ready.push(`CampaignSpec SDK routing meta tags are runtime-rooted for ${routeRoot}`);
     return;
   }
@@ -1509,6 +1525,43 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
     warnings,
     "routing_meta.runtime_root",
     `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "${routeRoot}upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
+  );
+}
+
+// #531: a route with a host in front of its path ("shop.example.com/route/x/")
+// is nested under the campaign root by every stage that composes a URL
+// (polish capture requested "/route/shop.example.com/route/x/"), so it blocks.
+// prepare-build strips the host from a fresh --map-id fetch at intake but
+// never rewrites a local --spec file or a copy reused with --cached-spec; this
+// catches one that still reaches doctor. An absolute http(s) URL is accepted
+// as before (projection converts a page_url to its path; it is a valid SDK
+// target), so only the bare and protocol-relative forms block. page_url is
+// read by polish and QA whether or not the site is built, so it is always
+// checked; routing meta values follow the spec-literal deferral above.
+export function validateSpecHostPrefixedRoutes(spec, packet, errors, ready, derived = {}, buildState = {}) {
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const metaDeferred = publicRouteSlug ? specRoutingMetaDeferred(publicRouteSlug, derived, buildState) : false;
+  const hits = [];
+  for (const page of activeSpecPages(spec)) {
+    const pageUrl = parseHostPrefixedRoute(page.page_url, { keepAbsolute: true });
+    if (pageUrl) hits.push({ page_id: page.id, field: "page_url", value: pageUrl.from, rooted: pageUrl.to });
+    const metaTags = page.sdk_hints?.meta_tags;
+    if (metaDeferred || !isObject(metaTags)) continue;
+    for (const tag of SDK_ROUTING_META_TAGS) {
+      const meta = parseHostPrefixedRoute(metaTags[tag], { keepAbsolute: true });
+      if (meta) hits.push({ page_id: page.id, field: `sdk_hints.meta_tags.${tag}`, value: meta.from, rooted: meta.to });
+    }
+  }
+  if (!hits.length) return;
+
+  const sample = hits.slice(0, 5).map((hit) => `${hit.page_id}:${hit.field} ${JSON.stringify(hit.value)} -> ${JSON.stringify(hit.rooted)}`).join("; ");
+  const more = hits.length > 5 ? `; plus ${hits.length - 5} more` : "";
+  addIssue(
+    errors,
+    "routing_meta.host_prefixed",
+    `CampaignSpec route value(s) carry a host in front of the path, so every page URL built from them nests the host inside the campaign route: ${sample}${more}. `
+      + `Use the rooted form shown after each arrow: edit a local CampaignSpec file to that value (intake never rewrites it); for a saved Map, re-run prepare-build (or start) with --map-id and without --cached-spec so the Map is fetched and normalised (the host is stripped and recorded as ${HOST_STRIPPED_CODE} on the assembly report), or correct the value in the Map.`,
+    { routes: hits }
   );
 }
 

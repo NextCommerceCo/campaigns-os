@@ -3224,13 +3224,46 @@
       "entry_sha256": "57a5b7502cf401d87e59e0ba957ddafc2d5b10d93f587d7982d019071b1ee563"
     },
     {
-      "id": "RL-0172",
+      "id": "RL-0183",
       "sequence": 175,
       "date": "2026-09-30",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.45.0+agent.1",
-      "changelog_sha256": "cd84d901379155894414b36397a4013e91f45bdd748f45814d80d25943e247d9",
+      "changelog_sha256": "aaf60d7d921f0563b848e8ade18b1706b52492af081a7d2c054e7fe969a8b195",
+      "agent_impact": "Doctor now blocks with the new error routing_meta.host_prefixed when a page_url or SDK routing meta tag value has a bare or protocol-relative (//) host in front of its path, naming each value and its rooted form; an absolute http(s) page_url or routing meta value is accepted as before. Such values no longer appear in the routing_meta.runtime_root warning, whose other findings are unchanged. prepare-build, start and build strip those hosts, and the host of an absolute page_url, from a Map fetched with --map-id in the same run; once the Assembly Report is published they write the rooted values to the fetched copy under .campaign-runtime/fetched-specs/, and the report records each change as routing_meta.host_stripped on evidence[] with the value as fetched. The run checks that the fetched copy can be rewritten (it is not a symlink) before publishing the report and stops first if it cannot; a failed publish leaves the copy as fetched; if the rewrite fails after the report is published, one stderr line says the report records the stripped hosts but the cached spec was not rewritten, and the run fails. A dotted first segment ending in html, htm, shtml, php, asp, aspx, jsp or cgi is a route, not a host. A local --spec file and a copy reused with --cached-spec are never rewritten: intake prints a notice naming the values (edit the local file, or run again without --cached-spec so the Map is fetched and normalised), and doctor blocks until then. A --map-id fetch stops with an error, before fetching and without writing anything, when .campaign-runtime/, fetched-specs/ or the cache file is a symlink, and the cache file is always replaced by a new file rather than written in place, so a hard link to the old file keeps its bytes.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Strip a host from the front of each page_url and SDK routing meta tag value in a Map fetched by this run, record routing_meta.host_stripped evidence, check that the fetched copy can be rewritten before publishing the Assembly Report, write the rooted values to it only after the report is published, and print one notice line, or one line saying the copy was not rewritten if that write fails; leave a local --spec file and a --cached-spec copy unchanged and print a notice naming the values to edit or to re-fetch; refuse to write the fetch cache through a symlinked .campaign-runtime/, fetched-specs/ or cache file, and replace the cache file by rename rather than writing it in place."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Block a bare or protocol-relative host-prefixed route with routing_meta.host_prefixed, naming each value and its rooted form and, for a --cached-spec copy, a fresh fetch as the remedy; absolute http(s) values stay accepted and other routing_meta.runtime_root findings are unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document the host grammar and the page and script extensions read as routes, the fetched-copy rewrite after publication, the host_stripped evidence record, saved-revision alignment after host stripping, the unchanged local spec and --cached-spec copy, the host_prefixed blocker and the fetch-cache symlink refusal."
+        }
+      ],
+      "entry_sha256": "7210f6b4e7bf58a846c90714fa5cfa79cf36d9517b2a0c285cab8879b57aa207"
+    },
+    {
+      "id": "RL-0172",
+      "sequence": 176,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.2",
+      "changelog_sha256": "c58e7e9941a7a67757b8a0175440d4e9206a42d021245e7a181740e7bdf664af",
       "agent_impact": "None. Wording-only: provenance comments, one doctor message and a documentation example no longer name real merchants. Finding codes, triggers and detail fields are unchanged.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3260,7 +3293,7 @@
           "summary": "Drop the build reference from the analytics_contract.content_param_no_handler message; code and detail fields unchanged."
         }
       ],
-      "entry_sha256": "7c54400e12299abcccea87c564ef458e3ef6b76c5ec8bbd86fc25a66c2b26270"
+      "entry_sha256": "8fc6194db830f31c343734b9dded27ebf4623a31ad58fb20728d7ec6c3699dfd"
     }
   ]
 }

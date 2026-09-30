@@ -17,6 +17,7 @@ import {
   validateBuiltRouteDrift,
   validateBuiltStarterLogoResidue,
   validateMarketSensitiveCopy,
+  validateSpecHostPrefixedRoutes,
   validateSpecRoutingMetaTags,
 } from "./doctor/checks.mjs";
 
@@ -54,6 +55,69 @@ test("R2-B2 routing: defers to built output once assembly is complete and _site 
     validateSpecRoutingMetaTags(ROUTING_SPEC, PACKET, warnings, ready, { target_repo: dir }, buildState);
     assert.equal(codes(warnings).includes("routing_meta.runtime_root"), false);
     assert.ok(ready.some((note) => note.includes("deferred to built-output verification")));
+  });
+});
+
+// #531: a host in front of a route is a blocker under its own code; every
+// other routing_meta.runtime_root finding keeps its warning and message.
+test("host-prefixed routes block as routing_meta.host_prefixed; other unrooted metas keep the runtime_root warning", () => {
+  const spec = {
+    funnel_pages: [
+      { id: "checkout", type: "checkout", enabled: true, page_url: "shop.example.com/test-campaign/checkout/", sdk_hints: { meta_tags: { "next-success-url": "//shop.example.com/test-campaign/upsell/" } } },
+      { id: "upsell", type: "upsell", enabled: true, page_url: "/test-campaign/upsell/", sdk_hints: { meta_tags: { "next-upsell-accept-url": "upsell", "next-upsell-decline-url": "https://shop.example.com/test-campaign/receipt/" } } },
+    ],
+  };
+  const errors = [];
+  const warnings = [];
+  const ready = [];
+  validateSpecHostPrefixedRoutes(spec, PACKET, errors, ready);
+  validateSpecRoutingMetaTags(spec, PACKET, warnings, ready);
+
+  assert.deepEqual(codes(errors), ["routing_meta.host_prefixed"]);
+  assert.deepEqual(errors[0].detail.routes, [
+    { page_id: "checkout", field: "page_url", value: "shop.example.com/test-campaign/checkout/", rooted: "/test-campaign/checkout/" },
+    { page_id: "checkout", field: "sdk_hints.meta_tags.next-success-url", value: "//shop.example.com/test-campaign/upsell/", rooted: "/test-campaign/upsell/" },
+  ]);
+  assert.match(errors[0].message, /"shop\.example\.com\/test-campaign\/checkout\/" -> "\/test-campaign\/checkout\/"/);
+  // The same warning, message and all, as a spec without the host-prefixed values.
+  const without = [];
+  validateSpecRoutingMetaTags(ROUTING_SPEC, PACKET, without, []);
+  assert.deepEqual(codes(without), ["routing_meta.runtime_root"]);
+  assert.deepEqual(warnings, without);
+
+  // Non-host findings alone never raise the blocker.
+  const cleanErrors = [];
+  validateSpecHostPrefixedRoutes(ROUTING_SPEC, PACKET, cleanErrors, []);
+  assert.deepEqual(cleanErrors, []);
+});
+
+test("an absolute http(s) page_url stays accepted; only bare and //host forms block", () => {
+  const spec = {
+    funnel_pages: [
+      { id: "checkout", type: "checkout", enabled: true, page_url: "https://shop.example.com/test-campaign/checkout/" },
+      { id: "upsell", type: "upsell", enabled: true, page_url: "http://shop.example.com/test-campaign/upsell/" },
+      { id: "receipt", type: "receipt", enabled: true, page_url: "//shop.example.com/test-campaign/receipt/" },
+    ],
+  };
+  const errors = [];
+  validateSpecHostPrefixedRoutes(spec, PACKET, errors, []);
+  assert.deepEqual(errors[0].detail.routes, [
+    { page_id: "receipt", field: "page_url", value: "//shop.example.com/test-campaign/receipt/", rooted: "/test-campaign/receipt/" },
+  ]);
+});
+
+test("host-prefixed page_url still blocks after the build; routing metas defer to built output", () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "_site", SLUG), { recursive: true });
+    const spec = {
+      funnel_pages: [
+        { id: "upsell", type: "upsell", enabled: true, page_url: "localhost:8080/test-campaign/upsell/", sdk_hints: { meta_tags: { "next-upsell-accept-url": "shop.example.com/test-campaign/receipt/" } } },
+      ],
+    };
+    const errors = [];
+    const buildState = { report: { stages: { assembly: { status: "completed" } } } };
+    validateSpecHostPrefixedRoutes(spec, PACKET, errors, [], { target_repo: dir }, buildState);
+    assert.deepEqual(errors[0].detail.routes.map((route) => route.field), ["page_url"]);
   });
 });
 

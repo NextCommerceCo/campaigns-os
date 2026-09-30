@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.45.0+agent.1] - 2026-09-30
+## [1.45.0+agent.2] - 2026-09-30
 
 ### Changed
 
@@ -14,6 +14,47 @@ Notable supported-surface changes are recorded here.
   `subfolder-campaign.md` with synthetic repo and slug names. The doctor
   `analytics_contract.content_param_no_handler` message drops its build
   reference; its code, trigger and detail fields are unchanged.
+
+## [1.45.0+agent.1] - 2026-09-30
+
+### Changed
+
+- `prepare-build`, `start` and `build` strip a host from the front of a route
+  in a Map fetched with `--map-id` (#531). Some saved Maps stored `page_url`
+  values such as `shop.example.com/route/upsell/` instead of `/route/upsell/`,
+  and every URL built from them nested the host inside the campaign route, so
+  polish capture failed on every page. Intake now keeps the rooted path, with
+  any query and fragment, for each host-prefixed `page_url` and
+  `next-success-url`, `next-upsell-accept-url` or `next-upsell-decline-url`
+  meta tag value, before anything reads the spec. Once the Assembly Report is
+  published, it writes the rooted values to the fetched copy under
+  `.campaign-runtime/fetched-specs/`; the report's `evidence[]` records each
+  change as `routing_meta.host_stripped` with the value the Map returned in
+  `from`, and one line on stderr says so. The run first checks that the
+  fetched copy can be rewritten (it is not a symlink) and stops before
+  publishing the report if it cannot. If publishing fails, the copy is left
+  as fetched. If the rewrite itself fails after the report is published, one
+  line on stderr says the report records the stripped hosts but the cached
+  spec was not rewritten, and the run fails. A spec with no host-prefixed
+  value is handled exactly as before.
+- A dotted first segment ending in a page or script extension (`html`, `htm`,
+  `shtml`, `php`, `asp`, `aspx`, `jsp`, `cgi`), such as
+  `index.php/checkout/`, is a route, not a host.
+- A local `--spec` file and a copy reused with `--cached-spec` are never
+  rewritten. If either holds a host-prefixed route, intake prints one line
+  naming each value and its rooted form, saying the local file must be edited
+  or, for `--cached-spec`, to run again without it so the Map is fetched and
+  normalised, and doctor blocks until then.
+- A `--map-id` fetch stops with an error, before fetching and without writing
+  anything, when `.campaign-runtime/`, `fetched-specs/` or the cache file is a
+  symlink. The cache file is always replaced by a new file rather than written
+  in place, so a hard link to the old file keeps its bytes.
+- Doctor blocks a route with a bare (`shop.example.com/...`) or
+  protocol-relative (`//shop.example.com/...`) host in front of it with the
+  new `routing_meta.host_prefixed` error, naming each value and its rooted
+  form. An absolute `http(s)://` `page_url` or routing meta value is accepted
+  as before. Such values no longer appear in the `routing_meta.runtime_root`
+  warning; every other `runtime_root` finding keeps its warning and message.
 
 ## [1.45.0] - 2026-09-30
 
