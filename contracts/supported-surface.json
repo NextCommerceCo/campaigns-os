@@ -93,7 +93,7 @@
       "sha256": "22dc5b48f12337163bd36307510e619f49e77331c974f45292ecd6e72175570d"
     },
     "schemas/campaigns-os-release-ledger.v1.schema.json": {
-      "sha256": "08ca132134b9e4610370e88082a5e888d09ddec0d5ee4512d84cc57181da722e"
+      "sha256": "d7521fe0ab4deb62485f92286cb890ee548ea290793a6ce7444ecc42ba336d49"
     },
     "schemas/campaigns-os-run-record.v0.schema.json": {
       "sha256": "00dc9bcec79c12ea22a27f636188bcc33c6811df2d646ac7b49d4cc076e97355"
@@ -102,7 +102,7 @@
       "sha256": "f8a2ab5eadbb71fb6d5653b670ee71e4471c3df74dd04000d3dbd3d9ae9e71fc"
     },
     "schemas/campaigns-os-tooling-orientation.v1.schema.json": {
-      "sha256": "897b192c7b3965c84909616023879b0a269a2e727e10efdec1b34e4c33ec499f"
+      "sha256": "8a2431b564041e8d2cbfaaf9d77ec272249268e54f5fc8952681537e0ad06e7c"
     },
     "schemas/campaigns-os-workflow-finding.v0.schema.json": {
       "sha256": "41ff370de4395149781d7e8c4ad6d7d4e2f896eb2030944399d36f1237726a20"
@@ -149,6 +149,8 @@
     "AGENTS.md",
     "CHANGELOG.md",
     "contracts/release-ledger.json",
+    "contracts/archive/release-ledger.2026-09-30.json",
+    "contracts/archive/CHANGELOG.2026-09-30.md",
     "contracts/agent-relevant-change-policy.v1.json",
     "contracts/orientation-limits.v1.json",
     "contracts/orientation-reason-codes.v1.json",

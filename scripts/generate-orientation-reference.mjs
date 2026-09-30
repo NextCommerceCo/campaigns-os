@@ -26,9 +26,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import {
+  ARCHIVE_DIR,
   canonicalEntryJson,
   entryHash,
+  LEDGER_PATH,
   LEDGER_SCHEMA_PATH,
+  ORIENTATION_SOURCE_PATHS,
   LIMITS_PATH,
   ORIENTATION_SCHEMA_PATH,
   POLICY_PATH,
@@ -406,7 +409,7 @@ function collectEnums(schema, path = "", found = []) {
 
 const escapeCell = (text) => String(text).replace(/\|/g, "\\|").replace(/\n+/g, " ").trim();
 
-export function renderReference({ orientationSchema, ledgerSchema, policy, reasonCodes, limits, surface, fixtures, canonicalizationFixture }) {
+export function renderReference({ orientationSchema, ledgerSchema, policy, reasonCodes, limits, surface, fixtures, canonicalizationFixture, floor = null }) {
   const lines = [];
   const push = (...text) => lines.push(...text);
 
@@ -422,6 +425,7 @@ export function renderReference({ orientationSchema, ledgerSchema, policy, reaso
     `    ${REASON_CODES_PATH}`,
     `    ${LIMITS_PATH}`,
     `    ${SURFACE_PATH}`,
+    `    ${LEDGER_PATH} (baseline_floor only)`,
     `    ${CANONICALIZATION_FIXTURE_PATH}`,
     "  Regenerate: node ./scripts/generate-orientation-reference.mjs --write",
     "  CI runs the same script with --check, so a stale copy of this file fails the build.",
@@ -477,8 +481,48 @@ export function renderReference({ orientationSchema, ledgerSchema, policy, reaso
     "its number to `sequence`; the two diverge legitimately, because when concurrent pull requests",
     "land the later one restamps its `sequence` to follow the earlier while keeping the id it was",
     "written with. Order by `sequence`, identify by `id`, and do not infer one from the other.",
+    "After a baseline rotation the file starts at `baseline_floor.last_archived_sequence + 1`, not at 1;",
+    "entries are never renumbered, so position plus that offset is still the sequence.",
     "",
   );
+
+  push(
+    "## Baseline rotation",
+    "",
+    "The ledger and the changelog are bounded as whole files, so they are rotated rather than allowed to",
+    `outgrow the limits. A rotation moves every entry up to a reviewed cut, and the changelog from the first section`,
+    "those entries link to the end of the file (unlinked sections in that range included), byte-for-byte and in order",
+    `into a dated archive pair under \`${ARCHIVE_DIR}\`, and declares the cut as`,
+    `\`baseline_floor\` in \`${LEDGER_PATH}\`. Archived entries keep their \`sequence\`, \`entry_sha256\` and`,
+    "`changelog_sha256`; each section hash verifies against the archive changelog. The floor names the archive",
+    "files with their SHA-256, the last archived entry and its sequence, the first kept entry, the live entry that",
+    "recorded the rotation, and the reason code to refuse with. The floor only moves forward, only with a new",
+    "rotation entry, and an archive file never changes once merged; the next rotation writes a new dated pair.",
+    "",
+    "Rotation changes no mandatory read. The reading order in `AGENTS.md` is unchanged, and `source_bytes` measures",
+    "exactly its data files (steps 1 to 8):",
+    "",
+    ...ORIENTATION_SOURCE_PATHS.map((path) => `- \`${path}\``),
+    "",
+    "The archive files are not among them: they are optional history reads and count against no limit, and their",
+    "sections and entries are not in `section_count` or `ledger_entries`.",
+    "",
+  );
+  if (floor) {
+    const refusal = reasonCodes.codes[floor.refusal_reason_code];
+    push(
+      `Current floor: last archived entry \`${floor.last_archived_id}\` (sequence ${floor.last_archived_sequence}), first kept entry`,
+      `\`${floor.first_kept_id}\`, recorded by \`${floor.rotation_entry}\`. Archives, oldest rotation first:`,
+      "",
+      ...floor.archives.map((record) => `- [\`${record.ledger_path}\`](../${record.ledger_path}) and [\`${record.changelog_path}\`](../${record.changelog_path})`),
+      "",
+      `A consumer whose reviewed baseline's newest ledger entry is older than \`${floor.last_archived_id}\` refuses with`,
+      `\`${floor.refusal_reason_code}\`. ${refusal ? escapeCell(refusal.remedy) : ""}`.trimEnd(),
+      "",
+    );
+  } else {
+    push(`No floor is declared: \`${LEDGER_PATH}\` starts at sequence 1.`, "");
+  }
 
   push(
     "## Release-ledger digest canonicalization",
@@ -630,6 +674,7 @@ export function generate() {
   const reasonCodes = readJson(REASON_CODES_PATH);
   const limits = readJson(LIMITS_PATH);
   const surface = readJson(SURFACE_PATH);
+  const floor = readJson(LEDGER_PATH).baseline_floor ?? null;
 
   const fixtures = buildEnvelopeFixtures(limits);
   const canonicalizationFixture = buildCanonicalizationFixture();
@@ -655,7 +700,7 @@ export function generate() {
     files.set(`${ENVELOPE_FIXTURE_DIR}/${disposition}.json`, `${JSON.stringify(envelope, null, 2)}\n`);
   }
   files.set(CANONICALIZATION_FIXTURE_PATH, `${JSON.stringify(canonicalizationFixture, null, 2)}\n`);
-  files.set(REFERENCE_PATH, renderReference({ orientationSchema, ledgerSchema, policy, reasonCodes, limits, surface, fixtures, canonicalizationFixture }));
+  files.set(REFERENCE_PATH, renderReference({ orientationSchema, ledgerSchema, policy, reasonCodes, limits, surface, fixtures, canonicalizationFixture, floor }));
   return files;
 }
 

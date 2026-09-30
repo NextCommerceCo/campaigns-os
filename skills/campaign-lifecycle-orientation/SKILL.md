@@ -1,6 +1,6 @@
 ---
 name: campaign-lifecycle-orientation
-version: 1.0.11
+version: 1.0.12
 description: Orient a reader to the Campaigns OS lifecycle artifacts a run has already emitted, without advancing any stage or changing any state.
 ---
 
@@ -33,6 +33,15 @@ it names — `CONTEXT.md`, `CHANGELOG.md`, `skills.json`, the `contracts/`,
 cite `src/` or `scripts/`: those are implementation and may change without a
 supported-surface bump, so a reader cannot check them and a rename would not
 reach this text. `docs/supported-surface.md` is the prose twin of that list.
+
+`CHANGELOG.md` and `contracts/release-ledger.json` hold recent history. When
+the ledger declares a `baseline_floor`, the older entries and the sections they
+link sit in the dated `contracts/archive/` files it names: cite those for
+history, but they are not part of an orientation read. An orientation whose
+reviewed baseline is older than the floor is refused with
+`baseline_below_floor`, and the remedy is to adopt a newer reviewed baseline.
+That is a reviewed change for an authorized human, not something to do in a
+session.
 
 Identity comes from the tool, not from a file beside the session.
 `campaigns-os tooling status --json` (tier `B`: its only write is the
