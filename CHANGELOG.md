@@ -19,11 +19,14 @@ Notable supported-surface changes are recorded here.
   one served page and a key resolves, and records the result in the verdict
   as `api-metadata` assertions with the same codes.
 - The campaign is read from the `data` field of the proxy's envelope: one
-  campaign, or an array picked by `campaign.ref_id` or holding exactly one.
+  campaign, or an array picked by `campaign.ref_id` or holding exactly one. A
+  campaign not carrying the asked-for ref (`ref_id`, else `id`) is `not_run`
+  (`campaign_mismatch`).
 - A page ref the live campaign does not serve is a blocker,
   `built_output.shipping_ref_live_missing` or
   `built_output.package_ref_live_missing`, even when the CampaignSpec lists no
-  shipping methods. CampaignSpec refs the live campaign does not serve, or the
+  shipping methods. Doctor compares every built page under `_site/<route>/`,
+  naming by path any the CampaignSpec does not list. CampaignSpec refs the live campaign does not serve, or the
   reverse, are the separate warning `spec.campaign_drift`, which never softens
   a page blocker.
 - A read that is not made or fails is `not_run` with a reason, never a pass,

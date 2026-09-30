@@ -22,7 +22,8 @@
 // here. It takes its fetch and the proxy base as arguments, so a caller that
 // passes neither reads nothing. Anything short of one parsed campaign —
 // no key, no fetch, a network error, a non-2xx, a timeout, `ok: false`, a body
-// that is not the envelope, several campaigns and no ref to pick one — is
+// that is not the envelope, several campaigns and no ref to pick one, a
+// campaign other than the one the CampaignSpec names — is
 // `not_run` with its reason, never a pass and never a fall back to the Map's
 // own list.
 import { parse as parseHtml } from "parse5";
@@ -157,16 +158,36 @@ function parseJson(text) {
   }
 }
 
+// A campaign's own identity as the proxy reads it: `ref_id`, else `id`, a
+// scalar compared as its string form; null when it carries neither.
+function campaignIdentity(campaign) {
+  return liveRef(campaign?.ref_id ?? campaign?.id);
+}
+
+function campaignMismatch(refId, carried) {
+  return notRun("campaign_mismatch", `The live campaign read asked for campaign ref ${refId} but got ${carried}, so another campaign's refs were not compared against.`);
+}
+
 // The one campaign in the envelope's `data`: the object itself, or from an
-// array the entry whose ref is the one asked for (or the only entry, when no
-// ref was asked for). Returns { campaign } or { notRun }.
+// array the entry whose identity is the one asked for (or the only entry, when
+// no ref was asked for). A campaign asked for by ref must carry that ref, in
+// either shape. Returns { campaign } or { notRun }.
 function pickCampaign(data, refId) {
-  if (!Array.isArray(data)) return { campaign: data };
+  if (!Array.isArray(data)) {
+    if (!refId) return { campaign: data };
+    const identity = campaignIdentity(data);
+    return identity === refId
+      ? { campaign: data }
+      : { notRun: campaignMismatch(refId, identity ? `campaign ref ${identity}` : "a campaign carrying no ref") };
+  }
   if (refId) {
-    const matches = data.filter((entry) => liveRef(entry?.ref_id) === refId);
+    if (data.length === 0) {
+      return { notRun: notRun("not_found", `The live campaign read returned no campaign for ref ${refId}, so there was no live campaign to compare against.`) };
+    }
+    const matches = data.filter((entry) => campaignIdentity(entry) === refId);
     if (matches.length === 1) return { campaign: matches[0] };
     return matches.length === 0
-      ? { notRun: notRun("not_found", `The live campaign read returned ${data.length} campaign(s), none with ref ${refId}, so there was no live campaign to compare against.`) }
+      ? { notRun: campaignMismatch(refId, `${data.length} campaign(s), none with that ref`) }
       : { notRun: notRun("ambiguous_campaign", `The live campaign read returned ${matches.length} campaigns with ref ${refId}, so it could not tell which one the pages use.`) };
   }
   if (data.length === 1) return { campaign: data[0] };
@@ -362,7 +383,8 @@ function sortedRefs(values) {
   return [...new Set([...values].map(String))].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
 }
 
-// pages: [{ page_id, file?, package_refs, shipping_refs }] (Sets or arrays).
+// pages: [{ page_id, file?, in_spec?, package_refs, shipping_refs }] (Sets or
+// arrays); `in_spec: false` marks a built page the CampaignSpec does not list.
 // map: { package_refs, shipping_refs } from the CampaignSpec. live: a
 // readLiveCampaign result, or undefined when the caller did not read.
 export function evaluateLiveCampaignRefs({ pages = [], map = {}, live } = {}) {
@@ -389,8 +411,9 @@ export function evaluateLiveCampaignRefs({ pages = [], map = {}, live } = {}) {
   for (const page of checkedPages) {
     const missingShipping = sortedRefs(page.shipping_refs || []).filter((ref) => !liveShipping.has(ref));
     const missingPackages = sortedRefs(page.package_refs || []).filter((ref) => !livePackages.has(ref));
-    if (missingShipping.length) pageFindings.push({ code: LIVE_REF_CODES.shipping, kind: "shipping", page_id: String(page.page_id), ...(page.file ? { file: page.file } : {}), refs: missingShipping });
-    if (missingPackages.length) pageFindings.push({ code: LIVE_REF_CODES.package, kind: "package", page_id: String(page.page_id), ...(page.file ? { file: page.file } : {}), refs: missingPackages });
+    const where = { page_id: String(page.page_id), ...(page.file ? { file: page.file } : {}), ...(page.in_spec === false ? { in_spec: false } : {}) };
+    if (missingShipping.length) pageFindings.push({ code: LIVE_REF_CODES.shipping, kind: "shipping", ...where, refs: missingShipping });
+    if (missingPackages.length) pageFindings.push({ code: LIVE_REF_CODES.package, kind: "package", ...where, refs: missingPackages });
   }
   const mapPackages = sortedRefs(map.package_refs || []);
   const mapShipping = sortedRefs(map.shipping_refs || []);
@@ -420,7 +443,8 @@ export function liveRefFindingMessage(finding) {
   const effect = finding.kind === "shipping"
     ? "the SDK falls back to another shipping method and the order is charged that method's price"
     : "the SDK cannot add a package the campaign does not serve";
-  return `Page "${finding.page_id}" references ${noun} the live campaign does not serve: ${finding.refs.join(", ")}. The CampaignSpec is not the authority here; ${effect}. Point the page at a ${finding.kind === "shipping" ? "shipping method" : "package"} the campaign serves, or restore it in the campaign.`;
+  const subject = finding.in_spec === false ? `Built page ${finding.file || finding.page_id} (not a CampaignSpec page)` : `Page "${finding.page_id}"`;
+  return `${subject} references ${noun} the live campaign does not serve: ${finding.refs.join(", ")}. The CampaignSpec is not the authority here; ${effect}. Point the page at a ${finding.kind === "shipping" ? "shipping method" : "package"} the campaign serves, or restore it in the campaign.`;
 }
 
 export function campaignDriftMessage(drift) {

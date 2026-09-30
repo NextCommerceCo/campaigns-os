@@ -457,7 +457,9 @@ test("proxy envelope: data as one campaign or an array is unwrapped, and a known
   assert.deepEqual([picked.status, picked.campaign_ref_id, picked.shipping_refs], ["read", "502", ["21"]]);
 
   const missing = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: "503", fetchImpl: jsonFetch(envelope([campaign({ ref: 501 }), campaign({ ref: 502 })])) });
-  assert.equal(missing.reason_code, "not_found");
+  assert.equal(missing.reason_code, "campaign_mismatch");
+  const none = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: "503", fetchImpl: jsonFetch(envelope([])) });
+  assert.equal(none.reason_code, "not_found");
 
   const refused = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: "offer-1", fetchImpl: () => assert.fail("no request for a non-numeric campaign ref") });
   assert.equal(refused.reason_code, "unexpected_ref");
@@ -553,5 +555,64 @@ test("--no-live-refs: doctor sends nothing and records not_run with reason disab
     assert.equal(result.derived.live_campaign_refs.reason_code, "disabled");
     assert.equal(codes([...result.errors, ...result.warnings]).some((code) => code.startsWith("built_output.live_refs") || code.endsWith("_live_missing") || code === "spec.campaign_drift"), false);
     assert.equal(result.ready.some((line) => line.includes("served by the live campaign")), false);
+  });
+});
+
+test("campaign identity: a campaign asked for by ref must carry that ref (ref_id, else id) in the object and array shapes, or the check is not_run", async () => {
+  const pk = "pk_fixture_public_key";
+  const read = (data, campaignRefId = 501) => readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId, fetchImpl: jsonFetch(envelope(data, { requestedRefId: campaignRefId })) });
+  const withoutRef = ({ ref_id, ...rest }) => rest;
+  // [data, expected status, expected reason_code]
+  const cases = [
+    [campaign({ ref: 502 }), "not_run", "campaign_mismatch"],
+    [withoutRef(campaign()), "not_run", "campaign_mismatch"],
+    [{ ...withoutRef(campaign()), id: 502 }, "not_run", "campaign_mismatch"],
+    [{ ...campaign({ ref: 502 }), id: 501 }, "not_run", "campaign_mismatch"],
+    [{ ...campaign(), ref_id: { value: 501 } }, "not_run", "campaign_mismatch"],
+    [[{ ...withoutRef(campaign()), id: 502 }], "not_run", "campaign_mismatch"],
+    [campaign({ ref: 501 }), "read", undefined],
+    [campaign({ ref: "501" }), "read", undefined],
+    [{ ...withoutRef(campaign()), id: 501 }, "read", undefined],
+    [[campaign({ ref: 502 }), { ...withoutRef(campaign()), id: 501 }], "read", undefined],
+  ];
+  for (const [data, status, reasonCode] of cases) {
+    const live = await read(data);
+    assert.equal(live.status, status, JSON.stringify(data));
+    assert.equal(live.reason_code, reasonCode, JSON.stringify(data));
+    if (status === "read") assert.equal(live.campaign_ref_id, "501");
+  }
+  // No ref asked for: the one campaign returned is the key's campaign.
+  assert.equal((await read(campaign({ ref: 502 }), null)).status, "read");
+
+  // Doctor: the wrong campaign is a visible not_run, never a pass, and its
+  // refs never reach the page comparison.
+  await withBuiltCampaign({
+    checkoutHtml: page('<input data-next-shipping-id="21">'),
+    specEdit: (spec) => { spec.campaign.ref_id = 501; },
+  }, async ({ packetPath, doctor }) => {
+    const live = await readDoctorLiveCampaign({ packet: packetPath, "proxy-base": PROXY_BASE }, { env: {}, fetchImpl: jsonFetch(envelope(campaign({ ref: 502, shipping: [20, 21] }), { requestedRefId: 501 })) });
+    const result = doctor(live);
+    assert.deepEqual([result.derived.live_campaign_refs.status, result.derived.live_campaign_refs.reason_code], ["not_run", "campaign_mismatch"]);
+    assert.equal(result.warnings.find((entry) => entry.code === "built_output.live_refs_not_run")?.detail.reason_code, "campaign_mismatch");
+    assert.equal(result.ready.some((line) => line.includes("served by the live campaign")), false);
+  });
+});
+
+test("coverage: every built page under _site/<route>/ is compared with the live campaign, including pages the CampaignSpec does not list", async () => {
+  await withBuiltCampaign({ checkoutHtml: page('<input data-next-shipping-id="20">') }, ({ repo, doctor }) => {
+    mkdirSync(join(repo, "_site", "offer", "extra-checkout"), { recursive: true });
+    writeFileSync(join(repo, "_site", "offer", "extra-checkout", "index.html"), page('<div data-next-package-id="99"></div><input data-next-shipping-id="21">'));
+    const result = doctor({ status: "read", package_refs: ["10", "17", "19", "30"], shipping_refs: ["20"] });
+    const live = result.errors.filter((entry) => entry.code.endsWith("_live_missing"));
+    assert.deepEqual(live.map((entry) => [entry.code, entry.detail.page_id, entry.detail.file, entry.detail.in_spec, entry.detail.refs]), [
+      ["built_output.shipping_ref_live_missing", "extra-checkout/index.html", "./_site/offer/extra-checkout/index.html", false, ["21"]],
+      ["built_output.package_ref_live_missing", "extra-checkout/index.html", "./_site/offer/extra-checkout/index.html", false, ["99"]],
+    ]);
+    assert.match(live[0].message, /^Built page \.\/_site\/offer\/extra-checkout\/index\.html \(not a CampaignSpec page\) references shipping ID/);
+    assert.equal(result.derived.live_campaign_refs.status, "blocked");
+    assert.equal(result.derived.live_campaign_refs.checked_pages, 2);
+    // The CampaignSpec ref check keeps its scope, the spec's pages: package 99
+    // on the unlisted page is not reported as a Map miss.
+    assert.equal([...result.errors, ...result.warnings].some((entry) => entry.code === "built_output.package_ref" && /99/.test(entry.message)), false);
   });
 });

@@ -1728,20 +1728,34 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
 // check is recorded not_run with its reason, never passed. Page-level misses
 // block at any stage — a page pointing at a method the campaign no longer
 // serves charges the wrong price whether or not assembly is recorded.
+// Unlike the CampaignSpec check, whose scope stays the spec's pages, this one
+// covers every built HTML page under _site/<route>/: a page the Map does not
+// list still ships, so it is compared too and named by its path.
 function validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, derived, buildState = {}) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
   const pages = [];
   if (siteRoot && existsSync(siteRoot)) {
+    const covered = new Set();
     for (const page of activeSpecPages(spec)) {
       const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
       if (!builtPath || !existsSync(builtPath)) continue;
-      const content = readFileSync(builtPath, "utf8");
+      covered.add(resolve(builtPath));
       pages.push({
         page_id: page.id,
         file: relFromDir(targetRepo, builtPath),
-        ...extractRenderedRefs(content),
+        ...extractRenderedRefs(readFileSync(builtPath, "utf8")),
+      });
+    }
+    for (const html of collectHtmlFiles(siteRoot)) {
+      const builtPath = resolve(siteRoot, html.path);
+      if (covered.has(builtPath)) continue;
+      pages.push({
+        page_id: html.path.split(sep).join("/"),
+        file: relFromDir(targetRepo, builtPath),
+        in_spec: false,
+        ...extractRenderedRefs(readFileSync(builtPath, "utf8")),
       });
     }
   }
@@ -1767,7 +1781,7 @@ function validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, de
     return;
   }
   for (const finding of result.page_findings) {
-    addIssue(errors, finding.code, liveRefFindingMessage(finding), { page_id: finding.page_id, file: finding.file, refs: finding.refs });
+    addIssue(errors, finding.code, liveRefFindingMessage(finding), { page_id: finding.page_id, file: finding.file, ...(finding.in_spec === false ? { in_spec: false } : {}), refs: finding.refs });
   }
   if (result.drift) addIssue(warnings, LIVE_REF_CODES.drift, campaignDriftMessage(result.drift), { drift: result.drift });
   if (result.status === "pass") ready.push(`Built page shipping and package refs are served by the live campaign (${result.checked_pages} page(s))`);
