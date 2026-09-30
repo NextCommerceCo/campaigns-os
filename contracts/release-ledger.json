@@ -3654,6 +3654,141 @@
         }
       ],
       "entry_sha256": "6c86b242bdc817127b64e4c1efbc933921b71d9bc0be9aebca8e3d8c0cfe9b7f"
+    },
+    {
+      "id": "RL-0189",
+      "sequence": 181,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": "1.46.0",
+      "changelog_section": "1.46.0",
+      "changelog_sha256": "d99ead5cf5ea362111e52ea914f522267826e037f78a3dead2fdab0365dd91c2",
+      "agent_impact": "Record setup, build and polish completion with campaigns-os record setup, record build and record polish --evidence <file> instead of hand-editing build-context.json or assembly-report.json. Each command validates before writing and writes nothing on failure.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare the writes of record setup, record build and record polish, and their read-only --dry-run forms."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Add the record command, advance the supported surface to 1.46.0 and refresh the effects contract hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document recording stage completion with the record commands, including what each writes and when it refuses."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the local setup install command to the 1.46.0 package."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface 1.46.0 and the record command."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime readiness reference for surface 1.46.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.46.0+skills.1 bundle in executable examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Update release metadata for the record commands."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release the record commands as 1.46.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision and individual versions for the record commands release."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current bundle revision and record build after every page-kit build instead of copying the fingerprint by hand."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current bundle revision and record setup with record setup instead of editing both files by hand."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current bundle revision and name the record commands for stage completion."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the current bundle revision and record polish from an evidence file with record polish."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.1 bundle revision."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "record",
+          "summary": "Add record setup, record build and record polish, and point next's stage actions and prompts at them."
+        }
+      ],
+      "entry_sha256": "3dfe47624d3165a7abab6551f316adac38ae10112f3685c8f36348b029163a55"
     }
   ]
 }

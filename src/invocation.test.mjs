@@ -24,12 +24,12 @@ const ROWS = CONTRACT.rows.filter((row) => row.command !== "*refused*");
 const COMMAND_NAMES = [
   "build", "bundle", "checkpoint", "demo", "doctor", "findings", "help",
   "install-agent-context", "install-skills", "login", "logout", "next", "page-kit", "polish", "prepare-build",
-  "qa", "readback", "run", "run-record", "sdk", "spec", "standardize", "start",
+  "qa", "readback", "record", "run", "run-record", "sdk", "spec", "standardize", "start",
   "telemetry", "theme", "tooling", "validate-assembly-report",
 ];
 const DRY_RUN_IMPLEMENTERS = [
   "checkpoint waive", "install-agent-context", "install-skills", "page-kit sync", "qa publish",
-  "run end", "run-record", "spec derive", "theme waive",
+  "record build", "record polish", "record setup", "run end", "run-record", "spec derive", "theme waive",
 ];
 
 // What a row's invocation needs beyond its own tokens to be the form the row
@@ -59,7 +59,7 @@ function functionSource(name) {
   return CLI_SOURCE.slice(start, CLI_SOURCE.indexOf("\n}\n", start));
 }
 
-test("invocation: the declaration names exactly the 27 commands, and knownCommands() is that list", () => {
+test("invocation: the declaration names exactly the 28 commands, and knownCommands() is that list", () => {
   assert.deepEqual([...commandNames()].sort(), COMMAND_NAMES);
   assert.deepEqual(knownCommands(), commandNames());
 });
@@ -97,7 +97,7 @@ test("invocation: every readOnlyHint row resolves journal-exempt", () => {
   }
 });
 
-test("invocation: the --dry-run implementers are exactly the nine, and every --dry-run row is one of them or runs inline", () => {
+test("invocation: the --dry-run implementers are exactly the twelve, and every --dry-run row is one of them or runs inline", () => {
   const implementers = [];
   for (const command of commandNames()) {
     if (resolveInvocationPolicy(command, { _: [command] }).implementsDryRun) implementers.push(command);
@@ -109,7 +109,7 @@ test("invocation: the --dry-run implementers are exactly the nine, and every --d
   for (const row of ROWS.filter((candidate) => candidate.flags.includes("--dry-run"))) {
     const policy = resolveInvocationPolicy(row.command, rowArgs(row));
     if (implementers.includes(pairOf(row))) continue;
-    // The one row outside the nine: `tooling setup --dry-run`, whose inline
+    // The one row outside the twelve: `tooling setup --dry-run`, whose inline
     // handler owns the flag itself. Any other command is a drift.
     assert.equal(pairOf(row), "tooling setup", `${row.effect_test}: --dry-run on a command that does not implement it`);
     assert.equal(policy.class, "inline");

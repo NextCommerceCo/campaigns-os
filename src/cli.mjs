@@ -318,6 +318,9 @@ Usage:
   campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads through campaigns-os login gateway credentials (--store-token-source env:<VAR> explicitly selects the warned break-glass Admin path; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
+  campaigns-os record setup --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # record setup complete once the campaign output directory exists: Build Context scaffold.required=false and stages.setup completed, validated against their schemas before either is written
+  campaigns-os record build --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after page-kit build: stages.assembly completed with build_fingerprint = doctor's derived.build_output_fingerprint.value (and the Design Source Package material fingerprint when the report has one); stages.polish becomes required unless its evidence is bound to this exact output
+  campaigns-os record polish --packet <campaign-runtime.build.json> --evidence <polish-evidence.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after polish capture: stages.polish from the file's status (completed, completed_with_warnings, blocked with blockers, or skipped with skip_reason), evidence and optional repair_loop_defect, bound to doctor's current fingerprint; a completed status is refused, writing nothing, unless the polish gate doctor evaluates would pass. --dry-run runs every check and writes nothing
   campaigns-os readback <target-repo-root> [--json] [--packet <path>] [--doctor <path>] [--context <path>] [--report <path>] [--qa-verdict <path>] [--findings <path>]   # read-only projection of one run's emitted artifacts (packet, doctor output, build context, assembly report, QA verdict, findings export): artifact states, per-artifact freshness against the checkout's HEAD reflog, doctor warning grouping, skip cascades and cross-artifact divergences. Writes nothing, starts no process, touches no network, and records no lifecycle entry; --json emits one campaigns-os-readback/v2 object (docs/readback.md). Exit 2 for a missing target root or a Build Packet set freshness cannot single out.
   campaigns-os readback --example [--json]                                # project the bundled synthetic sample; freshness is not computable for it by design
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -1059,6 +1062,12 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   if (command === "polish") {
     const result = await polishCaptureCommand(args);
     writePolishCaptureResult(result, args, result.ok ? 0 : 2);
+    return;
+  }
+
+  if (command === "record") {
+    const { recordStageCommand } = await import("./stage-record.mjs");
+    writeResult(recordStageCommand(args), args, 0);
     return;
   }
 
@@ -4620,9 +4629,9 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     }
   }
   if (result.stage === "setup") {
-    push("setup_skill", "skill", "next-campaigns-os-setup", "Prepare the target page-kit structure and agent context, then record stages.setup in the assembly report.");
+    push("setup_skill", "skill", "next-campaigns-os-setup", `Prepare the target page-kit structure and agent context, then record setup with ${cmd("record")} setup --packet ${packetPath}.`);
   } else if (result.stage === "build") {
-    push("build_skill", "skill", "next-campaigns-build", "Assemble the campaign per the build prompt, then record stages.assembly in the assembly report.");
+    push("build_skill", "skill", "next-campaigns-build", `Assemble the campaign per the build prompt, run the page-kit build, then record build with ${cmd("record")} build --packet ${packetPath}.`);
     if (isLocalServePacket(packet)) {
       push("build_local_proof", "command", LOCAL_PROOF_BUILD_COMMAND, `Local proof mode (deploy.target is local-serve): build page-kit in the ${LOCAL_PROOF_BUILD_ENVIRONMENT} environment into _site/ and record ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} as "${LOCAL_PROOF_BUILD_ENVIRONMENT}". Vendor loaders are environment-gated out of this render (their protocol-relative //host/... URLs fail over a plain-HTTP local serve); SDK dl_* events still fire. ${LOCAL_PROOF_NEVER_EDIT_RULE}`);
       push("build_production_parity", "command", asInvocation(substitutePacket(LOCAL_PROOF_PARITY_COMMAND, packetPath)), "After the development build is proven, assert the production render differs from it only in environment-gated output (same pages, route slugs, Campaign Cart pin and next-api-key) before committing; the PR preview is the second check.");
@@ -4633,7 +4642,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
       }
     }
   } else if (result.stage === "polish") {
-    push("polish_skill", "skill", "next-campaigns-polish", "Run the visual polish pass, capture desktop/mobile evidence, then record stages.polish in the assembly report.");
+    push("polish_skill", "skill", "next-campaigns-polish", `Run the visual polish pass and ${cmd("polish")} capture, then record polish with ${cmd("record")} polish --packet ${packetPath} --evidence <polish-evidence.json>.`);
     if (polishCheckpointGate?.status === "blocked") pushPolishCheckpointActions();
   } else if (result.stage === "deploy") {
     if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
@@ -4802,7 +4811,7 @@ Rules:
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
 - For two-step package-selection flows, treat the selector page as the pre-checkout step and pass the selected cart to checkout with forcePackageId; preserve normal tracking params and strip forcePackageId from visible checkout URLs after SDK initialization.
 - After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
-- Run page-kit build and SDK/template lint, then update stages.assembly.status plus stages.assembly.build_fingerprint before polish. The fingerprint is computed from the built output, never typed: after page-kit build, run doctor --json and copy derived.build_output_fingerprint.value (sha256 over the sorted path+sha256 manifest of _site/<slug>/; doctor reports built_output.fingerprint_stale whenever the output on disk stops matching the recorded value). If report.design_source_package.material_fingerprint exists, also record the same value on stages.assembly.source_package_material_fingerprint so Polish can prove the build used the current source context. Build must set stages.polish.status to "required" or "pending" with required_by="build" and required_for=["qa"]; Build must not mark stages.polish as completed/completed_with_warnings/skipped. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.
+- Run page-kit build and SDK/template lint, then record build before polish: \`${cmd("record")} build --packet ${packetPath}\`. It stamps stages.assembly.build_fingerprint with the fingerprint doctor computes from the built output (derived.build_output_fingerprint.value, sha256 over the sorted path+sha256 manifest of _site/<slug>/; doctor reports built_output.fingerprint_stale whenever the output on disk stops matching the recorded value), records report.design_source_package.material_fingerprint on stages.assembly.source_package_material_fingerprint when present, and sets stages.polish to "required" (required_by="build", required_for=["qa"]). Re-run it after every rebuild; never hand-edit these fields. Build must not mark stages.polish as completed/completed_with_warnings/skipped. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.
 - Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND). If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.${localProofPromptLines(packet)}`;
 }
 
@@ -4827,9 +4836,9 @@ Read first:
 - Target repo: ${packet.assembly.target_repo}
 - Output dir: ${packet.assembly.output_dir}
 
-Prepare the target page-kit structure and agent context, then update setup status in both:
-- .campaign-runtime/build-context.json scaffold.required/scaffold.mode/handoff fields
-- .campaign-runtime/assembly-report.json stages.setup
+Prepare the target page-kit structure and agent context, then record setup:
+- ${cmd("record")} setup --packet ${packetPath}
+It sets .campaign-runtime/build-context.json scaffold.required=false and .campaign-runtime/assembly-report.json stages.setup to completed, validated against their schemas; do not hand-edit either file.
 
 When copying a starter template family, copy the family as an atomic page-kit slice: pages plus required _includes, _layouts, assets/css, and assets/js. Do not copy only checkout.html and receipt.html.
 
@@ -4854,13 +4863,10 @@ Before marking Polish complete, install the package-owned browser once and run t
 
 The producer covers every mapped route at fixed desktop/mobile viewports and attaches stages.polish.evidence.visual_review.page_load to the current Assembly Report. Never hand-author or copy page_load. A missing, stale, malformed, incomplete, cache/service-worker-observed, or over-threshold result keeps Polish/deploy/QA blocked; repair and recapture, or use the exact named-human checkpoint waiver only for a complete hidden eager-media finding.
 
-Record Polish on stages.polish before QA:
-- status: completed or completed_with_warnings (or blocked with blockers)
-- performed_by: next-campaigns-polish
-- source_build_fingerprint: the current stages.assembly.build_fingerprint
-- source_package_material_fingerprint: the current report.design_source_package.material_fingerprint when present
-- completed_at: ISO timestamp
-- evidence.visual_review: representative screenshot paths/URLs plus package-generated page_load
+Record Polish before QA with ${cmd("record")} polish --packet ${packetPath} --evidence <polish-evidence.json>. It stamps performed_by (next-campaigns-polish), source_build_fingerprint (doctor's current build output fingerprint), source_package_material_fingerprint (when the report has one) and completed_at, keeps the captured page_load, and refuses a completed status, writing nothing, unless the polish gate would pass. The file is a JSON object:
+- status: completed or completed_with_warnings (default completed); or blocked with blockers (non-empty array of {code, message}), or skipped with skip_reason (string), evidence then optional; a blocked or skipped Polish keeps QA blocked
+- repair_loop_defect: optional; null or the first brand-layer repair-loop defect object, written to report.theme.repair_loop_defect
+- evidence.visual_review: object with representative screenshot paths/URLs (page_load comes from polish capture; never include it)
 - evidence.brand_review: logo/favicon/brand color checks, including non-template favicon confirmation
 - evidence.checkout_review: labels/placeholders, phone alignment, payment display, bump compare-price rule
 - evidence.template_residue_review: NEXT Blue/template placeholder/starter favicon/lorem/product residue checks
@@ -8135,6 +8141,11 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   if (WAIVE_ACTIONS.has(result.action) && result.gate) {
     lines.push(`${result.dry_run ? "Would waive" : "Waived"}: ${result.gate} by ${result.waiver?.waived_by || "(unattributed)"}${result.waiver?.expires_at ? ` until ${result.waiver.expires_at}` : ""}`);
     if (result.dry_run) lines.push(`Would write: ${result.would_write} (nothing was written)`);
+    if (result.next_stage) lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
+  }
+  if (result.action === "record") {
+    lines.push(`${result.dry_run ? "Would record" : "Recorded"}: ${result.stage}`);
+    for (const path of result.dry_run ? result.would_write : result.written) lines.push(`${result.dry_run ? "Would write" : "Wrote"}: ${path}${result.dry_run ? " (nothing was written)" : ""}`);
     if (result.next_stage) lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
   }
   if (result.targets?.length) {
