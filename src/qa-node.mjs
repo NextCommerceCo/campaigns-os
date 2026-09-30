@@ -101,8 +101,10 @@ import {
 import {
   LIVE_REF_CODES,
   campaignDriftMessage,
+  disabledLiveRead,
   evaluateLiveCampaignRefs,
   extractRenderedRefs,
+  liveRefsDisabled,
   liveRefFindingMessage,
   liveRefsNotRunMessage,
   readLiveCampaignForPacket,
@@ -120,7 +122,7 @@ const HELP = `campaigns-os qa — Node/npm spec-aware QA
 Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
-  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--json]
+  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--no-live-refs] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
@@ -140,7 +142,7 @@ Options:
                                   Requires --base-url and --family. No Map ID / CampaignSpec needed.
   --spec <path>                   Local exported CampaignSpec JSON for the non-packet Map ID flow.
                                   Packet QA always uses packet.spec.local_path and rejects this override.
-  --proxy-base <url>              Campaign Map proxy base for /api/spec, /api/price-preview, and verdict publishing.
+  --proxy-base <url>              Campaign Map proxy base for /api/spec, /api/price-preview, /api/campaign, and verdict publishing.
   --base-url <url>                Deployed campaign root. Packet deploy URL is used when omitted.
                                   Commercial pages are checked automatically against /api/price-preview;
                                   no commercial sidecar or extra catalog flag is required.
@@ -176,6 +178,9 @@ Options:
                                   Record is not stamped; a refusal still exits 2, a clean dry run exits 0
                                   (--json: dry_run, would_publish, would_post).
   --no-remit                     When an ambient run session is active, write the local Run Record but skip Run Telemetry remit.
+  --no-live-refs                  qa run: skip the one read-only GET of <proxy-base>/api/campaign that checks each
+                                  served page's shipping and package refs against the live campaign; the verdict
+                                  records the check not_run with reason disabled, never a pass.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
                                   Requires one-time setup: campaigns-os qa install-browser
@@ -2280,9 +2285,12 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
     }
   }
   // The live campaign read (#533): one GET of {proxy-base}/api/campaign under
-  // the public campaign key, made only when a served page was read to compare.
+  // the public campaign key, made only when a served page was read to compare;
+  // --no-live-refs sends nothing and records the check not_run (`disabled`).
   const liveSpec = resolved.rawSpec || resolved.spec;
-  const liveRead = liveCampaign !== undefined || livePages.size === 0
+  const liveRead = liveRefsDisabled(args)
+    ? disabledLiveRead()
+    : liveCampaign !== undefined || livePages.size === 0
     ? liveCampaign
     : await readLiveCampaignForPacket({
       packet: resolved.packet,
@@ -2925,7 +2933,7 @@ async function runPageChecks(page, args, {
 // caller made; absent or failed, the check is not_run with its reason.
 function liveCampaignRefAssertions({ pages, spec, liveCampaign }) {
   const campaignAssertion = (fields) => assertion({ family: "api-metadata", page: { page_id: "campaign" }, ...fields });
-  if (!pages.length) {
+  if (!pages.length && liveCampaign?.reason_code !== "disabled") {
     return [campaignAssertion({
       id: "live-campaign-refs",
       status: STATUS.SKIPPED,

@@ -17,12 +17,31 @@ const codes = (issues) => issues.map((issue) => issue.code);
 const PROXY_BASE = "https://proxy.example.test";
 const LIVE_URL = `${PROXY_BASE}/api/campaign`;
 
-function liveBody({ packages = [10, 17, 19, 30], shipping = [20, 21] } = {}) {
+// The upstream campaign retrieve body: what the proxy carries in `data`.
+function campaign({ ref = 501, packages = [10, 17, 19, 30], shipping = [20, 21] } = {}) {
   return {
+    ref_id: ref,
     name: "Fixture Campaign",
     packages: packages.map((ref) => ({ ref_id: ref, name: `Package ${ref}`, price: "10.00" })),
     shipping_methods: shipping.map((ref) => ({ ref_id: ref, code: `ship-${ref}`, price: "4.95" })),
   };
+}
+
+// What the proxy's GET /api/campaign answers: an envelope around the upstream
+// body (one campaign, or an array of them).
+function envelope(data, { requestedRefId } = {}) {
+  return {
+    ok: true,
+    status: 200,
+    endpoint: "campaigns",
+    ...(requestedRefId !== undefined ? { requested_ref_id: requestedRefId } : {}),
+    retrieved_at: "2026-09-30T00:00:00.000Z",
+    data,
+  };
+}
+
+function liveBody(options = {}) {
+  return envelope(campaign(options));
 }
 
 function jsonFetch(body, { status = 200, calls = [] } = {}) {
@@ -192,12 +211,19 @@ test("D4: no key, no read, network failure, non-2xx, 404, timeout and a non-camp
     ["insecure_proxy_base", await readLiveCampaign({ apiKey: pk, proxyBase: "http://proxy.example.test", fetchImpl: () => assert.fail("no request over plain http") })],
     ["fetch_unavailable", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE })],
     ["network_error", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: async () => { throw new TypeError("fetch failed"); } })],
-    ["http_status", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ detail: "error" }, { status: 500 }) })],
-    ["not_found", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ detail: "Not found." }, { status: 404 }) })],
+    ["http_status", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ ok: false, error: "upstream request failed", detail: "socket hang up" }, { status: 502 }) })],
+    ["not_found", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: 999, fetchImpl: jsonFetch({ ok: false, status: 404, requested_ref_id: 999, upstream_shape: "array", error: "No campaign with ref_id 999" }, { status: 404 }) })],
     ["timeout", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, timeoutMs: 20, fetchImpl: () => new Promise(() => {}) })],
     ["unparseable", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch("<html>not json</html>") })],
-    ["unexpected_body", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ packages: [] }) })],
-    ["unexpected_body", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ packages: [{ name: "no ref" }], shipping_methods: [] }) })],
+    // The bare upstream campaign, without the proxy's envelope, is not what the
+    // proxy serves and is refused rather than read.
+    ["unexpected_body", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch(campaign()) })],
+    ["unexpected_body", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ ok: true, status: 200, endpoint: "campaigns" }) })],
+    ["unexpected_body", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch(envelope({ packages: [] })) })],
+    ["unexpected_body", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch(envelope({ packages: [{ name: "no ref" }], shipping_methods: [] })) })],
+    ["proxy_error", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ ok: false, status: 401, endpoint: "campaigns", error: "Upstream answered 401" }) })],
+    ["ambiguous_campaign", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch(envelope([campaign({ ref: 501 }), campaign({ ref: 502 })])) })],
+    ["not_found", await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch(envelope([])) })],
   ];
   for (const [reason, live] of cases) {
     assert.equal(live.status, "not_run", reason);
@@ -344,7 +370,7 @@ test("D5: QA runs the same comparison over served pages and records it in the ve
     commerceStructureContract: null,
     topologies: [{ funnel_id: "default", funnel_name: "Default", weight: 100, pages: [{ page_id: "checkout", page_type: "checkout", label: "Checkout", url: pageUrl, packages: spec.funnels[0].pages[0].packages }] }],
   };
-  const run = (options) => __qaNodeTestHooks.runResolvedQa({ _: ["qa", "run"], "output-dir": outputDir, "no-post-verdict": true, json: true }, resolved, options);
+  const run = (options, extraArgs = {}) => __qaNodeTestHooks.runResolvedQa({ _: ["qa", "run"], "output-dir": outputDir, "no-post-verdict": true, json: true, ...extraArgs }, resolved, options);
   try {
     const blocked = await run({ liveCampaign: { status: "read", package_refs: ["10"], shipping_refs: ["20"] } });
     const live = blocked.verdict.assertions.filter((entry) => entry.evidence?.code?.startsWith("built_output.") || entry.evidence?.code === "spec.campaign_drift" || entry.id === "live-campaign-refs");
@@ -375,6 +401,16 @@ test("D5: QA runs the same comparison over served pages and records it in the ve
     assert.equal(readMiss?.severity, "blocker");
     assert.equal(read.verdict.disposition, "blocked");
 
+    // --no-live-refs: a key resolves and a page was served, yet no request is
+    // made and the verdict records the check skipped with reason disabled.
+    spec.campaign.campaigns_api_key = "pk_fixture_public_key";
+    const disabled = await run({ liveCampaignFetch: () => assert.fail("no request under --no-live-refs") }, { "no-live-refs": true });
+    delete spec.campaign.campaigns_api_key;
+    const skipped = disabled.verdict.assertions.find((entry) => entry.id === "live-campaign-refs");
+    assert.equal(skipped.status, "skipped");
+    assert.equal(skipped.evidence.reason_code, "disabled");
+    assert.equal(disabled.verdict.assertions.some((entry) => entry.id.startsWith("built_output.") || entry.id === "spec.campaign_drift"), false);
+
     const failed = await run({ liveCampaign: { status: "not_run", reason_code: "timeout", reason: "The live campaign read timed out after 10000ms." } });
     const warn = failed.verdict.assertions.find((entry) => entry.id === "built_output.live_refs_not_run");
     assert.equal(warn.status, "warn");
@@ -399,5 +435,123 @@ test("doctor's read: packet mode with built pages and a public key makes one GET
     // No built page under _site/<route>/: nothing to compare, nothing sent.
     rmSync(join(repo, "_site"), { recursive: true, force: true });
     assert.equal(await readDoctorLiveCampaign({ packet: packetPath, "proxy-base": PROXY_BASE }, { env: {}, fetchImpl: refuse }), undefined);
+  });
+});
+
+test("proxy envelope: data as one campaign or an array is unwrapped, and a known campaign ref asks the proxy for that one", async () => {
+  const pk = "pk_fixture_public_key";
+  const object = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch(envelope(campaign({ packages: [10], shipping: [20] }))) });
+  assert.deepEqual([object.status, object.package_refs, object.shipping_refs], ["read", ["10"], ["20"]]);
+
+  const single = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch(envelope([campaign({ packages: [17], shipping: [21] })])) });
+  assert.deepEqual([single.status, single.package_refs, single.shipping_refs], ["read", ["17"], ["21"]]);
+
+  const calls = [];
+  const picked = await readLiveCampaign({
+    apiKey: pk,
+    proxyBase: PROXY_BASE,
+    campaignRefId: 502,
+    fetchImpl: jsonFetch(envelope([campaign({ ref: 501, shipping: [20] }), campaign({ ref: 502, shipping: [21] })], { requestedRefId: 502 }), { calls }),
+  });
+  assert.deepEqual(calls.map((call) => call.url), [`${LIVE_URL}?ref_id=502`]);
+  assert.deepEqual([picked.status, picked.campaign_ref_id, picked.shipping_refs], ["read", "502", ["21"]]);
+
+  const missing = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: "503", fetchImpl: jsonFetch(envelope([campaign({ ref: 501 }), campaign({ ref: 502 })])) });
+  assert.equal(missing.reason_code, "not_found");
+
+  const refused = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: "offer-1", fetchImpl: () => assert.fail("no request for a non-numeric campaign ref") });
+  assert.equal(refused.reason_code, "unexpected_ref");
+
+  // The CampaignSpec's campaign.ref_id is the ref the packet read asks for.
+  const packetCalls = [];
+  const fromSpec = await readLiveCampaignForPacket({
+    packet: {},
+    spec: { campaign: { ref_id: 501, campaigns_api_key: pk } },
+    env: {},
+    fetchImpl: jsonFetch(envelope(campaign({ ref: 501 }), { requestedRefId: 501 }), { calls: packetCalls }),
+    proxyBase: PROXY_BASE,
+  });
+  assert.equal(fromSpec.status, "read");
+  assert.deepEqual(packetCalls.map((call) => call.url), [`${LIVE_URL}?ref_id=501`]);
+});
+
+test("proxy errors: ok false and non-2xx envelopes are not_run with the proxy's error as one line, never the raw body or the key", async () => {
+  const pk = "pk_fixture_public_key";
+  const okFalse = await readLiveCampaign({
+    apiKey: pk,
+    proxyBase: PROXY_BASE,
+    fetchImpl: jsonFetch({ ok: false, status: 403, endpoint: "campaigns", error: `Upstream refused\n  key ${pk}\tfor this origin`, data: { packages: [], shipping_methods: [] } }),
+  });
+  assert.equal(okFalse.status, "not_run");
+  assert.equal(okFalse.reason_code, "proxy_error");
+  assert.match(okFalse.reason, /Upstream refused key \[key\] for this origin/);
+  assert.doesNotMatch(okFalse.reason, /\n|pk_fixture_public_key|packages/);
+
+  const missingKey = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ ok: false, error: "Missing X-Campaign-Key header" }, { status: 400 }) });
+  assert.deepEqual([missingKey.reason_code, missingKey.http_status], ["http_status", 400]);
+  assert.match(missingKey.reason, /answered 400.*The proxy said: Missing X-Campaign-Key header$/);
+
+  const transport = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ ok: false, error: "Upstream fetch failed", detail: "connect ECONNREFUSED 10.0.0.1:443" }, { status: 502 }) });
+  assert.equal(transport.reason_code, "http_status");
+  assert.match(transport.reason, /Upstream fetch failed/);
+  assert.doesNotMatch(transport.reason, /ECONNREFUSED/);
+
+  const notFound = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: 999, fetchImpl: jsonFetch({ ok: false, status: 404, requested_ref_id: 999, upstream_shape: "array", error: "No campaign with ref_id 999" }, { status: 404 }) });
+  assert.equal(notFound.reason_code, "not_found");
+  assert.equal(notFound.campaign_ref_id, "999");
+  assert.match(notFound.reason, /404 for campaign ref 999.*No campaign with ref_id 999/);
+
+  const long = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ ok: false, error: "x".repeat(5000) }, { status: 500 }) });
+  assert.ok(long.reason.length < 400, "the error line is capped");
+});
+
+test("proxy errors: ok true with no campaign in data is not_run with the proxy's error as one capped, redacted line", async () => {
+  const pk = "pk_fixture_public_key";
+  const said = await readLiveCampaign({
+    apiKey: pk,
+    proxyBase: PROXY_BASE,
+    fetchImpl: jsonFetch({ ok: true, status: 200, endpoint: "campaigns", error: `Upstream campaign\n unavailable for ${pk}` }),
+  });
+  assert.equal(said.status, "not_run");
+  assert.equal(said.reason_code, "proxy_error");
+  assert.match(said.reason, /no campaign in its data field: Upstream campaign unavailable for \[key\]/);
+  assert.doesNotMatch(said.reason, /\n|pk_fixture_public_key/);
+
+  const long = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ ok: true, data: null, error: "y".repeat(5000) }) });
+  assert.equal(long.reason_code, "proxy_error");
+  assert.ok(long.reason.length < 400, "the error line is capped");
+
+  const silent = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, fetchImpl: jsonFetch({ ok: true, status: 200 }) });
+  assert.equal(silent.reason_code, "unexpected_body");
+});
+
+test("D1 through the envelope: doctor asks for the CampaignSpec's campaign ref and blocks on the page's shipping ref that campaign does not serve", async () => {
+  await withBuiltCampaign({
+    checkoutHtml: page('<div data-next-package-id="10"></div><input data-next-shipping-id="21">'),
+    specEdit: (spec) => { spec.campaign.ref_id = 501; },
+  }, async ({ packetPath, doctor }) => {
+    const calls = [];
+    // The key serves two campaigns; only 502 still serves shipping method 21.
+    const body = envelope([campaign({ ref: 501, shipping: [20] }), campaign({ ref: 502, shipping: [20, 21] })], { requestedRefId: 501 });
+    const live = await readDoctorLiveCampaign({ packet: packetPath, "proxy-base": PROXY_BASE }, { env: {}, fetchImpl: jsonFetch(body, { calls }) });
+    assert.deepEqual(calls.map((call) => call.url), [`${LIVE_URL}?ref_id=501`]);
+    assert.equal(live.status, "read");
+    const result = doctor(live);
+    const issue = result.errors.find((entry) => entry.code === "built_output.shipping_ref_live_missing");
+    assert.deepEqual(issue?.detail.refs, ["21"]);
+    assert.equal(result.status, "blocked");
+    assert.equal(result.derived.live_campaign_refs.status, "blocked");
+  });
+});
+
+test("--no-live-refs: doctor sends nothing and records not_run with reason disabled, never a pass and never a warning", async () => {
+  await withBuiltCampaign({ checkoutHtml: page('<input data-next-shipping-id="21">') }, async ({ packetPath, doctor }) => {
+    const live = await readDoctorLiveCampaign({ packet: packetPath, "proxy-base": PROXY_BASE, "no-live-refs": true }, { env: {}, fetchImpl: () => assert.fail("no request under --no-live-refs") });
+    assert.deepEqual([live.status, live.reason_code], ["not_run", "disabled"]);
+    const result = doctor(live);
+    assert.equal(result.derived.live_campaign_refs.status, "not_run");
+    assert.equal(result.derived.live_campaign_refs.reason_code, "disabled");
+    assert.equal(codes([...result.errors, ...result.warnings]).some((code) => code.startsWith("built_output.live_refs") || code.endsWith("_live_missing") || code === "spec.campaign_drift"), false);
+    assert.equal(result.ready.some((line) => line.includes("served by the live campaign")), false);
   });
 });

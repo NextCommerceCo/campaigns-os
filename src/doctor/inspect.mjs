@@ -10,7 +10,7 @@ import { DOCTOR_SIDECAR_SCHEMA } from "../doctor-sidecar.mjs";
 import { resolveCampaignWorkspace } from "../campaign-workspace.mjs";
 import { normalizePublicRouteSlug } from "../route-identity.mjs";
 import { DEFAULT_PROXY_BASE } from "../spec-fetch.mjs";
-import { readLiveCampaignForPacket } from "../live-campaign-refs.mjs";
+import { disabledLiveRead, liveRefsDisabled, readLiveCampaignForPacket } from "../live-campaign-refs.mjs";
 import { evaluateThemeGate } from "../theme-gate.mjs";
 import { findForbiddenPriceHides } from "../template-brand-contract.mjs";
 import { resolveBuiltSiteScope, synthesizeMinimalBuildPacket } from "../built-site-scope.mjs";
@@ -96,11 +96,13 @@ const DOCTOR_PRODUCER = "doctor";
 // no built page there is nothing to compare, so nothing is sent), and only
 // under the public Campaigns API key the packet, its local CampaignSpec or its
 // declared campaign-key env var resolves. One GET of {proxy-base}/api/campaign;
-// --proxy-base names the proxy, else the canonical one. `undefined` means no
+// --proxy-base names the proxy, else the canonical one; --no-live-refs sends
+// nothing and records not_run with reason `disabled`. `undefined` means no
 // read was due, which doctor records as not_run; every other outcome,
 // failures included, is a readLiveCampaign result.
 export async function readDoctorLiveCampaign(args, { fetchImpl = globalThis.fetch, env = process.env, warn = undefined } = {}) {
   if (((args.built || args.site) && !args.packet) || !isNonEmptyString(args.packet)) return undefined;
+  if (liveRefsDisabled(args)) return disabledLiveRead();
   let workspace;
   try {
     workspace = resolveCampaignWorkspace(resolve(args.packet), { followContextPointer: false });

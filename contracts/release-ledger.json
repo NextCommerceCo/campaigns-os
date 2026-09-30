@@ -7809,10 +7809,10 @@
       "kind": "release",
       "surface_version": "1.44.0",
       "changelog_section": "1.44.0",
-      "changelog_sha256": "0222665b08e38a766311d0a847abe5105490e86ce2857e2f2d5582a8538d5e85",
-      "agent_impact": "doctor --packet may now make one read-only request, GET {proxy-base}/api/campaign with the public Campaigns API key in X-Campaign-Key, when the packet's built _site/<route>/ exists and that key resolves from the packet, its local CampaignSpec or the declared campaign-key env var; it uses no store or Admin credential and writes nothing, and doctor accepts --proxy-base to name the proxy. qa run makes the same read when it has read a served page and a key resolves. A built or served page ref the live campaign does not serve blocks as built_output.shipping_ref_live_missing or built_output.package_ref_live_missing; spec.campaign_drift warns when the CampaignSpec and the live campaign list different refs and never softens a page blocker. An api_key_source env var whose name contains ADMIN, TOKEN, SECRET, PASSWORD, PRIVATE or STORE is refused for this read with no request. Page refs are read from parsed HTML (any valid attribute syntax, template content included; comments, noscript and visible text excluded) for both the live check and the CampaignSpec ref check. To see not_run: doctor's derived.live_campaign_refs carries status not_run with reason_code (no_key, no_built_pages, or not_read when an internal caller such as next ran doctor without reading), and a failed or refused read (network_error, http_status, not_found, timeout, unparseable, unexpected_body, key_source_refused) is also the warning built_output.live_refs_not_run; a QA verdict carries a skipped live-campaign-refs assertion, or a warn built_output.live_refs_not_run assertion for a failed read, with the same reason_code. Read not_run as unchecked, never as a pass. The doctor and doctor --no-write effects rows are no longer readOnlyHint and sit at tier A. QA commercial parity warns commercial_parity.recurring_claim_absent, naming the package, when a page renders a subscription package with no readable recurring claim, and reports incomplete instead of pass.",
+      "changelog_sha256": "3dd0f73944c883ee8f15fab0d72166328dc4418724e4ca9d2bc39e310d241094",
+      "agent_impact": "doctor --packet may now make one read-only GET {proxy-base}/api/campaign with the public Campaigns API key in X-Campaign-Key (plus ?ref_id=<id> from the CampaignSpec's campaign.ref_id) when the built _site/<route>/ exists and the key resolves from the packet, its local CampaignSpec or the declared campaign-key env var; no store or Admin credential, nothing written; --proxy-base names the proxy. qa run makes the same read after reading a served page. The campaign comes from the proxy envelope's data field. --no-live-refs on doctor or qa run skips only that read; their other declared sends are unchanged. Only doctor and qa run read; other commands that run doctor record not_read. A page ref the live campaign does not serve blocks as built_output.shipping_ref_live_missing or built_output.package_ref_live_missing; spec.campaign_drift warns on CampaignSpec-vs-live differences and never softens a page blocker. An api_key_source env name containing ADMIN, TOKEN, SECRET, PASSWORD, PRIVATE or STORE is refused with no request. Page refs are read from parsed HTML for both ref checks. To see not_run: doctor's derived.live_campaign_refs has status not_run and a reason_code (no_key, no_built_pages, disabled, not_read); a failed or refused read (network_error, http_status, not_found, timeout, too_large, unparseable, unexpected_body, proxy_error, ambiguous_campaign, unexpected_ref, key_source_refused) is also the warning built_output.live_refs_not_run; a QA verdict carries a skipped live-campaign-refs assertion or a warn built_output.live_refs_not_run assertion with the same reason_code. Read not_run as unchecked, never as a pass. The doctor and doctor --no-write effects rows are no longer readOnlyHint and sit at tier A. QA commercial parity warns commercial_parity.recurring_claim_absent, naming the package, when a page renders a subscription package with no readable recurring claim, and reports incomplete instead of pass.",
       "compatibility": "additive",
-      "migration": "Update to the exact 1.44.0 package. To keep doctor off the network, run it without a resolvable public campaign key or before the site is built; its result then records the live ref check as not_run.",
+      "migration": "Update to the exact 1.44.0 package. To skip the live campaign read, pass --no-live-refs to doctor or qa run; only the /api/campaign request is skipped and the live ref check is recorded as not_run with reason disabled.",
       "changes": [
         {
           "class": "compatibility_policy",
@@ -7824,13 +7824,13 @@
           "class": "compatibility_policy",
           "path": "contracts/effects.v1.json",
           "surface_entry": "contracts/effects.v1.json",
-          "summary": "Declare the read-only {proxy-base}/api/campaign send on the doctor, doctor --no-write and doctor --write rows (the first two leave readOnlyHint and move to tier A) and on all five qa run rows."
+          "summary": "Declare the read-only {proxy-base}/api/campaign send on the doctor, doctor --no-write and doctor --write rows (the first two leave readOnlyHint and move to tier A) and on the five existing qa run rows; add --no-live-refs to the effect-changing flags with rows without the read for doctor, doctor --write, and qa run alone and with --no-remit, --no-post-verdict, --test-order or --browser."
         },
         {
           "class": "named_surface",
           "path": "docs/effects.md",
           "surface_entry": "docs/effects.md",
-          "summary": "Stop listing doctor inspection and doctor --no-write among the read-only invocations; they still skip the lifecycle journal but may send the one live campaign read."
+          "summary": "Stop listing doctor inspection and doctor --no-write among the read-only invocations (they still skip the lifecycle journal but may send the one live campaign read), list doctor --no-live-refs inspection, add --no-live-refs to the effect-changing flags, and describe the live campaign read, its opt-out and the commands that record not_read."
         },
         {
           "class": "named_surface",
@@ -7932,7 +7932,7 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "doctor",
-          "summary": "Make the live campaign read before doctor's packet inspection and document doctor --proxy-base and the read in the doctor usage line."
+          "summary": "Make the live campaign read before doctor's packet inspection and document doctor --proxy-base, doctor --no-live-refs, qa run --no-live-refs and the read in the usage lines."
         },
         {
           "class": "cli_surface",
@@ -7944,10 +7944,10 @@
           "class": "cli_surface",
           "path": "src/doctor/inspect.mjs",
           "surface_entry": "doctor",
-          "summary": "Read the live campaign in packet mode when the built route exists and a public campaign key resolves, and pass the result to the inspection."
+          "summary": "Read the live campaign in packet mode when the built route exists and a public campaign key resolves, unless --no-live-refs is given, and pass the result to the inspection."
         }
       ],
-      "entry_sha256": "5c96fd4b1e149ad7e0f5473cd96ac7ddc35f339bd852725fa3d8c193e82f772c"
+      "entry_sha256": "b264f195c75c58e75edb67d94bb637c579798d12f920e6220675d120e08c3787"
     }
   ]
 }

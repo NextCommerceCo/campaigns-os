@@ -81,8 +81,9 @@ test('canonical run emits real credential-free page evidence', async () => {
   const campaignReads = [];
   globalThis.fetch = async (url, init) => {
     // The live campaign read (#533) goes to the fixture proxy; count it apart
-    // from the page fetches this test is about.
-    if (String(url).endsWith('/api/campaign')) { campaignReads.push({ url: String(url), init }); return new Response('{}', { status: 404 }); }
+    // from the page fetches this test is about. The answer is the proxy's own
+    // not-found envelope.
+    if (new URL(String(url)).pathname === '/api/campaign') { campaignReads.push({ url: String(url), init }); return new Response(JSON.stringify({ ok: false, status: 404, upstream_shape: 'array', error: 'No campaign found for this key' }), { status: 404 }); }
     calls++; return String(url).endsWith('/unavailable') ? new Response('', {status:503}) : new Response(inline(String(url).endsWith('/mismatch') ? 'different-synthetic-value' : key)); };
   const spec = { schema_version: '4.3', campaign: { slug: 'binding-fixture', campaigns_api_key: key }, funnels: [] };
   try {

@@ -12,25 +12,31 @@
 //     serve, or the reverse (`spec.campaign_drift`, a warning that never
 //     downgrades a page-level blocker).
 //
-// The read is one GET of `{proxy-base}/api/campaign` under `X-Campaign-Key`:
-// NEXT's proxy forwards it to the campaign retrieve the Campaign Cart SDK
-// makes in the browser and returns that body. The only credential is the
+// The read is one GET of `{proxy-base}/api/campaign` under `X-Campaign-Key`
+// (with `?ref_id=<id>` when the CampaignSpec names the campaign): NEXT's proxy
+// forwards it to the campaign retrieve the Campaign Cart SDK makes in the
+// browser and answers with an envelope, `{ ok, status, endpoint,
+// requested_ref_id, retrieved_at, data }`, whose `data` is that retrieve's
+// body — one campaign, or an array of them. The only credential is the
 // public Campaigns API key; no store or Admin credential is reachable from
 // here. It takes its fetch and the proxy base as arguments, so a caller that
-// passes neither reads nothing. Anything short of a parsed campaign —
-// no key, no fetch, a network error, a non-2xx, a timeout, a body that is not a
-// campaign — is `not_run` with its reason, never a pass and never a fall back
-// to the Map's own list.
+// passes neither reads nothing. Anything short of one parsed campaign —
+// no key, no fetch, a network error, a non-2xx, a timeout, `ok: false`, a body
+// that is not the envelope, several campaigns and no ref to pick one — is
+// `not_run` with its reason, never a pass and never a fall back to the Map's
+// own list.
 import { parse as parseHtml } from "parse5";
 
 import { runWithDeadline } from "./deadline.mjs";
 import { assertSecureProxyBase } from "./remit.mjs";
 import { resolveCampaignsApiKeySource, describeCampaignKeyRejection } from "./campaigns-api-key.mjs";
+import { readJsonIfExists, resolveFromFile } from "./cli-helpers.mjs";
 
 export const LIVE_CAMPAIGN_PATH = "/api/campaign";
 
 export const LIVE_CAMPAIGN_TIMEOUT_MS = 10_000;
 export const LIVE_CAMPAIGN_MAX_BYTES = 2 * 1024 * 1024;
+const LIVE_CAMPAIGN_ERROR_MAX_BYTES = 64 * 1024;
 
 export const LIVE_REF_CODES = Object.freeze({
   shipping: "built_output.shipping_ref_live_missing",
@@ -122,15 +128,64 @@ export function liveCampaignRefs(body) {
   return { package_refs: [...new Set(packages)].sort(), shipping_refs: [...new Set(shipping)].sort() };
 }
 
+// The campaign's own ref as the CampaignSpec records it (`campaign.ref_id`,
+// the numeric platform id), or null when it names none the proxy's
+// `?ref_id=` would take.
+export function campaignRefIdFromSpec(spec) {
+  const value = spec?.campaign?.ref_id;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) return value.trim();
+  return null;
+}
+
+// The proxy's error text as one short line: the envelope's `error` string,
+// whitespace collapsed, the key redacted if it were ever echoed, and capped.
+// Never the raw body.
+function proxyErrorText(body, apiKey) {
+  const raw = body && typeof body === "object" && !Array.isArray(body) && typeof body.error === "string" ? body.error : "";
+  let text = raw.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  if (apiKey && text.includes(apiKey)) text = text.split(apiKey).join("[key]");
+  if (text.length > 160) text = `${text.slice(0, 157)}...`;
+  return text;
+}
+
+function parseJson(text) {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+// The one campaign in the envelope's `data`: the object itself, or from an
+// array the entry whose ref is the one asked for (or the only entry, when no
+// ref was asked for). Returns { campaign } or { notRun }.
+function pickCampaign(data, refId) {
+  if (!Array.isArray(data)) return { campaign: data };
+  if (refId) {
+    const matches = data.filter((entry) => liveRef(entry?.ref_id) === refId);
+    if (matches.length === 1) return { campaign: matches[0] };
+    return matches.length === 0
+      ? { notRun: notRun("not_found", `The live campaign read returned ${data.length} campaign(s), none with ref ${refId}, so there was no live campaign to compare against.`) }
+      : { notRun: notRun("ambiguous_campaign", `The live campaign read returned ${matches.length} campaigns with ref ${refId}, so it could not tell which one the pages use.`) };
+  }
+  if (data.length === 1) return { campaign: data[0] };
+  return data.length === 0
+    ? { notRun: notRun("not_found", "The live campaign read returned no campaign for this key, so there was no live campaign to compare against.") }
+    : { notRun: notRun("ambiguous_campaign", `The live campaign read returned ${data.length} campaigns for this key and the CampaignSpec names no campaign.ref_id to pick one, so it could not tell which one the pages use.`) };
+}
+
 // One GET of the campaign the key belongs to, through the proxy. `apiKey` is
 // the public Campaigns API key; it travels as the X-Campaign-Key header the
-// proxy's other routes take and never appears in the result. The proxy base
-// passes the same transport gate as every other proxy request: https, or a
-// loopback host over http.
+// proxy's other routes take and never appears in the result. `campaignRefId`,
+// when known, asks the proxy for that one campaign. The proxy base passes the
+// same transport gate as every other proxy request: https, or a loopback host
+// over http.
 export async function readLiveCampaign({
   apiKey,
   proxyBase = null,
   fetchImpl = null,
+  campaignRefId = null,
   timeoutMs = LIVE_CAMPAIGN_TIMEOUT_MS,
   maxBytes = LIVE_CAMPAIGN_MAX_BYTES,
   warn = undefined,
@@ -141,10 +196,14 @@ export async function readLiveCampaign({
   if (typeof proxyBase !== "string" || !proxyBase.trim()) {
     return notRun("not_read", "This invocation does not read the live campaign.");
   }
+  const refId = campaignRefId == null ? null : String(campaignRefId).trim();
+  if (refId !== null && !/^\d+$/.test(refId)) {
+    return notRun("unexpected_ref", "The CampaignSpec's campaign.ref_id is not a numeric campaign id, so the live campaign was not read.");
+  }
   let url;
   try {
     const { base } = assertSecureProxyBase(proxyBase, { label: "Live campaign read", credential: "the public campaign key", ...(warn ? { warn } : {}) });
-    url = `${base}${LIVE_CAMPAIGN_PATH}`;
+    url = `${base}${LIVE_CAMPAIGN_PATH}${refId ? `?ref_id=${refId}` : ""}`;
   } catch (error) {
     return notRun("insecure_proxy_base", `The live campaign was not read: ${error.message}`);
   }
@@ -162,10 +221,20 @@ export async function readLiveCampaign({
         headers: { Accept: "application/json", "X-Campaign-Key": apiKey.trim() },
         signal: controller.signal,
       });
-      if (!value?.ok) return { response: value, text: null };
       // Loaded here rather than at the top: QA's commercial parity imports
       // this module's extractors, and a static import back would be a cycle.
       const { readBoundedResponseText } = await import("./qa-commercial-parity.mjs");
+      if (!value?.ok) {
+        // A non-2xx body is read only for the proxy's error line; an
+        // unreadable one leaves the status to speak for itself.
+        let errorText = null;
+        try {
+          errorText = await readBoundedResponseText(value, { maxBytes: LIVE_CAMPAIGN_ERROR_MAX_BYTES, kind: "live_campaign" });
+        } catch {
+          // the status is the finding
+        }
+        return { response: value, text: errorText };
+      }
       return { response: value, text: await readBoundedResponseText(value, { maxBytes, kind: "live_campaign" }) };
     }, {
       timeoutMs,
@@ -178,25 +247,52 @@ export async function readLiveCampaign({
     if (error?.code === "live_campaign_response_too_large") return notRun("too_large", `The live campaign response exceeded ${maxBytes} bytes.`);
     return notRun("network_error", `The live campaign read failed before a response: ${error?.message || String(error)}.`);
   }
+  const requested = refId ? { campaign_ref_id: refId } : {};
+  const parsed = typeof text === "string" ? parseJson(text) : { ok: false };
   if (!response?.ok) {
     const status = Number.isInteger(response?.status) ? response.status : null;
+    const said = parsed.ok ? proxyErrorText(parsed.value, apiKey.trim()) : "";
+    const because = said ? ` The proxy said: ${said}` : "";
     return notRun(
       status === 404 ? "not_found" : "http_status",
       status === 404
-        ? "The live campaign read answered 404 for this key: no live campaign was found to compare against."
-        : `The live campaign read answered ${status ?? "an unknown status"}, so the live campaign was not read.`,
-      { http_status: status },
+        ? `The live campaign read answered 404${refId ? ` for campaign ref ${refId}` : " for this key"}: no live campaign was found to compare against.${because}`
+        : `The live campaign read answered ${status ?? "an unknown status"}, so the live campaign was not read.${because}`,
+      { http_status: status, ...requested },
     );
   }
-  let body;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    return notRun("unparseable", "The live campaign response was not JSON.");
+  if (!parsed.ok) return notRun("unparseable", "The live campaign response was not JSON.", requested);
+  const envelope = parsed.value;
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || typeof envelope.ok !== "boolean") {
+    return notRun("unexpected_body", "The live campaign response was not the proxy's envelope ({ ok, data }).", requested);
   }
-  const refs = liveCampaignRefs(body);
-  if (!refs) return notRun("unexpected_body", "The live campaign response did not carry package and shipping-method lists with a ref on every entry.");
-  return { status: "read", ...refs };
+  if (envelope.ok !== true) {
+    const said = proxyErrorText(envelope, apiKey.trim());
+    return notRun("proxy_error", `The proxy answered ok: false${said ? `: ${said}` : ""}, so the live campaign was not read.`, requested);
+  }
+  if (envelope.data == null || typeof envelope.data !== "object") {
+    // ok: true with no campaign; the proxy's error line, when it sent one, is
+    // the reason.
+    const said = proxyErrorText(envelope, apiKey.trim());
+    return said
+      ? notRun("proxy_error", `The proxy answered with no campaign in its data field: ${said}, so the live campaign was not read.`, requested)
+      : notRun("unexpected_body", "The live campaign response carried no campaign in its data field.", requested);
+  }
+  const picked = pickCampaign(envelope.data, refId);
+  if (picked.notRun) return { ...picked.notRun, ...requested };
+  const refs = liveCampaignRefs(picked.campaign);
+  if (!refs) return notRun("unexpected_body", "The live campaign did not carry package and shipping-method lists with a ref on every entry.", requested);
+  return { status: "read", ...requested, ...refs };
+}
+
+// The `--no-live-refs` opt-out on `doctor` and `qa run`: no request, and the
+// check recorded not_run with reason `disabled`, never a pass.
+export function liveRefsDisabled(args) {
+  return Boolean(args) && Object.hasOwn(args, "no-live-refs");
+}
+
+export function disabledLiveRead() {
+  return notRun("disabled", "--no-live-refs was given, so the live campaign was not read.");
 }
 
 // An env var whose name says it holds something other than a public campaign
@@ -219,12 +315,26 @@ function refusedEnvKeySource(packet, resolved) {
   return envInPlay ? envName : null;
 }
 
+// The packet-local CampaignSpec, read the way the key resolver reads it;
+// undefined when the packet names none or it cannot be read.
+function readPacketLocalSpec(packet, packetPath) {
+  const localPath = packet?.spec?.local_path;
+  if (typeof localPath !== "string" || !localPath.trim() || typeof packetPath !== "string" || !packetPath.trim()) return undefined;
+  try {
+    return readJsonIfExists(resolveFromFile(packetPath, localPath)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // The key from the packet, its local CampaignSpec, or the declared
 // campaign-key env var (the resolver the remit and Map write use; its shape
 // and env-name gates apply, plus the stricter env-name gate above), then one
-// read.
+// read, for the campaign the CampaignSpec's `campaign.ref_id` names when it
+// names one.
 export async function readLiveCampaignForPacket({ packet, packetPath = null, spec = undefined, env = process.env, fetchImpl = null, proxyBase = null, timeoutMs, warn } = {}) {
-  const resolved = resolveCampaignsApiKeySource(packet, packetPath, env, spec === undefined ? {} : { spec });
+  const localSpec = spec !== undefined ? spec : readPacketLocalSpec(packet, packetPath);
+  const resolved = resolveCampaignsApiKeySource(packet, packetPath, env, localSpec === undefined ? {} : { spec: localSpec });
   const refusedEnv = refusedEnvKeySource(packet, resolved);
   if (refusedEnv) {
     return notRun(
@@ -237,7 +347,14 @@ export async function readLiveCampaignForPacket({ packet, packetPath = null, spe
       ? notRun("key_rejected", describeCampaignKeyRejection(resolved.rejected))
       : notRun("no_key", "No public Campaigns API key resolved from the packet, its local CampaignSpec or the declared env source, so the live campaign was not read.");
   }
-  const result = await readLiveCampaign({ apiKey: resolved.key, fetchImpl, proxyBase, ...(timeoutMs ? { timeoutMs } : {}), ...(warn ? { warn } : {}) });
+  const result = await readLiveCampaign({
+    apiKey: resolved.key,
+    fetchImpl,
+    proxyBase,
+    campaignRefId: campaignRefIdFromSpec(localSpec),
+    ...(timeoutMs ? { timeoutMs } : {}),
+    ...(warn ? { warn } : {}),
+  });
   return { ...result, key_source: resolved.origin };
 }
 
@@ -257,9 +374,9 @@ export function evaluateLiveCampaignRefs({ pages = [], map = {}, live } = {}) {
       reason_code: live.reason_code,
       reason: live.reason,
       // A read that was attempted and failed is the operator's to see; no key
-      // is already reported by the key check, and a caller that does not read
-      // has nothing to report.
-      attempted: !["no_key", "key_rejected", "not_read"].includes(live.reason_code),
+      // is already reported by the key check, a caller that does not read
+      // has nothing to report, and `--no-live-refs` asked for no read.
+      attempted: !["no_key", "key_rejected", "not_read", "disabled"].includes(live.reason_code),
       ...(live.http_status !== undefined ? { http_status: live.http_status } : {}),
       checked_pages: checkedPages.length,
       page_findings: [],
