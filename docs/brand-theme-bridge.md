@@ -57,8 +57,10 @@ confirmed. Derived-foreground confidence scales with the achieved contrast
 One exception keeps the design's own CTA label. The declared CTA foreground is
 read from the selected source in this order:
 
-1. the `color:` of a button rule whose `background` or `background-color` is
-   the CTA background (the design's own pairing);
+1. the `color:` of the button rules whose `background` or `background-color`
+   is the CTA background (the design's own pairing), only when they all agree
+   on one colour; when they disagree, this step declares nothing and the next
+   step applies;
 2. a `:root` inverse/on-colour text token: the name needs a `text` or
    `foreground` part plus `inverse`, or `on` followed by `primary`, `cta`,
    `brand`, `accent` or `dark` (`--text-inverse` first, then for example

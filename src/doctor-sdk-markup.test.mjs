@@ -232,6 +232,9 @@ test("CHECKOUT_BUMP_IS_UPSELL reads the page type as upsell_selector_scope does:
   // Metas that disagree declare nothing, so the route decides either way.
   assert.deepEqual(warned(withHead(meta("upsell") + meta("checkout"), "checkout")).map((item) => item.code_name), ["CHECKOUT_BUMP_IS_UPSELL"], "conflicting metas on a checkout route");
   assert.deepEqual(warned(withHead(meta("checkout") + meta("upsell"), "upsell")), [], "conflicting metas on an upsell route");
+  // The shared reader normalises the type, so a capitalised one still counts.
+  assert.deepEqual(warned(withHead(meta(" Checkout "), "upsell")).map((item) => item.code_name), ["CHECKOUT_BUMP_IS_UPSELL"], "capitalised meta");
+  assert.deepEqual(warned(withHead("", "Checkout")).map((item) => item.code_name), ["CHECKOUT_BUMP_IS_UPSELL"], "capitalised route");
 });
 
 test("markup inside an SDK <template> is scanned, because the SDK clones it into the live DOM", () => {

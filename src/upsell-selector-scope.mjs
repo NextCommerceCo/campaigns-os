@@ -209,9 +209,11 @@ export function builtPageTypeMeta(content) {
 // the meta is what the SDK reads (#529). So a declared meta replaces the
 // guess; the guess stands for a page that declares nothing, or declares it
 // only in inert or conflicting markup. A type declared by a spec is not a
-// guess and is passed through as before.
+// guess and is passed through as before. Either way the type comes back
+// trimmed and lower-cased (" Checkout " is "checkout"), or null.
 export function builtPageTypeOverRouteGuess({ route_type = null, content = "" } = {}) {
-  return builtPageTypeMeta(content) ?? route_type;
+  const type = builtPageTypeMeta(content) ?? route_type;
+  return type == null ? null : String(type).trim().toLowerCase();
 }
 
 // A built page's funnel role, from either signal that carries it. The declared

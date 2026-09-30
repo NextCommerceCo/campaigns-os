@@ -212,20 +212,13 @@ function isSurfaceBgToken(parts) {
     || hasTokenSequence(parts, ["bg"], ["page", "body", "site"]);
 }
 
-// Feeds token inference only; the declared CTA label and body text use
-// isTextLabelToken below.
-function isTextInverseToken(parts) {
-  return hasTokenSequence(parts, ["text", "foreground"], ["inverse"])
-    || hasTokenSequence(parts, ["inverse"], ["text", "foreground"])
-    || hasTokenSequence(parts, ["on"], ["primary", "cta", "brand", "accent"]);
-}
-
 // Inverse / on-colour label tokens, whatever the word order (#535). The name
 // needs a text or foreground part, plus either "inverse" or "on" followed by a
 // coloured or dark background word: --text-inverse, --inverse-text,
 // --text-color-inverse, --on-primary-text, --text-on-dark, --foreground-on-cta.
 // --border-on-primary and --overlay-on-dark are not text; --text-on-light is
-// ordinary dark copy.
+// ordinary dark copy. The one rule for inverse text: token inference, the
+// declared CTA label and body text all read it.
 function isTextLabelToken(parts) {
   if (!hasTokenPart(parts, ["text", "foreground"])) return false;
   return hasTokenPart(parts, ["inverse"])
@@ -270,7 +263,7 @@ function inferDesignIntentTokens(content, rootTokens = {}) {
     }
     if (hasTokenPart(parts, ["text"]) && hasTokenPart(parts, ["primary", "main"])) addToken("--text-primary", color);
     if (hasTokenPart(parts, ["text", "foreground"]) && hasTokenPart(parts, ["secondary", "muted", "subtle"])) addToken("--text-secondary", color);
-    if (isTextInverseToken(parts)) addToken("--text-inverse", color);
+    if (isTextLabelToken(parts)) addToken("--text-inverse", color);
     if (hasTokenPart(parts, ["border", "outline", "stroke", "ring"])) addToken("--border-default", color);
     if (hasTokenPart(parts, ["rating", "star", "review"])) addToken("--rating-star", color);
   }
@@ -425,6 +418,38 @@ function isButtonSelector(selector) {
   });
 }
 
+// A rule body's declarations as [name, value] pairs. A `;` or `:` inside a
+// string or parentheses belongs to the value, so
+// `background: url("data:image/png;base64,...") #dd4249` stays one
+// declaration.
+function splitDeclarations(body) {
+  const declarations = [];
+  let depth = 0;
+  let quote = null;
+  let start = 0;
+  let colon = -1;
+  const text = String(body || "");
+  const push = (end) => {
+    if (colon !== -1) declarations.push([text.slice(start, colon), text.slice(colon + 1, end)]);
+  };
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === "\\") { i += 1; continue; }
+    if (quote) { if (ch === quote) quote = null; continue; }
+    if (ch === "\"" || ch === "'") quote = ch;
+    else if (ch === "(") depth += 1;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (ch === ":" && depth === 0 && colon === -1) colon = i;
+    else if (ch === ";" && depth === 0) {
+      push(i);
+      start = i + 1;
+      colon = -1;
+    }
+  }
+  push(text.length);
+  return declarations;
+}
+
 // The colour rules that can supply the CTA label (#535): each button-selector
 // rule that declares `color:`, with the background it declares beside it, if
 // any. The CTA background is known only after mapping, so pairing happens in
@@ -435,10 +460,9 @@ function collectCtaLabelRules(content, rootTokens = {}) {
     if (!isButtonSelector(match[1])) continue;
     let color = null;
     let background = null;
-    for (const declaration of match[2].split(";")) {
-      const [rawName, ...rawValueParts] = declaration.split(":");
-      const name = String(rawName || "").trim().toLowerCase();
-      const value = resolveDeclarationColor(rawValueParts.join(":"), rootTokens);
+    for (const [rawName, rawValue] of splitDeclarations(match[2])) {
+      const name = rawName.trim().toLowerCase();
+      const value = resolveDeclarationColor(rawValue, rootTokens);
       if (!value) continue;
       if (name === "color") color = value;
       if (["background", "background-color"].includes(name)) background = value;
@@ -854,16 +878,16 @@ function darkestDeclaredBodyText(rootTokens, bodyBackground) {
 }
 
 // The CTA label colour the source declares (#535), in this order: the colour
-// of a button-selector rule whose background is the CTA background (the
-// design's own pairing); a :root inverse / on-colour text token (--text-inverse
-// first); the colour every other button-selector rule agrees on. Button rules
-// that disagree declare nothing. null when none applies, so the luminance
-// pick stands.
+// every button-selector rule on the CTA background agrees on (the design's own
+// pairing); a :root inverse / on-colour text token (--text-inverse first); the
+// colour every other button-selector rule agrees on. Button rules that
+// disagree declare nothing at their step. null when none applies, so the
+// luminance pick stands.
 function declaredCtaForegroundValue({ rootTokens = {}, ctaLabelRules = [], ctaBackground = null }) {
   const background = normalizeColor(ctaBackground);
   if (!background) return null;
-  const paired = ctaLabelRules.find((rule) => rule.background === background);
-  if (paired) return paired.color;
+  const paired = [...new Set(ctaLabelRules.filter((rule) => rule.background === background).map((rule) => rule.color))];
+  if (paired.length === 1) return paired[0];
   const labelNames = Object.keys(rootTokens || {}).filter((name) => (
     !isTargetContractToken(name) && isTextLabelToken(tokenNameParts(name)) && normalizeColor(rootTokens[name])
   ));
@@ -890,8 +914,9 @@ function mapTokens(tokens, targetTokens, { rootTokens = {}, ctaLabelRules = [] }
   // Applies whether or not the source yields a --text-primary; a --text-primary
   // of the same colour keeps its plain mapping.
   const textPrimary = isNonEmptyString(tokens["--text-primary"]) ? tokens["--text-primary"].trim() : null;
+  const textPrimaryColor = normalizeColor(textPrimary);
   const bodyText = darkestDeclaredBodyText(rootTokens, tokens["--surface-bg"]);
-  const replaceBodyText = Boolean(bodyText) && bodyText.value !== normalizeColor(textPrimary);
+  const replaceBodyText = Boolean(bodyText) && bodyText.value !== textPrimaryColor;
 
   for (const [source, targets] of Object.entries(sourceMappings)) {
     const declaredBodyText = source === "--text-primary" && replaceBodyText;

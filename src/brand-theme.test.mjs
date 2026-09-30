@@ -509,6 +509,42 @@ test("brand theme treats inverse and on-colour text tokens as labels, whatever t
   });
 });
 
+test("brand theme infers --text-inverse from the same inverse / on-colour names it treats as labels", () => {
+  withTempDir((dir) => {
+    // The inferred source tokens surface in the producer-defaults comparison.
+    const inferred = (result) => result.context_theme.producer_defaults.present_core_tokens.includes("--text-inverse");
+    const navy = `:root {\n  --brand-cta: #0b1f3a;\n  --surface-bg: #ffffff;\n`;
+    const { result } = inspectCtaSource(join(dir, "on-dark"), `${navy}  --text-on-dark: #ffffff;\n}\n`);
+    assert.equal(inferred(result), true, "--text-on-dark is inverse text");
+    assert.ok(result.context_theme.producer_defaults.matched_tokens.includes("--text-inverse"));
+    // A border on the primary colour is not text.
+    const { result: border } = inspectCtaSource(join(dir, "border"), `${navy}  --border-on-primary: #93c5fd;\n}\n`);
+    assert.equal(inferred(border), false, "--border-on-primary is not text");
+  });
+});
+
+test("brand theme pairs a CTA rule whose background shorthand carries a data: URL", () => {
+  withTempDir((dir) => {
+    // The `;` inside the URL does not end the declaration, so the rule is on
+    // the CTA background and outranks the root label token.
+    const { byTarget } = inspectCtaSource(dir, `:root {${RED_CTA_ROOT}\n  --text-on-primary: #fdf2f2;\n}\n.cta-button { background: url("data:image/svg+xml;base64,PHN2Zy8+") no-repeat right center #dd4249; color: #ffffff; }\n`);
+    assert.equal(byTarget.get("--brand--color--cta-foreground").value, "#ffffff");
+  });
+});
+
+test("brand theme does not trust button rules on the CTA background that disagree on the label", () => {
+  withTempDir((dir) => {
+    const { result: expected } = inspectCtaSource(join(dir, "plain"), `:root {${RED_CTA_ROOT}\n}\n`);
+    const { result, byTarget } = inspectCtaSource(join(dir, "disagree"), `:root {${RED_CTA_ROOT}\n}\n.cta-button { background: var(--brand-cta); color: #ffffff; }\n.btn-primary { background: #dd4249; color: #f0f0f0; }\n`);
+    assert.equal(byTarget.get("--brand--color--cta-foreground").value, "#0a0a0a");
+    assert.equal(byTarget.get("--brand--color--cta-foreground").derivation.method, "foreground-from-luminance");
+    assert.equal(themeBody(result), themeBody(expected));
+    // Rules on the CTA background that agree still pair.
+    const { byTarget: agree } = inspectCtaSource(join(dir, "agree"), `:root {${RED_CTA_ROOT}\n}\n.cta-button { background: var(--brand-cta); color: #ffffff; }\n.btn-primary { background: #dd4249; color: #ffffff; }\n`);
+    assert.equal(agree.get("--brand--color--cta-foreground").value, "#ffffff");
+  });
+});
+
 test("brand theme reads the declared CTA label only from button rules, preferring the one on the CTA background", () => {
   const blueRoot = `:root {\n  --brand-cta: #2563eb;\n  --surface-bg: #ffffff;\n  --text-primary: #111111;\n}\n`;
   withTempDir((dir) => {

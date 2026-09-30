@@ -26,14 +26,19 @@ Notable supported-surface changes are recorded here.
   When the source declares a CTA foreground that reaches 3:1 on the CTA
   background (WCAG AA for large text), `--brand--color--text-inverse` and
   `--brand--color--cta-foreground` use it instead of the higher-contrast
-  black or white pick. The declared foreground is, in order: the `color:` of
-  a button rule whose background is the CTA background; a `:root` inverse or
+  black or white pick. The declared foreground is, in order: the one `color:`
+  every button rule on the CTA background agrees on; a `:root` inverse or
   on-colour text token such as `--text-inverse`, `--text-color-inverse`,
   `--text-on-primary` or `--foreground-on-dark` (the name needs a `text` or
   `foreground` part, so `--border-on-primary` does not count); or the one
-  colour every other button rule agrees on. A button rule targets `button`,
-  `input[type=submit]`, or a class starting with `btn`, `button` or `cta` or
-  having a `cta` part. Only the selector's own element, class and attribute
+  colour every other button rule agrees on. A `;` or `:` inside quotes or
+  parentheses, as in a `data:` URL in a `background` shorthand, no longer
+  splits a button rule's declaration. The same inverse and on-colour names,
+  and only those, are the source's inverse text token when the source is
+  compared with scaffold defaults, so `--text-on-dark` now counts and
+  `--border-on-primary` or a bare `--on-primary` no longer does. A button
+  rule targets `button`, `input[type=submit]`, or a class starting with
+  `btn`, `button` or `cta` or having a `cta` part. Only the selector's own element, class and attribute
   parts count, not the text inside an attribute value or inside `:not()`,
   `:is()`, `:where()` or `:has()`, and any other pseudo-class disqualifies
   it. So `button:not(.order-summary)` supplies the label, while

@@ -314,7 +314,7 @@ export function scanPageMarkup({ page_id, file = null, content = "", page_type =
   // is not parsed a second time.
   const pageTypeMeta = upsellFlagged.length ? builtPageTypeMeta(content) : null;
   const effectivePageType = upsellFlagged.length
-    ? String(builtPageTypeOverRouteGuess({ route_type: page_type, content }) || "").trim().toLowerCase()
+    ? builtPageTypeOverRouteGuess({ route_type: page_type, content })
     : null;
   if (effectivePageType === "checkout") {
     const elements = upsellFlagged.map(describeBump);
