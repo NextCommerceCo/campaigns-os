@@ -7641,8 +7641,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.43.2+agent.7",
-      "changelog_sha256": "fc5c5d2924e77b718468748fa240ce87d47b0abb36ed29a968d99120ca74992c",
-      "agent_impact": "Doctor now blocks with the new error routing_meta.host_prefixed when a page_url or SDK routing meta tag value has a host in front of its path, naming each value and its rooted form; such values no longer appear in the routing_meta.runtime_root warning, whose other findings are unchanged. prepare-build, start and build strip those hosts from a Map fetched with --map-id, write the rooted values to the fetched copy under .campaign-runtime/fetched-specs/, and record each change as routing_meta.host_stripped on the Assembly Report evidence[]. A local --spec file with host-prefixed routes is never rewritten: intake prints a notice naming the values, and the build blocks until the file is edited. A fetched copy that is a symlink or resolves outside .campaign-runtime/fetched-specs/ is also left unchanged, and doctor blocks the same way.",
+      "changelog_sha256": "8c73e87bbd0b2af588a19464b660071f41406f624d5e9cf5be4c109cadd97e96",
+      "agent_impact": "Doctor now blocks with the new error routing_meta.host_prefixed when a page_url or SDK routing meta tag value has a host in front of its path, naming each value and its rooted form; such values no longer appear in the routing_meta.runtime_root warning, whose other findings are unchanged. prepare-build, start and build strip those hosts from a Map fetched with --map-id, write the rooted values to the fetched copy under .campaign-runtime/fetched-specs/, and record each change as routing_meta.host_stripped on the Assembly Report evidence[]. A local --spec file with host-prefixed routes is never rewritten: intake prints a notice naming the values, and the build blocks until the file is edited. A copy reused with --cached-spec that is a symlink or resolves outside .campaign-runtime/fetched-specs/ is also left unchanged, and doctor blocks the same way. A --map-id fetch stops with an error, before fetching and without writing anything, when .campaign-runtime/, fetched-specs/ or the cache file is a symlink, and the cache file is always replaced by a new file rather than written in place, so a hard link to the old file keeps its bytes.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -7650,7 +7650,7 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "prepare-build",
-          "summary": "Strip a host from the front of each page_url and SDK routing meta tag value in a fetched Map, write the rooted values to the fetched copy, record routing_meta.host_stripped evidence and print one notice line; leave a local --spec file unchanged and print a notice naming the values to edit."
+          "summary": "Strip a host from the front of each page_url and SDK routing meta tag value in a fetched Map, write the rooted values to the fetched copy, record routing_meta.host_stripped evidence and print one notice line; leave a local --spec file unchanged and print a notice naming the values to edit; refuse to write the fetch cache through a symlinked .campaign-runtime/, fetched-specs/ or cache file, and replace the cache file by rename rather than writing it in place."
         },
         {
           "class": "cli_surface",
@@ -7662,10 +7662,10 @@
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Document the host grammar, the fetched-copy rewrite, the host_stripped evidence record, the unchanged local spec and the host_prefixed blocker."
+          "summary": "Document the host grammar, the fetched-copy rewrite, the host_stripped evidence record, the unchanged local spec, the host_prefixed blocker and the fetch-cache symlink refusal."
         }
       ],
-      "entry_sha256": "0acb5a9127c8379ed49394c933a8990a55f0c9ea381dadd898d2628a25810c52"
+      "entry_sha256": "c219d6321d99bff0896cf28c3c31bf4f094ae253c6d8f6594f50fcc6d6ccf549"
     }
   ]
 }

@@ -5,13 +5,10 @@ import { createDemo, demoArguments } from "./demo.mjs";
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
-  closeSync,
-  constants as fsConstants,
   cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
-  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -1273,10 +1270,14 @@ async function resolveSpecPath(args, opts = {}) {
       }
       return { specPath: cachePath, source: "cache", mapId, proxyBase };
     }
+    // Refuse a symlinked cache before fetching, and again at the write, which
+    // may run later under the prepare-build lock.
+    assertFetchedSpecCacheWritable(targetRepo, cachePath);
     const spec = await fetchSpecByMapId(mapId, { proxyBase, fetchImpl: opts.fetchImpl });
     const publishSpec = () => {
+      assertFetchedSpecCacheWritable(targetRepo, cachePath);
       mkdirSync(cacheDir, { recursive: true });
-      writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
+      replaceFetchedSpec(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
     };
     // deferCacheWrite hands the cache write back to the caller, which makes it
     // under the prepare-build lock.
@@ -1312,14 +1313,42 @@ function fetchedSpecRewritable(targetRepo, specPath) {
   }
 }
 
-// Writes the rooted spec over the fetched copy without following a symlink
-// that appeared after fetchedSpecRewritable() looked.
-function rewriteFetchedSpec(specPath, bytes) {
-  const fd = openSync(specPath, fsConstants.O_WRONLY | fsConstants.O_TRUNC | (fsConstants.O_NOFOLLOW || 0));
+// The fetch cache is written only inside a real
+// <target>/.campaign-runtime/fetched-specs/ directory. Throws when
+// .campaign-runtime/, fetched-specs/ or the cache entry exists as a symlink or
+// as the wrong kind of file, so a cache write cannot follow a link out of the
+// target. Missing entries are fine; the caller creates them.
+function assertFetchedSpecCacheWritable(targetRepo, cachePath) {
+  const checks = [
+    [join(targetRepo, ".campaign-runtime"), "directory"],
+    [dirname(cachePath), "directory"],
+    [cachePath, "regular file"],
+  ];
+  for (const [path, kind] of checks) {
+    let stat;
+    try {
+      stat = lstatSync(path);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (kind === "directory" ? stat.isDirectory() : stat.isFile()) continue;
+    throw new Error(
+      `Refusing to write the fetched CampaignSpec: ${path} is ${stat.isSymbolicLink() ? "a symlink" : `not a ${kind}`}. `
+      + "The fetch cache is written only inside a real <target>/.campaign-runtime/fetched-specs/ directory; remove the link and run again.",
+    );
+  }
+}
+
+// Writes `bytes` to a temp file beside the cache entry and renames it over the
+// entry, so another name for the old file (a hard link) is never written.
+function replaceFetchedSpec(cachePath, bytes) {
+  const tmpPath = join(dirname(cachePath), `.${basename(cachePath)}.${randomUUID()}.tmp`);
   try {
-    writeFileSync(fd, bytes);
+    writeFileSync(tmpPath, bytes, { flag: "wx" });
+    renameSync(tmpPath, cachePath);
   } finally {
-    closeSync(fd);
+    rmSync(tmpPath, { force: true });
   }
 }
 
@@ -2016,7 +2045,7 @@ function prepareBuildUnderLock({
   if (hostStripped.evidence.length) {
     const changes = hostStripped.evidence.map((entry) => `${JSON.stringify(entry.from)} -> ${JSON.stringify(entry.to)}`).join(", ");
     if (strippedSpecBytes != null) {
-      rewriteFetchedSpec(specPath, strippedSpecBytes);
+      replaceFetchedSpec(specPath, strippedSpecBytes);
       console.warn(
         `[campaigns-os prepare-build] removed the host from ${hostStripped.evidence.length} CampaignSpec route value(s) and rewrote the fetched copy ${specPath}: ${changes}; `
         + `recorded as ${HOST_STRIPPED_CODE} on the assembly report evidence[].`,

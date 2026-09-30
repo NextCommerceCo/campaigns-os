@@ -21,8 +21,12 @@ Notable supported-surface changes are recorded here.
 - A local `--spec` file is never rewritten. If it holds host-prefixed routes,
   intake prints one line naming each value and its rooted form and saying the
   file must be edited, and doctor blocks until it is. The same applies to a
-  fetched copy that is a symlink or resolves outside
+  copy reused with `--cached-spec` that is a symlink or resolves outside
   `.campaign-runtime/fetched-specs/`: it is left unchanged and doctor blocks.
+- A `--map-id` fetch stops with an error, before fetching and without writing
+  anything, when `.campaign-runtime/`, `fetched-specs/` or the cache file is a
+  symlink. The cache file is always replaced by a new file rather than written
+  in place, so a hard link to the old file keeps its bytes.
 - Doctor blocks a host-prefixed route that reaches it with the new
   `routing_meta.host_prefixed` error, naming each value and its rooted form.
   Such values no longer appear in the `routing_meta.runtime_root` warning;

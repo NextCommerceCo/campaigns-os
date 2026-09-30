@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import {
@@ -1005,6 +1005,68 @@ test("start --cached-spec still rewrites a regular cached copy in fetched-specs/
     assert.equal((result.json.doctor?.errors || []).some((issue) => issue.code === "routing_meta.host_prefixed"), false);
   });
 });
+
+// A cache entry hard-linked to an operator file outside the target: the
+// rewrite replaces the entry by rename, so the other name keeps its bytes.
+for (const [label, cached] of [["a fresh --map-id fetch", false], ["--cached-spec", true]]) {
+  test(`start with ${label} never writes an operator file hard-linked to the cache entry`, () => {
+    withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+      const spec = hostPrefixSpec(specPath);
+      const mapId = spec.spec_identity.map_id;
+      const operatorFile = join(dir, "operator-notes.json");
+      writeJson(operatorFile, spec);
+      const bytes = readFileSync(operatorFile);
+      mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
+      linkSync(operatorFile, cachedSpecPath(targetRepo, mapId));
+      const args = ["start", "--map-id", mapId, ...(cached ? ["--cached-spec"] : []), "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"];
+      const result = runCliRaw(args, { preload: cached ? null : mapFetchPreload(dir, spec) });
+      assert.ok(result.json, result.stderr);
+
+      assert.deepEqual(readFileSync(operatorFile), bytes, "the operator file keeps its bytes");
+      assert.equal(readJson(cachedSpecPath(targetRepo, mapId)).funnels[0].pages[2].page_url, "/runtime-packet-demo/upsell/");
+      assert.notEqual(statSync(cachedSpecPath(targetRepo, mapId)).ino, statSync(operatorFile).ino, "the cache entry is its own file now");
+    });
+  });
+}
+
+// A fresh fetch refuses a symlinked .campaign-runtime/, fetched-specs/ or
+// cache entry, and writes nothing through the link.
+for (const [label, link] of [
+  [".campaign-runtime is a symlinked directory", ({ dir, targetRepo, mapId }) => {
+    const externalDir = join(dir, "elsewhere");
+    mkdirSync(join(externalDir, "fetched-specs"), { recursive: true });
+    symlinkSync(externalDir, join(targetRepo, ".campaign-runtime"));
+    return join(externalDir, "fetched-specs", `${mapId}.json`);
+  }],
+  ["fetched-specs is a symlinked directory", ({ dir, targetRepo, mapId }) => {
+    const externalDir = join(dir, "elsewhere");
+    mkdirSync(externalDir, { recursive: true });
+    mkdirSync(join(targetRepo, ".campaign-runtime"), { recursive: true });
+    symlinkSync(externalDir, join(targetRepo, ".campaign-runtime/fetched-specs"));
+    return join(externalDir, `${mapId}.json`);
+  }],
+  ["the cache entry is a symlink to a file outside the target", ({ dir, targetRepo, mapId }) => {
+    const external = join(dir, "operator-spec.json");
+    mkdirSync(join(targetRepo, ".campaign-runtime/fetched-specs"), { recursive: true });
+    symlinkSync(external, cachedSpecPath(targetRepo, mapId));
+    return external;
+  }],
+]) {
+  test(`start --map-id refuses to write the fetch cache when ${label}`, () => {
+    withIntakeFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+      const spec = hostPrefixSpec(specPath);
+      const mapId = spec.spec_identity.map_id;
+      const sentinel = link({ dir, targetRepo, mapId });
+      writeFileSync(sentinel, "operator sentinel\n");
+      const result = runCliRaw(["start", "--map-id", mapId, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"], { preload: mapFetchPreload(dir, spec) });
+
+      assert.equal(readFileSync(sentinel, "utf8"), "operator sentinel\n", "nothing is written through the link");
+      assert.notEqual(result.status, 0, result.stderr);
+      assert.match(result.stderr, /Refusing to write the fetched CampaignSpec: .* is a symlink/);
+      assert.deepEqual(readdirSync(dirname(sentinel)).filter((name) => name.endsWith(".tmp")), [], "no temp file is left beside the link target");
+    });
+  });
+}
 
 test("doctor blocks a host-prefixed route that reaches it without intake, naming the value and its rooted form", () => {
   withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {

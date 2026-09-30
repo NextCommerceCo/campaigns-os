@@ -1228,7 +1228,7 @@ and report proof policy fields above.
 | `--spec <path>` | Local JSON file | Agent-authored local specs, saved-Map exports, offline work or CI fixtures |
 | `--map-id <id>` | Map Builder proxy (KV-backed) | Saved-Map intake from the current KV revision |
 
-When `--map-id <id>` is set, the CLI fetches `GET <proxy>/api/spec/<id>` (default `<proxy>` is `https://campaign-map.nextcommerce.com`) and caches the response to `<target>/.campaign-runtime/fetched-specs/<id>.json`. The cached file is what downstream stages read, so the packet's `spec.local_path` always resolves to an on-disk artifact regardless of intake mode.
+When `--map-id <id>` is set, the CLI fetches `GET <proxy>/api/spec/<id>` (default `<proxy>` is `https://campaign-map.nextcommerce.com`) and caches the response to `<target>/.campaign-runtime/fetched-specs/<id>.json`. The cached file is what downstream stages read, so the packet's `spec.local_path` always resolves to an on-disk artifact regardless of intake mode. The cache is written only inside a real `fetched-specs/` directory: if `.campaign-runtime/`, `fetched-specs/` or the cache file is a symlink, the command stops with an error before fetching and writes nothing. Each write goes to a new file renamed over the cache file, so a hard link to the old file keeps its bytes.
 
 Saved-Map retrieval behavior (`--map-id`):
 
@@ -1336,11 +1336,13 @@ tag value in `funnels[].pages[]` and `funnel_pages[]`:
 - The fetched copy at `<target>/.campaign-runtime/fetched-specs/<map-id>.json`
   (also when reused with `--cached-spec`) is written with the rooted values,
   so it is not left exactly as fetched. A spec with no host-prefixed value is
-  written exactly as before. Only a regular file whose real path is in that
-  directory is rewritten; if the copy or any directory under
-  `.campaign-runtime/` is a symlink, or the copy resolves outside
-  `fetched-specs/`, nothing is written, one line on stderr says the copy could
-  not be normalised in place, and doctor blocks as for a local spec.
+  written exactly as before. The rooted spec is written to a new file in
+  `fetched-specs/` and renamed over the copy, so another name for the old file
+  (a hard link) is never changed. Only a regular file whose real path is in
+  that directory is replaced; if a copy reused with `--cached-spec`, or any
+  directory under `.campaign-runtime/`, is a symlink, or the copy resolves
+  outside `fetched-specs/`, nothing is written, one line on stderr says the
+  copy could not be normalised in place, and doctor blocks as for a local spec.
 - Each changed value is recorded on the Assembly Report `evidence[]` as
   `{ "code": "routing_meta.host_stripped", "page_id", "field", "from", "to" }`;
   `from` is the value exactly as the Map returned it. One line on stderr lists
