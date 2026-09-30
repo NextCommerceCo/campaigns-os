@@ -746,13 +746,14 @@ built-output gate now carries.
 ### Built-output SDK markup gate (`built_output.sdk_markup`)
 
 Every doctor run that sees built output also runs the static SDK markup
-family: six shapes of `data-next-*` markup that the Campaign Cart SDK binds
+family: seven shapes of `data-next-*` markup that the Campaign Cart SDK binds
 without complaint and that then either do nothing (a field that never reaches
 the order, a button that never enables) or write the cart twice. They sit
 beside `built_output.upsell_selector_scope`, which is the same kind of check
-for one shape. The codes are the ones a partner Campaign Cart kit used, kept so
-the two vocabularies line up; each doctor issue is `built_output.sdk_markup.`
-plus the code lower-cased, and its message leads with the code.
+for one shape. The first six codes are the ones a partner Campaign Cart kit
+used, kept so the two vocabularies line up; each doctor issue is
+`built_output.sdk_markup.` plus the code lower-cased, and its message leads
+with the code.
 
 Blockers (not waivable — the markup provably does not do what it says):
 
@@ -774,6 +775,12 @@ Blockers (not waivable — the markup provably does not do what it says):
   `data-next-selector-id` names no selector on the page (an element that is a
   bundle, package, cart or upsell selector; another element echoing the id
   does not count). One finding per dead id, however many buttons link to it.
+- `ORPHANED_UPSELL_ACTION` — an element carrying `data-next-upsell-action` with
+  no ancestor carrying `data-next-upsell`. The SDK binds upsell actions only
+  inside that container, so a "No thanks" link placed beside the offer
+  container, not inside it, goes nowhere and the shopper cannot decline.
+  Checked on every page type, not only upsell and downsell pages. Move the
+  element inside its `data-next-upsell` container.
 
 Warnings (advisory):
 
