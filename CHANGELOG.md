@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.46.0+agent.2] - 2026-09-30
+## [1.46.0+agent.3] - 2026-09-30
 
 ### Changed
 
@@ -14,6 +14,19 @@ Notable supported-surface changes are recorded here.
   `subfolder-campaign.md` with synthetic repo and slug names. The doctor
   `analytics_contract.content_param_no_handler` message drops its build
   reference; its code, trigger and detail fields are unchanged.
+
+## [1.46.0+agent.2] - 2026-09-30
+
+### Fixed
+
+- The effects test for `campaigns-os login` no longer contacts the real login
+  gateway. The gateway host is hard-coded and now resolves on the public
+  internet, so the case, which assumed the gateway was unreachable offline,
+  sent a real device-authorization request on every run and failed the
+  "no connection off this machine" check in CI. The harness now answers the
+  DNS lookup for that one host with ENOTFOUND, so login takes its offline
+  failure path. Any other off-machine connection still fails the case. No
+  change to the CLI.
 
 ## [1.46.0+agent.1] - 2026-09-30
 

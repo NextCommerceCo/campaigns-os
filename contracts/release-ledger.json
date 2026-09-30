@@ -3796,8 +3796,8 @@
       "date": "2026-09-30",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.46.0+agent.2",
-      "changelog_sha256": "0bc554457dc45edfaa3871790abb80a1dbeeed66e653dd4ff501154c7e3ece86",
+      "changelog_section": "1.46.0+agent.3",
+      "changelog_sha256": "9b73d6df61483fb5541efd442308b620b5ef50bbb198a1b212f73c8058bdc2c5",
       "agent_impact": "None. Wording-only: provenance comments, one doctor message and a documentation example no longer name real merchants. Finding codes, triggers and detail fields are unchanged.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3827,7 +3827,7 @@
           "summary": "Drop the build reference from the analytics_contract.content_param_no_handler message; code and detail fields unchanged."
         }
       ],
-      "entry_sha256": "72df1b835760a584b423b97e5fc8b37b705d8e238edf38e7ff241046a8338dee"
+      "entry_sha256": "5c5b4362711e980c81eab5e1b643c42de1d8bfd74684dd73596f036925bfbeef"
     }
   ]
 }
