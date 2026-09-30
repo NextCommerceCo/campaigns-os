@@ -2696,7 +2696,10 @@ export function checkpointWaive(args) {
   const packetPath = resolve(requireArg(args, "packet"));
   const dryRun = isDryRun(args);
   const gateId = requireArg(args, "gate").trim();
-  const pageId = args.page == null ? null : String(args.page).trim();
+  if (args.page != null && (typeof args.page !== "string" || !args.page.trim())) {
+    throw new Error("--page needs a page id: pass --page <page_id>.");
+  }
+  const pageId = args.page == null ? null : args.page.trim();
   // One spelling for the page scope: --page. The <gate>:<page_id> form is
   // refused by name rather than falling through to "unknown gate".
   const colon = gateId.indexOf(":");

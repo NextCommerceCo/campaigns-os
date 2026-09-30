@@ -212,6 +212,15 @@ test("the page scope is --page only: unknown pages, the <gate>:<page_id> form an
       () => checkpointWaive({ ...base, gate: SOURCE_PROVENANCE_SCOPE }),
       /is waived per page; pass --page <page_id>/,
     );
+    // A bare --page (parsed as boolean true) or an empty one is refused, never
+    // read as a page called "true".
+    for (const page of [true, "", "   "]) {
+      assert.throws(
+        () => checkpointWaive({ ...base, gate: SOURCE_PROVENANCE_SCOPE, page }),
+        /--page needs a page id/,
+        `page=${JSON.stringify(page)}`,
+      );
+    }
     assert.throws(
       () => checkpointWaive({ ...base, gate: "page_kit.sdk_version", page: "landing" }),
       /--page applies only to per-page checkpoint gates/,
