@@ -146,14 +146,15 @@ function validateSectionOrder(sections, path) {
 /**
  * Every section id present at base that is now in no changelog file. Shared
  * with check-release-ledger.mjs, whose --base run is the one CI performs.
+ * `path` is the file the error is reported against.
  */
-export function findDroppedSections(baseSectionIds, presentSectionIds) {
+export function findDroppedSections(baseSectionIds, presentSectionIds, path = CHANGELOG_PATH) {
   const present = new Set(presentSectionIds);
   return [...new Set(baseSectionIds)]
     .filter((id) => !present.has(id))
     .map(
       (id) =>
-        `${CHANGELOG_PATH}: section "${id}" was present at base but is in neither ${CHANGELOG_PATH} nor an archive changelog — ` +
+        `${path}: section "${id}" was present at base but is in no changelog file now, live or archived — ` +
         `a section is never deleted; a baseline rotation moves it into a new archive file`,
     );
 }

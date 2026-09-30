@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { CONFLICT_MARKER, findConflictMarkers, loadInputs, validateChangelogStructure } from "./check-changelog-structure.mjs";
+import { CONFLICT_MARKER, findConflictMarkers, findDroppedSections, loadInputs, validateChangelogStructure } from "./check-changelog-structure.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -132,8 +132,15 @@ test("a section present at base must still be in the live file or an archive, li
   // Deleting one no ledger entry links, without archiving it, is refused.
   const deleted = validateChangelogStructure({ changelogText: changelog("1.2.0", "1.1.0", "1.0.0"), baseSectionIds: base });
   assert.deepEqual(deleted, [
-    'CHANGELOG.md: section "1.1.0+agent.1" was present at base but is in neither CHANGELOG.md nor an archive changelog — a section is never deleted; a baseline rotation moves it into a new archive file',
+    'CHANGELOG.md: section "1.1.0+agent.1" was present at base but is in no changelog file now, live or archived — a section is never deleted; a baseline rotation moves it into a new archive file',
   ]);
+});
+
+test("a dropped section is reported against the path its caller names, which the message states once", () => {
+  assert.deepEqual(findDroppedSections(["1.1.0", "1.0.0"], ["1.1.0"], "contracts/release-ledger.json"), [
+    'contracts/release-ledger.json: section "1.0.0" was present at base but is in no changelog file now, live or archived — a section is never deleted; a baseline rotation moves it into a new archive file',
+  ]);
+  assert.match(findDroppedSections(["1.0.0"], [])[0], /^CHANGELOG\.md: section "1\.0\.0"/);
 });
 
 test("an archived section moved back into the live file is refused, even at the bottom of both files", () => {
@@ -198,7 +205,7 @@ test("--base refuses an unlinked section deleted since the merge base", () => {
       stdout = error.stdout;
     }
     assert.equal(status, 1, stdout);
-    assert.match(stdout, /section "1\.0\.0\+agent\.1" was present at base but is in neither CHANGELOG\.md nor an archive changelog/);
+    assert.match(stdout, /section "1\.0\.0\+agent\.1" was present at base but is in no changelog file now, live or archived/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

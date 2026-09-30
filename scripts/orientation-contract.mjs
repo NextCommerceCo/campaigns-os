@@ -794,7 +794,8 @@ export function validateTwoWayGate({ classified, newEntries, surfaceBumped, surf
  * record must name a file that did not exist at base. A new archive may hold
  * only entries that were live at base (byte-identical) and only changelog
  * sections that were in the base changelog (byte-identical). A base entry that
- * stays live never amends an entry this rotation archived (rotationSplitError).
+ * stays live never amends an entry this rotation archived, nor links a section
+ * it archived (rotationSplitError).
  *
  * `rotation` is optional; without it (a range with no floor on either side)
  * this is the plain append-only rule.
@@ -914,14 +915,17 @@ export function validateAppendOnly(baseEntries, headEntries, rotation = {}) {
 
   // A hand-authored rotation keeps the pair rule rotateLedger enforces: an
   // entry that was live at base and stays live never amends one this rotation
-  // archived. A NEW entry amending an archived one is how archived history is
-  // corrected, so only base entries count as kept.
+  // archived, nor links a section it archived (the sections of the archive
+  // changelogs this rotation wrote). A NEW entry amending an archived one is how
+  // archived history is corrected, so only base entries count as kept.
   if (floorMoved) {
     const movedIds = new Set(baseEntries.filter((entry) => !head.has(entry.id) && entry.sequence <= headFloorSequence).map((entry) => entry.id));
+    const movedSectionIds = new Set((headArchive?.sections ?? []).filter((section) => newChangelogPaths.has(section.path)).map((section) => section.section_id));
     const split = rotationSplitError({
       lastArchivedId: headFloor.last_archived_id,
       archivedIds: movedIds,
       kept: headEntries.filter((entry) => baseById.has(entry.id)),
+      tailSectionIds: movedSectionIds,
     });
     if (split) errors.push(`${floorWhere}: ${split}`);
   }

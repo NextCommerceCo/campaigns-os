@@ -1036,6 +1036,37 @@ test("a hand-authored rotation that archives an entry a kept base entry amends f
   assert.deepEqual(rotationGate(base, head), [`${LEDGER_PATH} baseline_floor: ${refusal}`]);
 });
 
+test("a hand-authored rotation that archives a section a kept base entry links fails the gate with the helper's message", () => {
+  const base = rotationBase();
+  const refusal = "rotation at RL-0002 would split a pair (RL-0003 links archived section 1.1.0+agent.1); move the cut earlier";
+  assert.throws(() => rotate(base, { cut: "RL-0002" }), { message: refusal });
+
+  // The same cut written by hand: rotate without RL-0003, then put the
+  // unchanged historical RL-0003 back at the top of the live ledger.
+  const original = base.ledger.entries.find((entry) => entry.id === "RL-0003");
+  const without = { ...base, ledger: { ...base.ledger, entries: base.ledger.entries.filter((entry) => entry !== original) } };
+  const rotated = rotate(without, { cut: "RL-0002" });
+  const head = {
+    ...rotated,
+    ledger: { ...rotated.ledger, baseline_floor: { ...rotated.ledger.baseline_floor, first_kept_id: "RL-0003" }, entries: [original, ...rotated.ledger.entries] },
+  };
+  assert.deepEqual(rotationGate(base, head), [
+    `${LEDGER_PATH} RL-0003: changelog_section "1.1.0+agent.1" has no matching section in CHANGELOG.md`,
+    `${LEDGER_PATH} baseline_floor: ${refusal}`,
+  ]);
+});
+
+test("the release-ledger gate reports a dropped archived section once, against CHANGELOG.md", () => {
+  const unlinked = "## [0.9.0] - 2026-01-31\n\n### Added\n\n- Unlinked fixture release.\n";
+  const base = rotationBase({ changelog: `${ROTATION_CHANGELOG}\n${unlinked}` });
+  const head = rotate(base);
+  const dropped = tamperArchive(head, head.ledger.baseline_floor.archives[0].changelog_path, (text) => text.replace(unlinked, ""));
+  assert.deepEqual(rotationGate(base, dropped), [
+    'CHANGELOG.md: section "0.9.0" was present at base but is in no changelog file now, live or archived — a section is never deleted; ' +
+      "a baseline rotation moves it into a new archive file",
+  ]);
+});
+
 test("a new entry that amends an archived entry passes, in the rotation's range and in a later one", () => {
   const base = rotationBase();
   const rotated = rotate(base);
