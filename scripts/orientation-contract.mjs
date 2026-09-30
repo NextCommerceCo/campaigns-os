@@ -577,6 +577,21 @@ export function validateBaselineFloor(ledger, archive) {
 }
 
 /**
+ * The pair rule a rotation cut must keep, shared by `rotateLedger` (which
+ * refuses to write the cut) and `validateAppendOnly` (which refuses a
+ * hand-authored one). `kept` are the entries that stay live, `archivedIds` the
+ * entries this rotation moves, `tailSectionIds` the changelog sections it
+ * moves. Returns the refusal message, or null when no pair is split.
+ */
+export function rotationSplitError({ lastArchivedId, archivedIds, kept, tailSectionIds = new Set() }) {
+  const split = [
+    ...kept.filter((entry) => entry.kind === "amendment" && archivedIds.has(entry.amends)).map((entry) => `${entry.id} amends archived ${entry.amends}`),
+    ...kept.filter((entry) => tailSectionIds.has(entry.changelog_section)).map((entry) => `${entry.id} links archived section ${entry.changelog_section}`),
+  ];
+  return split.length ? `rotation at ${lastArchivedId} would split a pair (${split.join("; ")}); move the cut earlier` : null;
+}
+
+/**
  * Move every entry up to and including `lastArchivedId` into a new archive
  * ledger, and the changelog from the first section those entries link down to
  * the end of the file into a new archive changelog, verbatim and in order.
@@ -617,11 +632,8 @@ export function rotateLedger({ ledger, changelogText, lastArchivedId, ledgerArch
   while (first > 0 && starts[first - 1].section_id !== firstRelease && releaseOf(starts[first - 1].section_id) === firstRelease) first -= 1;
   const tailIds = new Set(starts.slice(first).map((start) => start.section_id));
 
-  const split = [
-    ...kept.filter((entry) => entry.kind === "amendment" && archivedIds.has(entry.amends)).map((entry) => `${entry.id} amends archived ${entry.amends}`),
-    ...kept.filter((entry) => tailIds.has(entry.changelog_section)).map((entry) => `${entry.id} links archived section ${entry.changelog_section}`),
-  ];
-  if (split.length) throw new Error(`rotation at ${lastArchivedId} would split a pair (${split.join("; ")}); move the cut earlier`);
+  const split = rotationSplitError({ lastArchivedId, archivedIds, kept, tailSectionIds: tailIds });
+  if (split) throw new Error(split);
 
   const cutLine = starts[first].index;
   const keptLines = lines.slice(0, cutLine);
@@ -781,7 +793,8 @@ export function validateTwoWayGate({ classified, newEntries, surfaceBumped, surf
  * must survive unchanged at the head of the head floor's list, and a new
  * record must name a file that did not exist at base. A new archive may hold
  * only entries that were live at base (byte-identical) and only changelog
- * sections that were in the base changelog (byte-identical).
+ * sections that were in the base changelog (byte-identical). A base entry that
+ * stays live never amends an entry this rotation archived (rotationSplitError).
  *
  * `rotation` is optional; without it (a range with no floor on either side)
  * this is the plain append-only rule.
@@ -897,6 +910,20 @@ export function validateAppendOnly(baseEntries, headEntries, rotation = {}) {
     if (canonicalJson(current) !== canonicalJson(baseEntry)) {
       errors.push(`${LEDGER_PATH} ${baseEntry.id}: historical entry was rewritten — the ledger is append-only; ship a correction as a new amendment entry`);
     }
+  }
+
+  // A hand-authored rotation keeps the pair rule rotateLedger enforces: an
+  // entry that was live at base and stays live never amends one this rotation
+  // archived. A NEW entry amending an archived one is how archived history is
+  // corrected, so only base entries count as kept.
+  if (floorMoved) {
+    const movedIds = new Set(baseEntries.filter((entry) => !head.has(entry.id) && entry.sequence <= headFloorSequence).map((entry) => entry.id));
+    const split = rotationSplitError({
+      lastArchivedId: headFloor.last_archived_id,
+      archivedIds: movedIds,
+      kept: headEntries.filter((entry) => baseById.has(entry.id)),
+    });
+    if (split) errors.push(`${floorWhere}: ${split}`);
   }
 
   for (const entry of headEntries) {

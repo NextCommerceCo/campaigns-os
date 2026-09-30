@@ -304,8 +304,11 @@ The gate accepts a base entry missing from the live ledger only when the head
 floor covers it, the new archive holds it canonical-JSON-identical, and the floor
 moved with a new rotation entry in the same range. Any other deletion, an
 archive copy that differs from base, a floor that moves without a rotation
-entry, a floor that moves back or is rewritten, and an edited archive file all
-fail. The live changelog and each archive changelog must each be well-formed on
+entry, a floor that moves back or is rewritten, an edited archive file, and a
+cut that archives an entry while an entry that was live at base stays live and
+amends it (the same refusal `rotateLedger` gives) all fail. A new entry added
+after the rotation may still amend an archived entry, linking its own section
+in the live changelog: that is how archived history is corrected. The live changelog and each archive changelog must each be well-formed on
 their own, a section id may appear in only one of them, a section present
 at base must still be in one of them, and the live changelog followed by the
 archives, newest rotation first, must read as the base's sections in order

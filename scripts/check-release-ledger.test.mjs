@@ -1016,6 +1016,36 @@ test("a rotation refuses to split an amendment from the entry it amends, or a se
   assert.throws(() => rotate(relink, { cut: "RL-0002" }), /RL-0003 links archived section 1\.1\.0\b/);
 });
 
+test("a hand-authored rotation that archives an entry a kept base entry amends fails the gate with the helper's message", () => {
+  const base = rotationBase({ third: { extra: { kind: "amendment", amends: "RL-0001", amendment_reason: "Fixture correction." } } });
+  const refusal = "rotation at RL-0001 would split a pair (RL-0003 amends archived RL-0001); move the cut earlier";
+  assert.throws(() => rotate(base, { cut: "RL-0001" }), { message: refusal });
+
+  // The same cut written by hand: rotate with the amendment disguised, then put
+  // the unchanged historical RL-0003 back in the live ledger.
+  const original = base.ledger.entries.find((entry) => entry.id === "RL-0003");
+  const disguised = { ...base, ledger: { ...base.ledger, entries: base.ledger.entries.map((entry) => (entry === original ? { ...entry, kind: "release" } : entry)) } };
+  const rotated = rotate(disguised, { cut: "RL-0001" });
+  const head = { ...rotated, ledger: { ...rotated.ledger, entries: rotated.ledger.entries.map((entry) => (entry.id === "RL-0003" ? original : entry)) } };
+  assert.deepEqual(rotationGate(base, head), [`${LEDGER_PATH} baseline_floor: ${refusal}`]);
+});
+
+test("a new entry that amends an archived entry passes, in the rotation's range and in a later one", () => {
+  const base = rotationBase();
+  const rotated = rotate(base);
+  const changelog = rotated.changelog.replace("## [", "## [1.3.0+agent.1] - 2026-03-02\n\n### Fixed\n\n- Correct the first fixture release's record.\n\n## [");
+  const amendment = fixtureEntry(parseChangelogSections(changelog), {
+    id: "RL-0006",
+    sequence: 6,
+    date: "2026-03-02",
+    section: "1.3.0+agent.1",
+    extra: { kind: "amendment", amends: "RL-0001", amendment_reason: "RL-0001 understated its impact." },
+  });
+  const head = { ...rotated, changelog, ledger: { ...rotated.ledger, entries: [...rotated.ledger.entries, amendment] } };
+  assert.deepEqual(rotationGate(rotated, head), []);
+  assert.deepEqual(rotationGate(base, head), []);
+});
+
 test("the changelog cut takes the whole tail from the top of the first archived release group, linked or not", () => {
   // Cutting at RL-0002 archives release 1.1.0, so 1.1.0+agent.1 above it moves
   // too; RL-0003 still links it, so the cut must move earlier.
