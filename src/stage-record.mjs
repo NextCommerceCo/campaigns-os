@@ -4,12 +4,13 @@
 //
 // Every value a record stamps is read from the doctor result the `next` ladder
 // itself reads (doctorPacket over the same packet and sidecars), so a record
-// can never carry a fingerprint doctor did not compute. The target lock is
-// taken first; the report binding, the report, the Build Context and doctor's
-// result are all read under it, and the record is composed on that report,
-// validated against the existing schemas and doctor's own report checks, and
-// refused whole (nothing written) when any of those fails. --dry-run takes the
-// same path, without the lock, and writes nothing.
+// can never carry a fingerprint doctor did not compute. The packet is read
+// once to name the target lock; under the lock it is re-read and re-checked
+// with the report binding, the report, the Build Context and doctor's result,
+// and the record is composed on that report, validated against the existing
+// schemas and doctor's own report checks, and refused whole (nothing written)
+// when any of those fails. --dry-run takes the same path, without the lock,
+// and writes nothing.
 //
 // The Build Context holds setup state only (`scaffold`); build and polish
 // completion live on the Assembly Report alone, so `record build` and `record
@@ -28,7 +29,7 @@ import { doctorPacket } from "./doctor/inspect.mjs";
 import { validateAssemblyReport } from "./doctor/checks.mjs";
 import { cmd } from "./install-invocation.mjs";
 import { refused } from "./lifecycle.mjs";
-import { stageIsTerminal } from "./orchestration-stage-contract.mjs";
+import { NEXT_STAGE_ORDER, reportKeyForCliStage, stageIsTerminal } from "./orchestration-stage-contract.mjs";
 import {
   POLISH_GATE_REQUIRED_EVIDENCE,
   POLISH_PRODUCER,
@@ -47,9 +48,11 @@ const RECORD_FLAGS = Object.freeze(["packet", "context", "report", "dry-run", "j
 const POLISH_RECORD_FLAGS = Object.freeze(["evidence"]);
 
 // The keys a --evidence file may carry. `evidence` is stages.polish.evidence;
-// `repair_loop_defect` is report.theme.repair_loop_defect.
-const POLISH_EVIDENCE_FILE_KEYS = Object.freeze(["status", "evidence", "repair_loop_defect"]);
-const POLISH_RECORD_STATUSES = Object.freeze(["completed", "completed_with_warnings"]);
+// `repair_loop_defect` is report.theme.repair_loop_defect; `blockers` (status
+// blocked) and `skip_reason` (status skipped) land on stages.polish.
+const POLISH_EVIDENCE_FILE_KEYS = Object.freeze(["status", "evidence", "repair_loop_defect", "blockers", "skip_reason"]);
+const POLISH_COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings"]);
+const POLISH_RECORD_STATUSES = Object.freeze([...POLISH_COMPLETED_STATUSES, "blocked", "skipped"]);
 
 const SCHEMA_DIR = fileURLToPath(new URL("../schemas/", import.meta.url));
 const validators = new Map();
@@ -139,10 +142,26 @@ export function readPolishEvidenceFile(path) {
   if (!POLISH_RECORD_STATUSES.includes(status)) {
     problems.push(`status must be one of ${POLISH_RECORD_STATUSES.join(", ")} (got ${JSON.stringify(input.status)}).`);
   }
+  // A blocked Polish names what blocks it and a skipped one says why; each
+  // key belongs to its own status only.
+  const blockers = input.blockers;
+  if (status === "blocked") {
+    if (!Array.isArray(blockers) || !blockers.length || !blockers.every((blocker) => isObject(blocker) && optionalString(blocker.code) && optionalString(blocker.message))) {
+      problems.push(`blockers must be a non-empty array of {"code": "...", "message": "..."} objects when status is blocked (got ${typeName(blockers)}).`);
+    }
+  } else if (blockers !== undefined) {
+    problems.push(`blockers is recorded only with status blocked (status is ${JSON.stringify(status)}).`);
+  }
+  if (status === "skipped") {
+    if (!optionalString(input.skip_reason)) problems.push(`skip_reason must be a non-empty string when status is skipped (got ${typeName(input.skip_reason)}).`);
+  } else if (input.skip_reason !== undefined) {
+    problems.push(`skip_reason is recorded only with status skipped (status is ${JSON.stringify(status)}).`);
+  }
   const evidence = input.evidence;
-  if (!isObject(evidence)) {
+  const evidenceRequired = POLISH_COMPLETED_STATUSES.includes(status);
+  if (!isObject(evidence) && (evidenceRequired || evidence !== undefined)) {
     problems.push(`evidence must be an object carrying ${POLISH_GATE_REQUIRED_EVIDENCE.join(", ")} (got ${typeName(evidence)}).`);
-  } else {
+  } else if (isObject(evidence)) {
     if (evidence.issues !== undefined && !Array.isArray(evidence.issues)) {
       problems.push(`evidence.issues must be an array ([] when polish found none) (got ${typeName(evidence.issues)}).`);
     }
@@ -161,7 +180,9 @@ export function readPolishEvidenceFile(path) {
   if (problems.length) throw refuseRecord("polish", problems);
   return {
     status,
-    evidence,
+    evidence: evidence ?? null,
+    blockers: status === "blocked" ? blockers : [],
+    skipReason: status === "skipped" ? input.skip_reason : null,
     hasRepairLoopDefect: Object.hasOwn(input, "repair_loop_defect"),
     repairLoopDefect: input.repair_loop_defect ?? null,
   };
@@ -236,22 +257,31 @@ function composeBuild(report, { now, recordedBy, fingerprint }) {
 function composePolish(report, { now, recordedBy, fingerprint, input }) {
   const previous = stageObject(report, "polish");
   const previousVisual = isObject(previous.evidence?.visual_review) ? previous.evidence.visual_review : {};
-  const visualReview = {
-    ...input.evidence.visual_review,
-    ...(Object.hasOwn(previousVisual, "page_load") ? { page_load: previousVisual.page_load } : {}),
-  };
+  // A blocked or skipped record given no evidence keeps what is there (the
+  // capture's bounded evidence stays for diagnosis).
+  const evidence = input.evidence
+    ? {
+        ...input.evidence,
+        visual_review: {
+          ...input.evidence.visual_review,
+          ...(Object.hasOwn(previousVisual, "page_load") ? { page_load: previousVisual.page_load } : {}),
+        },
+      }
+    : previous.evidence;
   const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
   const polish = {
-    ...withoutKeys(previous, ["source_package_material_fingerprint"]),
+    ...withoutKeys(previous, ["source_package_material_fingerprint", "completed_at", "skip_reason", "evidence"]),
     stage: "polish",
     status: input.status,
     performed_by: POLISH_PRODUCER,
     source_build_fingerprint: fingerprint,
     ...(sourcePackageFingerprint ? { source_package_material_fingerprint: sourcePackageFingerprint } : {}),
-    completed_at: now,
+    // A blocked Polish has not completed.
+    ...(input.status === "blocked" ? {} : { completed_at: now }),
     recorded_by: recordedBy,
-    evidence: { ...input.evidence, visual_review: visualReview },
-    blockers: [],
+    ...(evidence === undefined ? {} : { evidence }),
+    ...(input.skipReason ? { skip_reason: input.skipReason } : {}),
+    blockers: input.blockers,
   };
   const nextReport = { ...report, stages: { ...report.stages, polish } };
   // A null defect on a report with no theme block says nothing to record.
@@ -271,9 +301,10 @@ function validateRecord(stage, { report, context, packet, fingerprint }) {
     ...(context ? schemaProblems("campaign-runtime-build-context.v0.schema.json", context, "Build Context") : []),
   ];
   for (const issue of validateAssemblyReport(report).errors) problems.push(`Assembly Report ${issue.code}: ${issue.message}`);
-  if (stage === "polish" && !problems.length) {
+  if (stage === "polish" && POLISH_COMPLETED_STATUSES.includes(report.stages.polish.status) && !problems.length) {
     // The two gates doctor evaluates over the report it reads, evaluated here
-    // over the report this record would write.
+    // over the report this record would write. A blocked or skipped Polish is
+    // not a pass the gate could grant; doctor keeps QA blocked on it.
     const hiddenEagerMediaGate = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report });
     const gate = evaluatePolishGate({ report, hiddenEagerMediaGate, currentOutputFingerprint: fingerprint });
     if (gate.status === "blocked") {
@@ -313,14 +344,33 @@ function bindingProblems(doctor, report, packet) {
   return problems;
 }
 
+// The ladder `next` walks (pickNextStage), up to the stage being recorded:
+// doctor's prepare-build gate, on which `next` answers prepare-build whenever
+// it is set, then every earlier stage terminal by the picker's own predicate.
+function ladderProblems(stage, doctor, report) {
+  const gate = doctor.derived?.prepare_build_gate;
+  if (gate) return [`next answers prepare-build: ${gate.reason}`];
+  const problems = [];
+  for (const earlier of NEXT_STAGE_ORDER.slice(0, NEXT_STAGE_ORDER.indexOf(stage))) {
+    const key = reportKeyForCliStage(earlier);
+    const status = String(report.stages[key]?.status || "");
+    if (!stageIsTerminal(status)) {
+      problems.push(`stages.${key}.status is "${status || "(unset)"}", so next answers ${earlier}; run ${cmd("record")} ${earlier} first.`);
+    }
+  }
+  return problems;
+}
+
 // What doctor computed that the record depends on, checked before anything is
-// composed: the packet/report binding (every stage), the output fingerprint
-// (build, polish), the scaffold (setup, build), and the stage the ladder must
-// already have reached (polish).
+// composed: the packet/report binding and the ladder (every stage), the output
+// fingerprint (build, polish), the scaffold (setup, build), and the recorded
+// build (polish).
 function doctorFacts(stage, doctor, report, packet) {
   const derived = doctor.derived || {};
   const binding = bindingProblems(doctor, report, packet);
   if (binding.length) throw refuseRecord(stage, binding);
+  const ladder = ladderProblems(stage, doctor, report);
+  if (ladder.length) throw refuseRecord(stage, ladder);
   if (stage === "setup") {
     const outputDir = optionalString(derived.target_output_dir);
     if (!outputDir || !existsSync(outputDir)) {

@@ -7809,7 +7809,7 @@
       "kind": "release",
       "surface_version": "1.45.0",
       "changelog_section": "1.45.0",
-      "changelog_sha256": "35e4fc7e03764f046569be5ef041091abfc8fb783bdf8e8b6f7ee0ec929a5fc8",
+      "changelog_sha256": "157deae3a89bdca333426db2bf5706489cc0eb0187fac69e429ee3799c8bb3a9",
       "agent_impact": "Record setup, build and polish completion with campaigns-os record setup, record build and record polish --evidence <file> instead of hand-editing build-context.json or assembly-report.json. Each command validates before writing and writes nothing on failure.",
       "compatibility": "additive",
       "migration": "none",
@@ -7935,7 +7935,7 @@
           "summary": "Add record setup, record build and record polish, and point next's stage actions and prompts at them."
         }
       ],
-      "entry_sha256": "d6d703eb9317b90b8da895b1a189bc68fbda632407a8a4b145fc2de90d9eec33"
+      "entry_sha256": "2c8961b7b39b1fe5e2b550d6f29aa330f2a9c1989502fce7876645738d5eefd1"
     }
   ]
 }

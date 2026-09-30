@@ -513,23 +513,27 @@ campaigns-os record polish --packet <campaign-runtime.build.json> --evidence <po
 ```
 
 Run it after `campaigns-os polish capture`, against the build `campaigns-os
-record build` recorded. The `--evidence` file is a JSON object with three keys;
+record build` recorded. The `--evidence` file is a JSON object with these keys;
 any other key is refused:
 
 | Key | Required | Written to |
 |---|---|---|
-| `status` | no (default `completed`) | `stages.polish.status`; `completed` or `completed_with_warnings` |
-| `evidence` | yes | `stages.polish.evidence`, the seven categories of §2. Leave out `visual_review.page_load`: the value `polish capture` recorded is kept, and a file that carries one is refused. |
+| `status` | no (default `completed`) | `stages.polish.status`; `completed`, `completed_with_warnings`, `blocked` or `skipped` |
+| `evidence` | for `completed*` | `stages.polish.evidence`, the seven categories of §2. Leave out `visual_review.page_load`: the value `polish capture` recorded is kept, and a file that carries one is refused. Without it, a `blocked` or `skipped` record keeps the evidence already on the report. |
+| `blockers` | for `blocked` only | `stages.polish.blockers`: a non-empty array of `{"code", "message"}` objects. |
+| `skip_reason` | for `skipped` only | `stages.polish.skip_reason`: a non-empty string. |
 | `repair_loop_defect` | no | `report.theme.repair_loop_defect`: `null`, or the first brand-layer repair-loop defect as an object (`code`, `message`, `path`, `detail`). A non-null defect needs a recorded `report.theme`. |
 
 The command itself stamps `performed_by: "next-campaigns-polish"`,
 `source_build_fingerprint` (doctor's `derived.build_output_fingerprint.value`,
 which must equal the recorded `stages.assembly.build_fingerprint`),
 `source_package_material_fingerprint` when the report fingerprints a Design
-Source Package, and `completed_at`. It then validates the report it would write
-against `schemas/campaign-runtime-assembly-report.v0.schema.json` and doctor's
-report checks, and evaluates this gate and the hidden eager-media checkpoint
-over it exactly as doctor does. Any failure is printed by field or gate code
+Source Package, and `completed_at` (not for `blocked`). It then validates the
+report it would write against
+`schemas/campaign-runtime-assembly-report.v0.schema.json` and doctor's report
+checks and, for a `completed*` status, evaluates this gate and the hidden
+eager-media checkpoint over it exactly as doctor does. A `blocked` or `skipped`
+record keeps this gate blocked, so `next` stays at Polish and QA stays blocked. Any failure is printed by field or gate code
 (for example `repair_loop_defect must be null or an object ... (got string)`, or
 `polish.evidence_incomplete` with its per-field problems), the command exits
 non-zero, and nothing is written. `--dry-run` runs every check and writes

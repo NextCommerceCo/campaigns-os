@@ -1496,18 +1496,23 @@ hand-editing `.campaign-runtime/` JSON:
 | Command | Writes | Refused (nothing written) when |
 |---|---|---|
 | `campaigns-os record setup --packet <p>` | Build Context `scaffold.required=false` (`handoff_skill` next-campaigns-build) and `stages.setup` completed | the campaign output directory (`assembly.output_dir`) does not exist, or there is no Build Context or Assembly Report |
-| `campaigns-os record build --packet <p>` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, and `stages.polish` reset to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), or setup is still required |
-| `campaigns-os record polish --packet <p> --evidence <file>` | `stages.polish` from the file (`docs/polish-evidence.md` §7), bound to doctor's current fingerprint; `report.theme.repair_loop_defect` when the file sets it | build is not recorded for the current output, the file has a shape error (named by field), or the polish gate doctor evaluates would not pass on the result |
+| `campaigns-os record build --packet <p>` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, and `stages.polish` reset to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, or `stages.setup` is not terminal |
+| `campaigns-os record polish --packet <p> --evidence <file>` | `stages.polish` from the file (`docs/polish-evidence.md` §7: completed, blocked or skipped), bound to doctor's current fingerprint; `report.theme.repair_loop_defect` when the file sets it | build is not recorded for the current output, the file has a shape error (named by field), or, for a completed status, the polish gate doctor evaluates would not pass on the result |
+
+Each command also refuses a stage `next` has not reached: while doctor's
+prepare-build gate is set (`next` answers prepare-build) or while an earlier
+stage in the order below is not terminal.
 
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it
 would write against `schemas/campaign-runtime-build-context.v0.schema.json` and
 `schemas/campaign-runtime-assembly-report.v0.schema.json` plus doctor's report
 checks, and then writes under the target lock, stamping any retained doctor
-output stale. The target lock is taken before anything is read from the
-target: which report the Build Context binds, the report itself, the Build
-Context and doctor's reading (the fingerprint and the binding) are all read
-inside the same target lock as the write, and the fingerprint is computed once more just before the write; output
+output stale. The packet is read once first, only to name the target lock, and
+re-read and re-checked under it: which report the Build Context binds, the
+report itself, the Build Context and doctor's reading (the fingerprint and the
+binding) are all read inside the same target lock as the write, and the
+fingerprint is computed once more just before the write; output
 that changed in between is refused, never recorded with the old value. Every
 command refuses a report that is not bound to the packet: whenever doctor's
 prepare-build binding gate fails (`next.prepare_build.context_missing`,
@@ -1516,7 +1521,8 @@ prepare-build binding gate fails (`next.prepare_build.context_missing`,
 or `report_dsp_mismatch`, the refusals `next` answers with prepare-build), and
 whenever the report's campaign identity does not match the packet, including
 for packets with no Design Source Package. Every command also adds
-`completed_at` and `recorded_by` to the stage it records. `--dry-run` runs every check and writes nothing. A failed
+`recorded_by`, and `completed_at` unless it records a blocked Polish, to the
+stage it records. `--dry-run` runs every check, takes no lock and writes nothing. A failed
 check exits non-zero with the problems listed, one per line. Re-run `record
 build` after every page-kit build; a rebuild that changes the output needs
 `polish capture` and `record polish` again.

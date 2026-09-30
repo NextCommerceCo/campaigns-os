@@ -245,6 +245,122 @@ test("record polish rejects repair_loop_defect given as a string, naming the fie
   });
 });
 
+// Shapes only the schemas reject: the evidence-file reader and doctor's report
+// checks both accept them, so these refusals come from schema validation alone.
+test("record polish refuses a repair_loop_defect only the report schema rejects, naming the field, and writes nothing", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    const report = readJson(f.reportPath);
+    report.theme = { status: "applied", css_path: null, load_order: "after-next-core", commerce_pages: [], evidence: [] };
+    writeJson(f.reportPath, report);
+    const evidencePath = join(f.dir, "empty-code-evidence.json");
+    writeJson(evidencePath, { ...readJson(POLISH_EVIDENCE), repair_loop_defect: { code: "" } });
+    const before = snapshotFiles(f);
+    const result = record(f, "polish", ["--evidence", evidencePath, "--dry-run"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Assembly Report theme\.repair_loop_defect\.code must NOT have fewer than 1 characters/);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record setup refuses a Build Context only the context schema rejects, naming the field, and writes nothing", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    const context = readJson(f.contextPath);
+    delete context.scaffold.handoff_artifact;
+    writeJson(f.contextPath, context);
+    const before = snapshotFiles(f);
+    const result = record(f, "setup");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Build Context scaffold must have required property 'handoff_artifact'/);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+// The ladder `next` walks: a record lands only on a stage `next` has reached.
+test("record setup and record build refuse while next answers prepare-build on a non-binding blocker, writing nothing", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    buildSite(f);
+    const report = readJson(f.reportPath);
+    report.stages.prepare_build.status = "blocked";
+    report.stages.prepare_build.blockers = [{ code: "MISSING_SOURCE_PAGE", message: "a source page is missing" }];
+    writeJson(f.reportPath, report);
+    assert.equal(doctor(f).derived.prepare_build_gate.binding_failure === true, false, "control: not a binding failure");
+    assert.equal(nextStage(f).stage, "prepare-build", "control: next answers prepare-build");
+    const before = snapshotFiles(f);
+    for (const stage of ["setup", "build"]) {
+      const result = record(f, stage);
+      assert.notEqual(result.status, 0, `record ${stage} must refuse`);
+      assert.match(result.stderr, /next answers prepare-build: Stage "prepare_build" is blocked/, stage);
+      assert.deepEqual(snapshotFiles(f), before, stage);
+    }
+  });
+});
+
+test("record build refuses while stages.setup is pending even when scaffold.required is false, writing nothing", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    buildSite(f);
+    const context = readJson(f.contextPath);
+    context.scaffold.required = false;
+    writeJson(f.contextPath, context);
+    assert.equal(doctor(f).derived.scaffold_required, false, "control: doctor sees no scaffold owed");
+    assert.equal(nextStage(f).stage, "setup", "control: next still answers setup");
+    const before = snapshotFiles(f);
+    const result = record(f, "build");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /stages\.setup\.status is "pending", so next answers setup; run campaigns-os record setup first/);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record polish records a blocked or skipped Polish from the evidence file, and next keeps Polish blocked", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    const fingerprint = readJson(f.reportPath).stages.assembly.build_fingerprint;
+    const file = (name, value) => {
+      const path = join(f.dir, name);
+      writeJson(path, value);
+      return path;
+    };
+
+    const before = snapshotFiles(f);
+    const noBlockers = record(f, "polish", ["--evidence", file("blocked-bare.json", { status: "blocked" })]);
+    assert.notEqual(noBlockers.status, 0);
+    assert.match(noBlockers.stderr, /blockers must be a non-empty array .* when status is blocked \(got undefined\)/);
+    const noReason = record(f, "polish", ["--evidence", file("skipped-bare.json", { status: "skipped" })]);
+    assert.notEqual(noReason.status, 0);
+    assert.match(noReason.stderr, /skip_reason must be a non-empty string when status is skipped/);
+    assert.deepEqual(snapshotFiles(f), before);
+
+    const blocker = { code: "polish.capture_failed", message: "polish capture could not load the checkout route" };
+    recordOk(f, "polish", ["--evidence", file("blocked.json", { status: "blocked", blockers: [blocker] })]);
+    const blocked = readJson(f.reportPath).stages.polish;
+    assert.equal(blocked.status, "blocked");
+    assert.deepEqual(blocked.blockers, [blocker]);
+    assert.equal(blocked.source_build_fingerprint, fingerprint);
+    assert.equal(blocked.completed_at, undefined);
+    assert.ok(validReport(readJson(f.reportPath)), JSON.stringify(validReport.errors));
+    assert.equal(doctor(f).derived.polish_gate.code, "polish.blocked");
+    assert.equal(nextStage(f).stage, "polish");
+
+    recordOk(f, "polish", ["--evidence", file("skipped.json", { status: "skipped", skip_reason: "operator deferred polish to a later run" })]);
+    const skipped = readJson(f.reportPath).stages.polish;
+    assert.equal(skipped.status, "skipped");
+    assert.equal(skipped.skip_reason, "operator deferred polish to a later run");
+    assert.deepEqual(skipped.blockers, []);
+    assert.ok(validReport(readJson(f.reportPath)), JSON.stringify(validReport.errors));
+    assert.equal(nextStage(f).stage, "polish");
+  });
+});
+
 test("record polish refuses evidence the polish gate would reject, naming the missing field, and writes nothing", () => {
   withLifecycle((f) => {
     scaffold(f);

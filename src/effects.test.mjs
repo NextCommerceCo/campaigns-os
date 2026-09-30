@@ -320,13 +320,21 @@ function seedSetupContext(seed) {
   writeJson(join(seed.targetRepo, ".campaign-runtime/build-context.json"), context);
 }
 
+/** A built `_site/` with setup recorded: the state `record build` records from. */
+function seedBuildReady(seed) {
+  seedBuiltSite(seed);
+  const report = readJson(seed.reportPath);
+  report.stages.setup = { ...report.stages.setup, status: "completed" };
+  writeJson(seed.reportPath, report);
+}
+
 /**
  * A recorded build over the seeded `_site/`, package page-load evidence for
  * every planned route with nothing blocking, and a complete --evidence file:
  * the state `record polish` records from.
  */
 function seedPolishReady(seed) {
-  seedBuiltSite(seed);
+  seedBuildReady(seed);
   const packet = readJson(seed.packetPath);
   const slug = packet.campaign.public_route_slug;
   const buildFingerprint = computeBuildFingerprint(join(seed.targetRepo, "_site", slug)).fingerprint;
@@ -498,8 +506,8 @@ const INVOCATIONS = {
   "polish capture": { argv: (s, receiver) => ["polish", "capture", "--packet", s.packetPath, "--base-url", receiver, "--json"] },
   "record setup": { prepare: seedSetupContext, argv: (s) => ["record", "setup", "--packet", s.packetPath, "--json"] },
   "record setup|--dry-run": { prepare: seedSetupContext, expect: recordDryRunSucceeded("setup", ["target-page-kit/.campaign-runtime/build-context.json", "target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "setup", "--packet", s.packetPath, "--dry-run", "--json"] },
-  "record build": { prepare: seedBuiltSite, argv: (s) => ["record", "build", "--packet", s.packetPath, "--json"] },
-  "record build|--dry-run": { prepare: seedBuiltSite, expect: recordDryRunSucceeded("build", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "build", "--packet", s.packetPath, "--dry-run", "--json"] },
+  "record build": { prepare: seedBuildReady, argv: (s) => ["record", "build", "--packet", s.packetPath, "--json"] },
+  "record build|--dry-run": { prepare: seedBuildReady, expect: recordDryRunSucceeded("build", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "build", "--packet", s.packetPath, "--dry-run", "--json"] },
   "record polish": { prepare: seedPolishReady, argv: (s) => ["record", "polish", "--packet", s.packetPath, "--evidence", join(s.dir, "polish-evidence.json"), "--json"] },
   "record polish|--dry-run": { prepare: seedPolishReady, expect: recordDryRunSucceeded("polish", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "polish", "--packet", s.packetPath, "--evidence", join(s.dir, "polish-evidence.json"), "--dry-run", "--json"] },
   "validate-assembly-report": { argv: (s) => ["validate-assembly-report", "--report", s.reportPath, "--json"] },

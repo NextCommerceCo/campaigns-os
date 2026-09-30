@@ -77,7 +77,8 @@ Responsibilities:
   The package captures every mapped route at fixed desktop/mobile viewports and
   attaches `stages.polish.evidence.visual_review.page_load`. Never hand-author,
   copy, or repair that object directly.
-- Record a completed Polish with `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`
+- Record Polish as `completed`, `skipped`, or `blocked` with
+  `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`
   (tier `C`: it overwrites `stages.polish` in the assembly report and stamps the
   doctor output stale; `--dry-run` is tier `none`). A nonzero capture result keeps
   Polish blocked until repair and recapture. The
@@ -121,8 +122,8 @@ Write the seven fields under `evidence` in a JSON file and record it with
 `campaigns-os record polish --packet <packet> --evidence <file>`. The file
 holds `status` (`completed` or `completed_with_warnings`, default
 `completed`), `evidence`, and optionally `repair_loop_defect` (null or an
-object, written to `report.theme.repair_loop_defect`); any other key is
-refused. The command stamps `performed_by: "next-campaigns-polish"`,
+object, written to `report.theme.repair_loop_defect`); any other key but the
+two below is refused. The command stamps `performed_by: "next-campaigns-polish"`,
 `source_build_fingerprint` (doctor's current output fingerprint, which must
 equal the recorded `stages.assembly.build_fingerprint`), `completed_at`, and —
 when the report fingerprints a Design Source Package —
@@ -131,6 +132,12 @@ names any shape error by field (for example `repair_loop_defect` given as a
 string), and writes nothing unless the polish gate doctor evaluates would pass
 on the result. `docs/polish-evidence.md` ("Recording with `record polish`")
 has a complete example file. Do not hand-edit `stages.polish`.
+
+A Polish that cannot complete is recorded with the same command: a file with
+`"status": "blocked"` and `blockers` (a non-empty array of `{"code", "message"}`
+objects), or `"status": "skipped"` and a `skip_reason` string. `evidence` is
+optional for both; the captured evidence stays. Either keeps `next` at Polish
+and QA blocked until a completed Polish is recorded.
 
 The `polish.hidden_eager_media` checkpoint blocks on nonwaivable missing,
 malformed, stale, integrity-invalid, route-mismatched, or incomplete package

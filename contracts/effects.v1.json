@@ -4882,7 +4882,7 @@
       "sends": [],
       "effect_test": "effects: record setup",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.setup and the Build Context scaffold block, which changes the stage next recommends. Refused, writing nothing, when the campaign output directory does not exist, when there is no Build Context or Assembly Report, or when either file would fail its schema. Both files are written together, the Build Context first."
+      "notes": "Destructive: it replaces stages.setup and the Build Context scaffold block, which changes the stage next recommends. Refused, writing nothing, when next answers prepare-build, when the campaign output directory does not exist, when there is no Build Context or Assembly Report, or when either file would fail its schema. Both files are written together, the Build Context first."
     },
     {
       "command": "record",
@@ -4949,7 +4949,7 @@
       "sends": [],
       "effect_test": "effects: record build",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.assembly and, when the output changed, resets stages.polish to required. The fingerprint is doctor's, never typed. Refused, writing nothing, when doctor cannot compute the fingerprint (no built output), when setup is still required, or when the report would fail its schema. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.assembly and, when the output changed, resets stages.polish to required. The fingerprint is doctor's, never typed. Refused, writing nothing, when next answers prepare-build, when doctor cannot compute the fingerprint (no built output), when setup is still required or stages.setup is not terminal, or when the report would fail its schema. The Build Context is read, not written."
     },
     {
       "command": "record",
@@ -4984,7 +4984,7 @@
       "writes": [
         {
           "path": "{target}/.campaign-runtime/assembly-report.json",
-          "when": "the record passes every check — stages.polish becomes the file's completed status and evidence, bound to doctor's current fingerprint; theme.repair_loop_defect when the file sets it",
+          "when": "the record passes every check — stages.polish becomes the file's status (completed, blocked with blockers, or skipped with skip_reason) and evidence, bound to doctor's current fingerprint; theme.repair_loop_defect when the file sets it",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -5016,7 +5016,7 @@
       "sends": [],
       "effect_test": "effects: record polish",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.polish (the captured page_load is kept). Refused, writing nothing, when build is not recorded for the current output, when the --evidence file has a shape error (named by field), or when the polish gate doctor evaluates would not pass on the report it would write. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.polish (the captured page_load is kept). Refused, writing nothing, when build is not recorded for the current output, when the --evidence file has a shape error (named by field), or, for a completed status, when the polish gate doctor evaluates would not pass on the report it would write. The Build Context is read, not written."
     },
     {
       "command": "record",

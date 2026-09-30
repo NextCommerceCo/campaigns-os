@@ -17,22 +17,27 @@ Notable supported-surface changes are recorded here.
   fingerprint when the report has one, and marks Polish required. Re-run it
   after every rebuild. `record polish --evidence <file>` reads the status, the
   seven evidence fields and an optional `repair_loop_defect` from a JSON file,
-  binds them to the current build and keeps the captured `page_load`.
+  binds them to the current build and keeps the captured `page_load`. The same
+  file records a blocked Polish (`status: "blocked"` with `blockers`) or a
+  skipped one (`status: "skipped"` with `skip_reason`).
 - Each command validates what it would write against the existing Build
-  Context and Assembly Report schemas and doctor's report checks. `record
-  polish` also requires that the polish gate would pass. On any failure the
+  Context and Assembly Report schemas and doctor's report checks. A completed
+  `record polish` also requires that the polish gate would pass. Each command
+  refuses a stage `next` has not reached: while `next` answers prepare-build,
+  or while an earlier stage is not complete. On any failure the
   command exits non-zero, lists each problem by field (for example
   `repair_loop_defect` given as a string), and writes nothing. It also writes
   nothing when the Build Packet or report is missing, or when doctor cannot
   compute the build fingerprint. Each command also refuses a report bound to
   another packet or campaign, with the binding code `next` reports (for
-  example `next.prepare_build.report_campaign_mismatch`). Each command takes
-  the target lock before it reads anything from the target, so the report the
-  Build Context binds, the report itself and doctor's fingerprint are all read
-  under the same lock as the write. Output that changes before the write is
-  refused rather than recorded with the old fingerprint.
-  `--dry-run` runs every check and writes nothing. Unknown flags are refused
-  before anything is read.
+  example `next.prepare_build.report_campaign_mismatch`). Everything a record
+  depends on is re-read under the target lock: the packet is read first only
+  to name the lock and re-checked under it, and the report the Build Context
+  binds, the report itself and doctor's fingerprint are all read under the
+  same lock as the write. Output that changes before the write is refused
+  rather than recorded with the old fingerprint. `--dry-run` runs every check,
+  takes no lock and writes nothing. Unknown flags are refused before anything
+  is read.
 - The commands are `record <stage>` rather than the `<stage> record` spelling
   #535 proposed: `build` is already the intake alias and ignores extra words,
   so `build record` already runs an intake. `build` and `polish` behave
