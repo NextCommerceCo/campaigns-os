@@ -3936,7 +3936,7 @@
               "key": "announcement_text",
               "kind": "copy",
               "role": "micro",
-              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 20,
@@ -3947,7 +3947,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4049,7 +4049,7 @@
               "key": "announcement_text",
               "kind": "copy",
               "role": "micro",
-              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 20,
@@ -4060,7 +4060,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4170,7 +4170,7 @@
               "key": "announcement_text",
               "kind": "copy",
               "role": "micro",
-              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 20,
@@ -4181,7 +4181,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4283,7 +4283,7 @@
               "key": "announcement_text",
               "kind": "copy",
               "role": "micro",
-              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 20,
@@ -4294,7 +4294,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4305,14 +4305,12 @@
               "key": "countdown_timer",
               "kind": "copy",
               "role": "micro",
-              "description": "Structured SDK countdown (text, highlight, duration, persistence_id). It is urgency chrome: it may render only when filled from verified offer urgency (a real offer window), and duration must match that window. Unverified \u2192 leave the block out (hard rule 4).",
-              "source_policy": "spec_truth",
+              "description": "Structured SDK countdown (text, highlight, duration, persistence_id).",
+              "source_policy": "generated",
               "length_band_chars": {
                 "min": 6,
                 "max": 40
-              },
-              "urgency": true,
-              "enabled_by_verified_urgency": true
+              }
             },
             {
               "key": "upsell_layout",
@@ -4334,21 +4332,18 @@
               "key": "upsell_body",
               "kind": "copy",
               "role": "body",
-              "description": "Structured upsell body sections (features, comparison, steps, reviews). Every section makes product, coverage or customer claims, so the content must come from the merchant brief: reviews are real and authorized, coverage and claim-process terms match the actual offer. Empty \u2192 the body sections do not render.",
-              "source_policy": "merchant_asset_required",
+              "description": "Structured upsell body sections (features, comparison, steps, reviews).",
+              "source_policy": "generated",
               "length_band_chars": {
                 "min": 10,
                 "max": 240
-              },
-              "proof_surface": true,
-              "proof_modality": "review",
-              "needs_merchant_input_able": true
+              }
             },
             {
               "key": "closing_cta",
               "kind": "copy",
               "role": "cta",
-              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees). Title is producer copy; a note that states a guarantee must copy the guarantee terms from the spec verbatim.",
+              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees).",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 10,
@@ -4418,7 +4413,7 @@
               "key": "announcement_text",
               "kind": "copy",
               "role": "micro",
-              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 20,
@@ -4445,7 +4440,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4456,14 +4451,12 @@
               "key": "countdown_timer",
               "kind": "copy",
               "role": "micro",
-              "description": "Structured SDK countdown (text, highlight, duration, persistence_id). It is urgency chrome: it may render only when filled from verified offer urgency (a real offer window), and duration must match that window. Unverified \u2192 leave the block out (hard rule 4).",
-              "source_policy": "spec_truth",
+              "description": "Structured SDK countdown (text, highlight, duration, persistence_id).",
+              "source_policy": "generated",
               "length_band_chars": {
                 "min": 6,
                 "max": 40
-              },
-              "urgency": true,
-              "enabled_by_verified_urgency": true
+              }
             },
             {
               "key": "upsell_layout",
@@ -4485,9 +4478,8 @@
               "key": "upsell_video",
               "kind": "image",
               "role": "image",
-              "description": "Structured upsell video (src, poster, title, autoplay, loop). The video and poster are merchant-supplied product media; never generated. Empty \u2192 the video block does not render.",
-              "source_policy": "merchant_asset_required",
-              "needs_merchant_input_able": true
+              "description": "Structured upsell video (src, poster, title, autoplay, loop).",
+              "source_policy": "merchant_asset_required"
             },
             {
               "key": "swiper_slides",
@@ -4509,7 +4501,7 @@
               "key": "offer_bullets",
               "kind": "copy",
               "role": "body",
-              "description": "Bullet list beside the upsell offer. Each bullet's claim must trace to the claims whitelist or the offer (shipping, guarantee, price terms come from the spec).",
+              "description": "Bullet list beside the upsell offer.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4520,7 +4512,7 @@
               "key": "upsell_guarantees",
               "kind": "copy",
               "role": "body",
-              "description": "Structured guarantee/trust cards (secure checkout, money-back terms). Terms such as the refund window and conditions are copied from the spec's guarantee, never composed.",
+              "description": "Structured guarantee/trust cards (e.g. secure checkout, money-back terms).",
               "source_policy": "spec_truth",
               "length_band_chars": {
                 "min": 10,
@@ -4531,21 +4523,18 @@
               "key": "upsell_body",
               "kind": "copy",
               "role": "body",
-              "description": "Structured upsell body sections (features, comparison, steps, reviews). Every section makes product, coverage or customer claims, so the content must come from the merchant brief: reviews are real and authorized, coverage and claim-process terms match the actual offer. Empty \u2192 the body sections do not render.",
-              "source_policy": "merchant_asset_required",
+              "description": "Structured upsell body sections (features, comparison, steps, reviews).",
+              "source_policy": "generated",
               "length_band_chars": {
                 "min": 10,
                 "max": 240
-              },
-              "proof_surface": true,
-              "proof_modality": "review",
-              "needs_merchant_input_able": true
+              }
             },
             {
               "key": "closing_cta",
               "kind": "copy",
               "role": "cta",
-              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees). Title is producer copy; a note that states a guarantee must copy the guarantee terms from the spec verbatim.",
+              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees).",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 10,
