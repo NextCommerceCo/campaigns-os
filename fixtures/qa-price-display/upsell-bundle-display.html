@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Upsell bundle-display price fixture</title>
+<style>
+  body { margin: 0; font: 16px/1.4 system-ui, sans-serif; }
+  .offer { padding: 24px; }
+  .offer__price { font-weight: 700; }
+</style>
+</head>
+<body>
+<!-- The offer's only price is the SDK's bundle-display node: no .price-wrapper,
+     .price-display, .summary_price or data-next-display price. -->
+<section class="offer">
+  <h1>Add one more</h1>
+  <p class="offer__price"><span data-next-bundle-display="price">$29.00</span></p>
+  <button type="button" data-next-upsell-action="add">Yes, add it</button>
+</section>
+</body>
+</html>

@@ -28,6 +28,20 @@ test("diagnostic exports accepted IDs and fixed recovery while dropping seeded s
   assert.ok(result.recovery.every((item) => item.owner && item.input_needed));
 });
 
+test("source-provenance findings export their own reason ids, waived or inert, and never their text", () => {
+  const codes = [
+    "source_html.producer_provenance", "source_html.producer_provenance.source_type",
+    "source_html.producer_provenance.screenshot_fallback_used", "source_html.producer_provenance.semantic_section_count",
+    "source_html.producer_provenance.material_fingerprint", "source_html.producer_provenance.section_exports",
+  ];
+  const doctor = { status: "ready_with_waivers", next: { stage: "build" }, errors: [],
+    warnings: [...codes.map((code) => ({ code, message: SECRET, detail: { waived: true, page_id: SECRET } })),
+      { code: "source_html.producer_provenance.waiver_inert", message: SECRET, detail: { pages: [SECRET] } }] };
+  const result = diagnosticExport({ tooling, doctor });
+  assert.equal(JSON.stringify(result).includes(SECRET), false);
+  assert.deepEqual(result.reason_ids, [...codes, "source_html.producer_provenance.waiver_inert"].sort());
+});
+
 test("unsupported diagnostic enums and package version never echo their raw values", () => {
   const result = diagnosticExport({ tooling: { ...tooling, package: { version: SECRET }, install: { mode: SECRET }, status: SECRET }, doctor: { status: SECRET, next: { stage: SECRET } }, platform: SECRET });
   assert.equal(JSON.stringify(result).includes(SECRET), false);
