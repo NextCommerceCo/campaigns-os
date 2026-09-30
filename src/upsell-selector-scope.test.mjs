@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   UPSELL_SELECTOR_SCOPE,
   builtPageIsPostPurchase,
+  builtPageTypeOverRouteGuess,
   collectBundleSelectors,
   evaluateUpsellSelectorScope,
 } from "./upsell-selector-scope.mjs";
@@ -243,4 +244,65 @@ test("a selector inside a <template> is scanned — this SDK clones slot templat
   `)]);
   assert.equal(gate.status, "blocked");
   assert.equal(gate.findings[0].selector_id, "slot-inner");
+});
+
+// --- Declared page type over the route guess (#529) ---------------------------
+
+// One row per way a page can carry next-page-type. `role` is what the page
+// declares over a route that guesses "upsell": only a meta the browser puts in
+// the document, unambiguously, replaces the guess. Anything else leaves the
+// guess standing, so the post-purchase blocker is never lost to inert markup.
+const META = (attrs) => `<meta ${attrs}>`;
+const CHECKOUT = META('name="next-page-type" content="checkout"');
+const DECLARATIONS = [
+  ["a live meta", CHECKOUT, "checkout"],
+  ["content before name", META('content="checkout" name="next-page-type"'), "checkout"],
+  ["single quotes", META("name='next-page-type' content='checkout'"), "checkout"],
+  ["no quotes", META("name=next-page-type content=checkout"), "checkout"],
+  ["upper-case attribute names", META('NAME="next-page-type" CONTENT="checkout"'), "checkout"],
+  ["value case and padding", META('name="next-page-type" content="  Checkout "'), "Checkout"],
+  ["a meta in the body", `</head><body>${CHECKOUT}`, "checkout"],
+  ["agreeing duplicates", `${CHECKOUT}${META('name="next-page-type" content="CHECKOUT"')}`, "checkout"],
+  ["commented out", `<!-- ${CHECKOUT} -->`, "upsell"],
+  ["commented out before a live upsell meta", `<!-- ${CHECKOUT} -->${META('name="next-page-type" content="upsell"')}`, "upsell"],
+  ["inside <template>", `</head><body><template>${CHECKOUT}</template>`, "upsell"],
+  ["inside a <script> string", `<script>const tag = '${CHECKOUT}';</script>`, "upsell"],
+  ["inside <noscript>", `<noscript>${CHECKOUT}</noscript>`, "upsell"],
+  ["inside <style>", `<style>/* ${CHECKOUT} */</style>`, "upsell"],
+  ["inside <textarea>", `</head><body><textarea>${CHECKOUT}</textarea>`, "upsell"],
+  ["inside <title>", `<title>${CHECKOUT}</title>`, "upsell"],
+  ["conflicting duplicates", `${CHECKOUT}${META('name="next-page-type" content="receipt"')}`, "upsell"],
+  ["empty content", META('name="next-page-type" content=""'), "upsell"],
+  ["blank content", META('name="next-page-type" content="   "'), "upsell"],
+  ["no content attribute", META('name="next-page-type"'), "upsell"],
+  ["a blank first meta", `${META('name="next-page-type" content=""')}${CHECKOUT}`, "upsell"],
+  ["a look-alike data-content attribute", META('name="next-page-type" data-content="checkout"'), "upsell"],
+  ["the name in another case", META('name="Next-Page-Type" content="checkout"'), "upsell"],
+  ["the name padded", META('name=" next-page-type" content="checkout"'), "upsell"],
+];
+
+test("only a live, unambiguous next-page-type meta replaces the route guess", () => {
+  for (const [label, head, role] of DECLARATIONS) {
+    const content = `<html><head>${head}</head><body>${UNSCOPED}</body></html>`;
+    assert.equal(builtPageTypeOverRouteGuess({ route_type: "upsell", content }), role, label);
+    const gate = gateFor([upsellPage(content, { page_type: builtPageTypeOverRouteGuess({ route_type: "upsell", content }) })]);
+    assert.equal(gate.status, role === "upsell" ? "blocked" : "not_applicable", label);
+  }
+});
+
+test("any next-page-type saying post-purchase, live or inert, still makes the page post-purchase", () => {
+  for (const head of [
+    `${CHECKOUT}${META('name="next-page-type" content="upsell"')}`,
+    META("name=next-page-type content=downsell"),
+    META('name="NEXT-PAGE-TYPE" content="upsell"'),
+    `<!-- ${META('name="next-page-type" content="upsell"')} -->`,
+    `<template>${META('name="next-page-type" content="downsell"')}</template>`,
+    // Look-alike attributes and mismatched quotes the earlier reader took.
+    META('name="next-page-type" data-content="upsell"'),
+    META('data-name="next-page-type" content="upsell"'),
+    META(`name='next-page-type" content="upsell"`),
+  ]) {
+    assert.equal(builtPageIsPostPurchase({ page_type: "checkout", content: `<html><head>${head}</head></html>` }), true, head);
+  }
+  assert.equal(builtPageIsPostPurchase({ page_type: null, content: `<html><head>${CHECKOUT}</head></html>` }), false);
 });

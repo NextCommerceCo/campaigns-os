@@ -2,12 +2,12 @@
 //
 // `built_output.upsell_selector_scope` catches one shape of built markup that
 // the Campaign Cart SDK binds without complaint and that then does the wrong
-// thing to a shopper. This module is the rest of that family: six more
+// thing to a shopper. This module is the rest of that family: seven more
 // shapes, each a static read of built HTML, each producing either a silent
 // no-op (the shopper fills a field that never reaches the order; a button
 // that never enables) or a double cart write. A partner agency's Campaign
-// Cart skill kit listed them as stable lint codes; the codes are kept so the
-// two vocabularies line up.
+// Cart skill kit listed the first six as stable lint codes; the codes are
+// kept so the two vocabularies line up. ORPHANED_UPSELL_ACTION is ours.
 //
 //   Blockers (not waivable — the markup provably does not do what it says)
 //   SWAP_WITH_ADD_TO_CART      a bundle selector in swap mode (explicit, or
@@ -26,6 +26,12 @@
 //   MISSING_SELECTOR_ID_MATCH  an add-to-cart button whose data-next-selector-id
 //                              names no selector on the page. The button waits
 //                              for a selection that can never arrive.
+//   ORPHANED_UPSELL_ACTION     data-next-upsell-action with no ancestor carrying
+//                              data-next-upsell (#529). The upsell enhancer
+//                              binds only the actions inside its container; an
+//                              action outside it is a plain link, so a "No
+//                              thanks" goes nowhere and the shopper is stuck.
+//                              Every page type, not only upsell pages.
 //
 //   Warnings (advisory)
 //   DOUBLE_SELECTED            more than one data-next-selected="true" card in
@@ -43,10 +49,11 @@
 //                              own data-next-* hooks, which is why it informs
 //                              rather than warns.
 //
-// Parsed with parse5 rather than regex because four of the six turn on
-// containment (a card inside a selector, a field inside a form, a template's
-// content), and HTML nesting is not a regular language. Template content is
-// walked too: the SDK clones it into the live DOM.
+// Parsed with parse5 rather than regex because five of the seven turn on
+// containment (a card inside a selector, a field inside a form, an action
+// inside its upsell container, a template's content), and HTML nesting is not
+// a regular language. Template content is walked too: the SDK clones it into
+// the live DOM.
 //
 // Pure: callers hand in built HTML. Both doctor entry points drive it.
 
@@ -65,6 +72,7 @@ export const SDK_MARKUP_CODES = Object.freeze({
   CHECKOUT_NOT_FORM: { code: `${SDK_MARKUP}.checkout_not_form`, severity: "error" },
   WRONG_FIELD_NAME: { code: `${SDK_MARKUP}.wrong_field_name`, severity: "error" },
   MISSING_SELECTOR_ID_MATCH: { code: `${SDK_MARKUP}.missing_selector_id_match`, severity: "error" },
+  ORPHANED_UPSELL_ACTION: { code: `${SDK_MARKUP}.orphaned_upsell_action`, severity: "error" },
   DOUBLE_SELECTED: { code: `${SDK_MARKUP}.double_selected`, severity: "warning" },
   TEMPLATE_DOUBLE_BRACE: { code: `${SDK_MARKUP}.template_double_brace`, severity: "warning" },
   // Unknown data-next-* names are not a finding and carry no code: they are
@@ -179,6 +187,15 @@ export function scanPageMarkup({ page_id, file = null, content = "" }) {
           `data-next-checkout-field="${value}" on ${where} is not a field name the SDK ${SDK_ATTRIBUTE_INDEX_VERSION} maps (${suggestFieldName(value)}). The input renders and the value never reaches the order.`,
           { value, suggestion: suggestFieldName(value, true) }));
       }
+    }
+
+    // An ancestor, not the element itself: the enhancer looks for actions
+    // inside the container it binds.
+    if (a.has("data-next-upsell-action") && !ancestors.some((anc) => anc.attrs.has("data-next-upsell"))) {
+      const value = a.get("data-next-upsell-action") ?? "";
+      findings.push(finding("ORPHANED_UPSELL_ACTION", page_id, where,
+        `${describe(entry)} data-next-upsell-action="${value}" on ${where} has no ancestor carrying data-next-upsell. The SDK binds upsell actions only inside that container, so this one never fires and the shopper cannot ${value.trim().toLowerCase() === "skip" ? "decline" : "act on"} the offer. Move it inside the data-next-upsell container it belongs to.`,
+        { tag, action: value }));
     }
 
     const action = (a.get("data-next-action") || "").trim().toLowerCase();
