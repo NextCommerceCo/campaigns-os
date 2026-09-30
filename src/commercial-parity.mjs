@@ -872,6 +872,50 @@ export function serializeCommercialFindings(findingsValue, options = {}) {
   return { assertions, omittedFindingCount };
 }
 
+export const RECURRING_CLAIM_ABSENT_CODE = "commercial_parity.recurring_claim_absent";
+
+/**
+ * A subscription package a page renders with no recurring claim extracted for
+ * it (#533). The diff above is silent when there is nothing to compare, which
+ * is exactly how a page whose rebill copy could not be read used to pass. This
+ * is incomplete evidence, not a mismatch: it names the package, never a price.
+ * `subscriptionRefsByPage` maps a page id to the refs the spec says recur;
+ * a capture carries the package refs its page renders as
+ * `rendered_package_refs`. A capture that failed extraction is skipped — that
+ * failure is already its own issue.
+ */
+export function recurringClaimAbsences(capturesValue, subscriptionRefsByPage) {
+  const absences = [];
+  const seen = new Set();
+  partitionCaptures(capturesValue).valid.forEach((capture) => {
+    const pageId = present(capture.page_id) ? String(capture.page_id) : null;
+    const subscriptions = pageId ? subscriptionRefsByPage?.get?.(pageId) : null;
+    if (!subscriptions?.size) return;
+    const claimed = new Set(capture.recurrence_claims.map((claim) => String(claim.package_id)));
+    array(capture.rendered_package_refs).map(String).forEach((ref) => {
+      const key = `${pageId}\u0000${ref}`;
+      if (!subscriptions.has(ref) || claimed.has(ref) || seen.has(key)) return;
+      seen.add(key);
+      absences.push({ type: "recurring-claim-absent", page_id: pageId, ...(present(capture.url) ? { url: String(capture.url) } : {}), package_id: ref });
+    });
+  });
+  return absences;
+}
+
+export function recurringClaimAbsentAssertions(absences, { maxAssertions = Number.POSITIVE_INFINITY } = {}) {
+  return array(absences).slice(0, Math.max(0, maxAssertions)).map((absence) => ({
+    id: `${RECURRING_CLAIM_ABSENT_CODE}:${component(absence.page_id)}:package-${component(absence.package_id)}`,
+    family: "pricing",
+    page: absence.page_id || "campaign",
+    ...(absence.url ? { url: absence.url } : {}),
+    status: "warn",
+    severity: "warn",
+    expected: `a readable recurring (rebill) claim for subscription package ${absence.package_id}`,
+    actual: `no recurring claim extracted for package ${absence.package_id}`,
+    evidence: { type: absence.type, code: RECURRING_CLAIM_ABSENT_CODE, package_id: absence.package_id },
+  }));
+}
+
 /**
  * Build the runner-facing commercial evidence section and flat QA assertions.
  * `countsOnly` retains matched array lengths without walking claim elements.

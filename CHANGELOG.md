@@ -2,6 +2,54 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.44.0] - 2026-09-30
+
+### Changed
+
+- Package and supported-surface version advance to 1.44.0 and ship the
+  same-surface changes recorded since 1.43.2 (`1.43.2+agent.1` through
+  `1.43.2+agent.3`).
+- `doctor --packet` checks every built page's shipping and package refs against
+  the live campaign, alongside the existing CampaignSpec check (#533). When the
+  packet's built `_site/<route>/` exists and a public Campaigns API key
+  resolves (the packet, its local CampaignSpec, or the declared campaign-key
+  env var), doctor makes one read-only `GET {proxy-base}/api/campaign` with the
+  key in `X-Campaign-Key`. No store or Admin credential is used, and the read
+  writes nothing. `doctor` now accepts `--proxy-base <url>` (https, or a
+  loopback host over http); without it the canonical proxy is used.
+- A ref the live campaign does not serve is a blocker:
+  `built_output.shipping_ref_live_missing` or
+  `built_output.package_ref_live_missing`. This applies even when the
+  CampaignSpec lists no shipping methods. Refs the CampaignSpec lists that the
+  live campaign does not serve, or the reverse, are a separate warning,
+  `spec.campaign_drift`, which never softens a page blocker.
+- With no key or no built page, doctor makes no request and records
+  `derived.live_campaign_refs` as `not_run` with its reason, never as a pass. A
+  read that fails (no response, a non-2xx such as 404, a timeout after 10
+  seconds, or a body without package and shipping-method lists) is the warning
+  `built_output.live_refs_not_run`, with no fall back to the CampaignSpec list.
+- `qa run` makes the same read through its proxy when it has read at least one
+  served page and a key resolves, and records the comparison in the verdict
+  under the same codes, as `api-metadata` assertions. Without a read it
+  records a skipped `live-campaign-refs` assertion carrying the `not_run`
+  reason.
+- `contracts/effects.v1.json` declares the new `{proxy-base}/api/campaign`
+  send on the `doctor`, `doctor --no-write` and `doctor --write` rows and on
+  all five `qa run` rows. The two read-only doctor rows are no longer
+  `readOnlyHint` and move to tier A; they still write nothing and append no
+  lifecycle entry.
+- QA commercial parity warns `commercial_parity.recurring_claim_absent` when a
+  page renders a subscription package (a recurring price and interval on the
+  package) and no recurring claim was read for it. The warning names the
+  package, and commercial parity reports `incomplete` with the issue
+  `recurring_claim_absent` instead of passing.
+- `docs/effects.md` no longer lists `doctor` inspection and `doctor --no-write`
+  among the read-only invocations; they still skip the lifecycle journal. The
+  bundled skills that cite doctor inspection now cite it at tier `A` for the
+  same reason.
+- The local setup install command pins the 1.44.0 package. Bundled skills
+  carry revision `1.44.0+skills.1`, with each skill version advanced one patch.
+
 ## [1.43.2+agent.3] - 2026-09-28
 
 ### Changed

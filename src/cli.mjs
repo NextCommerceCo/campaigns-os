@@ -253,7 +253,7 @@ import {
   addIssue,
 } from "./cli-helpers.mjs";
 import { resolveCampaignsApiKeySource, describeCampaignKeyRejection } from "./campaigns-api-key.mjs";
-import { doctorCommand, doctorBuiltOutput, doctorPacket } from "./doctor/inspect.mjs";
+import { doctorCommand, doctorBuiltOutput, doctorPacket, readDoctorLiveCampaign } from "./doctor/inspect.mjs";
 import {
   PACKET_SCHEMA,
   CONTEXT_SCHEMA,
@@ -300,7 +300,7 @@ Usage:
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
-  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins
+  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--proxy-base <url>] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves (packet, its local CampaignSpec, or the declared campaign-key env var), doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign; --proxy-base overrides the canonical proxy (https, or a loopback host over http). No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json]
@@ -980,7 +980,10 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   }
 
   if (command === "doctor") {
-    const result = doctorCommand(args);
+    // The live campaign ref check's one read (#533), made before the
+    // synchronous inspection; see readDoctorLiveCampaign.
+    const liveCampaign = await readDoctorLiveCampaign(args);
+    const result = doctorCommand(args, { liveCampaign });
     writeResult(result, args, result.ok ? 0 : 2);
     printDoctorTinyPrompt(result, args);
     return;

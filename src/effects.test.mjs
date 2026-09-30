@@ -383,9 +383,12 @@ const INVOCATIONS = {
   "readback": { argv: (s) => ["readback", s.targetRepo, "--json"] },
   "readback|--example": { argv: () => ["readback", "--example", "--json"] },
   "run status": { argv: () => ["run", "status", "--json"] },
-  "doctor": { argv: (s) => ["doctor", "--packet", s.packetPath, "--json"] },
-  "doctor|--no-write": { argv: (s) => ["doctor", "--packet", s.packetPath, "--write", "--no-write", "--json"] },
-  "doctor|--write": { argv: (s) => ["doctor", "--packet", s.packetPath, "--write", "--json"] },
+  // The packet forms read the live campaign when a built page exists and a
+  // key resolves; the seeded spec carries one in every condition, so the
+  // proxy is the loopback receiver in every condition, not only the fifth.
+  "doctor": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--proxy-base", receiver, "--json"] },
+  "doctor|--no-write": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--write", "--no-write", "--proxy-base", receiver, "--json"] },
+  "doctor|--write": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--write", "--proxy-base", receiver, "--json"] },
   "doctor|--built": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--json"] },
   "doctor|--built --emit-packet": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--emit-packet", "--json"] },
   "sdk storage-check": {

@@ -38,8 +38,10 @@ that already understands those hints needs no translation layer.
 **`readOnlyHint` counts the command-lifecycle journal.** A journal append is a
 write like any other, so every `readOnlyHint: true` row is an invocation the
 CLI exempts from lifecycle capture (the converse does not hold: `demo` and the
-`--no-write` forms skip the journal but still write other declared files): `help`, `readback`,
-`run status`, `doctor` inspection, `doctor --no-write`, `sdk storage-check`,
+`--no-write` forms skip the journal but still write other declared files, and
+`doctor` inspection and `doctor --no-write` skip it and write nothing but may
+send the one live campaign read): `help`, `readback`,
+`run status`, `sdk storage-check`,
 `tooling diagnose`, a refused invocation, `run-record --no-write`, and every
 `--dry-run` form on the commands that implement the flag. Everything else
 appends an entry when a journal is selected — an active run session,

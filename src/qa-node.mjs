@@ -98,6 +98,17 @@ import {
   unavailableCommercialCapture,
   unavailableCommercialReport,
 } from "./qa-commercial-parity.mjs";
+import {
+  LIVE_REF_CODES,
+  campaignDriftMessage,
+  evaluateLiveCampaignRefs,
+  extractRenderedPackageRefs,
+  extractRenderedShippingRefs,
+  liveRefFindingMessage,
+  liveRefsNotRunMessage,
+  readLiveCampaignForPacket,
+} from "./live-campaign-refs.mjs";
+import { specPackageRefs, specShippingRefs } from "./doctor/checks.mjs";
 
 // The producing runtime identity on every verdict. Read from package.json so
 // a verdict names the release that made it; a literal here outlived three
@@ -2165,7 +2176,7 @@ async function runQa(args, options = {}) {
 // `runSessionActive` is threaded in from the CLI's single ambient-session read
 // rather than re-discovered here, so the closeout command this run prints and
 // the run_id the session will close under come from the same observation.
-async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) {
+async function runResolvedQa(args, resolved, { runSessionActive = false, liveCampaign = undefined, liveCampaignFetch = globalThis.fetch } = {}) {
   const startedAt = new Date().toISOString();
   const runId = generateRunId();
   const gate = resolved.themeGate;
@@ -2258,13 +2269,30 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
   const pages = resolved.topologies.flatMap(topology => topology.pages);
   const pageResults = await mapConcurrent(pages, COMMERCIAL_QA_LIMITS.concurrency, page =>
     runPageChecks(page, args, { sourceLoader, bindingExpected, bindingScriptLoader, captureCommercial: commercialIds.has(String(page.page_id)) }));
+  const livePages = new Map();
   for (const [index, page] of pages.entries()) {
     const pageResult = pageResults[index];
     assertions.push(...pageResult.assertions);
+    if (pageResult.renderedRefs && !livePages.has(String(page.page_id))) {
+      livePages.set(String(page.page_id), { ...page, page_id: String(page.page_id), ...pageResult.renderedRefs });
+    }
     if (commercialIds.has(String(page.page_id)) && pageResult.commercialCapture && !capturesByPageId.has(String(page.page_id))) {
       capturesByPageId.set(String(page.page_id), pageResult.commercialCapture);
     }
   }
+  // The live campaign read (#533): one GET of {proxy-base}/api/campaign under
+  // the public campaign key, made only when a served page was read to compare.
+  const liveSpec = resolved.rawSpec || resolved.spec;
+  const liveRead = liveCampaign !== undefined || livePages.size === 0
+    ? liveCampaign
+    : await readLiveCampaignForPacket({
+      packet: resolved.packet,
+      packetPath: resolved.packetPath || null,
+      spec: liveSpec,
+      fetchImpl: liveCampaignFetch,
+      proxyBase: resolved.proxyBase,
+    });
+  assertions.push(...liveCampaignRefAssertions({ pages: [...livePages.values()], spec: liveSpec, liveCampaign: liveRead }));
   if (args.browser === true) {
     assertions.push(...await runBrowserChecks(resolved.topologies, args, {
       brandContract: resolved.brandContract,
@@ -2884,7 +2912,74 @@ async function runPageChecks(page, args, {
     }));
   }
 
-  return { assertions, commercialCapture };
+  return {
+    assertions,
+    commercialCapture,
+    renderedRefs: { package_refs: [...extractRenderedPackageRefs(html)], shipping_refs: [...extractRenderedShippingRefs(html)] },
+  };
+}
+
+// The live campaign ref check (#533) as QA assertions: the comparison doctor
+// runs over built pages, run here over the served pages this attempt read,
+// under the same codes. `liveCampaign` is a readLiveCampaign result the
+// caller made; absent or failed, the check is not_run with its reason.
+function liveCampaignRefAssertions({ pages, spec, liveCampaign }) {
+  const campaignAssertion = (fields) => assertion({ family: "api-metadata", page: { page_id: "campaign" }, ...fields });
+  if (!pages.length) {
+    return [campaignAssertion({
+      id: "live-campaign-refs",
+      status: STATUS.SKIPPED,
+      expected: "every served page's shipping and package refs are served by the live campaign",
+      actual: "not_run",
+      evidence: { code: LIVE_REF_CODES.notRun, reason_code: "no_pages", reason: "No served page source was read to compare against the live campaign." },
+    })];
+  }
+  const result = evaluateLiveCampaignRefs({
+    pages,
+    map: { package_refs: specPackageRefs(spec), shipping_refs: specShippingRefs(spec) },
+    live: liveCampaign,
+  });
+  const keySource = liveCampaign?.key_source ? { key_source: liveCampaign.key_source } : {};
+  if (result.status === "not_run") {
+    return [campaignAssertion({
+      id: result.attempted ? LIVE_REF_CODES.notRun : "live-campaign-refs",
+      status: result.attempted ? STATUS.WARN : STATUS.SKIPPED,
+      ...(result.attempted ? { severity: SEVERITY.WARN } : {}),
+      expected: "every served page's shipping and package refs are served by the live campaign",
+      actual: "not_run",
+      evidence: { code: LIVE_REF_CODES.notRun, reason_code: result.reason_code, reason: result.attempted ? liveRefsNotRunMessage(result) : result.reason, ...keySource },
+    })];
+  }
+  const out = result.page_findings.map((finding) => assertion({
+    id: `${finding.code}:${finding.page_id}`,
+    family: "api-metadata",
+    page: pages.find((page) => String(page.page_id) === finding.page_id) || { page_id: finding.page_id },
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+    expected: `every rendered ${finding.kind} ref is served by the live campaign`,
+    actual: finding.refs.join(", "),
+    evidence: { code: finding.code, refs: finding.refs, message: liveRefFindingMessage(finding) },
+  }));
+  if (result.drift) {
+    out.push(campaignAssertion({
+      id: LIVE_REF_CODES.drift,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: "the CampaignSpec lists the refs the live campaign serves",
+      actual: "drift",
+      evidence: { code: LIVE_REF_CODES.drift, drift: result.drift, message: campaignDriftMessage(result.drift) },
+    }));
+  }
+  if (result.status === "pass") {
+    out.push(campaignAssertion({
+      id: "live-campaign-refs",
+      status: STATUS.PASS,
+      expected: "every served page's shipping and package refs are served by the live campaign",
+      actual: `${result.checked_pages} page(s) checked`,
+      evidence: { ...keySource },
+    }));
+  }
+  return out;
 }
 
 async function maybeRunTestOrders(
@@ -3888,6 +3983,7 @@ export const __qaNodeTestHooks = Object.freeze({
   isRoutingMetaTag,
   unsupportedSdkMetaHint,
   reportCommercialRunnerError,
+  liveCampaignRefAssertions,
   browserSkippedByGate,
   reportBrowserSkippedByGate,
   gateClearingHint,
