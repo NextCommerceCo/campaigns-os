@@ -11,7 +11,7 @@ import { resolveCampaignWorkspace } from "../campaign-workspace.mjs";
 import { evaluateThemeGate } from "../theme-gate.mjs";
 import { findForbiddenPriceHides } from "../template-brand-contract.mjs";
 import { resolveBuiltSiteScope, synthesizeMinimalBuildPacket } from "../built-site-scope.mjs";
-import { UPSELL_SELECTOR_SCOPE } from "../upsell-selector-scope.mjs";
+import { UPSELL_SELECTOR_SCOPE, builtPageTypeOverRouteGuess } from "../upsell-selector-scope.mjs";
 import { CAMPAIGN_IDENTITY } from "../campaign-identity.mjs";
 import { SDK_MARKUP } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs } from "../built-script-syntax.mjs";
@@ -234,7 +234,8 @@ export function doctorBuiltOutput(args) {
   // branch above: the defect is family-independent, and this mode is reached
   // without --family more often than with it. Page roles come from the built
   // route (resolveBuiltSiteScope infers them) and from each page's own
-  // next-page-type meta, so no packet or spec is needed. No assembly report
+  // next-page-type meta, so no packet or spec is needed; a meta the browser
+  // reads, declared unambiguously, replaces the route guess (#529). No assembly report
   // exists on this path, so there are no waivers to assess — a blocker here is
   // repaired in the source, or waived through the packet path.
   recordUpsellSelectorScopeGate({
@@ -242,12 +243,15 @@ export function doctorBuiltOutput(args) {
       public_route_slug: scope.slug || null,
       site_root: relFromDir(targetRepo, scope.campaign_dir),
     },
-    pages: scope.pages.map((page) => ({
-      page_id: page.page_id,
-      page_type: page.page_type,
-      file: relFromDir(targetRepo, page.built_path),
-      content: readFileSync(page.built_path, "utf8"),
-    })),
+    pages: scope.pages.map((page) => {
+      const content = readFileSync(page.built_path, "utf8");
+      return {
+        page_id: page.page_id,
+        page_type: builtPageTypeOverRouteGuess({ route_type: page.page_type, content }),
+        file: relFromDir(targetRepo, page.built_path),
+        content,
+      };
+    }),
     waivers: null,
     errors,
     warnings,
