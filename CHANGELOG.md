@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.5] - 2026-09-30
+
+### Changed
+
+- Doctor's `built_output.upsell_selector_scope` check takes a page's role
+  from its own `next-page-type` meta only when the route guess is ambiguous
+  (#529): the guess comes only from `oto` or `one-time-offer` in the route, or
+  the route also reads as a checkout (`checkout`, `cart`, `order`). A route
+  with an explicit `upsell` or `downsell` word (for example `/upsell-1/`,
+  `/checkout-downsell/`) keeps its role whatever its meta says, so a meta
+  copied from another page no longer lifts a real upsell page out of the
+  check. In 1.43.2+agent.4 any single live meta replaced the route guess.
+- 1.43.2+agent.4 also made a page post-purchase when a `next-page-type` of
+  `upsell` or `downsell` appears anywhere in its markup: beside a meta that
+  says otherwise, unquoted, with an upper-case name, commented out, or inside
+  `<template>`, `<script>` or `<noscript>`. Its notes left that out. Such a
+  page can block under `built_output.upsell_selector_scope` when it has a
+  bundle selector without `data-next-upsell-context`; `doctor --built` has no
+  waivers, so remove the stray tag if the page is not post-purchase.
+
 ## [1.43.2+agent.4] - 2026-09-30
 
 ### Fixed

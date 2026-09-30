@@ -7672,6 +7672,33 @@
         }
       ],
       "entry_sha256": "ce76bc932914105287f044eeb8d027190c5e262eb6ccbe44cd8e0f338405bf5b"
+    },
+    {
+      "id": "RL-0180",
+      "sequence": 170,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.2+agent.5",
+      "changelog_sha256": "ebdfd5e51402539fb5bf64ed49ad05f019560963b4f456d71c5468f3857cbd75",
+      "agent_impact": "doctor --built and the packet path keep an explicit upsell or downsell route in built_output.upsell_selector_scope whatever the page next-page-type meta says; the meta replaces the route guess only for oto / one-time-offer routes or routes that also read as checkout. Records what RL-0170 omitted: a page whose markup carries next-page-type upsell or downsell anywhere (conflicting, unquoted, commented out, or inside template/script/noscript) is treated as post-purchase and can block; remove the stray tag on non-post-purchase pages.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The packet path passes the page route so an explicit upsell/downsell route keeps its role over a conflicting meta."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor --built passes the page route so an explicit upsell/downsell route keeps its role over a conflicting meta."
+        }
+      ],
+      "entry_sha256": "992052b3bc4b137336d542c33773f8f1e8e7d5867a9e2d5d237d66c97c471196"
     }
   ]
 }

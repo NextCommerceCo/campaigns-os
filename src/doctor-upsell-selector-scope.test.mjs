@@ -136,6 +136,37 @@ test("#529: a checkout page with an embedded offer is not flagged because its ro
   }
 });
 
+test("#529: an upsell route whose meta was copied from another page still blocks doctor --built", () => {
+  // The meta says product, checkout or receipt; the route says upsell, and
+  // the order is already paid there, so the selector still charges.
+  const offer = `<main><div data-next-upsell="offer">${UNSCOPED}</div></main>`;
+  for (const meta of ["product", "checkout", "receipt"]) {
+    withTempDir((repo) => {
+      writePage(repo, "upsell-1", `<html><head><meta name="next-page-type" content="${meta}"></head><body>${offer}</body></html>`);
+      const result = doctorBuiltOutput({ built: repo, slug: SLUG });
+      assert.ok(codes(result.errors).includes(UPSELL_SELECTOR_SCOPE), meta);
+      assert.equal(gateOf(result).status, "blocked", meta);
+    });
+  }
+});
+
+test("#529: an oto route takes its role from a checkout meta, and blocks with no meta or an upsell one", () => {
+  const offer = `<main><div data-next-upsell="offer">${UNSCOPED}</div></main>`;
+  const CHECKOUT_HEAD = '<meta name="next-page-type" content="checkout">';
+  const cases = [
+    ["checkout-oto-v2", CHECKOUT_HEAD, "not_applicable"],
+    ["oto-1", CHECKOUT_HEAD, "not_applicable"],
+    ["oto-1", "", "blocked"],
+    ["oto-1", UPSELL_HEAD, "blocked"],
+  ];
+  for (const [route, head, status] of cases) {
+    withTempDir((repo) => {
+      writePage(repo, route, `<html><head>${head}</head><body>${offer}</body></html>`);
+      assert.equal(gateOf(doctorBuiltOutput({ built: repo, slug: SLUG })).status, status, `${route} ${head || "(no meta)"}`);
+    });
+  }
+});
+
 test("#529: a checkout meta the browser never reads does not lift an upsell page out of the gate", () => {
   // Each head names checkout only in markup that is not the page's meta, or
   // names it ambiguously; the upsell route's blocker stands, with or without

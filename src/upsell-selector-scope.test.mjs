@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { inferPageType } from "./built-site-scope.mjs";
 import {
   UPSELL_SELECTOR_SCOPE,
   builtPageIsPostPurchase,
@@ -250,9 +251,10 @@ test("a selector inside a <template> is scanned — this SDK clones slot templat
 // --- Declared page type over the route guess (#529) ---------------------------
 
 // One row per way a page can carry next-page-type. `role` is what the page
-// declares over a route that guesses "upsell": only a meta the browser puts in
-// the document, unambiguously, replaces the guess. Anything else leaves the
-// guess standing, so the post-purchase blocker is never lost to inert markup.
+// declares over an ambiguous route that guesses "upsell" ("checkout-oto-1"):
+// only a meta the browser puts in the document, unambiguously, replaces the
+// guess. Anything else leaves the guess standing, so the post-purchase blocker
+// is never lost to inert markup.
 const META = (attrs) => `<meta ${attrs}>`;
 const CHECKOUT = META('name="next-page-type" content="checkout"');
 const DECLARATIONS = [
@@ -285,10 +287,60 @@ const DECLARATIONS = [
 test("only a live, unambiguous next-page-type meta replaces the route guess", () => {
   for (const [label, head, role] of DECLARATIONS) {
     const content = `<html><head>${head}</head><body>${UNSCOPED}</body></html>`;
-    assert.equal(builtPageTypeOverRouteGuess({ route_type: "upsell", content }), role, label);
-    const gate = gateFor([upsellPage(content, { page_type: builtPageTypeOverRouteGuess({ route_type: "upsell", content }) })]);
+    const page_type = builtPageTypeOverRouteGuess({ route: "checkout-oto-1", route_type: "upsell", content });
+    assert.equal(page_type, role, label);
+    const gate = gateFor([upsellPage(content, { page_type })]);
     assert.equal(gate.status, role === "upsell" ? "blocked" : "not_applicable", label);
   }
+});
+
+// Route x meta -> flagged, over a page with an unscoped bundle selector inside
+// its offer container. The meta beats the route guess only when the guess is
+// ambiguous: "oto" / "one-time-offer" without an "upsell" word, or a route
+// that also reads as checkout. An explicit upsell or downsell route blocks
+// whatever its meta says, because the charge comes from the page's place in
+// the funnel (#529). Where the guess is not post-purchase, an upsell meta
+// still brings the page in.
+const OFFER_BODY = `<div data-next-upsell="offer">${UNSCOPED}</div>`;
+const ROUTE_META_METAS = [null, "checkout", "upsell", "product", "receipt"];
+const flaggedFor = (...metas) => Object.fromEntries(ROUTE_META_METAS.map((meta) => [meta ?? "(none)", metas.includes(meta)]));
+const ALWAYS = flaggedFor(...ROUTE_META_METAS);
+const AMBIGUOUS = flaggedFor(null, "upsell");
+const NOT_POST_PURCHASE = flaggedFor("upsell");
+const ROUTE_META_TABLE = [
+  ["upsell-1", ALWAYS],
+  ["up-sell-2", ALWAYS],
+  ["upsell-oto", ALWAYS],
+  ["checkout-upsell", ALWAYS],
+  ["downsell", ALWAYS],
+  ["down-sell-2", ALWAYS],
+  ["checkout-downsell", ALWAYS],
+  ["oto-1", AMBIGUOUS],
+  ["oto1", AMBIGUOUS],
+  ["one-time-offer", AMBIGUOUS],
+  ["checkout-oto-1", AMBIGUOUS],
+  ["checkout-oto-v2", AMBIGUOUS],
+  ["checkout", NOT_POST_PURCHASE],
+  ["order", NOT_POST_PURCHASE],
+  ["offer", NOT_POST_PURCHASE],
+  ["special", NOT_POST_PURCHASE],
+];
+
+test("route x meta: a meta beats only an ambiguous route guess; an explicit upsell or downsell route always blocks", () => {
+  for (const [route, expected] of ROUTE_META_TABLE) {
+    for (const meta of ROUTE_META_METAS) {
+      const head = meta ? META(`name="next-page-type" content="${meta}"`) : "";
+      const content = `<html><head>${head}</head><body>${OFFER_BODY}</body></html>`;
+      const page_type = builtPageTypeOverRouteGuess({ route, route_type: inferPageType(route), content });
+      const gate = gateFor([upsellPage(content, { page_id: route, page_type })]);
+      assert.equal(gate.status === "blocked", expected[meta ?? "(none)"], `${route} with meta ${meta ?? "(none)"}`);
+    }
+  }
+});
+
+test("with no route to read, the route type stands against any meta", () => {
+  const content = `<html><head>${CHECKOUT}</head><body>${OFFER_BODY}</body></html>`;
+  assert.equal(builtPageTypeOverRouteGuess({ route_type: "upsell", content }), "upsell");
 });
 
 test("any next-page-type saying post-purchase, live or inert, still makes the page post-purchase", () => {
