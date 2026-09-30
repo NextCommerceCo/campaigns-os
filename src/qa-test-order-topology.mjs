@@ -30,6 +30,19 @@ export function resolveTestOrderTopology(topology = {}, checkoutPage = null) {
     ...(entry?.kind === "terminal" ? [entry.terminal] : []),
     ...terminalPaths.map((candidate) => candidate.terminal),
   ]);
+  // Every declared offer page with the offer page each action leads to, so a
+  // planned path that stops short of a terminal can still be walked to the
+  // controls it clicks.
+  const offerEdges = [];
+  for (const [key, page] of pagesByUrl) {
+    if (!OFFER_PAGE_TYPES.has(pageType(page))) continue;
+    const edge = { key, page_id: page.page_id || null, page_type: page.page_type || null, url: page.url };
+    for (const [action, field] of ACTIONS) {
+      const target = targetNode(page?.[field], pagesByUrl, topologyOrigin);
+      edge[`${action}_key`] = target?.kind === "offer" ? canonicalHttpUrl(target.page.url) : null;
+    }
+    offerEdges.push(edge);
+  }
 
   return {
     topology_id: topology?.funnel_id || "default",
@@ -48,6 +61,8 @@ export function resolveTestOrderTopology(topology = {}, checkoutPage = null) {
     terminal_paths: terminalPaths,
     invalid_paths: invalidPaths,
     recognized_terminals: recognizedTerminals,
+    entry_offer_key: entry?.kind === "offer" ? canonicalHttpUrl(entry.page.url) : null,
+    offer_edges: offerEdges,
   };
 }
 
@@ -93,6 +108,139 @@ export function commonTestOrderPaths(resolvedTopology) {
   const shortest = receiptPaths[0]?.path;
   if (shortest && !paths.includes(shortest)) paths.push(shortest);
   return paths;
+}
+
+// The default `common` depth (#530). The sample above never reached a
+// downsell's decline, so a broken decline link passed QA. When every actual
+// terminal path fits under the cap, `common` runs them all. Above the cap it
+// keeps the sample and adds, for each offer page whose decline no planned path
+// clicks yet, the shortest path that clicks it, until the cap is reached. A
+// page counts as covered only when its decline is clicked: arriving at it, or
+// clicking its accept, does not. Pages still uncovered are returned, not
+// dropped. The sample is never trimmed, so a cap below it is still refused by
+// the flood guard exactly as before.
+export function commonTestOrderPlan(resolvedTopology, { cap } = {}) {
+  const baseline = commonTestOrderPaths(resolvedTopology);
+  let full = null;
+  try {
+    full = fullTestOrderPaths(resolvedTopology);
+  } catch {
+    full = null;
+  }
+  const plan = {
+    requested_depth: "common",
+    cap,
+    full_path_count: full ? full.length : null,
+    baseline_paths: baseline,
+  };
+  if (full && full.length <= cap) {
+    // Same set as `full`; the sample's paths keep their place at the front.
+    const paths = [...baseline.filter((path) => full.includes(path)), ...full.filter((path) => !baseline.includes(path))];
+    return { ...plan, effective_depth: "full", reason: "under_cap", paths, coverage_paths: [], uncovered_pages: [] };
+  }
+
+  const paths = baseline.slice();
+  const coveragePaths = [];
+  const offers = offerPagesByReach(resolvedTopology);
+  for (const offer of offers) {
+    if (paths.length >= cap) break;
+    const declined = declinedOfferKeys(resolvedTopology, paths);
+    if (declined.has(offer.key) || !offer.reach) continue;
+    const candidate = shortestDeclinePath(resolvedTopology, offer, declined);
+    if (!candidate || paths.includes(candidate)) continue;
+    paths.push(candidate);
+    coveragePaths.push(candidate);
+  }
+  const declined = declinedOfferKeys(resolvedTopology, paths);
+  const uncovered = offers
+    .filter((offer) => !declined.has(offer.key))
+    .map((offer) => ({
+      page_id: offer.page_id,
+      page_type: offer.page_type,
+      reason: offer.reach ? "cap" : "unreachable",
+    }));
+  return {
+    ...plan,
+    effective_depth: "common",
+    reason: full ? "over_cap" : "full_not_enumerable",
+    paths,
+    coverage_paths: coveragePaths,
+    uncovered_pages: uncovered,
+  };
+}
+
+// The offer pages a planned path clicks, in click order: `checkout` clicks
+// none, `decline-accept` clicks the entry offer's decline and then the accept
+// on whichever offer that decline leads to. A walk stops where the topology
+// leaves the offer graph, as the runner does.
+export function testOrderPathClicks(resolvedTopology, path) {
+  const normalized = String(path || "").toLowerCase();
+  const steps = !normalized || normalized === "checkout" ? [] : normalized.split("-");
+  const edges = new Map((resolvedTopology?.offer_edges || []).map((edge) => [edge.key, edge]));
+  const clicks = [];
+  let current = edges.get(resolvedTopology?.entry_offer_key) || null;
+  for (const step of steps) {
+    if (!current) break;
+    clicks.push({ key: current.key, page_id: current.page_id, action: step });
+    current = edges.get(current[`${step}_key`]) || null;
+  }
+  return clicks;
+}
+
+function declinedOfferKeys(resolvedTopology, paths) {
+  const keys = new Set();
+  for (const path of paths) {
+    for (const click of testOrderPathClicks(resolvedTopology, path)) {
+      if (click.action === "decline") keys.add(click.key);
+    }
+  }
+  return keys;
+}
+
+// Declared offer pages, shallowest first, each with the shortest action
+// sequence that reaches it (accept before decline on a tie) or null when no
+// path from the checkout reaches it.
+function offerPagesByReach(resolvedTopology) {
+  const edges = resolvedTopology?.offer_edges || [];
+  const byKey = new Map(edges.map((edge) => [edge.key, edge]));
+  const reach = new Map();
+  const entry = resolvedTopology?.entry_offer_key;
+  if (entry && byKey.has(entry)) {
+    reach.set(entry, []);
+    const queue = [entry];
+    while (queue.length) {
+      const key = queue.shift();
+      for (const action of ["accept", "decline"]) {
+        const next = byKey.get(key)?.[`${action}_key`];
+        if (!next || reach.has(next) || !byKey.has(next)) continue;
+        reach.set(next, [...reach.get(key), action]);
+        queue.push(next);
+      }
+    }
+  }
+  const reached = [...reach.keys()].map((key) => ({ ...byKey.get(key), reach: reach.get(key) }));
+  const unreached = edges.filter((edge) => !reach.has(edge.key)).map((edge) => ({ ...edge, reach: null }));
+  return [...reached, ...unreached];
+}
+
+// The shortest actual terminal path that clicks this offer's decline. Among
+// equally short paths, the one that also clicks the most still-undeclined
+// offers wins, then accept before decline. Where no terminal path clicks it
+// (the graph beyond is not enumerable), the path that reaches the offer and
+// declines it.
+function shortestDeclinePath(resolvedTopology, offer, declined) {
+  const newlyDeclined = (path) => new Set(testOrderPathClicks(resolvedTopology, path)
+    .filter((click) => click.action === "decline" && !declined.has(click.key))
+    .map((click) => click.key)).size;
+  const candidates = (resolvedTopology?.terminal_paths || [])
+    .filter((candidate) => testOrderPathClicks(resolvedTopology, candidate.path)
+      .some((click) => click.key === offer.key && click.action === "decline"))
+    .map((candidate) => ({ ...candidate, gain: newlyDeclined(candidate.path) }))
+    .sort((left, right) => (left.steps.length - right.steps.length)
+      || (right.gain - left.gain)
+      || compareActionSteps(left.steps, right.steps));
+  if (candidates.length) return candidates[0].path;
+  return [...offer.reach, "decline"].join("-");
 }
 
 function compareCommonReceiptPaths(left, right) {

@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.15
+version: 1.3.16
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.44.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.44.0+skills.1`
+Bundle revision: 1.44.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.44.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -108,7 +108,8 @@ Rules:
 - Valid test-order modes are `common`, `checkout`, `accept`, `decline`, `both`, `full`, `off`, and explicit accept/decline paths such as `accept-decline-accept`.
 - Browser test orders default to `--max-test-orders 6` (an accidental-flood guard, not a permission gate). Planning happens before browser launch; when `full` exceeds the cap, use explicit sample paths or rerun with the exact larger cap printed by the command (a linear three-offer graph plans nine orders, so use `--max-test-orders 9`). That cap bounds planned paths; `--max-order-creations` bounds real order creations, defaults to the planned path count, and is reserved before each submit click. A run that hits it stops that path with an explicit budget assertion — read it as a safety stop, not as a checkout defect, and account for the orders already created before raising it.
 - Resolve paths from the selected checkout's `expected_next_url`, then follow reachable offer `expected_accept_url` / `expected_decline_url` edges. Treat only declared receipt/thank-you pages and genuine cross-origin handoffs as terminals; an absent same-origin route is unresolved, not an external handoff.
-- `--test-order common` runs checkout plus first-offer accept/decline and adds the shortest real receipt path, deduplicated to at most four orders. It must not synthesize a receipt path from offer count.
+- `--test-order common` is the default depth. When every actual terminal path fits under the flood cap (`--max-test-orders`, 6 by default), it runs them all and records effective depth `full`, reason `under_cap`. Above the cap it runs checkout, first-offer accept/decline and the shortest real receipt path, then adds the shortest path that clicks the decline on each offer or downsell page no planned path declines yet, until the cap is reached, and names any page left out. It never trims the checkout/accept/decline/receipt sample to fit a lower cap, and it must not synthesize a receipt path from offer count.
+- A page counts as exercised only when an order of its own funnel clicked its decline control. Reaching the page, or clicking only its accept, does not count. `browser-test-order:upsell-action-coverage` reports this for every page with upsell actions in every funnel of the run, and is `pass` or `warn` only when coverage is certain (orders placed, every offer page listed with its own unshared URL, every plan matched to one funnel, every click on a declared page of the order's funnel): `warn` names each page whose decline no order clicked and each funnel no order ran through, `pass` means every page's decline was clicked. Anything uncertain is `manual_review` naming the pages and why (`evidence.reason`, `evidence.not_assessable`, `evidence.uncertainty`), including a `--test-order off` run or attempts that all failed before an order reference. Read `warn` and `manual_review` as missing proof, not as a defect.
 - Use `full` for every actual terminal path. The graph walk is deterministic and cycle-safe; cycles, missing routes, unresolved same-origin targets, and reachable nonterminals block `full` before browser launch instead of producing phantom coverage.
 - A path with remaining actions may stop cleanly only at a terminal recognized in that selected topology. Missing accept/decline controls on any other page are blockers. A cross-origin handoff is a valid terminal navigation but is not receipt-rendering or persisted-receipt proof.
 - Keep multi-funnel and `tiers:common` / `tiers:full` plans isolated to each selected checkout's own funnel graph, tiers, and recognized terminals; never borrow an unrelated funnel's receipt page.

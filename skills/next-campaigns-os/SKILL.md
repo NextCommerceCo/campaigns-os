@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-os
-version: 1.0.31
+version: 1.0.32
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
-Bundle revision: 1.44.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.44.0+skills.1`
+Bundle revision: 1.44.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.44.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -95,7 +95,7 @@ Map and run endpoints) with a local CampaignSpec, prepared HTML/assets source, t
    retains each attributed exception as `ready_with_exceptions`, and one
    exception never suppresses another blocker.
 10. Run the package-owned proof path in sequence: ensure `npx --no-install campaigns-os qa install-browser` has completed, run `campaigns-os qa resolve --packet <packet>` (tier `A`: it fetches `--base-url`; `--no-probe` is tier `B` and local), then `campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common` (tier `C`: it overwrites the stored verdict and assembly report, places real typed-card test orders against the campaign, and posts the verdict and progress; `--no-post-verdict` drops the verdict POST and `--no-remit` the Run Record remit, but both stay tier `C`).
-11. Treat typed-card proof coverage as the control. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed. `common` runs checkout, first-offer accept and decline, and a deduplicated shortest real receipt path when that adds coverage (at most four orders). `full` walks every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The accidental-flood cap remains `6`, and an overflow names the exact explicit `--max-test-orders` raise. Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.
+11. Treat typed-card proof coverage as the control. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed. `common` runs every actual terminal path when they fit under the flood cap (`--max-test-orders`, 6 by default); above the cap it runs checkout, first-offer accept and decline, and a deduplicated shortest real receipt path, then adds one decline path per offer or downsell page not yet declined, up to the cap, and names any page left out. A page counts as covered only when an order clicks its decline; the `browser-test-order:upsell-action-coverage` verdict row warns naming each page whose decline no order clicked. `full` walks every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The accidental-flood cap remains `6`, and an overflow names the exact explicit `--max-test-orders` raise. Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.
 12. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
 
 ## Session Intake
