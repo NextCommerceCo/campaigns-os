@@ -7672,6 +7672,135 @@
         }
       ],
       "entry_sha256": "ce76bc932914105287f044eeb8d027190c5e262eb6ccbe44cd8e0f338405bf5b"
+    },
+    {
+      "id": "RL-0171",
+      "sequence": 170,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": "1.43.3",
+      "changelog_section": "1.43.3",
+      "changelog_sha256": "0f49fe98ae308df34fe82e605c5015768bd80af7804ff4e900f4a22327948baf",
+      "agent_impact": "start, prepare-build and build with --map-id (no --cached-spec) are now declared to write {target}/.campaign-runtime/fetched-specs/<map-id>.json. A tool face that gates on effects.v1.json should expect that write, which the CLI already made; the 1.43.3 package also ships the same-surface changes recorded as 1.43.2+agent.1 through 1.43.2+agent.4.",
+      "compatibility": "compatible",
+      "migration": "Update to the exact 1.43.3 package and refresh bundled skills to 1.43.3+skills.1 before starting a new agent session.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.43.3 and record the new effects.v1.json hash."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare the fetched Map copy under {target}/.campaign-runtime/fetched-specs/ on all nine start, prepare-build and build rows, and mark it and the /api/spec/{map-id} fetch as observed under persisted_consent."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Describe the --map-id fetch and its fetched copy, and stop listing the fetch as unreachable by the offline effect test."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the copy-paste local setup install command to the 1.43.3 package release."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Restamp the generated orientation reference for surface 1.43.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Restamp the generated runtime reference for surface 1.43.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.43.3+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Stamp package version 1.43.3 without changing dependency resolutions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release package version 1.43.3 without changing exports or dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.43.3+skills.1 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.3+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.3+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.3+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.3+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.3+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.3+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.3+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.3+skills.1 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.3+skills.1 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "ac6a18d8321d7b41e70d44504cb22a789ed21c10633d23ba43c1fd5a8a3abacb"
     }
   ]
 }
