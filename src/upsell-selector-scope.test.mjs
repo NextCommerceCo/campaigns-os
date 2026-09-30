@@ -341,6 +341,9 @@ test("route x meta: a meta beats only an ambiguous route guess; an explicit upse
 test("with no route to read, the route type stands against any meta", () => {
   const content = `<html><head>${CHECKOUT}</head><body>${OFFER_BODY}</body></html>`;
   assert.equal(builtPageTypeOverRouteGuess({ route_type: "upsell", content }), "upsell");
+  const upsellMeta = `<html><head>${META('name="next-page-type" content="upsell"')}</head><body>${OFFER_BODY}</body></html>`;
+  assert.equal(builtPageTypeOverRouteGuess({ route_type: "checkout", content: upsellMeta }), "checkout");
+  assert.equal(builtPageTypeOverRouteGuess({ route: "", route_type: "checkout", content: upsellMeta }), "checkout");
 });
 
 test("any next-page-type saying post-purchase, live or inert, still makes the page post-purchase", () => {

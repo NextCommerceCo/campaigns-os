@@ -20,7 +20,10 @@ Notable supported-surface changes are recorded here.
   `<template>`, `<script>` or `<noscript>`. Its notes left that out. Such a
   page can block under `built_output.upsell_selector_scope` when it has a
   bundle selector without `data-next-upsell-context`; `doctor --built` has no
-  waivers, so remove the stray tag if the page is not post-purchase.
+  waivers. Doctor finds these tags by scanning the page source, not only the
+  live document, so a tag inside a comment, `<template>`, `<script>` or
+  `<noscript>` counts too: delete the markup itself if the page is not
+  post-purchase.
 
 ## [1.43.3] - 2026-09-30
 
