@@ -59,7 +59,8 @@ warning and reports `ready_with_exceptions`.
 
 `checkpoint waive` is deliberately a staged registry. Its registered gates are
 `page_kit.store_profile`, `page_kit.sdk_version`, `polish.hidden_eager_media`,
-and `built_output.upsell_selector_scope`. The SDK gate's strict released-semver and
+`built_output.upsell_selector_scope`, and the per-page
+`source_html.producer_provenance`. The SDK gate's strict released-semver and
 mismatch-only waiver boundary, plus the package-owned Polish checkpoint, are
 documented in the [Build Packet contract](./build-packet.md). Within Polish,
 only the broader Source Freshness waiver remains on its existing report lane;

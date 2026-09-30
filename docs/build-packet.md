@@ -1064,9 +1064,11 @@ Design Source Package exists. The waiver must remain visible in Campaign
 Readiness Readback and downstream QA evidence; it is not a silent pass.
 In v0, write accepted Source Freshness Waivers directly into `waivers[]`.
 `campaigns-os checkpoint waive` is a staged generic registry and currently
-accepts four gates: `page_kit.store_profile`, `page_kit.sdk_version`,
-`polish.hidden_eager_media`, and `built_output.upsell_selector_scope`; an
-unregistered gate id is refused with that list. `theme waive` applies the same
+accepts five gates: `page_kit.store_profile`, `page_kit.sdk_version`,
+`polish.hidden_eager_media`, `built_output.upsell_selector_scope`, and
+`source_html.producer_provenance`, which is waived per page with
+`--page <page_id>` (see the [Design Source Package](./design-source-package.md)
+hand-written HTML route); an unregistered gate id is refused with that list. `theme waive` applies the same
 attribution rule (a named human, no placeholder, an optional future
 `--expires-at`) on its own lane. Within Polish, only the broader Source Freshness
 waiver retains its existing report path; theme and QA decisions retain their

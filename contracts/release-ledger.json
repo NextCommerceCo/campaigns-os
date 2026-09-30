@@ -7633,6 +7633,129 @@
         }
       ],
       "entry_sha256": "b04ee701fcb95fce30ddb6c19291320187a92cb16563c58c951217ddc5543e9b"
+    },
+    {
+      "id": "RL-0174",
+      "sequence": 169,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.43.2+agent.8",
+      "changelog_sha256": "51dca49f975423672d4cbbbf2d4272b65621e491c3f9d3d5cf7169081769e684",
+      "agent_impact": "checkpoint waive accepts source_html.producer_provenance, waived per page with --page <page_id>, for a Figma-typed page whose approved source is hand-written HTML. Doctor adds one source_html.producer_provenance gate per Figma-typed page to derived.checkpoint_gates and reports the source_html.producer_provenance* findings once per such page with detail.page_id: warnings carrying waived: true for a waived page, errors for an unwaived one. A manifest whose generator claims figma-sections-export keeps them as manifest-wide errors. Every other source check keeps its severity.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "checkpoint",
+          "summary": "checkpoint waive registers source_html.producer_provenance with a required --page <page_id>; an unknown page, the <gate>:<page_id> form, and --page on a campaign-wide gate are refused."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor publishes one source-provenance gate per Figma-typed page, reports the provenance findings per page, as warnings carrying waived: true for a waived page and errors for an unwaived one, adds source_html.producer_provenance.waiver_inert, and names the waiver route in the missing-mapping error for a Figma page."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/source-provenance.mjs",
+          "surface_entry": "doctor",
+          "summary": "New per-page evaluator for the source-provenance gate and its waiver history."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "checkpoint waive accepts five gates, the fifth waived per page."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Document the hand-written HTML route for a Figma-typed page: a hand-written manifest, preserve_document_wrappers when needed, and the per-page waiver."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The checkpoint waiver example lists source_html.producer_provenance in its --gate alternation and --page <page_id>, required for that gate only."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "checkpoint waive currently accepts five registered gates, including the per-page source_html.producer_provenance."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "State bundle revision 1.43.2+skills.2 in every example."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.43.2+skills.2 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "List source_html.producer_provenance among the registered checkpoint gates, stamp bundle revision 1.43.2+skills.2, and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.43.2+skills.2 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "afcd1e607158ff0d3e981a9c5378bec17f976e4ff829040538b3a802efdc9347"
     }
   ]
 }

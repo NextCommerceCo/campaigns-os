@@ -2,6 +2,43 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.2+agent.8] - 2026-09-30
+
+### Added
+
+- `checkpoint waive` registers a fifth gate, `source_html.producer_provenance`,
+  waived one page at a time with `--page <page_id>` (#534). It is for a
+  CampaignSpec page whose `design_source` is Figma but whose approved source
+  is hand-written HTML, so no figma-sections-export provenance exists. The
+  usual rules apply: a named human, a reason, and an expiry or review
+  condition, and `--dry-run` writes nothing. `--page` must name an active page
+  with a Figma design source; any other id is refused, and the refusal lists
+  the pages that qualify. The `<gate>:<page_id>` form is refused with the
+  `--page` spelling to use instead.
+
+### Changed
+
+- Doctor reports one `source_html.producer_provenance` checkpoint gate per
+  Figma-typed page, and reports the `source_html.producer_provenance*`
+  findings once per such page, naming it in `detail.page_id`. A waived page's
+  findings are warnings carrying `waived: true`; an unwaived page's findings
+  stay errors. When every blocker is waived, doctor and `next` report
+  `ready_with_waivers`. A waiver never applies when the manifest's generator
+  is figma-sections-export; those findings stay manifest-wide errors. An
+  expired, stale or malformed waiver no longer applies. Manifest validation,
+  the manifest's file inventory (`source_html.files.partial`,
+  `source_html.files.asset`), wrapper-policy and source-preparation findings,
+  and screenshot proof keep their severity.
+- A waiver for a page that no longer has a Figma design source is reported as
+  the warning `source_html.producer_provenance.waiver_inert`.
+- The missing-mapping error for a Figma-typed page now also names the
+  hand-written HTML route and the `checkpoint waive` command.
+  `docs/design-source-package.md` documents the route: a hand-written
+  manifest, `wrapper_policy: preserve_document_wrappers` for full-document
+  HTML, and the per-page waiver.
+- Bundled skills carry revision `1.43.2+skills.2`, with each skill version
+  advanced one patch. The lifecycle skill lists the new gate.
+
 ## [1.43.2+agent.3] - 2026-09-28
 
 ### Changed

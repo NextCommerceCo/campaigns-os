@@ -246,11 +246,17 @@ before QA with the relevant gate ID:
 ```bash
 campaigns-os checkpoint waive \
   --packet campaign-runtime.build.json \
-  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media|built_output.upsell_selector_scope> \
+  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media|built_output.upsell_selector_scope|source_html.producer_provenance> \
+  [--page <page_id>] \
   --reason "<why>" \
   --waived-by "<named human>" \
   --review-condition "<specific re-evaluation trigger>"
 ```
+
+`--page` is required for `source_html.producer_provenance`, which is waived one
+Figma-typed page at a time (see the
+[Design Source Package](./design-source-package.md) hand-written HTML route),
+and refused for the other gates.
 
 Legacy source/theme/QA waiver commands and artifact lanes remain in place until
 those gates are registered. Store Profile evidence includes only the governed
