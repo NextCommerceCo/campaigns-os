@@ -3947,7 +3947,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing. The length band applies to each copy string, not the whole block.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4060,7 +4060,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing. The length band applies to each copy string, not the whole block.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4181,7 +4181,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing. The length band applies to each copy string, not the whole block.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4294,7 +4294,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing. The length band applies to each copy string, not the whole block.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4305,7 +4305,7 @@
               "key": "countdown_timer",
               "kind": "copy",
               "role": "micro",
-              "description": "Structured SDK countdown (text, highlight, duration, persistence_id).",
+              "description": "Structured SDK countdown (text, highlight, duration, persistence_id). The length band applies to each copy string (text, highlight).",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 6,
@@ -4332,7 +4332,7 @@
               "key": "upsell_body",
               "kind": "copy",
               "role": "body",
-              "description": "Structured upsell body sections (features, comparison, steps, reviews).",
+              "description": "Structured upsell body sections (features, comparison, steps, reviews). The length band applies to each copy string, not the whole block.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 10,
@@ -4343,7 +4343,7 @@
               "key": "closing_cta",
               "kind": "copy",
               "role": "cta",
-              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees).",
+              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees). The length band applies to each copy string (title, note).",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 10,
@@ -4440,7 +4440,7 @@
               "key": "upsell_hero",
               "kind": "copy",
               "role": "headline",
-              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing.",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Hint: {price}, {package_name}, {discount} and {first_name} are SDK-resolved tokens, so keeping them keeps the copy in sync with live pricing. The length band applies to each copy string, not the whole block.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4451,7 +4451,7 @@
               "key": "countdown_timer",
               "kind": "copy",
               "role": "micro",
-              "description": "Structured SDK countdown (text, highlight, duration, persistence_id).",
+              "description": "Structured SDK countdown (text, highlight, duration, persistence_id). The length band applies to each copy string (text, highlight).",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 6,
@@ -4501,7 +4501,7 @@
               "key": "offer_bullets",
               "kind": "copy",
               "role": "body",
-              "description": "Bullet list beside the upsell offer.",
+              "description": "Bullet list beside the upsell offer. The length band applies to each bullet.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 15,
@@ -4512,7 +4512,7 @@
               "key": "upsell_guarantees",
               "kind": "copy",
               "role": "body",
-              "description": "Structured guarantee/trust cards (e.g. secure checkout, money-back terms).",
+              "description": "Structured guarantee/trust cards (e.g. secure checkout, money-back terms). The length band applies to each copy string (title, text).",
               "source_policy": "spec_truth",
               "length_band_chars": {
                 "min": 10,
@@ -4523,7 +4523,7 @@
               "key": "upsell_body",
               "kind": "copy",
               "role": "body",
-              "description": "Structured upsell body sections (features, comparison, steps, reviews).",
+              "description": "Structured upsell body sections (features, comparison, steps, reviews). The length band applies to each copy string, not the whole block.",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 10,
@@ -4534,7 +4534,7 @@
               "key": "closing_cta",
               "kind": "copy",
               "role": "cta",
-              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees).",
+              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees). The length band applies to each copy string (title, note).",
               "source_policy": "generated",
               "length_band_chars": {
                 "min": 10,
