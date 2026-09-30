@@ -3257,13 +3257,136 @@
       "entry_sha256": "7210f6b4e7bf58a846c90714fa5cfa79cf36d9517b2a0c285cab8879b57aa207"
     },
     {
-      "id": "RL-0172",
+      "id": "RL-0184",
       "sequence": 176,
       "date": "2026-09-30",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.45.0+agent.2",
-      "changelog_sha256": "c58e7e9941a7a67757b8a0175440d4e9206a42d021245e7a181740e7bdf664af",
+      "changelog_sha256": "d1cfcf370b59fcb4a77084c4d80e48d59ec76bfb8edd726212fbc8cf2535605a",
+      "agent_impact": "checkpoint waive accepts source_html.producer_provenance, waived per page with --page <page_id>, for a Figma-typed page whose approved source is hand-written HTML. Doctor adds one source_html.producer_provenance gate per Figma-typed page to derived.checkpoint_gates and reports the Figma-export findings (source_html.producer_provenance*, source_html.files.partial, source_html.files.asset) once per such page with detail.page_id: warnings carrying waived: true for a waived page, errors for an unwaived one. When the manifest generator names figma-sections-export in any form (with or without @<version>, any case), the findings stay manifest-wide errors, each page gate reports blocked with code source_html.producer_provenance.exporter_claim, checkpoint waive refuses the gate, and any recorded page waiver is inert. Every other source check keeps its severity. next lists the per-page gates after theme_gate and polish_gate. tooling diagnose exports the source_html.producer_provenance* codes, including .waiver_inert, as their own reason ids instead of diagnostic.unsupported_reason. checkpoint waive refuses any value-taking flag given bare or empty instead of reading it as \"true\".",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "checkpoint",
+          "summary": "checkpoint waive registers source_html.producer_provenance with a required --page <page_id>; an unknown page, the <gate>:<page_id> form, --page on a campaign-wide gate, and a page under a manifest whose generator claims figma-sections-export are refused. Every value-taking flag given bare or empty is refused by name. next lists the per-page gates after theme_gate and polish_gate. tooling diagnose exports the source_html.producer_provenance* reason ids, including .waiver_inert, instead of diagnostic.unsupported_reason."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor publishes one source-provenance gate per Figma-typed page, reports the Figma-export findings (source_html.producer_provenance*, source_html.files.partial, source_html.files.asset) per page, as warnings carrying waived: true for a waived page and errors for an unwaived one, keeps them as errors when the manifest generator names figma-sections-export in any form, adds source_html.producer_provenance.waiver_inert, and names the waiver route in the missing-mapping error for a Figma page."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/source-provenance.mjs",
+          "surface_entry": "doctor",
+          "summary": "New per-page evaluator for the source-provenance gate and its waiver history, the one predicate for a figma-sections-export generator claim, and the blocked, non-waivable source_html.producer_provenance.exporter_claim gate state that makes a recorded page waiver inert."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "checkpoint waive accepts five gates, the fifth waived per page."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Document the hand-written HTML route for a Figma-typed page: a hand-written manifest listing only its page files, preserve_document_wrappers when needed, and the per-page waiver, which covers the export's missing partials and assets and is refused for a manifest whose generator names figma-sections-export."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The checkpoint waiver example lists source_html.producer_provenance in its --gate alternation and --page <page_id>, required for that gate only."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "checkpoint waive currently accepts five registered gates, including the per-page source_html.producer_provenance."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "State bundle revision 1.45.0+skills.2 in every example."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.45.0+skills.2 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "List source_html.producer_provenance among the registered checkpoint gates, stamp bundle revision 1.45.0+skills.2, and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.2 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "f654ec6da73399a3a8bf84804da225ee0ed8cfe3d8ace5284248b2ed041e4fd5"
+    },
+    {
+      "id": "RL-0172",
+      "sequence": 177,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.4",
+      "changelog_sha256": "f2dfe0356bd3766f6cfb604d40e8bae13dc52e266e02f323fa6e87ef039f6264",
       "agent_impact": "None. Wording-only: provenance comments, one doctor message and a documentation example no longer name real merchants. Finding codes, triggers and detail fields are unchanged.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3293,7 +3416,7 @@
           "summary": "Drop the build reference from the analytics_contract.content_param_no_handler message; code and detail fields unchanged."
         }
       ],
-      "entry_sha256": "8fc6194db830f31c343734b9dded27ebf4623a31ad58fb20728d7ec6c3699dfd"
+      "entry_sha256": "c31dcda45d8d765dcea22ceaa10d1b5381468d8658532d913f6565651a9dcdf7"
     }
   ]
 }
