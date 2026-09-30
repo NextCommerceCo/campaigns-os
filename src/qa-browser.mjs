@@ -1507,11 +1507,124 @@ async function checkoutCommerceStructureAssertions(browserPage, page) {
   }
 
   const evidence = await inspectCommerceStructure(browserPage, contract);
+  const behaviour = await inspectCheckoutBehaviour(browserPage);
   return [commerceStructureAssertionFromEvidence(page, {
     template_family: family,
     contract_status: contractStatus,
     ...evidence,
+    behaviour,
   })];
+}
+
+// The checkout's wrapper and page composition belong to the campaign source,
+// not the template family (#532). A catalog rule is family shell when every
+// selector it reads is on this list: the layout wrapper and column classes the
+// pinned catalog uses, and the family include's shipping field row marker.
+// Every other selector is SDK wiring the checkout needs to work
+// (`[data-next-checkout]`, `[os-checkout-payment]`, `[data-next-cart-summary]`,
+// `[data-next-bundle-slots-for]`) and is never relaxed. That includes any
+// selector not listed here, even a bare class such as the hosted payment
+// field's `.input-flds`, so a catalog recorded in the packet cannot widen it.
+const FAMILY_SHELL_SELECTORS = Object.freeze([
+  ".checkout-wrapper",
+  ".checkout-layout__left",
+  ".checkout-layout__right",
+  ".checkout__layout",
+  ".checkout__column--left",
+  ".checkout__column--right",
+  '[data-next-component="shipping-field-row"]',
+]);
+
+function isFamilyShellSelector(selector) {
+  return FAMILY_SHELL_SELECTORS.includes(String(selector || "").trim());
+}
+
+function isFamilyShellCheck(check) {
+  const selectors = Array.isArray(check?.selectors) ? check.selectors : [];
+  return selectors.length > 0 && selectors.every(isFamilyShellSelector);
+}
+
+// What a checkout has to do, whoever composed it. The required fields are the
+// contact and shipping fields the test-order form fill types without the
+// optional flag (fillCheckoutFields): each must be a form control carrying
+// data-next-checkout-field inside a <form data-next-checkout="form">, and not a
+// type="hidden" input or a disabled control (its own attribute or a disabled
+// fieldset), since a customer cannot fill either. Visibility is not required:
+// progressive-reveal checkouts hide the address fields until a country is
+// chosen. The total is the cart-summary total the order-total parity check
+// reads.
+const CHECKOUT_FORM_SELECTOR = 'form[data-next-checkout="form"]';
+const CHECKOUT_BEHAVIOUR_REQUIRED_FIELDS = Object.freeze([
+  "email",
+  "fname",
+  "lname",
+  "country",
+  "address1",
+  "city",
+  "province",
+  "postal",
+]);
+
+function checkoutBehaviourProbeInput() {
+  return {
+    formSelector: CHECKOUT_FORM_SELECTOR,
+    requiredFields: [...CHECKOUT_BEHAVIOUR_REQUIRED_FIELDS],
+    totalSelectors: checkoutTotalSelectors(),
+  };
+}
+
+async function inspectCheckoutBehaviour(browserPage) {
+  return browserPage.evaluate((input) => {
+    const visible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0
+        && rect.height > 0
+        && style.display !== "none"
+        && style.visibility !== "hidden"
+        && Number(style.opacity || "1") !== 0;
+    };
+    const forms = Array.from(document.querySelectorAll(input.formSelector));
+    const controls = new Set(["INPUT", "SELECT", "TEXTAREA"]);
+    // readonly has no effect on a select, so only an input or textarea loses it.
+    const fillable = (field) => controls.has(field.tagName)
+      && !(field.tagName === "INPUT" && field.type === "hidden")
+      && !field.matches(":disabled")
+      && !(field.tagName !== "SELECT" && field.hasAttribute("readonly"))
+      && field.getAttribute("aria-disabled") !== "true";
+    const missing = input.requiredFields.filter((name) => !forms.some((form) => Array
+      .from(form.querySelectorAll("[data-next-checkout-field]"))
+      .some((field) => field.getAttribute("data-next-checkout-field") === name && fillable(field))));
+    const totals = input.totalSelectors.flatMap((selector) => {
+      try {
+        return Array.from(document.querySelectorAll(selector));
+      } catch {
+        return [];
+      }
+    });
+    const visibleTotals = totals.filter((element) => visible(element) && (element.textContent || "").trim().length > 0);
+    const checkoutForm = { selector: input.formSelector, count: forms.length, status: forms.length ? "pass" : "fail" };
+    const fieldsBound = {
+      required: input.requiredFields,
+      missing,
+      status: forms.length && !missing.length ? "pass" : "fail",
+    };
+    const totalVisible = {
+      selectors: input.totalSelectors,
+      count: totals.length,
+      visible_count: visibleTotals.length,
+      status: visibleTotals.length ? "pass" : "fail",
+    };
+    return {
+      status: [checkoutForm, fieldsBound, totalVisible].every((check) => check.status === "pass") ? "pass" : "fail",
+      checkout_form: checkoutForm,
+      fields_bound: fieldsBound,
+      total_visible: totalVisible,
+    };
+  }, checkoutBehaviourProbeInput()).catch((error) => ({
+    status: "fail",
+    error: error instanceof Error ? error.message : String(error),
+  }));
 }
 
 async function inspectCommerceStructure(browserPage, contract) {
@@ -1598,18 +1711,28 @@ function commerceStructureAssertionFromEvidence(page, evidence) {
       evidence,
     });
   }
-  const failed = checks.filter((check) => check.status === "fail");
+  const classified = checks.map((check) => ({ ...check, kind: isFamilyShellCheck(check) ? "family_shell" : "sdk_wiring" }));
+  const failed = classified.filter((check) => check.status === "fail");
+  // A missing family-shell selector is a warning only when nothing else failed
+  // and the behaviour probe ran and passed; absent or failing behaviour
+  // evidence keeps the row a failure.
+  const shellOnly = failed.length > 0 && failed.every((check) => check.kind === "family_shell");
+  const behaviourPassed = evidence?.behaviour?.status === "pass";
+  const relaxed = shellOnly && behaviourPassed;
+  const missing = `${checks.length - failed.length}/${checks.length} structure check(s) passed; missing ${failed.map((check) => check.name).join(", ")}`;
   return assertion({
     id: `browser-commerce-structure:${page.page_id}`,
     family: "browser-runtime",
     page,
-    status: failed.length ? STATUS.FAIL : STATUS.PASS,
+    status: !failed.length ? STATUS.PASS : relaxed ? STATUS.WARN : STATUS.FAIL,
     severity: failed.length ? SEVERITY.WARN : undefined,
     expected: "rendered checkout conforms to the selected template-family commerce structure contract",
-    actual: failed.length
-      ? `${checks.length - failed.length}/${checks.length} structure check(s) passed; missing ${failed.map((check) => check.name).join(", ")}`
-      : `${checks.length}/${checks.length} structure check(s) passed`,
-    evidence,
+    actual: !failed.length
+      ? `${checks.length}/${checks.length} structure check(s) passed`
+      : relaxed
+        ? `${missing}; the checkout form, bound fields and visible total pass, so the missing family shell is source-owned`
+        : missing,
+    evidence: { ...evidence, checks: classified },
   });
 }
 
@@ -2611,13 +2734,13 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
   if (!surfaces) return [];
   const pageType = contractPageType(page);
   if (["upsell", "downsell"].includes(pageType)) {
-    const selectors = surfaces.upsell?.price_row_selectors || [];
+    const selectors = withSdkPriceDisplaySelectors(surfaces.upsell?.price_row_selectors);
     if (!selectors.length) return [];
     const visibleCount = await countVisiblePriceRows(browserPage, selectors);
     return [upsellPriceVisibilityAssertion({ page, selectors, visibleCount })];
   }
   if (pageType === "checkout") {
-    const selectors = surfaces.checkout_bundle?.price_row_selectors || [];
+    const selectors = withSdkPriceDisplaySelectors(surfaces.checkout_bundle?.price_row_selectors);
     // Two price surfaces satisfy this check. The contract's bundle price rows
     // are one; the rendered cart-summary total is the other — the same
     // selectors the order-total parity check reads at submit. A family that
@@ -2636,11 +2759,29 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
   return [];
 }
 
+// The SDK renders a bundle or upsell price through data-next-bundle-display as
+// well as data-next-display (#532). A contract surface that lists price rows
+// also counts that attribute; an empty list stays empty so a contract that
+// declares no rows keeps skipping the count.
+const SDK_BUNDLE_PRICE_DISPLAY_SELECTOR = "[data-next-bundle-display*='price']";
+
+function withSdkPriceDisplaySelectors(selectors) {
+  const list = Array.isArray(selectors) ? selectors : [];
+  if (!list.length || list.includes(SDK_BUNDLE_PRICE_DISPLAY_SELECTOR)) return list;
+  return [...list, SDK_BUNDLE_PRICE_DISPLAY_SELECTOR];
+}
+
 // Visible = non-zero bounding box, display != none, visibility != hidden. This
 // is what caught nothing in the dogfood run: a campaign CSS rule display:none'd
 // the only price row on a full-price upsell and 48/48 checks still passed.
+// A bundle-display node is the price text itself, so it also needs
+// non-whitespace text: a sized but empty node is a price the SDK never filled.
+// The rule follows the node's attribute, not the selector that reached it
+// first, so a bundle-display node that also carries `.price-wrapper` still
+// needs text.
 async function countVisiblePriceRows(browserPage, selectors) {
-  return browserPage.evaluate((targets) => {
+  return browserPage.evaluate(({ targets, bundlePriceSelector }) => {
+    const textRequired = (element) => element.matches(bundlePriceSelector);
     const visible = (element) => {
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -2653,14 +2794,16 @@ async function countVisiblePriceRows(browserPage, selectors) {
         for (const element of document.querySelectorAll(selector)) {
           if (seen.has(element)) continue;
           seen.add(element);
-          if (visible(element)) count += 1;
+          if (!visible(element)) continue;
+          if (textRequired(element) && !(element.textContent || "").trim()) continue;
+          count += 1;
         }
       } catch {
         // invalid selector: contract bug surfaced elsewhere
       }
     }
     return count;
-  }, selectors).catch(() => 0);
+  }, { targets: selectors, bundlePriceSelector: SDK_BUNDLE_PRICE_DISPLAY_SELECTOR }).catch(() => 0);
 }
 
 // Page-scoped like every other per-page row (`template-residue:<page>:…`,
