@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.43.2+agent.10] - 2026-09-30
+## [1.43.3+agent.6] - 2026-09-30
 
 ### Changed
 
@@ -40,9 +40,56 @@ Notable supported-surface changes are recorded here.
   `contracts/release-ledger.json`, this changelog). Their source-preparation
   guidance leads with standalone HTML mockups: keep them whole and set
   `wrapper_policy: preserve_document_wrappers`.
-- Bundled skills carry revision `1.43.2+skills.2`, with each skill version
+- Bundled skills carry revision `1.43.3+skills.2`, with each skill version
   advanced one patch. `next-campaigns-build` gives the standalone-HTML route
   beside the wrapper-stripping conversion.
+
+## [1.43.3] - 2026-09-30
+
+### Changed
+
+- `contracts/effects.v1.json` now declares that `start`, `prepare-build` and
+  `build` with `--map-id` (and no `--cached-spec`) write the fetched Map copy to
+  `{target}/.campaign-runtime/fetched-specs/<map-id>.json`, replacing any
+  earlier copy of that Map. All nine rows for those commands carry the write.
+  The CLI has always written this file; only the declaration was missing.
+- The effect test for those nine rows now runs them with `--map-id` under the
+  `persisted_consent` condition, where a loopback receiver serves the spec. The
+  Map Builder fetch to `{proxy-base}/api/spec/{map-id}` and the fetched copy are
+  both observed there, so neither send nor write is declared without proof.
+  `docs/effects.md` describes the fetch and no longer lists it as unreachable
+  offline.
+- Package and supported-surface version advance to 1.43.3 for the new effects
+  contract hash, and ship every same-surface change recorded since 1.43.2
+  (`1.43.2+agent.1` through `1.43.2+agent.4`). The local setup install command
+  pins 1.43.3. Bundled skills carry revision `1.43.3+skills.1`, with each skill
+  version advanced one patch.
+
+## [1.43.2+agent.4] - 2026-09-30
+
+### Fixed
+
+- Doctor no longer flags `built_output.upsell_selector_scope` on a checkout
+  page just because its route reads like an offer (for example
+  `/checkout-oto-1/`). When a built page declares its role in its own
+  `next-page-type` meta, doctor takes the role from that meta instead of
+  guessing it from the route name, on `doctor --built` and the packet path
+  alike (#529). Only a meta the browser actually reads counts: one that is
+  commented out or sits inside `<template>`, `<script>` or `<noscript>`, a
+  blank one, or two metas that disagree leave the route guess in place. Pages
+  whose meta or declared type is `upsell` or `downsell` are still checked as
+  before, and so are pages with no meta whose route reads as an upsell or
+  downsell. A `next-page-type` of `upsell` or `downsell` anywhere in the page
+  now puts it in scope even when another meta says otherwise or the value is
+  unquoted.
+- Doctor now blocks under `built_output.sdk_markup.orphaned_upsell_action`
+  when an element carrying `data-next-upsell-action` has no ancestor carrying
+  `data-next-upsell`. The SDK binds upsell actions only inside that container,
+  so a "No thanks" link placed beside the offer container, not inside it,
+  goes nowhere and the shopper cannot decline. The check runs on every page
+  type, is not waivable, and passes on every certified starter family. The
+  message names the page, the action value, and the fix: move the element
+  inside its `data-next-upsell` container.
 
 ## [1.43.2+agent.3] - 2026-09-28
 
