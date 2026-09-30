@@ -11,8 +11,10 @@ import {
   canonicalJson,
   canonicalEntryJson,
   entryHash,
+  LEDGER_PATH,
   LEDGER_SCHEMA_PATH,
   ORIENTATION_SCHEMA_PATH,
+  ORIENTATION_SOURCE_PATHS,
   parseChangelogSections,
   REASON_CODES_PATH,
   SURFACE_PATH,
@@ -260,4 +262,18 @@ test("the reference declares itself generated so nobody hand-edits it", () => {
   assert.match(reference, /scripts\/generate-orientation-reference\.mjs/);
   assert.match(reference, /accepts and preserves unknown additive/);
   assert.match(reference, /unknown schema ID or/);
+});
+
+test("the reference states the mandatory reads, excludes the archive, and names the current floor and its refusal", () => {
+  const floor = readJson(LEDGER_PATH).baseline_floor;
+  const section = reference.slice(reference.indexOf("## Baseline rotation"), reference.indexOf("## Release-ledger digest canonicalization"));
+  assert.ok(section.startsWith("## Baseline rotation"), "the reference must carry a baseline rotation section");
+  const listed = [...section.matchAll(/^- `([^`]+)`$/gm)].map((match) => match[1]);
+  assert.deepEqual(listed, [...ORIENTATION_SOURCE_PATHS]);
+  for (const record of floor.archives) {
+    assert.ok(!listed.includes(record.ledger_path) && !listed.includes(record.changelog_path));
+    assert.ok(section.includes(`](../${record.ledger_path})`) && section.includes(`](../${record.changelog_path})`));
+  }
+  assert.match(section, new RegExp(`\`${floor.last_archived_id}\` \\(sequence ${floor.last_archived_sequence}\\)`));
+  assert.ok(section.includes(`\`${floor.refusal_reason_code}\`. ${reasonCodes.codes[floor.refusal_reason_code].remedy}`));
 });
