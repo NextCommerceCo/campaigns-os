@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.45.0+agent.5] - 2026-09-30
+## [1.45.0+agent.7] - 2026-09-30
 
 ### Fixed
 
@@ -14,6 +14,81 @@ Notable supported-surface changes are recorded here.
   and header knobs are template-owned. The manifest may declare slots the
   pinned templates do not carry yet, so against the currently pinned templates
   this only adds notes.
+
+## [1.45.0+agent.5] - 2026-09-30
+
+### Added
+
+- `doctor` warns with `built_output.sdk_markup.checkout_bump_is_upsell` when a
+  checkout page carries `data-next-is-upsell="true"` on an order bump (#535).
+  A checkout bump is a pre-purchase add-on, and the flag puts it on the
+  initial order as an upsell line. The warning names the page and each flagged
+  element. The page type is read from the page's live `next-page-type`
+  meta, or from its route when that meta is absent, blank, inside a `<template>` or conflicting. Upsell,
+  downsell and receipt pages, and bumps without the flag, get no warning. The
+  flag comes from the bump include's markup, and several starter bump includes
+  write it unconditionally, so a canonical starter checkout with a bump shows
+  this warning. To clear it, remove `data-next-is-upsell="true"` from the bump
+  include in the campaign, unless the line really should be billed as an
+  upsell. It is a warning, not a blocker.
+
+### Fixed
+
+- `theme generate` keeps the CTA label colour the source declares (#535).
+  When the source declares a CTA foreground that reaches 3:1 on the CTA
+  background (WCAG AA for large text), `--brand--color--text-inverse` and
+  `--brand--color--cta-foreground` use it instead of the higher-contrast
+  black or white pick. The declared foreground is, in order: the one `color:`
+  every button rule on the CTA background agrees on; a `:root` inverse or
+  on-colour text token such as `--text-inverse`, `--text-color-inverse`,
+  `--text-on-primary` or `--foreground-on-dark` (the name needs a `text` or
+  `foreground` part, so `--border-on-primary` does not count); or the one
+  colour every other button rule agrees on. A `;` or `:` inside quotes or
+  parentheses, as in a `data:` URL in a `background` shorthand, no longer
+  splits a button rule's declaration. The same inverse and on-colour names,
+  and only those, are the source's inverse text token when the source is
+  compared with scaffold defaults, so `--text-on-dark` now counts and
+  `--border-on-primary` or a bare `--on-primary` no longer does. A button
+  rule targets `button`, `input[type=submit]`, or a class starting with
+  `btn`, `button` or `cta` or having a `cta` part. Only the selector's own element, class and attribute
+  parts count, not the text inside an attribute value or inside `:not()`,
+  `:is()`, `:where()` or `:has()`, and any other pseudo-class disqualifies
+  it. So `button:not(.order-summary)` supplies the label, while
+  `.order-summary`, `.cart-count`, `.order-summary[data-target=".btn"]`,
+  `.cart:has(.button)`, `[type=submit]` and `div[type="submit"]` never do.
+  A declared white label on `#dd4249`
+  (4.24:1) now stays white where it used to become black. A declared colour
+  under 3:1 is ignored.
+  One under 4.5:1 is used and reported with `theme.foreground.low_contrast`,
+  so the theme status reads `ready_with_warnings`. Sources that declare no CTA
+  foreground generate the same CSS as before.
+- `theme generate` takes body text from the darkest declared text token
+  (#535). When a source declares `:root` text colour tokens and a body
+  background, `--brand--color--text-primary` and
+  `--brand--color--foreground` use the darkest one that is darker than the
+  background and reaches 4.5:1 on it, instead of a lighter grey. This applies
+  even when the source has no primary text token of its own. Inverse and
+  on-colour label tokens such as `--text-color-inverse` or `--text-on-dark`
+  are not body text, whatever the word order, and neither are link, status and
+  state colours (names with `link`, `error`, `danger`, `success`, `warning`,
+  `info`, `highlight`, `accent`, `placeholder`, `disabled` or `selection`).
+  Sources with no qualifying token generate the same CSS as before.
+- `theme generate` no longer reads declarations inside CSS comments. A
+  commented-out token or rule used to count as a source colour, so it could
+  set the CTA label or body text; now it is skipped. A comment inside a rule
+  also no longer hides the declaration after it. Sources without comments
+  generate the same CSS as before. An inline `<style>` source is hashed as
+  before, so an existing `brand-theme.css` is not reported stale after
+  upgrading.
+
+### Changed
+
+- `docs/brand-theme-bridge.md` says `next-core.css` and the brand layer belong
+  only on pages where the template family's components render. It says its
+  element resets break design-owned upsell, downsell and receipt markup, and
+  how to record the scoped pages in `report.theme.commerce_pages`, which the
+  theme gate does not compare with the funnel. It also documents the declared
+  CTA foreground and body-text rules above.
 
 ## [1.45.0+agent.4] - 2026-09-30
 
