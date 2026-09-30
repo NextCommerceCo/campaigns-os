@@ -1599,8 +1599,8 @@ The legacy form `campaigns-os next <stage>` (e.g. `next build`) still works and 
 
 CampaignSpec pages may carry an optional `design_source` block on `Page` — a pointer to the design artifact (Figma file + per-breakpoint selection URLs) that supplies prepared HTML for that page. When doctor detects an active spec page with no source mapping, the `source_html.pages.coverage` error now carries a hint that points the operator at the design source:
 
-- `design_source.type === "figma"` with `file_url`: doctor calls out the Figma file and the figma-sections-export handoff command (`npm run handoff -- <slug>`).
+- `design_source.type === "figma"` with `file_url`: doctor calls out the Figma file and says the Figma provenance gate (`source_html.producer_provenance`) needs the figma-sections-export handoff manifest (`npm run handoff -- <slug>`); a hand-written manifest cannot pass that gate.
 - `design_source` set without `file_url`: doctor flags the missing `file_url` so the spec can be corrected.
-- `design_source` unset: doctor keeps the original generic coverage error.
+- `design_source` unset, `ai-generated`, or another producer type: the message names the manifest path (`<source-root>/.campaigns-os/source-html-manifest.json`), the schema, and a minimal page entry to write by hand (no exporter is needed), plus `"wrapper_policy": "preserve_document_wrappers"` for standalone documents kept whole. When any active page's `design_source` is Figma, it instead says the manifest must pass the Figma provenance gate.
 
 The error code (`source_html.pages.coverage`) is unchanged so existing doctor consumers do not need to be updated; only the human-readable `message` and an optional `detail.design_source` payload are added.

@@ -77,6 +77,14 @@ test("present tooling marks only non-boolean skills.ok values unsupported", () =
   assert.ok(stale.action_ids.includes("install-skills"));
 });
 
+// #535: the agent that reads this recovery cannot restart itself.
+test("the stale-skills recovery says to read the Read now files in the running session, restart only as a fallback", () => {
+  const stale = diagnosticExport({ tooling: { ...tooling, skills: { ok: false } } });
+  const recovery = stale.recovery.find((item) => item.action_id === "install-skills");
+  assert.match(recovery.instruction, /read the SKILL\.md files install-skills lists under Read now in the running session; restart the agent only if it cannot read them/);
+  assert.doesNotMatch(recovery.instruction, /and restart the agent/);
+});
+
 test("diagnose forwards only read-only inputs and suppresses sensitive producer exceptions", () => {
   let readArgs;
   const result = toolingDiagnose({ packet: SECRET, write: true, "doctor-out": SECRET, remit: true, platform: "claude" }, {

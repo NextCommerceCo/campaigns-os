@@ -3473,13 +3473,130 @@
       "entry_sha256": "574683086b30857b1bddc9ff7af7c5f7f6faf804cd6e0e088d5b2c05b70cf847"
     },
     {
-      "id": "RL-0172",
+      "id": "RL-0186",
       "sequence": 178,
       "date": "2026-09-30",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.45.0+agent.4",
-      "changelog_sha256": "f2dfe0356bd3766f6cfb604d40e8bae13dc52e266e02f323fa6e87ef039f6264",
+      "changelog_sha256": "33b73c959086a63cc0b4b1b97ba21c66fc0631e9f856fa02a81a1f60bacf9b27",
+      "agent_impact": "qa install-browser, qa policy set and qa resolve no longer record deviations, and a deviation declared with --deviation-reason prints one confirming line. next quotes each ledger/artifact divergence inline, folded to one line. install-skills, the tooling status skill actions and the tooling diagnose recovery say to read the listed SKILL.md files in the current session, with a restart only as a fallback. The coverage error for an unmapped Figma page says the provenance gate needs the exporter's handoff manifest; for other pages it gives the manifest path, schema and a minimal hand-written entry. QA ignores the Netlify deploy-preview drawer loader script's failed request on Netlify preview pages (*.netlify.app or a deploy-preview-<n> subdomain). Bundled skills move to 1.45.0+skills.4.",
+      "compatibility": "compatible",
+      "migration": "Refresh bundled skills to 1.45.0+skills.4 with install-skills, then read the SKILL.md files it lists.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "The divergence_inspect action quotes each divergence (stage, ledger claim, artifact evidence) and says divergences[] is next --json output, not a file; the prepare-build recovery prompt quotes the same entries. Each quoted value is folded to one line with control characters replaced."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "install-skills",
+          "summary": "List each written SKILL.md under Read now (read_now[] in --json) with read-now-in-this-session guidance instead of a restart instruction."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "tooling",
+          "summary": "The tooling status install and refresh skill actions, and the tooling diagnose stale-skills recovery, say to read the SKILL.md files install-skills lists under Read now in the running session, and to restart the agent only if it cannot read them."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa install-browser, qa policy set and qa resolve record no deviation; a deviation with --deviation-reason prints one confirming line instead of the warning; QA ignores a failed request for the Netlify deploy-preview drawer's loader script (netlify-cdp-loader.netlify.app/netlify.js) only on pages whose final URL, after any redirect, is a Netlify preview host: a *.netlify.app host, or a deploy-preview-<n> or deploy-preview-<n>--<site> subdomain of a custom domain."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The source_html.pages.coverage error for an unmapped page with a Figma design_source says the Figma provenance gate needs the exporter's handoff manifest. For a page without one, it names the manifest path, schema file and a minimal hand-written page entry, unless another active page is Figma-sourced, when it names the provenance gate instead."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The design-source-aware coverage error section describes the Figma branch (provenance gate needs the exporter's handoff manifest) and the hand-written manifest hint for other pages."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update displayed bundle revision examples to 1.45.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.45.0+skills.4 and every skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Give the standalone-HTML route (keep the document whole, wrapper_policy: preserve_document_wrappers) beside the wrapper-stripping conversion; stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Stamp bundle revision 1.45.0+skills.4 and advance the skill version one patch."
+        }
+      ],
+      "entry_sha256": "5f2e7b56e9659579272e02edf00a032e83a1e2917f56b28288ce9a13ab483361"
+    },
+    {
+      "id": "RL-0172",
+      "sequence": 179,
+      "date": "2026-09-30",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.6",
+      "changelog_sha256": "838779f2778cdbfc659f14a8fc0522d0edee386505dbbf37b3c683fc58e713be",
       "agent_impact": "None. Wording-only: provenance comments, one doctor message and a documentation example no longer name real merchants. Finding codes, triggers and detail fields are unchanged.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3509,7 +3626,7 @@
           "summary": "Drop the build reference from the analytics_contract.content_param_no_handler message; code and detail fields unchanged."
         }
       ],
-      "entry_sha256": "957f790688ecf1f02c7d8a2821314f02f144787fec637c7c00a71c46ce7a27c9"
+      "entry_sha256": "c1fa9a0cebca81126264c6c8bce18bc29e50412e821c289c50c12a0e2aaa7366"
     }
   ]
 }

@@ -109,3 +109,25 @@ test("an absent retired slot is not reported at all", () => {
     rmSync(target, { recursive: true, force: true });
   }
 });
+
+// #535: the session that runs install-skills cannot restart itself, so the
+// text output lists every SKILL.md it wrote for that session to read now.
+test("install-skills text output lists each written SKILL.md to read now in this session", () => {
+  const target = mkdtempSync(join(tmpdir(), "campaigns-os-install-test-"));
+  try {
+    const text = execFileSync("node", [CLI, "install-skills", "--target", target, "--no-run-session"], { encoding: "utf8" });
+    const written = runInstall(target, ["--dry-run"]).skills.filter((skill) => skill.action !== "retired").map((skill) => skill.destination);
+    assert.ok(written.length > 0);
+    const lines = text.split("\n");
+    const header = lines.indexOf("Read now (read these now in this session):");
+    assert.ok(header > 0, text);
+    assert.deepEqual(lines.slice(header + 1, header + 1 + written.length), written.map((path) => `- ${path}`));
+    for (const path of written) assert.equal(existsSync(path), true, path);
+    assert.match(text, /Read these now in this session/);
+    assert.doesNotMatch(text, /^Restart /m);
+    const again = execFileSync("node", [CLI, "install-skills", "--target", target, "--no-run-session"], { encoding: "utf8" });
+    assert.doesNotMatch(again, /Read now/, "an unchanged install writes nothing new to read");
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
