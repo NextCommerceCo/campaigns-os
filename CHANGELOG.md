@@ -2,6 +2,40 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.45.0+agent.6] - 2026-09-30
+
+### Changed
+
+- An explicit `""` (or whitespace-only string) in one of the eight optional
+  Store Profile fields (`campaign.store_name`, `store_terms`, `store_privacy`,
+  `store_contact`, `store_returns`, `store_shipping`, `store_phone`,
+  `store_phone_tel`) now means the merchant has no such value (#535).
+  `page-kit sync` blanks a recognised starter demo value in such a field (the
+  placeholder storefront URLs and phone number; the starter's demo store name
+  is not recognised and stays a `target_only` warning), where it previously
+  left the demo value in place and reported it as not synced, and doctor
+  offers `page-kit sync` as the repair for that demo residue. Doctor reads a
+  blank or absent target field as `intentionally_empty`, a clean status named
+  in the gate reason and the doctor line, including alongside `target_only`
+  warnings. An absent or null field still means "not provided", and `""` in
+  any other field carries no such meaning.
+- `campaign.store_url` stays required. `store_url: ""` still raises doctor's
+  `spec.store_profile` error, which now says an explicit `""` does not mark a
+  required field as having none; sync still blanks the demo storefront URL
+  with it, and the gate reason says the field is still required.
+- A real, non-demo target value under a spec `""` is left as it is and still
+  warns as `target_only`, so a spec `""` never wipes or newly blocks a value
+  entered in the target. `page-kit sync` now says so: the field stays in
+  `not_in_spec[]` and is also listed in a new `spec_empty_not_applied[]`,
+  printed as `Spec "" not applied` rather than `Not in spec`. The
+  `target_only` warning, and the repair text for a malformed target value
+  under a spec `""`, say the `""` was not applied and the value must be
+  removed by hand.
+- The CampaignSpec validator no longer warns `store-phone-tel-empty` for
+  `campaign.store_phone_tel: ""`, and no longer warns
+  `store-phone-tel-bad-type` for `campaign.store_phone_tel: null` (null means
+  not provided). Empty strings elsewhere keep their warnings.
+
 ## [1.45.0+agent.5] - 2026-09-30
 
 ### Added
