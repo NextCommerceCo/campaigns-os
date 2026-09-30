@@ -409,6 +409,8 @@ test("D5: QA runs the same comparison over served pages and records it in the ve
     const skipped = disabled.verdict.assertions.find((entry) => entry.id === "live-campaign-refs");
     assert.equal(skipped.status, "skipped");
     assert.equal(skipped.evidence.reason_code, "disabled");
+    // The verdict says what went unchecked: the one served page.
+    assert.equal(skipped.evidence.pages_eligible, 1);
     assert.equal(disabled.verdict.assertions.some((entry) => entry.id.startsWith("built_output.") || entry.id === "spec.campaign_drift"), false);
 
     const failed = await run({ liveCampaign: { status: "not_run", reason_code: "timeout", reason: "The live campaign read timed out after 10000ms." } });
@@ -458,8 +460,11 @@ test("proxy envelope: data as one campaign or an array is unwrapped, and a known
 
   const missing = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: "503", fetchImpl: jsonFetch(envelope([campaign({ ref: 501 }), campaign({ ref: 502 })])) });
   assert.equal(missing.reason_code, "campaign_mismatch");
+  // Asked for by ref, an empty array carries that ref no more than a list
+  // without it does: both are the campaign_mismatch the identity rule names.
   const none = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: "503", fetchImpl: jsonFetch(envelope([])) });
-  assert.equal(none.reason_code, "not_found");
+  assert.deepEqual([none.status, none.reason_code, none.campaign_ref_id], ["not_run", "campaign_mismatch", "503"]);
+  assert.match(none.reason, /asked for campaign ref 503 but got no campaign/);
 
   const refused = await readLiveCampaign({ apiKey: pk, proxyBase: PROXY_BASE, campaignRefId: "offer-1", fetchImpl: () => assert.fail("no request for a non-numeric campaign ref") });
   assert.equal(refused.reason_code, "unexpected_ref");
@@ -614,5 +619,58 @@ test("coverage: every built page under _site/<route>/ is compared with the live 
     // The CampaignSpec ref check keeps its scope, the spec's pages: package 99
     // on the unlisted page is not reported as a Map miss.
     assert.equal([...result.errors, ...result.warnings].some((entry) => entry.code === "built_output.package_ref" && /99/.test(entry.message)), false);
+  });
+});
+
+test("request URL: a proxy base that already carries a query keeps it, and ref_id is added as its own parameter", async () => {
+  const pk = "pk_fixture_public_key";
+  const read = async (proxyBase, campaignRefId) => {
+    const calls = [];
+    const live = await readLiveCampaign({
+      apiKey: pk,
+      proxyBase,
+      campaignRefId,
+      warn: () => {},
+      fetchImpl: jsonFetch(envelope(campaign({ ref: 501 }), { requestedRefId: campaignRefId ?? undefined }), { calls }),
+    });
+    return { live, urls: calls.map((call) => call.url) };
+  };
+  const queried = await read("http://127.0.0.1:8787/?tenant=a", 501);
+  assert.equal(queried.live.status, "read");
+  assert.deepEqual(queried.urls, ["http://127.0.0.1:8787/api/campaign?tenant=a&ref_id=501"]);
+  const parsed = new URL(queried.urls[0]);
+  assert.deepEqual([parsed.pathname, parsed.searchParams.get("tenant"), parsed.searchParams.get("ref_id")], ["/api/campaign", "a", "501"]);
+
+  // No ref asked for: the base's query stands alone, with no dangling "?".
+  assert.deepEqual((await read("http://127.0.0.1:8787/?tenant=a", null)).urls, ["http://127.0.0.1:8787/api/campaign?tenant=a"]);
+  // A base with a path prefix and a trailing slash keeps the prefix.
+  assert.deepEqual((await read("http://127.0.0.1:8787/edge/", 501)).urls, ["http://127.0.0.1:8787/edge/api/campaign?ref_id=501"]);
+});
+
+test("coverage: a stale 404.html and pages under _ or . directories are build noise, not funnel pages; the route-root index.html is still compared", async () => {
+  await withBuiltCampaign({ checkoutHtml: page('<input data-next-shipping-id="20">') }, ({ repo, doctor }) => {
+    const live = { status: "read", package_refs: ["10", "17", "19", "30"], shipping_refs: ["20"] };
+    const write = (route, html) => {
+      mkdirSync(join(repo, "_site", "offer", ...route.slice(0, -1)), { recursive: true });
+      writeFileSync(join(repo, "_site", "offer", ...route), html);
+    };
+    // Each carries a ref the live campaign does not serve.
+    const stale = page('<div data-next-package-id="99"></div><input data-next-shipping-id="21">');
+    write(["404.html"], stale);
+    write(["_drafts", "checkout", "index.html"], stale);
+    write([".cache", "index.html"], stale);
+    const quiet = doctor(live);
+    assert.equal(quiet.errors.some((entry) => entry.code.endsWith("_live_missing")), false);
+    assert.equal(quiet.derived.live_campaign_refs.status, "pass");
+    assert.equal(quiet.derived.live_campaign_refs.checked_pages, 1);
+
+    // The landing page at the route root ships, so it is compared.
+    write(["index.html"], stale);
+    const landing = doctor(live);
+    assert.deepEqual(landing.errors.filter((entry) => entry.code.endsWith("_live_missing")).map((entry) => [entry.code, entry.detail.page_id, entry.detail.file]), [
+      ["built_output.shipping_ref_live_missing", "index.html", "./_site/offer/index.html"],
+      ["built_output.package_ref_live_missing", "index.html", "./_site/offer/index.html"],
+    ]);
+    assert.equal(landing.derived.live_campaign_refs.status, "blocked");
   });
 });

@@ -2949,13 +2949,15 @@ function liveCampaignRefAssertions({ pages, spec, liveCampaign }) {
   });
   const keySource = liveCampaign?.key_source ? { key_source: liveCampaign.key_source } : {};
   if (result.status === "not_run") {
+    // --no-live-refs: the verdict says how many served pages went unchecked.
+    const eligible = result.reason_code === "disabled" ? { pages_eligible: result.checked_pages } : {};
     return [campaignAssertion({
       id: result.attempted ? LIVE_REF_CODES.notRun : "live-campaign-refs",
       status: result.attempted ? STATUS.WARN : STATUS.SKIPPED,
       ...(result.attempted ? { severity: SEVERITY.WARN } : {}),
       expected: "every served page's shipping and package refs are served by the live campaign",
       actual: "not_run",
-      evidence: { code: LIVE_REF_CODES.notRun, reason_code: result.reason_code, reason: result.attempted ? liveRefsNotRunMessage(result) : result.reason, ...keySource },
+      evidence: { code: LIVE_REF_CODES.notRun, reason_code: result.reason_code, reason: result.attempted ? liveRefsNotRunMessage(result) : result.reason, ...eligible, ...keySource },
     })];
   }
   const out = result.page_findings.map((finding) => assertion({

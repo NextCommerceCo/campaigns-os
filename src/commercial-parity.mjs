@@ -882,14 +882,16 @@ export const RECURRING_CLAIM_ABSENT_CODE = "commercial_parity.recurring_claim_ab
  * `subscriptionRefsByPage` maps a page id to the refs the spec says recur;
  * a capture carries the package refs its page renders as
  * `rendered_package_refs`. A capture that failed extraction is skipped — that
- * failure is already its own issue.
+ * failure is already its own issue — and so is one with no page id: there is
+ * no page to hold its subscriptions against, and it is never keyed as "null".
  */
 export function recurringClaimAbsences(capturesValue, subscriptionRefsByPage) {
   const absences = [];
   const seen = new Set();
   partitionCaptures(capturesValue).valid.forEach((capture) => {
-    const pageId = present(capture.page_id) ? String(capture.page_id) : null;
-    const subscriptions = pageId ? subscriptionRefsByPage?.get?.(pageId) : null;
+    if (!present(capture.page_id)) return;
+    const pageId = String(capture.page_id);
+    const subscriptions = subscriptionRefsByPage?.get?.(pageId);
     if (!subscriptions?.size) return;
     const claimed = new Set(capture.recurrence_claims.map((claim) => String(claim.package_id)));
     array(capture.rendered_package_refs).map(String).forEach((ref) => {

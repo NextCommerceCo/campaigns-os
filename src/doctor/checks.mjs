@@ -1719,6 +1719,23 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
   if (checked > 0) ready.push(`Built HTML structure and commerce refs checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
 }
 
+// A path from path.relative as the "/"-separated form findings name: on
+// Windows path.relative answers with backslashes, and a page id or file must
+// read the same whichever machine ran doctor. A no-op on POSIX.
+function posixPath(path) {
+  return path.split(sep).join("/");
+}
+
+// Built output under _site/<route>/ that is not a funnel page: the route's
+// 404.html, and anything under a directory whose name starts with "_" or "."
+// (build scratch, hidden directories). The route-root index.html is the
+// landing page and is kept.
+function isLiveRefBuildNoise(routePath) {
+  const segments = routePath.split("/");
+  if (segments.length === 1 && segments[0].toLowerCase() === "404.html") return true;
+  return segments.slice(0, -1).some((segment) => segment.startsWith("_") || segment.startsWith("."));
+}
+
 // Built page refs against the live campaign (#533). The CampaignSpec check
 // above cannot see a campaign that changed after the Map was saved, and skips
 // entirely when the spec lists no shipping methods; this one compares every
@@ -1729,8 +1746,10 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
 // block at any stage — a page pointing at a method the campaign no longer
 // serves charges the wrong price whether or not assembly is recorded.
 // Unlike the CampaignSpec check, whose scope stays the spec's pages, this one
-// covers every built HTML page under _site/<route>/: a page the Map does not
-// list still ships, so it is compared too and named by its path.
+// covers every built .html page under _site/<route>/ except build noise that
+// never serves a funnel step: the route's 404.html and anything under a path
+// directory starting with "_" or "." (node_modules is never walked). A page the
+// Map does not list still ships, so it is compared too and named by its path.
 function validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, derived, buildState = {}) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
@@ -1744,16 +1763,17 @@ function validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, de
       covered.add(resolve(builtPath));
       pages.push({
         page_id: page.id,
-        file: relFromDir(targetRepo, builtPath),
+        file: posixPath(relFromDir(targetRepo, builtPath)),
         ...extractRenderedRefs(readFileSync(builtPath, "utf8")),
       });
     }
     for (const html of collectHtmlFiles(siteRoot)) {
       const builtPath = resolve(siteRoot, html.path);
-      if (covered.has(builtPath)) continue;
+      const routePath = posixPath(html.path);
+      if (covered.has(builtPath) || isLiveRefBuildNoise(routePath)) continue;
       pages.push({
-        page_id: html.path.split(sep).join("/"),
-        file: relFromDir(targetRepo, builtPath),
+        page_id: routePath,
+        file: posixPath(relFromDir(targetRepo, builtPath)),
         in_spec: false,
         ...extractRenderedRefs(readFileSync(builtPath, "utf8")),
       });

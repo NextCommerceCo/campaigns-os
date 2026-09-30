@@ -171,7 +171,8 @@ function campaignMismatch(refId, carried) {
 // The one campaign in the envelope's `data`: the object itself, or from an
 // array the entry whose identity is the one asked for (or the only entry, when
 // no ref was asked for). A campaign asked for by ref must carry that ref, in
-// either shape. Returns { campaign } or { notRun }.
+// either shape; an empty array does not carry it either. Returns { campaign }
+// or { notRun }.
 function pickCampaign(data, refId) {
   if (!Array.isArray(data)) {
     if (!refId) return { campaign: data };
@@ -181,9 +182,7 @@ function pickCampaign(data, refId) {
       : { notRun: campaignMismatch(refId, identity ? `campaign ref ${identity}` : "a campaign carrying no ref") };
   }
   if (refId) {
-    if (data.length === 0) {
-      return { notRun: notRun("not_found", `The live campaign read returned no campaign for ref ${refId}, so there was no live campaign to compare against.`) };
-    }
+    if (data.length === 0) return { notRun: campaignMismatch(refId, "no campaign") };
     const matches = data.filter((entry) => campaignIdentity(entry) === refId);
     if (matches.length === 1) return { campaign: matches[0] };
     return matches.length === 0
@@ -224,7 +223,12 @@ export async function readLiveCampaign({
   let url;
   try {
     const { base } = assertSecureProxyBase(proxyBase, { label: "Live campaign read", credential: "the public campaign key", ...(warn ? { warn } : {}) });
-    url = `${base}${LIVE_CAMPAIGN_PATH}${refId ? `?ref_id=${refId}` : ""}`;
+    // Built with URL so a base that already carries a query keeps it and
+    // ref_id is added as one more parameter, not appended after it.
+    const target = new URL(base);
+    target.pathname = `${target.pathname.replace(/\/+$/, "")}${LIVE_CAMPAIGN_PATH}`;
+    if (refId) target.searchParams.set("ref_id", refId);
+    url = target.href;
   } catch (error) {
     return notRun("insecure_proxy_base", `The live campaign was not read: ${error.message}`);
   }

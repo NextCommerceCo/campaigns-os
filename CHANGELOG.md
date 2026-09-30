@@ -18,28 +18,30 @@ Notable supported-surface changes are recorded here.
   loopback over http). `qa run` makes the same read when it has read at least
   one served page and a key resolves, and records the result in the verdict
   as `api-metadata` assertions with the same codes.
-- The campaign is read from the `data` field of the proxy's envelope: one
-  campaign, or an array picked by `campaign.ref_id` or holding exactly one. A
-  campaign not carrying the asked-for ref (`ref_id`, else `id`) is `not_run`
+- The campaign is read from the proxy envelope's `data`: one campaign, or an
+  array picked by `campaign.ref_id` or holding exactly one. A campaign not
+  carrying the asked-for ref (`ref_id`, else `id`), or none, is `not_run`
   (`campaign_mismatch`).
 - A page ref the live campaign does not serve is a blocker,
   `built_output.shipping_ref_live_missing` or
   `built_output.package_ref_live_missing`, even when the CampaignSpec lists no
-  shipping methods. Doctor compares every built page under `_site/<route>/`,
-  naming by path any the CampaignSpec does not list. CampaignSpec refs the live campaign does not serve, or the
-  reverse, are the separate warning `spec.campaign_drift`, which never softens
-  a page blocker.
+  shipping methods. Doctor compares every built `.html` page in
+  `_site/<route>/` but `404.html` and `_`/`.` directories, naming unlisted
+  pages by path. CampaignSpec refs the live campaign lacks, or the reverse,
+  are the separate warning `spec.campaign_drift`, which never softens a page
+  blocker.
 - A read that is not made or fails is `not_run` with a reason, never a pass,
   and never falls back to the CampaignSpec list. Doctor records it in
   `derived.live_campaign_refs`. No key, no built page and `--no-live-refs`
   (`disabled`) make no request and raise no warning. A failed read is the
   warning `built_output.live_refs_not_run`: no response, a non-2xx, a
   10-second timeout, an `ok: false` envelope or one with an `error` and no
-  campaign (`proxy_error`), several
-  campaigns and no `campaign.ref_id` (`ambiguous_campaign`), or a body that is
-  not the envelope (`unexpected_body`). The reason quotes the proxy's error as
-  one line, never the raw body. QA records a skipped `live-campaign-refs`
-  assertion or a warn `built_output.live_refs_not_run` assertion.
+  campaign (`proxy_error`), several campaigns and no `campaign.ref_id`
+  (`ambiguous_campaign`), or a body that is not the envelope
+  (`unexpected_body`). The reason quotes the proxy's error as one line, never
+  the raw body. QA records a skipped `live-campaign-refs` assertion
+  (`pages_eligible` under `--no-live-refs`) or a warn
+  `built_output.live_refs_not_run` one.
 - `doctor --no-live-refs` and `qa run --no-live-refs` skip only the live
   campaign read (`/api/campaign`); other declared sends are unchanged. Only
   `doctor` and `qa run` read; `start`, `prepare-build`, `build`,
