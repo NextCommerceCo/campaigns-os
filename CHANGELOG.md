@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.43.3+agent.2] - 2026-09-30
+
+### Fixed
+
+- The shared slot manifest now declares the upsell pages and keys that starter
+  templates #184 and #187 added, so `check:slot-manifest` passes against the
+  current templates and the next starter-catalog refresh will not fail on it.
+  New pages: `upsell-single` and `upsell-vsl`. New keys on the three bundle
+  upsell pages: `announcement_text`, `upsell_hero` and `upsell_layout`.
+  `countdown_timer` is declared as urgency that may render only from verified
+  offer urgency. `upsell_body` is declared as merchant-supplied proof, and
+  `upsell_video` as merchant-supplied media. Layout and header knobs are
+  template-owned. The manifest may declare slots the pinned templates do not
+  carry yet, so against the currently pinned templates this only adds notes.
+
 ## [1.43.3] - 2026-09-30
 
 ### Changed

@@ -3933,6 +3933,36 @@
               "source_policy": "template_static"
             },
             {
+              "key": "announcement_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 90
+              }
+            },
+            {
+              "key": "upsell_hero",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 140
+              }
+            },
+            {
+              "key": "upsell_layout",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Structured layout knobs for the shared upsell offer shell (style, boxed, media, media_position, media_align, show_* toggles, decline_position). Template-owned presentation, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
               "key": "upsell_offer",
               "kind": "commerce",
               "role": "commerce_structure",
@@ -4013,6 +4043,36 @@
               "role": "page_meta",
               "owner": "template",
               "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "announcement_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 90
+              }
+            },
+            {
+              "key": "upsell_hero",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 140
+              }
+            },
+            {
+              "key": "upsell_layout",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Structured layout knobs for the shared upsell offer shell (style, boxed, media, media_position, media_align, show_* toggles, decline_position). Template-owned presentation, assembly never touches.",
               "source_policy": "template_static"
             },
             {
@@ -4107,6 +4167,36 @@
               "source_policy": "template_static"
             },
             {
+              "key": "announcement_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 90
+              }
+            },
+            {
+              "key": "upsell_hero",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 140
+              }
+            },
+            {
+              "key": "upsell_layout",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Structured layout knobs for the shared upsell offer shell (style, boxed, media, media_position, media_align, show_* toggles, decline_position). Template-owned presentation, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
               "key": "upsell_offer",
               "kind": "commerce",
               "role": "commerce_structure",
@@ -4137,6 +4227,330 @@
               "owner": "commerce",
               "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
               "reference": "integrated_commerce_surface_ref"
+            }
+          ]
+        }
+      ]
+    },
+    "upsell-single": {
+      "sections": [
+        {
+          "section": "main",
+          "slots": [
+            {
+              "key": "title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Short copy slot.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 67
+              },
+              "demo_value": "Apollo \u2014 Upsell (single offer)"
+            },
+            {
+              "key": "page_type",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "next_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "decline_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "scripts",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "announcement_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 90
+              }
+            },
+            {
+              "key": "upsell_hero",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 140
+              }
+            },
+            {
+              "key": "countdown_timer",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Structured SDK countdown (text, highlight, duration, persistence_id). It is urgency chrome: it may render only when filled from verified offer urgency (a real offer window), and duration must match that window. Unverified \u2192 leave the block out (hard rule 4).",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 6,
+                "max": 40
+              },
+              "urgency": true,
+              "enabled_by_verified_urgency": true
+            },
+            {
+              "key": "upsell_layout",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Structured layout knobs for the shared upsell offer shell (style, boxed, media, media_position, media_align, show_* toggles, decline_position). Template-owned presentation, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "upsell_offer",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "upsell_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Structured upsell body sections (features, comparison, steps, reviews). Every section makes product, coverage or customer claims, so the content must come from the merchant brief: reviews are real and authorized, coverage and claim-process terms match the actual offer. Empty \u2192 the body sections do not render.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 10,
+                "max": 240
+              },
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "closing_cta",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees). Title is producer copy; a note that states a guarantee must copy the guarantee terms from the spec verbatim.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 140
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "upsell-vsl": {
+      "sections": [
+        {
+          "section": "main",
+          "slots": [
+            {
+              "key": "title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Short copy slot.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 67
+              },
+              "demo_value": "Apollo \u2014 Upsell (VSL)"
+            },
+            {
+              "key": "page_type",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "next_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "decline_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "styles",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "scripts",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "announcement_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Top announcement bar on the upsell page, e.g. 'Special Offer Unlocked - Do Not Close This Page'. A page-state notice, not urgency: it must not claim a deadline, a countdown or limited stock (those belong to countdown_timer and verified offer urgency).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 90
+              }
+            },
+            {
+              "key": "announcement_variant",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Announcement bar style knob (e.g. danger). Template-owned presentation, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "header_bar",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Header style knob for the upsell page (e.g. logo-only). Template-owned presentation, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "upsell_hero",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Structured upsell hero: title plus offer/suboffer/heading/text lines and a presentation variant. Copy strings are producer-filled; {price}, {package_name}, {discount} and {first_name} tokens are SDK-resolved and must be kept, never replaced with literal prices or discounts. Length band applies to each copy string.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 140
+              }
+            },
+            {
+              "key": "countdown_timer",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Structured SDK countdown (text, highlight, duration, persistence_id). It is urgency chrome: it may render only when filled from verified offer urgency (a real offer window), and duration must match that window. Unverified \u2192 leave the block out (hard rule 4).",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 6,
+                "max": 40
+              },
+              "urgency": true,
+              "enabled_by_verified_urgency": true
+            },
+            {
+              "key": "upsell_layout",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Structured layout knobs for the shared upsell offer shell (style, boxed, media, media_position, media_align, show_* toggles, decline_position). Template-owned presentation, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "upsell_offer",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "upsell_video",
+              "kind": "image",
+              "role": "image",
+              "description": "Structured upsell video (src, poster, title, autoplay, loop). The video and poster are merchant-supplied product media; never generated. Empty \u2192 the video block does not render.",
+              "source_policy": "merchant_asset_required",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "swiper_slides",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "swiper_thumbs",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "offer_bullets",
+              "kind": "copy",
+              "role": "body",
+              "description": "Bullet list beside the upsell offer. Each bullet's claim must trace to the claims whitelist or the offer (shipping, guarantee, price terms come from the spec).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 80
+              }
+            },
+            {
+              "key": "upsell_guarantees",
+              "kind": "copy",
+              "role": "body",
+              "description": "Structured guarantee/trust cards (secure checkout, money-back terms). Terms such as the refund window and conditions are copied from the spec's guarantee, never composed.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 10,
+                "max": 200
+              }
+            },
+            {
+              "key": "upsell_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Structured upsell body sections (features, comparison, steps, reviews). Every section makes product, coverage or customer claims, so the content must come from the merchant brief: reviews are real and authorized, coverage and claim-process terms match the actual offer. Empty \u2192 the body sections do not render.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 10,
+                "max": 240
+              },
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "closing_cta",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Structured closing accept/decline block (variant, title, note, show_guarantees). Title is producer copy; a note that states a guarantee must copy the guarantee terms from the spec verbatim.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 140
+              }
             }
           ]
         }
