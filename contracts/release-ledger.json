@@ -3955,13 +3955,34 @@
       "entry_sha256": "ba5bdb8718c7b405c7cc60e1129f76ebe10011f099aa151bf893d617cc0c4270"
     },
     {
-      "id": "RL-0197",
-      "sequence": 189,
+      "id": "RL-0194",
+      "sequence": 186,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.46.0+agent.9",
-      "changelog_sha256": "fd78d9d89ba53ce4e1a019f5b1aef421fd7930897005880450a7c49503960ffb",
+      "changelog_section": "1.46.0+agent.6",
+      "changelog_sha256": "8cb11f8b85a7b9abe6791d75a7b7915491477bbe2d3e2f01dae2fb5ca458943a",
+      "agent_impact": "sdk storage-check now accepts a release manifest whose SDK version is above its supported range, such as Campaign Cart v0.4.40 (range 0.4.38 only). Targets outside the declared range still report unknown; a manifest whose SDK version is below its supported maximum is still refused.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "A release manifest covers the range it declares, which may end below its own SDK version; targets outside it report unknown."
+        }
+      ],
+      "entry_sha256": "f064edf5031f8fd36197984145f5cbcfca3efd78a76982d3132e254b81964884"
+    },
+    {
+      "id": "RL-0197",
+      "sequence": 187,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.46.0+agent.7",
+      "changelog_sha256": "3e259a65b6656e4c39f6f92a7e7d934927794d878703e496d23c0008b4721da2",
       "agent_impact": "Doctor's script syntax gate gives one built_output.script_syntax.missing_script warning per resolved URL, not per raw src spelling. A <script> left unclosed at end of file is no longer parsed by doctor or QA and cannot block; doctor warns under built_output.script_syntax.unclosed_script. A script symlink resolving outside the site root is not read; doctor warns under built_output.script_syntax.symlink_outside_site and lists it in scripts_outside_site[]. Symlinks inside the site root are read as before.",
       "compatibility": "additive",
       "migration": "none",
@@ -3973,7 +3994,7 @@
           "summary": "The script syntax gate section records resolved-URL grouping of missing-script warnings, the unclosed-script rule and warning, and the symlink rule: followed inside the site root, warned about and not read outside it."
         }
       ],
-      "entry_sha256": "42d948ca82a3aa8a01350a1762d3ef6f0d8fadfca02b2733303617fe161f0af2"
+      "entry_sha256": "f41cef54fb347bc3529d8830a2a72b74d2438ec9d72d6ae454c865dcb5cc38b7"
     }
   ]
 }
