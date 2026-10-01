@@ -10,7 +10,7 @@ Notable supported-surface changes are recorded here.
   API puts the reason in `payment_details`, which QA's response capture
   dropped, so the `browser-test-order` row read only
   `order create rejected: HTTP 400`. The capture now keeps a string
-  `payment_details`, and a duplicate-order refusal adds `duplicate_order`
+  `payment_details` on an error response, and a duplicate-order refusal adds `duplicate_order`
   with the remedy: re-run with a different `--test-email-prefix` (or
   `--test-email`), or wait up to 30 minutes. `docs/qa-and-test-orders.md`
   explains what the platform matches on and why concurrent runs collide.
