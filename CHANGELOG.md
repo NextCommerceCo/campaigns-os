@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.47.0+agent.1] - 2026-10-01
+
+### Fixed
+
+- The one-line setup command in `docs/local-setup.md` now starts with
+  `npm init -y`. Without a `package.json` in the campaign folder, npm installs
+  into the nearest parent folder that has a `package.json` or `node_modules`,
+  so a campaign folder created inside another project added page-kit and the
+  toolkit to that project instead of the campaign. The README and quickstart
+  installs already started with `npm init -y`; a test now holds all three to
+  it.
+
 ## [1.47.0] - 2026-10-01
 
 ### Changed
