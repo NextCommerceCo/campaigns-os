@@ -2822,7 +2822,22 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
       selectors.length ? countVisiblePriceRows(browserPage, selectors) : 0,
       countVisiblePriceRows(browserPage, totalSelectors),
     ]);
-    return [checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount })];
+    // Nothing priced is visible. When the checkout also has no package
+    // selection of its own and the SDK reports an empty cart, the cart is
+    // filled on an earlier page (a landing link carrying forcePackageId), and
+    // opening the checkout directly shows a state no shopper reaches. The
+    // test-order path enters that cart from the landing page instead.
+    const emptyEntry = visibleCount === 0 && totalVisibleCount === 0
+      ? await Promise.all([
+        browserPage.evaluate(() => (typeof window.next?.getCartCount === "function" ? window.next.getCartCount() : null)),
+        browserPage.evaluate(checkoutSelectionSurfaceScript()),
+      ]).then(
+        ([cart_count, selection_surface]) => ({ cart_count, selection_surface }),
+        // A failed probe leaves the row failed, and says why on the row.
+        (error) => ({ probe_error: trim(error?.message || String(error)).slice(0, 200) }),
+      )
+      : null;
+    return [checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount, emptyEntry })];
   }
   return [];
 }
@@ -2896,25 +2911,37 @@ function upsellPriceVisibilityAssertion({ page, selectors, visibleCount }) {
 // no `totalSelectors` ran the bundle-row check alone, and the row says so
 // rather than reporting an empty selector list that reads like a check that
 // ran and found nothing.
-function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount = 0 }) {
+//
+// `emptyEntry` ({ cart_count, selection_surface }, or { probe_error }) is read
+// only when nothing priced is visible. An empty SDK cart (cart_count 0, never
+// null: null means no SDK was read) on a checkout with no package selection of
+// its own is not a price the shopper fails to see: the row is skipped with
+// that reason rather than failed, and only that row carries the probe values.
+function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount = 0, emptyEntry = null }) {
   const totalChecked = Array.isArray(totalSelectors);
   const ok = visibleCount >= 1 || (totalChecked && totalVisibleCount >= 1);
+  const enteredUpstream = !ok && emptyEntry?.cart_count === 0 && emptyEntry?.selection_surface?.count === 0;
+  const counts = totalChecked
+    ? `${visibleCount} visible price row(s); ${totalVisibleCount} visible cart-summary total(s)`
+    : `${visibleCount} visible price row(s)`;
   return assertion({
     id: "pricing.checkout_price_visible",
     family: "pricing",
     page,
-    status: ok ? STATUS.PASS : STATUS.FAIL,
-    severity: ok ? undefined : SEVERITY.WARN,
+    status: ok ? STATUS.PASS : enteredUpstream ? STATUS.SKIPPED : STATUS.FAIL,
+    severity: ok || enteredUpstream ? undefined : SEVERITY.WARN,
     expected: totalChecked
       ? "at least one visible checkout bundle price row or a visible cart-summary total"
       : "at least one visible checkout bundle price row",
-    actual: totalChecked
-      ? `${visibleCount} visible price row(s); ${totalVisibleCount} visible cart-summary total(s)`
-      : `${visibleCount} visible price row(s)`,
+    actual: enteredUpstream
+      ? `${counts}: opened directly, the checkout has an empty cart and no package selection of its own; its cart is filled on an earlier page, and the test order enters it from there`
+      : counts,
     evidence: {
       selectors,
       visible_count: visibleCount,
       ...(totalChecked ? { total_selectors: totalSelectors, total_visible_count: totalVisibleCount } : {}),
+      ...(enteredUpstream ? { cart_count: emptyEntry.cart_count, checkout_selection_surface: emptyEntry.selection_surface } : {}),
+      ...(emptyEntry?.probe_error ? { empty_cart_probe_error: emptyEntry.probe_error } : {}),
       page_url: page.url,
     },
   });

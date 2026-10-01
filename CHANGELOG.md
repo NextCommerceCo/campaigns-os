@@ -15,6 +15,24 @@ Notable supported-surface changes are recorded here.
   `--test-email`), or wait up to 30 minutes. `docs/qa-and-test-orders.md`
   explains what the platform matches on and why concurrent runs collide.
 
+## [1.47.0+agent.8] - 2026-10-01
+
+### Fixed
+
+- `qa run` no longer fails `pricing.checkout_price_visible` on a checkout
+  whose cart is filled on an earlier page. When QA opens such a checkout
+  directly, the SDK cart is empty and the page has no package selection of its
+  own, so no price can show. The row is now `skipped` with that reason and
+  records `cart_count` and `checkout_selection_surface`. The test order
+  already enters that cart from the landing page. A checkout with its own
+  package selection, or a filled cart, still fails when no price shows.
+- The page-binding check recognises `campaign-cart@<tag>/dist/loader.js`, the
+  SDK loader the starter templates use, and no longer tries to fetch it as a
+  cross-origin config script. Starter-template pages now report
+  `dynamic_unresolved` instead of `script_unavailable_or_limit`; they still
+  need manual review, because the static reader cannot prove a binding on a
+  page that runs other scripts.
+
 ## [1.47.0+agent.7] - 2026-10-01
 
 ### Removed
