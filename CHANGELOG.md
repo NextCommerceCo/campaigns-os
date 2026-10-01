@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.46.0+agent.5] - 2026-10-01
+
+### Removed
+
+- `doctor` no longer warns with `built_output.sdk_markup.checkout_bump_is_upsell`
+  (added in `1.45.0+agent.5`). When a shopper selects an order bump on a
+  checkout page, it is added as a line item on the checkout order. With
+  `data-next-is-upsell="true"` that line is tagged as an upsell, so platform
+  order reports show upsell items apart from the core items. That tagging is
+  the intended default. The warning fired on every canonical starter checkout
+  with a bump and told the user to remove the attribute, which would report
+  the bump as a core item. Leave the attribute in place. A campaign that
+  should not tag a bump as an upsell opts out by passing `is_upsell: false` to
+  the bump include. Doctor reports no finding for the attribute either way.
+
 ## [1.46.0+agent.4] - 2026-10-01
 
 ### Changed
@@ -148,9 +163,11 @@ Notable supported-surface changes are recorded here.
   downsell and receipt pages, and bumps without the flag, get no warning. The
   flag comes from the bump include's markup, and several starter bump includes
   write it unconditionally, so a canonical starter checkout with a bump shows
-  this warning. To clear it, remove `data-next-is-upsell="true"` from the bump
-  include in the campaign, unless the line really should be billed as an
-  upsell. It is a warning, not a blocker.
+  this warning. It was a warning, not a blocker. Its advice to remove
+  `data-next-is-upsell="true"` was wrong: tagging a checkout bump line as an
+  upsell is the intended default, so order reports show upsell items apart
+  from core items, and removing the attribute would report the bump as a core
+  item. The warning is retired in `1.46.0+agent.5`.
 
 ### Fixed
 

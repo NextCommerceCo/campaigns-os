@@ -2041,7 +2041,6 @@ function collectBuiltPageIdentityInputs(scope, targetRepo) {
     }
     return {
       page_id: page.page_id,
-      page_type: page.page_type,
       route: page.route,
       file: relFromDir(targetRepo, page.built_path),
       content,

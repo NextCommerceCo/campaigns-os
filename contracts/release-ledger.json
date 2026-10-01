@@ -3909,6 +3909,50 @@
         }
       ],
       "entry_sha256": "8e891f36ce261c325f0837bf4c37ca145f60dbdd3ef55ab0ac9c4c4f3f92de7c"
+    },
+    {
+      "id": "RL-0192",
+      "sequence": 184,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.46.0+agent.5",
+      "changelog_sha256": "16cbe0246a154be864bf97c671e3f82d4118aa8d7ed64722168fb756492c69a7",
+      "agent_impact": "doctor no longer reports built_output.sdk_markup.checkout_bump_is_upsell. A selected checkout order bump is a line item on the checkout order; data-next-is-upsell=\"true\" tags that line as an upsell so platform order reports show upsell items apart from core items, and that is the intended default. Do not remove the attribute, and do not advise anyone to: it would report the bump as a core item. A bump include opts out with is_upsell: false. A run that recorded the warning under an earlier version can disregard it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Stop passing each built page type to the SDK markup check, which no longer reads it now that built_output.sdk_markup.checkout_bump_is_upsell is retired."
+        }
+      ],
+      "entry_sha256": "5f833a760aad0eada255118b29c4b2098fff4bfa4d364d31be121e7655a135ef"
+    },
+    {
+      "id": "RL-0193",
+      "sequence": 185,
+      "date": "2026-10-01",
+      "kind": "amendment",
+      "amends": "RL-0187",
+      "amendment_reason": "RL-0187 and its 1.45.0+agent.5 section told users to remove data-next-is-upsell=\"true\" from checkout bump includes. Tagging a checkout bump line as an upsell is the intended default, so order reports separate upsell items from core items; removing the attribute would report the bump as a core item. The section now says the advice was wrong and that the warning is retired in 1.46.0+agent.5; this amendment carries the corrected section hash.",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.5",
+      "changelog_sha256": "74564091423695f83383d296ce664656bc84cb9d21f7f044daffc0315d87110e",
+      "agent_impact": "Disregard RL-0187's advice to remove data-next-is-upsell=\"true\" from a checkout bump. The upsell tag on the bump line is the intended default and the warning that recommended removing it is retired (RL-0192). RL-0187's theme generate and brand-theme-bridge changes stand.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "Correct the recorded repair advice for built_output.sdk_markup.checkout_bump_is_upsell: the attribute is intended, and the warning is retired."
+        }
+      ],
+      "entry_sha256": "ba5bdb8718c7b405c7cc60e1129f76ebe10011f099aa151bf893d617cc0c4270"
     }
   ]
 }
