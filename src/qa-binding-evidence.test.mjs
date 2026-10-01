@@ -373,3 +373,23 @@ test('the SDK exemption matches the URL as the parser reads it, tab and newline 
   const other = await observe(`${inline(key)}<script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v1/dist/other.js"></script>`, { scriptLoader: async () => ({ ok: false }) });
   assert.equal(other.reason, 'script_unavailable_or_limit');
 });
+
+// #515: the browser never runs a script whose end tag never arrives.
+test('a <script> left unclosed at end of file is not fetched or parsed', async () => {
+  const loads = [];
+  const parseFailures = [];
+  const evidence = await observe(`${inline(key)}<script src="/js/bad.js">`, {
+    parseFailures,
+    scriptLoader: async (src) => { loads.push(src); return { ok: true, html: '});' }; },
+  });
+  assert.deepEqual(loads, []);
+  assert.deepEqual(parseFailures, []);
+  assert.equal(evidence.outcome, 'match');
+  const inlineFailures = [];
+  assert.equal((await observe(`${inline(key)}<script>})`, { parseFailures: inlineFailures })).outcome, 'match');
+  assert.deepEqual(inlineFailures, []);
+  // Negative control: the same script, closed, is fetched and blocks.
+  const closed = [];
+  await observe(`${inline(key)}<script src="/js/bad.js"></script>`, { parseFailures: closed, scriptLoader: async () => ({ ok: true, html: '});' }) });
+  assert.equal(closed.length, 1);
+});

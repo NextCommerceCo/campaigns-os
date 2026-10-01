@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.46.0+agent.11] - 2026-10-01
+
+### Changed
+
+- `doctor`'s `built_output.script_syntax` gate groups missing-script warnings
+  by the URL the browser resolves, not the raw src. Two spellings of one URL,
+  such as `check&#9;out.js` and `checkout.js`, now give one
+  `built_output.script_syntax.missing_script` warning instead of two. One src
+  that names different files on pages in different folders still gives one
+  warning per file.
+- A `<script>` the page ends inside, with no `</script>`, is no longer parsed
+  by doctor or QA: the browser never runs a script element whose end tag never
+  arrives, so it can no longer block either. Doctor warns about it under the
+  new `built_output.script_syntax.unclosed_script` code, one warning per page,
+  because the page output is probably truncated.
+- A script symlink under `_site` is read by following the link only while its
+  real path stays inside the site root. A link whose target is outside the
+  site root is not read. Doctor warns under the new
+  `built_output.script_syntax.symlink_outside_site` code, naming the link, and
+  does not block. The gate lists such links in `scripts_outside_site[]`. The
+  rule is recorded in `docs/build-packet.md`.
+
 ## [1.46.0+agent.10] - 2026-10-01
 
 ### Fixed

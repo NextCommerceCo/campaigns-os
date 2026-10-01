@@ -858,15 +858,35 @@ file. A referenced local script that is not in the built output is a warning,
 not a blocker, under `built_output.script_syntax.missing_script`, one warning
 per src naming the pages that load it: the browser gets a 404 for it and
 nothing it would define runs, but whether the page needs it is not known here.
+Missing scripts are grouped by the URL the browser resolves, not the raw src,
+so `check&#9;out.js` and `checkout.js` (the URL parser removes the tab) are one
+warning; the src shown is the first spelling met.
 The src is also listed in `scripts_unresolved[]`. While a parse failure blocks
 the gate, the missing scripts stay on the gate's `warned[]` rather than also
 surfacing as warnings.
 
+A `<script>` the page ends inside, with no `</script>` before end of file, is
+not parsed: the browser never runs a script element whose end tag never
+arrives. Doctor warns about it under `built_output.script_syntax.unclosed_script`,
+one warning per page, because a page that ends mid-script is usually truncated
+output. QA neither fetches nor parses such a script.
+
+**Symlinks under `_site`.** A script that is a symlink, or sits under a
+symlinked directory, is read the way a static server serves it, by following
+the link, as long as its real path stays inside the site root (`_site/`). A
+parse failure in it is reported under the path the page loads. A script whose
+real path resolves outside the site root is not read. Doctor warns, and does
+not block, under `built_output.script_syntax.symlink_outside_site`, naming the
+link (never its target) and saying the target is outside the site root. The
+link is listed in `scripts_outside_site[]` with `file`, `src` and `pages`, not
+in `scripts_unresolved[]`.
+
 The gate's evidence lands beside the other checkpoint gates at
 `derived.checkpoint_gates[]` (`id: built_output.script_syntax`, status `pass` |
 `blocked` | `not_applicable`, `findings[]` with `file`, `line`, `column`,
-`source_type` and `pages`, `warned[]` with `src` and `pages`,
-`scripts_scanned`, `scripts_unresolved[]`, `pages_scanned`). Fixtures: `fixtures/script-syntax/{good,bad}`. It passes, parsing every
+`source_type` and `pages`, `warned[]` with `code`, `src` and `pages` (and
+`file` for a symlink outside the site root), `scripts_scanned`,
+`scripts_unresolved[]`, `scripts_outside_site[]`, `pages_scanned`). Fixtures: `fixtures/script-syntax/{good,bad}`. It passes, parsing every
 local script the pages load and with no missing-script warning, on the
 canonical rendered output of every certified starter family
 (`fixtures/certified-families/`). QA applies the same rule to the page scripts
