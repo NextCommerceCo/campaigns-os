@@ -2,6 +2,29 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.47.0+agent.7] - 2026-10-01
+
+### Removed
+
+- `doctor` no longer scans built pages for proof and urgency copy. The
+  `content_residue.anti_pattern` warning (review counts, "Verified Purchase"
+  labels, stock and sell-out lines, expert and press mentions) is gone, and so
+  is `content_residue.urgency_unattested`, which asked a campaign without a
+  brief payload to confirm its countdown was real. That copy belongs to the
+  merchant, and agents read the warnings as a reason to strip it from the
+  merchant's own designs. Template demo residue, the needs-merchant-input
+  marker, the discount-claim warnings and the brief-backed urgency and proof
+  attestation gates are unchanged.
+
+### Changed
+
+- The `next-campaigns-build` and `next-campaigns-polish` skills now say to
+  reproduce the source design's own proof and urgency elements (reviews,
+  "Verified Purchase" labels, recent-purchase popups, stock counters,
+  countdowns, guarantees) as designed, and not to record them as polish
+  issues. `docs/campaign-build-brief.md` says the same. Bundled skills carry
+  revision `1.47.0+skills.2`, with each skill version advanced one patch.
+
 ## [1.47.0+agent.6] - 2026-10-01
 
 ### Changed

@@ -4208,6 +4208,99 @@
         }
       ],
       "entry_sha256": "bbf5c759e5518a3025a0e5f6db6b732e8960721ce45bb4be3821cb58096319e8"
+    },
+    {
+      "id": "RL-0200",
+      "sequence": 193,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.7",
+      "changelog_sha256": "b97164cb0efb6b87ee04d95e28679d731173b0998b2f92ddf308e333127ff8e3",
+      "agent_impact": "doctor no longer emits content_residue.anti_pattern or content_residue.urgency_unattested: do not wait for, or act on, a review of the merchant's proof and urgency copy. Reproduce the source design's own reviews, labels, popups, stock counters and countdowns as designed. Bundled skills carry revision 1.47.0+skills.2: an agent that loaded 1.47.0+skills.1 should start a fresh session.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Replace the content-claims section: the merchant's own proof and urgency content is not reviewed and is reproduced as designed; list the content checks that remain."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.47.0+skills.2 bundle in executable examples."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.47.0+skills.2 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Say to reproduce the source design's own proof and urgency elements as designed; publish the 1.47.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Say that proof and urgency copy the source supplies is not residue and is not recorded as an issue; publish the 1.47.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.2 bundle revision."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Stop emitting content_residue.anti_pattern and content_residue.urgency_unattested; the merchant's proof and urgency copy is no longer scanned."
+        }
+      ],
+      "entry_sha256": "396746eab5577268a1eef6e76fa3cffeb989da503c7bb898bf3c80d56d31164b"
     }
   ]
 }
