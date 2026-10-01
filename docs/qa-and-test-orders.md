@@ -1004,6 +1004,22 @@ the baseline, and when no candidate page is captured the leg emits
 `no_in_scope_page_captured` (skipped) or `no_capture_page_answered`
 (`FAIL`/`BLOCKER`).
 
+The automatic candidate is never a receipt page: the campaign root is not one,
+and a built entry counts as one only when its topology `page_type` is `receipt`
+or `thankyou`. The leg does not substitute the topology's receipt step, because
+a receipt loaded without an order fires no Purchase. So when the automatic
+candidate is not a receipt and fires no Purchase, `purchase-present` is
+`MANUAL_REVIEW`/`WARN` instead of a blocker, and its `evidence.page_mismatch`
+names the mismatch: `reason` (`receipt_baseline_non_receipt_candidate` when the
+baseline fired a Purchase, else `candidate_not_receipt`),
+`baseline_fired_purchase`, `candidate_receipt: false`, `candidate_source`
+(`campaign_root` or `built_entry`) and `candidate_page_type`. To compare
+Purchase, pass the candidate receipt with `--analytics-candidate`. An explicit
+candidate, or an automatic one whose page type is a receipt, still blocks on a
+missing Purchase, and a non-receipt candidate that does fire a Purchase gets the
+full set of Purchase checks, with its page recorded in `evidence.candidate_page`
+on `purchase-present`.
+
 | Flag | Meaning |
 |---|---|
 | `--analytics-baseline <url>` | Legacy funnel URL to capture as the parity baseline (enables the leg) |
@@ -1019,7 +1035,9 @@ Point both at the **thank-you / receipt page** for the highest-value `dl_purchas
 check, or drive the same offer through each funnel so client-fired values line up.
 
 What the diff asserts (BLOCKER unless noted):
-- `purchase-present` — candidate fires a purchase event.
+- `purchase-present` — candidate fires a purchase event (`MANUAL_REVIEW`
+  naming the page mismatch when the automatic candidate is not a receipt and
+  fires none; see above).
 - `purchase-value` / `purchase-currency` — match the baseline's **client-fired**
   value (compared client-vs-client; never vs a backend total, since tax is
   computed backend and is not in the client value on headless checkouts).
