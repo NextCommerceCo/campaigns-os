@@ -16,6 +16,7 @@ import {
   SCRIPT_SYNTAX_PARSE_FAILURE,
   SCRIPT_SYNTAX_SYMLINK_OUTSIDE_SITE,
   SCRIPT_SYNTAX_UNCLOSED_SCRIPT,
+  collectBuiltScriptSyntaxInputs,
   evaluateBuiltScriptSyntax,
   frozenBaseUrl,
   pageScriptReferences,
@@ -572,6 +573,34 @@ test("a <script> left unclosed at end of file is never run, so it is not parsed 
     rmSync(dir, { recursive: true, force: true });
   }
   assert.deepEqual(pageScriptReferences(`<script src="a.js"></script><script src="b.js">`), [{ src: "a.js", module: false }]);
+});
+
+test("an unresolvable site root leaves the outside-site check undecided: scripts are read, none flagged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "script-syntax-noroot-"));
+  try {
+    const campaign = join(dir, "built", SLUG);
+    mkdirSync(join(campaign, "js"), { recursive: true });
+    writeFileSync(join(campaign, "js", "app.js"), GOOD);
+    writeFileSync(join(campaign, "index.html"), `<script src="/js/app.js"></script>`);
+    const scope = { site_root: join(dir, "missing-site-root"), campaign_dir: campaign, pages: [{ page_id: "home", built_path: join(campaign, "index.html") }] };
+    const inputs = collectBuiltScriptSyntaxInputs(scope, dir);
+    assert.deepEqual(inputs.outside_site, []);
+    assert.equal(inputs.scripts.length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a page that ends inside a script is one unclosed entry, whatever the markup", () => {
+  const dir = mkdtempSync(join(tmpdir(), "script-syntax-unclosed-"));
+  try {
+    mkdirSync(join(dir, SLUG), { recursive: true });
+    writeFileSync(join(dir, SLUG, "index.html"), `<script src="/a.js"><script src="/b.js">`);
+    const scope = { site_root: dir, campaign_dir: join(dir, SLUG), pages: [{ page_id: "home", built_path: join(dir, SLUG, "index.html") }] };
+    assert.equal(collectBuiltScriptSyntaxInputs(scope, dir).unclosed.length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a script symlink is read where it resolves inside the site root, and warned about, not read, outside it", () => {

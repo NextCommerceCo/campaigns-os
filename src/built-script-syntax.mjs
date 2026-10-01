@@ -396,7 +396,9 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
       continue;
     }
     const document = pageScriptDocument(html);
-    for (const entry of document.unclosed) unclosed.push({ src: entry.src, pages: [page.page_id] });
+    // One entry per page: the file ends inside at most one script, and the
+    // warning is about the page's truncated output.
+    if (document.unclosed.length) unclosed.push({ src: document.unclosed[0].src, pages: [page.page_id] });
     const pageUrl = pageUrlFor(scope.site_root, page.built_path);
     for (const ref of document.refs) {
       if (isRemote(ref.src)) continue;
@@ -421,9 +423,10 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
         continue;
       }
       // Read where a static server would serve it, but only while the real
-      // path stays inside the site root.
+      // path stays inside the site root. When either real path is unknown the
+      // check is undecidable, and the script is read as before.
       const real = realPathOf(path);
-      if (!siteRootReal || !real || (real !== siteRootReal && !real.startsWith(`${siteRootReal}${sep}`))) {
+      if (siteRootReal && real && real !== siteRootReal && !real.startsWith(`${siteRootReal}${sep}`)) {
         const file = relFrom(targetRepo, resolve(path));
         const entry = outsideSite.get(file) || { file, src: ref.src, pages: [] };
         if (!entry.pages.includes(page.page_id)) entry.pages.push(page.page_id);
