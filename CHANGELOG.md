@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.46.0+agent.4] - 2026-10-01
+
+### Changed
+
+- The `next-campaigns-qa` and `next-campaigns-build` skills now say which
+  checkout controls count as bound for `browser-commerce-structure`: a
+  required field bound only on a `type="hidden"` input, a disabled control, a
+  read-only input or textarea, or a control with `aria-disabled="true"` does
+  not count, and QA reports it in `fields_bound.missing`. This is the rule QA
+  has applied since #540; the skills had not stated it. Bundled skills carry
+  revision `1.46.0+skills.2`, with each skill version advanced one patch. No
+  change to the CLI.
+
 ## [1.46.0+agent.3] - 2026-09-30
 
 ### Changed
