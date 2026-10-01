@@ -62,34 +62,31 @@ Doctor warns when generated guided drafts still need answers, a brief allows pay
 
 Existing template residue, theme, pricing, and built-output checks continue to run. The brief gives those checks business intent instead of replacing them.
 
-## Content Claims Are Reviewed, Not Enforced
+## The Merchant's Own Claims Are Not Reviewed
 
-The doctor scans built output for content residue and raises some of it as
-warnings: every content anti-pattern under the warning code
-`content_residue.anti_pattern` (the finding ids include `invented_counts`
-for invented counts and ratings, `verified_buyer_chrome` for "Verified
-Buyer" and similar review chrome, `byline_persona`, `borrowed_authority`,
-`press_marquee`, and `science_theater`; all of them are warning-only), and
-promo copy claiming a discount above the CampaignSpec maximum (`template_contract.discount_claim_residue`, or
-`template_contract.discount_claim_unverified` when the spec sets no maximum).
+Proof and urgency content the merchant supplies is the merchant's
+responsibility, not Campaigns OS's: reviews and testimonials, ratings and
+counts, "Verified Purchase" labels, recent-purchase popups, stock counters,
+countdowns, guarantees and press mentions. The doctor does not scan for it and
+QA does not assert on it. When the prepared source design carries these
+elements, the build reproduces them as designed. The starter templates ship
+without some of them; that is not a reason to drop the source's.
 
-These stay warnings on purpose, and nothing downstream reads them. There is no
-blocker, no `blocked_stages` entry, no QA assertion, and no test-order gate
-keyed on any of them. A build carrying all of them can pass doctor, pass QA,
-and deploy.
+What the doctor does scan built output for is template residue: the starter
+templates' own demo strings and bracket-style stubs
+(`content_residue.demo_residue`, a warning). It also warns on promo copy
+claiming a discount above the CampaignSpec maximum
+(`template_contract.discount_claim_residue`, or
+`template_contract.discount_claim_unverified` when the spec sets no maximum),
+because that copy disagrees with the campaign's own pricing. Nothing downstream
+blocks on either.
 
-The toolkit flags the copy; it does not adjudicate it. **Responsibility for
-every claim on the page — proof counts, review chrome, discount percentages,
-and the rest — sits with the operator and the client, not with Campaigns OS.**
-Use the brief to record which claims are approved and which language is
-forbidden (see the high-impact questions above), and treat a content warning as
-a prompt to check the brief, not as a gate that will stop the build if you
-ignore it.
-
-The hard content checks are separate and do block: the needs-merchant-input
-marker (`content_residue.needs_merchant_input`) and countdown chrome rendered
-without verified offer urgency on a brief-backed build
-(`content_residue.unverified_urgency`).
+Two content checks do block: the needs-merchant-input marker
+(`content_residue.needs_merchant_input`), and, on a brief-backed build only,
+starter countdown chrome the brief payload does not verify
+(`content_residue.unverified_urgency`). Use the brief to record which claims
+are approved and which language is forbidden (see the high-impact questions
+above).
 
 ## QA Policy Scope
 
