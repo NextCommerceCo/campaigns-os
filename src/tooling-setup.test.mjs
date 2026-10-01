@@ -20,6 +20,14 @@ test("local setup install pins match the package version", () => {
   for (const [, version] of pins) assert.equal(version, PKG.version, "docs/local-setup.md toolkit install pin must match package.json");
 });
 
+test("the published compatibility statement names the package version", () => {
+  // compatibility.json ships in the package as the published statement of what
+  // this release supports; a stale version contradicts the contract it states.
+  const statement = JSON.parse(readFileSync(join(ROOT, "compatibility.json"), "utf8"));
+  assert.equal(statement.package, PKG.name);
+  assert.equal(statement.version, PKG.version, "compatibility.json version must match package.json");
+});
+
 test("documented install commands keep page-kit a runtime dependency and the toolkit a dev dependency", () => {
   // `npm install --save-dev` moves an already-declared runtime dependency into
   // devDependencies, which `npm ci --omit=dev` builds then skip. Page-kit must

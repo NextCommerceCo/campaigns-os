@@ -4486,7 +4486,7 @@
       ],
       "effect_test": "effects: start --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `start` destructive; the base form refuses instead."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `start` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path."
     },
     {
       "command": "start",
@@ -4998,7 +4998,7 @@
       ],
       "effect_test": "effects: prepare-build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `prepare-build` destructive; the base form refuses instead. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `prepare-build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
     },
     {
       "command": "build",
@@ -5412,7 +5412,7 @@
       ],
       "effect_test": "effects: build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `build` destructive; the base form refuses instead. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
     },
     {
       "command": "spec",
