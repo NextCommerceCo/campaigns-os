@@ -1017,7 +1017,8 @@ baseline fired a Purchase, else `candidate_not_receipt`),
 Purchase, pass the candidate receipt with `--analytics-candidate`. An explicit
 candidate, or an automatic one whose page type is a receipt, still blocks on a
 missing Purchase, and a non-receipt candidate that does fire a Purchase gets the
-full set of Purchase checks.
+full set of Purchase checks, with its page recorded in `evidence.candidate_page`
+on `purchase-present`.
 
 | Flag | Meaning |
 |---|---|

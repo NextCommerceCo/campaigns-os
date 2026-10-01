@@ -274,6 +274,7 @@ test("#512: a non-receipt automatic candidate that does fire a Purchase is still
   const candidate = { purchase: { present: true, value: 39.99, currency: "USD", transactionId: "2" }, inventory: {} };
   const a = byId(diffAnalyticsParity(baseline, candidate, { candidatePage: { receipt: false, source: "built_entry" } }));
   assert.equal(a["analytics-parity:purchase-present"].status, STATUS.PASS);
+  assert.deepEqual(a["analytics-parity:purchase-present"].evidence.candidate_page, { receipt: false, source: "built_entry" }, "the pass records the non-receipt page");
   assert.equal(a["analytics-parity:purchase-value"].status, STATUS.FAIL);
   assert.equal(a["analytics-parity:purchase-value"].severity, SEVERITY.BLOCKER);
 });

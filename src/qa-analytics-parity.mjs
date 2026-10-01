@@ -577,7 +577,7 @@ export function diffAnalyticsParity(baseline, candidate, options = {}) {
       id: "analytics-parity:purchase-present",
       status: STATUS.MANUAL_REVIEW,
       severity: SEVERITY.WARN,
-      expected: "candidate fires a Purchase on a receipt page matching the baseline",
+      expected: "a receipt candidate to check Purchase on; the automatic candidate is not a receipt, so pair receipts with --analytics-candidate",
       actual: baselineFired
         ? "baseline fired a Purchase but the automatic candidate is not a receipt page; pass --analytics-candidate <candidate receipt url> to compare receipts"
         : "neither page fired a Purchase and the automatic candidate is not a receipt page; pass receipt URLs to --analytics-baseline and --analytics-candidate to compare Purchase",
@@ -588,7 +588,7 @@ export function diffAnalyticsParity(baseline, candidate, options = {}) {
         page_mismatch: {
           reason: baselineFired ? "receipt_baseline_non_receipt_candidate" : "candidate_not_receipt",
           baseline_fired_purchase: baselineFired,
-          candidate_receipt: false,
+          candidate_receipt: candidatePage.receipt,
           candidate_source: candidatePage.source ?? null,
           candidate_page_type: candidatePage.page_type ?? null,
         },
@@ -600,7 +600,9 @@ export function diffAnalyticsParity(baseline, candidate, options = {}) {
     severity: SEVERITY.BLOCKER,
     expected: "candidate fires a Purchase (dl_purchase, or Meta/GA4 pixel if the SDK event is blocked)",
     actual: cEff.fired ? `purchase fired via ${cEff.via}` : "no purchase fire captured on candidate (dataLayer, Meta, or GA4)",
-    evidence: { via: cEff.via, candidate_events: c.eventNames || [], candidate_signals: c.purchaseSignals || {}, baseline_purchase: bp },
+    // An automatic candidate's page is recorded even when it fired, so a pass on
+    // a non-receipt page reads as such.
+    evidence: { via: cEff.via, candidate_events: c.eventNames || [], candidate_signals: c.purchaseSignals || {}, baseline_purchase: bp, ...(candidatePage ? { candidate_page: candidatePage } : {}) },
   }));
 
   if (cEff.fired) {
