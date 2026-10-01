@@ -49,10 +49,16 @@ test("documented page-kit installs give a new folder its own package.json first"
   let checked = 0;
   for (const file of ["docs/local-setup.md", "docs/quickstart.md", "README.md"]) {
     const text = readFileSync(join(ROOT, file), "utf8");
-    const lines = [...text.matchAll(/^```[^\n]*\n([\s\S]*?)^```/gm)].flatMap((m) => m[1].split("\n"));
-    for (const line of lines.filter((l) => /\bnpm (install|i)\b[^&]*next-campaign-page-kit/.test(l))) {
+    // Join wrapped commands (a trailing "\" or "&&") so a chain split across
+    // lines is checked as one, then walk each chain's commands in order.
+    const chains = [...text.matchAll(/^```[^\n]*\n([\s\S]*?)^```/gm)]
+      .flatMap((m) => m[1].replace(/\\\n\s*/g, " ").replace(/&&\s*\n\s*/g, "&& ").split("\n"));
+    for (const chain of chains) {
+      const commands = chain.split("&&").map((c) => c.trim());
+      const at = commands.findIndex((c) => /^npm (install|i)\b/.test(c) && c.includes("next-campaign-page-kit"));
+      if (at < 0) continue;
       checked += 1;
-      assert.match(line.trim(), /^npm init -y && /, `${file}: start the page-kit install with npm init -y: ${line.trim()}`);
+      assert.ok(commands.slice(0, at).includes("npm init -y"), `${file}: run npm init -y before the page-kit install: ${chain.trim()}`);
     }
   }
   assert.ok(checked >= 3, "local setup, quickstart and README each document a page-kit install");
