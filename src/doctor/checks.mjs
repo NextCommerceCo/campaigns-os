@@ -4069,17 +4069,20 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
     } else if (id === "unverified_urgency_countdown") {
       // The scanner emits this only when the brief does not verify urgency
       // (urgencyVerified=false). Only a readable brief payload (AI-assembled)
-      // makes it a finding. Without one, the countdown is the merchant's
-      // content and is not ours to question. An unreadable brief is already
-      // blocked by proof_attestation.unreadable, and urgency is re-evaluated
-      // once it parses.
+      // makes it a finding.
       if (briefReadable) {
         addIssue(
           errors,
           "content_residue.unverified_urgency",
           `Built output renders countdown chrome without verified offer urgency (${where}). Set offer.urgency.verified in ${BRIEF_PAYLOAD_REL_PATH} from a real promotion window, or blank the urgency slots.`,
         );
+      } else if (brief?.error) {
+        // Deliberately nothing: an unreadable brief payload already blocks
+        // through proof_attestation.unreadable (validateProofAttestation),
+        // and urgency is re-evaluated once the brief parses.
       }
+      // No brief payload at all: the countdown is the merchant's content and
+      // is not ours to question.
     } else if (id === "demo_residue_term" || id === "bracket_placeholder_stub") {
       addIssue(
         warnings,

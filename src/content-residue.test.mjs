@@ -35,7 +35,7 @@ test("bracket stubs and demo residue are review findings; CSS attribute selector
   assert.ok(demo.review.filter((f) => f.id === "demo_residue_term").length >= 2);
 });
 
-test("the merchant's own proof and urgency copy is not a finding", () => {
+test("proof and urgency copy is not a finding unless it is a starter demo string", () => {
   const { hard, review } = scanRenderedHtml(
     "<p>Backed by 1,200 reviews. Verified Purchase. Only 172 left in stock. Offer expires tonight. Clinically proven. As Seen On TV.</p>",
   );

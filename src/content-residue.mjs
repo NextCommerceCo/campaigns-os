@@ -110,9 +110,10 @@ function excerptAt(html, index, span = 80) {
 }
 
 // Pure scan of one rendered HTML document. Returns { hard: [], review: [] };
-// each finding: { id, tier, rule?, excerpt }. Every check runs on the markup
-// view: attributes count, comments and script/style bodies do not, so
-// attribute residue is still caught.
+// each finding: { id, tier, rule?, excerpt }. The hard checks and the demo
+// terms run on the markup view (attributes count, comments and script/style
+// bodies do not), so attribute residue is still caught; bracket stubs run on
+// the same view with tags stripped, so CSS attribute selectors never match.
 export function scanRenderedHtml(html, { urgencyVerified = false } = {}) {
   const markup = markupView(typeof html === "string" ? html : "");
   const hard = [];
