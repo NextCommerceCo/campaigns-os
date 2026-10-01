@@ -12,6 +12,10 @@
 //    unverified. The order the run reports must not read as verified.
 // 3. An earlier step's mutation whose waiter expired answers only after this
 //    step's click. This step's waiter must not take it as its own response.
+// 4. The accept's order upsell POST is redirected (307). The step is judged
+//    from the redirect chain's final response, a late final body is matched
+//    to the step by the chain's root request, and a chain with no final
+//    response is not taken as answered (campaigns-os#516).
 //
 // Chromium is not part of `npm ci --ignore-scripts`, so the file skips when it
 // cannot launch locally. The browser CI lane requires Chromium.
@@ -246,4 +250,129 @@ browserTest("an earlier step's mutation answering after this step's click is not
     await browser.close();
     await server.close();
   }
+});
+
+// The order upsell POST answers 307 to a relay URL outside the order-upsells
+// pattern, and the browser re-posts there. `final` is how the relay answers:
+// "prompt" (201 with the order body), "late" (201 headers at once, the body
+// only after the bounded read gave up), or "drop" (the connection is reset,
+// so the redirect chain has no final response). `relay` overrides the relay
+// path, to put it outside every URL pattern the event capture logs.
+async function serveRedirect({ final, relay = null }) {
+  const REF = "FIXTUREREF7";
+  const relayPath = relay || `/api/v1/orders/${REF}/upsells-relay/`;
+  const hops = [];
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, "http://localhost");
+    if (request.method === "POST" && url.pathname === `/api/v1/orders/${REF}/upsells/`) {
+      for await (const chunk of request) void chunk;
+      hops.push("upsells");
+      response.writeHead(307, { location: relayPath });
+      return response.end();
+    }
+    if (request.method === "POST" && url.pathname === relayPath) {
+      let raw = "";
+      for await (const chunk of request) raw += chunk;
+      hops.push("relay");
+      if (final === "drop") return request.socket.destroy();
+      const body = JSON.stringify({ ref_id: REF, offer: JSON.parse(raw || "{}").offer, hop: "final" });
+      response.writeHead(201, { "content-type": "application/json" });
+      if (final === "prompt") return response.end(body);
+      response.write(" ");
+      setTimeout(() => response.end(body), hooks.RESPONSE_BODY_READ_TIMEOUT_MS + 1500);
+      return undefined;
+    }
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    return response.end(await readFile(join(FIXTURES, "redirect.html")));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    url: `http://127.0.0.1:${server.address().port}/x/upsell-b/?ref_id=${REF}`,
+    hops,
+    close: () => new Promise((resolve) => {
+      server.closeAllConnections?.();
+      server.close(resolve);
+    }),
+  };
+}
+
+async function withRedirectPage(final, run, { relay = null } = {}) {
+  const server = await serveRedirect({ final, relay });
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    const events = hooks.captureCheckoutEvents(page);
+    await page.goto(server.url, { waitUntil: "load" });
+    await run({ page, events, server });
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+}
+
+browserTest("a redirected order upsell mutation is judged from the redirect chain's final response", { timeout: 60000 }, async () => {
+  await withRedirectPage("prompt", async ({ page, server }) => {
+    const step = await hooks.clickUpsellPath(page, "accept");
+
+    assert.deepEqual(server.hops, ["upsells", "relay"], "the browser followed the 307 and re-posted");
+    assert.equal(step.api_response_seen, true);
+    assert.equal(step.api_response_status, 201, `step took the HTTP ${step.api_response_status} hop`);
+    assert.equal(step.api_response_order_body?.hop, "final");
+    assert.equal(step.api_response_order_body?.offer, "b");
+  });
+});
+
+browserTest("a redirected mutation's late body is matched to this step by the root of its redirect chain", { timeout: 90000 }, async () => {
+  await withRedirectPage("late", async ({ page, events }) => {
+    const responseIndexBefore = events.responses.length;
+    const step = await hooks.clickUpsellPath(page, "accept");
+
+    assert.equal(step.api_response_status, 201, `step took the HTTP ${step.api_response_status} hop`);
+    assert.equal(step.api_response_body_read?.timed_out, true, "the final hop's body read hit the bound");
+    const late = await hooks.waitForLateUpsellEvidence(events, {
+      responseIndexBefore,
+      mutationRequest: step[hooks.REQUEST_IDENTITY] || null,
+      mutationRespondedAt: step.mutation_responded_at,
+      initialLineItems: [],
+      expectedItems: [],
+      timeoutMs: 10000,
+    });
+    assert.equal(late.source, "late_upsell_body");
+    assert.equal(late.body?.hop, "final");
+    assert.equal(late.body?.offer, "b");
+  });
+});
+
+browserTest("a redirected mutation's late body is captured even when the relay URL is outside the logged URL patterns", { timeout: 90000 }, async () => {
+  await withRedirectPage("late", async ({ page, events }) => {
+    const responseIndexBefore = events.responses.length;
+    const step = await hooks.clickUpsellPath(page, "accept");
+
+    assert.equal(step.api_response_status, 201, `step took the HTTP ${step.api_response_status} hop`);
+    const late = await hooks.waitForLateUpsellEvidence(events, {
+      responseIndexBefore,
+      mutationRequest: step[hooks.REQUEST_IDENTITY] || null,
+      mutationRespondedAt: step.mutation_responded_at,
+      initialLineItems: [],
+      expectedItems: [],
+      timeoutMs: 10000,
+    });
+    assert.equal(late.source, "late_upsell_body");
+    assert.equal(late.body?.hop, "final");
+  }, { relay: "/relay/final/" });
+});
+
+browserTest("a redirected mutation with no final response is not taken as answered", { timeout: 90000 }, async () => {
+  await withRedirectPage("drop", async ({ page, server }) => {
+    const step = await hooks.clickUpsellPath(page, "accept");
+
+    // Chromium may retry the reset relay post; no attempt answers it.
+    assert.equal(server.hops[0], "upsells");
+    assert.ok(server.hops.slice(1).length >= 1 && server.hops.slice(1).every((hop) => hop === "relay"), server.hops.join(","));
+    assert.equal(step.api_response_seen, false, `step took the HTTP ${step.api_response_status} hop as the mutation's answer`);
+    assert.equal(step.api_response_status, null);
+    assert.equal(step.api_response_order_body, null);
+    assert.equal(step[hooks.REQUEST_IDENTITY], undefined, "no request identity to match a late body against");
+  });
 });
