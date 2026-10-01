@@ -1,23 +1,22 @@
 // Rendered-output content-residue scan + proof-attestation gate.
 //
 // Scans BUILT campaign output (_site HTML), not frontmatter: layout- or
-// script-rendered proof/urgency chrome only exists after the build, which is
-// why frontmatter-level checks missed the hardcoded rating/countdown chrome.
+// script-rendered chrome only exists after the build, which is why
+// frontmatter-level checks missed the hardcoded starter countdown chrome.
 //
-// Pattern provenance: the generic anti-pattern classes distilled from the
-// 2026-07 winning-campaign content audit (invented counts, fabricated
-// verified-buyer chrome, fictional bylines, borrowed authority, science
-// theater, scarcity theater, fake comparisons, unlinked press marquees).
-// Only GENERIC patterns and the public starter-template demo strings live
-// here; merchant-specific residue fingerprints are deliberately not carried
-// in this public package.
+// What it looks for is template residue, never the merchant's own copy: the
+// public starter-template demo strings, bracket-style demo stubs, and the
+// literal needs-merchant-input marker. Proof and urgency content the merchant
+// supplies (reviews, ratings, "Verified Purchase" labels, stock counters,
+// countdowns) is the merchant's responsibility and is not scanned. No
+// merchant-specific fingerprints are carried in this public package.
 //
-// Posture (fail closed, two tiers):
-// - hard: the literal needs-merchant-input marker, and urgency chrome
-//   rendered without verified offer urgency — blockers (collect-inputs).
-// - review: anti-pattern hits and demo/placeholder residue — warnings that
-//   feed the review/attestation queue; a hit means "remove or demand
-//   brief/source evidence", never "make it more plausible".
+// Posture (two tiers):
+// - hard: the literal needs-merchant-input marker, and starter countdown
+//   chrome on a brief-backed build whose brief does not verify the offer
+//   urgency — blockers (collect-inputs).
+// - review: demo/placeholder residue — warnings; a hit means an unreplaced
+//   demo slot or a stale template.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
@@ -53,63 +52,6 @@ export const DEMO_RESIDUE_TERMS = Object.freeze([
   "Sandra M.",
   "Derek H.",
   "Sell-Out Risk: High",
-]);
-
-// Generic anti-pattern classes (review tier). Each id is stable so the
-// attestation/review UX can key on it.
-export const CONTENT_ANTI_PATTERNS = Object.freeze([
-  {
-    id: "invented_counts",
-    antiPattern: 1,
-    rule: "Counts/ratings/percent-recommend claims require a real, brief-sourced basis.",
-    // Count branch requires a proof-scaled number (comma groups, 4+ digits, or
-    // a trailing +) so ordinary commerce quantities ("Choose 3 pairs and
-    // save") never enter the review queue; "pairs"/"sold" dropped as nouns
-    // for the same reason. Small invented counts are a knowingly accepted gap.
-    regex: /\b(?:\d{1,3}(?:,\d{3})+|\d{4,}|\d+\+)\s+(?:reviews?|ratings?|customers?|users?|famil(?:y|ies)|wearers?|people)\b|\b(?:4\.[5-9]|5\.0)\s*(?:\/\s*5|stars?)|\b(?:9[0-9]|100)%\b[^<]{0,60}\b(?:recommend|reported|said|would)\b/i,
-  },
-  {
-    id: "verified_buyer_chrome",
-    antiPattern: 2,
-    rule: "'Verified' labels must resolve to a real approved review source.",
-    regex: /Verified\s+(?:Buyer|Customer|Purchase)|What\s+(?:Our\s+)?Customers\s+(?:Think|Say)|Real\s+(?:People|Customers)[^<]{0,20}Real\s+(?:Results|Relief)|5[- ]Star\s+Review/i,
-  },
-  {
-    id: "byline_persona",
-    antiPattern: 3,
-    rule: "Advertorial identities must be real, brief-supplied, and authorized.",
-    regex: /Mom\s+of\s+Two|Consumer\s+Report|Review\s+Team|Wellness\s+Educator|Licensed\s+(?:Physiotherapist|Professional)/i,
-  },
-  {
-    id: "borrowed_authority",
-    antiPattern: 4,
-    rule: "Expert/clinician/institution references require name, credential, permission, and source.",
-    regex: /\bDr\.\s+[A-Z]|\bM\.?D\.?\b|doctor[- ]recommended|clinically\s+(?:recognized|recommended)|expert\s+(?:says|recommends)/i,
-  },
-  {
-    id: "press_marquee",
-    antiPattern: 8,
-    rule: "Press mentions require a brief-supplied working URL for the exact merchant and product.",
-    regex: /As\s+Seen\s+(?:On|In)|Featured\s+(?:On|In)/i,
-  },
-  {
-    id: "science_theater",
-    antiPattern: 9,
-    rule: "Study/clinical/certification claims require citation metadata and approved wording.",
-    regex: /peer[- ]reviewed|science[- ]backed|backed\s+by\s+science|stud(?:y|ies)\s+(?:show|prove|confirm)|researchers\s+found|clinically\s+(?:proven|shown|tested)|NASA[- ]developed/i,
-  },
-  {
-    id: "scarcity_theater",
-    antiPattern: 10,
-    rule: "Urgency renders only from a real, approved promotion window or live inventory source.",
-    regex: /ENDS\s+AT\s+MIDNIGHT|Offer\s+Expires|Deal\s+Ending|Only\s+\d+\s+(?:Units\s+)?Left|Stock\s+(?:Levels?\s+)?Low|\d+%\s+Sold|Sell[- ]?Out\s+Risk|supplies\s+are\s+limited/i,
-  },
-  {
-    id: "fake_comparison",
-    antiPattern: 11,
-    rule: "Tested-N/showdown framing requires a brief-supplied comparison matrix and test record.",
-    regex: /(?:we\s+)?tested\s+\d+\s+(?:contenders|products|devices|gloves|combinations|brands)|only\s+one\s+(?:survived|worked|stood)|Competitor\s+[12]\b/i,
-  },
 ]);
 
 const ENTITIES = new Map([
@@ -168,13 +110,11 @@ function excerptAt(html, index, span = 80) {
 }
 
 // Pure scan of one rendered HTML document. Returns { hard: [], review: [] };
-// each finding: { id, tier, rule?, excerpt }. Hard checks run on the markup
-// view (attributes count, comments/scripts do not); review checks run on the
-// visible-text view for precision, except exact-string demo terms and bracket
-// stubs which run on markup so attribute residue is still caught.
+// each finding: { id, tier, rule?, excerpt }. Every check runs on the markup
+// view: attributes count, comments and script/style bodies do not, so
+// attribute residue is still caught.
 export function scanRenderedHtml(html, { urgencyVerified = false } = {}) {
   const markup = markupView(typeof html === "string" ? html : "");
-  const text = visibleText(typeof html === "string" ? html : "");
   const hard = [];
   const review = [];
 
@@ -205,19 +145,6 @@ export function scanRenderedHtml(html, { urgencyVerified = false } = {}) {
     }
   }
 
-  for (const pattern of CONTENT_ANTI_PATTERNS) {
-    if (pattern.id === "scarcity_theater" && urgencyVerified) continue;
-    const match = pattern.regex.exec(text);
-    if (match) {
-      review.push({
-        id: pattern.id,
-        tier: "review",
-        antiPattern: pattern.antiPattern,
-        rule: pattern.rule,
-        excerpt: excerptAt(text, match.index),
-      });
-    }
-  }
   return { hard, review };
 }
 

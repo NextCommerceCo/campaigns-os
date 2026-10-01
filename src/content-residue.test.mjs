@@ -26,14 +26,6 @@ test("countdown chrome without verified urgency is hard; with verified urgency i
   assert.equal(scanRenderedHtml(html, { urgencyVerified: true }).hard.length, 0);
 });
 
-test("scarcity language is a review hit unless urgency is verified", () => {
-  const html = "<p>Only 58 Units Left — Sell-Out Risk: High</p>";
-  const unverified = scanRenderedHtml(html);
-  assert.ok(unverified.review.some((f) => f.id === "scarcity_theater"));
-  const verified = scanRenderedHtml(html, { urgencyVerified: true });
-  assert.ok(!verified.review.some((f) => f.id === "scarcity_theater"));
-});
-
 test("bracket stubs and demo residue are review findings; CSS attribute selectors are not", () => {
   const { review } = scanRenderedHtml("<h2>[Real Review Proof Goes Here]</h2><style>[data-x]{color:red}</style>");
   assert.ok(review.some((f) => f.id === "bracket_placeholder_stub"));
@@ -43,14 +35,12 @@ test("bracket stubs and demo residue are review findings; CSS attribute selector
   assert.ok(demo.review.filter((f) => f.id === "demo_residue_term").length >= 2);
 });
 
-test("anti-pattern classes: invented counts, verified-buyer chrome, science theater, press marquee", () => {
-  const { review } = scanRenderedHtml(
-    "<p>Backed by 1,200 reviews. Verified Buyer. Clinically proven. As Seen On TV.</p>",
+test("the merchant's own proof and urgency copy is not a finding", () => {
+  const { hard, review } = scanRenderedHtml(
+    "<p>Backed by 1,200 reviews. Verified Purchase. Only 172 left in stock. Offer expires tonight. Clinically proven. As Seen On TV.</p>",
   );
-  const ids = new Set(review.map((f) => f.id));
-  for (const id of ["invented_counts", "verified_buyer_chrome", "science_theater", "press_marquee"]) {
-    assert.ok(ids.has(id), `expected ${id}`);
-  }
+  assert.deepEqual(hard, []);
+  assert.deepEqual(review, []);
 });
 
 test("clean generated copy produces no findings", () => {
@@ -96,17 +86,6 @@ test("comments and scripts never trigger hard findings; attributes still do", ()
   assert.equal(hard.length, 0);
   const inAlt = '<img alt="⚠ NEEDS MERCHANT INPUT: author_name ⚠">';
   assert.equal(scanRenderedHtml(inAlt).hard[0].id, "needs_merchant_input_marker");
-});
-
-test("a comment occurrence does not mask a later visible anti-pattern hit", () => {
-  const html = "<!-- Verified Buyer component --><p>ok</p><span>Verified Buyer</span>";
-  const { review } = scanRenderedHtml(html);
-  assert.ok(review.some((f) => f.id === "verified_buyer_chrome"));
-});
-
-test("ordinary commerce quantities are not invented counts", () => {
-  const { review } = scanRenderedHtml("<p>Choose 3 pairs and save. Buy 2 items today.</p>");
-  assert.ok(!review.some((f) => f.id === "invented_counts"));
 });
 
 test("short proof claims match on token boundaries, not bare substrings", () => {
