@@ -524,3 +524,79 @@ test("no action or next-action text proposes editing a generated include to make
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// The local preview policy: missing polish and page-load evidence is carried
+// forward as a warning on a local-serve packet served from loopback, and stays
+// a blocker everywhere else.
+// ---------------------------------------------------------------------------
+
+function templateStockFixture(t, deploy) {
+  const fixture = packetFixture(t, (packet) => {
+    Object.assign(packet.deploy, deploy);
+    packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock: no design source" }));
+  });
+  writeReport(fixture.targetRepo, (report) => {
+    report.stages.assembly.evidence.build_environment = "development";
+    report.stages.polish = { status: "required", required_by: "build", required_for: ["qa"] };
+  });
+  return fixture;
+}
+
+const POLISH_MISSING_CODES = ["polish.evidence_missing", "polish.report_missing", "polish.hidden_eager_media.no_capturable_routes"];
+
+test("a template-stock build on the local preview carries missing polish forward; hosted and non-loopback packets stay blocked", async (t) => {
+  const { __qaNodeTestHooks } = await import("./qa-node.mjs");
+  const { computeDisposition } = await import("./qa-verdict.mjs");
+  const cases = [
+    { name: "local preview", deploy: { target: "local-serve", preview_url: "http://localhost:8080/runtime-packet-demo/" }, carried: true },
+    { name: "hosted preview", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/" }, carried: false },
+    { name: "local-serve on a non-loopback host", deploy: { target: "local-serve", preview_url: "http://192.0.2.10:8080/runtime-packet-demo/" }, carried: false },
+  ];
+  for (const { name, deploy, carried } of cases) {
+    const { packetPath } = templateStockFixture(t, deploy);
+    const doctor = doctorPacket(packetPath, { write: false });
+    const checkpoint = doctor.derived.polish_checkpoint_gate;
+    assert.equal(checkpoint.code, "polish.hidden_eager_media.no_capturable_routes", name);
+    const polishErrors = doctor.errors.filter((issue) => POLISH_MISSING_CODES.includes(issue.code));
+    const polishWarnings = doctor.warnings.filter((issue) => POLISH_MISSING_CODES.includes(issue.code));
+    if (carried) {
+      assert.equal(checkpoint.status, "carried_forward", name);
+      assert.equal(doctor.derived.polish_gate.status, "carried_forward", name);
+      assert.deepEqual(polishErrors, [], name);
+      assert.ok(polishWarnings.length >= 1 && polishWarnings.every((issue) => /^Carried forward on the local preview: .* missing, not passed/.test(issue.message)), JSON.stringify(polishWarnings));
+      assert.notEqual(doctor.next?.stage, "polish", name);
+      assert.equal((doctor.next?.blocked_stages || []).includes("qa"), false, name);
+    } else {
+      assert.equal(checkpoint.status, "blocked", name);
+      assert.ok(polishErrors.length >= 1, `${name}: ${JSON.stringify(doctor.errors)}`);
+      assert.deepEqual(polishWarnings, [], name);
+    }
+
+    const resolved = await __qaNodeTestHooks.resolveQaInputs({ _: ["qa", "run"], packet: packetPath });
+    const qaCheckpoint = resolved.checkpointGates.find((gate) => gate.id === "polish.hidden_eager_media");
+    assert.equal(qaCheckpoint.status, carried ? "carried_forward" : "blocked", name);
+    assert.equal(resolved.polishGate.status, carried ? "carried_forward" : "blocked", name);
+    if (carried) {
+      const rows = [
+        __qaNodeTestHooks.polishGateAssertion(resolved.polishGate),
+        __qaNodeTestHooks.hiddenEagerMediaGateAssertion(qaCheckpoint),
+      ];
+      assert.deepEqual(rows.map((row) => [row.status, row.severity]), [["warn", "warn"], ["warn", "warn"]], name);
+      // Missing evidence is never a pass: the verdict cannot be plain ready.
+      assert.equal(computeDisposition(rows), "ready_with_exceptions", name);
+    }
+  }
+});
+
+test("starter-template residue is a warning on the local preview only when no brand theme is generatable", async () => {
+  const { starterResidueIsExpected } = await import("./local-preview-policy.mjs");
+  const local = { deploy: { target: "local-serve", preview_url: "http://localhost:8080/demo/" } };
+  const hosted = { deploy: { target: "netlify", preview_url: "https://preview.example.test/demo/" } };
+  const nothingGeneratable = { status: "pass", code: "theme_gate.nothing_generatable" };
+  assert.equal(starterResidueIsExpected(nothingGeneratable, { packet: local }), true);
+  assert.equal(starterResidueIsExpected(nothingGeneratable, { packet: local, baseUrl: "http://127.0.0.1:8080/demo/" }), true);
+  assert.equal(starterResidueIsExpected(nothingGeneratable, { packet: local, baseUrl: "https://preview.example.test/demo/" }), false);
+  assert.equal(starterResidueIsExpected(nothingGeneratable, { packet: hosted }), false);
+  assert.equal(starterResidueIsExpected({ status: "pass", code: "theme_gate.applied" }, { packet: local }), false);
+});

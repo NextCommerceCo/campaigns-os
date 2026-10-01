@@ -1,5 +1,6 @@
 // The next step doctor recommends, and the gate issues `next` reads from doctor.
 import { campaignIdentitiesMatch } from "../spec-source-identity.mjs";
+import { CARRIED_FORWARD } from "../local-preview-policy.mjs";
 import { resolve } from "node:path";
 import { orderPathDepthDriftText } from "../proof-policy.mjs";
 import { anyAssemblyReportStageBlocked } from "../stage-ledger.mjs";
@@ -462,6 +463,9 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
   }
 
   for (const cliStage of NEXT_STAGE_ORDER) {
+    // On the local preview, missing polish is carried forward as a warning
+    // (local-preview-policy.mjs): the ladder moves on to deploy and QA.
+    if (cliStage === "polish" && polishGate.status === CARRIED_FORWARD) continue;
     const reportKey = reportKeyForCliStage(cliStage);
     const stage = report.stages[reportKey];
     if (!stage) {

@@ -1,4 +1,5 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
+import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, carriedForwardMessage, CARRIED_FORWARD, starterResidueIsExpected } from "./local-preview-policy.mjs";
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion, scriptParseAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
 import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
@@ -481,6 +482,8 @@ async function resolveQaInputs(args, {
     packetPath,
     report: checkpointPreflight?.runtimeReport,
     hiddenEagerMediaGate,
+    packet,
+    baseUrl: stringArg(args["base-url"]),
   });
   const qaWaivers = resolveQaWaivers({ packetPath, report: checkpointPreflight?.runtimeReport });
   const qaScope = applyQaBuildScope(topologies, {
@@ -593,7 +596,10 @@ function resolvePacketCheckpointPreflight(args, {
       waivers: report?.waivers,
       required: true,
     }),
-    evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
+    applyLocalPreviewToCheckpoint(
+      evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
+      { packet, report, baseUrl: stringArg(args["base-url"]) },
+    ),
   ];
   const runtimeReport = reportMatchesPacketIdentity(report, packet) ? report : null;
   return {
@@ -692,6 +698,8 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
     packetPath: preflight.packetPath,
     report: preflight.runtimeReport,
     hiddenEagerMediaGate,
+    packet: preflight.packet,
+    baseUrl: stringArg(args["base-url"]),
   });
   return {
     themeGate,
@@ -931,16 +939,18 @@ function resolvePolishGate({
   packetPath,
   report: reportOverride = undefined,
   hiddenEagerMediaGate = undefined,
+  packet = null,
+  baseUrl = null,
 }) {
   const report = reportOverride === undefined
     ? loadRuntimeArtifact(packetPath, "assembly-report.json")
     : reportOverride;
-  const gate = evaluatePolishGate({
+  const gate = applyLocalPreviewToPolishGate(evaluatePolishGate({
     report,
     required: true,
     hiddenEagerMediaGate,
     currentOutputFingerprint: currentBuiltOutputFingerprint(packetPath),
-  });
+  }), { packet, checkpointGate: hiddenEagerMediaGate, baseUrl });
   gate.scope_source = report ? "assembly_report" : "missing_assembly_report";
   return gate;
 }
@@ -1042,6 +1052,18 @@ function polishGateAssertion(gate) {
         problems: gate.problems || [],
         required_actions: gate.required_actions || [],
       },
+    });
+  }
+  if (gate.status === CARRIED_FORWARD) {
+    return assertion({
+      id: gate.code,
+      family: "polish_gate",
+      page,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: "current structured Polish evidence produced by next-campaigns-polish",
+      actual: carriedForwardMessage(gate),
+      evidence: { ...evidence, reason: gate.reason, carried_forward: gate.carried_forward },
     });
   }
   if (gate.status === "not_applicable") {
@@ -1349,6 +1371,9 @@ function hiddenEagerMediaGateAssertion(gate) {
   }
   if (summary.status === "waived") {
     return assertion({ ...common, status: STATUS.WARN, severity: SEVERITY.WARN, waiver: summary.waiver });
+  }
+  if (summary.status === CARRIED_FORWARD) {
+    return assertion({ ...common, status: STATUS.WARN, severity: SEVERITY.WARN, actual: `${summary.code}: ${carriedForwardMessage(summary)}` });
   }
   if (summary.status === "not_applicable") {
     return assertion({ ...common, status: STATUS.SKIPPED });
@@ -2306,7 +2331,11 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
   if (args.browser === true) {
     assertions.push(...await runBrowserChecks(resolved.topologies, args, {
       brandContract: resolved.brandContract,
-      residueSeverity: residueSeverityForThemeGate(gate.status),
+      // With no generatable brand theme on the local preview, the starter
+      // template is the design: its residue is a warning (local-preview-policy.mjs).
+      residueSeverity: starterResidueIsExpected(gate, { packet: resolved.packet, baseUrl: resolved.baseUrl })
+        ? SEVERITY.WARN
+        : residueSeverityForThemeGate(gate.status),
       supportedPaymentMethods: supportedPaymentMethodsFromSpec(resolved.spec),
     }));
   }

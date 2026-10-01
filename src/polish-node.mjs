@@ -1,4 +1,5 @@
 import { campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
+import { NO_CAPTURABLE_ROUTES_CODE } from "./local-preview-policy.mjs";
 import { createHash } from "node:crypto";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 import { dirname, join, resolve } from "node:path";
@@ -93,6 +94,8 @@ function mappedSpecRoute(value, pageId) {
   return route;
 }
 
+const NO_CAPTURABLE_ROUTES_ERROR = "no_capturable_routes";
+
 export function planPolishCapture({ packet, baseUrl } = {}) {
   if (!isPlainObject(packet) || !Array.isArray(packet?.source_html?.pages) || packet.source_html.pages.length === 0) {
     throw new Error("polish capture requires packet.source_html.pages mappings.");
@@ -129,7 +132,14 @@ export function planPolishCapture({ packet, baseUrl } = {}) {
     });
   }
 
-  if (routes.length === 0) throw new Error("polish capture has no mapped non-skipped routes to capture.");
+  if (routes.length === 0) {
+    const error = new Error(
+      "polish capture has no mapped non-skipped routes to capture: every mapped page is template stock (skip_reason), so there is no design route to compare."
+      + " On a local-serve preview, missing polish evidence is carried forward as a warning; run `next` for the next stage.",
+    );
+    error.code = NO_CAPTURABLE_ROUTES_ERROR;
+    throw error;
+  }
   routes.sort((a, b) => a.requested_route.localeCompare(b.requested_route) || a.page_id.localeCompare(b.page_id));
   for (let index = 1; index < routes.length; index += 1) {
     if (routes[index - 1].requested_route === routes[index].requested_route) {
@@ -189,6 +199,19 @@ function recordedAuthorityBlock({ packet, report, plan = null, now } = {}) {
   };
 }
 
+// Every mapped page is template stock: there is nothing for polish capture to
+// measure, which is missing evidence rather than a malformed packet. It stays
+// a non-waivable block; the local preview policy carries it forward.
+function noCapturableRoutesBlock({ packet, report, now } = {}) {
+  const block = recordedAuthorityBlock({ packet, report, now });
+  return {
+    ...block,
+    code: NO_CAPTURABLE_ROUTES_CODE,
+    reason: "Every mapped page is template stock (skip_reason), so polish capture has no design route to capture and this build has no page-load evidence.",
+    required_actions: [],
+  };
+}
+
 function recordedCheckpointNotApplicable() {
   return {
     id: HIDDEN_EAGER_MEDIA_SCOPE,
@@ -219,7 +242,8 @@ export function evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report, now
   let plan;
   try {
     plan = planPolishCapture({ packet, baseUrl: "https://polish-capture.invalid" });
-  } catch {
+  } catch (error) {
+    if (error?.code === NO_CAPTURABLE_ROUTES_ERROR) return noCapturableRoutesBlock({ packet, report, now });
     return recordedAuthorityBlock({ packet, report, now });
   }
 

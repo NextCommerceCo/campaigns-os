@@ -96,6 +96,32 @@ recapture. A hosted target (`netlify`, `cloudflare-pages`, …) is unaffected:
 its build stage renders production as before and `page-kit parity` refuses the
 packet (`local_proof.parity.not_local_serve`).
 
+### Missing evidence carried forward on the local preview
+
+On a `local-serve` packet served from a loopback host (`localhost`,
+`127.0.0.1`, `[::1]`, for both `deploy.preview_url` and `--base-url`), some
+missing evidence is carried forward as a warning instead of blocking the
+loop. The campaign must still prove its commerce there: store and campaign
+binding, routes, SDK loading, prices and a typed-card order. Only these
+checks are carried forward:
+
+| Check | When |
+| --- | --- |
+| `polish.evidence_missing`, `polish.report_missing` | Polish was never recorded for this build. |
+| `polish.hidden_eager_media.no_capturable_routes` | Every mapped page is template stock (`skip_reason`), so polish capture has no design route to capture. |
+| `polish.hidden_eager_media.capture_malformed` | Only when no page-load capture was recorded at all. |
+| Template-residue severity | With `theme_gate.nothing_generatable`, the starter template is the design, so residue findings are warnings rather than blockers. |
+
+A carried-forward gate has status `carried_forward`. Doctor reports it as a
+warning starting "Carried forward on the local preview"; `next` moves past
+polish to deploy and QA; QA records it as a `warn` row, so the verdict is at
+best `ready_with_exceptions`. The evidence is reported as missing, never as
+passed. Any other check keeps its meaning. A hosted preview or production
+packet, and a `local-serve` packet served from any other host, gets the strict
+gates. `record polish` and the waiver commands also keep them strict. Progress
+snapshots record a carried-forward gate as `not_applicable`, because their
+schema has no carried-forward state.
+
 ## Resolve
 
 Use resolve before a full run:
