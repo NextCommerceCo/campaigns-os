@@ -547,6 +547,10 @@ function valuesEqual(a, b) {
 // flag carried-over-tag regressions for human review.
 // `options.url` is the candidate URL that was captured (the resolved capture
 // target) — stamped on every emitted assertion, pass and fail alike.
+// `options.candidatePage` describes the page the candidate was captured on when
+// the leg picked it automatically (#512): `{ receipt, source, page_type }`.
+// An explicit --analytics-candidate passes none and is treated as the receipt
+// the operator named.
 export function diffAnalyticsParity(baseline, candidate, options = {}) {
   const assertions = [];
   const auditedUrl = (typeof options.url === "string" && options.url.trim()) ? options.url.trim() : null;
@@ -561,13 +565,44 @@ export function diffAnalyticsParity(baseline, candidate, options = {}) {
   const cEff = effectivePurchase(c);
 
   // 1. Purchase present on candidate — the highest-value blocking check.
-  assertions.push(emit({
+  // #512: Purchase fires only on a receipt. When the candidate is known not to
+  // be one (the automatic capture page is the campaign root or a built entry),
+  // a missing Purchase is a page mismatch, not a regression, so it goes to
+  // manual review naming the mismatch. A receipt candidate, or one the
+  // operator named, still blocks.
+  const candidatePage = options.candidatePage && typeof options.candidatePage === "object" ? options.candidatePage : null;
+  if (!cEff.fired && candidatePage?.receipt === false) {
+    const baselineFired = effectivePurchase(b).fired;
+    assertions.push(emit({
+      id: "analytics-parity:purchase-present",
+      status: STATUS.MANUAL_REVIEW,
+      severity: SEVERITY.WARN,
+      expected: "a receipt candidate to check Purchase on; the automatic candidate is not a receipt, so pair receipts with --analytics-candidate",
+      actual: baselineFired
+        ? "baseline fired a Purchase but the automatic candidate is not a receipt page; pass --analytics-candidate <candidate receipt url> to compare receipts"
+        : "neither page fired a Purchase and the automatic candidate is not a receipt page; pass receipt URLs to --analytics-baseline and --analytics-candidate to compare Purchase",
+      evidence: {
+        via: cEff.via,
+        candidate_events: c.eventNames || [],
+        baseline_purchase: bp,
+        page_mismatch: {
+          reason: baselineFired ? "receipt_baseline_non_receipt_candidate" : "candidate_not_receipt",
+          baseline_fired_purchase: baselineFired,
+          candidate_receipt: candidatePage.receipt,
+          candidate_source: candidatePage.source ?? null,
+          candidate_page_type: candidatePage.page_type ?? null,
+        },
+      },
+    }));
+  } else assertions.push(emit({
     id: "analytics-parity:purchase-present",
     status: cEff.fired ? STATUS.PASS : STATUS.FAIL,
     severity: SEVERITY.BLOCKER,
     expected: "candidate fires a Purchase (dl_purchase, or Meta/GA4 pixel if the SDK event is blocked)",
     actual: cEff.fired ? `purchase fired via ${cEff.via}` : "no purchase fire captured on candidate (dataLayer, Meta, or GA4)",
-    evidence: { via: cEff.via, candidate_events: c.eventNames || [], candidate_signals: c.purchaseSignals || {}, baseline_purchase: bp },
+    // An automatic candidate's page is recorded even when it fired, so a pass on
+    // a non-receipt page reads as such.
+    evidence: { via: cEff.via, candidate_events: c.eventNames || [], candidate_signals: c.purchaseSignals || {}, baseline_purchase: bp, ...(candidatePage ? { candidate_page: candidatePage } : {}) },
   }));
 
   if (cEff.fired) {

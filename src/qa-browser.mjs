@@ -428,11 +428,11 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
 // with --analytics-baseline's legacy receipt, and identity resolution cannot
 // derive a receipt page yet (receipt-aware capture is out of packet 01's
 // scope). Absent that override, the candidate IS the resolved target.
-function analyticsParityCaptureAssertions({ baseline, candidate, baselineUrl, candidateUrl, capturePage = null, rootFallback = null }) {
+function analyticsParityCaptureAssertions({ baseline, candidate, baselineUrl, candidateUrl, capturePage = null, rootFallback = null, candidatePage = null }) {
   const baselinePublicUrl = redactUrlQuery(baselineUrl);
   const candidatePublicUrl = redactUrlQuery(candidateUrl);
   const analyticsPage = { page_id: "analytics", url: candidatePublicUrl || baselinePublicUrl || undefined };
-  const assertions = diffAnalyticsParity(baseline, candidate, { url: candidatePublicUrl });
+  const assertions = diffAnalyticsParity(baseline, candidate, { url: candidatePublicUrl, ...(candidatePage ? { candidatePage } : {}) });
   assertions.unshift(assertion({
     id: "analytics-parity:capture",
     family: "analytics-parity",
@@ -540,7 +540,22 @@ async function captureAnalyticsParityInContext(context, baselineUrl, targetUrl, 
     candidateUrl: selected.url,
     capturePage: selected.capturePage,
     rootFallback: selected.rootFallback,
+    candidatePage: automaticParityCandidatePage(selected),
   });
+}
+
+// #512: what the automatic candidate is, for the Purchase checks. The campaign
+// root is never a receipt; a built entry is one only when its topology page
+// type says so. A receipt loaded without an order fires no Purchase, so the
+// leg does not go looking for the topology's receipt step: the operator pairs
+// receipts with --analytics-candidate.
+function automaticParityCandidatePage(selected) {
+  const pageType = selected.pageType || null;
+  return {
+    receipt: contractPageType({ page_type: pageType }) === "receipt",
+    source: selected.capturePage?.source || null,
+    page_type: pageType,
+  };
 }
 
 // Analytics CORRECTNESS inventory leg: capture ONE page and assess only
@@ -716,6 +731,7 @@ function analyticsCaptureCandidates(url, options = {}) {
       source: "built_entry",
       page_id: entry.page_id || null,
       funnel_id: entry.funnel_id || null,
+      page_type: entry.page_type || null,
       // The query value is redacted from every record; this says the entry
       // was told apart from the root by its query alone.
       ...(url && isQueryRoutedFrom(trim(entry.url), url) ? { query_routed: true } : {}),
@@ -761,6 +777,7 @@ async function captureFirstAnsweringAnalyticsPage(context, url, args, extraHosts
           ...queryRouted(candidate),
           http_status: httpStatus ?? null,
         },
+        pageType: candidate.page_type || null,
         rootFallback: usedFallback ? rootFallback : null,
       };
     }
