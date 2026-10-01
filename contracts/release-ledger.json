@@ -4216,7 +4216,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.47.0+agent.12",
-      "changelog_sha256": "1b845d7110a00a776b0e0798587b296600e32997d526ccd7fa0651cc39c0579b",
+      "changelog_sha256": "2569d0ed5531ce2fbc5732e64038f4e6fd793eecdf136455c61f21f00331b164",
       "agent_impact": "On a local-serve packet served from loopback, a gate with status carried_forward is missing evidence that does not block: follow next past polish to deploy and QA, and expect warn rows and at best ready_with_exceptions. Do not waive or hand-author polish evidence to get there. Hosted and production packets keep the strict gates. polish.hidden_eager_media.no_capturable_routes replaces capture_malformed for an all-template-stock packet.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4240,7 +4240,7 @@
           "summary": "Move past the polish stage when its gate is carried forward on the local preview."
         }
       ],
-      "entry_sha256": "7d22a2509126fff7d1d670c98897b79358da3ba7da121da89c1a16aea9dfbacf"
+      "entry_sha256": "33d2238faa97695357f05cf458788ee13331e8f4de900d0ee02d23f85129dcf4"
     }
   ]
 }

@@ -569,6 +569,7 @@ test("a template-stock build on the local preview carries missing polish forward
       assert.equal((doctor.next?.blocked_stages || []).includes("qa"), false, name);
     } else {
       assert.equal(checkpoint.status, "blocked", name);
+      assert.deepEqual(checkpoint.required_actions.map((action) => action.id), ["polish.hidden_eager_media.map_design_route"], name);
       assert.ok(polishErrors.length >= 1, `${name}: ${JSON.stringify(doctor.errors)}`);
       assert.deepEqual(polishWarnings, [], name);
     }

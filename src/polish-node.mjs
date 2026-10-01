@@ -208,7 +208,7 @@ function noCapturableRoutesBlock({ packet, report, now } = {}) {
     ...block,
     code: NO_CAPTURABLE_ROUTES_CODE,
     reason: "Every mapped page is template stock (skip_reason), so polish capture has no design route to capture and this build has no page-load evidence.",
-    required_actions: [],
+    required_actions: [HIDDEN_EAGER_MEDIA_ACTIONS.map_design_route],
   };
 }
 

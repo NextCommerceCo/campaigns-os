@@ -23,7 +23,8 @@ Notable supported-surface changes are recorded here.
 - An all-template-stock packet's page-load checkpoint now reports
   `polish.hidden_eager_media.no_capturable_routes` instead of the
   malformed-authority `capture_malformed`, and `polish capture` says why it
-  has nothing to capture. It still blocks off the local preview.
+  has nothing to capture. It still blocks off the local preview, with one
+  action: map a page to its design source, or prove on the local preview.
 
 ## [1.47.0+agent.6] - 2026-10-01
 
