@@ -4962,10 +4962,7 @@ async function waitForCheckoutResult(page, events = null) {
     if (outcomeUrl.test(String(safePageUrl(page) || ""))) break;
     if (events) {
       const rejected = rejectedOrderCreateResponse(events);
-      if (rejected) {
-        const detail = typeof rejected.body?.detail === "string" ? `: ${trim(rejected.body.detail)}` : "";
-        throw new Error(`order create rejected: HTTP ${rejected.status}${detail}`);
-      }
+      if (rejected) throw new Error(orderCreateRejectionMessage(rejected));
       const failed = failedOrderCreateRequest(events);
       if (failed) throw new Error(`order create request failed: ${failed.failure || "network failure"}`);
     }
@@ -4979,6 +4976,23 @@ async function waitForCheckoutResult(page, events = null) {
 // The MOST RECENT create response decides the outcome: SDKs/platforms retry
 // transient create failures, so [..., 400, 201] means the retry succeeded and
 // the earlier rejection is history, not the result.
+// The platform refuses an order whose customer, items and total match one it
+// accepted or is still processing in the last 30 minutes, and reports it in
+// `payment_details`. QA reuses one test customer, so two runs against the same
+// campaign at once, or a rerun after an attempt that died mid-submit, trip it.
+const DUPLICATE_ORDER_PATTERN = /duplicate order/i;
+const DUPLICATE_ORDER_REMEDY =
+  "duplicate_order: the platform refused an order matching a recent one from the same test customer with the same items and total, " +
+  "for up to 30 minutes. Concurrent QA runs that share a test customer collide. Re-run with a different --test-email-prefix " +
+  "(or --test-email), or wait. The shipping address is not part of the match";
+
+function orderCreateRejectionMessage(rejected) {
+  const body = rejected?.body;
+  const reason = [body?.detail, body?.payment_details].find((value) => typeof value === "string" && value.trim());
+  const base = `order create rejected: HTTP ${rejected?.status}${reason ? `: ${trim(reason)}` : ""}`;
+  return reason && DUPLICATE_ORDER_PATTERN.test(reason) ? `${base} (${DUPLICATE_ORDER_REMEDY})` : base;
+}
+
 function rejectedOrderCreateResponse(events) {
   for (let index = events.responses.length - 1; index >= 0; index -= 1) {
     const response = events.responses[index];
@@ -6432,6 +6446,9 @@ function summarizeResponseBody(body) {
     ...(body.checkout_url ? { checkout_url: body.checkout_url } : {}),
     ...(Array.isArray(body.lines) ? { lines: extractReceiptLines(body) } : {}),
     ...(body.detail ? { detail: body.detail } : {}),
+    // A rejected order create names its reason here (for example the
+    // duplicate-order refusal). It is an error message, not order data.
+    ...(typeof body.payment_details === "string" ? { payment_details: trim(body.payment_details).slice(0, 300) } : {}),
   };
 }
 
@@ -7789,6 +7806,8 @@ export const __qaBrowserTestHooks = Object.freeze({
   linePriceDeltaEvidence,
   packageMatchesLine,
   rejectedOrderCreateResponse,
+  orderCreateRejectionMessage,
+  summarizeResponseBody,
   failedOrderCreateRequest,
   extractOrderVouchers,
   orderDiscountTotal,
