@@ -3836,8 +3836,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.46.0+agent.4",
-      "changelog_sha256": "f55c02d0b41f39f29ed2e434530b1fdcea7de6b271921f81f6dfb3d502ce9235",
-      "agent_impact": "Skill text only. The next-campaigns-qa and next-campaigns-build skills now state that a required checkout field bound only on a type=\"hidden\" input, a disabled control, a read-only input or textarea, or an aria-disabled=\"true\" control does not count as bound for browser-commerce-structure, and QA reports it in fields_bound.missing. Bundled skills carry revision 1.46.0+skills.2: an agent that loaded 1.46.0+skills.1 text should start a fresh session. QA behaviour is unchanged.",
+      "changelog_sha256": "894c809bfbd9a3345cd56d5ff7664730b9fc3035ee9181f735dae1527f975e2b",
+      "agent_impact": "Skill text only. The next-campaigns-qa and next-campaigns-build skills now state that a required checkout field bound only on a type=\"hidden\" input, a disabled control, a read-only input or read-only textarea, or an aria-disabled=\"true\" control does not count as bound for browser-commerce-structure, and QA reports it in fields_bound.missing. Bundled skills carry revision 1.46.0+skills.2: an agent that loaded 1.46.0+skills.1 text should start a fresh session. QA behaviour is unchanged.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -3908,7 +3908,7 @@
           "summary": "State that a required checkout field bound only on a hidden, disabled, read-only or aria-disabled control is not bound and is reported in fields_bound.missing; publish the 1.46.0+skills.2 bundle revision."
         }
       ],
-      "entry_sha256": "3649c3878817294fafabcf029c01c977b102c712198ea4edefd065d4b228569d"
+      "entry_sha256": "8e891f36ce261c325f0837bf4c37ca145f60dbdd3ef55ab0ac9c4c4f3f92de7c"
     }
   ]
 }
