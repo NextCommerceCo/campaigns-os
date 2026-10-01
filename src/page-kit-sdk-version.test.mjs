@@ -132,6 +132,12 @@ test("a missing CampaignSpec SDK declaration is a non-waivable blocker", () => {
     familyVerification: { family: "apollo", sdk_version: "0.4.40" },
   });
   assert.match(named.reason, /"apollo" template family was last verified against 0\.4\.40\./);
+
+  // A malformed verification record adds nothing: the reason stays as it was.
+  for (const familyVerification of [null, { family: 42, sdk_version: "0.4.40" }, { family: "apollo", sdk_version: "0.4.40-beta.1" }, { family: "apollo" }]) {
+    const plain = evaluatePageKitSdkVersion({ spec: { runtime: {}, global_config: {} }, targetLoad: targetLoad(), familyVerification });
+    assert.equal(plain.reason, gate.reason, JSON.stringify(familyVerification));
+  }
 });
 
 test("an unavailable packet-local CampaignSpec is a non-waivable blocker", () => {
