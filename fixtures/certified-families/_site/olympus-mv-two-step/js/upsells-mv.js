@@ -1,5 +1,6 @@
 /**
- * upsells-mv.js — MV upsell: bundle slot variant dropdowns + qty toggle.
+ * upsells-mv.js — MV upsell: bundle slot variant dropdowns. The quantity toggle (initBundleQtyToggle) and
+ * the closing-CTA proxies live in upsells.js — load both files on the MV upsell page.
  *
  * Replaces the legacy UpsellController / per-package-id mapping approach (SDK 0.3.x)
  * with data-next-bundle-selector + data-next-bundle-slots-for (SDK 0.4.10).
@@ -19,10 +20,7 @@
  *   window.BUNDLE_SLOT_COLOR_STYLES = { 'navy': '#001f5b', … } before next:initialized.
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * initBundleQtyToggle():
- *   Wires data-bundle-qty-btn buttons to click matching hidden data-next-bundle-card.
- *   On card click, SDK re-fetches voucher-adjusted price + re-renders remote
- *   bundle.upsell-bundle.* display values and slot count.
+ * initBundleQtyToggle() — see upsells.js (shared with every upsell page).
  */
 
 var BUNDLE_SLOT_COLOR_STYLES = {
@@ -291,38 +289,7 @@ function setupBundleSlotVariantDropdowns() {
   }
 }
 
-/**
- * Bundle upsell qty toggle — wires [data-bundle-qty-btn] buttons to click the
- * matching hidden [data-next-bundle-card] inside a [data-next-bundle-selector].
- *
- * Markup contract:
- *   Qty container: data-bundle-qty-for="<selectorId>" (typically `.next-bundle-qty__row`)
- *   Qty buttons:   data-bundle-qty-btn="<N>" (`.next-bundle-qty__btn` — next-core.css)
- *   Bundle cards:  data-next-bundle-id="<selectorId>-<N>x"
- *
- * On card click the SDK re-fetches voucher-calculated price, updates remote
- * bundle.<selectorId>.* display values, and re-renders configurable slots.
- */
-function initBundleQtyToggle() {
-  document.querySelectorAll('[data-bundle-qty-for]').forEach(function (container) {
-    var selectorId = container.getAttribute('data-bundle-qty-for');
-    var buttons = container.querySelectorAll('[data-bundle-qty-btn]');
-    var selector = document.querySelector('[data-next-selector-id="' + selectorId + '"]');
-    if (!selector) return;
-    buttons.forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var qty = btn.getAttribute('data-bundle-qty-btn');
-        var card = selector.querySelector('[data-next-bundle-id="' + selectorId + '-' + qty + 'x"]');
-        if (!card) return;
-        card.click();
-        buttons.forEach(function (b) { b.classList.remove('next-selected'); });
-        btn.classList.add('next-selected');
-      });
-    });
-  });
-}
 
 window.addEventListener('next:initialized', function () {
   setupBundleSlotVariantDropdowns(); // comment out to use barebones native <select> UI instead
-  initBundleQtyToggle();
 });

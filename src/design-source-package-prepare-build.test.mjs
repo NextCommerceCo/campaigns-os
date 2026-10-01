@@ -368,7 +368,7 @@ test("prepare-build consumes Apollo Template Reference proof from the commerce c
     const dsp = readJson(join(fixture.target, DSP_REL_PATH));
     const template = dsp.contributions.find((contribution) => contribution.id === "template-baseline");
     assert.equal(template.template_reference.family, "apollo");
-    assert.equal(template.template_reference.version, "sdk-0.4.38-revalidated-2026-09-03");
+    assert.equal(template.template_reference.version, "sdk-0.4.38-composable-upsells-2026-09-25");
     assert.deepEqual(
       new Set(template.template_reference.standard_viewport_refs.map((ref) => ref.viewport)),
       new Set(["desktop", "mobile"]),

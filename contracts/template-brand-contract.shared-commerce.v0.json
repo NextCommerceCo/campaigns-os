@@ -55,12 +55,12 @@
       },
       "asset_pin": {
         "repo": "NextCommerceCo/campaign-cart-starter-templates",
-        "sha": "11352c30c596db258679fd3a552b906086b11bb9",
+        "sha": "3793b1de3b77cc31dffe9176f47e8e99ea6134aa",
         "path": "src/<family>/assets/<asset>",
         "note": "asset_sha256 is the sha256 of each shipped starter asset at this commit (the commerce-surface-catalog _synced_from_sha pin; the bytes are identical across every family). A served asset whose bytes hash to the shipped value is the untouched starter asset and counts as residue even though its markup names no method; different bytes mean it was edited in place. check-template-doctrine verifies these hashes against the pinned checkout."
       },
-      "rule": "Remove unless the method is listed in CampaignSpec available_payment_methods / available_express_payment_methods. Template chrome outside the SDK payment-method include counts as implied payment-method residue.",
-      "note": "paypal intentionally has two selectors. QA fails if any selector for an unsupported method remains visible."
+      "rule": "Remove unless the method is listed in CampaignSpec available_payment_methods / available_express_payment_methods. Template chrome outside the SDK payment-method include counts as implied payment-method residue. The starter payment-logos.html row renders one <img data-payment-logo> per method and hides the ones the campaign does not offer, so it needs no removal; when one of its logos is flagged, set payment_flags.show_<method>: false in the page frontmatter instead of deleting markup.",
+      "note": "paypal intentionally has two selectors. QA fails if any selector for an unsupported method remains visible. images/upsell-payment-logos.svg stays listed: the starter still renders it ungated under payment_flags.style: flat and on the olympus-mv-two-step select page."
     }
   },
   "demo_assets": {

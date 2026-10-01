@@ -3981,8 +3981,8 @@
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.46.0+agent.7",
-      "changelog_sha256": "6dfc6107e5dcf33953817b5981d881edc5098ed1618860378f4a05b4c1c64015",
+      "changelog_section": "1.46.0+agent.8",
+      "changelog_sha256": "c3aa9f4e74bac6c2dbeb05fea5bf7da84bebdb556244c7aafe8481a4248149e6",
       "agent_impact": "Install next-campaign-page-kit without --save-dev: the documented setup command now installs it with --save-exact as a runtime dependency and the toolkit with --save-dev --save-exact. tooling setup warns, and still proceeds, when page-kit is declared only in devDependencies.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3994,7 +3994,7 @@
           "summary": "Split the copy-paste install so page-kit is installed with --save-exact and stays in dependencies, while the toolkit keeps --save-dev --save-exact; note the setup warning for a dev-only page-kit."
         }
       ],
-      "entry_sha256": "8dad8079dfb331526bc4097089f7f465121de10bc143303f9dfbc8e56cb87ee5"
+      "entry_sha256": "d13bc2cf8c66ea894b8929b103455153e2a7465e316e71d817ac310aabd58526"
     }
   ]
 }
