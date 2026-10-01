@@ -26,6 +26,20 @@ test("the published compatibility statement names the package version", () => {
   const statement = JSON.parse(readFileSync(join(ROOT, "compatibility.json"), "utf8"));
   assert.equal(statement.package, PKG.name);
   assert.equal(statement.version, PKG.version, "compatibility.json version must match package.json");
+  // Each declared contract version is read from the file that defines it, so
+  // a contract bump that skips this statement fails here too.
+  const read = (path) => JSON.parse(readFileSync(join(ROOT, path), "utf8"));
+  const schemaVersion = (name) => read(`schemas/${name}.v0.schema.json`).properties.schema_version.const;
+  const specVersions = read("schemas/campaign-spec.v4.schema.json").properties.schema_version.enum;
+  const catalog = read("contracts/commerce-surface-catalog.json");
+  assert.deepEqual(statement.contracts, {
+    campaign_spec: `${specVersions[0]}-${specVersions.at(-1)}`,
+    build_packet: schemaVersion("campaign-runtime-build-packet"),
+    build_context: schemaVersion("campaign-runtime-build-context"),
+    assembly_report: schemaVersion("campaign-runtime-assembly-report"),
+    starter_template_agent_contract: catalog.agentContractVersion,
+    commerce_surface_catalog: catalog.version,
+  }, "compatibility.json contracts must match the schemas and catalog that define them");
 });
 
 test("documented install commands keep page-kit a runtime dependency and the toolkit a dev dependency", () => {
