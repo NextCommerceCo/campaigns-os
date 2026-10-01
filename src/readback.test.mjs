@@ -493,12 +493,14 @@ test("warn and manual_review are verdict statuses, not unrecognized ones", (t) =
     baseVerdict([
       { id: "a.one", family: "alpha", status: "pass" },
       { id: "page-binding:landing", family: "api-metadata", status: "manual_review", severity: "warn" },
-      { id: "c.three", family: "gamma", status: "warn", severity: "warn" },
+      { id: "c.three", family: "gamma", status: "warn", severity: "warn", actual: "1 console warning", evidence: { problems: ["first problem"] } },
     ]),
   );
   assert.ok(output.includes("assertions: 0 fail, 1 pass, 0 skipped, 2 warn or manual review"));
   assert.ok(output.includes("manual_review  page-binding:landing  (family api-metadata, severity warn)"));
   assert.ok(output.includes("warn  c.three  (family gamma, severity warn)"));
+  assert.ok(output.includes("recorded by Campaigns OS: 1 console warning"));
+  assert.ok(output.includes("          - first problem"));
   assert.ok(!output.includes("unrecognized status"));
 });
 
