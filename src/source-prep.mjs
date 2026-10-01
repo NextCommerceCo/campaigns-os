@@ -201,7 +201,7 @@ function describeFinding(code, pages, { wrapperPolicy }) {
     const policyNote = wrapperPolicy === "preserve_document_wrappers"
       ? " The adapter contract records wrapper_policy \"preserve_document_wrappers\", so this is reported without blocking."
       : "";
-    return `Mapped source HTML is a full browser document, not page-kit-ready source: ${listed}${more}. Strip <!doctype>, <html>, <head>, and <body> so the campaign layout can wrap the page, or record wrapper_policy "preserve_document_wrappers" as an explicit adapter decision.${policyNote} See ${docs}.`;
+    return `Mapped source HTML is a full browser document, not page-kit-ready source: ${listed}${more}. Strip <!doctype>, <html>, <head>, and <body> so the campaign layout can wrap the page, or, for a standalone page meant to stay whole, record wrapper_policy "preserve_document_wrappers" as an explicit adapter decision: re-run start or prepare-build with --wrapper-policy preserve_document_wrappers, or set "wrapper_policy" in the source-html manifest.${policyNote} See ${docs}.`;
   }
   if (code === SOURCE_PREP_FRONTMATTER_RESIDUE) {
     const listed = sample.map((page) => {

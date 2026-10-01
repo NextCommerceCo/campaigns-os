@@ -26,6 +26,65 @@ Notable supported-surface changes are recorded here.
   has nothing to capture. It still blocks off the local preview, with one
   action: map a page to its design source, or prove on the local preview.
 
+## [1.47.0+agent.11] - 2026-10-01
+
+### Changed
+
+- `doctor`'s `page_kit.sdk_version.spec_missing` now names the SDK the
+  selected certified template family was last verified against (for
+  example `The "apollo" template family was last verified against
+  0.4.40.`), so the CampaignSpec pin is not chosen by searching docs. The
+  bundled SDK support policy's `latest_known_release` moves from 0.4.38 to
+  0.4.40, which the catalog's verification records already named.
+- `source_html.prep.document_wrapper` names the two ways to record a
+  standalone page as whole: `--wrapper-policy preserve_document_wrappers`
+  on `start` or `prepare-build`, or `wrapper_policy` in the source-html
+  manifest.
+- `source_html.pages.source_hash` now says the hash it compares is the one
+  intake recorded in the Build Packet, that re-running intake with
+  `--force` refreshes it (and clears recorded stage evidence), and that
+  editing the manifest alone does not. It no longer points at a producer
+  script. `docs/build-packet.md` says the same, and that a revision made
+  after build belongs under `src/<route>/`.
+
+## [1.47.0+agent.10] - 2026-10-01
+
+### Fixed
+
+- A test order the platform refuses as a duplicate now says so. The order
+  API puts the reason in `payment_details`, which QA's response capture
+  dropped, so the `browser-test-order` row read only
+  `order create rejected: HTTP 400`. The capture now keeps a string
+  `payment_details` on an error response, and a duplicate-order refusal adds `duplicate_order`
+  with the remedy: re-run with a different `--test-email-prefix` (or
+  `--test-email`), or wait up to 30 minutes. `docs/qa-and-test-orders.md`
+  explains what the platform matches on and why concurrent runs collide.
+
+## [1.47.0+agent.9] - 2026-10-01
+
+### Changed
+
+- The agent context `install-agent-context` writes (`agents/claude/CLAUDE.md`,
+  `agents/codex/AGENTS.md`, `agents/copilot/copilot-instructions.md`,
+  `agents/cursor/campaigns-os.mdc`) now tells a session picking up an
+  existing campaign to run `readback` and `next` before reading artifacts by
+  hand. It also says the committed `.campaign-runtime/qa-verdict.json` keeps
+  no order records or URLs, so its `browser-test-order:<path>` assertions are
+  the typed-card proof. A resumed session had read the sidecar's empty
+  `test_orders` as "no test orders" after five verified orders.
+- The `campaign-run-evidence` skill says the same: the sidecar always
+  empties `test_orders` and the URL fields, so an empty `test_orders` there
+  says nothing about ordering. Bundled skills carry revision
+  `1.47.0+skills.3`, with each skill version advanced two patches from
+  `1.47.0+skills.1`.
+
+### Fixed
+
+- `readback` shows `warn` and `manual_review` assertions as the verdict
+  statuses they are, with their severity, recorded `actual` and evidence
+  problems (as it does for `fail` rows), instead of counting them as
+  "unrecognized status".
+
 ## [1.47.0+agent.8] - 2026-10-01
 
 ### Fixed
