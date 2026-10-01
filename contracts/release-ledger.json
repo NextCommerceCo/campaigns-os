@@ -3997,13 +3997,34 @@
       "entry_sha256": "d13bc2cf8c66ea894b8929b103455153e2a7465e316e71d817ac310aabd58526"
     },
     {
-      "id": "RL-0197",
+      "id": "RL-0196",
       "sequence": 188,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.46.0+agent.9",
-      "changelog_sha256": "fd78d9d89ba53ce4e1a019f5b1aef421fd7930897005880450a7c49503960ffb",
+      "changelog_sha256": "6e2850725b14b051323f4a75652c02536ca7aafcd6771d317a07614fae6f6b4b",
+      "agent_impact": "When qa run analytics parity picks its candidate automatically (no --analytics-candidate) and that page is not a receipt, a missing Purchase is now analytics-parity:purchase-present MANUAL_REVIEW/WARN with evidence.page_mismatch, not a blocker. Read page_mismatch and pass the candidate receipt with --analytics-candidate to compare Purchase. An explicit candidate still blocks on a missing Purchase.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe how the automatic parity candidate reports purchase-present when it is not a receipt page, and the page_mismatch evidence."
+        }
+      ],
+      "entry_sha256": "044a9de53405d944e05045dc62f6f4575b0ebe387225b176904bdd8b02ddcf09"
+    },
+    {
+      "id": "RL-0197",
+      "sequence": 189,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.46.0+agent.10",
+      "changelog_sha256": "15c0d8ac2f43f00cf9b2b0ea6fff03a96c28436b857d51c83cb71aee0a03f68b",
       "agent_impact": "Doctor's script syntax gate gives one built_output.script_syntax.missing_script warning per resolved URL, not per raw src spelling. A <script> left unclosed at end of file is no longer parsed by doctor or QA and cannot block; doctor warns under built_output.script_syntax.unclosed_script. A script symlink resolving outside the site root is not read; doctor warns under built_output.script_syntax.symlink_outside_site and lists it in scripts_outside_site[]. Symlinks inside the site root are read as before.",
       "compatibility": "additive",
       "migration": "none",
@@ -4015,7 +4036,7 @@
           "summary": "The script syntax gate section records resolved-URL grouping of missing-script warnings, the unclosed-script rule and warning, and the symlink rule: followed inside the site root, warned about and not read outside it."
         }
       ],
-      "entry_sha256": "c282e10a0ec25dd08ae4103d0bde94bd0fc37effa3df206b01d32207b0721ff6"
+      "entry_sha256": "1f453721938d46862ca3410157094db2f4878ed5e977940780f7981be5bc0a85"
     }
   ]
 }
