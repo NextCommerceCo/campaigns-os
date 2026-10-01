@@ -247,6 +247,48 @@ test("diffAnalyticsParity — missing candidate purchase is a BLOCKER", () => {
   assert.equal(a["analytics-parity:purchase-present"].severity, SEVERITY.BLOCKER);
 });
 
+// #512: the automatic parity candidate (the resolved campaign root or a built
+// entry) is never a receipt, so a missing Purchase there is a page mismatch,
+// not a measured regression.
+test("#512: a receipt baseline against a non-receipt automatic candidate is manual review, not a purchase blocker", () => {
+  const baseline = { eventNames: ["purchase"], purchase: { present: true, value: 49.99, currency: "USD", transactionId: "1" }, inventory: {} };
+  const candidate = { eventNames: ["dl_view_item"], purchase: { present: false }, inventory: {} };
+  const candidatePage = { receipt: false, source: "campaign_root", page_type: null };
+  const a = byId(diffAnalyticsParity(baseline, candidate, { url: "https://c.test/campaign/", candidatePage }));
+  const present = a["analytics-parity:purchase-present"];
+  assert.equal(present.status, STATUS.MANUAL_REVIEW);
+  assert.equal(present.severity, SEVERITY.WARN);
+  assert.deepEqual(present.evidence.page_mismatch, {
+    reason: "receipt_baseline_non_receipt_candidate",
+    baseline_fired_purchase: true,
+    candidate_receipt: false,
+    candidate_source: "campaign_root",
+    candidate_page_type: null,
+  });
+  assert.match(present.actual, /not a receipt/);
+  assert.match(present.actual, /--analytics-candidate/);
+});
+
+test("#512: a non-receipt automatic candidate that does fire a Purchase is still checked normally", () => {
+  const baseline = { purchase: { present: true, value: 49.99, currency: "USD", transactionId: "1" }, inventory: {} };
+  const candidate = { purchase: { present: true, value: 39.99, currency: "USD", transactionId: "2" }, inventory: {} };
+  const a = byId(diffAnalyticsParity(baseline, candidate, { candidatePage: { receipt: false, source: "built_entry" } }));
+  assert.equal(a["analytics-parity:purchase-present"].status, STATUS.PASS);
+  assert.equal(a["analytics-parity:purchase-value"].status, STATUS.FAIL);
+  assert.equal(a["analytics-parity:purchase-value"].severity, SEVERITY.BLOCKER);
+});
+
+test("#512: a matched receipt-to-receipt pair still blocks on a missing candidate Purchase", () => {
+  const baseline = { eventNames: ["purchase"], purchase: { present: true, value: 49.99, currency: "USD", transactionId: "1" }, inventory: {} };
+  const candidate = { eventNames: ["dl_view_item"], purchase: { present: false }, inventory: {} };
+  for (const options of [{}, { candidatePage: { receipt: true, source: "built_entry", page_type: "receipt" } }]) {
+    const present = byId(diffAnalyticsParity(baseline, candidate, options))["analytics-parity:purchase-present"];
+    assert.equal(present.status, STATUS.FAIL);
+    assert.equal(present.severity, SEVERITY.BLOCKER);
+    assert.equal(present.evidence.page_mismatch, undefined);
+  }
+});
+
 test("diffAnalyticsParity — value mismatch and missing eventID block cutover", () => {
   const baseline = {
     purchase: { present: true, value: 49.99, currency: "USD", transactionId: "1" },

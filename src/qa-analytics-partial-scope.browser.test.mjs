@@ -410,6 +410,45 @@ browserTest("#503: parity on a full build whose root answers still compares the 
   assert.equal(capture.evidence.root_fallback, undefined);
 });
 
+// #512: the legacy baseline is a receipt that fires dl_purchase; the automatic
+// candidate is the resolved root or a built entry, which never is.
+const RECEIPT_BASELINE_PAGE = {
+  "/legacy/checkout/": {
+    status: 200,
+    body: `<!doctype html><title>Thank you</title><script>
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({ event: "dl_purchase", ecommerce: { value: 49.99, currency: "USD", transaction_id: "1001" } });
+    </script>`,
+  },
+};
+
+browserTest("#512: an automatic parity run against a receipt baseline does not block purchase-present on a non-receipt candidate", async () => {
+  const { assertions, visited } = await runParityLeg({ rootInScope: false, fallbackTargets: [{ ...ENTRY, page_type: "checkout" }] }, RECEIPT_BASELINE_PAGE);
+
+  assert.deepEqual(visited, ["/campaign/checkout/", "/legacy/checkout/"]);
+  const present = byId(assertions, "analytics-parity:purchase-present");
+  assert.equal(present.status, STATUS.MANUAL_REVIEW);
+  assert.equal(present.severity, SEVERITY.WARN);
+  assert.deepEqual(present.evidence.page_mismatch, {
+    reason: "receipt_baseline_non_receipt_candidate",
+    baseline_fired_purchase: true,
+    candidate_receipt: false,
+    candidate_source: "built_entry",
+    candidate_page_type: "checkout",
+  });
+  assert.equal(assertions.some((a) => a.status === STATUS.FAIL && a.severity === SEVERITY.BLOCKER), false);
+});
+
+browserTest("#512: an automatic candidate that is a topology receipt still blocks on a missing Purchase", async () => {
+  const receipt = { funnel_id: "default", page_id: "receipt", page_type: "receipt", url: CHECKOUT };
+  const { assertions } = await runParityLeg({ rootInScope: false, fallbackTargets: [receipt] }, RECEIPT_BASELINE_PAGE);
+
+  const present = byId(assertions, "analytics-parity:purchase-present");
+  assert.equal(present.status, STATUS.FAIL);
+  assert.equal(present.severity, SEVERITY.BLOCKER);
+  assert.equal(present.evidence.page_mismatch, undefined);
+});
+
 // #509 review: `query_routed` marks an entry told apart from the root by its
 // query alone, not any entry that happens to carry a query.
 browserTest("#503: a built entry on its own path is not marked query_routed even when it carries a query", async () => {

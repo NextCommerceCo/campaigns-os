@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.46.0+agent.8] - 2026-10-01
+
+### Fixed
+
+- `qa run` analytics parity no longer blocks on `purchase-present` when the
+  operator did not pass `--analytics-candidate`. The automatic candidate (the
+  campaign root, or the first built entry) is not a receipt page, so a Purchase
+  cannot fire there. When that candidate fires no Purchase, `purchase-present`
+  is now `MANUAL_REVIEW`/`WARN`, and `evidence.page_mismatch` gives the reason
+  (`receipt_baseline_non_receipt_candidate` or `candidate_not_receipt`), the
+  candidate's source and its page type. An explicit `--analytics-candidate`,
+  or a built entry whose topology page type is a receipt, still blocks on a
+  missing Purchase. To compare Purchase, pass the candidate receipt with
+  `--analytics-candidate`.
+
 ## [1.46.0+agent.5] - 2026-10-01
 
 ### Removed
