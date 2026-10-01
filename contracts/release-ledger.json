@@ -4189,13 +4189,34 @@
       "entry_sha256": "d2b022241969d22dbe4e5865f24f34d1a7883e000b62218bbe3f82c0d958b24d"
     },
     {
-      "id": "RL-0203",
+      "id": "RL-0204",
       "sequence": 192,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.47.0+agent.5",
-      "changelog_sha256": "cc98f9812301987bdcd0e08c2eb5e0a0222ef91fee8f5cbf3677f2c327bb8776",
+      "changelog_section": "1.47.0+agent.6",
+      "changelog_sha256": "ce5b04b70f31282319d2974ffaeb6352ecb96e89c136e72c7f6f8a32332afab4",
+      "agent_impact": "Help for start, prepare-build and build now lists --deploy-target, --preview-url and --production-url, which intake already accepted; a Start page or docs command using them matches --help.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "List --deploy-target, --preview-url and --production-url on the start, prepare-build and build usage lines; intake already writes them to the Build Packet deploy block."
+        }
+      ],
+      "entry_sha256": "bbf5c759e5518a3025a0e5f6db6b732e8960721ce45bb4be3821cb58096319e8"
+    },
+    {
+      "id": "RL-0203",
+      "sequence": 193,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.10",
+      "changelog_sha256": "ad304ab2a75313c00dc5c6df21b35127ba7905fe5a4ca34a1e597b078914bad7",
       "agent_impact": "A browser-test-order row that says order create rejected: HTTP 400: Duplicate order detected … (duplicate_order …) means the platform refused a repeat order from the same test customer: re-run with a different --test-email-prefix or wait, and do not change the address or the funnel to get past it.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4207,7 +4228,7 @@
           "summary": "Explain the platform's duplicate-order refusal for a reused test customer, how QA names it, and the remedy."
         }
       ],
-      "entry_sha256": "8a2d111cabf411908bfadd871f0acf4cb3f7757a87663e41d07709ab8eb069e6"
+      "entry_sha256": "34108d2b27eea083f459d2a2b71a1c262b9264f6cb4369bf6f7996102dced94b"
     }
   ]
 }

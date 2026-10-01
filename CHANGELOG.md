@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.47.0+agent.5] - 2026-10-01
+## [1.47.0+agent.10] - 2026-10-01
 
 ### Fixed
 
@@ -14,6 +14,19 @@ Notable supported-surface changes are recorded here.
   with the remedy: re-run with a different `--test-email-prefix` (or
   `--test-email`), or wait up to 30 minutes. `docs/qa-and-test-orders.md`
   explains what the platform matches on and why concurrent runs collide.
+
+## [1.47.0+agent.6] - 2026-10-01
+
+### Changed
+
+- The usage lines for `start`, `prepare-build` and `build` now list
+  `--deploy-target <target>`, `--preview-url <url>` and
+  `--production-url <url>`. Intake has always written them to the Build
+  Packet's `deploy` block (`deploy.target` defaults to `unknown`), and
+  `docs/build-packet.md`, the README and the Start page already pass
+  `--deploy-target local-serve` to `start`, but the help text left them out,
+  so an agent checking that command against the help read it as
+  unsupported. Behaviour is unchanged.
 
 ## [1.47.0+agent.1] - 2026-10-01
 
