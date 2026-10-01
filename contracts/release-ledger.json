@@ -4324,8 +4324,113 @@
       "entry_sha256": "4352e041bcffb1cc329abba198d11523a45b94d37572831a1679c20618d2e78c"
     },
     {
-      "id": "RL-0203",
+      "id": "RL-0202",
       "sequence": 195,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.9",
+      "changelog_sha256": "5d93e171ffd6b8ffeb1ffc8973cc9b23d1e38042c8223ed5f1c5d650f5fe2ffc",
+      "agent_impact": "When resuming a campaign, run readback and next before reading artifacts by hand. Read typed-card proof from the committed sidecar's browser-test-order:<path> assertions; its test_orders array is always empty. readback now prints warn and manual_review rows as such. Bundled skills carry revision 1.47.0+skills.3: an agent that loaded an earlier 1.47.0 revision should start a fresh session.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Tell a resuming session to run readback and next first, and that the committed QA sidecar's browser-test-order assertions are the typed-card proof."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "Tell a resuming session to run readback and next first, and that the committed QA sidecar's browser-test-order assertions are the typed-card proof."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "Tell a resuming session to run readback and next first, and that the committed QA sidecar's browser-test-order assertions are the typed-card proof."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "Tell a resuming session to run readback and next first, and that the committed QA sidecar's browser-test-order assertions are the typed-card proof."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.47.0+skills.3 bundle in executable examples."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.47.0+skills.3 and each skill version two patches."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.3 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.3 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Say the committed QA sidecar always empties test_orders and URL fields, and that its browser-test-order assertions carry the typed-card proof; publish the 1.47.0+skills.3 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.3 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.3 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.3 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.3 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.3 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.47.0+skills.3 bundle revision."
+        }
+      ],
+      "entry_sha256": "4780bf77ca1a5ec8bc8728318237eeeff1e88c81a31fcaece6e1a6b4fc6b6d7b"
+    },
+    {
+      "id": "RL-0203",
+      "sequence": 196,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
@@ -4342,7 +4447,7 @@
           "summary": "Explain the platform's duplicate-order refusal for a reused test customer, how QA names it, and the remedy."
         }
       ],
-      "entry_sha256": "e69cd17c5086f522eece2d479134348199989a8fd0dbf080bb95a1d5b0b39cf6"
+      "entry_sha256": "22e451d62b473dab8907cfd897028f5add642614c10476fc2138b81657ac23d9"
     }
   ]
 }

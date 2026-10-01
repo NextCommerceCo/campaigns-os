@@ -487,6 +487,23 @@ test("an unrecognized assertion status is counted and shown", (t) => {
   assert.ok(output.includes('unrecognized status "error"  b.two'));
 });
 
+test("warn and manual_review are verdict statuses, not unrecognized ones", (t) => {
+  const output = renderVerdictCase(
+    t,
+    baseVerdict([
+      { id: "a.one", family: "alpha", status: "pass" },
+      { id: "page-binding:landing", family: "api-metadata", status: "manual_review", severity: "warn" },
+      { id: "c.three", family: "gamma", status: "warn", severity: "warn", actual: "1 console warning", evidence: { problems: ["first problem"] } },
+    ]),
+  );
+  assert.ok(output.includes("assertions: 0 fail, 1 pass, 0 skipped, 2 warn or manual review"));
+  assert.ok(output.includes("manual_review  page-binding:landing  (family api-metadata, severity warn)"));
+  assert.ok(output.includes("warn  c.three  (family gamma, severity warn)"));
+  assert.ok(output.includes("recorded by Campaigns OS: 1 console warning"));
+  assert.ok(output.includes("          - first problem"));
+  assert.ok(!output.includes("unrecognized status"));
+});
+
 test("a pass row without a family falls back to the assertion id", (t) => {
   const output = renderVerdictCase(t, baseVerdict([{ id: "a.one", status: "pass" }]));
   assert.ok(output.includes("pass  a.one  (family a.one)"));
@@ -2396,7 +2413,7 @@ test("the schema is a gate: a payload missing a staleness field is refused", (t)
 });
 
 test("partitionAssertions returns empty buckets with no verdict loaded", () => {
-  assert.deepEqual(partitionAssertions({}), { fail: [], pass: [], skipped: [], other: [] });
+  assert.deepEqual(partitionAssertions({}), { fail: [], pass: [], skipped: [], review: [], other: [] });
   assert.deepEqual(computeSkipCascades({}), []);
   assert.deepEqual(computeDivergences({}), []);
   assert.equal(computeDoctorSummary({}).present, false);

@@ -6,6 +6,8 @@ Packet exists, read it and follow `next`. Check the loaded skill's bundle
 revision and restart the session if it differs from the
 project copy. Do not use private runtime source as the campaign's starting point.
 
+To pick up an existing campaign, run `campaigns-os readback .` and `campaigns-os next --packet campaign-runtime.build.json` before reading artifacts by hand; `next` blocks polish and QA again whenever the built output changes. The committed `.campaign-runtime/qa-verdict.json` keeps no order records or URLs: its `browser-test-order:<path>` assertions are the typed-card proof, and the full verdict is under `qa-output/`.
+
 Core rules:
 
 - Treat CampaignSpec as campaign intent and the Campaigns API as live commerce truth.

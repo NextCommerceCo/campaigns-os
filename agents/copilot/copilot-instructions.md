@@ -5,6 +5,7 @@ When this repository contains Campaigns OS artifacts, use them as the build hand
 - `campaign-runtime.build.json` defines the CampaignSpec, source adapter, target output, template family, deploy target, SDK origin state, and QA proof depth.
 - `.campaign-runtime/build-context.json` records page mappings and setup/build handoff details.
 - `.campaign-runtime/assembly-report.json` records stage evidence and blockers.
+- To pick up an existing campaign, run `campaigns-os readback .` and `campaigns-os next --packet campaign-runtime.build.json` before reading artifacts by hand; `next` blocks polish and QA again whenever the built output changes. The committed `.campaign-runtime/qa-verdict.json` keeps no order records or URLs: its `browser-test-order:<path>` assertions are the typed-card proof, and the full verdict is under `qa-output/`.
 - `.campaign-runtime/theme/theme-report.json`, when present, is optional brand-theme evidence. Generated `brand-theme.css` must load after `next-core.css`; missing or low-confidence theme is a warning/skipped reason, not permission to edit SDK-owned runtime surfaces.
 
 CampaignSpec validation is owned by the public `@nextcommerce/campaigns-os/campaign-spec` rules surfaced through doctor `spec.validation` findings; use structured rule/path detail when available.
