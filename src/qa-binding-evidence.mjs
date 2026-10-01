@@ -1,7 +1,7 @@
 import { parse as parseHtml } from 'parse5';
 import { parse as parseJs } from 'acorn';
 import { createPageSourceLoader, resolveCommercialApiKey } from './qa-commercial-parity.mjs';
-import { HTML_NAMESPACE, baseInEffect, documentBases, frozenBaseUrl, parseFailureDiagnostic, scriptKind } from './built-script-syntax.mjs';
+import { HTML_NAMESPACE, baseInEffect, documentBases, endsUnclosed, frozenBaseUrl, parseFailureDiagnostic, scriptKind } from './built-script-syntax.mjs';
 
 export const BINDING_SCHEMA = 'campaigns-os-page-binding/v0';
 export const BINDING_LIMITS = Object.freeze({ scripts_per_page: 6, scripts_per_run: 24, script_bytes: 262144, timeout_ms: 5000 });
@@ -124,8 +124,10 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
     // Only an HTML-namespace <script> loads `src`. An SVG script runs from
     // href / xlink:href or its inline text, which this static read does not
     // model: it is not fetched and leaves the binding dynamic.
+    // A script the file ends inside never reaches its end tag, so the parser
+    // never prepares it: the browser neither fetches nor runs it (#515).
     if (node.tagName === 'script' && node.namespaceURI !== HTML_NAMESPACE) dynamic = true;
-    else if (node.tagName === 'script') scripts.push({ attrs, base: baseInEffect(bases, node), text: (node.childNodes || []).map(n => n.value || '').join('') });
+    else if (node.tagName === 'script' && !endsUnclosed(node)) scripts.push({ attrs, base: baseInEffect(bases, node), text: (node.childNodes || []).map(n => n.value || '').join('') });
     // parse5 keeps template content separate; it is inert, as is noscript at boot.
     if (node.tagName !== 'noscript') for (const child of node.childNodes || []) walk(child);
   };

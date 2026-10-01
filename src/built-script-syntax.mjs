@@ -17,10 +17,17 @@
 // nothing it would define runs, but whether the page needs it is not known
 // here, so it does not block.
 //
+// Two shapes are not read and only warn (#515). A `<script>` left unclosed at
+// the end of the file never runs: the browser does not prepare a script
+// element whose end tag never arrives. And a script that is a symlink, or
+// sits under a symlinked directory, resolving outside the site root: a static
+// server would follow it, but its bytes are not part of the built output. A
+// symlink that stays inside the site root is read where it points.
+//
 // Not waivable: a script that cannot be parsed cannot be intended to ship.
 // Both doctor entry points drive it, like the other static built-output gates.
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 
 import { parse as parseJs } from "acorn";
@@ -29,6 +36,8 @@ import { parse as parseHtml } from "parse5";
 export const SCRIPT_SYNTAX = "built_output.script_syntax";
 export const SCRIPT_SYNTAX_PARSE_FAILURE = `${SCRIPT_SYNTAX}.parse_failure`;
 export const SCRIPT_SYNTAX_MISSING_SCRIPT = `${SCRIPT_SYNTAX}.missing_script`;
+export const SCRIPT_SYNTAX_UNCLOSED_SCRIPT = `${SCRIPT_SYNTAX}.unclosed_script`;
+export const SCRIPT_SYNTAX_SYMLINK_OUTSIDE_SITE = `${SCRIPT_SYNTAX}.symlink_outside_site`;
 
 // Classic script MIME types the browser executes. Anything else with a type
 // attribute (JSON-LD, text/template, importmap) is a data block, not script.
@@ -201,6 +210,17 @@ export function baseInEffect(bases, scriptNode) {
 }
 
 /**
+ * Whether the file ended inside this parse5 element, before its end tag. The
+ * parser prepares a script at its end tag; at end of file it marks the element
+ * "already started" instead, so the browser never fetches or runs it.
+ *
+ * @param {object} node a parse5 element parsed with `sourceCodeLocationInfo`
+ */
+export function endsUnclosed(node) {
+  return Boolean(node?.sourceCodeLocation) && !node.sourceCodeLocation.endTag;
+}
+
+/**
  * `<script src>` references on a page, in document order, with whether each
  * is a module and the `<base href>` in effect when the browser prepares it
  * (see baseInEffect), plus the document's first `<base href>` (null when
@@ -215,16 +235,21 @@ export function baseInEffect(bases, scriptNode) {
  * load there. A module script ignores `nomodule` and is kept (see scriptKind).
  * Template content and noscript are inert and not walked.
  *
+ * A script element the file ends inside (its end tag never arrives) is never
+ * prepared, so it never runs and is not a reference. It is returned in
+ * `unclosed` instead: its src, or null for an inline script.
+ *
  * @param {string} html
- * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean, base: string | null }> }}
+ * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean, base: string | null }>, unclosed: Array<{ src: string | null }> }}
  */
 export function pageScriptDocument(html) {
   const refs = [];
+  const unclosed = [];
   let document;
   try {
     document = parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true });
   } catch {
-    return { base: null, refs };
+    return { base: null, refs, unclosed };
   }
   const bases = documentBases(document);
   const walk = (node) => {
@@ -233,9 +258,12 @@ export function pageScriptDocument(html) {
     // href / xlink:href, and a MathML "script" is not a script element.
     if (node.tagName === "script" && node.namespaceURI === HTML_NAMESPACE) {
       const kind = scriptKind(attrs);
+      const hasSrc = typeof attrs.src === "string" && attrs.src !== "";
+      if (kind && endsUnclosed(node)) {
+        unclosed.push({ src: hasSrc ? stripUrlSpace(attrs.src) : null });
       // "prepare the script element" skips only an empty src; anything else,
       // even whitespace, is parsed as a URL and fetched.
-      if (kind && typeof attrs.src === "string" && attrs.src !== "") {
+      } else if (kind && hasSrc) {
         refs.push({ src: stripUrlSpace(attrs.src), module: kind === "module", base: baseInEffect(bases, node) });
       }
     }
@@ -243,7 +271,7 @@ export function pageScriptDocument(html) {
     for (const child of node.childNodes || []) walk(child);
   };
   walk(document);
-  return { base: bases[0]?.href ?? null, refs };
+  return { base: bases[0]?.href ?? null, refs, unclosed };
 }
 
 /**
@@ -317,6 +345,15 @@ function isRemote(src) {
   return /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("//");
 }
 
+// The real path of a file, or null when it cannot be resolved.
+function realPathOf(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
+}
+
 function relFrom(root, path) {
   const rel = relative(root, path);
   return rel && !rel.startsWith("..") ? rel.split(sep).join("/") : path;
@@ -334,13 +371,23 @@ function relFrom(root, path) {
  * emits `/js/...`), never outside either. A base or src on another origin is
  * remote and not read.
  *
+ * Missing scripts are keyed by the URL the browser resolves, so two spellings
+ * of one URL (`check&#9;out.js`, `checkout.js`) are one entry, under the first
+ * spelling met. A path whose real path leaves the site root (a symlinked file
+ * or directory pointing elsewhere) is not read and is listed in
+ * `outside_site` by the link's own path. A page that ends inside a script
+ * element is listed in `unclosed`.
+ *
  * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
  * @param {string} targetRepo
  */
 export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
   const scripts = new Map();
   const unresolved = new Map();
+  const outsideSite = new Map();
+  const unclosed = [];
   const pages = Array.isArray(scope?.pages) ? scope.pages : [];
+  const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
   for (const page of pages) {
     let html;
     try {
@@ -348,9 +395,10 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
     } catch {
       continue;
     }
-    const { refs } = pageScriptDocument(html);
+    const document = pageScriptDocument(html);
+    for (const entry of document.unclosed) unclosed.push({ src: entry.src, pages: [page.page_id] });
     const pageUrl = pageUrlFor(scope.site_root, page.built_path);
-    for (const ref of refs) {
+    for (const ref of document.refs) {
       if (isRemote(ref.src)) continue;
       const { remote, pathname } = resolveScriptUrl(ref.src, ref.base, pageUrl);
       if (remote) continue;
@@ -366,9 +414,20 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
         isFile = false;
       }
       if (!isFile) {
-        const entry = unresolved.get(ref.src) || { src: ref.src, pages: [] };
+        const urlKey = pathname ?? `\u0000${ref.src}`;
+        const entry = unresolved.get(urlKey) || { src: ref.src, pages: [] };
         if (!entry.pages.includes(page.page_id)) entry.pages.push(page.page_id);
-        unresolved.set(ref.src, entry);
+        unresolved.set(urlKey, entry);
+        continue;
+      }
+      // Read where a static server would serve it, but only while the real
+      // path stays inside the site root.
+      const real = realPathOf(path);
+      if (!siteRootReal || !real || (real !== siteRootReal && !real.startsWith(`${siteRootReal}${sep}`))) {
+        const file = relFrom(targetRepo, resolve(path));
+        const entry = outsideSite.get(file) || { file, src: ref.src, pages: [] };
+        if (!entry.pages.includes(page.page_id)) entry.pages.push(page.page_id);
+        outsideSite.set(file, entry);
         continue;
       }
       const key = `${resolve(path)}\u0000${ref.module ? "module" : "script"}`;
@@ -386,7 +445,13 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
       if (!entry.pages.includes(page.page_id)) entry.pages.push(page.page_id);
     }
   }
-  return { pages_scanned: pages.length, scripts: [...scripts.values()], unresolved: [...unresolved.values()] };
+  return {
+    pages_scanned: pages.length,
+    scripts: [...scripts.values()],
+    unresolved: [...unresolved.values()],
+    outside_site: [...outsideSite.values()],
+    unclosed,
+  };
 }
 
 function gateBase(subject) {
@@ -405,11 +470,16 @@ function gateBase(subject) {
  *
  * @param {{ subject?: object, pages_scanned?: number,
  *   scripts?: Array<{ file: string, module?: boolean, content: string, pages?: string[] }>,
- *   unresolved?: Array<{ src: string, pages: string[] }> }} input
+ *   unresolved?: Array<{ src: string, pages: string[] }>,
+ *   outside_site?: Array<{ file: string, src: string, pages: string[] }>,
+ *   unclosed?: Array<{ src: string | null, pages: string[] }> }} input
  */
-export function evaluateBuiltScriptSyntax({ subject, pages_scanned: pagesScanned = 0, scripts = [], unresolved = [] } = {}) {
+export function evaluateBuiltScriptSyntax({ subject, pages_scanned: pagesScanned = 0, scripts = [], unresolved = [], outside_site: outsideSite = [], unclosed = [] } = {}) {
   const list = Array.isArray(scripts) ? scripts : [];
   const missing = Array.isArray(unresolved) ? unresolved : [];
+  const outside = Array.isArray(outsideSite) ? outsideSite : [];
+  const open = Array.isArray(unclosed) ? unclosed : [];
+  const onPages = (pages) => (pages.length ? ` on ${pages.join(", ")}` : "");
   // A local script the page loads that is not in the built output: a 404 at
   // runtime. A warning, not a blocker (#502).
   const warned = missing.map((entry) => {
@@ -418,11 +488,39 @@ export function evaluateBuiltScriptSyntax({ subject, pages_scanned: pagesScanned
       code: SCRIPT_SYNTAX_MISSING_SCRIPT,
       src: entry.src,
       pages,
-      message: `${entry.src} is loaded by a local <script src>${pages.length ? ` on ${pages.join(", ")}` : ""} but is not in the built output. The browser gets a 404 for it and nothing it would define runs. Add the file to the build, or remove the reference if the page does not need it.`,
+      message: `${entry.src} is loaded by a local <script src>${onPages(pages)} but is not in the built output. The browser gets a 404 for it and nothing it would define runs. Add the file to the build, or remove the reference if the page does not need it.`,
     };
   });
-  const missingNote = warned.length ? ` ${warned.length} referenced local script(s) are not in the built output.` : "";
-  const common = { scripts_unresolved: missing, warned, pages_scanned: pagesScanned };
+  // A script symlink whose target is outside the site root (#515): not read,
+  // and named by the link, never by where it points.
+  for (const entry of outside) {
+    const pages = Array.isArray(entry.pages) ? entry.pages : [];
+    warned.push({
+      code: SCRIPT_SYNTAX_SYMLINK_OUTSIDE_SITE,
+      file: entry.file,
+      src: entry.src,
+      pages,
+      message: `${entry.file} is loaded by a local <script src>${onPages(pages)} but is a symlink whose target is outside the site root, so its syntax was not checked. A static server may still serve it. Copy the script into the build output instead of linking to it.`,
+    });
+  }
+  // A page that ends inside a script element (#515): the browser never runs
+  // that script, so it is not parsed. The page output is probably truncated.
+  for (const entry of open) {
+    const pages = Array.isArray(entry.pages) ? entry.pages : [];
+    warned.push({
+      code: SCRIPT_SYNTAX_UNCLOSED_SCRIPT,
+      src: entry.src ?? null,
+      pages,
+      message: `${entry.src ? `The <script src="${entry.src}">` : "An inline <script>"}${onPages(pages)} is never closed: the page ends before its </script>. The browser does not run a script element whose end tag never arrives, so it was not parsed. Check the page for truncated output and rebuild.`,
+    });
+  }
+  const notes = [
+    missing.length ? ` ${missing.length} referenced local script(s) are not in the built output.` : "",
+    outside.length ? ` ${outside.length} script symlink(s) resolve outside the site root and were not read.` : "",
+    open.length ? ` ${open.length} page(s) end inside an unclosed <script>.` : "",
+  ];
+  const missingNote = notes.join("");
+  const common = { scripts_unresolved: missing, scripts_outside_site: outside, warned, pages_scanned: pagesScanned };
   if (list.length === 0) {
     return {
       ...gateBase(subject),

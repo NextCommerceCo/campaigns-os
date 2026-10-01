@@ -118,6 +118,9 @@ try {
     if (scriptInputs.unresolved.length) {
       throw new Error(`Certified family "${family}" references local script(s) the render does not contain: ${scriptInputs.unresolved.map((entry) => entry.src).join(", ")}.`);
     }
+    if (scriptInputs.outside_site.length) {
+      throw new Error(`Certified family "${family}" loads script symlink(s) that resolve outside the site root: ${scriptInputs.outside_site.map((entry) => entry.file).join(", ")}.`);
+    }
     const scripts = new Set(scriptInputs.scripts.map((script) => resolve(work, script.file)));
     // Containment by the real path, not the lexical one: a symlinked script
     // (or page) could otherwise copy bytes from outside the render into this

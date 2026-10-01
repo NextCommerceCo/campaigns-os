@@ -4,7 +4,7 @@
 // `});` in js/checkout.js, the shape that shipped.
 
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -14,6 +14,8 @@ import {
   SCRIPT_SYNTAX,
   SCRIPT_SYNTAX_MISSING_SCRIPT,
   SCRIPT_SYNTAX_PARSE_FAILURE,
+  SCRIPT_SYNTAX_SYMLINK_OUTSIDE_SITE,
+  SCRIPT_SYNTAX_UNCLOSED_SCRIPT,
   evaluateBuiltScriptSyntax,
   frozenBaseUrl,
   pageScriptReferences,
@@ -518,5 +520,100 @@ test("only an empty src is skipped: a src of U+00A0 is fetched and parsed", () =
     assert.deepEqual(gateOf(result).scripts_unresolved, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// #515 leftovers from the #508 reviews.
+test("missing-script warnings are deduplicated by the URL the browser resolves, not the raw src", () => {
+  // The URL parser removes a tab inside a URL, so both spellings load /js/checkout.js.
+  const { dir, run } = builtSite(`<script src="/${SLUG}/js/check&#9;out.js"></script><script src="/${SLUG}/js/checkout.js"></script>`, {});
+  try {
+    const result = run();
+    const gate = gateOf(result);
+    assert.equal(gate.scripts_unresolved.length, 1, JSON.stringify(gate.scripts_unresolved));
+    assert.deepEqual(gate.scripts_unresolved[0].pages, ["checkout"]);
+    assert.equal(result.warnings.filter((issue) => issue.code === SCRIPT_SYNTAX_MISSING_SCRIPT).length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // Negative control: one raw src on two pages in different directories names
+  // two different files, so it stays two warnings.
+  const two = builtSite('<script src="app.js"></script>', {
+    [`_site/${SLUG}/upsell/index.html`]: '<!DOCTYPE html><html><head><script src="app.js"></script></head><body></body></html>',
+  });
+  try {
+    const gate = gateOf(two.run());
+    assert.deepEqual(gate.scripts_unresolved.map((entry) => entry.pages), [["checkout"], ["upsell"]]);
+  } finally {
+    rmSync(two.dir, { recursive: true, force: true });
+  }
+});
+
+test("a <script> left unclosed at end of file is never run, so it is not parsed and cannot block", () => {
+  const { dir, run } = builtSite(`<script src="/${SLUG}/js/app.js"></script>`, {
+    [`_site/${SLUG}/js/app.js`]: GOOD,
+    [`_site/${SLUG}/js/bad.js`]: BAD,
+  });
+  try {
+    // The page ends inside the second script element: its end tag never arrives.
+    writeFileSync(join(dir, "_site", SLUG, "checkout", "index.html"),
+      `<!DOCTYPE html><html><head><script src="/${SLUG}/js/app.js"></script></head><body><script src="/${SLUG}/js/bad.js">`);
+    const result = run();
+    const gate = gateOf(result);
+    assert.deepEqual(syntaxErrors(result), []);
+    assert.equal(gate.status, "pass", gate.reason);
+    // Positive control: the closed script on the same page is still parsed.
+    assert.equal(gate.scripts_scanned, 1);
+    const warnings = result.warnings.filter((issue) => issue.code === SCRIPT_SYNTAX_UNCLOSED_SCRIPT);
+    assert.equal(warnings.length, 1);
+    assert.deepEqual(warnings[0].detail.finding.pages, ["checkout"]);
+    assert.match(warnings[0].message, /never closed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(pageScriptReferences(`<script src="a.js"></script><script src="b.js">`), [{ src: "a.js", module: false }]);
+});
+
+test("a script symlink is read where it resolves inside the site root, and warned about, not read, outside it", () => {
+  const { dir, run } = builtSite(
+    `<script src="/${SLUG}/js/inside.js"></script><script src="/${SLUG}/js/outside.js"></script><script src="/${SLUG}/vendor/lib.js"></script>`,
+    {
+      [`_site/${SLUG}/lib/real.js`]: BAD,
+      "elsewhere/outside.js": BAD,
+      "elsewhere/vendor/lib.js": BAD,
+    },
+  );
+  try {
+    mkdirSync(join(dir, "_site", SLUG, "js"), { recursive: true });
+    symlinkSync(join(dir, "_site", SLUG, "lib", "real.js"), join(dir, "_site", SLUG, "js", "inside.js"));
+    symlinkSync(join(dir, "elsewhere", "outside.js"), join(dir, "_site", SLUG, "js", "outside.js"));
+    // A symlinked directory leaves the site root the same way.
+    symlinkSync(join(dir, "elsewhere", "vendor"), join(dir, "_site", SLUG, "vendor"));
+    const result = run();
+    const gate = gateOf(result);
+    // Inside the site root: read as a static server serves it, and it blocks,
+    // named by the path the page loads.
+    assert.deepEqual(syntaxErrors(result).map((issue) => issue.detail.finding.file), [`_site/${SLUG}/js/inside.js`]);
+    assert.equal(gate.scripts_scanned, 1);
+    assert.deepEqual(gate.scripts_unresolved, []);
+    // Outside it: not read, one warning per link, naming the link.
+    const outside = gate.warned.filter((item) => item.code === SCRIPT_SYNTAX_SYMLINK_OUTSIDE_SITE);
+    assert.deepEqual(outside.map((item) => item.file), [`_site/${SLUG}/js/outside.js`, `_site/${SLUG}/vendor/lib.js`]);
+    assert.match(outside[0].message, /^_site\/example-campaign\/js\/outside\.js .*outside the site root/);
+    assert.equal(outside[0].message.includes("elsewhere"), false, "the target path is not echoed");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // Only the outside link: the gate warns and does not block.
+  const only = builtSite(`<script src="/${SLUG}/js/outside.js"></script>`, { "elsewhere/outside.js": BAD });
+  try {
+    mkdirSync(join(only.dir, "_site", SLUG, "js"), { recursive: true });
+    symlinkSync(join(only.dir, "elsewhere", "outside.js"), join(only.dir, "_site", SLUG, "js", "outside.js"));
+    const result = only.run();
+    assert.deepEqual(syntaxErrors(result), []);
+    assert.equal(gateOf(result).status, "not_applicable");
+    assert.equal(result.warnings.filter((issue) => issue.code === SCRIPT_SYNTAX_SYMLINK_OUTSIDE_SITE).length, 1);
+  } finally {
+    rmSync(only.dir, { recursive: true, force: true });
   }
 });
