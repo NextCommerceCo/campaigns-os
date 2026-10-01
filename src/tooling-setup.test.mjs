@@ -42,6 +42,28 @@ test("the published compatibility statement names the package version", () => {
   }, "compatibility.json contracts must match the schemas and catalog that define them");
 });
 
+test("documented page-kit installs give a new folder its own package.json first", () => {
+  // Without a package.json, npm installs into the nearest parent folder that has
+  // one (or a node_modules), so a campaign folder created inside another project
+  // would add page-kit and the toolkit to that project instead.
+  let checked = 0;
+  for (const file of ["docs/local-setup.md", "docs/quickstart.md", "README.md"]) {
+    const text = readFileSync(join(ROOT, file), "utf8");
+    // Join wrapped commands (a trailing "\" or "&&") so a chain split across
+    // lines is checked as one, then walk each chain's commands in order.
+    const chains = [...text.matchAll(/^```[^\n]*\n([\s\S]*?)^```/gm)]
+      .flatMap((m) => m[1].replace(/\\\n\s*/g, " ").replace(/&&\s*\n\s*/g, "&& ").split("\n"));
+    for (const chain of chains) {
+      const commands = chain.split("&&").map((c) => c.trim());
+      const at = commands.findIndex((c) => /^npm (install|i)\b/.test(c) && c.includes("next-campaign-page-kit"));
+      if (at < 0) continue;
+      checked += 1;
+      assert.ok(commands.slice(0, at).includes("npm init -y"), `${file}: run npm init -y before the page-kit install: ${chain.trim()}`);
+    }
+  }
+  assert.ok(checked >= 3, "local setup, quickstart and README each document a page-kit install");
+});
+
 test("documented install commands keep page-kit a runtime dependency and the toolkit a dev dependency", () => {
   // `npm install --save-dev` moves an already-declared runtime dependency into
   // devDependencies, which `npm ci --omit=dev` builds then skip. Page-kit must
