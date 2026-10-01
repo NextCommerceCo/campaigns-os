@@ -168,13 +168,44 @@
         "accept_text",
         "decline_text",
         "retail_shipping",
-        "offer_shipping"
+        "offer_shipping",
+        "type",
+        "display_selector_id",
+        "display_bundle_id",
+        "voucher",
+        "pricing_mode",
+        "pretitle",
+        "title",
+        "rating_text",
+        "heading_prices",
+        "quantity_label",
+        "accept_show_price",
+        "cta_note",
+        "ships_info_text",
+        "social_proof",
+        "urgency_text",
+        "image",
+        "closing_title",
+        "default_quantity",
+        "min_quantity",
+        "max_quantity",
+        "tier_count",
+        "variant_labels",
+        "price_rows",
+        "show_rating",
+        "retail_label",
+        "price_label",
+        "unit_label",
+        "total_label",
+        "details_hint",
+        "image_alt",
+        "image_display"
       ],
       "sourceOfTruth": [
         "CampaignSpec upsell/downsell pages",
         "Campaigns API package refs and vouchers/offers"
       ],
-      "agentRule": "Post-purchase upsells do not use shipping_methods. Package refs and vouchers must come from the upsell page contract. `retail_shipping` and `offer_shipping` are display copy for the offer price block (the struck retail shipping line and the offer shipping line), not shipping method refs. The starter defaults claim `+$4.95 SHIPPING` and `+ FREE SHIPPING`; set both from the target campaign's real shipping figures whenever they differ."
+      "agentRule": "Post-purchase upsells do not use shipping_methods. Package refs and vouchers must come from the upsell page contract. `retail_shipping` and `offer_shipping` are display copy for the offer price block (the struck retail shipping line and the offer shipping line), not shipping method refs. The starter defaults claim `+$4.95 SHIPPING` and `+ FREE SHIPPING`; set both from the target campaign's real shipping figures whenever they differ.Upsell pricing_mode defaults to full_price (one visible price row) per template-brand-contract.shared-commerce.v0; set discounted / compare_at explicitly when an offer or voucher governs the price. Copy keys (pretitle, title, rating_text, cta_note, …) are display strings — HTML allowed, data-next-display spans allowed — never package refs."
     },
     "upsell_bundle_tiers": {
       "purpose": "Tiered post-purchase bundle upsell rows.",
@@ -226,13 +257,29 @@
         "show_paypal",
         "show_klarna",
         "show_apple_pay",
-        "show_google_pay"
+        "show_google_pay",
+        "show_link",
+        "show_affirm",
+        "show_twint",
+        "show_bancontact",
+        "show_ideal",
+        "show_sepa_debit",
+        "style",
+        "secure_text",
+        "show_visa",
+        "show_mastercard",
+        "show_american_express",
+        "show_discover",
+        "show_diners_club",
+        "show_jcb",
+        "show_maestro",
+        "show_dankort"
       ],
       "sourceOfTruth": [
         "CampaignSpec payment methods",
         "Campaigns API/payment provider capability"
       ],
-      "agentRule": "Payment config, CampaignSpec/API support, and visible rows must agree."
+      "agentRule": "Payment config, CampaignSpec/API support, and visible rows must agree. On upsell and checkout pages the logo row resolves itself from next.getCampaignData() (available_payment_methods + available_express_payment_methods, platform payment-source codes); payment_flags.show_<code> is only a per-method override. Card brands: the platform exposes cards as the single code bankcard and the merchant's gateway accepted_card_types list (visa, mastercard, american_express, discover, diners_club, jcb, maestro, dankort; empty = all) is NOT in the campaign payload, so bankcard shows the four common tiles by default; the other four are opt-in (show_jcb: true) and any brand can be forced off (show_american_express: false). Use the platform codes, not abbreviations."
     },
     "slot_personalization": {
       "purpose": "MV slot-picker line-item personalization (SDK 0.4.27+). Adds a data-next-property input to each rendered bundle slot — on the checkout/select selector AND the post-purchase upsell offer — so units carry distinct text and become separate order lines. Same contract name across both surfaces.",
@@ -246,7 +293,7 @@
       ],
       "sourceOfTruth": [
         "Campaign personalization requirement (per-line custom text)",
-        "Template slot partials: mv-configurable-selector.html / mv-slot-stage.html (checkout/select) and upsell-mv-offer.html (upsell)"
+        "Template slot partials: mv-configurable-selector.html / mv-slot-stage.html (checkout/select) and upsell/offer-selector.html (MV upsell slot template)"
       ],
       "agentRule": "MV/slot-rendering families only — per-line customization requires a slot picker (eng-confirmed); not available on tier-swap families. Same `slot_personalization` contract on MV checkout/select and MV upsell. Shipped enabled on `apollo-mv-single-step` and `olympus-mv-single-step` (checkout.html + upsell-mv.html), disabled on `olympus-mv-two-step` (one live reference each). To apply on any other MV page, set slot_personalization.enabled:true in that page's frontmatter — the shared partial renders the field from the same contract (no markup copy). property_key becomes the order line-item attribute name. Fill every slot explicitly; do not rely on an order-wide default to fill some slots and override others (same-package overrides drop). When paired with order_personalization, keep property_keys distinct (per-slot overrides the page default on a shared key)."
     },
@@ -265,6 +312,206 @@
         "Template partial: personalization-field.html; offer partials may render the same order_personalization contract with data-next-default-property"
       ],
       "agentRule": "Reliable for 'same value on every unit' and for single non-variant / non-slot upsells where the accepted set is one line. The generic partial ships in every family's _includes but is NOT wired into generic pages; opt in with a campaign_include or an offer partial that accepts order_personalization. For per-line distinct slot values use slot_personalization (MV checkout/select/upsell) instead. When paired with a per-slot field on the same surface, use a DISTINCT property_key: the merge is { ...default, ...slot } so a per-slot value overrides the default on a shared key (MV checkout uses custom_text vs slot number; MV upsell example uses gift_message vs slot upsell_message)."
+    },
+    "upsell_layout": {
+      "purpose": "Layout knobs for the composable upsell/offer.html shell.",
+      "canonicalKeys": [
+        "boxed",
+        "media",
+        "media_position",
+        "show_bullets",
+        "show_ships_info",
+        "show_payment_logos",
+        "media_align",
+        "media_width",
+        "style",
+        "decline_position",
+        "show_decline"
+      ],
+      "sourceOfTruth": [
+        "CampaignSpec upsell page copy / design spec"
+      ],
+      "agentRule": "media: carousel|image|grid|video|none (the swiper area; video reads media_video, same contract as upsell_video — upsell_video itself is the content-column include under the heading); media_position: right (default, content left) | left; boxed false + upsell_hero.variant card is the long-form (VSL) look. Pure presentation — never derived from the API."
+    },
+    "upsell_hero": {
+      "purpose": "Upsell title band (band) or band + overlapping offer card with countdown (card).",
+      "canonicalKeys": [
+        "variant",
+        "title",
+        "offer",
+        "suboffer",
+        "heading",
+        "text",
+        "narrow"
+      ],
+      "sourceOfTruth": [
+        "CampaignSpec upsell page copy / design spec"
+      ],
+      "agentRule": "HTML strings; quote SDK values with data-next-display spans (bundle.upsell-bundle-1x.* for the pinned 1× price on tier offers, bundle.<selector_id>.* on stepper/single-with-voucher, package.<id>.name everywhere)."
+    },
+    "upsell_video": {
+      "purpose": "VSL / product video rendered by upsell/video.html (native <video>).",
+      "canonicalKeys": [
+        "src",
+        "poster",
+        "title",
+        "autoplay",
+        "loop",
+        "controls",
+        "preload",
+        "id"
+      ],
+      "sourceOfTruth": [
+        "CampaignSpec upsell page copy / design spec"
+      ],
+      "agentRule": "src is a local asset path or an https URL — NEXT-hosted media MUST use cdn.cachebucket.com. autoplay defaults true and always pairs with muted (browser policy). Rendered under the offer heading whenever set; independent of upsell_layout.media. No player library. preload defaults metadata (autoplay) / none (autoplay: false). The <video> carries data-upsell-video (+ optional id) as the hook for a campaign-supplied player script; set controls: false when layering one on."
+    },
+    "upsell_guarantees": {
+      "purpose": "Trust / guarantee cards under the accept button.",
+      "canonicalKeys": [
+        "variant",
+        "icon",
+        "image",
+        "title",
+        "text"
+      ],
+      "sourceOfTruth": [
+        "CampaignSpec upsell page copy / design spec"
+      ],
+      "agentRule": "variant stacked (centered icon + title + text) | row (badge left, \"<strong>title</strong> text\" right). Guarantee copy must match the store policy links in campaigns.json."
+    },
+    "upsell_body": {
+      "purpose": "Ordered long-form sections between the offer and the closing CTA.",
+      "canonicalKeys": [
+        "type",
+        "title",
+        "text",
+        "items",
+        "steps",
+        "with",
+        "without",
+        "rating_text",
+        "recommended_label"
+      ],
+      "sourceOfTruth": [
+        "CampaignSpec upsell page copy / design spec"
+      ],
+      "agentRule": "type reviews | features | comparison | steps. Section copy is design-owned; any price/percentage inside it is a data-next-display span, never a literal."
+    },
+    "closing_cta": {
+      "purpose": "Closing CTA block after the body sections.",
+      "canonicalKeys": [
+        "variant",
+        "title",
+        "note",
+        "image",
+        "background",
+        "show_guarantees"
+      ],
+      "sourceOfTruth": [
+        "CampaignSpec upsell page copy / design spec"
+      ],
+      "agentRule": "variant cta (centered button + note + decline) | card (boxed image + price rows + button + decline). Its accept/skip are data-upsell-proxy buttons forwarded to the single in-offer SDK action — never add a second data-next-upsell=\"offer\" wrapper."
+    },
+    "offer_bullets": {
+      "purpose": "Feature bullets in the upsell offer content column.",
+      "canonicalKeys": [
+        "text"
+      ],
+      "sourceOfTruth": [
+        "CampaignSpec upsell page copy / design spec"
+      ],
+      "agentRule": "Array of strings or { text }. Absent = demo bullets render; upsell_layout.show_bullets false removes the block."
+    },
+    "ships_info": {
+      "purpose": "Shipping reassurance row under the upsell accept button.",
+      "canonicalKeys": [
+        "icon",
+        "flag",
+        "text"
+      ],
+      "sourceOfTruth": [
+        "Store shipping policy / fulfilment facts"
+      ],
+      "agentRule": "text is HTML with a {flag} token for the inline flag image; the defaults claim USPS from the USA within 1 business day — replace with the merchant's real carrier and origin, or set upsell_layout.show_ships_info: false."
+    },
+    "swiper_gallery": {
+      "purpose": "Carousel media for checkout and upsell pages (swiper-gallery.html).",
+      "canonicalKeys": [
+        "swiper_slides",
+        "swiper_thumbs",
+        "swiper_aspect",
+        "swiper_thumb_aspect",
+        "swiper_fit",
+        "swiper_thumbs_per_view"
+      ],
+      "sourceOfTruth": [
+        "Campaign product images / design spec"
+      ],
+      "agentRule": "swiper_slides / swiper_thumbs are { src, alt } lists; aspect 16-9 | 3-2 | 4-3 (default square); fit contain | cover; swiper_thumbs_per_view default 6. Requires the Swiper CDN CSS + JS in the page styles: / scripts:."
+    },
+    "media_images": {
+      "purpose": "2×2 image grid for upsell_layout.media: grid.",
+      "canonicalKeys": [
+        "src",
+        "alt"
+      ],
+      "sourceOfTruth": [
+        "Campaign product images"
+      ],
+      "agentRule": "Four { src, alt } entries; used only when upsell_layout.media is grid."
+    },
+    "media_video": {
+      "purpose": "Video in the upsell media column (upsell_layout.media: video).",
+      "canonicalKeys": [
+        "src",
+        "poster",
+        "title",
+        "autoplay",
+        "loop",
+        "controls",
+        "preload",
+        "id"
+      ],
+      "sourceOfTruth": [
+        "Campaign media on cdn.cachebucket.com"
+      ],
+      "agentRule": "Same contract as upsell_video; independent of it so a page can carry a content-column VSL and a media-column video."
+    },
+    "header_bar": {
+      "purpose": "Upsell top bar variant.",
+      "canonicalKeys": [
+        "header_bar"
+      ],
+      "sourceOfTruth": [
+        "Design spec"
+      ],
+      "agentRule": "steps (logo + Checkout › Upgrades › Summary) | logo (centered logo only)."
+    },
+    "announcement": {
+      "purpose": "Upsell top announcement bar.",
+      "canonicalKeys": [
+        "announcement_text",
+        "announcement_variant"
+      ],
+      "sourceOfTruth": [
+        "Design spec / campaign copy"
+      ],
+      "agentRule": "announcement_variant primary (default) | danger | success | dark | light; absent or \"\" text renders nothing."
+    },
+    "countdown_timer": {
+      "purpose": "Slim urgency bar + countdown (countdown-timer.html), used on checkout, upsells and inside the upsell hero card.",
+      "canonicalKeys": [
+        "text",
+        "highlight",
+        "duration",
+        "persistence_id",
+        "start"
+      ],
+      "sourceOfTruth": [
+        "Campaign offer rules / design spec"
+      ],
+      "agentRule": "duration (seconds) renders the SDK data-next-timer persisted per persistence_id — give each offer its own id; start (\"MM:SS\") is the legacy checkout.js-driven mode. Absent = nothing renders."
     }
   },
   "campaignSpecFixturePolicy": {
@@ -291,7 +538,8 @@
         "olympus in spec, path, or export metadata",
         "os-card tier bundle selector",
         "bundle selector include receives bundles frontmatter",
-        "side cart summary with Olympus card pricing rows"
+        "side cart summary with Olympus card pricing rows",
+        "upsell-single page (single-offer add-on: one package, fixed price, accept or skip)"
       ],
       "canonicalSurfaces": {
         "mainSelector": "tiered-bundle-selector",
@@ -299,7 +547,7 @@
         "payment": "payment-methods",
         "expressCheckout": "express-checkout|express-checkout-inline",
         "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
-        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards",
+        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards|single (+ vsl page) — all via the shared upsell/offer.html shell (upsell_offer.type)",
         "receipt": "receipt-skeleton"
       },
       "frontmatterInputsObserved": [
@@ -312,7 +560,22 @@
         "swiper_slides",
         "swiper_thumbs",
         "upsell_offer",
-        "upsell_bundle_tiers"
+        "upsell_bundle_tiers",
+        "offer_features",
+        "offer_comparison",
+        "offer_steps",
+        "guarantee_note",
+        "countdown_timer",
+        "announcement_text",
+        "upsell_layout",
+        "upsell_hero",
+        "offer_bullets",
+        "upsell_video",
+        "upsell_guarantees",
+        "upsell_body",
+        "closing_cta",
+        "ships_info",
+        "payment_flags"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -430,19 +693,109 @@
           {
             "name": "Olympus bundle upsell pages",
             "partials": [
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
             ],
             "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "offer_bullets",
+              "payment_flags",
+              "ships_info",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
               "upsell_offer",
-              "upsell_bundle_tiers"
+              "upsell_video"
             ],
             "sdkRoots": [
               "data-next-upsell",
               "data-next-bundle-selector",
               "data-next-bundle-card"
-            ]
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note)."
+          },
+          {
+            "name": "Olympus single-offer upsell page",
+            "partials": [
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
+            ],
+            "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "guarantee_note",
+              "offer_bullets",
+              "offer_comparison",
+              "offer_features",
+              "offer_steps",
+              "payment_flags",
+              "ships_info",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_offer",
+              "upsell_video"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-timer"
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note)."
           }
         ],
         "fixtures": [
@@ -495,9 +848,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.38",
-        "verified_at": "2026-09-15T16:51:10Z",
-        "evidence": "sdk-0.4.38-2026-09-15",
+        "sdk_version": "0.4.40",
+        "verified_at": "2026-10-01T04:56:01Z",
+        "evidence": "sdk-0.4.40-2026-10-01",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -507,8 +860,8 @@
       "templateReference": {
         "id": "template-reference-apollo",
         "family": "apollo",
-        "version": "sdk-0.4.38-revalidated-2026-09-03",
-        "source_commit": "84a63fe7af8cf49cd8cfdaaa66eb00ef6dd9bc4a",
+        "version": "sdk-0.4.38-composable-upsells-2026-09-25",
+        "source_commit": "6c96525b6416872ad0e51918fe6ec82a9673808c",
         "provenance_url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/README.md",
         "contract_path": "contracts/commerce-surface-catalog.json",
         "standard_viewport_refs": [
@@ -518,21 +871,21 @@
             "url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/checkout-desktop.png",
             "width": 1440,
             "height": 1491,
-            "sha256": "e0fd4854422b9ca90b54adc1477e1291824fc63e898e50c5c6cc8e4e58ce39e6",
+            "sha256": "7595630f9e3dd4da09c395f7681c1ff546011141d3981412d5f76a1ffe2d5c90",
             "device_profile": "Desktop 1440",
             "browser": "chromium",
-            "captured_at": "2026-08-24T05:10:18.000Z"
+            "captured_at": "2026-09-25T00:10:12.000Z"
           },
           {
             "id": "apollo-checkout-mobile",
             "viewport": "mobile",
             "url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/checkout-mobile.png",
             "width": 390,
-            "height": 2650,
-            "sha256": "14386e851e70b21f03ac2608c1efcde18b2bfc4d31736cb07add199e1953fe5c",
+            "height": 2648,
+            "sha256": "1d797be266beefb10cf7ec4502d8f8c97286a0861b969695986ebfc1ac29ce63",
             "device_profile": "Mobile 390",
             "browser": "chromium",
-            "captured_at": "2026-08-24T05:10:23.000Z"
+            "captured_at": "2026-09-25T00:10:12.000Z"
           }
         ]
       },
@@ -542,9 +895,11 @@
         "checkout-apollo.js",
         "bundle_card_style frontmatter",
         "bundle-selector.html with bundle-card dispatcher",
-        "promo-banner and promo-timer partials (not web components)",
+        "promo-banner and countdown-timer partials (not web components)",
         "checkout-reveal CTA and panel",
-        "selector_order_bump_variant for check03 below selector"
+        "selector_order_bump_variant for check03 below selector",
+        "upsell-single page (single-offer add-on: one package, fixed price, accept or skip)",
+        "upsell-vsl page (long-form VSL upsell composed from the shared upsell partial set: hero card + countdown, video under the heading, guarantees, reviews, closing CTA)"
       ],
       "canonicalSurfaces": {
         "mainSelector": "tiered-bundle-selector",
@@ -555,7 +910,7 @@
         "expressCheckout": "express-checkout|express-checkout-inline",
         "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
         "checkoutReveal": "checkout-form--reveal",
-        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards",
+        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards|single (+ vsl page = stepper offer_type in the long-form composition)",
         "receipt": "receipt-skeleton"
       },
       "frontmatterInputsObserved": [
@@ -570,7 +925,7 @@
         "as_seen_in",
         "reviews_slider",
         "guarantee",
-        "promo_timer",
+        "countdown_timer",
         "promo_banner",
         "product_heading",
         "packages",
@@ -578,7 +933,16 @@
         "swiper_slides",
         "swiper_thumbs",
         "upsell_offer",
-        "upsell_bundle_tiers"
+        "upsell_bundle_tiers",
+        "upsell_hero",
+        "upsell_layout",
+        "offer_bullets",
+        "upsell_video",
+        "upsell_guarantees",
+        "upsell_body",
+        "closing_cta",
+        "header_bar",
+        "announcement_variant"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -622,7 +986,7 @@
             "reviews",
             "guarantee",
             "promo_banner",
-            "promo_timer",
+            "countdown_timer",
             "product_heading",
             "packages.prepurchase_1",
             "packages.prepurchase_2",
@@ -630,7 +994,16 @@
             "swiper_thumbs",
             "payment_flags",
             "upsell_offer",
-            "upsell_bundle_tiers"
+            "upsell_bundle_tiers",
+            "upsell_hero",
+            "upsell_layout",
+            "offer_bullets",
+            "upsell_video",
+            "upsell_guarantees",
+            "upsell_body",
+            "closing_cta",
+            "header_bar",
+            "announcement_variant"
           ],
           "demoOnlyValues": [
             "packages.main_package=1",
@@ -705,7 +1078,7 @@
               "checkout-header.html",
               "product-heading.html",
               "promo-banner.html",
-              "promo-timer.html",
+              "countdown-timer.html",
               "as-seen-in.html",
               "reviews-slider.html",
               "guarantee.html"
@@ -713,7 +1086,7 @@
             "ownedInputs": [
               "product_heading",
               "promo_banner",
-              "promo_timer",
+              "countdown_timer",
               "as_seen_in",
               "reviews",
               "guarantee"
@@ -754,7 +1127,8 @@
             "name": "payment shell",
             "partials": [
               "payment-methods.html",
-              "express-checkout.html"
+              "express-checkout.html",
+              "payment-logos.html"
             ],
             "ownedInputs": [
               "payment_flags"
@@ -763,24 +1137,88 @@
               "data-next-payment-method",
               "data-next-payment-form",
               "data-next-express-checkout"
-            ]
+            ],
+            "note": "payment-logos.html under the submit button renders one logo per method; js/payment-logos.js reveals only those in the campaign's available_payment_methods (SDK sessionStorage cache first, then live)."
           },
           {
-            "name": "Apollo bundle upsell pages",
+            "name": "Apollo bundle upsell pages (composable upsell-offer shell)",
             "partials": [
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/video.html",
+              "upsell/ships-info.html",
+              "upsell/guarantees.html",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
             ],
             "ownedInputs": [
               "upsell_offer",
-              "upsell_bundle_tiers"
+              "upsell_bundle_tiers",
+              "upsell_layout",
+              "upsell_hero",
+              "offer_bullets",
+              "upsell_video",
+              "upsell_guarantees",
+              "upsell_body",
+              "closing_cta",
+              "announcement_text",
+              "announcement_variant",
+              "header_bar",
+              "countdown_timer",
+              "swiper_slides",
+              "swiper_thumbs",
+              "media_images",
+              "ships_info",
+              "payment_flags"
             ],
             "sdkRoots": [
               "data-next-upsell",
               "data-next-bundle-selector",
-              "data-next-bundle-card"
-            ]
+              "data-next-bundle-card",
+              "data-next-bundle-qty-for",
+              "data-next-timer"
+            ],
+            "note": "Every upsell page composes the same partial set: upsell-announcement → upsell-header-bar (steps|logo) → upsell-hero (band|card) → countdown-timer → upsell-offer (the shell; offer_type tier-cards|tier-pills|stepper|single|mv picks the ONLY piece that differs, upsell/offer-controls.html + upsell/offer-selector.html) → upsell-body (reviews|features|comparison|steps sections) → upsell-closing-cta (cta|card) → footer. upsell/offer.html owns the single [data-next-upsell=\"offer\"] wrapper; the display-only 1x selector (tier-cards/tier-pills/mv) and the single-offer voucher selector sit outside it; the hidden state-machine selector is the first in-offer selector. upsell/offer-context.html resolves package_id / selector_id / price paths once (assign shares scope). upsell/closing-cta.html renders PROXY buttons (data-upsell-proxy=add|skip → initUpsellProxyActions() in upsells.js clicks the in-offer actions) so a page never has two SDK offer wrappers. pricing_mode (discounted|compare_at|full_price|unit_total|unit_only) lives in upsell/offer-prices.html; default full_price per the shared commerce contract, demo pages opt into discounted. upsell/video.html is a native <video> (autoplay+muted, controls) — no Plyr / custom controls; rendered under the heading whenever upsell_video is set (upsell_layout.media only picks the swiper-area content). Reference pages: upsell-bundle-stepper / -tier-pills / -tier-cards (classic band + boxed offer), upsell-single (offer + body sections + closing card), upsell-vsl (danger announcement bar, logo header, hero card + countdown, unboxed offer with video, guarantees, reviews, closing CTA). Identical set in all eight families, generated from _shared/upsell/ by sync-shared (lint:shared gate); MV families add upsell-mv.html with upsell_offer.type: mv. Switching upsell_offer.type alone renders a working selector: absent upsell_bundle_tiers / upsell_mv_tiers are generated from package_id (offer.tier_count, offer.vouchers_json) by upsell/offer-context.html + upsell/offer-tier.html; declare tiers only for distinct vouchers / labels."
+          },
+          {
+            "name": "Apollo single-offer upsell page",
+            "partials": [
+              "upsell/offer.html (offer_type=single)",
+              "upsell/body.html",
+              "upsell/closing-cta.html (variant=card)"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_layout",
+              "upsell_hero",
+              "upsell_body",
+              "closing_cta",
+              "countdown_timer",
+              "announcement_text"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-timer"
+            ],
+            "note": "Single-package, fixed-price offer (accept or skip, no tiers) — now offer_type='single' on the shared upsell/offer.html shell; the long-form sections are upsell_body entries (features, comparison, steps) and the closing card is upsell/closing-cta.html variant=card whose accept/skip are proxies to the one SDK offer. Optional `voucher` renders a hidden linked bundle selector outside the offer (data-next-bundle-selector-id on the wrapper) and prices read bundle.<selector_id>.*; without a voucher they read package.* gated on package.hasRetailPrice / hasSavings (data-next-show and data-next-display on separate elements). pricing_mode full_price (default) | discounted | compare_at | unit_total | unit_only. Countdown uses the SDK data-next-timer."
           }
         ],
         "fixtures": [
@@ -834,9 +1272,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.38",
-        "verified_at": "2026-09-15T16:51:10Z",
-        "evidence": "sdk-0.4.38-2026-09-15",
+        "sdk_version": "0.4.40",
+        "verified_at": "2026-10-01T04:56:01Z",
+        "evidence": "sdk-0.4.40-2026-10-01",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -850,7 +1288,8 @@
         "checkout-progress bar above bundle selection",
         "open side cart using cart-summary03",
         "luxury/editorial spacing with serif display type",
-        "demeter upsell offer includes with upsell_offer or upsell_bundle_tiers frontmatter"
+        "demeter upsell offer includes with upsell_offer or upsell_bundle_tiers frontmatter",
+        "upsell-single page (single-offer add-on: one package, fixed price, accept or skip)"
       ],
       "canonicalSurfaces": {
         "mainSelector": "editorial-tier-selector",
@@ -858,7 +1297,7 @@
         "payment": "payment-methods",
         "expressCheckout": "express-checkout|express-checkout-inline",
         "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
-        "upsell": "upsell-bundle-stepper-offer|upsell-bundle-tier-pills-offer|upsell-bundle-tier-cards-offer",
+        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards|single (+ vsl page) — all via the shared upsell/offer.html shell (upsell_offer.type)",
         "receipt": "receipt-skeleton|receipt-order-summary-mobile|receipt-order-summary-desktop"
       },
       "frontmatterInputsNeeded": [
@@ -880,7 +1319,22 @@
         "cart_summary_feature_package",
         "receipt_summary",
         "upsell_bundle_tiers",
-        "upsell_offer"
+        "upsell_offer",
+        "offer_features",
+        "offer_comparison",
+        "offer_steps",
+        "guarantee_note",
+        "countdown_timer",
+        "announcement_text",
+        "upsell_layout",
+        "upsell_hero",
+        "offer_bullets",
+        "upsell_video",
+        "upsell_guarantees",
+        "upsell_body",
+        "closing_cta",
+        "ships_info",
+        "payment_flags"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -975,20 +1429,109 @@
           {
             "name": "upsell and receipt includes",
             "partials": [
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html",
-              "receipt-skeleton.html"
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
             ],
             "ownedInputs": [
-              "upsell_offer",
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "offer_bullets",
+              "payment_flags",
+              "receipt_summary",
+              "ships_info",
+              "upsell_body",
               "upsell_bundle_tiers",
-              "receipt_summary"
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_offer",
+              "upsell_video"
             ],
             "sdkRoots": [
               "data-next-upsell",
               "data-next-order-items"
-            ]
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note)."
+          },
+          {
+            "name": "Demeter single-offer upsell page",
+            "partials": [
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
+            ],
+            "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "guarantee_note",
+              "offer_bullets",
+              "offer_comparison",
+              "offer_features",
+              "offer_steps",
+              "payment_flags",
+              "ships_info",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_offer",
+              "upsell_video"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-timer"
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note)."
           }
         ],
         "fixtures": [
@@ -1040,9 +1583,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.38",
-        "verified_at": "2026-09-15T16:51:10Z",
-        "evidence": "sdk-0.4.38-2026-09-15",
+        "sdk_version": "0.4.40",
+        "verified_at": "2026-10-01T04:56:01Z",
+        "evidence": "sdk-0.4.40-2026-10-01",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1055,7 +1598,8 @@
         "shop checkout with checkout.html plus upsell-bundle-stepper/tier-pills/tier-cards pages",
         "cart-summary04 used on checkout",
         "receipt order summary split into mobile and desktop order item templates",
-        "upsell bundle offers promoted to shop-single-step *_offer includes"
+        "upsell bundle offers promoted to shop-single-step *_offer includes",
+        "upsell-single page (single-offer add-on: one package, fixed price, accept or skip)"
       ],
       "canonicalSurfaces": {
         "checkoutSummary": "cart-summary04",
@@ -1063,7 +1607,7 @@
         "expressCheckout": "express-checkout",
         "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
         "receipt": "receipt-skeleton|receipt-order-summary-mobile|receipt-order-summary-desktop",
-        "upsell": "upsell-bundle-stepper-offer|upsell-bundle-tier-pills-offer|upsell-bundle-tier-cards-offer"
+        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards|single (+ vsl page) — all via the shared upsell/offer.html shell (upsell_offer.type)"
       },
       "frontmatterInputsNeeded": [
         "cart_summary_variant"
@@ -1076,7 +1620,22 @@
         "swiper_slides",
         "swiper_thumbs",
         "upsell_bundle_tiers",
-        "upsell_offer"
+        "upsell_offer",
+        "offer_features",
+        "offer_comparison",
+        "offer_steps",
+        "guarantee_note",
+        "countdown_timer",
+        "announcement_text",
+        "upsell_layout",
+        "upsell_hero",
+        "offer_bullets",
+        "upsell_video",
+        "upsell_guarantees",
+        "upsell_body",
+        "closing_cta",
+        "ships_info",
+        "payment_flags"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -1160,18 +1719,52 @@
           {
             "name": "shop upsell offers",
             "partials": [
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
             ],
             "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "offer_bullets",
+              "payment_flags",
+              "ships_info",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
               "upsell_offer",
-              "upsell_bundle_tiers"
+              "upsell_video"
             ],
             "sdkRoots": [
               "data-next-upsell",
               "data-next-bundle-selector"
-            ]
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note)."
           },
           {
             "name": "shop receipt",
@@ -1186,6 +1779,62 @@
             "sdkRoots": [
               "data-next-order-items"
             ]
+          },
+          {
+            "name": "Shop single-offer upsell page",
+            "partials": [
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
+            ],
+            "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "guarantee_note",
+              "offer_bullets",
+              "offer_comparison",
+              "offer_features",
+              "offer_steps",
+              "payment_flags",
+              "ships_info",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_offer",
+              "upsell_video"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-timer"
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note)."
           }
         ],
         "fixtures": [
@@ -1237,9 +1886,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.38",
-        "verified_at": "2026-09-15T16:51:10Z",
-        "evidence": "sdk-0.4.38-2026-09-15",
+        "sdk_version": "0.4.40",
+        "verified_at": "2026-10-01T04:56:01Z",
+        "evidence": "sdk-0.4.40-2026-10-01",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1252,7 +1901,8 @@
         "data-next-bundle-slots-for in checkout",
         "checkout-olympus-mv-full.js",
         "variant slot controls inside checkout",
-        "MV product gallery plus bundle slots on one page"
+        "MV product gallery plus bundle slots on one page",
+        "upsell-single page (single-offer add-on: one package, fixed price, accept or skip)"
       ],
       "canonicalSurfaces": {
         "mainSelector": "mv-configurable-selector",
@@ -1262,7 +1912,7 @@
         "payment": "payment-methods",
         "expressCheckout": "express-checkout|express-checkout-inline",
         "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
-        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
+        "upsell": "upsell-mv|bundle-stepper|bundle-tier-pills|bundle-tier-cards|single (+ vsl page) — all via the shared upsell/offer.html shell (upsell_offer.type)",
         "receipt": "receipt-skeleton"
       },
       "frontmatterInputsNeeded": [
@@ -1282,7 +1932,22 @@
         "upsell_mv_tiers",
         "slot_personalization",
         "order_personalization",
-        "upsell_bundle_tiers"
+        "upsell_bundle_tiers",
+        "offer_features",
+        "offer_comparison",
+        "offer_steps",
+        "guarantee_note",
+        "countdown_timer",
+        "announcement_text",
+        "upsell_layout",
+        "upsell_hero",
+        "offer_bullets",
+        "upsell_video",
+        "upsell_guarantees",
+        "upsell_body",
+        "closing_cta",
+        "ships_info",
+        "payment_flags"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -1401,24 +2066,115 @@
           {
             "name": "MV upsell offers",
             "partials": [
-              "upsell-mv-offer.html",
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
             ],
             "ownedInputs": [
-              "upsell_offer",
-              "upsell_mv_tiers",
-              "slot_personalization",
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "offer_bullets",
               "order_personalization",
-              "upsell_bundle_tiers"
+              "payment_flags",
+              "ships_info",
+              "slot_personalization",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_mv_tiers",
+              "upsell_offer",
+              "upsell_video"
             ],
             "sdkRoots": [
               "data-next-upsell",
               "data-next-bundle-selector",
               "data-next-bundle-card",
               "data-next-bundle-slots-for"
-            ]
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note). MV families: upsell-mv.html sets upsell_offer.type: mv; upsells-mv.js styles the SDK slot selects, upsells.js drives the qty pills and closing-CTA proxies."
+          },
+          {
+            "name": "Olympus MV Single single-offer upsell page",
+            "partials": [
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
+            ],
+            "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "guarantee_note",
+              "offer_bullets",
+              "offer_comparison",
+              "offer_features",
+              "offer_steps",
+              "order_personalization",
+              "payment_flags",
+              "ships_info",
+              "slot_personalization",
+              "upsell_body",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_mv_tiers",
+              "upsell_offer",
+              "upsell_video"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-timer"
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note). MV families: upsell-mv.html sets upsell_offer.type: mv; upsells-mv.js styles the SDK slot selects, upsells.js drives the qty pills and closing-CTA proxies."
           }
         ],
         "fixtures": [
@@ -1471,9 +2227,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.38",
-        "verified_at": "2026-09-15T16:51:10Z",
-        "evidence": "sdk-0.4.38-2026-09-15",
+        "sdk_version": "0.4.40",
+        "verified_at": "2026-10-01T04:56:01Z",
+        "evidence": "sdk-0.4.40-2026-10-01",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1487,7 +2243,8 @@
         "data-next-bundle-slots-for in checkout",
         "mv-configurable-selector.html with Apollo layout partials",
         "selector_order_bump_variant and checkout_reveal frontmatter",
-        "checkout_step.selector_layout"
+        "checkout_step.selector_layout",
+        "upsell-single page (single-offer add-on: one package, fixed price, accept or skip)"
       ],
       "canonicalSurfaces": {
         "mainSelector": "mv-configurable-selector",
@@ -1500,7 +2257,7 @@
         "expressCheckout": "express-checkout|express-checkout-inline",
         "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
         "checkoutReveal": "checkout-form--reveal",
-        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
+        "upsell": "upsell-mv|bundle-stepper|bundle-tier-pills|bundle-tier-cards|single (+ vsl page) — all via the shared upsell/offer.html shell (upsell_offer.type)",
         "receipt": "receipt-skeleton"
       },
       "frontmatterInputsNeeded": [
@@ -1518,7 +2275,7 @@
         "as_seen_in",
         "reviews",
         "guarantee",
-        "promo_timer",
+        "countdown_timer",
         "promo_banner",
         "product_heading",
         "swiper_slides",
@@ -1529,7 +2286,21 @@
         "upsell_offer",
         "upsell_mv_tiers",
         "order_personalization",
-        "upsell_bundle_tiers"
+        "upsell_bundle_tiers",
+        "offer_features",
+        "offer_comparison",
+        "offer_steps",
+        "guarantee_note",
+        "announcement_text",
+        "upsell_layout",
+        "upsell_hero",
+        "offer_bullets",
+        "upsell_video",
+        "upsell_guarantees",
+        "upsell_body",
+        "closing_cta",
+        "ships_info",
+        "payment_flags"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -1572,7 +2343,7 @@
             "reviews",
             "guarantee",
             "promo_banner",
-            "promo_timer",
+            "countdown_timer",
             "product_heading",
             "swiper_slides",
             "swiper_thumbs",
@@ -1652,7 +2423,7 @@
               "checkout-header.html",
               "product-heading.html",
               "promo-banner.html",
-              "promo-timer.html",
+              "countdown-timer.html",
               "as-seen-in.html",
               "reviews-slider.html",
               "guarantee.html"
@@ -1660,7 +2431,7 @@
             "ownedInputs": [
               "product_heading",
               "promo_banner",
-              "promo_timer",
+              "countdown_timer",
               "as_seen_in",
               "reviews",
               "guarantee"
@@ -1729,24 +2500,115 @@
           {
             "name": "MV upsell offers",
             "partials": [
-              "upsell-mv-offer.html",
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
             ],
             "ownedInputs": [
-              "upsell_offer",
-              "upsell_mv_tiers",
-              "slot_personalization",
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "offer_bullets",
               "order_personalization",
-              "upsell_bundle_tiers"
+              "payment_flags",
+              "ships_info",
+              "slot_personalization",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_mv_tiers",
+              "upsell_offer",
+              "upsell_video"
             ],
             "sdkRoots": [
               "data-next-upsell",
               "data-next-bundle-selector",
               "data-next-bundle-card",
               "data-next-bundle-slots-for"
-            ]
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note). MV families: upsell-mv.html sets upsell_offer.type: mv; upsells-mv.js styles the SDK slot selects, upsells.js drives the qty pills and closing-CTA proxies."
+          },
+          {
+            "name": "Apollo MV Single single-offer upsell page",
+            "partials": [
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
+            ],
+            "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "guarantee_note",
+              "offer_bullets",
+              "offer_comparison",
+              "offer_features",
+              "offer_steps",
+              "order_personalization",
+              "payment_flags",
+              "ships_info",
+              "slot_personalization",
+              "upsell_body",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_mv_tiers",
+              "upsell_offer",
+              "upsell_video"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-timer"
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note). MV families: upsell-mv.html sets upsell_offer.type: mv; upsells-mv.js styles the SDK slot selects, upsells.js drives the qty pills and closing-CTA proxies."
           }
         ],
         "fixtures": [
@@ -1804,9 +2666,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.38",
-        "verified_at": "2026-09-15T16:51:10Z",
-        "evidence": "sdk-0.4.38-2026-09-15",
+        "sdk_version": "0.4.40",
+        "verified_at": "2026-10-01T04:56:01Z",
+        "evidence": "sdk-0.4.40-2026-10-01",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1819,7 +2681,8 @@
         "select.html before checkout.html",
         "checkout-olympus-mv-selection.js",
         "checkout-olympus-mv-full.js",
-        "variant selection step followed by payment step"
+        "variant selection step followed by payment step",
+        "upsell-single page (single-offer add-on: one package, fixed price, accept or skip)"
       ],
       "canonicalSurfaces": {
         "selectStep": "mv-selection-step",
@@ -1829,7 +2692,7 @@
         "orderSummary": "cart-summary03|cart-summary04",
         "payment": "payment-methods",
         "expressCheckout": "express-checkout|express-checkout-inline",
-        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
+        "upsell": "upsell-mv|bundle-stepper|bundle-tier-pills|bundle-tier-cards|single (+ vsl page) — all via the shared upsell/offer.html shell (upsell_offer.type)",
         "receipt": "receipt-skeleton"
       },
       "frontmatterInputsNeeded": [
@@ -1849,7 +2712,22 @@
         "upsell_mv_tiers",
         "slot_personalization",
         "order_personalization",
-        "upsell_bundle_tiers"
+        "upsell_bundle_tiers",
+        "offer_features",
+        "offer_comparison",
+        "offer_steps",
+        "guarantee_note",
+        "countdown_timer",
+        "announcement_text",
+        "upsell_layout",
+        "upsell_hero",
+        "offer_bullets",
+        "upsell_video",
+        "upsell_guarantees",
+        "upsell_body",
+        "closing_cta",
+        "ships_info",
+        "payment_flags"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -1984,24 +2862,115 @@
           {
             "name": "MV upsell offers",
             "partials": [
-              "upsell-mv-offer.html",
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
             ],
             "ownedInputs": [
-              "upsell_offer",
-              "upsell_mv_tiers",
-              "slot_personalization",
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "offer_bullets",
               "order_personalization",
-              "upsell_bundle_tiers"
+              "payment_flags",
+              "ships_info",
+              "slot_personalization",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_mv_tiers",
+              "upsell_offer",
+              "upsell_video"
             ],
             "sdkRoots": [
               "data-next-upsell",
               "data-next-bundle-selector",
               "data-next-bundle-card",
               "data-next-bundle-slots-for"
-            ]
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note). MV families: upsell-mv.html sets upsell_offer.type: mv; upsells-mv.js styles the SDK slot selects, upsells.js drives the qty pills and closing-CTA proxies."
+          },
+          {
+            "name": "Olympus MV Two Step single-offer upsell page",
+            "partials": [
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
+            ],
+            "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "guarantee_note",
+              "offer_bullets",
+              "offer_comparison",
+              "offer_features",
+              "offer_steps",
+              "order_personalization",
+              "payment_flags",
+              "ships_info",
+              "slot_personalization",
+              "upsell_body",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_mv_tiers",
+              "upsell_offer",
+              "upsell_video"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-timer"
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note). MV families: upsell-mv.html sets upsell_offer.type: mv; upsells-mv.js styles the SDK slot selects, upsells.js drives the qty pills and closing-CTA proxies."
           }
         ],
         "fixtures": [
@@ -2054,9 +3023,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.38",
-        "verified_at": "2026-09-15T16:51:10Z",
-        "evidence": "sdk-0.4.38-2026-09-15",
+        "sdk_version": "0.4.40",
+        "verified_at": "2026-10-01T04:56:01Z",
+        "evidence": "sdk-0.4.40-2026-10-01",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2068,14 +3037,15 @@
         "shop-three-step in spec, path, or export metadata",
         "information.html -> shipping.html -> billing.html flow",
         "checkout-shop-three-shipping.js dynamic shipping options",
-        "separate shipping method page before billing"
+        "separate shipping method page before billing",
+        "upsell-single page (single-offer add-on: one package, fixed price, accept or skip)"
       ],
       "canonicalSurfaces": {
         "informationStep": "shipping/contact form",
         "shippingStep": "dynamic shipping methods from SDK getShippingMethods()",
         "billingStep": "payment-methods and checkout review",
         "receipt": "receipt-skeleton",
-        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards"
+        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards|single (+ vsl page) — all via the shared upsell/offer.html shell (upsell_offer.type)"
       },
       "frontmatterInputsNeeded": [
         "receipt_summary"
@@ -2088,7 +3058,22 @@
         "swiper_slides",
         "swiper_thumbs",
         "upsell_offer",
-        "upsell_bundle_tiers"
+        "upsell_bundle_tiers",
+        "offer_features",
+        "offer_comparison",
+        "offer_steps",
+        "guarantee_note",
+        "countdown_timer",
+        "announcement_text",
+        "upsell_layout",
+        "upsell_hero",
+        "offer_bullets",
+        "upsell_video",
+        "upsell_guarantees",
+        "upsell_body",
+        "closing_cta",
+        "ships_info",
+        "payment_flags"
       ],
       "agentContract": {
         "status": "upsell-include-driven",
@@ -2181,19 +3166,109 @@
           {
             "name": "upsell selectors/actions",
             "partials": [
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
             ],
             "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "offer_bullets",
+              "payment_flags",
+              "ships_info",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
               "upsell_offer",
-              "upsell_bundle_tiers"
+              "upsell_video"
             ],
             "sdkRoots": [
               "data-next-upsell",
               "data-next-bundle-selector",
               "data-next-bundle-card"
-            ]
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note)."
+          },
+          {
+            "name": "Shop Three Step single-offer upsell page",
+            "partials": [
+              "upsell/offer.html",
+              "upsell/offer-context.html",
+              "upsell/offer-tier.html",
+              "upsell/offer-selector.html",
+              "upsell/offer-controls.html",
+              "upsell/offer-heading.html",
+              "upsell/offer-bullets.html",
+              "upsell/offer-prices.html",
+              "upsell/offer-media.html",
+              "upsell/cta.html",
+              "upsell/decline.html",
+              "upsell/ships-info.html",
+              "upsell/video.html",
+              "upsell/guarantees.html",
+              "upsell/copy.html",
+              "payment-logos.html (shared with checkout)",
+              "upsell/announcement.html",
+              "upsell/header-bar.html",
+              "upsell/hero.html",
+              "upsell/body.html",
+              "upsell/reviews.html",
+              "upsell/features.html",
+              "upsell/comparison.html",
+              "upsell/steps.html",
+              "upsell/closing-cta.html"
+            ],
+            "ownedInputs": [
+              "announcement_text",
+              "closing_cta",
+              "countdown_timer",
+              "guarantee_note",
+              "offer_bullets",
+              "offer_comparison",
+              "offer_features",
+              "offer_steps",
+              "payment_flags",
+              "ships_info",
+              "upsell_body",
+              "upsell_bundle_tiers",
+              "upsell_guarantees",
+              "upsell_hero",
+              "upsell_layout",
+              "upsell_offer",
+              "upsell_video"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-timer"
+            ],
+            "note": "Same composable upsell set as apollo (generated from _shared/upsell/; see the apollo 'Apollo bundle upsell pages' surface note)."
           }
         ],
         "fixtures": [
@@ -2238,9 +3313,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.38",
-        "verified_at": "2026-09-15T16:51:10Z",
-        "evidence": "sdk-0.4.38-2026-09-15",
+        "sdk_version": "0.4.40",
+        "verified_at": "2026-10-01T04:56:01Z",
+        "evidence": "sdk-0.4.40-2026-10-01",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2450,5 +3525,5 @@
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
   "_synced_from_ref": "main",
-  "_synced_from_sha": "11352c30c596db258679fd3a552b906086b11bb9"
+  "_synced_from_sha": "3793b1de3b77cc31dffe9176f47e8e99ea6134aa"
 }

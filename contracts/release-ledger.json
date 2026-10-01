@@ -3981,8 +3981,8 @@
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.46.0+agent.7",
-      "changelog_sha256": "3e259a65b6656e4c39f6f92a7e7d934927794d878703e496d23c0008b4721da2",
+      "changelog_section": "1.46.0+agent.8",
+      "changelog_sha256": "8c46bc7526b44d9f7cfb9f509a5af71726b6b1d7bd2f500b0fd6f38851d05b0b",
       "agent_impact": "Doctor's script syntax gate gives one built_output.script_syntax.missing_script warning per resolved URL, not per raw src spelling. A <script> left unclosed at end of file is no longer parsed by doctor or QA and cannot block; doctor warns under built_output.script_syntax.unclosed_script. A script symlink resolving outside the site root is not read; doctor warns under built_output.script_syntax.symlink_outside_site and lists it in scripts_outside_site[]. Symlinks inside the site root are read as before.",
       "compatibility": "additive",
       "migration": "none",
@@ -3994,7 +3994,7 @@
           "summary": "The script syntax gate section records resolved-URL grouping of missing-script warnings, the unclosed-script rule and warning, and the symlink rule: followed inside the site root, warned about and not read outside it."
         }
       ],
-      "entry_sha256": "f41cef54fb347bc3529d8830a2a72b74d2438ec9d72d6ae454c865dcb5cc38b7"
+      "entry_sha256": "9f0b98da37762b0b768f9d174f7686157d9802b941293ce913a4460ea6ec0980"
     }
   ]
 }
