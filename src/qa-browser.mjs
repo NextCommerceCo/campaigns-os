@@ -6214,9 +6214,13 @@ function responseRequest(response) {
   }
 }
 
+// Walks back to the chain's first request. A visited set ends the walk on any
+// chain, however long, so every hop of one chain reports the same root.
 function redirectChainRoot(request) {
   let root = request || null;
-  for (let hops = 0; root && typeof root.redirectedFrom === "function" && hops < 32; hops += 1) {
+  const visited = new Set();
+  while (root && typeof root.redirectedFrom === "function" && !visited.has(root)) {
+    visited.add(root);
     const previous = root.redirectedFrom();
     if (!previous) break;
     root = previous;
@@ -6263,11 +6267,16 @@ function captureCheckoutEvents(page) {
   // polls for it. A bound here would record a slow but successful order body
   // as null for good, and the order would read as not created.
   page.on("response", async (response) => {
-    if (!interesting.test(response.url())) return;
+    // A redirected chain is logged by where it started, so its final hop is
+    // captured even when it answers from a URL this filter would not match
+    // (#516): the late-body search finds it by request identity.
+    const request = responseRequest(response);
+    let chainUrl = null;
+    try { chainUrl = request?.url() ?? null; } catch { /* identity only */ }
+    if (!interesting.test(response.url()) && !(chainUrl && interesting.test(chainUrl))) return;
     // Taken before the body read: an entry lands in the log when its body
     // finishes, so its position says nothing about when it was requested.
     const requestStartedAt = responseRequestStartedAt(response);
-    const request = responseRequest(response);
     const entry = {
       status: response.status(),
       url: response.url(),
