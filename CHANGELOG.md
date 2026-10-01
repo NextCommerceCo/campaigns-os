@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.47.0+agent.3] - 2026-10-01
+## [1.47.0+agent.8] - 2026-10-01
 
 ### Fixed
 
@@ -19,6 +19,19 @@ Notable supported-surface changes are recorded here.
   `dynamic_unresolved` instead of `script_unavailable_or_limit`; they still
   need manual review, because the static reader cannot prove a binding on a
   page that runs other scripts.
+
+## [1.47.0+agent.6] - 2026-10-01
+
+### Changed
+
+- The usage lines for `start`, `prepare-build` and `build` now list
+  `--deploy-target <target>`, `--preview-url <url>` and
+  `--production-url <url>`. Intake has always written them to the Build
+  Packet's `deploy` block (`deploy.target` defaults to `unknown`), and
+  `docs/build-packet.md`, the README and the Start page already pass
+  `--deploy-target local-serve` to `start`, but the help text left them out,
+  so an agent checking that command against the help read it as
+  unsupported. Behaviour is unchanged.
 
 ## [1.47.0+agent.1] - 2026-10-01
 

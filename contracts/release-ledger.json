@@ -4189,13 +4189,34 @@
       "entry_sha256": "d2b022241969d22dbe4e5865f24f34d1a7883e000b62218bbe3f82c0d958b24d"
     },
     {
-      "id": "RL-0201",
+      "id": "RL-0204",
       "sequence": 192,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.47.0+agent.3",
-      "changelog_sha256": "dfb2c9f1cca4753ff4a2a29f298a878ffe61d0f7bee370ed0ef6e54d5b598674",
+      "changelog_section": "1.47.0+agent.6",
+      "changelog_sha256": "ce5b04b70f31282319d2974ffaeb6352ecb96e89c136e72c7f6f8a32332afab4",
+      "agent_impact": "Help for start, prepare-build and build now lists --deploy-target, --preview-url and --production-url, which intake already accepted; a Start page or docs command using them matches --help.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "List --deploy-target, --preview-url and --production-url on the start, prepare-build and build usage lines; intake already writes them to the Build Packet deploy block."
+        }
+      ],
+      "entry_sha256": "bbf5c759e5518a3025a0e5f6db6b732e8960721ce45bb4be3821cb58096319e8"
+    },
+    {
+      "id": "RL-0201",
+      "sequence": 193,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.8",
+      "changelog_sha256": "5dca52cee13425480a82fc46b88aead96c6eb8a293519d11a502a247455538aa",
       "agent_impact": "A skipped pricing.checkout_price_visible row whose actual names an empty cart and no package selection is expected on a checkout filled from the landing page; do not remove forcePackageId links or add a selector to make it pass. Page-binding evidence on starter-template pages now reads dynamic_unresolved instead of script_unavailable_or_limit.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4207,7 +4228,7 @@
           "summary": "Say when pricing.checkout_price_visible is skipped (empty cart, no package selection on the checkout) and name the Campaign Cart loader paths the page-binding reader skips, including dist/loader.js."
         }
       ],
-      "entry_sha256": "76ba7b7e7021dc17b44fc3807ffa49c48004264c2f5311581fd16da3ad0d557a"
+      "entry_sha256": "5b2889c85270e3df28ba662c9372bf10844a40a9ee6882c0bfaccba5fd3beec0"
     }
   ]
 }
