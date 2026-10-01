@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.46.0+agent.11] - 2026-10-01
+
+### Changed
+
+- The vendored starter-template catalog is re-synced to
+  campaign-cart-starter-templates `3793b1d` (was `11352c3`). That brings in the
+  runtime-gated payment logos, the composable upsell pages, the `is_upsell`
+  opt-out on every bump include, and template verification evidence for
+  Campaign Cart SDK 0.4.40. Family certification freshness now reads 0.4.40 as
+  the verified SDK. The SDK support policy (minimum and preferred versions) is
+  unchanged.
+- `fixtures/certified-families` is regenerated at the new pin, and the shared
+  commerce brand contract's payment-chrome `asset_pin` moves with it. The
+  shipped asset bytes are unchanged. The payment-chrome repair text now says
+  to set `payment_flags.show_<method>: false` in the page frontmatter when a
+  logo from the starter `payment-logos.html` row is flagged, instead of
+  deleting markup. `upsell-payment-logos.svg` stays listed because the
+  starter still renders it ungated under `payment_flags.style: flat` and on
+  one select page.
+
 ## [1.46.0+agent.5] - 2026-10-01
 
 ### Removed
