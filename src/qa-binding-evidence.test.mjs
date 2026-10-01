@@ -369,6 +369,10 @@ test('the SDK exemption matches the URL as the parser reads it, tab and newline 
   const evidence = await observe(`${inline(key)}<script src="${sdk}"></script>`, { scriptLoader: async (src) => { loads.push(src); return { ok: false }; } });
   assert.deepEqual(loads, []);
   assert.equal(evidence.outcome, 'match');
+  // The loader path the starter templates use is the SDK too.
+  const starter = await observe(`${inline(key)}<script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.40/dist/loader.js" type="module"></script>`, { scriptLoader: async (src) => { loads.push(src); return { ok: false }; } });
+  assert.deepEqual(loads, []);
+  assert.equal(starter.outcome, 'match');
   // Negative control: a script that is not the SDK is still fetched.
   const other = await observe(`${inline(key)}<script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v1/dist/other.js"></script>`, { scriptLoader: async () => ({ ok: false }) });
   assert.equal(other.reason, 'script_unavailable_or_limit');
