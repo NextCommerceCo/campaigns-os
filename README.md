@@ -11,8 +11,8 @@ This toolkit gives campaign developers and AI coding tools a clear path for asse
 5. Provide or generate a [Campaign Build Brief](./docs/campaign-build-brief.md) for merchandising/design presentation decisions.
 6. Create and doctor a Build Packet.
 7. Hand off to `next-campaigns-build`.
-8. Run build/lint, then install the Campaigns OS Playwright browser once with `campaigns-os qa install-browser`.
-9. Run `next-campaigns-polish`, serve the current build, and run the mandatory `campaigns-os polish capture` producer before marking Polish complete.
+8. Run build/lint and record the build with `campaigns-os record build`, then install the Campaigns OS Playwright browser once with `campaigns-os qa install-browser`.
+9. Run `next-campaigns-polish`, serve the current build, run the mandatory `campaigns-os polish capture` producer, then record Polish with `campaigns-os record polish --evidence <file>`.
 10. Deploy a preview.
 11. Run `next-campaigns-qa` against the tested URL.
 12. Record launch blockers and follow-up work.
@@ -52,6 +52,15 @@ npx --no-install campaigns-os tooling status --platform claude
 npx --no-install campaigns-os install-skills --platform claude
 mkdir -p source
 ```
+
+With Claude Code, [local setup](docs/local-setup.md) replaces the last two
+lines with one: `npx --no-install campaigns-os tooling setup --target .
+--platform claude` installs the QA browser, the skills and the project
+context, and keeps existing pages and instructions. It does not scaffold
+pages; the agent chooses the template at intake. Codex, Cursor and other
+agents keep the separate steps: `install-skills --platform codex` (or
+`--platform agents`), `install-agent-context --target .` and
+`qa install-browser`.
 
 The toolkit is also published to npm as `@nextcommerce/campaigns-os`, so the
 CLI can be installed once, globally, instead of pinned per campaign:
@@ -126,7 +135,10 @@ npx --no-install campaigns-os next --packet ./campaign-runtime.build.json --json
 `--proxy-base <origin>` when the map was saved on a non-production map store);
 `--spec <campaignspec.json>` starts from a local export or an agent-authored
 [local spec](docs/build-packet.md#local-spec-entry) instead. Local-spec identity
-requires a reviewed 1.43.0-or-later release. `--source` is
+requires a reviewed 1.43.0-or-later release. To prove the campaign on
+localhost before a preview deploy, add `--deploy-target local-serve` (and
+`--preview-url http://localhost:<port>/`); `qa policy set --deploy-target`
+changes it later. `--source` is
 always required: the folder of prepared HTML/CSS/assets for the pages you are
 building, with a source manifest that carries desktop and mobile screenshot
 proof for each designed page
@@ -267,21 +279,28 @@ Before an SDK bump, scan explicitly scoped tracked merchant HTML/JS with [SDK st
 
 ```bash
 npm run campaigns-os -- tooling status
+npm run campaigns-os -- tooling setup --target <campaign-dir> --platform claude --dry-run --json
 npm run campaigns-os -- install-skills --dry-run
 npm run campaigns-os -- install-skills --platform codex --dry-run
+npm run campaigns-os -- install-agent-context --target <page-kit-repo> --dry-run
 npm run campaigns-os -- qa install-browser
 npm run skills -- status
 npm run campaigns-os -- prepare-build --spec <spec.json> --source <html-dir> --target <page-kit-repo> --template-family <family> --brief <campaign-build-brief.yaml>
 npm run campaigns-os -- doctor --packet <page-kit-repo>/campaign-runtime.build.json
+npm run campaigns-os -- page-kit sync --packet <page-kit-repo>/campaign-runtime.build.json --dry-run
+npm run campaigns-os -- checkpoint waive --packet <packet.json> --gate source_html.producer_provenance --page <page_id> --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>" --dry-run
 npm run campaigns-os -- sdk storage-check --target <campaign-git-root> --target-sdk 0.4.38 --manifest <sdk-storage-manifest.json> --scope <campaign,shared> --json
 npm run campaigns-os -- standardize --target <page-kit-repo-or-cpk-repo> --json
 npm run campaigns-os -- theme inspect --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- theme generate --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- next setup --packet <page-kit-repo>/campaign-runtime.build.json
 npm run campaigns-os -- next build --packet <page-kit-repo>/campaign-runtime.build.json
+npm run campaigns-os -- record setup --packet <page-kit-repo>/campaign-runtime.build.json
+npm run campaigns-os -- record build --packet <page-kit-repo>/campaign-runtime.build.json
 npm run qa:install-browser
 npm run campaigns-os -- next polish --packet <packet.json> --report <assembly-report.json>
 npm run campaigns-os -- polish capture --packet <packet.json> --base-url <served-current-build-url>
+npm run campaigns-os -- record polish --packet <packet.json> --evidence <polish-evidence.json>
 npm run campaigns-os -- next qa --packet <packet.json> --report <assembly-report.json>
 npm run campaigns-os -- qa resolve --packet <packet.json>
 npm run campaigns-os -- qa run --packet <packet.json> --base-url <preview-url> --browser --test-order common
@@ -298,6 +317,12 @@ only when deliberately recording a new doctor stage. `--no-write` overrides
 `--write`. A custom `--doctor-out <path>` also requires `--write`; naming an
 output path alone does not create or refresh the file. Build/QA producer
 commands continue to record their own stages.
+Record a stage's completion with `record setup`, `record build` (after every
+rebuild) and `record polish --evidence <file>` rather than hand-editing
+`.campaign-runtime/build-context.json` or `.campaign-runtime/assembly-report.json`.
+Each validates what it would write, refuses a stage `next` has not reached, and
+writes nothing on failure; `--dry-run` runs the checks without writing. See
+[Build Packet](docs/build-packet.md) and [Polish evidence](docs/polish-evidence.md).
 Do not use `prepare-build --force` merely to refresh a catalog path: doctor
 already resolves the running toolkit's catalog, and force clears stage evidence.
 
