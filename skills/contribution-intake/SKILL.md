@@ -1,11 +1,11 @@
 ---
 name: contribution-intake
-version: 1.0.20
+version: 1.0.21
 description: Turn a suggestion about the agent surface into a classified, evidence-checked proposal and, only with attended approval, one issue on this repository's tracker.
 ---
 
-Bundle revision: 1.47.0+skills.2
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.47.0+skills.2`
+Bundle revision: 1.47.0+skills.3
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.47.0+skills.3`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read

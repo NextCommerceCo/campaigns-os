@@ -1,11 +1,11 @@
 ---
 name: campaign-run-evidence
-version: 1.0.20
+version: 1.0.21
 description: Interpret existing Campaigns OS doctor, QA and proof-depth evidence without claiming more proof than the artifacts contain.
 ---
 
-Bundle revision: 1.47.0+skills.2
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.47.0+skills.2`
+Bundle revision: 1.47.0+skills.3
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.47.0+skills.3`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -65,7 +65,12 @@ Saved-Map QA may publish it under the existing consent and flag controls; a
 publication failure does not erase the local one. Local-spec packet verdicts
 stay local even with `--post-verdict`, and `qa publish` refuses those packets.
 The readback projects `.campaign-runtime/qa-verdict.json` when
-that sidecar has been copied into the campaign repository. A markdown QA
+that sidecar has been copied into the campaign repository. The sidecar is a
+committable projection: it always empties `test_orders`, `entry_urls`,
+`page_urls` and `tested_urls`, so an empty `test_orders` there says nothing
+about ordering. Its typed-card proof is the `browser-test-order:<path>`
+assertions, each with a `browser-order-total-parity:<path>` row beside it; the
+full verdict under `qa-output/` keeps the order records. A markdown QA
 report, a ledger or a gate script is not a verdict and must not be scanned for
 a disposition, a run id or a blocker. Where two JSON verdicts exist, interpret
 the one the projection loaded; do not walk a report looking for a later rerun.
