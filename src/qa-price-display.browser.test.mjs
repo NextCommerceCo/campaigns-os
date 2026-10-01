@@ -100,6 +100,27 @@ test("a checkout bundle card counts a filled data-next-bundle-display price and 
   assert.equal(empty.status, "fail");
 });
 
+test("a checkout opened with an empty cart and no package selection of its own is skipped, not failed", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  // The single-step shape: the landing links to checkout with forcePackageId,
+  // so the checkout carries no selector and its summary stays hidden while
+  // the cart is empty.
+  const sdkCart = (count) => `<script>window.next = { getCartCount: () => ${count} };</script>`;
+  const hiddenSummary = '<div data-next-cart-summary style="display:none"></div>';
+  const upstream = await priceRow(`${sdkCart(0)}${hiddenSummary}`, checkoutPage);
+  assert.equal(upstream.status, "skipped");
+  assert.equal(upstream.severity, undefined);
+  assert.equal(upstream.evidence.cart_count, 0);
+  assert.equal(upstream.evidence.checkout_selection_surface.count, 0);
+
+  // A checkout with its own package selection still fails when no price shows.
+  const selector = await priceRow(`${sdkCart(0)}<div data-next-bundle-selector><div data-next-bundle-card data-next-package-id="1"></div></div>`, checkoutPage);
+  assert.equal(selector.status, "fail");
+  // So does a filled cart whose prices are hidden.
+  const filledCart = await priceRow(`${sdkCart(1)}${hiddenSummary}`, checkoutPage);
+  assert.equal(filledCart.status, "fail");
+});
+
 test("an empty data-next-bundle-display price does not count through an overlapping .price-wrapper selector", async (t) => {
   if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
   // .price-wrapper comes first in both surfaces' selector lists, so it reaches

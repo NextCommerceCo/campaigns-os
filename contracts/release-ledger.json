@@ -4187,6 +4187,27 @@
         }
       ],
       "entry_sha256": "d2b022241969d22dbe4e5865f24f34d1a7883e000b62218bbe3f82c0d958b24d"
+    },
+    {
+      "id": "RL-0201",
+      "sequence": 192,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.3",
+      "changelog_sha256": "dfb2c9f1cca4753ff4a2a29f298a878ffe61d0f7bee370ed0ef6e54d5b598674",
+      "agent_impact": "A skipped pricing.checkout_price_visible row whose actual names an empty cart and no package selection is expected on a checkout filled from the landing page; do not remove forcePackageId links or add a selector to make it pass. Page-binding evidence on starter-template pages now reads dynamic_unresolved instead of script_unavailable_or_limit.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Say when pricing.checkout_price_visible is skipped (empty cart, no package selection on the checkout) and name the Campaign Cart loader paths the page-binding reader skips, including dist/loader.js."
+        }
+      ],
+      "entry_sha256": "76ba7b7e7021dc17b44fc3807ffa49c48004264c2f5311581fd16da3ad0d557a"
     }
   ]
 }
