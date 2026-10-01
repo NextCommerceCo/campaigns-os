@@ -3,6 +3,7 @@
 Use this context when working in a target campaign repo with Campaigns OS artifacts.
 
 - Read `campaign-runtime.build.json` first.
+- To pick up an existing campaign, run `campaigns-os readback .` and `campaigns-os next --packet campaign-runtime.build.json` before reading artifacts by hand; `next` blocks polish and QA again whenever the built output changes. The committed `.campaign-runtime/qa-verdict.json` keeps no order records or URLs: its `browser-test-order:<path>` assertions are the typed-card proof, and the full verdict is under `qa-output/`.
 - If `.campaign-runtime/build-context.json` or `.campaign-runtime/assembly-report.json` exists, read them before editing campaign files.
 - Run `campaigns-os doctor --packet campaign-runtime.build.json` before build work.
 - Treat CampaignSpec validation as owned by the public `@nextcommerce/campaigns-os/campaign-spec` rules surfaced through doctor `spec.validation` findings; use structured rule/path detail when available.

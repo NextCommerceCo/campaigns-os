@@ -1075,13 +1075,17 @@ function artifactData(views, key) {
  * branch.
  */
 export function partitionAssertions(views) {
-  const buckets = { fail: [], pass: [], skipped: [], other: [] };
+  // `review` holds the verdict's own warn and manual_review statuses: evidence
+  // that still needs reading, which the disposition counts as an exception.
+  const buckets = { fail: [], pass: [], skipped: [], review: [], other: [] };
   const verdict = artifactData(views, "qa_verdict");
   if (verdict === null) return buckets;
   for (const assertion of verdict.assertions ?? []) {
     if (!isPlainObject(assertion)) continue;
     const status = assertion.status;
-    const bucket = status === "fail" || status === "pass" || status === "skipped" ? status : "other";
+    const bucket = status === "fail" || status === "pass" || status === "skipped"
+      ? status
+      : status === "warn" || status === "manual_review" ? "review" : "other";
     buckets[bucket].push(assertion);
   }
   return buckets;
@@ -1414,8 +1418,9 @@ function renderVerdict(views, lines) {
   lines.push(
     `QA VERDICT  [QA verdict; disposition: ${verdict.disposition} — Campaigns OS is the verdict authority]`,
   );
-  const { fail: failed, pass: passed, skipped, other } = partitionAssertions(views);
+  const { fail: failed, pass: passed, skipped, review, other } = partitionAssertions(views);
   let countLine = `  assertions: ${failed.length} fail, ${passed.length} pass, ${skipped.length} skipped`;
+  if (review.length) countLine += `, ${review.length} warn or manual review`;
   if (other.length) countLine += `, ${other.length} unrecognized status`;
   lines.push(countLine);
   for (const assertion of failed) {
@@ -1434,6 +1439,13 @@ function renderVerdict(views, lines) {
       for (const problem of problems) lines.push(`          - ${problem}`);
     }
   }
+  for (const assertion of review) {
+    const severityText = assertion.severity ? `, severity ${assertion.severity}` : "";
+    lines.push(
+      `  ${assertion.status}  ${recorded(assertion.id, "(no id)")}  ` +
+        `(family ${recorded(assertion.family, "(no family)")}${severityText})`,
+    );
+  }
   for (const assertion of passed) {
     const family = assertion.family || assertion.id || "(no family)";
     lines.push(`  pass  ${recorded(assertion.id, "(no id)")}  (family ${family})`);
@@ -1442,7 +1454,7 @@ function renderVerdict(views, lines) {
     lines.push(
       `  unrecognized status ${JSON.stringify(assertion.status ?? null)}  ${recorded(assertion.id, "(no id)")}  ` +
         `(family ${assertion.family || "(no family)"}) — shown as written; this readback ` +
-        "projects fail, pass, and skipped statuses",
+        "projects fail, pass, skipped, warn and manual_review statuses",
     );
   }
 
