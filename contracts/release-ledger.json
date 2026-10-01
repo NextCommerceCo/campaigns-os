@@ -3828,6 +3828,87 @@
         }
       ],
       "entry_sha256": "5c5b4362711e980c81eab5e1b643c42de1d8bfd74684dd73596f036925bfbeef"
+    },
+    {
+      "id": "RL-0191",
+      "sequence": 183,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.46.0+agent.4",
+      "changelog_sha256": "894c809bfbd9a3345cd56d5ff7664730b9fc3035ee9181f735dae1527f975e2b",
+      "agent_impact": "Skill text only. The next-campaigns-qa and next-campaigns-build skills now state that a required checkout field bound only on a type=\"hidden\" input, a disabled control, a read-only input or read-only textarea, or an aria-disabled=\"true\" control does not count as bound for browser-commerce-structure, and QA reports it in fields_bound.missing. Bundled skills carry revision 1.46.0+skills.2: an agent that loaded 1.46.0+skills.1 text should start a fresh session. QA behaviour is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.46.0+skills.2 bundle in executable examples."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.46.0+skills.2 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "State that a checkout field bound only on a hidden, disabled, read-only or aria-disabled control does not count as bound for QA; publish the 1.46.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.46.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "State that a required checkout field bound only on a hidden, disabled, read-only or aria-disabled control is not bound and is reported in fields_bound.missing; publish the 1.46.0+skills.2 bundle revision."
+        }
+      ],
+      "entry_sha256": "8e891f36ce261c325f0837bf4c37ca145f60dbdd3ef55ab0ac9c4c4f3f92de7c"
     }
   ]
 }
