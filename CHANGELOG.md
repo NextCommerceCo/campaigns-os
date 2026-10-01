@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.46.0+agent.10] - 2026-10-01
+
+### Fixed
+
+- `qa run --test-order` now follows a redirected order upsell mutation. When
+  the accept's POST to the order-upsells URL answered 307 or 308, the step
+  took the redirect hop as the mutation's response and judged the upsell
+  without the order body. It now waits for the redirect chain's final
+  response and judges from that body. A late body is matched to the step by
+  the request that started its redirect chain, so every hop of one redirected
+  POST counts as the step's request and a body from another request still
+  never does. A redirect whose chain has no final response is reported as no
+  mutation response, not as answered.
+
 ## [1.46.0+agent.9] - 2026-10-01
 
 ### Fixed
