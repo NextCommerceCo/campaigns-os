@@ -41,7 +41,7 @@
     
 
     
-    <script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.38/dist/loader.js" type="module"></script>
+    <script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.40/dist/loader.js" type="module"></script>
 
     
 
@@ -401,16 +401,15 @@
 </div>
 
                     </div>
-                    <div class="promo-timer">
-  <div class="promo-timer__inner">
-    <p class="promo-timer__label">
-      <span class="promo-timer__label-accent">Discount</span>
-      <span class="promo-timer__label-strong">Activated</span>
+                    <div class="countdown-timer">
+  <div class="countdown-timer__inner">
+    <p class="countdown-timer__label">
+      <span class="countdown-timer__label-accent">Discount</span>
+      <span class="countdown-timer__label-strong">Activated</span>
     </p>
-    <span class="promo-timer__pill"><span data-next-element="timer">59:59</span></span>
+    <span class="countdown-timer__pill"><span data-next-element="timer">59:59</span></span>
   </div>
 </div>
-
                     <div class="checkout-form checkout-form--reveal">
                       <form data-next-checkout="form" id="combo_form" method="post">
                         <div class="form-content">
@@ -1356,7 +1355,10 @@
                             </svg></div>
                           <div class="trust-badge--text">GUARANTEED<br>SAFE CHECKOUT</div>
                         </div>
-                      </div><img loading="lazy" src="/apollo/images/credit-card-flags.svg" alt="" class="credit-card__flags">
+                      </div>
+                      <div class="payment-img-wrapper "><div class="payment-logos" data-payment-logos aria-label="Accepted payment methods"><img loading="lazy" src="/apollo/images/cc-visa.svg" alt="Visa" class="payment-logos__item" data-payment-logo="bankcard" data-card-brand="visa" data-card-default="true"><img loading="lazy" src="/apollo/images/cc_master.svg" alt="Mastercard" class="payment-logos__item" data-payment-logo="bankcard" data-card-brand="mastercard" data-card-default="true"><img loading="lazy" src="/apollo/images/cc_amex.svg" alt="American Express" class="payment-logos__item" data-payment-logo="bankcard" data-card-brand="american_express" data-card-default="true"><img loading="lazy" src="/apollo/images/cc_discover.svg" alt="Discover" class="payment-logos__item" data-payment-logo="bankcard" data-card-brand="discover" data-card-default="true"><img loading="lazy" src="/apollo/images/cc_diners_club.svg" alt="Diners Club" class="payment-logos__item" data-payment-logo="bankcard" data-card-brand="diners_club" data-card-default="false" hidden><img loading="lazy" src="/apollo/images/cc_jcb.svg" alt="JCB" class="payment-logos__item" data-payment-logo="bankcard" data-card-brand="jcb" data-card-default="false" hidden><img loading="lazy" src="/apollo/images/cc_maestro.svg" alt="Maestro" class="payment-logos__item" data-payment-logo="bankcard" data-card-brand="maestro" data-card-default="false" hidden><img loading="lazy" src="/apollo/images/cc_dankort.svg" alt="Dankort" class="payment-logos__item" data-payment-logo="bankcard" data-card-brand="dankort" data-card-default="false" hidden><img loading="lazy" src="/apollo/images/paypal-logo.svg" alt="PayPal" class="payment-logos__item" data-payment-logo="paypal" hidden><img loading="lazy" src="/apollo/images/apple-pay-logo.svg" alt="Apple Pay" class="payment-logos__item" data-payment-logo="apple_pay" hidden><img loading="lazy" src="/apollo/images/google-pay-logo.svg" alt="Google Pay" class="payment-logos__item" data-payment-logo="google_pay" hidden><img loading="lazy" src="/apollo/images/klarna-logo.svg" alt="Klarna" class="payment-logos__item" data-payment-logo="klarna" hidden><img loading="lazy" src="/apollo/images/affirm-logo.svg" alt="Affirm" class="payment-logos__item" data-payment-logo="affirm" hidden><img loading="lazy" src="/apollo/images/link-logo.svg" alt="Link" class="payment-logos__item" data-payment-logo="link" hidden><img loading="lazy" src="/apollo/images/twint-logo.svg" alt="TWINT" class="payment-logos__item" data-payment-logo="twint" hidden><img loading="lazy" src="/apollo/images/bancontact-logo.svg" alt="Bancontact" class="payment-logos__item" data-payment-logo="bancontact" hidden><img loading="lazy" src="/apollo/images/ideal-logo.svg" alt="iDEAL" class="payment-logos__item" data-payment-logo="ideal" hidden><img loading="lazy" src="/apollo/images/sepa-logo.svg" alt="SEPA Direct Debit" class="payment-logos__item" data-payment-logo="sepa_debit" hidden>
+  </div></div>
+
                     </div>
                     <div class="hide-tablet-up">
                       <div class="guarantee-section guarantee-section--apollo">
@@ -1498,6 +1500,8 @@
     <script defer src="/apollo/js/checkout.js"></script>
     
     <script defer src="/apollo/js/checkout-apollo.js"></script>
+    
+    <script defer src="/apollo/js/payment-logos.js"></script>
     
   </body>
 </html>

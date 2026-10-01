@@ -3981,8 +3981,8 @@
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.46.0+agent.7",
-      "changelog_sha256": "a225ca418ab92d3787612a59f53c80179a079fb03e1e99a4aefca573133d02b8",
+      "changelog_section": "1.46.0+agent.8",
+      "changelog_sha256": "2bcfef5d884d1705d30dfc28095c19947894d913e16eba1204be4024fd79a5dc",
       "agent_impact": "When qa run analytics parity picks its candidate automatically (no --analytics-candidate) and that page is not a receipt, a missing Purchase is now analytics-parity:purchase-present MANUAL_REVIEW/WARN with evidence.page_mismatch, not a blocker. Read page_mismatch and pass the candidate receipt with --analytics-candidate to compare Purchase. An explicit candidate still blocks on a missing Purchase.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3994,7 +3994,7 @@
           "summary": "Describe how the automatic parity candidate reports purchase-present when it is not a receipt page, and the page_mismatch evidence."
         }
       ],
-      "entry_sha256": "0ba79e42f30833cd9df6b01feba0b72fe3a2a7322b02f6b86208d1bfd9d142a3"
+      "entry_sha256": "e59e719adc106c4d986dded9b9cac57fde7c16b62bda4b6a13b8ee7abcf03521"
     }
   ]
 }
