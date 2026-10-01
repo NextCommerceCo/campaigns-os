@@ -3,18 +3,21 @@
 For a new campaign, choose its working folder and run this from that folder:
 
 ```sh
-npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.46.0 next-campaign-page-kit@0.2.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
+npm install --save-exact next-campaign-page-kit@0.2.0 && npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.46.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
 ```
 
 Review the release source/provenance before installation as described in
 `AGENTS.md`. npm installs the dependencies first; `--no-install` then runs only
-the project's installed CLI. Keep `package.json` and `package-lock.json` in
-Git. For an existing project, preserve its reviewed pin: run `npm ci`, then
+the project's installed CLI. Page-kit stays a runtime dependency and the
+toolkit a dev dependency: installing page-kit with `--save-dev` would move it
+out of `dependencies` and break builds that run `npm ci --omit=dev`. Keep
+`package.json` and `package-lock.json` in Git. For an existing project, preserve its reviewed pin: run `npm ci`, then
 `npx --no-install campaigns-os tooling setup --target . --platform claude`
 on a release that supports setup. Changing the pin is a separate update.
 
 Setup checks the exact toolkit pin, its lockfile version and the installed
-page-kit dependency before it changes files. It composes the existing
+page-kit dependency before it changes files, and warns when page-kit is
+declared only in `devDependencies`. It composes the existing
 installers to:
 
 1. Install the QA browser through this toolkit's own Playwright package.
