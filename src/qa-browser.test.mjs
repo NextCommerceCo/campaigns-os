@@ -1359,6 +1359,22 @@ test("rejected order-create detection matches only the create endpoint with a 4x
   ] }), null);
 });
 
+test("a duplicate-order rejection keeps its reason through capture and names the remedy", () => {
+  const { summarizeResponseBody, orderCreateRejectionMessage } = __qaBrowserTestHooks;
+  // The platform's body as the response capture sees it.
+  const body = summarizeResponseBody({ payment_details: "Duplicate order detected, order not created.", ref_id: "abc" }, { status: 400 });
+  assert.equal(body.payment_details, "Duplicate order detected, order not created.");
+  // A successful response never carries payment_details into evidence.
+  assert.equal(summarizeResponseBody({ payment_details: "processor text", ref_id: "abc" }, { status: 201 }).payment_details, undefined);
+  const message = orderCreateRejectionMessage({ status: 400, body });
+  assert.match(message, /^order create rejected: HTTP 400: Duplicate order detected/);
+  assert.match(message, /duplicate_order/);
+  assert.match(message, /--test-email-prefix/);
+  // Any other rejection keeps its own reason and gains no remedy.
+  assert.equal(orderCreateRejectionMessage({ status: 400, body: { detail: "Unknown voucher" } }), "order create rejected: HTTP 400: Unknown voucher");
+  assert.equal(orderCreateRejectionMessage({ status: 400, body: { ref_id: "abc" } }), "order create rejected: HTTP 400");
+});
+
 test("voucher extraction skips identity-less entries so bare amount rows cannot suppress the discount_total fallback", () => {
   const { extractOrderVouchers, assessCouponApplication } = __qaBrowserTestHooks;
 

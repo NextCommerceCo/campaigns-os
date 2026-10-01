@@ -4427,6 +4427,27 @@
         }
       ],
       "entry_sha256": "4780bf77ca1a5ec8bc8728318237eeeff1e88c81a31fcaece6e1a6b4fc6b6d7b"
+    },
+    {
+      "id": "RL-0203",
+      "sequence": 196,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.10",
+      "changelog_sha256": "b4bbba3f0ec3aacfe704b5f4690b867ea62d50aa9e41eb911c997bec20872d89",
+      "agent_impact": "A browser-test-order row that says order create rejected: HTTP 400: Duplicate order detected … (duplicate_order …) means the platform refused a repeat order from the same test customer: re-run with a different --test-email-prefix or wait, and do not change the address or the funnel to get past it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Explain the platform's duplicate-order refusal for a reused test customer, how QA names it, and the remedy."
+        }
+      ],
+      "entry_sha256": "22e451d62b473dab8907cfd897028f5add642614c10476fc2138b81657ac23d9"
     }
   ]
 }

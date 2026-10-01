@@ -1757,6 +1757,17 @@ shared real inbox rather than a synthetic one). When neither is set, the runner
 falls back to a single stable synthetic address — still one reused customer, but
 not deliverable.
 
+Reusing one customer has one cost. The platform refuses an order whose customer,
+items and total match one it accepted or is still processing in the last 30
+minutes ("Duplicate order detected, order not created"). A successful test order
+does not hold that window, so the paths of one run do not collide. Two QA runs
+against the same campaign at once do, and so can a rerun soon after an attempt
+that died mid-submit. QA reports it on the path's `browser-test-order` row as
+`order create rejected: HTTP 400: Duplicate order detected …` followed by
+`duplicate_order` and the remedy: re-run with a different `--test-email-prefix`
+(or `--test-email`), or wait. The shipping address is not part of the match, so
+changing `--test-address1` does not help.
+
 The browser driver intentionally behaves like a user:
 
 - package selection uses rendered `[data-next-package-id]` controls when
