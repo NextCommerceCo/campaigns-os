@@ -101,6 +101,13 @@ export function setupTooling(args, { packageRoot, installSkills, installAgentCon
   if (!existsSync(join(target, "node_modules", "next-campaign-page-kit", "package.json"))) {
     throw new Error("tooling setup: page-kit is declared but not installed; run npm ci in the selected project first.");
   }
+  // Page-kit builds the deployed pages, so a dev-only declaration disappears
+  // from any host that installs with --omit=dev or NODE_ENV=production.
+  // The command names the installed version, so it can be pasted as-is.
+  const pageKitVersion = json(join(target, "node_modules", "next-campaign-page-kit", "package.json")).version;
+  const warnings = manifest.dependencies?.["next-campaign-page-kit"] ? [] : [
+    `next-campaign-page-kit is declared only in devDependencies, so builds that run npm ci --omit=dev or set NODE_ENV=production will not install it. Move it back with npm install --save-exact next-campaign-page-kit@${pageKitVersion}.`,
+  ];
 
   // Preflight every destination before any installer runs. Custom repository
   // instructions are preserved; only one Claude import line is appended.
@@ -136,6 +143,7 @@ export function setupTooling(args, { packageRoot, installSkills, installAgentCon
     context,
     instructions: { path: instructions, action: !ready ? "not_run" : hasImport ? "unchanged" : "append_import" },
     browser,
+    warnings,
     next_action: contextFailed
       ? `Setup could not add the runtime ignore block (${context.gitignore.reason}). Fix .gitignore and rerun setup; skills and context files may already be installed.`
       : args["dry-run"]
@@ -154,6 +162,7 @@ export function setupTextLines(result) {
     `Skills revision: ${result.skills_revision}`,
     `Browser: ${result.browser.status}`,
     ...(result.browser.note ? [result.browser.note] : []),
+    ...(result.warnings ?? []).map((warning) => `Warning: ${warning}`),
     result.next_action,
     result.note,
   ];
