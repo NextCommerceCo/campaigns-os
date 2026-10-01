@@ -116,9 +116,10 @@ test("a checkout opened with an empty cart and no package selection of its own i
   // A checkout with its own package selection still fails when no price shows.
   const selector = await priceRow(`${sdkCart(0)}<div data-next-bundle-selector><div data-next-bundle-card data-next-package-id="1"></div></div>`, checkoutPage);
   assert.equal(selector.status, "fail");
-  // So does a filled cart whose prices are hidden.
+  // So does a filled cart whose prices are hidden, without the probe values.
   const filledCart = await priceRow(`${sdkCart(1)}${hiddenSummary}`, checkoutPage);
   assert.equal(filledCart.status, "fail");
+  assert.equal(filledCart.evidence.cart_count, undefined);
 });
 
 test("an empty data-next-bundle-display price does not count through an overlapping .price-wrapper selector", async (t) => {

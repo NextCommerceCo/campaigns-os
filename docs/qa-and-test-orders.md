@@ -486,7 +486,8 @@ hidden, zero-size or empty bundle-display node does not count. A checkout that
 shows no price because QA opened it directly, with an empty SDK cart and no
 package selection of its own, is `skipped` rather than failed:
 `pricing.checkout_price_visible` records `cart_count` and
-`checkout_selection_surface` and says so. Its cart is filled on an earlier
+`checkout_selection_surface` and says so. A failed cart probe leaves the row
+failed and records `empty_cart_probe_error`. Its cart is filled on an earlier
 page, for example by a landing link carrying `forcePackageId`, and the test
 order enters it from there. A checkout with its own package selection, or a
 filled cart, still fails when no price shows.
@@ -1926,8 +1927,9 @@ ASCII whitespace and compared case-insensitively as the browser does; classic
 `built_output.script_syntax` in [the Build Packet doc](build-packet.md).
 
 External executable scripts other than the recognized jsDelivr Campaign Cart
-loader or index (`dist/loader.js`, which the starter templates load,
-`dist/index.js` or `public/loader.js`) are inspected only on the page's origin. Each page admits at most
+loader or index are inspected only on the page's origin. Three Campaign Cart
+paths count as the SDK and are never fetched: `dist/loader.js` (the one the
+starter templates load), `dist/index.js` and `public/loader.js`. Each page admits at most
 6 such references; each run fetches at most 24 distinct URLs (deduplicated),
 256 KiB per response and 6 MiB aggregate, 5 seconds per request including body
 read (at most 30 seconds of sequential config requests per page). Redirects,

@@ -2831,7 +2831,11 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
       ? await Promise.all([
         browserPage.evaluate(() => (typeof window.next?.getCartCount === "function" ? window.next.getCartCount() : null)),
         browserPage.evaluate(checkoutSelectionSurfaceScript()),
-      ]).then(([cart_count, selection_surface]) => ({ cart_count, selection_surface }), () => null)
+      ]).then(
+        ([cart_count, selection_surface]) => ({ cart_count, selection_surface }),
+        // A failed probe leaves the row failed, and says why on the row.
+        (error) => ({ probe_error: trim(error?.message || String(error)).slice(0, 200) }),
+      )
       : null;
     return [checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount, emptyEntry })];
   }
@@ -2908,10 +2912,11 @@ function upsellPriceVisibilityAssertion({ page, selectors, visibleCount }) {
 // rather than reporting an empty selector list that reads like a check that
 // ran and found nothing.
 //
-// `emptyEntry` ({ cart_count, selection_surface }) is read only when nothing
-// priced is visible. An empty SDK cart on a checkout with no package
-// selection of its own is not a price the shopper fails to see: the row is
-// skipped with that reason rather than failed.
+// `emptyEntry` ({ cart_count, selection_surface }, or { probe_error }) is read
+// only when nothing priced is visible. An empty SDK cart (cart_count 0, never
+// null: null means no SDK was read) on a checkout with no package selection of
+// its own is not a price the shopper fails to see: the row is skipped with
+// that reason rather than failed, and only that row carries the probe values.
 function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount = 0, emptyEntry = null }) {
   const totalChecked = Array.isArray(totalSelectors);
   const ok = visibleCount >= 1 || (totalChecked && totalVisibleCount >= 1);
@@ -2935,7 +2940,8 @@ function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, total
       selectors,
       visible_count: visibleCount,
       ...(totalChecked ? { total_selectors: totalSelectors, total_visible_count: totalVisibleCount } : {}),
-      ...(emptyEntry ? { cart_count: emptyEntry.cart_count, checkout_selection_surface: emptyEntry.selection_surface } : {}),
+      ...(enteredUpstream ? { cart_count: emptyEntry.cart_count, checkout_selection_surface: emptyEntry.selection_surface } : {}),
+      ...(emptyEntry?.probe_error ? { empty_cart_probe_error: emptyEntry.probe_error } : {}),
       page_url: page.url,
     },
   });
