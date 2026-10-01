@@ -2,6 +2,23 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.47.0] - 2026-10-01
+
+### Changed
+
+- `contracts/effects.v1.json`: the `--force` notes on `start`,
+  `prepare-build` and `build` now say that `--force` also regenerates a stale
+  Design Source Package that the intake synthesized itself (#506). That holds
+  when the previous Assembly Report records origin `"synthesized"` and the
+  package bytes still match it. An adopted or hand-edited package is never
+  replaced. The declared writes already covered this path, so behaviour is
+  unchanged; only the notes were incomplete.
+- `compatibility.json` names the package version again. It still said 1.34.0
+  (#486). A unit test now fails when it differs from `package.json`.
+- Bundled skills carry revision `1.47.0+skills.1`, with each skill version
+  advanced one patch, and the local setup install command pins the 1.47.0
+  package. The skill text is unchanged.
+
 ## [1.46.0+agent.11] - 2026-10-01
 
 ### Changed
