@@ -4023,11 +4023,11 @@ function collectPlaceholderTextResidueMatches(root, terms) {
 }
 
 // Rendered-output content-residue scan (assembly-surfaces prototype): scans
-// BUILT pages for the needs-merchant-input marker and urgency chrome rendered
-// without verified offer urgency (blockers), plus demo/placeholder residue and
-// generic content anti-pattern hits (warnings feeding the review/attestation
-// queue). Scans _site output, not frontmatter — layout/script-rendered chrome
-// only exists after the build.
+// BUILT pages for the needs-merchant-input marker and, on a brief-backed
+// build, starter countdown chrome the brief does not verify (blockers), plus
+// template demo/placeholder residue (warnings). The merchant's own proof and
+// urgency copy is not scanned. Scans _site output, not frontmatter —
+// layout/script-rendered chrome only exists after the build.
 export function validateBuiltContentResidue(packet, errors, warnings, ready, derived, buildState = {}) {
   if (!isStageComplete(buildState.report, "assembly")) return;
   // Scan the RENDERED _site output, not the campaign source dir: the Liquid
@@ -4040,7 +4040,7 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
   const urgencyVerified = briefUrgencyVerified(brief?.payload);
   const findings = scanBuiltOutputContentResidue(siteRoot, { urgencyVerified });
   if (!findings.length) {
-    ready.push("Built output carries no needs-input markers, unverified urgency chrome, or content-residue hits");
+    ready.push("Built output carries no needs-input markers, unverified urgency chrome, or template demo residue");
     return;
   }
   // One issue per finding id, carrying the FULL file inventory: the id keeps
@@ -4073,9 +4073,8 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
       );
     } else if (id === "unverified_urgency_countdown") {
       // The scanner emits this only when the brief does not verify urgency
-      // (urgencyVerified=false). Severity keys on the path: with a readable
-      // brief payload (AI-assembled) it blocks; a designed-source campaign
-      // with no brief payload may carry an intentional countdown — warning.
+      // (urgencyVerified=false). Only a readable brief payload (AI-assembled)
+      // makes it a finding.
       if (briefReadable) {
         addIssue(
           errors,
@@ -4083,29 +4082,17 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
           `Built output renders countdown chrome without verified offer urgency (${where}). Set offer.urgency.verified in ${BRIEF_PAYLOAD_REL_PATH} from a real promotion window, or blank the urgency slots.`,
         );
       } else if (brief?.error) {
-        // Unreadable brief payload: the run is already blocked by
-        // proof_attestation.unreadable with the right remediation (repair the
-        // brief). Urgency is re-evaluated on the next doctor run once the
-        // brief parses — "confirm the urgency is real" copy here would point
-        // the operator at the wrong fix.
-      } else {
-        addIssue(
-          warnings,
-          "content_residue.urgency_unattested",
-          `Built output renders countdown chrome and no brief payload attests the promotion window (${where}). Confirm the urgency is real (a genuine offer window or live inventory) before launch.`,
-        );
+        // Deliberately nothing: an unreadable brief payload already blocks
+        // through proof_attestation.unreadable (validateProofAttestation),
+        // and urgency is re-evaluated once the brief parses.
       }
+      // No brief payload at all: the countdown is the merchant's content and
+      // is not ours to question.
     } else if (id === "demo_residue_term" || id === "bracket_placeholder_stub") {
       addIssue(
         warnings,
         "content_residue.demo_residue",
         `Built output carries template demo/placeholder residue (${where}; e.g. "${finding.excerpt}"). Fill or blank the slot — demo values must never ship.`,
-      );
-    } else {
-      addIssue(
-        warnings,
-        "content_residue.anti_pattern",
-        `Built output matches content anti-pattern "${id}" (${where}; e.g. "${finding.excerpt}"). ${finding.rule || "Remove it or route it through brief-sourced proof."} This is a review warning and nothing downstream blocks on it: the claim is the operator's and the client's responsibility — remove or evidence it, never make it more plausible.`,
       );
     }
   }
