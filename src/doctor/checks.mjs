@@ -363,7 +363,7 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: PAGE_KIT_SDK_VERSION_SCOPE,
     phase: "target",
-    run: ({ spec, errors, warnings, ready, derived, buildState }) => validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildState),
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildState, packet),
   },
   {
     id: PAGE_KIT_STORE_PROFILE_SCOPE,
@@ -1159,17 +1159,22 @@ function validateLocalProof(packet, report, errors, warnings, ready) {
   addIssue(errors, LOCAL_PROOF_PARITY_SCOPE, `Production parity FAILED${difference ? ` — first non-gated difference: ${singleLineField(String(difference.kind))} at ${singleLineField(String(difference.route))}${difference.line ? ` line ${difference.line}` : ""}: ${singleLineField(String(difference.detail || ""))}` : `: ${singleLineField(String(parity.summary || ""))}`}. Rebuild in development, re-prove, and run ${parityCommand} again. ${LOCAL_PROOF_NEVER_EDIT_RULE}`, difference ? { first_difference: difference } : undefined);
 }
 
-function validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildState) {
+function validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildState, packet = null) {
   const report = buildState?.report || null;
   const required = stageIsTerminal(report?.stages?.setup?.status)
     || stageIsTerminal(report?.stages?.assembly?.status)
     || derived.scaffold_required !== true;
+  const family = packet?.assembly?.template_family;
+  const verified = isNonEmptyString(family) && isCertifiedTemplateFamily(family)
+    ? assessTemplateFreshness({ family, catalog: resolveCommerceCatalog(), sdkSupportPolicy: defaultSdkSupportPolicy() }).verified_sdk_version
+    : null;
   const gate = evaluatePageKitSdkVersion({
     spec,
     specStatus: buildState?.specStatus || "ok",
     targetLoad: buildState?.pageKitCampaignConfig,
     waivers: report?.waivers,
     required,
+    familyVerification: verified ? { family, sdk_version: verified } : null,
   });
   derived.checkpoint_gates.push(gate);
 
@@ -3199,7 +3204,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
             addIssue(
               warnings,
               "source_html.pages.source_hash",
-              `Source page "${page.page_id}" hash mismatch — file at ${page.path} has changed since the manifest was written (manifest sha256=${expectedHash.slice(0, 12)}…, on-disk sha256=${actualHash.slice(0, 12)}…). Re-run the producer to refresh the manifest, or accept the local edits.`,
+              `Source page "${page.page_id}" hash mismatch — file at ${page.path} has changed since intake recorded it in the Build Packet (recorded sha256=${expectedHash.slice(0, 12)}…, on-disk sha256=${actualHash.slice(0, 12)}…). This warning does not block. Re-running start or prepare-build with --force records the current file and clears recorded stage evidence; editing the source-html manifest alone does not change the hash the packet holds.`,
             );
           }
         }

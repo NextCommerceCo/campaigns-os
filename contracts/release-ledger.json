@@ -4187,6 +4187,33 @@
         }
       ],
       "entry_sha256": "d2b022241969d22dbe4e5865f24f34d1a7883e000b62218bbe3f82c0d958b24d"
+    },
+    {
+      "id": "RL-0204",
+      "sequence": 192,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.6",
+      "changelog_sha256": "9ca8e387a947a456054312f84e7bf4a8e74e8af0442707157690f791c3bc838b",
+      "agent_impact": "Pin global_config.sdk_version to the SDK doctor names for the selected template family when the spec has none. To record a standalone page whole, use --wrapper-policy preserve_document_wrappers. A source_hash drift warning is cleared only by re-running intake with --force, not by editing the manifest; make post-build revisions under src/<route>/.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Say the source_hash drift warning compares the packet's recorded hash, that intake with --force refreshes it, and where post-build revisions belong."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Name the selected family's verified SDK in page_kit.sdk_version.spec_missing, and name the packet hash and intake refresh in source_html.pages.source_hash."
+        }
+      ],
+      "entry_sha256": "fff0fc788ca87b501fc4e47ae3823e5a9d1de32a94118aa45f9561ed0d043ffe"
     }
   ]
 }

@@ -1453,7 +1453,7 @@ Each `manifest.pages[]` entry MAY carry a `source_hash` field — the sha256 hex
 Behavior:
 
 - Optional on the producer side. Producers that don't emit `source_hash` (pre-Slice-6 manifests, template-stock, hand-authored) keep working; doctor's drift check is silent without a hash to compare.
-- Warning severity only. A drift never blocks a build — the operator decides whether to re-run the producer to refresh the manifest or accept the local edits.
+- Warning severity only. A drift never blocks a build. The hash doctor compares is the one intake recorded in the packet, so editing the manifest alone does not clear the warning: re-running `start` or `prepare-build` with `--force` records the current file, and also clears recorded stage evidence. A revision made after build belongs in the page-kit source under `src/<route>/`; the source HTML stays the design provenance.
 - The warning names the file path and includes both hashes (truncated to 12 chars) so the operator can confirm which file diverged without re-running the producer.
 
 ### Reference AI-generated producer

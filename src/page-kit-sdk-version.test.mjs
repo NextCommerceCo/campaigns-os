@@ -124,6 +124,14 @@ test("a missing CampaignSpec SDK declaration is a non-waivable blocker", () => {
   assert.equal(gate.state_fingerprint, null);
   assert.equal(gate.expected_sdk_version, null);
   assert.deepEqual(gate.required_actions.map((action) => action.id), ["repair_spec"]);
+
+  // Given the selected family's verification, the reason names the SDK to pin.
+  const named = evaluatePageKitSdkVersion({
+    spec: { runtime: {}, global_config: {} },
+    targetLoad: targetLoad(),
+    familyVerification: { family: "apollo", sdk_version: "0.4.40" },
+  });
+  assert.match(named.reason, /"apollo" template family was last verified against 0\.4\.40\./);
 });
 
 test("an unavailable packet-local CampaignSpec is a non-waivable blocker", () => {

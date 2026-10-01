@@ -2,6 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.47.0+agent.6] - 2026-10-01
+
+### Changed
+
+- `doctor`'s `page_kit.sdk_version.spec_missing` now names the SDK the
+  selected certified template family was last verified against (for
+  example `The "apollo" template family was last verified against
+  0.4.40.`), so the CampaignSpec pin is not chosen by searching docs. The
+  bundled SDK support policy's `latest_known_release` moves from 0.4.38 to
+  0.4.40, which the catalog's verification records already named.
+- `source_html.prep.document_wrapper` names the two ways to record a
+  standalone page as whole: `--wrapper-policy preserve_document_wrappers`
+  on `start` or `prepare-build`, or `wrapper_policy` in the source-html
+  manifest.
+- `source_html.pages.source_hash` now says the hash it compares is the one
+  intake recorded in the Build Packet, that re-running intake with
+  `--force` refreshes it (and clears recorded stage evidence), and that
+  editing the manifest alone does not. It no longer points at a producer
+  script. `docs/build-packet.md` says the same, and that a revision made
+  after build belongs under `src/<route>/`.
+
 ## [1.47.0+agent.1] - 2026-10-01
 
 ### Fixed

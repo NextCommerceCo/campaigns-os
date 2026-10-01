@@ -92,6 +92,10 @@ export function evaluatePageKitSdkVersion({
   waivers = [],
   required = true,
   now = new Date().toISOString(),
+  // { family, sdk_version } of the selected certified template family, when
+  // the caller knows it: the missing-pin reason names that verified SDK so the
+  // pin is not chosen by searching docs.
+  familyVerification = null,
 } = {}) {
   const pin = resolveSpecSdkPin(spec);
   const { has_canonical: hasCanonical, has_alias: hasAlias } = pin;
@@ -139,7 +143,10 @@ export function evaluatePageKitSdkVersion({
       scope: PAGE_KIT_SDK_VERSION_SCOPE,
       status: "blocked",
       code: "page_kit.sdk_version.spec_missing",
-      reason: "CampaignSpec is missing global_config.sdk_version (and the runtime.sdk_version alias); add an explicit released SDK pin before build or QA.",
+      reason: "CampaignSpec is missing global_config.sdk_version (and the runtime.sdk_version alias); add an explicit released SDK pin before build or QA."
+        + (isReleasedSdkVersion(familyVerification?.sdk_version) && typeof familyVerification?.family === "string"
+          ? ` The "${familyVerification.family}" template family was last verified against ${familyVerification.sdk_version}.`
+          : ""),
       waivable: false,
       subject,
       state: { spec_status: "missing" },
