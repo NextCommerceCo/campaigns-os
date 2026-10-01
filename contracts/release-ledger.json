@@ -4189,13 +4189,34 @@
       "entry_sha256": "d2b022241969d22dbe4e5865f24f34d1a7883e000b62218bbe3f82c0d958b24d"
     },
     {
-      "id": "RL-0202",
+      "id": "RL-0204",
       "sequence": 192,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.47.0+agent.4",
-      "changelog_sha256": "52369f02662bbe665619c4c7e00ea8c593e02bde5a64a23d2899770f12731c8b",
+      "changelog_section": "1.47.0+agent.6",
+      "changelog_sha256": "ce5b04b70f31282319d2974ffaeb6352ecb96e89c136e72c7f6f8a32332afab4",
+      "agent_impact": "Help for start, prepare-build and build now lists --deploy-target, --preview-url and --production-url, which intake already accepted; a Start page or docs command using them matches --help.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "List --deploy-target, --preview-url and --production-url on the start, prepare-build and build usage lines; intake already writes them to the Build Packet deploy block."
+        }
+      ],
+      "entry_sha256": "bbf5c759e5518a3025a0e5f6db6b732e8960721ce45bb4be3821cb58096319e8"
+    },
+    {
+      "id": "RL-0202",
+      "sequence": 193,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.9",
+      "changelog_sha256": "5d93e171ffd6b8ffeb1ffc8973cc9b23d1e38042c8223ed5f1c5d650f5fe2ffc",
       "agent_impact": "When resuming a campaign, run readback and next before reading artifacts by hand. Read typed-card proof from the committed sidecar's browser-test-order:<path> assertions; its test_orders array is always empty. readback now prints warn and manual_review rows as such. Bundled skills carry revision 1.47.0+skills.3: an agent that loaded an earlier 1.47.0 revision should start a fresh session.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4291,7 +4312,7 @@
           "summary": "Publish the 1.47.0+skills.3 bundle revision."
         }
       ],
-      "entry_sha256": "78ef222c2fc6f840ed527d84460f1281fd15f755aa5a7b761096e8257fe0c737"
+      "entry_sha256": "bca69ace8c282d3aa21e39aa71df4b1d78b3909569412e09fa8139814f4ec1e6"
     }
   ]
 }
