@@ -2,6 +2,30 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.47.0+agent.12] - 2026-10-01
+
+### Changed
+
+- On the local preview (a `local-serve` packet served from a loopback host),
+  missing polish and page-load evidence no longer stops the loop before a
+  typed-card order. One policy, `src/local-preview-policy.mjs`, carries
+  forward `polish.evidence_missing` / `polish.report_missing`, a page-load
+  checkpoint with no capture recorded, and the new
+  `polish.hidden_eager_media.no_capturable_routes` (every mapped page is
+  template stock). It also makes starter-template residue a warning when the
+  theme gate finds nothing generatable. Doctor reports these as warnings,
+  `next` moves past polish, and QA records `warn` rows, so the verdict is at
+  best `ready_with_exceptions`. A campaign built from a starter template with
+  no design can now reach a toolkit test order locally. Hosted preview and
+  production packets, other checks, `record polish` and the waiver commands
+  are unchanged. `docs/qa-and-test-orders.md` lists the carried-forward
+  checks.
+- An all-template-stock packet's page-load checkpoint now reports
+  `polish.hidden_eager_media.no_capturable_routes` instead of the
+  malformed-authority `capture_malformed`, and `polish capture` says why it
+  has nothing to capture. It still blocks off the local preview, with one
+  action: map a page to its design source, or prove on the local preview.
+
 ## [1.47.0+agent.11] - 2026-10-01
 
 ### Changed

@@ -58,7 +58,11 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
     binding:reportBound&&id(verdict.run_id)&&id(verdict.run_id)===id(report?.stages?.qa?.verdict_run_id)&&build&&qaSource===build&&doctor?.derived?.build_output_fingerprint?.status==='pass'&&hash(verdict.spec_hash)===localHash?'matching':'unconfirmed',
     publish_state:accepted(qaResult?.qa_verdict_publish?.state,['skipped','ok','failed']),
   }:null;
-  const gates=(Array.isArray(continuation?.gates)?continuation.gates:[]).slice(0,PROGRESS_GATE_LIMIT).map(gate=>({id:accepted(gate?.id,PROGRESS_GATE_IDS),state:PROGRESS_GATE_IDS.includes(gate?.id)?accepted(gate?.status,['pass','blocked','waived','not_applicable']):'unknown'}));
+  // The snapshot schema has no carried-forward state: a gate the local preview
+  // policy carried forward does not apply on this path, so it is not_applicable
+  // here (never pass).
+  const gateState=status=>accepted(status==='carried_forward'?'not_applicable':status,['pass','blocked','waived','not_applicable']);
+  const gates=(Array.isArray(continuation?.gates)?continuation.gates:[]).slice(0,PROGRESS_GATE_LIMIT).map(gate=>({id:accepted(gate?.id,PROGRESS_GATE_IDS),state:PROGRESS_GATE_IDS.includes(gate?.id)?gateState(gate?.status):'unknown'}));
   const actions=[...new Set((Array.isArray(continuation?.next_actions)?continuation.next_actions:[]).slice(0,64).map(action=>accepted(action?.id,PROGRESS_ACTION_IDS)))];
   const stage=accepted(continuation?.stage,PROGRESS_CONTINUATIONS);
   const preview=typeof packet?.deploy?.preview_url==='string'&&packet.deploy.preview_url?packet.deploy.preview_url:null;

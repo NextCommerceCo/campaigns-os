@@ -62,6 +62,14 @@ export const HIDDEN_EAGER_MEDIA_ACTIONS = Object.freeze({
     command: null,
     description: localProofRebuildText(),
   }),
+  // Every mapped page is template stock: capture has no design route, so
+  // neither a recapture nor an authority repair can produce the evidence.
+  map_design_route: Object.freeze({
+    id: "polish.hidden_eager_media.map_design_route",
+    kind: "manual",
+    command: null,
+    description: "Every mapped page is template stock, so polish capture has nothing to measure. Map at least one page to its design source HTML (source_html.pages[].path) and rerun intake, or prove the campaign on the local preview (deploy.target local-serve served from localhost), where this missing evidence is carried forward as a warning.",
+  }),
 });
 
 const PACKET_PLACEHOLDER = "--packet <packet>";

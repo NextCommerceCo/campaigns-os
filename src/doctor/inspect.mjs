@@ -1,5 +1,6 @@
 // Doctor entry points: the doctor command, packet inspection and built-output inspection.
 import { resolveCampaignIdentity } from "../spec-source-identity.mjs";
+import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, carriedForwardMessage, CARRIED_FORWARD } from "../local-preview-policy.mjs";
 import { withHtmlScanSnapshot } from "../html-scan.mjs";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -506,16 +507,23 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   }
   runPricingCssHideCheck({ packet, derived, warnings, ready, report });
 
-  const polishCheckpointGate = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report });
+  // The local preview policy (local-preview-policy.mjs) carries missing
+  // polish and page-load evidence forward as warnings on a local-serve packet.
+  const polishCheckpointGate = applyLocalPreviewToCheckpoint(
+    evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
+    { packet, report },
+  );
   derived.polish_checkpoint_gate = polishCheckpointGate;
-  const polishGate = evaluatePolishGate({
+  const polishGate = applyLocalPreviewToPolishGate(evaluatePolishGate({
     report,
     hiddenEagerMediaGate: polishCheckpointGate,
     currentOutputFingerprint: derived.build_output_fingerprint?.value || null,
-  });
+  }), { packet, checkpointGate: polishCheckpointGate });
   derived.polish_gate = polishGate;
   if (polishGate.status === "blocked" && !polishGate.owned_checkpoint_only) {
     pushGateIssue({ errors, warnings }, gateIssue("polish_gate", polishGate));
+  } else if (polishGate.status === CARRIED_FORWARD && !polishGate.owned_checkpoint_only) {
+    addIssue(warnings, polishGate.code, carriedForwardMessage(polishGate), { polish_gate: polishGate });
   } else if (polishGate.status === "waived" && !polishGate.owned_checkpoint_only) {
     ready.push(`Polish gate passed under waiver: ${polishGate.waiver?.reason || "(no reason recorded)"}`);
   } else if (polishGate.status === "pass") {
@@ -524,6 +532,8 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
 
   if (polishCheckpointGate.status === "blocked") {
     pushGateIssue({ errors, warnings }, gateIssue("polish_checkpoint_gate", polishCheckpointGate));
+  } else if (polishCheckpointGate.status === CARRIED_FORWARD) {
+    addIssue(warnings, polishCheckpointGate.code, carriedForwardMessage(polishCheckpointGate), { polish_checkpoint_gate: polishCheckpointGate });
   } else if (polishCheckpointGate.status === "waived") {
     addIssue(
       warnings,
