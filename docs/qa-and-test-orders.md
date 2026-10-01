@@ -486,11 +486,11 @@ hidden, zero-size or empty bundle-display node does not count. A checkout that
 shows no price because QA opened it directly, with an empty SDK cart and no
 package selection of its own, is `skipped` rather than failed:
 `pricing.checkout_price_visible` records `cart_count` and
-`checkout_selection_surface` and says so. A failed cart probe leaves the row
-failed and records `empty_cart_probe_error`. Its cart is filled on an earlier
-page, for example by a landing link carrying `forcePackageId`, and the test
-order enters it from there. A checkout with its own package selection, or a
-filled cart, still fails when no price shows.
+`checkout_selection_surface` and says so. That checkout's cart is filled on
+an earlier page, for example by a landing link carrying `forcePackageId`, and
+the test order enters it from there. A checkout with its own package
+selection, or a filled cart, still fails when no price shows. If the cart
+probe itself fails, the row stays failed and records `empty_cart_probe_error`.
 Promoted template families must also have
 `contracts/template-brand-contract.<family>.v0.json`; QA emits a blocker if the
 selected family is missing its brand/residue/pricing contract instead of
