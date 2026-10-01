@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.46.0+agent.8] - 2026-10-01
+## [1.46.0+agent.7] - 2026-10-01
 
 ### Fixed
 
@@ -16,6 +16,21 @@ Notable supported-surface changes are recorded here.
   or a built entry whose topology page type is a receipt, still blocks on a
   missing Purchase. To compare Purchase, pass the candidate receipt with
   `--analytics-candidate`.
+
+## [1.46.0+agent.6] - 2026-10-01
+
+### Fixed
+
+- `sdk storage-check` accepts a Campaign Cart release manifest whose SDK
+  version is above its supported range. Released manifests stamp their own
+  release version but declare an earlier supported range (v0.4.40 declares
+  0.4.38 only), and the check refused every one of them with "Manifest
+  source SDK version must equal supported maximum". The target SDK is still
+  judged against the declared range, so a target outside it reports unknown
+  (`target-outside-manifest-range`). A manifest whose SDK version is below its
+  supported maximum is still refused, because it cannot vouch for later
+  releases. The report keeps recording the manifest's SDK version and range
+  separately.
 
 ## [1.46.0+agent.5] - 2026-10-01
 

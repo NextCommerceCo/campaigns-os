@@ -3955,13 +3955,34 @@
       "entry_sha256": "ba5bdb8718c7b405c7cc60e1129f76ebe10011f099aa151bf893d617cc0c4270"
     },
     {
-      "id": "RL-0196",
-      "sequence": 188,
+      "id": "RL-0194",
+      "sequence": 186,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.46.0+agent.8",
-      "changelog_sha256": "2bcfef5d884d1705d30dfc28095c19947894d913e16eba1204be4024fd79a5dc",
+      "changelog_section": "1.46.0+agent.6",
+      "changelog_sha256": "8cb11f8b85a7b9abe6791d75a7b7915491477bbe2d3e2f01dae2fb5ca458943a",
+      "agent_impact": "sdk storage-check now accepts a release manifest whose SDK version is above its supported range, such as Campaign Cart v0.4.40 (range 0.4.38 only). Targets outside the declared range still report unknown; a manifest whose SDK version is below its supported maximum is still refused.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "A release manifest covers the range it declares, which may end below its own SDK version; targets outside it report unknown."
+        }
+      ],
+      "entry_sha256": "f064edf5031f8fd36197984145f5cbcfca3efd78a76982d3132e254b81964884"
+    },
+    {
+      "id": "RL-0196",
+      "sequence": 187,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.46.0+agent.7",
+      "changelog_sha256": "a225ca418ab92d3787612a59f53c80179a079fb03e1e99a4aefca573133d02b8",
       "agent_impact": "When qa run analytics parity picks its candidate automatically (no --analytics-candidate) and that page is not a receipt, a missing Purchase is now analytics-parity:purchase-present MANUAL_REVIEW/WARN with evidence.page_mismatch, not a blocker. Read page_mismatch and pass the candidate receipt with --analytics-candidate to compare Purchase. An explicit candidate still blocks on a missing Purchase.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3973,7 +3994,7 @@
           "summary": "Describe how the automatic parity candidate reports purchase-present when it is not a receipt page, and the page_mismatch evidence."
         }
       ],
-      "entry_sha256": "da9eee21d710679a54006968c0cb86be04a556054039bfb78abe78330bc29c61"
+      "entry_sha256": "0ba79e42f30833cd9df6b01feba0b72fe3a2a7322b02f6b86208d1bfd9d142a3"
     }
   ]
 }
