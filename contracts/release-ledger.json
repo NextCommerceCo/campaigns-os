@@ -4189,13 +4189,34 @@
       "entry_sha256": "d2b022241969d22dbe4e5865f24f34d1a7883e000b62218bbe3f82c0d958b24d"
     },
     {
-      "id": "RL-0200",
+      "id": "RL-0204",
       "sequence": 192,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.47.0+agent.2",
-      "changelog_sha256": "f54a3f2a7b3993075af3cfa7e6a85e2491a60af93ac96571ae72e6d8f0a1e6ee",
+      "changelog_section": "1.47.0+agent.6",
+      "changelog_sha256": "ce5b04b70f31282319d2974ffaeb6352ecb96e89c136e72c7f6f8a32332afab4",
+      "agent_impact": "Help for start, prepare-build and build now lists --deploy-target, --preview-url and --production-url, which intake already accepted; a Start page or docs command using them matches --help.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "List --deploy-target, --preview-url and --production-url on the start, prepare-build and build usage lines; intake already writes them to the Build Packet deploy block."
+        }
+      ],
+      "entry_sha256": "bbf5c759e5518a3025a0e5f6db6b732e8960721ce45bb4be3821cb58096319e8"
+    },
+    {
+      "id": "RL-0200",
+      "sequence": 193,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.7",
+      "changelog_sha256": "b97164cb0efb6b87ee04d95e28679d731173b0998b2f92ddf308e333127ff8e3",
       "agent_impact": "doctor no longer emits content_residue.anti_pattern or content_residue.urgency_unattested: do not wait for, or act on, a review of the merchant's proof and urgency copy. Reproduce the source design's own reviews, labels, popups, stock counters and countdowns as designed. Bundled skills carry revision 1.47.0+skills.2: an agent that loaded 1.47.0+skills.1 should start a fresh session.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4279,7 +4300,7 @@
           "summary": "Stop emitting content_residue.anti_pattern and content_residue.urgency_unattested; the merchant's proof and urgency copy is no longer scanned."
         }
       ],
-      "entry_sha256": "12971f27e22e0e94b3d7685f01de94a34ad3e225c2ecb597f387c3f5294b93ba"
+      "entry_sha256": "396746eab5577268a1eef6e76fa3cffeb989da503c7bb898bf3c80d56d31164b"
     }
   ]
 }
