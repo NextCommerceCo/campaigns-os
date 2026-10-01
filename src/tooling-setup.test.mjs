@@ -20,6 +20,33 @@ test("local setup install pins match the package version", () => {
   for (const [, version] of pins) assert.equal(version, PKG.version, "docs/local-setup.md toolkit install pin must match package.json");
 });
 
+test("documented install commands keep page-kit a runtime dependency and the toolkit a dev dependency", () => {
+  // `npm install --save-dev` moves an already-declared runtime dependency into
+  // devDependencies, which `npm ci --omit=dev` builds then skip. Page-kit must
+  // therefore never share an install with --save-dev.
+  let pageKit = 0;
+  for (const file of ["docs/local-setup.md", "docs/quickstart.md", "README.md", "AGENTS.md", "CONTEXT.md"]) {
+    const text = readFileSync(join(ROOT, file), "utf8");
+    const fenced = [...text.matchAll(/^```[^\n]*\n([\s\S]*?)^```/gm)].flatMap((m) => m[1].split("\n"));
+    const inline = [...text.replace(/^```[\s\S]*?^```/gm, "").matchAll(/`([^`]+)`/g)].map((m) => m[1].replace(/\s+/g, " "));
+    for (const command of [...fenced, ...inline].flatMap((line) => line.split("&&"))) {
+      const words = command.trim().split(/\s+/);
+      if (words[0] !== "npm" || !["install", "i", "add"].includes(words[1]) || words.includes("-g")) continue;
+      const devFlag = words.some((w) => w === "--save-dev" || w === "-D");
+      const exactFlag = words.some((w) => w === "--save-exact" || w === "-E");
+      if (words.some((w) => w.startsWith("next-campaign-page-kit"))) {
+        pageKit += 1;
+        assert.equal(devFlag, false, `${file}: page-kit must not be installed with --save-dev: ${command.trim()}`);
+        assert.ok(exactFlag, `${file}: page-kit install must be exact: ${command.trim()}`);
+      }
+      if (words.some((w) => w.includes("campaigns-os@") || w.includes("NextCommerceCo/campaigns-os#"))) {
+        assert.ok(devFlag && exactFlag, `${file}: toolkit install must use --save-dev --save-exact: ${command.trim()}`);
+      }
+    }
+  }
+  assert.ok(pageKit >= 3, "local setup, quickstart and README each document a page-kit install");
+});
+
 function fixture(t, real = false) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-setup-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -67,6 +94,21 @@ test("setup preserves authored pages and instructions across reruns and requires
   setupTooling(f.args, f.deps);
   assert.equal(readFileSync(join(f.target, "CLAUDE.md"), "utf8"), instructions);
   assert.equal(readFileSync(join(f.target, "src/checkout.html"), "utf8"), "authored checkout");
+});
+
+test("setup warns when page-kit is declared only as a dev dependency", (t) => {
+  const f = fixture(t);
+  const result = setupTooling({ ...f.args, "dry-run": true }, f.deps);
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /devDependencies.*--omit=dev/);
+  assert.match(result.warnings[0], /npm install --save-exact next-campaign-page-kit@0\.2\.0\.$/, "the command names the installed version");
+  assert.match(setupTextLines(result).join("\n"), /Warning: .*next-campaign-page-kit/);
+
+  const runtime = fixture(t);
+  writeJson(join(runtime.target, "package.json"), { dependencies: { "next-campaign-page-kit": "0.2.0" }, devDependencies: { "@nextcommerce/campaigns-os": PKG.version } });
+  const clean = setupTooling({ ...runtime.args, "dry-run": true }, runtime.deps);
+  assert.deepEqual(clean.warnings, []);
+  assert.doesNotMatch(setupTextLines(clean).join("\n"), /Warning:/);
 });
 
 test("setup dry run does not connect context or download the browser", (t) => {

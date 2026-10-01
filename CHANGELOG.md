@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.46.0+agent.8] - 2026-10-01
+## [1.46.0+agent.9] - 2026-10-01
 
 ### Changed
 
@@ -23,6 +23,23 @@ Notable supported-surface changes are recorded here.
   `built_output.script_syntax.symlink_outside_site` code, naming the link, and
   does not block. The gate lists such links in `scripts_outside_site[]`. The
   rule is recorded in `docs/build-packet.md`.
+
+## [1.46.0+agent.8] - 2026-10-01
+
+### Fixed
+
+- The local setup command in `docs/local-setup.md` installed both the toolkit
+  and `next-campaign-page-kit` with `--save-dev`. In an existing page-kit
+  project that moved page-kit from `dependencies` to `devDependencies`, so
+  builds that run `npm ci --omit=dev` or set `NODE_ENV=production` no longer
+  installed it. The command now installs page-kit with `--save-exact` only and
+  the toolkit with `--save-dev --save-exact`, so a project that declares
+  page-kit under `dependencies` keeps it there. The README and quickstart
+  page-kit installs also pin exactly.
+- `tooling setup` now warns when the project declares page-kit only in
+  `devDependencies`, and prints the command that moves it back. The warning
+  appears in the text output and in a new `warnings` array in the `--json`
+  result; setup still proceeds.
 
 ## [1.46.0+agent.7] - 2026-10-01
 
