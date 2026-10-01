@@ -3909,6 +3909,50 @@
         }
       ],
       "entry_sha256": "8e891f36ce261c325f0837bf4c37ca145f60dbdd3ef55ab0ac9c4c4f3f92de7c"
+    },
+    {
+      "id": "RL-0192",
+      "sequence": 184,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.46.0+agent.5",
+      "changelog_sha256": "620fc030c781b02d80e340dabdb54782929aba1d2cac2b072f6ba5f29b791826",
+      "agent_impact": "doctor no longer reports built_output.sdk_markup.checkout_bump_is_upsell. A checkout order bump carrying data-next-is-upsell=\"true\" is billed as an upsell line on the initial order, and that is the intended default: do not remove the attribute, and do not advise anyone to. A bump include opts out with is_upsell: false. A run that recorded the warning under an earlier version can disregard it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Stop passing each built page type to the SDK markup check, which no longer reads it now that built_output.sdk_markup.checkout_bump_is_upsell is retired."
+        }
+      ],
+      "entry_sha256": "057ff93f08a51f140afeecc86b3847bd38e544ded7ae6572459099aae7a85341"
+    },
+    {
+      "id": "RL-0193",
+      "sequence": 185,
+      "date": "2026-10-01",
+      "kind": "amendment",
+      "amends": "RL-0187",
+      "amendment_reason": "RL-0187 and its 1.45.0+agent.5 section told users to remove data-next-is-upsell=\"true\" from checkout bump includes. Upsell billing on a checkout bump is the intended default, so that advice would have changed billing. The section now says the advice was wrong and that the warning is retired in 1.46.0+agent.5; this amendment carries the corrected section hash.",
+      "surface_version": null,
+      "changelog_section": "1.45.0+agent.5",
+      "changelog_sha256": "424b4a77e7cf137bca0078a2b2a95b40e6720af8ec1cf4779ce811bac1d51d5b",
+      "agent_impact": "Disregard RL-0187's advice to remove data-next-is-upsell=\"true\" from a checkout bump. The attribute is the intended default and the warning that recommended removing it is retired (RL-0192). RL-0187's theme generate and brand-theme-bridge changes stand.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "doctor",
+          "summary": "Correct the recorded repair advice for built_output.sdk_markup.checkout_bump_is_upsell: the attribute is intended, and the warning is retired."
+        }
+      ],
+      "entry_sha256": "e1e2bbf9188e54d7d2c97b7b82f37d94c980d5a99396233577aebb34cb0b8909"
     }
   ]
 }
