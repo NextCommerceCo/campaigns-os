@@ -3955,6 +3955,27 @@
       "entry_sha256": "ba5bdb8718c7b405c7cc60e1129f76ebe10011f099aa151bf893d617cc0c4270"
     },
     {
+      "id": "RL-0194",
+      "sequence": 186,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.46.0+agent.6",
+      "changelog_sha256": "8cb11f8b85a7b9abe6791d75a7b7915491477bbe2d3e2f01dae2fb5ca458943a",
+      "agent_impact": "sdk storage-check now accepts a release manifest whose SDK version is above its supported range, such as Campaign Cart v0.4.40 (range 0.4.38 only). Targets outside the declared range still report unknown; a manifest whose SDK version is below its supported maximum is still refused.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "A release manifest covers the range it declares, which may end below its own SDK version; targets outside it report unknown."
+        }
+      ],
+      "entry_sha256": "f064edf5031f8fd36197984145f5cbcfca3efd78a76982d3132e254b81964884"
+    },
+    {
       "id": "RL-0195",
       "sequence": 187,
       "date": "2026-10-01",

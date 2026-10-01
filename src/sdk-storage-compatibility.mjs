@@ -57,8 +57,9 @@ export function readStorageManifest(path) {
   version(value.sdkVersion);
   version(value.supportedSdkVersions?.min);
   version(value.supportedSdkVersions?.max);
-  if (compare(value.sdkVersion, value.supportedSdkVersions.max) !== 0)
-    throw new Error('Manifest source SDK version must equal supported maximum.');
+  // A release manifest may describe a supported range ending below its own release; it cannot vouch past itself.
+  if (compare(value.sdkVersion, value.supportedSdkVersions.max) < 0)
+    throw new Error('Manifest source SDK version is below its supported maximum.');
   const unique = new Set();
   if (compare(value.supportedSdkVersions.min, value.supportedSdkVersions.max) > 0)
     throw new Error('Invalid manifest version range.');
