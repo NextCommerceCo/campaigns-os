@@ -137,7 +137,7 @@ npx --no-install campaigns-os next --packet ./campaign-runtime.build.json --json
 [local spec](docs/build-packet.md#local-spec-entry) instead. Local-spec identity
 requires a reviewed 1.43.0-or-later release. To prove the campaign on
 localhost before a preview deploy, add `--deploy-target local-serve` (and
-`--preview-url http://localhost:<port>/`); `qa policy set --deploy-target`
+`--preview-url http://localhost:<port>/`); `qa policy set --deploy-target <target>`
 changes it later. `--source` is
 always required: the folder of prepared HTML/CSS/assets for the pages you are
 building, with a source manifest that carries desktop and mobile screenshot
@@ -279,7 +279,7 @@ Before an SDK bump, scan explicitly scoped tracked merchant HTML/JS with [SDK st
 
 ```bash
 npm run campaigns-os -- tooling status
-npm run campaigns-os -- tooling setup --target <campaign-dir> --platform claude --dry-run --json
+npm run campaigns-os -- tooling setup --target <page-kit-repo> --platform claude --dry-run --json
 npm run campaigns-os -- install-skills --dry-run
 npm run campaigns-os -- install-skills --platform codex --dry-run
 npm run campaigns-os -- install-agent-context --target <page-kit-repo> --dry-run
@@ -317,12 +317,14 @@ only when deliberately recording a new doctor stage. `--no-write` overrides
 `--write`. A custom `--doctor-out <path>` also requires `--write`; naming an
 output path alone does not create or refresh the file. Build/QA producer
 commands continue to record their own stages.
+
 Record a stage's completion with `record setup`, `record build` (after every
 rebuild) and `record polish --evidence <file>` rather than hand-editing
 `.campaign-runtime/build-context.json` or `.campaign-runtime/assembly-report.json`.
 Each validates what it would write, refuses a stage `next` has not reached, and
 writes nothing on failure; `--dry-run` runs the checks without writing. See
 [Build Packet](docs/build-packet.md) and [Polish evidence](docs/polish-evidence.md).
+
 Do not use `prepare-build --force` merely to refresh a catalog path: doctor
 already resolves the running toolkit's catalog, and force clears stage evidence.
 
