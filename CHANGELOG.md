@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.47.0+agent.6] - 2026-10-01
+## [1.47.0+agent.11] - 2026-10-01
 
 ### Changed
 
@@ -22,6 +22,19 @@ Notable supported-surface changes are recorded here.
   editing the manifest alone does not. It no longer points at a producer
   script. `docs/build-packet.md` says the same, and that a revision made
   after build belongs under `src/<route>/`.
+
+## [1.47.0+agent.6] - 2026-10-01
+
+### Changed
+
+- The usage lines for `start`, `prepare-build` and `build` now list
+  `--deploy-target <target>`, `--preview-url <url>` and
+  `--production-url <url>`. Intake has always written them to the Build
+  Packet's `deploy` block (`deploy.target` defaults to `unknown`), and
+  `docs/build-packet.md`, the README and the Start page already pass
+  `--deploy-target local-serve` to `start`, but the help text left them out,
+  so an agent checking that command against the help read it as
+  unsupported. Behaviour is unchanged.
 
 ## [1.47.0+agent.1] - 2026-10-01
 

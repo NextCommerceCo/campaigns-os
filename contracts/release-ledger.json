@@ -4195,7 +4195,28 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.47.0+agent.6",
-      "changelog_sha256": "9ca8e387a947a456054312f84e7bf4a8e74e8af0442707157690f791c3bc838b",
+      "changelog_sha256": "ce5b04b70f31282319d2974ffaeb6352ecb96e89c136e72c7f6f8a32332afab4",
+      "agent_impact": "Help for start, prepare-build and build now lists --deploy-target, --preview-url and --production-url, which intake already accepted; a Start page or docs command using them matches --help.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "List --deploy-target, --preview-url and --production-url on the start, prepare-build and build usage lines; intake already writes them to the Build Packet deploy block."
+        }
+      ],
+      "entry_sha256": "bbf5c759e5518a3025a0e5f6db6b732e8960721ce45bb4be3821cb58096319e8"
+    },
+    {
+      "id": "RL-0206",
+      "sequence": 193,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.11",
+      "changelog_sha256": "f7a8e2aa340f1dbffcaffe18db69556b5fb1b42a1834fa2749231b99497431ac",
       "agent_impact": "Pin global_config.sdk_version to the SDK doctor names for the selected template family when the spec has none. To record a standalone page whole, use --wrapper-policy preserve_document_wrappers. A source_hash drift warning is cleared only by re-running intake with --force, not by editing the manifest; make post-build revisions under src/<route>/.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4213,7 +4234,7 @@
           "summary": "Name the selected family's verified SDK in page_kit.sdk_version.spec_missing, and name the packet hash and intake refresh in source_html.pages.source_hash."
         }
       ],
-      "entry_sha256": "fff0fc788ca87b501fc4e47ae3823e5a9d1de32a94118aa45f9561ed0d043ffe"
+      "entry_sha256": "1d6deb4709d52b7454e9cba0a57a76e898be1da092d4dd1042a42ae06d06066d"
     }
   ]
 }
