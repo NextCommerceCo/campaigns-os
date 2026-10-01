@@ -172,6 +172,42 @@ test('malformed manifest evidence cannot create a compatible result', () => {
   }
 });
 
+test('a later release manifest may declare an earlier supported range; targets outside it stay unknown', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'storage-release-manifest-'));
+  try {
+    const git = args => execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
+    git(['init']);
+    mkdirSync(join(cwd, 'a'));
+    writeFileSync(join(cwd, 'a/index.js'), `localStorage.getItem('next-order');sessionStorage.getItem('merchant-flag');`);
+    git(['add', '.']);
+    const path = join(cwd, 'manifest.json');
+    // Shape of a published release manifest: stamped with its own release, describing an earlier range.
+    const release = { ...structuredClone(manifest), sdkVersion: '0.4.40' };
+    writeFileSync(path, JSON.stringify(release));
+    const { evidence } = readStorageManifest(path);
+    assert.equal(evidence.sdkVersion, '0.4.40');
+    assert.deepEqual(evidence.supportedSdkVersions, { min: '0.4.38', max: '0.4.38' });
+    const scan = targetSdkVersion => scanSdkStorageCompatibility({ cwd, targetSdkVersion, manifestPath: path, scope: ['a'] });
+    let report = scan('0.4.38');
+    assert.equal(report.status, 'incompatible');
+    assert.equal(report.manifest.sdkVersion, '0.4.40');
+    assert.ok(!report.findings.some(f => f.reason === 'target-outside-manifest-range'));
+    for (const target of ['0.4.37', '0.4.39', '0.4.40']) {
+      report = scan(target);
+      assert.ok(report.findings.some(f => f.reason === 'target-outside-manifest-range' && f.detail === target));
+    }
+    for (const sdkVersion of ['0.4.37', '0.4.33']) {
+      writeFileSync(path, JSON.stringify({ ...release, sdkVersion }));
+      assert.throws(() => readStorageManifest(path), /below its supported maximum|disagree/);
+    }
+    writeFileSync(path, JSON.stringify({ ...release, supportedSdkVersions: { min: '0.4.39', max: '0.4.38' } }));
+    assert.throws(() => readStorageManifest(path), /range/);
+  }
+  finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('loop and switch lexical declarations preserve outer SDK key bindings', () => {
   for (const inner of [
     "for (const key='harmless'; false;) {}",
