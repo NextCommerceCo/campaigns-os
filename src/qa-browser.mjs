@@ -6407,7 +6407,7 @@ function sanitizedEvents(events) {
     responses: events.responses.slice(-20).map((response) => ({
       status: response.status,
       url: response.url,
-      body: summarizeResponseBody(response.body),
+      body: summarizeResponseBody(response.body, { status: response.status }),
     })),
     failed: events.failed.slice(-20),
     console: events.console.slice(-20),
@@ -6434,7 +6434,7 @@ function summarizeRequestPostData(value) {
   }
 }
 
-function summarizeResponseBody(body) {
+function summarizeResponseBody(body, { status = null } = {}) {
   if (typeof body === "string") return trim(body).slice(0, 1000);
   if (!body || typeof body !== "object" || Array.isArray(body)) return body;
   return {
@@ -6446,9 +6446,12 @@ function summarizeResponseBody(body) {
     ...(body.checkout_url ? { checkout_url: body.checkout_url } : {}),
     ...(Array.isArray(body.lines) ? { lines: extractReceiptLines(body) } : {}),
     ...(body.detail ? { detail: body.detail } : {}),
-    // A rejected order create names its reason here (for example the
-    // duplicate-order refusal). It is an error message, not order data.
-    ...(typeof body.payment_details === "string" ? { payment_details: trim(body.payment_details).slice(0, 300) } : {}),
+    // A rejected request names its reason here (for example the
+    // duplicate-order refusal). Kept only on an error response, so a
+    // successful create never carries payment_details into evidence.
+    ...(Number(status) >= 400 && typeof body.payment_details === "string"
+      ? { payment_details: trim(body.payment_details).slice(0, 300) }
+      : {}),
   };
 }
 
