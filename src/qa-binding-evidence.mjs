@@ -5,7 +5,7 @@ import { HTML_NAMESPACE, baseInEffect, documentBases, endsUnclosed, frozenBaseUr
 
 export const BINDING_SCHEMA = 'campaigns-os-page-binding/v0';
 export const BINDING_LIMITS = Object.freeze({ scripts_per_page: 6, scripts_per_run: 24, script_bytes: 262144, timeout_ms: 5000 });
-const SDK = /^https:\/\/cdn\.jsdelivr\.net\/gh\/NextCommerceCo\/campaign-cart@[^/]+\/(?:dist\/index\.js|public\/loader\.js)(?:\?[^#]*)?$/;
+const SDK = /^https:\/\/cdn\.jsdelivr\.net\/gh\/NextCommerceCo\/campaign-cart@[^/]+\/(?:dist\/(?:index|loader)\.js|public\/loader\.js)(?:\?[^#]*)?$/;
 const str = value => typeof value === 'string' && value.length ? value : null;
 
 // The expected credential uses the existing producer resolver. Disagreement

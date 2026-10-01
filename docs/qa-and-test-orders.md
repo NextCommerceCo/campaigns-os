@@ -482,7 +482,15 @@ the three checks and each `evidence.checks[]` entry carries `kind`
 (`family_shell` or `sdk_wiring`).
 The upsell and checkout bundle price checks count the SDK's
 `[data-next-bundle-display*='price']` alongside the contract's price rows; a
-hidden, zero-size or empty bundle-display node does not count.
+hidden, zero-size or empty bundle-display node does not count. A checkout that
+shows no price because QA opened it directly, with an empty SDK cart and no
+package selection of its own, is `skipped` rather than failed:
+`pricing.checkout_price_visible` records `cart_count` and
+`checkout_selection_surface` and says so. That checkout's cart is filled on
+an earlier page, for example by a landing link carrying `forcePackageId`, and
+the test order enters it from there. A checkout with its own package
+selection, or a filled cart, still fails when no price shows. If the cart
+probe itself fails, the row stays failed and records `empty_cart_probe_error`.
 Promoted template families must also have
 `contracts/template-brand-contract.<family>.v0.json`; QA emits a blocker if the
 selected family is missing its brand/residue/pricing contract instead of
@@ -1919,7 +1927,9 @@ ASCII whitespace and compared case-insensitively as the browser does; classic
 `built_output.script_syntax` in [the Build Packet doc](build-packet.md).
 
 External executable scripts other than the recognized jsDelivr Campaign Cart
-loader/index are inspected only on the page's origin. Each page admits at most
+loader or index are inspected only on the page's origin. Three Campaign Cart
+paths count as the SDK and are never fetched: `dist/loader.js` (the one the
+starter templates load), `dist/index.js` and `public/loader.js`. Each page admits at most
 6 such references; each run fetches at most 24 distinct URLs (deduplicated),
 256 KiB per response and 6 MiB aggregate, 5 seconds per request including body
 read (at most 30 seconds of sequential config requests per page). Redirects,
