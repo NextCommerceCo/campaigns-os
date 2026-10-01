@@ -45,7 +45,7 @@ steps, in this order:
 
 ```bash
 mkdir "<route>" && cd "<route>"
-npm init -y && npm i next-campaign-page-kit
+npm init -y && npm i --save-exact next-campaign-page-kit
 npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
 npm install --save-dev --save-exact @nextcommerce/campaigns-os@<version>
 npx --no-install campaigns-os tooling status --platform claude

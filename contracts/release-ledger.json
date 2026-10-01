@@ -3976,13 +3976,34 @@
       "entry_sha256": "f064edf5031f8fd36197984145f5cbcfca3efd78a76982d3132e254b81964884"
     },
     {
-      "id": "RL-0196",
+      "id": "RL-0195",
       "sequence": 187,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.46.0+agent.8",
-      "changelog_sha256": "2bcfef5d884d1705d30dfc28095c19947894d913e16eba1204be4024fd79a5dc",
+      "changelog_sha256": "c3aa9f4e74bac6c2dbeb05fea5bf7da84bebdb556244c7aafe8481a4248149e6",
+      "agent_impact": "Install next-campaign-page-kit without --save-dev: the documented setup command now installs it with --save-exact as a runtime dependency and the toolkit with --save-dev --save-exact. tooling setup warns, and still proceeds, when page-kit is declared only in devDependencies.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Split the copy-paste install so page-kit is installed with --save-exact and stays in dependencies, while the toolkit keeps --save-dev --save-exact; note the setup warning for a dev-only page-kit."
+        }
+      ],
+      "entry_sha256": "d13bc2cf8c66ea894b8929b103455153e2a7465e316e71d817ac310aabd58526"
+    },
+    {
+      "id": "RL-0196",
+      "sequence": 188,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.46.0+agent.9",
+      "changelog_sha256": "6e2850725b14b051323f4a75652c02536ca7aafcd6771d317a07614fae6f6b4b",
       "agent_impact": "When qa run analytics parity picks its candidate automatically (no --analytics-candidate) and that page is not a receipt, a missing Purchase is now analytics-parity:purchase-present MANUAL_REVIEW/WARN with evidence.page_mismatch, not a blocker. Read page_mismatch and pass the candidate receipt with --analytics-candidate to compare Purchase. An explicit candidate still blocks on a missing Purchase.",
       "compatibility": "compatible",
       "migration": "none",
@@ -3994,7 +4015,7 @@
           "summary": "Describe how the automatic parity candidate reports purchase-present when it is not a receipt page, and the page_mismatch evidence."
         }
       ],
-      "entry_sha256": "e59e719adc106c4d986dded9b9cac57fde7c16b62bda4b6a13b8ee7abcf03521"
+      "entry_sha256": "044a9de53405d944e05045dc62f6f4575b0ebe387225b176904bdd8b02ddcf09"
     }
   ]
 }
