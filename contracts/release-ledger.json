@@ -4168,8 +4168,29 @@
       "entry_sha256": "cc03e502869034a55209958ac02cce0c2b637b12e3e678646c93cfc7aa3a4eeb"
     },
     {
-      "id": "RL-0200",
+      "id": "RL-0199",
       "sequence": 191,
+      "date": "2026-10-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.47.0+agent.1",
+      "changelog_sha256": "f0ba2dff1852537f82cac078ccc8b74d78c433476ed72be8814ff3aa4271cc1f",
+      "agent_impact": "Start a new campaign folder with npm init -y: the documented one-line setup command now creates the folder's own package.json first, so npm cannot install page-kit and the toolkit into a parent project.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Prefix the copy-paste setup command with npm init -y and say why: without a package.json npm installs into the nearest parent folder that has one or a node_modules."
+        }
+      ],
+      "entry_sha256": "d2b022241969d22dbe4e5865f24f34d1a7883e000b62218bbe3f82c0d958b24d"
+    },
+    {
+      "id": "RL-0200",
+      "sequence": 192,
       "date": "2026-10-01",
       "kind": "release",
       "surface_version": null,
@@ -4258,7 +4279,7 @@
           "summary": "Stop emitting content_residue.anti_pattern and content_residue.urgency_unattested; the merchant's proof and urgency copy is no longer scanned."
         }
       ],
-      "entry_sha256": "d0ed84a71b6f352a276380727528cc13df25ce09d1bfccf339352ed4c98f9e79"
+      "entry_sha256": "12971f27e22e0e94b3d7685f01de94a34ad3e225c2ecb597f387c3f5294b93ba"
     }
   ]
 }

@@ -1,10 +1,15 @@
 # Local campaign setup
 
-For a new campaign, choose its working folder and run this from that folder:
+For a new campaign, create an empty working folder and run this from it:
 
 ```sh
-npm install --save-exact next-campaign-page-kit@0.2.0 && npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.47.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
+npm init -y && npm install --save-exact next-campaign-page-kit@0.2.0 && npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.47.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
 ```
+
+`npm init -y` gives the folder its own `package.json`. Without one, npm
+installs into the nearest parent folder that has a `package.json` or
+`node_modules`, so a campaign folder created inside another project would add
+page-kit and the toolkit to that project instead.
 
 Review the release source/provenance before installation as described in
 `AGENTS.md`. npm installs the dependencies first; `--no-install` then runs only
