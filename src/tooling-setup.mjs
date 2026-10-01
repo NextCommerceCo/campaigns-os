@@ -103,8 +103,10 @@ export function setupTooling(args, { packageRoot, installSkills, installAgentCon
   }
   // Page-kit builds the deployed pages, so a dev-only declaration disappears
   // from any host that installs with --omit=dev or NODE_ENV=production.
+  // The command names the installed version, so it can be pasted as-is.
+  const pageKitVersion = json(join(target, "node_modules", "next-campaign-page-kit", "package.json")).version;
   const warnings = manifest.dependencies?.["next-campaign-page-kit"] ? [] : [
-    "next-campaign-page-kit is declared only in devDependencies, so builds that run npm ci --omit=dev or set NODE_ENV=production will not install it. Move it back with npm install --save-exact next-campaign-page-kit@<current-version>.",
+    `next-campaign-page-kit is declared only in devDependencies, so builds that run npm ci --omit=dev or set NODE_ENV=production will not install it. Move it back with npm install --save-exact next-campaign-page-kit@${pageKitVersion}.`,
   ];
 
   // Preflight every destination before any installer runs. Custom repository

@@ -33,13 +33,14 @@ test("documented install commands keep page-kit a runtime dependency and the too
       const words = command.trim().split(/\s+/);
       if (words[0] !== "npm" || !["install", "i", "add"].includes(words[1]) || words.includes("-g")) continue;
       const devFlag = words.some((w) => w === "--save-dev" || w === "-D");
+      const exactFlag = words.some((w) => w === "--save-exact" || w === "-E");
       if (words.some((w) => w.startsWith("next-campaign-page-kit"))) {
         pageKit += 1;
         assert.equal(devFlag, false, `${file}: page-kit must not be installed with --save-dev: ${command.trim()}`);
-        assert.ok(words.includes("--save-exact"), `${file}: page-kit install must be exact: ${command.trim()}`);
+        assert.ok(exactFlag, `${file}: page-kit install must be exact: ${command.trim()}`);
       }
       if (words.some((w) => w.includes("campaigns-os@") || w.includes("NextCommerceCo/campaigns-os#"))) {
-        assert.ok(devFlag && words.includes("--save-exact"), `${file}: toolkit install must use --save-dev --save-exact: ${command.trim()}`);
+        assert.ok(devFlag && exactFlag, `${file}: toolkit install must use --save-dev --save-exact: ${command.trim()}`);
       }
     }
   }
@@ -100,6 +101,7 @@ test("setup warns when page-kit is declared only as a dev dependency", (t) => {
   const result = setupTooling({ ...f.args, "dry-run": true }, f.deps);
   assert.equal(result.warnings.length, 1);
   assert.match(result.warnings[0], /devDependencies.*--omit=dev/);
+  assert.match(result.warnings[0], /npm install --save-exact next-campaign-page-kit@0\.2\.0\.$/, "the command names the installed version");
   assert.match(setupTextLines(result).join("\n"), /Warning: .*next-campaign-page-kit/);
 
   const runtime = fixture(t);
