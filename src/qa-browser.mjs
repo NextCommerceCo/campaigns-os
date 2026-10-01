@@ -5171,10 +5171,18 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
   // the browser's wall time at request start), and armedAt is read before the
   // click is sent, so this click's request starts at or after it. A request
   // with no known start time is not excluded: nothing shows it is stale.
+  //
+  // A redirected POST (307/308) is one mutation across several hops, and
+  // Playwright gives each hop its own Request. The watch matches a hop by the
+  // request that started its chain, and passes over a hop the browser follows,
+  // so it resolves on the chain's final response: that is the one carrying the
+  // order. A chain with no final response is not answered (#516).
   const armedAt = Date.now();
   const mutationPromise = path === "accept"
     ? page.waitForResponse((response) => {
-        if (response.request().method() !== "POST" || !isOrderUpsellsUrl(response.url())) return false;
+        if (isFollowedRedirect(response)) return false;
+        const root = responseRequest(response);
+        if (!root || root.method() !== "POST" || !isOrderUpsellsUrl(root.url())) return false;
         const startedAt = responseRequestStartedAt(response);
         return startedAt === null || startedAt >= armedAt;
       }, { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
@@ -5205,9 +5213,9 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     // waits for a later read-back before it judges the step.
     ...(bodyRead ? { api_response_body_read: { timed_out: bodyRead.timed_out, waited_ms: bodyRead.waited_ms, bound_ms: bodyRead.bound_ms } } : {}),
   };
-  // The request this click made. Another step's upsell mutation posts to the
-  // same order-upsells URL, so a late body is this step's only when it
-  // answers this request.
+  // The request this click made (the root of its redirect chain). Another
+  // step's upsell mutation posts to the same order-upsells URL, so a late body
+  // is this step's only when it answers this request.
   const mutationRequest = mutationResponse ? responseRequest(mutationResponse) : null;
   if (mutationRequest) record[REQUEST_IDENTITY] = mutationRequest;
   return record;
@@ -6191,21 +6199,48 @@ function mutationRespondedAt(response) {
 // it). Playwright hands every listener the same Request object for one
 // request, and a different one for each request, even to the same URL: an
 // upsell step matches its own mutation's late body by this identity (#505).
+//
+// A redirect gives each hop a new Request, so the identity is the request
+// that started the chain (followed back through redirectedFrom()): every hop
+// of one redirected POST carries the same identity, and two POSTs never do
+// (#516).
 const REQUEST_IDENTITY = Symbol("campaigns-os.request-identity");
 
 function responseRequest(response) {
   try {
-    return response.request() || null;
+    return redirectChainRoot(response.request());
   } catch {
     return null;
   }
 }
 
+function redirectChainRoot(request) {
+  let root = request || null;
+  for (let hops = 0; root && typeof root.redirectedFrom === "function" && hops < 32; hops += 1) {
+    const previous = root.redirectedFrom();
+    if (!previous) break;
+    root = previous;
+  }
+  return root;
+}
+
+// A 3xx hop the browser follows: it names a Location, and the chain's answer
+// is a later hop's response. A 3xx with no Location is a final response.
+function isFollowedRedirect(response) {
+  try {
+    const status = response.status();
+    return status >= 300 && status < 400 && Boolean(response.headers()?.location);
+  } catch {
+    return false;
+  }
+}
+
 // When the browser started a response's request, in epoch milliseconds (the
-// same clock as Date.now()), or null when Playwright does not report it.
+// same clock as Date.now()), or null when Playwright does not report it. For a
+// redirected request this is when its chain's first hop started.
 function responseRequestStartedAt(response) {
   try {
-    const startTime = response.request().timing().startTime;
+    const startTime = responseRequest(response).timing().startTime;
     return Number.isFinite(startTime) && startTime > 0 ? startTime : null;
   } catch {
     return null;
@@ -7369,7 +7404,8 @@ async function waitForLateUpsellEvidence(events, { responseIndexBefore, mutation
       const response = fresh[index];
       if (!response.body || typeof response.body !== "object" || Array.isArray(response.body)) continue;
       if (!(response.status >= 200 && response.status < 300)) continue;
-      if (!ORDER_UPSELLS_RESPONSE_PATTERN.test(response.url)) continue;
+      // A redirected mutation's final hop may answer from another URL; its
+      // identity, the root of its chain, is what ties it to this step (#516).
       if (mutationRequest && response[REQUEST_IDENTITY] === mutationRequest) return { source: "late_upsell_body", body: response.body };
     }
     for (let index = fresh.length - 1; index >= 0; index -= 1) {

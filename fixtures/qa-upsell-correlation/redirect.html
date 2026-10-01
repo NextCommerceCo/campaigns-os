@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Upsell step whose order upsell mutation is redirected</title>
+</head>
+<body>
+<div data-next-upsell>
+  <h1>Offer B</h1>
+  <button type="button" data-next-upsell-action="add">Yes, add offer B</button>
+  <button type="button" data-next-upsell-action="skip">No thanks</button>
+</div>
+<script>
+  // The accept posts to the order-upsells URL. The server answers it with a
+  // 307, and the browser re-posts to the Location: the response that carries
+  // the order is the last hop's, not the first.
+  var ref = new URLSearchParams(location.search).get("ref_id");
+  var url = "/api/v1/orders/" + encodeURIComponent(ref) + "/upsells/";
+  document.querySelector('[data-next-upsell-action="add"]').addEventListener("click", function () {
+    fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ offer: "b" }) });
+  });
+</script>
+</body>
+</html>
