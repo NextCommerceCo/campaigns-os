@@ -42,8 +42,9 @@
 //                              a double brace renders literally.
 //
 //   Not a finding: data-next-is-upsell="true" on a checkout order bump. The
-//   bump is billed as an upsell line on the initial order, and that is the
-//   intended default; a bump include opts out with is_upsell: false.
+//   selected bump is a line item on the checkout order, tagged as an upsell so
+//   order reports show it apart from core items. That is the intended default;
+//   a bump include opts out with is_upsell: false.
 //
 //   Info (advisory, one note per campaign, no code)
 //   unknown_attributes[]       a data-next-* name the pinned SDK's attribute

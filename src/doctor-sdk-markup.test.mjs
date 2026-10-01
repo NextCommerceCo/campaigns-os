@@ -191,7 +191,7 @@ test("MISSING_SELECTOR_ID_MATCH is not satisfied by a non-selector element echoi
   assert.equal(real.status, "pass");
 });
 
-test("a checkout order bump with data-next-is-upsell=\"true\" is not a finding: upsell billing is the intended default", () => {
+test("a checkout order bump with data-next-is-upsell=\"true\" is not a finding: the upsell tag is the intended default", () => {
   const content = '<html><head><meta name="next-page-type" content="checkout"></head><body><div data-next-package-toggle><div data-next-toggle-card data-next-is-upsell="true" data-next-package-id="7"></div></div></body></html>';
   const gate = evaluateSdkMarkup({ pages: [{ page_id: "checkout", file: "checkout.html", content }] });
   assert.deepEqual(codeNames(gate), []);

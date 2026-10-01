@@ -7,14 +7,15 @@ Notable supported-surface changes are recorded here.
 ### Removed
 
 - `doctor` no longer warns with `built_output.sdk_markup.checkout_bump_is_upsell`
-  (added in `1.45.0+agent.5`). An order bump on a checkout page that carries
-  `data-next-is-upsell="true"` is billed as an upsell line on the initial
-  order, and that is the intended default. The warning fired on every
-  canonical starter checkout with a bump and told the user to remove the
-  attribute, which would change billing. Leave the attribute in place. A
-  campaign that should not bill a bump as an upsell opts out by passing
-  `is_upsell: false` to the bump include. Doctor reports no finding for the
-  attribute either way.
+  (added in `1.45.0+agent.5`). When a shopper selects an order bump on a
+  checkout page, it is added as a line item on the checkout order. With
+  `data-next-is-upsell="true"` that line is tagged as an upsell, so platform
+  order reports show upsell items apart from the core items. That tagging is
+  the intended default. The warning fired on every canonical starter checkout
+  with a bump and told the user to remove the attribute, which would report
+  the bump as a core item. Leave the attribute in place. A campaign that
+  should not tag a bump as an upsell opts out by passing `is_upsell: false` to
+  the bump include. Doctor reports no finding for the attribute either way.
 
 ## [1.46.0+agent.4] - 2026-10-01
 
@@ -163,9 +164,10 @@ Notable supported-surface changes are recorded here.
   flag comes from the bump include's markup, and several starter bump includes
   write it unconditionally, so a canonical starter checkout with a bump shows
   this warning. It was a warning, not a blocker. Its advice to remove
-  `data-next-is-upsell="true"` was wrong: billing a checkout bump as an upsell
-  line on the initial order is the intended default, and removing the
-  attribute changes billing. The warning is retired in `1.46.0+agent.5`.
+  `data-next-is-upsell="true"` was wrong: tagging a checkout bump line as an
+  upsell is the intended default, so order reports show upsell items apart
+  from core items, and removing the attribute would report the bump as a core
+  item. The warning is retired in `1.46.0+agent.5`.
 
 ### Fixed
 
