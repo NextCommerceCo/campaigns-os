@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { observeBinding, bindingAssertion, scriptParseAssertion, expectedBinding, createBindingScriptLoader, BINDING_LIMITS } from './qa-binding-evidence.mjs';
+import { observeBinding, bindingAssertion, scriptParseAssertion, expectedBinding, createBindingScriptLoader, BINDING_LIMITS, isSdkApiRequest } from './qa-binding-evidence.mjs';
 import { __qaNodeTestHooks } from './qa-node.mjs';
 const key = 'binding-canary-7V4m9Q2z8P5';
 const page = { page_id: 'checkout', page_type: 'checkout', url: 'https://fixture.example.test/checkout' };
@@ -20,6 +20,12 @@ test('meta, literal inline and external declarations compare without credentials
     assert.equal(JSON.stringify(evidence).includes(key.slice(0, 8)), false);
   }
   assert.equal((await observe(inline('different'))).outcome, 'mismatch');
+});
+test('only the Campaigns API host shape counts as an SDK request', () => {
+  assert.equal(isSdkApiRequest('https://campaigns.apps.example.com/api/v1/campaigns/'), true);
+  for (const url of ['https://campaigns.apps.attacker.test/api/v1/campaigns/', 'https://campaigns.apps.example.com.attacker.test/api/', 'https://x.campaigns.apps.example.com/api/', 'http://campaigns.apps.example.com/api/', 'https://campaigns.apps.example.com/other/']) {
+    assert.equal(isSdkApiRequest(url), false, url);
+  }
 });
 test('ambiguity stays unknown: conflicts, dynamic code, unrelated credentials, missing input and scripts', async () => {
   for (const [html, reason] of [

@@ -57,8 +57,8 @@ async function chromiumAvailable() {
 
 const KEY = "binding-browser-canary-4Rq8Lz2W";
 const ORIGIN = "https://binding.example.test";
-// Matched by its `campaigns.apps` host label; the SDK's own host is not named here.
-const API = "https://campaigns.apps.example.test/api/v1/campaigns/";
+// Matched by its host shape; the SDK's own host is not named here.
+const API = "https://campaigns.apps.example.com/api/v1/campaigns/";
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type" };
 
 // The key each page's config declares and its SDK sends. Pages not listed

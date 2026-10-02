@@ -188,12 +188,15 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
   return result(values[0] === expected.value ? 'match' : 'mismatch', 'credential_comparison');
 }
 
-// The Campaign Cart SDK sends the page's key as `Authorization` on every
-// Campaigns API call, so the browser pass can see the key a page actually
-// uses, whatever its scripts look like. The API is matched by its
-// `campaigns.apps` host label, as the order capture in qa-browser.mjs does.
+// The Campaign Cart SDK sends the page's raw key, with no scheme, as
+// `Authorization` on every Campaigns API call, so the browser pass can see the
+// key a page actually uses, whatever its scripts look like. The value is
+// compared as sent: if the SDK ever adds a scheme, every page reads mismatch
+// rather than passing. The API host is matched by its shape,
+// campaigns.apps.<name>.com, without naming it.
+const SDK_API_HOST = /^campaigns\.apps\.[a-z0-9-]+\.com$/;
 export function isSdkApiRequest(url) {
-  try { const parsed = new URL(url); return parsed.protocol === 'https:' && parsed.hostname.startsWith('campaigns.apps.') && parsed.pathname.startsWith('/api/'); } catch { return false; }
+  try { const parsed = new URL(url); return parsed.protocol === 'https:' && SDK_API_HOST.test(parsed.hostname) && parsed.pathname.startsWith('/api/'); } catch { return false; }
 }
 
 // The keys a page sent are compared here and dropped; only the outcome is
