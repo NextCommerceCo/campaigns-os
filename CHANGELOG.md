@@ -2,6 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.48.0+agent.1] - 2026-10-02
+
+### Changed
+
+- The agent context that `install-agent-context` and `tooling setup` write
+  (`agents/claude/CLAUDE.md`, `agents/codex/AGENTS.md`,
+  `agents/copilot/copilot-instructions.md`, `agents/cursor/campaigns-os.mdc`)
+  spells every command `npx --no-install campaigns-os …`, as the skills and
+  `AGENTS.md` do. It said `campaigns-os readback .`, `campaigns-os qa run …`
+  and so on, and fresh sessions ran them as written: "command not found"
+  where nothing is installed globally, and an older global copy instead of
+  the campaign's pinned one where something is. A test keeps bare commands
+  out of the agent context.
+- The agent context carries the build skill's proof rule: reproduce the
+  source design's own proof and urgency elements as designed, and do not
+  remove, soften or flag them. The rule was only in the build and polish
+  skills, and sessions were still questioning or removing the merchant's
+  proof.
+- An installed copy keeps the old text until `install-agent-context`
+  refreshes it.
+
 ## [1.48.0] - 2026-10-02
 
 ### Changed

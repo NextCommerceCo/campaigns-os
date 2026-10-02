@@ -66,6 +66,22 @@ test("no skill or doc tells a reader to run a plain `npx campaigns-os <command>`
   );
 });
 
+// The agent context is installed into the campaign folder and loaded into
+// sessions there (tooling setup imports the Claude copy), and setup runs only
+// from the folder's pinned copy. A bare `campaigns-os <command>` in it reaches
+// whatever is on PATH, or nothing, so each command carries the full prefix.
+function bareInvocations(text) {
+  return [...text.replace(/\s+/g, " ").matchAll(/(?<![\w./@-])(?<!npx --no-install )campaigns-os [a-z][a-z-]*/g)].map((match) => match[0]);
+}
+
+test("the installed agent context spells every command the way the campaign folder runs it", () => {
+  const context = filesUnder("agents", () => true);
+  assert.ok(context.length >= 4, "the agent context files were scanned");
+  const offenders = context.flatMap((path) =>
+    bareInvocations(readFileSync(join(ROOT, path), "utf8")).map((command) => `${path}: ${command}`));
+  assert.deepEqual(offenders, [], `spell these as \`${LOCAL_INVOCATION_PREFIX} …\``);
+});
+
 // The printed prefix cannot show this: from a checkout it is the bare form
 // wherever ROOT points. The install mode is decided from ROOT, so ROOT itself
 // is pinned to the package root.
