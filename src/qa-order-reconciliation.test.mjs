@@ -166,6 +166,36 @@ test("upsell lines are out of scope — an accepted upsell is not a stray charge
   assert.equal(reconciliation.non_upsell_line_count, 1);
 });
 
+test("a checkout order bump the summary displays is charged, though the order tags it is_upsell", () => {
+  const { orderDisplayParityAssertion } = __qaBrowserTestHooks;
+  // The add-on is selected on the checkout, rendered in the summary, and
+  // persisted with is_upsell: true, the platform's reporting tag for a bump.
+  const display = {
+    ...fixture.clean_variant.checkout_display,
+    summary_rows: [
+      ...fixture.clean_variant.checkout_display.summary_rows,
+      { package_id: "7", text: "1x Retinol Serum $29.00" },
+    ],
+  };
+  const order = {
+    verification: {
+      display_reconciliation: __qaBrowserTestHooks.reconcileOrderAgainstDisplay({
+        lines: [
+          ...fixture.order_lines.filter((line) => line.sku === "DEV-BUNDLE"),
+          { ...fixture.order_lines[1], is_upsell: true },
+        ],
+        display,
+        events: fixture.events,
+      }),
+    },
+  };
+
+  const result = orderDisplayParityAssertion(page, "checkout", order);
+  assert.equal(result.status, "pass", result.actual);
+  assert.deepEqual(result.evidence.missing, []);
+  assert.deepEqual(result.evidence.extra, []);
+});
+
 test("a summary whose rows carry no package id is reported not-comparable, never guessed at", () => {
   const { orderDisplayParityAssertion } = __qaBrowserTestHooks;
   const order = orderFrom({
