@@ -302,10 +302,16 @@ async function deployReady(f) {
 }
 
 // A static server over the built _site/, the way a local preview serves it.
-async function serveSite(f) {
+// `redirect` sends one page elsewhere: { page, to }.
+async function serveSite(f, redirect = null) {
   const root = join(f.target, "_site");
   const server = createServer((request, response) => {
     const path = decodeURIComponent(new URL(request.url, "http://local").pathname);
+    if (redirect && path.endsWith(`/${redirect.page}/`)) {
+      response.writeHead(302, { location: redirect.to });
+      response.end();
+      return;
+    }
     const file = join(root, path, path.endsWith("/") ? "index.html" : "");
     const found = existsSync(file) && statSync(file).isFile();
     response.writeHead(found ? 200 : 404, { "content-type": "text/html" });
@@ -321,6 +327,8 @@ test("record deploy records the served local preview on the packet and stages.de
     assert.equal(nextStage(f).stage, "deploy", "control: next stops at deploy before the record");
     const site = await serveSite(f);
     try {
+      const dry = await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `${site.url}index.html`, "dry-run": true });
+      assert.equal(dry.status, "dry_run", "an index.html base URL names the same route root");
       const result = await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
       assert.deepEqual(result.written, [f.packetPath, f.reportPath]);
       assert.equal(readJson(f.packetPath).deploy.preview_url, site.url);
@@ -336,7 +344,7 @@ test("record deploy records the served local preview on the packet and stages.de
   });
 });
 
-test("record deploy refuses, writing nothing, a non-loopback URL, the wrong route root, or a preview that does not answer", async () => {
+test("record deploy refuses, writing nothing, a non-loopback URL, the wrong route root, a redirect off the preview, or a preview that does not answer", async () => {
   await withLifecycle(async (f) => {
     await deployReady(f);
     const before = [readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")];
@@ -346,6 +354,10 @@ test("record deploy refuses, writing nothing, a non-loopback URL, the wrong rout
     const site = await serveSite(f);
     await assert.rejects(deploy(new URL("/", site.url).href), /route root is \/[^ ]+\//);
     await site.close();
+    // A redirect elsewhere is reported, never followed: the probe stays on the preview.
+    const redirecting = await serveSite(f, { page: "checkout", to: "http://127.0.0.1:9/elsewhere/" });
+    await assert.rejects(deploy(redirecting.url), /checkout\/: redirects to http:\/\/127\.0\.0\.1:9\/elsewhere\/, off this preview/);
+    await redirecting.close();
     await assert.rejects(deploy(site.url), /checkout\/: .*\n.*record deploy again|record deploy again/s);
     assert.deepEqual([readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")], before);
   });

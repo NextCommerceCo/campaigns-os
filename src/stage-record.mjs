@@ -443,13 +443,37 @@ function localPreviewUrl(packet, rawUrl) {
   const routeRoot = campaignRouteRoot(packet);
   if (!routeRoot) {
     problems.push("The packet records no campaign.public_route_slug, so the served route root is unknown; record it first.");
-  } else if (`/${routeKey(url.pathname)}/`.replace("//", "/") !== routeRoot) {
+  } else if (`/${routeKey(url.pathname.replace(/\/index\.html?$/i, "/"))}/`.replace("//", "/") !== routeRoot) {
     problems.push(`--base-url ${url.href} serves ${url.pathname}, but this campaign's route root is ${routeRoot}; give ${url.origin}${routeRoot}.`);
   }
   return { url: problems.length ? null : `${url.origin}${routeRoot}`, problems };
 }
 
 const PROBE_TIMEOUT_MS = 5_000;
+const PROBE_MAX_REDIRECTS = 3;
+
+// One page request. Redirects are followed only within the preview's own
+// origin, so a probe never leaves the machine; a redirect elsewhere is
+// reported, not followed.
+async function probePage(target, fetchImpl) {
+  let current = target;
+  try {
+    for (let hop = 0; hop <= PROBE_MAX_REDIRECTS; hop += 1) {
+      const response = await fetchImpl(current, { redirect: "manual", signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+      await response.body?.cancel();
+      const location = response.headers?.get?.("location");
+      if (!(response.status >= 300 && response.status < 400) || !location) return { url: target, status: response.status };
+      const next = new URL(location, current);
+      if (next.origin !== new URL(target).origin) return { url: target, status: null, error: `redirects to ${next.href}, off this preview; nothing was requested there` };
+      current = next.href;
+    }
+    return { url: target, status: null, error: `more than ${PROBE_MAX_REDIRECTS} redirects` };
+  } catch (error) {
+    const reason = error?.name === "TimeoutError" ? `no answer within ${PROBE_TIMEOUT_MS / 1000} s` : String(error?.cause?.code || error?.message || error);
+    // A local static server usually speaks plain http; say so when https fails.
+    return { url: target, status: null, error: new URL(target).protocol === "https:" ? `${reason} (over https; a local static server usually serves http)` : reason };
+  }
+}
 
 /**
  * What only the running server can say, read before the target lock (like
@@ -466,16 +490,8 @@ export async function probeLocalPreview({ packetPath, baseUrl, fetchImpl = globa
   // The built pages, not the bare route root: a funnel often has no index
   // page there, and servers answer that differently (404, a listing).
   const targets = [...new Set(site.pages.map((page) => (routeKey(page.route) ? new URL(`${routeKey(page.route)}/`, url).href : url)))];
-  const routes = [];
-  for (const target of targets) {
-    try {
-      const response = await fetchImpl(target, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-      await response.body?.cancel();
-      routes.push({ url: target, status: response.status });
-    } catch (error) {
-      routes.push({ url: target, status: null, error: error?.name === "TimeoutError" ? `no answer within ${PROBE_TIMEOUT_MS / 1000} s` : String(error?.cause?.code || error?.message || error) });
-    }
-  }
+  // Requested together; the evidence keeps the built pages' order.
+  const routes = await Promise.all(targets.map((target) => probePage(target, fetchImpl)));
   const failed = routes.filter((route) => !(route.status >= 200 && route.status < 300));
   if (failed.length) {
     throw refuseRecord("deploy", [
