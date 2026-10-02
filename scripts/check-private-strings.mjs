@@ -100,6 +100,7 @@ const forbiddenNameDigests = new Set([
   "6c262aa794ce2c453cb42e655ab4c0286958c610d6b072e52449d089c2a4510c",
   "b5c21cb4fcb0c4d110a13c676c785e4bfde7cbffca22049dedfb99f8113fc652",
   "c8e02b6b4ace04008590c7928711319a558ddecfc53873b29ae494e6ca8430a7",
+  "3fbea8967ed6ed9411a1cb14fdd73ceb6ce615f614f9b56047a3eff0e71eefa2",
 ]);
 
 export function sha256(value) {

@@ -125,17 +125,17 @@ test("format of the progress event line is stable", () => {
 test("hosted redirect detection: different origin + /accounts/complete-order/ path, query redacted", () => {
   const checkoutUrl = "https://preview.netlify.app/recovery-relief-stack-v1/checkout/";
   const hosted = hostedRedirectInfo(
-    "https://keer.29next.store/accounts/complete-order/?order_token=SECRET&ref_id=abc",
+    "https://demo-store.29next.store/accounts/complete-order/?order_token=SECRET&ref_id=abc",
     checkoutUrl,
   );
-  assert.equal(hosted.origin, "https://keer.29next.store");
-  assert.equal(hosted.redacted_url, "https://keer.29next.store/accounts/complete-order/");
+  assert.equal(hosted.origin, "https://demo-store.29next.store");
+  assert.equal(hosted.redacted_url, "https://demo-store.29next.store/accounts/complete-order/");
   assert.doesNotMatch(hosted.redacted_url, /SECRET/);
 
   // same origin → not a hosted handoff
   assert.equal(hostedRedirectInfo("https://preview.netlify.app/accounts/complete-order/", checkoutUrl), null);
   // different origin but not the hosted path → not a hosted handoff
-  assert.equal(hostedRedirectInfo("https://keer.29next.store/upsell/", checkoutUrl), null);
+  assert.equal(hostedRedirectInfo("https://demo-store.29next.store/upsell/", checkoutUrl), null);
   assert.equal(hostedRedirectInfo(null, checkoutUrl), null);
 });
 
@@ -177,7 +177,7 @@ test("hosted-checkout path maps to a manual_review assertion with the step ladde
   const steps = [
     { step: "opened_checkout", status: "ok", started_at: "2026-06-11T00:00:00.000Z", duration_ms: 900 },
     { step: "order_submitted", status: "ok", started_at: "2026-06-11T00:00:05.000Z", duration_ms: 4000 },
-    { step: "hosted_redirect_observed", status: "ok", started_at: "2026-06-11T00:00:09.000Z", duration_ms: 0, detail: "redirected to hosted checkout: https://keer.29next.store/accounts/complete-order/" },
+    { step: "hosted_redirect_observed", status: "ok", started_at: "2026-06-11T00:00:09.000Z", duration_ms: 0, detail: "redirected to hosted checkout: https://demo-store.29next.store/accounts/complete-order/" },
     { step: "upsell_action", status: "skipped", started_at: "2026-06-11T00:00:09.000Z", duration_ms: 0, detail: "hosted checkout flow is platform-owned; typed-card runner stops at the handoff" },
   ];
   const result = testOrderAssertion(checkoutPage, "checkout", {
@@ -188,8 +188,8 @@ test("hosted-checkout path maps to a manual_review assertion with the step ladde
       path: "checkout",
       ok: false,
       outcome: "manual_review",
-      hosted_checkout_url: "https://keer.29next.store/accounts/complete-order/",
-      final_url: "https://keer.29next.store/accounts/complete-order/",
+      hosted_checkout_url: "https://demo-store.29next.store/accounts/complete-order/",
+      final_url: "https://demo-store.29next.store/accounts/complete-order/",
       evidence: { steps },
     },
   });
