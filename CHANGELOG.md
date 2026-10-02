@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.50.0+agent.2] - 2026-10-02
+## [1.50.0+agent.3] - 2026-10-02
 
 ### Changed
 
@@ -35,6 +35,29 @@ Notable supported-surface changes are recorded here.
   promo placeholders where it named promo/urgency language.
 - `docs/campaign-build-brief.md` rewords question 5 and adds "Answering The
   Questions", with the fields that close each question.
+
+## [1.50.0+agent.2] - 2026-10-02
+
+### Changed
+
+- `docs/build-packet.md` says how to read a campaign's package, offer and
+  shipping refs for a local CampaignSpec. Its new "Reading package, offer and
+  shipping refs" section, under "Local-spec entry", gives the read doctor and
+  QA already make against the live campaign: one GET of NEXT's proxy,
+  `https://campaign-map.nextcommerce.com/api/campaign`, with the public
+  Campaigns API key in the `X-Campaign-Key` header. It shows a `node` and a
+  `curl` form, describes the envelope, and maps the campaign retrieve body's
+  `id`, `packages[]`, `offers[]` and `shipping_methods[]` to
+  `campaign.ref_id`, `funnels[].pages[].packages[]`, root `offers[]` and root
+  `shipping_methods[]`. It also notes that the proxy refuses some default user
+  agents, Python `urllib`'s and Perl `libwww-perl`'s among them. No command
+  writes these refs, as before.
+- With no saved gateway login, `tooling status` no longer only says to run
+  `login`. Its warning says login is optional and only lets `spec derive
+  --from-store` fill the Store Profile fields, and a second warning says
+  package, offer and shipping refs never come from the gateway login and
+  where the public-key read is documented. Both lines are under `warnings`,
+  and the exit code is unchanged.
 
 ## [1.50.0+agent.1] - 2026-10-02
 

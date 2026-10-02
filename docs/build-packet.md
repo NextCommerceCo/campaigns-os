@@ -22,8 +22,9 @@ ordinary CampaignSpec from the brief, source design and configured campaign's
 real commerce values, following `schemas/campaign-spec.v4.schema.json`. The
 operator supplies the selected store/campaign, public Campaigns API key, intended
 pages and commercial choices, plus store contact details and policy URLs. Verify
-the store/campaign binding and package/offer references; do not guess commerce
-values. No gateway or Map provisioning is required for this entry.
+the store/campaign binding, and read the package, offer and shipping references
+from the campaign itself (below); do not guess commerce values. No gateway or
+Map provisioning is required for this entry.
 
 Set `spec_identity.local_spec_id` to a new UUID once, commit it with the spec,
 and keep it unchanged through revisions and fresh checkouts. It accepts 1–64
@@ -64,6 +65,56 @@ Existing saved-Map specs and packets continue to work. The identity change does
 not relax template certification, source proof, store/SDK parity, polish,
 commerce checks, or typed-card checkout proof. Resolve their reported gates;
 localhost readiness is not production approval.
+
+### Reading package, offer and shipping refs
+
+No command writes commerce refs into a local spec, and `login` does not read
+them: a gateway login serves only the Store Profile fields that `spec derive
+--from-store` fills. Read them with the campaign's public Campaigns API key,
+through the request doctor and QA already make to check built pages against
+the live campaign: one GET of NEXT's proxy with the key in the
+`X-Campaign-Key` header. No store or Admin credential is involved.
+
+```sh
+CAMPAIGN_KEY='<public key>' node -e '
+fetch("https://campaign-map.nextcommerce.com/api/campaign", {
+  headers: { Accept: "application/json", "X-Campaign-Key": process.env.CAMPAIGN_KEY },
+}).then(async (res) => console.log(res.status, JSON.stringify(await res.json(), null, 2)));
+'
+```
+
+`curl -sS -H "Accept: application/json" -H "X-Campaign-Key: <public key>" https://campaign-map.nextcommerce.com/api/campaign`
+returns the same. Add `?ref_id=<campaign id>` when one key serves several
+campaigns. Other HTTP clients work with the same header, but the proxy refuses
+some default user agents, Python `urllib`'s and Perl `libwww-perl`'s among
+them, with a 403 whose body is `error code: 1010`; send another `User-Agent`
+or use one of the commands above.
+
+The answer is an envelope, `{ ok, status, endpoint, requested_ref_id,
+retrieved_at, data }`, with `requested_ref_id` present only when `?ref_id=`
+was sent; `ok: false` carries an `error` instead of a campaign. `data` is the
+campaign retrieve body the Campaign Cart SDK reads in the browser: one
+campaign, or an array of them, in which case use the entry whose `id` is the
+selected campaign. Copy from it as follows:
+
+| `data` field | CampaignSpec field |
+|---|---|
+| `id` | `campaign.ref_id` (doctor and QA send it as `?ref_id=`) |
+| `name`, `currency`, `language`, `payment_env_key` | the `campaign` fields of the same name |
+| `packages[]`: `ref_id`, `name`, `qty`, `price`, `price_retail`, `image`, the `product_*` fields and the recurring fields (`is_recurring`, `price_recurring`, `interval`, `interval_count`) | one `funnels[].pages[].packages[]` entry for each package the page sells |
+| `offers[]`: `ref_id`, `name`, `type`, `code`, `condition`, `benefit`, `packages[]` (by `package_id`), `shipping_methods[]` | root `offers[]`, copied whole; a page that presents an offer lists it in `funnels[].pages[].offers[]` by `ref_id` |
+| `shipping_methods[]`: `ref_id`, `code`, `price` | root `shipping_methods[]` |
+
+A package's ref is its `ref_id`, numbered within the campaign. `external_id`,
+`product_id` and `product_variant_id` are catalog ids, never package refs. The
+same `ref_id` values are what pages render in `data-next-package-id` and
+`data-next-shipping-id`. The read supplies refs and the values the campaign
+serves, not the selection: which packages and offers each page carries, and
+the role flags `is_upsell`, `is_order_bump` and `default_selected`, come from
+the brief and the operator. Copy prices and availability from the read rather
+than typing them from the brief. After the build, doctor and QA repeat this
+read and block a page ref the live campaign does not serve (see
+[the live campaign read](effects.md#the-live-campaign-read)).
 
 ## Root-Served Campaigns (`campaign.route_root`)
 
