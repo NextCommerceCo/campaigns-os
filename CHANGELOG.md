@@ -10,8 +10,9 @@ Notable supported-surface changes are recorded here.
   explains how repeated package declarations become purchase multipliers
   named an internal store as its example; it now gives a neutral one (a 1x
   and a 2x package). Two QA test files swap the same name in a fixture SKU
-  and a hosted-checkout URL for neutral placeholders. Comment and test
-  fixtures only; every message and every exit code is unchanged.
+  and a hosted-checkout URL for neutral placeholders, and the same fixture's
+  product title becomes "Demo Bag". Comment and test fixtures only; every
+  message and every exit code is unchanged.
 - The private-string check adds that store name to its hashed list, so it
   cannot return.
 

@@ -68,13 +68,13 @@ test("a selected unit package bought twice reconciles only to a persisted quanti
   ] } }] };
   const display = {
     summary_present: true,
-    summary_rows: [{ package_id: "1", text: "2x Tactical Sling Bag" }],
+    summary_rows: [{ package_id: "1", text: "2x Demo Bag" }],
     selected_bundle_package_ids: ["1"],
   };
   const selected_packages = [{ packageId: "1", quantity: 2 }];
 
   const correct = reconcileOrderAgainstDisplay({
-    lines: [{ title: "Tactical Sling Bag", quantity: 2, sku: "DEMO-BAG", product_id: 382, variant_id: 383 }],
+    lines: [{ title: "Demo Bag", quantity: 2, sku: "DEMO-BAG", product_id: 382, variant_id: 383 }],
     display,
     events,
     selected_packages,
@@ -83,7 +83,7 @@ test("a selected unit package bought twice reconciles only to a persisted quanti
   assert.deepEqual(correct.matched_quantities, [{ package_ref_id: "1", unit_quantity: 1, purchase_multiplier: 2, persisted_quantity: 2 }]);
 
   const wrong = reconcileOrderAgainstDisplay({
-    lines: [{ title: "Tactical Sling Bag", quantity: 1, sku: "DEMO-BAG", product_id: 382, variant_id: 383 }],
+    lines: [{ title: "Demo Bag", quantity: 1, sku: "DEMO-BAG", product_id: 382, variant_id: 383 }],
     display,
     events,
     selected_packages,
