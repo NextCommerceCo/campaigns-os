@@ -2,6 +2,36 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.48.0] - 2026-10-02
+
+### Changed
+
+- The supported surface advances to 1.48.0 and ships the same-surface
+  changes recorded since 1.47.0, each described in its own section below:
+  the local setup command starts with `npm init -y` (`+agent.1`); the
+  `start`, `prepare-build` and `build` usage lines list
+  `--deploy-target`, `--preview-url` and `--production-url` (`+agent.6`);
+  doctor no longer scans built pages for proof and urgency copy
+  (`+agent.7`); QA stops failing the checkout price check on a checkout whose
+  cart is filled on an earlier page, and recognises the starter templates'
+  SDK loader (`+agent.8`); `readback` shows `warn` and `manual_review` rows as
+  themselves, and the agent context sends a resumed session to `readback`
+  and `next` first (`+agent.9`); a test order refused as a duplicate says so
+  (`+agent.10`); doctor's missing SDK pin message names the SDK the template
+  family was verified against (`+agent.11`); the local preview carries
+  missing polish and page-load evidence forward as warnings, so a campaign
+  built from a starter template can reach a test order (`+agent.12`); and the
+  vendored starter-template catalog is pinned to
+  campaign-cart-starter-templates `37a8d94` (`+agent.13`).
+- The bundled SDK support policy's `latest_known_release` returns to 0.4.38,
+  the value 1.47.0 shipped; `+agent.11` had moved it to 0.4.40. The policy
+  line only feeds template freshness, where the catalog's verification
+  records already name 0.4.40 as the current SDK, so freshness results and
+  doctor's missing SDK pin message are unchanged.
+- Bundled skills carry revision `1.48.0+skills.1`, with each skill version
+  advanced one patch, and the local setup install command pins the 1.48.0
+  package. The skill text is unchanged.
+
 ## [1.47.0+agent.12] - 2026-10-01
 
 ### Changed

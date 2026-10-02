@@ -4508,6 +4508,129 @@
         }
       ],
       "entry_sha256": "d29250e168a1a4270672d9426c1fda0670bd29eccefe7fe70c9a1a0f445c0bfe"
+    },
+    {
+      "id": "RL-0207",
+      "sequence": 199,
+      "date": "2026-10-02",
+      "kind": "release",
+      "surface_version": "1.48.0",
+      "changelog_section": "1.48.0",
+      "changelog_sha256": "4ec8df27478899217d11f925983fc17e558aa7c91e0ed9d13c88fb0a26315c39",
+      "agent_impact": "Surface 1.48.0. Ships the same-surface changes 1.47.0+agent.1 through +agent.13 (setup command starts with npm init -y, intake usage lines list the deploy flags, local-preview evidence carried forward as warnings, QA and readback fixes, starter catalog pinned to 37a8d94). The bundled SDK support policy's latest_known_release returns to 0.4.38; freshness results are unchanged because the catalog's verification records name 0.4.40. Bundled skills carry revision 1.48.0+skills.1 with unchanged text: an agent that loaded 1.47.0+skills.3 should start a fresh session. Install the 1.48.0 package with the documented local setup command.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Name the package version (1.48.0)."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.48.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the local setup install command to the 1.48.0 package."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface 1.48.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime readiness reference for surface 1.48.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.48.0+skills.1 bundle in executable examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Update release metadata for 1.48.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release 1.48.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.48.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.48.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.48.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.48.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.48.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.48.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.48.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.48.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.48.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.48.0+skills.1 bundle revision."
+        }
+      ],
+      "entry_sha256": "abc8749936f439d33b92b3bfdc1c954d0b38df24e5a80a2e3862123494b47f07"
     }
   ]
 }
