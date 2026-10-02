@@ -123,7 +123,7 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
             id: "fix_load_order",
             kind: "manual",
             command: null,
-            description: "List brand-theme.css after next-core.css in commerce-page frontmatter styles, rebuild, then record report.theme.load_order=after-next-core.",
+            description: `List brand-theme.css after next-core.css in commerce-page frontmatter styles, rebuild, run campaigns-os record build, then campaigns-os record theme --packet ${packetArg}.`,
           },
         ],
       );
@@ -145,7 +145,7 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
     return result(
       "blocked",
       "theme_gate.needs_decision",
-      `Assembly report theme status is "${reportStatus || "missing"}" and no generatable brand theme exists; record an applied brand layer or waive the gate with a reason.`,
+      `Assembly report theme status is "${reportStatus || "missing"}" and no generatable brand theme exists; apply a brand layer and record it with campaigns-os record theme, or waive the gate with a reason.`,
       [
         {
           id: "waive_theme",
@@ -172,7 +172,7 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
         id: "apply_brand_layer",
         kind: "manual",
         command: null,
-        description: "Copy brand-theme.css into the campaign assets/css folder, list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles, rebuild, then record report.theme.status=applied, load_order=after-next-core, and commerce_pages.",
+        description: `Copy brand-theme.css into the campaign assets/css folder, list it after next-core.css in the frontmatter styles of the commerce pages that render family components, rebuild, run campaigns-os record build, then campaigns-os record theme --packet ${packetArg}, which records report.theme from the built pages.`,
       },
       {
         id: "waive_theme",

@@ -25,7 +25,7 @@ export const THEME_REPORT_STATUSES = new Set(["applied", "skipped", "blocked", "
 export const THEME_CONFIDENCES = new Set(["high", "medium", "low", "none"]);
 
 const SKIP_DIRS = new Set([".git", "node_modules", "_site", "dist", "build", ".next", "coverage", "qa-output"]);
-const BRAND_LAYER_FILENAMES = new Set(["brand-theme.css", "checkout-brand.css"]);
+export const BRAND_LAYER_FILENAMES = new Set(["brand-theme.css", "checkout-brand.css"]);
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

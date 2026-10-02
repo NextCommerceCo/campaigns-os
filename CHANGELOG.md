@@ -2,6 +2,36 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.49.0] - 2026-10-02
+
+### Added
+
+- `campaigns-os record theme --packet <p>` records an applied brand layer on
+  the Assembly Report, where the theme gate previously sent the operator to
+  edit `report.theme` by hand. It reads each built commerce page's stylesheet
+  links in document order. A page that loads `next-core.css` must load
+  `brand-theme.css` (or `checkout-brand.css`) after it, and that file must be
+  in the built output. A page that loads neither renders the design's own
+  markup and is left out, noted in the evidence. When every page passes and at
+  least one loads the brand layer, it writes `report.theme`: status `applied`,
+  `load_order` `after-next-core`, `css_path`, `commerce_pages` and one evidence
+  line per page, and clears any earlier theme waiver. Otherwise it is refused,
+  naming each page, and writes nothing. Build must be recorded for the current
+  output first. `--dry-run` runs every check and writes nothing.
+
+### Changed
+
+- The theme gate's apply and load-order actions, the starter-palette notice,
+  the build prompt, the build and polish skills, `docs/brand-theme-bridge.md`
+  and `docs/build-packet.md` name `record theme` where they described a hand
+  edit of `report.theme`.
+- `contracts/effects.v1.json` declares `record theme` and
+  `record theme --dry-run`.
+- Package and supported-surface version advance to 1.49.0 for the effects
+  contract hash. The local setup install command pins 1.49.0. Bundled skills
+  carry revision `1.49.0+skills.1`, with each skill version advanced one patch;
+  the build and polish skills also name `record theme`.
+
 ## [1.48.0] - 2026-10-02
 
 ### Changed

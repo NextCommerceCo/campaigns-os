@@ -4631,6 +4631,153 @@
         }
       ],
       "entry_sha256": "abc8749936f439d33b92b3bfdc1c954d0b38df24e5a80a2e3862123494b47f07"
+    },
+    {
+      "id": "RL-0208",
+      "sequence": 200,
+      "date": "2026-10-02",
+      "kind": "release",
+      "surface_version": "1.49.0",
+      "changelog_section": "1.49.0",
+      "changelog_sha256": "fdd872f21c180fcacc6bac9e0cc263dbd9146f374128f103969ddb414ff985f4",
+      "agent_impact": "Surface 1.49.0. Record an applied brand layer with campaigns-os record theme --packet <p> after record build, instead of editing report.theme by hand: it reads each built commerce page's stylesheet links, requires brand-theme.css (or checkout-brand.css) after next-core.css on every page that loads next-core.css, and writes report.theme (status applied, load_order after-next-core, css_path, commerce_pages, evidence), clearing any earlier theme waiver. It is refused, naming each page and writing nothing, otherwise. Bundled skills carry revision 1.49.0+skills.1: an agent that loaded 1.48.0+skills.1 should start a fresh session. Install the 1.49.0 package with the documented local setup command.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Name the package version (1.49.0)."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare record theme (writes the Assembly Report, and the doctor sidecar when one is retained) and its read-only --dry-run form."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.49.0 and record the effects contract hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "Record an applied brand layer with record theme, which writes commerce_pages from the built pages that load next-core.css."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Add record theme to the record command table and name it in the starter-palette lane."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the local setup install command to the 1.49.0 package."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface 1.49.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime readiness reference for surface 1.49.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.49.0+skills.1 bundle in executable examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Update release metadata for 1.49.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release 1.49.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.49.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Run record theme after record build when a brand theme is applied, instead of editing report.theme; publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Name record build and record theme in the theme gate's apply lane; publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "record",
+          "summary": "Add record theme to the usage text, and name it in the build prompt and the starter-palette notice."
+        }
+      ],
+      "entry_sha256": "7cdef4160a3e7d2128cb53f4cd6844ec97296d8a8c1cc44058b208922d2e0351"
     }
   ]
 }

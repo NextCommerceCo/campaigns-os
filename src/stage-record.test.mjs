@@ -97,13 +97,14 @@ function scaffold(f) {
   writeJson(join(f.target, "_data/campaigns.json"), { [f.spec.campaign.slug]: entry });
 }
 
-// What page-kit build produces: one page per CampaignSpec page at its route.
-function buildSite(f, marker = "") {
+// What page-kit build produces: one page per CampaignSpec page at its route,
+// with whatever stylesheet links `head` gives that page.
+function buildSite(f, marker = "", head = () => "") {
   for (const page of f.spec.funnels.flatMap((funnel) => funnel.pages)) {
     const route = String(page.page_url || "").replace(/^\/+|\/+$/g, "");
     const file = join(f.target, "_site", f.slug, route, "index.html");
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, `<!doctype html><html><head><meta name="next-page-type" content="${page.type}"><title>${page.id}</title><script src="https://cdn.example.com/campaign-cart@v0.4.37/dist/loader.js"></script></head><body data-next-page="${page.id}"><h1>${page.id}${marker}</h1></body></html>\n`);
+    writeFileSync(file, `<!doctype html><html><head><meta name="next-page-type" content="${page.type}"><title>${page.id}</title>${head(page)}<script src="https://cdn.example.com/campaign-cart@v0.4.37/dist/loader.js"></script></head><body data-next-page="${page.id}"><h1>${page.id}${marker}</h1></body></html>\n`);
   }
 }
 
@@ -225,6 +226,63 @@ test("record polish binds the evidence file to the current build and next advanc
       const inspected = doctor(f);
       assert.equal(inspected.derived.polish_gate.status, "pass", JSON.stringify(inspected.derived.polish_gate));
       assert.equal(nextStage(f).stage, "deploy");
+  });
+});
+
+// A recorded build whose theme gate is blocked the way a generatable brand
+// theme leaves it, with the stylesheets each commerce page links set by
+// `links`.
+function themeReady(f, links) {
+  scaffold(f);
+  recordOk(f, "setup");
+  const context = readJson(f.contextPath);
+  context.theme.generated.can_generate = true;
+  writeJson(f.contextPath, context);
+  const report = readJson(f.reportPath);
+  report.theme = { ...report.theme, status: "needs_review" };
+  writeJson(f.reportPath, report);
+  const css = join(f.target, "_site", f.slug, "css");
+  mkdirSync(css, { recursive: true });
+  writeFileSync(join(css, "next-core.css"), ":root {}\n");
+  writeFileSync(join(css, "brand-theme.css"), ":root { --brand--color--primary: #0a2540; }\n");
+  const tag = (name) => `<link rel="stylesheet" href="/${f.slug}/css/${name}">`;
+  buildSite(f, "", (page) => (page.type === "landing" ? "" : links(page).map(tag).join("")));
+  recordOk(f, "build");
+}
+
+test("record theme records the brand layer each commerce page that loads next-core.css loads after it, and the theme gate passes", () => {
+  withLifecycle((f) => {
+    // The receipt is the design's own markup: neither stylesheet, so no brand layer is owed there.
+    themeReady(f, (page) => (page.type === "thankyou" ? [] : ["next-core.css", "brand-theme.css"]));
+    assert.equal(doctor(f).derived.theme_gate.code, "theme_gate.generatable_not_applied", "control: the gate blocks before the record");
+
+    const result = recordOk(f, "theme");
+    const theme = readJson(f.reportPath).theme;
+    assert.equal(theme.status, "applied");
+    assert.equal(theme.load_order, "after-next-core");
+    assert.equal(theme.css_path, `_site/${f.slug}/css/brand-theme.css`);
+    assert.deepEqual(theme.commerce_pages, ["checkout", "upsell"]);
+    assert.ok(theme.evidence.some((line) => line.startsWith("receipt: ") && line.includes("loads neither")), theme.evidence.join("\n"));
+    assert.deepEqual(result.record, theme);
+    assert.ok(validReport(readJson(f.reportPath)), JSON.stringify(validReport.errors));
+    assert.equal(doctor(f).derived.theme_gate.code, "theme_gate.applied");
+  });
+});
+
+test("record theme refuses, naming each page and writing nothing, when a commerce page loads the brand layer before next-core.css or not at all", () => {
+  withLifecycle((f) => {
+    themeReady(f, (page) => (page.id === "checkout"
+      ? ["brand-theme.css", "next-core.css"]
+      : page.id === "upsell" ? ["next-core.css"] : ["next-core.css", "brand-theme.css"]));
+    const before = readFileSync(f.reportPath, "utf8");
+
+    const result = record(f, "theme");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /checkout: .* links \/[^ ]+\/brand-theme\.css before next-core\.css/);
+    assert.match(result.stderr, /upsell: .* links no brand layer/);
+    assert.doesNotMatch(result.stderr, /receipt:/);
+    assert.equal(readFileSync(f.reportPath, "utf8"), before);
+    assert.equal(doctor(f).derived.theme_gate.code, "theme_gate.generatable_not_applied");
   });
 });
 

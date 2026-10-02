@@ -970,8 +970,9 @@ starter palette is acceptable>" --waived-by "<named human>"`, optionally
 (status and severity — never `fail`) and keeps the shipped palette visible in
 the verdict; or hand-author the brand
 layer — write `brand-theme.css`, list it after `next-core.css` in commerce-page
-frontmatter styles, rebuild, and record `report.theme.status: applied` with
-`load_order: after-next-core`. Nothing waives the gate on the operator's
+frontmatter styles, rebuild, `record build`, and `record theme`, which records
+`report.theme.status: applied` with `load_order: after-next-core` from the
+built pages. Nothing waives the gate on the operator's
 behalf. See [Brand Theme Bridge](./brand-theme-bridge.md) for both lanes in
 full.
 
@@ -1609,6 +1610,7 @@ hand-editing `.campaign-runtime/` JSON:
 | `campaigns-os record setup --packet <p>` | Build Context `scaffold.required=false` (`handoff_skill` next-campaigns-build) and `stages.setup` completed | the campaign output directory (`assembly.output_dir`) does not exist, or there is no Build Context or Assembly Report |
 | `campaigns-os record build --packet <p>` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, and `stages.polish` reset to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, or `stages.setup` is not terminal |
 | `campaigns-os record polish --packet <p> --evidence <file>` | `stages.polish` from the file (`docs/polish-evidence.md` §7: completed, blocked or skipped), bound to doctor's current fingerprint; `report.theme.repair_loop_defect` when the file sets it | build is not recorded for the current output, the file has a shape error (named by field), or, for a completed status, the polish gate doctor evaluates would not pass on the result |
+| `campaigns-os record theme --packet <p>` | `report.theme`: status `applied`, `load_order` `after-next-core`, `css_path`, `commerce_pages` and per-page evidence read from each built commerce page's stylesheet links; any earlier theme waiver is cleared | build is not recorded for the current output, the campaign ships no commerce pages, a built commerce page that loads `next-core.css` does not load `brand-theme.css` (or `checkout-brand.css`) after it or links one missing from the built output, or no built commerce page loads `next-core.css` |
 
 Each command also refuses a stage `next` has not reached: while doctor's
 prepare-build gate is set (`next` answers prepare-build) or while an earlier

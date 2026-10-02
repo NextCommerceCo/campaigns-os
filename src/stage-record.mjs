@@ -1,6 +1,6 @@
-// `campaigns-os record <setup|build|polish>`: record a stage's completion on
-// the Build Context and Assembly Report through one validated command instead
-// of hand-edited JSON.
+// `campaigns-os record <setup|build|polish|theme>`: record a stage's
+// completion (or, for theme, an applied brand layer) on the Build Context and
+// Assembly Report through one validated command instead of hand-edited JSON.
 //
 // Every value a record stamps is read from the doctor result the `next` ladder
 // itself reads (doctorPacket over the same packet and sidecars), so a record
@@ -14,14 +14,17 @@
 //
 // The Build Context holds setup state only (`scaffold`); build and polish
 // completion live on the Assembly Report alone, so `record build` and `record
-// polish` validate the context they read but write only the report.
+// polish` validate the context they read but write only the report. `record
+// theme` writes `report.theme` only after reading, in each built commerce
+// page, that a brand layer stylesheet is linked after next-core.css.
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import Ajv2020 from "ajv/dist/2020.js";
 
-import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { BRAND_LAYER_FILENAMES } from "./brand-theme.mjs";
+import { computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { isObject, optionalString, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
@@ -39,8 +42,9 @@ import {
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { applyDerivedAssemblyReportSummary, assemblyReportMatchesPacket, commitAssemblyReport } from "./stage-ledger.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
+import { commerceScopeFromScope } from "./theme-gate.mjs";
 
-export const RECORD_STAGES = Object.freeze(["setup", "build", "polish"]);
+export const RECORD_STAGES = Object.freeze(["setup", "build", "polish", "theme"]);
 
 // Every flag `record` reads, plus the two any command accepts (run id and
 // lifecycle journal). Anything else is refused before a file is read.
@@ -294,6 +298,115 @@ function composePolish(report, { now, recordedBy, fingerprint, input }) {
   return { report: nextReport, context: null };
 }
 
+// The stylesheet every family's commerce pages load first; the brand layer
+// must come after it so its --brand--* values win.
+const CORE_STYLESHEET = "next-core.css";
+
+function stylesheetHrefs(html) {
+  return [...html.matchAll(/<link\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .filter((tag) => /\brel\s*=\s*["']?[^"'>]*\bstylesheet\b/i.test(tag))
+    .map((tag) => (tag.match(/\bhref\s*=\s*["']([^"']+)["']/i) || [])[1])
+    .filter(Boolean);
+}
+
+const hrefName = (href) => href.split(/[?#]/)[0].split("/").pop();
+const routeKey = (route) => String(route || "").replace(/^\/+|\/+$/g, "");
+
+// What `record theme` stands on, read from each built commerce page's
+// stylesheet links in document order. A page that loads next-core.css renders
+// family components, so it must load a brand layer (brand-theme.css or
+// checkout-brand.css) after it, and that file must be in the built output. A
+// page that loads neither renders the design's own markup and needs no brand
+// layer (docs/brand-theme-bridge.md, "Where next-core.css belongs"). Any page
+// that breaks the rule is a refusal naming the page.
+function brandLayerFacts(doctor) {
+  const derived = doctor.derived || {};
+  const commerce = commerceScopeFromScope(derived.scope);
+  if (!commerce.all.length) {
+    throw refuseRecord("theme", ["The campaign ships no commerce pages, so there is no brand layer to record; the theme gate does not apply."]);
+  }
+  const site = resolveBuiltSiteScope(derived.target_repo, { slug: derived.public_route_slug });
+  if (!site.ok) throw refuseRecord("theme", [site.error]);
+  const byRoute = new Map(site.pages.map((page) => [routeKey(page.route), page]));
+  const byId = new Map(site.pages.map((page) => [page.page_id, page]));
+  const problems = [];
+  const evidence = [];
+  const layers = [];
+  const styled = [];
+  const unstyled = [];
+  for (const page of commerce.built) {
+    const label = page.page_id || page.route || page.type;
+    const built = byRoute.get(routeKey(page.route)) || byId.get(page.page_id);
+    if (!built) {
+      problems.push(`${label}: no built page in ${relative(derived.target_repo, site.campaign_dir) || "."}; run the page-kit build, then ${cmd("record")} build.`);
+      continue;
+    }
+    const builtRel = relative(derived.target_repo, built.built_path);
+    const hrefs = stylesheetHrefs(readFileSync(built.built_path, "utf8"));
+    const core = hrefs.findIndex((href) => hrefName(href) === CORE_STYLESHEET);
+    const brand = hrefs.findIndex((href, index) => index > core && BRAND_LAYER_FILENAMES.has(hrefName(href)));
+    if (core < 0) {
+      if (hrefs.some((href) => BRAND_LAYER_FILENAMES.has(hrefName(href)))) {
+        problems.push(`${label}: ${builtRel} links a brand layer but not ${CORE_STYLESHEET}; load ${CORE_STYLESHEET} first, or neither on a page built from the design's own markup.`);
+      } else {
+        unstyled.push(label);
+        evidence.push(`${label}: ${builtRel} loads neither ${CORE_STYLESHEET} nor a brand layer (the design's own markup).`);
+      }
+      continue;
+    }
+    if (brand < 0) {
+      const early = hrefs.find((href) => BRAND_LAYER_FILENAMES.has(hrefName(href)));
+      problems.push(early
+        ? `${label}: ${builtRel} links ${early} before ${CORE_STYLESHEET}; list it after ${CORE_STYLESHEET} in the page's frontmatter styles and rebuild.`
+        : `${label}: ${builtRel} links no brand layer (${[...BRAND_LAYER_FILENAMES].join(" or ")}) after ${CORE_STYLESHEET}.`);
+      continue;
+    }
+    const href = hrefs[brand].split(/[?#]/)[0];
+    const file = href.startsWith("/") ? join(site.site_root, href) : resolve(dirname(built.built_path), href);
+    if (!existsSync(file)) {
+      problems.push(`${label}: ${builtRel} links ${hrefs[brand]}, which is not in the built output.`);
+      continue;
+    }
+    layers.push(file);
+    styled.push(label);
+    evidence.push(`${label}: ${builtRel} loads ${relative(derived.target_repo, file)} after ${CORE_STYLESHEET}.`);
+  }
+  if (problems.length) throw refuseRecord("theme", problems);
+  if (!styled.length) {
+    throw refuseRecord("theme", [`No built commerce page loads ${CORE_STYLESHEET} (${unstyled.join(", ") || "none built"}), so no page renders family components for a brand layer to style. If shipping without one is intended, record that with ${cmd("theme")} waive.`]);
+  }
+  const cssPath = relative(derived.target_repo, layers[0]);
+  const generated = resolve(derived.target_repo, ".campaign-runtime/theme/brand-theme.css");
+  if (existsSync(generated)) {
+    const same = readFileSync(generated, "utf8") === readFileSync(layers[0], "utf8");
+    evidence.push(`${cssPath} ${same ? "matches" : "differs from"} the generated .campaign-runtime/theme/brand-theme.css.`);
+  }
+  return {
+    cssPath,
+    commercePages: styled,
+    outOfScope: commerce.out_of_scope.map((page) => page.page_id || page.route || page.type),
+    evidence,
+  };
+}
+
+// An applied brand layer replaces any earlier waiver: the gate reads a waiver
+// first, and the two answer the same question opposite ways.
+function composeTheme(report, { now, recordedBy, layer }) {
+  const theme = {
+    ...(isObject(report.theme) ? report.theme : {}),
+    status: "applied",
+    css_path: layer.cssPath,
+    load_order: "after-next-core",
+    commerce_pages: layer.commercePages,
+    evidence: layer.evidence,
+    waiver: null,
+    recorded_by: recordedBy,
+    recorded_at: now,
+  };
+  return { report: { ...report, theme }, context: null };
+}
+
 // Every check a written record must pass, over exactly what would be written.
 function validateRecord(stage, { report, context, packet, fingerprint }) {
   const problems = [
@@ -369,7 +482,8 @@ function doctorFacts(stage, doctor, report, packet) {
   const derived = doctor.derived || {};
   const binding = bindingProblems(doctor, report, packet);
   if (binding.length) throw refuseRecord(stage, binding);
-  const ladder = ladderProblems(stage, doctor, report);
+  // The brand layer is applied to built output, so theme is checked as polish is.
+  const ladder = ladderProblems(stage === "theme" ? "polish" : stage, doctor, report);
   if (ladder.length) throw refuseRecord(stage, ladder);
   if (stage === "setup") {
     const outputDir = optionalString(derived.target_output_dir);
@@ -386,13 +500,15 @@ function doctorFacts(stage, doctor, report, packet) {
   if (stage === "build" && derived.scaffold_required === true) {
     throw refuseRecord(stage, [`Setup is still required (${derived.scaffold_reason || "Build Context scaffold.required is true"}); run ${cmd("record")} setup first.`]);
   }
-  if (stage === "polish") {
+  if (stage === "polish" || stage === "theme") {
     const recorded = optionalString(report?.stages?.assembly?.build_fingerprint);
     if (!String(report?.stages?.assembly?.status || "").startsWith("completed") || !recorded) {
       throw refuseRecord(stage, [`Build is not recorded (stages.assembly needs a completed status and build_fingerprint); run ${cmd("record")} build first.`]);
     }
     if (recorded !== fingerprint) {
-      throw refuseRecord(stage, [`The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then ${cmd("polish")} capture, then record polish again.`]);
+      throw refuseRecord(stage, [stage === "theme"
+        ? `The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then record theme again.`
+        : `The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then ${cmd("polish")} capture, then record polish again.`]);
     }
   }
   return {
@@ -457,11 +573,15 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead,
   });
   const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
-  const { composed, facts, reportPath, contextPath, after } = recorded;
+  const { composed, facts, layer, reportPath, contextPath, after } = recorded;
 
   const stageKey = stage === "build" ? "assembly" : stage;
   const writes = [...(composed.context ? [contextPath] : []), reportPath];
-  const ready = [
+  const ready = stage === "theme" ? [
+    `theme.status = applied, load_order = after-next-core (${layer.cssPath})`,
+    ...layer.evidence,
+    ...(layer.outOfScope.length ? [`Not built in this scope, so not checked: ${layer.outOfScope.join(", ")}; run record theme again after building them.`] : []),
+  ] : [
     `stages.${stageKey}.status = ${composed.report.stages[stageKey].status}`,
     ...(facts.fingerprint ? [`build output fingerprint ${facts.fingerprint} (doctor derived.build_output_fingerprint.value)`] : []),
     ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
@@ -477,7 +597,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(composed.context ? { context_path: contextPath } : {}),
     ...(dryRun ? { would_write: writes } : { written: writes }),
     build_fingerprint: facts.fingerprint || null,
-    record: composed.report.stages[stageKey],
+    record: stage === "theme" ? composed.report.theme : composed.report.stages[stageKey],
     ...(stage === "build" ? { polish: composed.report.stages.polish } : {}),
     ...(composed.context ? { scaffold: composed.context.scaffold } : {}),
     ...(stage === "polish" && input.hasRepairLoopDefect ? { repair_loop_defect: input.repairLoopDefect } : {}),
@@ -508,6 +628,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
 
   let composed = null;
   let facts = null;
+  let layer = null;
   const compose = (report) => {
     if (!isObject(report) || !isObject(report.stages)) throw refuseRecord(stage, [`Assembly Report at ${reportPath} has no stages object.`]);
     const context = stage === "setup" ? readJsonIfExists(contextPath) : null;
@@ -525,11 +646,14 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     }
     facts = doctorFacts(stage, doctor, report, packet);
     if (typeof afterDoctorRead === "function") afterDoctorRead();
+    if (stage === "theme") layer = brandLayerFacts(doctor);
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
         ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint })
-        : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input });
+        : stage === "theme"
+          ? composeTheme(report, { now: timestamp, recordedBy, layer })
+          : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input });
     applyDerivedAssemblyReportSummary(next.report);
     validateRecord(stage, { report: next.report, context: next.context, packet, fingerprint: facts.fingerprint });
     assertOutputUnchanged(stage, facts);
@@ -543,9 +667,9 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
   // Already inside the target lock, which commitAssemblyReport re-enters.
   commitAssemblyReport(workspace, compose, {
     command: `record ${stage}`,
-    staleReason: `stages.${stage === "build" ? "assembly" : stage} was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+    staleReason: `${stage === "theme" ? "theme" : `stages.${stage === "build" ? "assembly" : stage}`} was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
     ...(dryRun ? { lock: false } : {}),
   });
   const after = dryRun ? null : doctorPacket(packetPath, sidecars);
-  return { composed, facts, reportPath, contextPath, after };
+  return { composed, facts, layer, reportPath, contextPath, after };
 }

@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-build
-version: 1.0.27
+version: 1.0.28
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
 
-Bundle revision: 1.48.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.48.0+skills.1`
+Bundle revision: 1.49.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.49.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -107,6 +107,6 @@ Build rules:
 - Run page-kit build and SDK/template lint available in the target repo.
 - Record build with `campaigns-os record build --packet <packet>` after every page-kit build (tier `C`: it overwrites `stages.assembly` and, when the output changed, resets `stages.polish` to `required` in the assembly report, and stamps the doctor output stale; `--dry-run` is tier `none`). It stamps `stages.assembly.build_fingerprint` with the fingerprint doctor computes from `_site/<slug>/` and the Design Source Package material fingerprint when the report has one. Never type or copy these fields by hand.
 - Capture the machine-readable build summary as an artifact: `npx campaign-build --json > .campaign-runtime/page-kit-build-summary.json` (requires `next-campaign-page-kit` >= 0.1.4). Doctor's `built_output.build_summary` check verifies per-page build status and Page Kit shape warnings (`NESTED_NO_PERMALINK`, `DUPLICATE_OUTPUT`, `MISSING_FRONTMATTER`, `LAYOUT_NOT_FOUND`, `NO_CAMPAIGN`) from this artifact. If the installed page-kit predates `--json`, record that in the assembly report instead of skipping silently.
-- Update the assembly report with commands, evidence, warnings, blockers, and next owner. If a brand theme was applied, record `report.theme.status`, `css_path`, `commerce_pages`, `load_order=after-next-core`, evidence, and any first repair-loop defect.
+- Update the assembly report with commands, evidence, warnings, blockers, and next owner. If a brand theme was applied, run `campaigns-os record theme --packet <p>` (tier `C`) after `record build`: it reads each built commerce page's stylesheet links and records `report.theme` (status applied, `load_order=after-next-core`, `css_path`, `commerce_pages`, evidence). It refuses, writing nothing, when a page that loads `next-core.css` does not load the brand layer after it. Don't hand-edit `report.theme`; a first repair-loop defect goes through `record polish`.
 
 Build does not replace polish or QA. Hand off to `next-campaigns-polish` when the campaign is runnable.
