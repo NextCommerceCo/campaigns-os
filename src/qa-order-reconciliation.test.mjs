@@ -194,6 +194,7 @@ test("a checkout order bump the summary displays is charged, though the order ta
   assert.equal(result.status, "pass", result.actual);
   assert.deepEqual(result.evidence.missing, []);
   assert.deepEqual(result.evidence.extra, []);
+  assert.equal(result.evidence.order_bump_line_count, 1);
 });
 
 test("a summary whose rows carry no package id is reported not-comparable, never guessed at", () => {
