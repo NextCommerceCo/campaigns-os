@@ -191,6 +191,28 @@ test("brand theme normalizes role-like source tokens into a complete commerce to
   });
 });
 
+test("brand theme treats a stylesheet linked from pages of several roles as shared, ahead of one page's vendor CSS", () => {
+  withTempDir((dir) => {
+    const pages = ["landing", "presell", "checkout", "upsell"].map((page_id) => ({ page_id, path: `${page_id}.html` }));
+    const { source, packet, packetPath } = makePacket(dir, pages);
+    mkdirSync(join(source, "assets/landing/css"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="assets/landing/css/lightbox.css"><main>Landing</main>`);
+    writeFileSync(join(source, "assets/landing/css/lightbox.css"), `.lightbox-caption { color: #444; }\n`);
+    for (const page of ["presell", "checkout", "upsell"]) {
+      writeFileSync(join(source, `${page}.html`), `<link rel="stylesheet" href="assets/brand.css"><main>${page}</main>`);
+    }
+    writeFileSync(join(source, "assets/brand.css"), highConfidenceTokens());
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const selected = result.context_theme.selected_source;
+
+    assert.match(selected.path, /assets\/brand\.css$/);
+    assert.equal(selected.role, "shared");
+    assert.deepEqual(selected.referenced_by.map((ref) => ref.page_id), ["presell", "checkout", "upsell"]);
+    assert.match(result.css, /--brand--color--primary: #2c3d43;/);
+  });
+});
+
 test("brand theme detects inline :root tokens from mapped HTML without workflow-order assumptions", () => {
   withTempDir((dir) => {
     const { source, packet, packetPath } = makePacket(dir);
