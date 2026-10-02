@@ -188,6 +188,24 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
   return result(values[0] === expected.value ? 'match' : 'mismatch', 'credential_comparison');
 }
 
+// The Campaign Cart SDK sends the page's key as `Authorization` on every
+// Campaigns API call, so the browser pass can see the key a page actually
+// uses, whatever its scripts look like. The API is matched by its
+// `campaigns.apps` host label, as the order capture in qa-browser.mjs does.
+export function isSdkApiRequest(url) {
+  try { const parsed = new URL(url); return parsed.protocol === 'https:' && parsed.hostname.startsWith('campaigns.apps.') && parsed.pathname.startsWith('/api/'); } catch { return false; }
+}
+
+// The keys a page sent are compared here and dropped; only the outcome is
+// kept. With nothing sent, or no single expected key, the static read stands
+// (null).
+export function sentBinding(sentKeys, expected) {
+  if (!sentKeys.length || expected?.conflict || !expected?.value) return null;
+  return { schema_version: BINDING_SCHEMA, observation: 'sdk_request',
+    outcome: sentKeys.every(value => value === expected.value) ? 'match' : 'mismatch',
+    reason: 'credential_comparison', source_kinds: ['sdk_request'], identity: 'not_verified' };
+}
+
 export function bindingAssertion(page, evidence) {
   // No source URLs, values, hashes, masked fragments, or inferred App IDs.
   return { id: `page-binding:${page.page_id}`, family: 'api-metadata', page: page.page_id,

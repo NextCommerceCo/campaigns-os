@@ -1928,19 +1928,32 @@ expectations, and commerce-ref validation. A doctor-clean non-packet run means
 matches a spec". Treat it as a residue/visual gate, not equivalent to a
 packet-driven QA pass.
 
-### Per-page credential declarations
+### Per-page credential binding
 
 Canonical `qa run` emits `page-binding:<page_id>` in the existing `api-metadata`
 family, with `campaigns-os-page-binding/v0` evidence (typed in the verdict schema).
-`match` means the statically declared credential equals the expected credential;
+`match` means the page's credential equals the expected credential;
 `mismatch` is a blocker. `unknown` requires manual review. All three carry
 `identity: not_verified`: credential equality never proves a unique Campaign App
 ID, and no App ID is inferred from `campaignId` or `next-campaign-id`.
 
 Expected data reuses the commercial QA resolver (packet, then spec, then an
 explicit supported environment source). Conflicting authored values are unknown.
-The SDK loads `window.nextConfig.apiKey` before `next-api-key` at boot, so meta
-wins at runtime; this check deliberately reports differing declarations as a
+
+With `--browser`, the row comes from the key the Campaign Cart SDK actually
+sent. The SDK sends it as `Authorization` on every Campaigns API request, and
+the browser pass reads that header on each page it loads. The values are
+compared in memory and dropped: the evidence records
+`observation: sdk_request`, `source_kinds: ["sdk_request"]`, and `match` when
+every request carried the expected credential or `mismatch` when any carried
+another. This works whatever the
+page's scripts look like. A page that sent no Campaigns API request, or a run
+with no single expected credential, keeps the static row described below.
+
+Without `--browser`, or for such a page, the row is a static read of what the
+page declares (`observation: static_declaration`). The SDK loads
+`window.nextConfig.apiKey` before `next-api-key` at boot, so meta wins at
+runtime; the static read deliberately reports differing declarations as a
 conflict rather than certifying one. It does not observe SDK execution.
 
 The bounded HTML loader is reused. HTML is parsed without execution; JavaScript

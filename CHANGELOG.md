@@ -2,6 +2,36 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0] - 2026-10-02
+
+### Changed
+
+- With `qa run --browser`, each page's `page-binding:<page_id>` row comes
+  from the key the Campaign Cart SDK actually sent. The SDK sends the page's
+  key as `Authorization` on every Campaigns API request. The browser pass
+  reads that header on each page it loads, compares it with the expected key
+  in memory and keeps only the outcome: `match` (pass) when every request
+  carried the expected key, `mismatch` (blocker) when any carried another.
+  The key itself is never recorded. The static read of a page's declarations
+  could not resolve most real pages: the starter templates' `config.js` opens
+  with `window.dataLayer = window.dataLayer || []` and
+  `window.nextReady = window.nextReady || []`, which the static grammar treats
+  as dynamic, so every starter page was left for manual review, and inline
+  scripts, `async` scripts and scripts from other origins left other pages
+  the same way. A page that sends no Campaigns API request, a run with no
+  single expected key, and `qa run` without `--browser` keep the static read.
+- The QA verdict schema's page-binding evidence accepts
+  `observation: "sdk_request"` and the `sdk_request` source kind for that row.
+  Nothing is removed, so every verdict that validated before still does.
+  `docs/qa-and-test-orders.md` describes both observations.
+- Ships the same-surface change recorded since 1.49.0: the agent context
+  spells every command `npx --no-install campaigns-os …` and carries the
+  build skill's proof rule (`+agent.1`).
+- Package and supported-surface version advance to 1.50.0 for the QA verdict
+  schema hash. The local setup install command pins 1.50.0. Bundled skills
+  carry revision `1.50.0+skills.1`, with each skill version advanced one
+  patch. The skill text is unchanged.
+
 ## [1.49.0+agent.1] - 2026-10-02
 
 ### Changed

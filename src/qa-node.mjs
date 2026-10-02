@@ -2329,7 +2329,7 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
     });
   assertions.push(...liveCampaignRefAssertions({ pages: [...livePages.values()], spec: liveSpec, liveCampaign: liveRead }));
   if (args.browser === true) {
-    assertions.push(...await runBrowserChecks(resolved.topologies, args, {
+    const browserAssertions = await runBrowserChecks(resolved.topologies, args, {
       brandContract: resolved.brandContract,
       // With no generatable brand theme on the local preview, the starter
       // template is the design: its residue is a warning (local-preview-policy.mjs).
@@ -2337,7 +2337,15 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
         ? SEVERITY.WARN
         : residueSeverityForThemeGate(gate.status),
       supportedPaymentMethods: supportedPaymentMethodsFromSpec(resolved.spec),
-    }));
+      bindingExpected,
+    });
+    // A page-binding row from the browser is the key the SDK actually sent;
+    // it takes the place of that page's static read.
+    for (const observed of browserAssertions) {
+      const at = observed.id.startsWith("page-binding:") ? assertions.findIndex((entry) => entry.id === observed.id) : -1;
+      if (at >= 0) assertions[at] = observed;
+      else assertions.push(observed);
+    }
   }
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions });

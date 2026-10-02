@@ -146,7 +146,11 @@
           "const": "campaigns-os-page-binding/v0"
         },
         "observation": {
-          "const": "static_declaration"
+          "enum": [
+            "static_declaration",
+            "sdk_request"
+          ],
+          "description": "static_declaration: the key the page's HTML and same-origin config scripts declare. sdk_request: the key the Campaign Cart SDK sent to the Campaigns API in the browser pass (qa run --browser)."
         },
         "outcome": {
           "enum": [
@@ -174,7 +178,8 @@
             "enum": [
               "meta",
               "inline",
-              "config_script"
+              "config_script",
+              "sdk_request"
             ]
           }
         },
@@ -182,7 +187,7 @@
           "const": "not_verified"
         }
       },
-      "description": "Credential-free static declaration comparison, not observed execution or Campaign App identity. No keys, hashes, fragments, source URLs or inferred resource IDs."
+      "description": "Credential-free comparison of the page's key with the expected key: the static declaration, or the key the SDK sent in the browser pass. Not Campaign App identity. No keys, hashes, fragments, source URLs or inferred resource IDs."
     },
     "pageUrlRef": {
       "type": "object",
