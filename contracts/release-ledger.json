@@ -4972,7 +4972,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.50.0+agent.2",
-      "changelog_sha256": "10b4e61576ed2fe6dea8c6fcc468c51ecf325230e7c3d4e931d6107b5ae4c774",
+      "changelog_sha256": "883416d360a9f1d0886a232259fbca2931d5c2bec48c528a0584d9441985b69f",
       "agent_impact": "To fill a local CampaignSpec with package, offer and shipping refs, read the campaign with its public Campaigns API key: one GET of https://campaign-map.nextcommerce.com/api/campaign with the key in X-Campaign-Key, as docs/build-packet.md \"Reading package, offer and shipping refs\" shows. Gateway login does not supply these refs; it only lets spec derive --from-store fill the Store Profile fields. The tooling status warnings for a missing gateway login now say so; they stay warnings and the exit code is unchanged.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4990,7 +4990,7 @@
           "summary": "The tooling status warning for a missing gateway login says login is optional, only fills the Store Profile fields through spec derive --from-store, never reads package, offer or shipping refs, and points to the public-key read."
         }
       ],
-      "entry_sha256": "57edb6fc7e643f8d9ee86293574de4a66de51372aec85ceba311bbb6482ae666"
+      "entry_sha256": "c1848ed1f25ee7a1069dc27e73872741867454a99b3c6d15b88e1408c2074e04"
     }
   ]
 }

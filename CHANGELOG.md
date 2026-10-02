@@ -16,7 +16,8 @@ Notable supported-surface changes are recorded here.
   `id`, `packages[]`, `offers[]` and `shipping_methods[]` to
   `campaign.ref_id`, `funnels[].pages[].packages[]`, root `offers[]` and root
   `shipping_methods[]`. It also notes that the proxy refuses some default user
-  agents, Python `urllib`'s and Perl `libwww-perl`'s among them. No command writes these refs, as before.
+  agents, Python `urllib`'s and Perl `libwww-perl`'s among them. No command
+  writes these refs, as before.
 - With no saved gateway login, `tooling status` no longer only says to run
   `login`. Its warning says login is optional and only lets `spec derive
   --from-store` fill the Store Profile fields, and a second warning says
