@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.2] - 2026-10-02
+
+### Changed
+
+- `docs/build-packet.md` says how to read a campaign's package, offer and
+  shipping refs for a local CampaignSpec. Its new "Reading package, offer and
+  shipping refs" section, under "Local-spec entry", gives the read doctor and
+  QA already make against the live campaign: one GET of NEXT's proxy,
+  `https://campaign-map.nextcommerce.com/api/campaign`, with the public
+  Campaigns API key in the `X-Campaign-Key` header. It shows a `node` and a
+  `curl` form, describes the envelope, and maps the campaign retrieve body's
+  `id`, `packages[]`, `offers[]` and `shipping_methods[]` to
+  `campaign.ref_id`, `funnels[].pages[].packages[]`, root `offers[]` and root
+  `shipping_methods[]`. It also notes that the proxy refuses Python
+  `urllib`'s default user agent. No command writes these refs, as before.
+- With no saved gateway login, the `tooling status` warning no longer only
+  says to run `login`. It says login is optional and only lets `spec derive
+  --from-store` fill the Store Profile fields, that login never reads
+  package, offer or shipping refs, and where the public-key read is
+  documented. The line stays under `warnings`, and the exit code is
+  unchanged.
+
 ## [1.50.0+agent.1] - 2026-10-02
 
 ### Changed
