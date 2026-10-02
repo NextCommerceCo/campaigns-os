@@ -5867,7 +5867,8 @@ export async function toolingStatusCommand(args, options = {}) {
   const auth = result.gateway_login;
   if (!auth.accounts.length) result.warnings.push(auth.state === "unavailable"
     ? "Gateway credential storage is unavailable or busy. Check user credential directory permissions and keychain access; wait for another campaigns-os process to finish. See docs/gateway-login.md for interrupted-process recovery."
-    : `Gateway login: ${auth.state}. Use ${result.cli.invocation_prefix} login --store <subdomain>.`);
+    : `Gateway login: ${auth.state}. Optional: ${result.cli.invocation_prefix} login --store <subdomain> only lets spec derive --from-store fill the Store Profile fields (campaign.store_*).`);
+  if (!auth.accounts.length && auth.state !== "unavailable") result.warnings.push(`Package, offer and shipping refs never come from the gateway login: read them with the campaign's public Campaigns API key (docs/build-packet.md, "Reading package, offer and shipping refs").`);
   for (const account of auth.accounts) (account.state === "logged_in" ? result.ready : result.warnings).push(`Gateway login: ${account.state}; store ${account.store}; access remaining ${account.remaining_seconds}s; gateway ${auth.gateway}; reported version ${account.gateway_version || "unavailable"} (local credential metadata only).`);
   return result;
 }
