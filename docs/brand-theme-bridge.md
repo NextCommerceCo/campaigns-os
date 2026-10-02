@@ -151,8 +151,9 @@ When `theme inspect` reports `can_generate: true` and the campaign ships
 commerce pages (checkout/upsell/downsell/receipt), the gate **blocks**
 `next polish`, `next deploy`, `next qa`, and `qa run` until one of:
 
-- the brand layer is generated and recorded as applied
-  (`report.theme.status: applied`, `load_order: after-next-core`), or
+- the brand layer is generated, linked and recorded as applied with
+  `campaigns-os record theme --packet <p>` (`report.theme.status: applied`,
+  `load_order: after-next-core`), or
 - an explicit waiver is recorded:
   `campaigns-os theme waive --packet <p> --reason "<why>" --waived-by "<named human>"`
   (optionally `--expires-at <ISO>`; placeholders such as "operator" are refused), or
@@ -197,8 +198,12 @@ If a fresh `brand-theme.css` exists:
 3. Preserve SDK-owned runtime surfaces: `data-next-*`, package selectors,
    payment fields, totals, submit controls, receipt templates, route meta tags,
    and SDK JavaScript.
-4. Record `report.theme.status`, `css_path`, `commerce_pages`, `load_order`,
-   and evidence.
+4. Rebuild, run `campaigns-os record build --packet <p>`, then
+   `campaigns-os record theme --packet <p>`. It reads each built commerce
+   page's stylesheet links and records `report.theme.status`, `css_path`,
+   `commerce_pages`, `load_order` and evidence. It refuses, writing nothing,
+   when a page that loads `next-core.css` does not load the brand layer after
+   it, or when no built commerce page loads `next-core.css`.
 
 ### Where next-core.css belongs
 
@@ -212,8 +217,9 @@ stylesheets off those pages and list them only in the frontmatter styles of
 the pages that render family components, often just checkout.
 
 `report.theme.commerce_pages` is the list of pages where the brand layer was
-applied, recorded by the build. Record the pages you actually scoped, for
-example `commerce_pages: ["checkout"]`. The theme gate does not compare this
+applied. `record theme` writes it from the built pages: every commerce page
+that loads `next-core.css`, for example `commerce_pages: ["checkout"]`. A page
+that loads neither stylesheet is left out and noted in the evidence. The theme gate does not compare this
 list with the funnel. It passes on `report.theme.status: applied` with
 `load_order: after-next-core`. The gate's own `commerce_pages` output is a
 different field: every checkout, upsell, downsell, receipt or thank-you page

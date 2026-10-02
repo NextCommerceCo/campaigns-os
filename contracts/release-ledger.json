@@ -4633,13 +4633,172 @@
       "entry_sha256": "abc8749936f439d33b92b3bfdc1c954d0b38df24e5a80a2e3862123494b47f07"
     },
     {
-      "id": "RL-0209",
+      "id": "RL-0208",
       "sequence": 200,
       "date": "2026-10-02",
       "kind": "release",
+      "surface_version": "1.49.0",
+      "changelog_section": "1.49.0",
+      "changelog_sha256": "89c063cc2229b29d161820612d3724a7daecc03c3d1531c0046b503941bd0667",
+      "agent_impact": "Surface 1.49.0. Record an applied brand layer with campaigns-os record theme --packet <p> after record build, instead of editing report.theme by hand: it reads each built commerce page's stylesheet links, requires brand-theme.css (or checkout-brand.css) after next-core.css on every page that loads next-core.css, and writes report.theme (status applied, load_order after-next-core, css_path, commerce_pages, evidence), clearing any earlier theme waiver. Record a local preview with campaigns-os record deploy --packet <p> --base-url <url> after record polish, instead of editing deploy.preview_url and stages.deploy by hand: the URL must be a loopback origin naming the campaign's route root, every built page under it must answer 2xx, and it writes the packet's deploy.preview_url and stages.deploy completed. Both are refused, writing nothing, otherwise. The Build Packet schema now accepts the template families apollo, apollo-mv-single-step, arjuna and karna, so a packet on those families validates. Bundled skills carry revision 1.49.0+skills.1: an agent that loaded 1.48.0+skills.1 should start a fresh session. Install the 1.49.0 package with the documented local setup command.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Name the package version (1.49.0)."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare record theme (writes the Assembly Report) and record deploy (writes the Build Packet and the Assembly Report, and requests each built page on the loopback --base-url), each with its --dry-run form, and the doctor sidecar stamp when one is retained."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the supported surface to 1.49.0 and record the effects contract and Build Packet schema hashes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "Record an applied brand layer with record theme, which writes commerce_pages from the built pages that load next-core.css."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Add record theme and record deploy to the record command table, name record theme in the starter-palette lane, and name record deploy where the local-serve URL is recorded."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "In the local proof sequence, record the served URL with record deploy once polish is recorded."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the local setup install command to the 1.49.0 package."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference for surface 1.49.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate the runtime readiness reference for surface 1.49.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.49.0+skills.1 bundle in executable examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Update release metadata for 1.49.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Release 1.49.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "assembly.template_family accepts apollo, apollo-mv-single-step, arjuna and karna, every family the catalog and the private template sources name; nothing is removed."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.49.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Run record theme after record build when a brand theme is applied, instead of editing report.theme; publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Name record build and record theme in the theme gate's apply lane; publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.49.0+skills.1 bundle revision."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "record",
+          "summary": "Add record theme and record deploy to the usage text; name record theme in the build prompt and starter-palette notice, and record deploy in next's local-serve deploy action and the deploy prompt."
+        }
+      ],
+      "entry_sha256": "044cecbdb3e7b2bf182ec907320d8beb45361095df4a1df1ec6a119639f1b28d"
+    },
+    {
+      "id": "RL-0209",
+      "sequence": 201,
+      "date": "2026-10-02",
+      "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.48.0+agent.1",
-      "changelog_sha256": "80742f1d80be8f3e028029c71d3b661720b521686c639c24d99e7c69f6fe4168",
+      "changelog_section": "1.49.0+agent.1",
+      "changelog_sha256": "b2b72f1759ab5a42e177b386aa70d7fbd56a1e2730d5143cf91b14d0f3e3c0ab",
       "agent_impact": "Run toolkit commands from the campaign folder as npx --no-install campaigns-os …, as the agent context now spells them; a bare campaigns-os resolves through PATH to another copy or to nothing. Reproduce the source design's own proof and urgency elements as designed; do not remove, soften or flag them. An installed agent context keeps the old text until install-agent-context refreshes it.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4669,7 +4828,7 @@
           "summary": "Spell every toolkit command npx --no-install campaigns-os, and carry the build skill's rule to reproduce the source design's proof and urgency elements without removing, softening or flagging them."
         }
       ],
-      "entry_sha256": "6aee1bcca292aacc78be8d85b51863bbc64d7682e538dea2a01c3bde44081204"
+      "entry_sha256": "11f7c4b1771dc24155cc03b92f942a115b834de9528e12da51bd9d7b73fb3572"
     }
   ]
 }

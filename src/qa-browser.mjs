@@ -5485,6 +5485,22 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
   const displayed = new Set(resolved.displayed_package_ids);
   const summaryIds = new Set(resolved.summary_package_ids);
   const matchedSummaryIds = new Set();
+  // A checkout order bump persists with is_upsell: true (the platform's
+  // reporting tag), yet the checkout summary displays it. Such a line charges
+  // a displayed row; an is_upsell line the summary does not show is a
+  // post-purchase upsell, out of scope here, never a stray charge.
+  let bumpLineCount = 0;
+  for (const line of (lines || []).filter((entry) => entry?.is_upsell)) {
+    const resolution = events ? campaignPackageResolutionForLine(events, line, {
+      selected_packages,
+      preferred_refs: resolved.summary_package_ids,
+    }) : null;
+    const ref = resolution?.pkg?.ref_id == null ? null : String(resolution.pkg.ref_id);
+    if (ref && summaryIds.has(ref)) {
+      matchedSummaryIds.add(ref);
+      bumpLineCount += 1;
+    }
+  }
   const extra = [];
   const unresolved = [];
   const matchedQuantities = [];
@@ -5532,6 +5548,7 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
     displayed_package_ids: [...displayed],
     summary_package_ids: [...summaryIds],
     non_upsell_line_count: nonUpsellLines.length,
+    ...(bumpLineCount ? { order_bump_line_count: bumpLineCount } : {}),
     extra,
     missing,
     matched_quantities: matchedQuantities,
@@ -5601,7 +5618,7 @@ function orderDisplayParityAssertion(page, planIdentifier, order) {
     return assertion({
       ...base,
       status: STATUS.PASS,
-      actual: `${reconciliation.non_upsell_line_count} non-upsell line(s) reconciled against ${reconciliation.summary_package_ids.length} displayed package(s)`,
+      actual: `${reconciliation.non_upsell_line_count} non-upsell line(s)${reconciliation.order_bump_line_count ? ` and ${reconciliation.order_bump_line_count} order bump line(s)` : ""} reconciled against ${reconciliation.summary_package_ids.length} displayed package(s)`,
       evidence: reconciliation,
     });
   }

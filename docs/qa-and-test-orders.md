@@ -55,9 +55,10 @@ the toolkit runs that loop in a fixed order:
    with it locally (the parity step renders it to a temp dir, and the deploy
    host renders it from the committed source).
 2. **Serve and prove.** Serve `_site/` on localhost (the `next deploy` handoff
-   names the directory and any root-route rewrite), record the URL on
-   `deploy.preview_url`, then run `polish capture`, `qa run --browser`, and the
-   typed-card order paths against it.
+   names the directory and any root-route rewrite) and run `polish capture`
+   against it. Once polish is recorded, `record deploy --packet <p> --base-url
+   <url>` records the URL on `deploy.preview_url` and the deploy stage; then run
+   `qa run --browser` and the typed-card order paths against it.
 3. **Prove the pin on the production output.** Before committing, run
 
    ```bash

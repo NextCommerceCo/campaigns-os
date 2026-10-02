@@ -395,6 +395,41 @@ function seedPolishReady(seed) {
 }
 
 /**
+ * A recorded build whose built commerce pages load brand-theme.css after
+ * next-core.css: the state `record theme` records from.
+ */
+function seedThemeReady(seed) {
+  seedBuildReady(seed);
+  const packet = readJson(seed.packetPath);
+  const site = join(seed.targetRepo, "_site", packet.campaign.public_route_slug);
+  mkdirSync(join(site, "css"), { recursive: true });
+  writeFileSync(join(site, "css", "next-core.css"), ":root {}\n");
+  writeFileSync(join(site, "css", "brand-theme.css"), ":root { --brand--color--primary: #0a2540; }\n");
+  for (const page of packet.source_html.pages.filter((entry) => entry.page_id !== "landing")) {
+    const dir = join(site, page.page_kit.spec_route);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "index.html"), `<!doctype html><html><head><link rel="stylesheet" href="../css/next-core.css"><link rel="stylesheet" href="../css/brand-theme.css"><title>${page.page_id}</title></head><body><h1>${page.page_id}</h1></body></html>`);
+  }
+  const report = readJson(seed.reportPath);
+  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: computeBuildFingerprint(site).fingerprint };
+  writeJson(seed.reportPath, report);
+}
+
+/**
+ * Build and polish recorded on a local-serve packet: the state `record deploy`
+ * records from. The receiver stands in for the served preview.
+ */
+function seedDeployReady(seed) {
+  seedPolishReady(seed);
+  const report = readJson(seed.reportPath);
+  report.stages.polish = { ...report.stages.polish, status: "completed" };
+  writeJson(seed.reportPath, report);
+  const packet = readJson(seed.packetPath);
+  packet.deploy = { ...packet.deploy, target: "local-serve" };
+  writeJson(seed.packetPath, packet);
+}
+
+/**
  * What a `record <stage> --dry-run` row must print besides writing nothing:
  * exit 0 and the dry-run result naming the files a real record would write.
  */
@@ -543,6 +578,10 @@ const INVOCATIONS = {
   "record build|--dry-run": { prepare: seedBuildReady, expect: recordDryRunSucceeded("build", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "build", "--packet", s.packetPath, "--dry-run", "--json"] },
   "record polish": { prepare: seedPolishReady, argv: (s) => ["record", "polish", "--packet", s.packetPath, "--evidence", join(s.dir, "polish-evidence.json"), "--json"] },
   "record polish|--dry-run": { prepare: seedPolishReady, expect: recordDryRunSucceeded("polish", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "polish", "--packet", s.packetPath, "--evidence", join(s.dir, "polish-evidence.json"), "--dry-run", "--json"] },
+  "record theme": { prepare: seedThemeReady, argv: (s) => ["record", "theme", "--packet", s.packetPath, "--json"] },
+  "record theme|--dry-run": { prepare: seedThemeReady, expect: recordDryRunSucceeded("theme", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "theme", "--packet", s.packetPath, "--dry-run", "--json"] },
+  "record deploy": { prepare: seedDeployReady, argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--json"] },
+  "record deploy|--dry-run": { prepare: seedDeployReady, expect: recordDryRunSucceeded("deploy", ["build-packet.basic.json", "target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--dry-run", "--json"] },
   "validate-assembly-report": { argv: (s) => ["validate-assembly-report", "--report", s.reportPath, "--json"] },
   "install-skills": { argv: () => ["install-skills", "--platform", "claude", "--json"], target: () => "home" },
   "install-skills|--dry-run": { argv: () => ["install-skills", "--platform", "claude", "--dry-run", "--json"], target: () => "home" },

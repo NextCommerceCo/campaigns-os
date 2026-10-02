@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-polish
-version: 1.1.26
+version: 1.1.27
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
-Bundle revision: 1.48.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.48.0+skills.1`
+Bundle revision: 1.49.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.49.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -48,7 +48,8 @@ Use this after build has produced a runnable page-kit campaign.
 Theme gate: `campaigns-os next polish` (tier `A`, like every `next` form: additive writes under `.campaign-runtime/` plus a stage-progress POST under Run Telemetry consent; `--no-write` and `--no-remit` are each tier `B`) blocks when theme inspect found a
 generatable brand theme that is not yet applied to commerce pages. Do not work
 around the gate — apply the brand layer (`theme generate`, tier `B`; copy into
-campaign assets, load after `next-core.css`, record `report.theme`) or record an
+campaign assets, load after `next-core.css`, rebuild, `campaigns-os record build`,
+then `campaigns-os record theme --packet <p>`, tier `C`) or record an
 explicit waiver (`campaigns-os theme waive --packet <p> --reason "<why>" --waived-by "<named human>"` — tier `C`, because the waiver overwrites the assembly report and doctor output; placeholders are refused).
 
 Responsibilities:
