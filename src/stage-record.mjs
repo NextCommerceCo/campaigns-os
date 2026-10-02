@@ -435,7 +435,7 @@ function localPreviewUrl(packet, rawUrl) {
   try {
     url = new URL(String(rawUrl));
   } catch {
-    return { url: null, problems: [`--base-url ${JSON.stringify(rawUrl)} is not a URL; give the served address, for example http://localhost:4173/<slug>/.`] };
+    return { url: null, problems: [`--base-url ${JSON.stringify(rawUrl)} is not a URL; give the served address, for example http://localhost:<port>/<slug>/.`] };
   }
   const problems = [];
   if (!/^https?:$/.test(url.protocol)) problems.push(`--base-url must be http or https (got ${url.protocol}).`);
