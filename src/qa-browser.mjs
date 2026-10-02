@@ -45,6 +45,7 @@ import {
 import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump.mjs";
 import { assessPurchaseDataLayer, expectedOrderReferences, purchaseDataLayerAssertion, purchaseDataLayerProbe } from "./qa-purchase-data-layer.mjs";
 import { isBumpRow } from "./commercial-journey.mjs";
+import { bindingAssertion, isSdkApiRequest, sentBinding } from "./qa-binding-evidence.mjs";
 import {
   RESIDUE_PAGE_TYPES,
   demoAssetConfig,
@@ -962,6 +963,14 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
       failure: request.failure()?.errorText || "request failed",
     });
   });
+  // The key each SDK request carried. It stays in this function: sentBinding
+  // keeps only whether it matched.
+  const sentKeys = [];
+  const keyReads = [];
+  browserPage.on("request", (request) => {
+    if (!isSdkApiRequest(request.url())) return;
+    keyReads.push(request.headerValue("authorization").then((value) => { if (value !== null) sentKeys.push(value); }, () => {}));
+  });
 
   // Measurements describe the existing sequence; readiness never shortens it.
   const observationStarted = performance.now();
@@ -1017,6 +1026,9 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
       assertions.push(runtimeIssueAssertion(page, "browser-console-errors", actionableConsoleErrors));
     }
     observation.failed_requests_sampled_after_ms = elapsedMilliseconds(observationStarted);
+    await Promise.all(keyReads);
+    const sent = sentBinding(sentKeys, options.bindingExpected);
+    if (sent) assertions.push(bindingAssertion(page, sent));
     if (failedRequests.length) {
       assertions.push(assertion({
         id: `browser-request-failures:${page.page_id}`,

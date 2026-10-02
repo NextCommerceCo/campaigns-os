@@ -188,6 +188,27 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
   return result(values[0] === expected.value ? 'match' : 'mismatch', 'credential_comparison');
 }
 
+// The Campaign Cart SDK sends the page's raw key, with no scheme, as
+// `Authorization` on every Campaigns API call, so the browser pass can see the
+// key a page actually uses, whatever its scripts look like. The value is
+// compared as sent: if the SDK ever adds a scheme, every page reads mismatch
+// rather than passing. The API host is matched by its shape,
+// campaigns.apps.<name>.com, without naming it.
+const SDK_API_HOST = /^campaigns\.apps\.[a-z0-9-]+\.com$/;
+export function isSdkApiRequest(url) {
+  try { const parsed = new URL(url); return parsed.protocol === 'https:' && SDK_API_HOST.test(parsed.hostname) && parsed.pathname.startsWith('/api/'); } catch { return false; }
+}
+
+// The keys a page sent are compared here and dropped; only the outcome is
+// kept. With nothing sent, or no single expected key, the static read stands
+// (null).
+export function sentBinding(sentKeys, expected) {
+  if (!sentKeys.length || expected?.conflict || !expected?.value) return null;
+  return { schema_version: BINDING_SCHEMA, observation: 'sdk_request',
+    outcome: sentKeys.every(value => value === expected.value) ? 'match' : 'mismatch',
+    reason: 'credential_comparison', source_kinds: ['sdk_request'], identity: 'not_verified' };
+}
+
 export function bindingAssertion(page, evidence) {
   // No source URLs, values, hashes, masked fragments, or inferred App IDs.
   return { id: `page-binding:${page.page_id}`, family: 'api-metadata', page: page.page_id,
