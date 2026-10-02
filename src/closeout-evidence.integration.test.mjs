@@ -18,7 +18,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { nextStage, nextTinyPromptLines, recordQaStageOutcome } from "./cli.mjs";
+import { checkoutOrderBumpCart, nextStage, nextTinyPromptLines, recordQaStageOutcome } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
@@ -297,6 +297,47 @@ test("a checkout order bump gets its own QA command with the bump in the cart", 
   assert.match(bumpRun.description, /order bump 2/);
   assert.ok(result.prompt.includes(`Order bump QA command (proves the charged add-on):\n${bumpRun.command}\n`), "the QA stage prompt names it too");
   assert.ok(nextTinyPromptLines(result).some((line) => line.endsWith(bumpRun.command)), "and so does the human next output");
+});
+
+// An unreadable CampaignSpec leaves next unable to tell whether the checkout
+// declares a bump; it says so instead of silently naming no bump command.
+test("next warns when the spec it reads for the order-bump command does not parse", () => {
+  const fixture = target({ prefix: "closeout-evidence-bump-unreadable-" });
+  writeFileSync(join(fixture.dir, "campaignspec.v42.basic.json"), "{ not json");
+  const result = runNext(fixture.packetPath);
+  const warning = (result.warnings || []).find((entry) => entry.code === "next.order_bump_spec_unreadable");
+  assert.ok(warning, "the suppressed order-bump command is reported");
+  assert.match(warning.message, /could not be read/);
+  assert.equal(action(result, "qa_run_bump"), null);
+});
+
+// QA's test orders run on one checkout, findPage(topologies, "checkout"): the
+// first across funnels in array order, pages filtered to enabled and sorted by
+// `order || 0`. The bump cart reads that same page, so a bump declared only on
+// a later funnel's checkout gets no command (its ref in --cart would land on a
+// checkout that does not carry it).
+test("the order-bump cart reads the one checkout QA drives", () => {
+  const checkout = (packages, extra = {}) => ({ id: `checkout${extra.suffix || ""}`, type: "checkout", order: 2, packages, ...extra });
+  const tier = { ref_id: "1", qty: 1, name: "Main", price: "29.00", default_selected: true };
+  const bump = { ref_id: "2", qty: 1, name: "Add-on", price: "9.00", is_upsell: true };
+  const spec = (funnels) => ({ funnels });
+
+  assert.deepEqual(checkoutOrderBumpCart(spec([{ pages: [checkout([tier, bump])] }]))?.cart, "1:1,2:1");
+  assert.equal(
+    checkoutOrderBumpCart(spec([{ pages: [checkout([tier])] }, { pages: [checkout([tier, bump], { suffix: "-b" })] }])),
+    null,
+    "a later funnel's bump is not on the checkout QA drives",
+  );
+  assert.equal(
+    checkoutOrderBumpCart(spec([{ pages: [checkout([tier, bump], { enabled: false }), checkout([tier], { suffix: "-2", order: 3 })] }])),
+    null,
+    "a disabled checkout is skipped, as QA's topology skips it",
+  );
+  assert.equal(
+    checkoutOrderBumpCart(spec([{ pages: [checkout([tier], { order: 5 }), checkout([tier, bump], { suffix: "-2", order: undefined })] }]))?.cart,
+    "1:1,2:1",
+    "a page with no order sorts as 0, as QA's topology sorts it",
+  );
 });
 
 test("an intentional no-order diagnostic policy still reaches done unchanged", () => {

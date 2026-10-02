@@ -17,7 +17,12 @@ Notable supported-surface changes are recorded here.
   declares; a checkout that declares no tier gets the bump alone, and several
   declared bumps share one cart. The QA stage prompt and the human `next`
   output name the same command, and `docs/qa-and-test-orders.md` says so
-  under its launch-grade proof list.
+  under its launch-grade proof list. The bump is read from the one checkout
+  QA's test orders run on, the first enabled checkout across funnels, so a
+  bump declared only on a later funnel's checkout gets no command. When the
+  CampaignSpec does not parse, `next` warns
+  (`next.order_bump_spec_unreadable`) instead of silently naming no bump
+  command.
 - A progress snapshot records `qa_run_bump` as `qa_run`. The snapshot's
   action vocabulary is unchanged, and a ready QA continuation does not read
   as blocked.

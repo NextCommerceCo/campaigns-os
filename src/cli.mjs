@@ -4066,10 +4066,12 @@ export function nextStage(stage, args, ambient = null) {
   // The CampaignSpec doctor just read (spec.local_path), for the QA stage's
   // order-bump command. Best-effort: doctor reports an unreadable spec itself.
   let spec = null;
+  let specReadError = null;
   try {
     spec = readJsonIfExists(doctor.derived?.spec_path || null);
-  } catch {
+  } catch (error) {
     spec = null;
+    specReadError = error;
   }
   // #171: `next` recomputes doctor state on every call; persist that fresh
   // snapshot so the retained sidecar can never stay a green lie from an
@@ -4143,6 +4145,12 @@ export function nextStage(stage, args, ambient = null) {
   const doctorHasOnlyPolishGateErrors = doctorErrorsAreOnlyPolishGate(doctor.errors);
   const errors = [];
   const warnings = doctor.warnings.map((issue) => withPacketSubstitutedIssue(issue, packetPath));
+  if (specReadError) {
+    warnings.push({
+      code: "next.order_bump_spec_unreadable",
+      message: `The CampaignSpec at ${doctor.derived?.spec_path} could not be read (${singleLineField(specReadError.message)}), so next cannot tell whether the checkout declares an order bump and names no order-bump QA command. Fix the spec and run next again.`,
+    });
+  }
   const ready = [...doctor.ready];
   if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors.map((issue) => withPacketSubstitutedIssue(issue, packetPath)));
 
@@ -4973,13 +4981,17 @@ function qaRunCommand(packetPath, url, bumpCart = null) {
 // `qa run --test-order common` never puts a checkout order bump in a test
 // order: the tier planner skips bump rows by design and bump coverage comes
 // from --cart. So when the spec declares one, `next` names a second run with
-// the bump in the cart. It reads the checkout QA drives (the first enabled
-// checkout page in funnel order, as QA's topology does) with QA's own row
-// classifiers. The base is the first selector tier QA would plan: QA's default
+// the bump in the cart. It reads the one checkout QA drives, with QA's own row
+// classifiers: QA's test orders run on findPage(topologies, "checkout"), the
+// first checkout across funnels in array order, each funnel's pages filtered
+// to enabled and sorted by `order || 0` (extractTopologies). This picks the
+// same page, and when that checkout declares no bump it returns null rather
+// than looking at a later funnel: QA never drives a later funnel's checkout,
+// so that funnel's bump ref in --cart would land on a checkout without it. The base is the first selector tier QA would plan: QA's default
 // keeps the page's pre-selected card, which a spec does not name. A checkout
 // that declares no tier (the cart is filled on an entry page) gets the bump
 // alone, on whatever selection the entry page made.
-function checkoutOrderBumpCart(spec) {
+export function checkoutOrderBumpCart(spec) {
   const funnels = Array.isArray(spec?.funnels)
     ? spec.funnels
     : Array.isArray(spec?.funnel_pages) ? [{ pages: spec.funnel_pages }] : [];

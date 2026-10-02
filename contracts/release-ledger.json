@@ -4972,8 +4972,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.50.0+agent.2",
-      "changelog_sha256": "f64da5d0da6939ffc9b66db24dde116925a52690cbb7f9307f6f075c216ad946",
-      "agent_impact": "At the QA stage of a campaign whose checkout declares an order bump (is_upsell: true rows), run both QA commands next lists: qa_run, then qa_run_bump, the same qa run --browser --test-order common with --cart <base>:1,<bump>:1, whose test orders carry the add-on. A consumer of next --json that keys on action ids should accept qa_run_bump. Progress snapshots record it as qa_run.",
+      "changelog_sha256": "e66e3675aa6cbe986d79ac3694af9ed4064ee45f7ac83d1b34953e6eb04da03d",
+      "agent_impact": "At the QA stage of a campaign whose checkout declares an order bump (is_upsell: true rows), run both QA commands next lists: qa_run, then qa_run_bump, the same qa run --browser --test-order common with --cart <base>:1,<bump>:1, whose test orders carry the add-on. A consumer of next --json that keys on action ids should accept qa_run_bump. Progress snapshots record it as qa_run. The bump is read from the checkout QA's test orders run on; when the CampaignSpec does not parse, next warns next.order_bump_spec_unreadable.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -4990,7 +4990,7 @@
           "summary": "Say that next names the base-plus-bump QA run (qa_run_bump) at the QA stage when the checkout declares an order bump."
         }
       ],
-      "entry_sha256": "394242d4dcf64c4558a925bb98d959ba37b9caaf9b654989043f45454678a432"
+      "entry_sha256": "0a377befbb7034d982bb0e5dea6a6402879f98d2a623e200eca12043701ae5a5"
     }
   ]
 }
