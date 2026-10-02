@@ -5017,7 +5017,7 @@
           "summary": "Say that next names the base-plus-bump QA run (qa_run_bump) at the QA stage when the checkout declares an order bump."
         }
       ],
-      "entry_sha256": "0a377befbb7034d982bb0e5dea6a6402879f98d2a623e200eca12043701ae5a5"
+      "entry_sha256": "cf1af9a8e7fa83c98c97a3e36454b867c64b49508ac9f86005b3b940efd41223"
     }
   ]
 }
