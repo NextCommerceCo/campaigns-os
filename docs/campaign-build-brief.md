@@ -47,12 +47,36 @@ Guided questions are intentionally short and business-readable. They prioritize:
 2. Which palette/CTA style should commerce pages use?
 3. Which product variants/colors are actually sold?
 4. How should bundle pricing be presented?
-5. What promo/savings/urgency language is approved?
+5. Should the starter template's own promo placeholders (demo countdown timers, promo banners, placeholder voucher codes, exit-pop offers) be filled from the campaign's promo codes and offers, or removed?
 6. Which payment methods/trust badges may appear?
 7. Are runtime/catalog names allowed to override provided display names?
 8. Are there regulated claims or forbidden copy areas?
 
 The CLI avoids SDK/page-kit jargon in questions. The implementation can resolve SDK attributes, responsive CSS, asset paths, routing, template copying, and QA reruns. Business choices should come from the brief or be escalated.
+
+Question 5 is asked only when the CampaignSpec maps a surface that fills the template's promo placeholders: a `funnels[].promo_codes` roster, or a page's `exit_intent` or `promo_code_input`. It never asks for approval of the source design's own promo, proof or urgency copy, which is built as designed (see below). Without such a surface the guided draft sets `header_claim_source` and `timer_label` to `"none"`: the template's promo placeholders are removed.
+
+## Answering The Questions
+
+An answer counts only once it is in a brief file that `start` or `prepare-build` reads. The guided draft is regenerated on every run, so an answer given in conversation, or typed into the normalized draft, does not stick.
+
+1. Copy `.campaign-runtime/input/campaign-build-brief.normalized.json` to `campaign-build-brief.json` in the target repo. A brief file replaces the guided draft whole, so starting from the copy keeps the fields the draft already filled; any question the file leaves open blocks as a prepared brief.
+2. Set the fields that close each open question:
+
+   | Question | Fields |
+   |---|---|
+   | `page_design_authority` | `design_authority.<page_id>.source` for each page named in the question |
+   | `brand_palette_cta` | `brand.commerce_palette_source`, `brand.cta_style` |
+   | `variant_media_rules` | `media.sold_variants`, `media.allow_other_variant_colors` |
+   | `bundle_pricing_presentation` | `offer_presentation.bundle_cards.primary_price` |
+   | `promo_urgency_copy` | `promo_urgency.header_claim_source` (`campaign_offers` or `none`), `promo_urgency.timer_label` (the template timer's label, or `none`) |
+   | `payment_methods_trust` | `commerce_surfaces.payment_methods_allowed` |
+   | `canonical_display_names` | `canonical_display.product_name_source` |
+   | `regulated_claims` | one of `campaign_intent.compliance.approved_benefit_language`, `.forbidden_claims`, `.approved_claims`, `.copy_rules` |
+
+3. Re-run `start` or `prepare-build` with the same arguments. The file is found in the target repo automatically, or pass `--brief <file>`. Doctor's `build_brief.guided_questions` warning names the open questions and their fields.
+
+Re-running regenerates the Assembly Report. Before any stage has recorded evidence, that costs nothing. Once a stage has recorded evidence (setup, build, polish or later), the re-run is refused unless you pass `--force`, which resets those stages and clears their evidence. Answer the questions right after `start`.
 
 ## Risky Defaults
 
