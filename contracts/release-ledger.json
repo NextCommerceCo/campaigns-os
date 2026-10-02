@@ -4790,6 +4790,45 @@
         }
       ],
       "entry_sha256": "044cecbdb3e7b2bf182ec907320d8beb45361095df4a1df1ec6a119639f1b28d"
+    },
+    {
+      "id": "RL-0209",
+      "sequence": 201,
+      "date": "2026-10-02",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.49.0+agent.1",
+      "changelog_sha256": "b2b72f1759ab5a42e177b386aa70d7fbd56a1e2730d5143cf91b14d0f3e3c0ab",
+      "agent_impact": "Run toolkit commands from the campaign folder as npx --no-install campaigns-os …, as the agent context now spells them; a bare campaigns-os resolves through PATH to another copy or to nothing. Reproduce the source design's own proof and urgency elements as designed; do not remove, soften or flag them. An installed agent context keeps the old text until install-agent-context refreshes it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Spell every toolkit command npx --no-install campaigns-os, and carry the build skill's rule to reproduce the source design's proof and urgency elements without removing, softening or flagging them."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "Spell every toolkit command npx --no-install campaigns-os, and carry the build skill's rule to reproduce the source design's proof and urgency elements without removing, softening or flagging them."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "Spell every toolkit command npx --no-install campaigns-os, and carry the build skill's rule to reproduce the source design's proof and urgency elements without removing, softening or flagging them."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "Spell every toolkit command npx --no-install campaigns-os, and carry the build skill's rule to reproduce the source design's proof and urgency elements without removing, softening or flagging them."
+        }
+      ],
+      "entry_sha256": "11f7c4b1771dc24155cc03b92f942a115b834de9528e12da51bd9d7b73fb3572"
     }
   ]
 }
