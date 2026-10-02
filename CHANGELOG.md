@@ -2,6 +2,16 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.49.0+agent.2] - 2026-10-02
+
+### Changed
+
+- No command behaves differently. The install-mode module drops a trailing
+  comment that described `applyInvocationPrefix`, a function removed when
+  commands began to be spelled with their prefix at the source (`cmd()` and
+  `asInvocation` in the install-invocation module). Comment-only; every
+  message and every exit code is unchanged.
+
 ## [1.49.0+agent.1] - 2026-10-02
 
 ### Changed
