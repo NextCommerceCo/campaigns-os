@@ -325,6 +325,7 @@ Usage:
   campaigns-os record build --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after page-kit build: stages.assembly completed with build_fingerprint = doctor's derived.build_output_fingerprint.value (and the Design Source Package material fingerprint when the report has one); stages.polish becomes required unless its evidence is bound to this exact output
   campaigns-os record polish --packet <campaign-runtime.build.json> --evidence <polish-evidence.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after polish capture: stages.polish from the file's status (completed, completed_with_warnings, blocked with blockers, or skipped with skip_reason), evidence and optional repair_loop_defect, bound to doctor's current fingerprint; a completed status is refused, writing nothing, unless the polish gate doctor evaluates would pass. --dry-run runs every check and writes nothing
   campaigns-os record theme --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after the brand layer is linked and build is recorded: report.theme becomes applied with load_order after-next-core, css_path, commerce_pages and per-page evidence, only when each built commerce page that loads next-core.css loads brand-theme.css (or checkout-brand.css) after it and at least one does; a page loading neither is left out as the design's own markup; refused, writing nothing, otherwise. --dry-run runs every check and writes nothing
+  campaigns-os record deploy --packet <campaign-runtime.build.json> --base-url <served url> [--context <json>] [--report <json>] [--dry-run] [--json]   # a local preview (deploy.target local-serve) after polish is recorded: GETs every built page under the loopback URL (the campaign route root), then records deploy.preview_url on the packet and stages.deploy completed with the URL in outputs; refused, writing nothing, when the URL is not loopback or not the route root, a page does not answer 2xx, the build changed since it was recorded, or the theme gate is blocked. --dry-run runs every check, the requests included, and writes nothing
   campaigns-os readback <target-repo-root> [--json] [--packet <path>] [--doctor <path>] [--context <path>] [--report <path>] [--qa-verdict <path>] [--findings <path>]   # read-only projection of one run's emitted artifacts (packet, doctor output, build context, assembly report, QA verdict, findings export): artifact states, per-artifact freshness against the checkout's HEAD reflog, doctor warning grouping, skip cascades and cross-artifact divergences. Writes nothing, starts no process, touches no network, and records no lifecycle entry; --json emits one campaigns-os-readback/v2 object (docs/readback.md). Exit 2 for a missing target root or a Build Packet set freshness cannot single out.
   campaigns-os readback --example [--json]                                # project the bundled synthetic sample; freshness is not computable for it by design
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -1070,8 +1071,8 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   }
 
   if (command === "record") {
-    const { recordStageCommand } = await import("./stage-record.mjs");
-    writeResult(recordStageCommand(args), args, 0);
+    const { recordCommand } = await import("./stage-record.mjs");
+    writeResult(await recordCommand(args), args, 0);
     return;
   }
 
@@ -4652,7 +4653,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   } else if (result.stage === "deploy") {
     if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
       const plan = localServePlan(packet);
-      push("deploy", "manual", null, `Serve the built ${plan.dir} output locally as the origin root (deploy.target is local-serve)${plan.rewrite ? ` — ${plan.rewrite}` : ""}, then record the localhost URL on deploy.preview_url and stages.deploy in the assembly report. Localhost on any port is a Development domain: SDK allowed, analytics suppressed.`);
+      push("deploy", "manual", null, `Serve the built ${plan.dir} output locally as the origin root (deploy.target is local-serve)${plan.rewrite ? ` — ${plan.rewrite}` : ""}, then run ${cmd("record")} deploy --packet ${packetPath} --base-url <served url>: it checks every built page answers and records deploy.preview_url and stages.deploy. Localhost on any port is a Development domain: SDK allowed, analytics suppressed.`);
     } else {
       push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"}, then record deploy.preview_url (or production_url) on the packet and stages.deploy in the assembly report.`);
     }
@@ -4927,9 +4928,8 @@ Read first:
 Nothing ships anywhere: the page-kit build produces _site/ output and you serve ${serveDir} on localhost (any static server, any port) for QA. Localhost on any port is a Campaigns App Development domain, so the SDK initialises there without an origin allowlist entry and Campaigns analytics events are suppressed.
 
 Once the server is up:
-1. Record the localhost URL (origin plus ${liveUrlPath}) on the packet at deploy.preview_url.
-2. Update the assembly report's stages.deploy.status to "completed" with that URL and the serve command in outputs.
-3. Run \`${cmd("next")} --packet ${packetPath}\` to advance to QA.
+1. Run \`${cmd("record")} deploy --packet ${packetPath} --base-url <localhost origin>${liveUrlPath}\`. It requests every built page under that URL, then records the URL on the packet at deploy.preview_url and stages.deploy as completed with the URL in outputs; it refuses, writing nothing, if a page does not answer.
+2. Run \`${cmd("next")} --packet ${packetPath}\` to advance to QA.
 
 If the served build cannot be reached, set stages.deploy.status to "blocked" with a clear reason in outputs so the orchestration loop surfaces it rather than skipping past.`;
   }

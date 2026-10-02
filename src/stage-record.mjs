@@ -1,4 +1,4 @@
-// `campaigns-os record <setup|build|polish|theme>`: record a stage's
+// `campaigns-os record <setup|build|polish|theme|deploy>`: record a stage's
 // completion (or, for theme, an applied brand layer) on the Build Context and
 // Assembly Report through one validated command instead of hand-edited JSON.
 //
@@ -16,7 +16,9 @@
 // completion live on the Assembly Report alone, so `record build` and `record
 // polish` validate the context they read but write only the report. `record
 // theme` writes `report.theme` only after reading, in each built commerce
-// page, that a brand layer stylesheet is linked after next-core.css.
+// page, that a brand layer stylesheet is linked after next-core.css. `record
+// deploy` records a local preview: the packet's deploy.preview_url and
+// stages.deploy, after every built page answers on the served loopback URL.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +29,9 @@ import { BRAND_LAYER_FILENAMES } from "./brand-theme.mjs";
 import { computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { isObject, optionalString, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
+import { isLocalServePacket } from "./local-proof.mjs";
+import { isLoopbackHostname } from "./remit.mjs";
+import { campaignRouteRoot } from "./route-identity.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
 import { validateAssemblyReport } from "./doctor/checks.mjs";
@@ -44,12 +49,13 @@ import { applyDerivedAssemblyReportSummary, assemblyReportMatchesPacket, commitA
 import { withTargetLockSync } from "./target-lock.mjs";
 import { commerceScopeFromScope } from "./theme-gate.mjs";
 
-export const RECORD_STAGES = Object.freeze(["setup", "build", "polish", "theme"]);
+export const RECORD_STAGES = Object.freeze(["setup", "build", "polish", "theme", "deploy"]);
 
 // Every flag `record` reads, plus the two any command accepts (run id and
 // lifecycle journal). Anything else is refused before a file is read.
 const RECORD_FLAGS = Object.freeze(["packet", "context", "report", "dry-run", "json", "run-id", "lifecycle-journal"]);
 const POLISH_RECORD_FLAGS = Object.freeze(["evidence"]);
+const DEPLOY_RECORD_FLAGS = Object.freeze(["base-url"]);
 
 // The keys a --evidence file may carry. `evidence` is stages.polish.evidence;
 // `repair_loop_defect` is report.theme.repair_loop_defect; `blockers` (status
@@ -97,9 +103,9 @@ function refuseRecord(stage, problems) {
 export function parseRecordArgs(args) {
   const stage = args._[1];
   if (!RECORD_STAGES.includes(stage) || args._.length !== 2) {
-    throw refused(`Use: ${cmd("record")} <${RECORD_STAGES.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>.`);
+    throw refused(`Use: ${cmd("record")} <${RECORD_STAGES.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, and record deploy --base-url <served url>.`);
   }
-  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : [])]);
+  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : [])]);
   const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
   if (unknown.length) {
     throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for record ${stage}: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${[...known].map((key) => `--${key}`).join(", ")}.`);
@@ -115,6 +121,7 @@ export function parseRecordArgs(args) {
     stage,
     packetPath: resolve(requireArg(args, "packet")),
     evidencePath: stage === "polish" ? resolve(requireArg(args, "evidence")) : null,
+    baseUrl: stage === "deploy" ? requireArg(args, "base-url") : null,
     dryRun: args["dry-run"] === true,
   };
 }
@@ -416,6 +423,89 @@ function composeTheme(report, { now, recordedBy, layer }) {
   return { report: { ...report, theme }, context: null };
 }
 
+// The local preview a `record deploy` URL must name: a loopback http(s)
+// origin serving the packet's route root ("/<slug>/", or "/" for a
+// root-served campaign) of a local-serve packet. Returns the URL as recorded
+// (origin plus route root) and the problems that refuse it.
+function localPreviewUrl(packet, rawUrl) {
+  if (!isLocalServePacket(packet)) {
+    return { url: null, problems: [`record deploy records a local preview, and this packet's deploy.target is "${packet?.deploy?.target || "unset"}". Serve the build locally with deploy.target local-serve (${cmd("qa")} policy set --packet <p> --deploy-target local-serve), or record a hosted deploy on the packet and stages.deploy.`] };
+  }
+  let url;
+  try {
+    url = new URL(String(rawUrl));
+  } catch {
+    return { url: null, problems: [`--base-url ${JSON.stringify(rawUrl)} is not a URL; give the served address, for example http://localhost:4173/<slug>/.`] };
+  }
+  const problems = [];
+  if (!/^https?:$/.test(url.protocol)) problems.push(`--base-url must be http or https (got ${url.protocol}).`);
+  if (!isLoopbackHostname(url.hostname)) problems.push(`--base-url ${url.href} is not a loopback address; a local preview is served on localhost, 127.0.0.1 or [::1].`);
+  const routeRoot = campaignRouteRoot(packet);
+  if (!routeRoot) {
+    problems.push("The packet records no campaign.public_route_slug, so the served route root is unknown; record it first.");
+  } else if (`/${routeKey(url.pathname)}/`.replace("//", "/") !== routeRoot) {
+    problems.push(`--base-url ${url.href} serves ${url.pathname}, but this campaign's route root is ${routeRoot}; give ${url.origin}${routeRoot}.`);
+  }
+  return { url: problems.length ? null : `${url.origin}${routeRoot}`, problems };
+}
+
+const PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * What only the running server can say, read before the target lock (like
+ * the polish --evidence file): the URL names this campaign's local preview,
+ * and every built page under it answers 2xx. The lock re-checks the
+ * packet and the built output; the probe is never trusted for either.
+ */
+export async function probeLocalPreview({ packetPath, baseUrl, fetchImpl = globalThis.fetch }) {
+  const packet = readPacketFile("deploy", packetPath);
+  const { url, problems } = localPreviewUrl(packet, baseUrl);
+  if (problems.length) throw refuseRecord("deploy", problems);
+  const site = resolveBuiltSiteScope(targetRepoFor(packetPath, packet), { slug: packet.campaign.public_route_slug });
+  if (!site.ok) throw refuseRecord("deploy", [site.error]);
+  // The built pages, not the bare route root: a funnel often has no index
+  // page there, and servers answer that differently (404, a listing).
+  const targets = [...new Set(site.pages.map((page) => (routeKey(page.route) ? new URL(`${routeKey(page.route)}/`, url).href : url)))];
+  const routes = [];
+  for (const target of targets) {
+    try {
+      const response = await fetchImpl(target, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+      await response.body?.cancel();
+      routes.push({ url: target, status: response.status });
+    } catch (error) {
+      routes.push({ url: target, status: null, error: error?.name === "TimeoutError" ? `no answer within ${PROBE_TIMEOUT_MS / 1000} s` : String(error?.cause?.code || error?.message || error) });
+    }
+  }
+  const failed = routes.filter((route) => !(route.status >= 200 && route.status < 300));
+  if (failed.length) {
+    throw refuseRecord("deploy", [
+      ...failed.map((route) => `${route.url}: ${route.status ? `HTTP ${route.status}` : route.error}.`),
+      `Serve the current _site/ build so every page answers at ${url}, then run ${cmd("record")} deploy again.`,
+    ]);
+  }
+  return { url, routes };
+}
+
+// A recorded local preview: the packet's deploy.preview_url, and stages.deploy
+// completed with the URL in outputs (what next reads) and the probe as evidence.
+function composeDeploy(report, packet, { now, recordedBy, probe }) {
+  const deploy = {
+    ...stageObject(report, "deploy"),
+    stage: "deploy",
+    status: "completed",
+    outputs: [probe.url],
+    evidence: probe.routes.map((route) => `${route.url} answered HTTP ${route.status}`),
+    completed_at: now,
+    recorded_by: recordedBy,
+    blockers: [],
+  };
+  return {
+    report: { ...report, stages: { ...report.stages, deploy } },
+    context: null,
+    packet: { ...packet, deploy: { ...packet.deploy, preview_url: probe.url } },
+  };
+}
+
 // Every check a written record must pass, over exactly what would be written.
 function validateRecord(stage, { report, context, packet, fingerprint }) {
   const problems = [
@@ -509,14 +599,14 @@ function doctorFacts(stage, doctor, report, packet) {
   if (stage === "build" && derived.scaffold_required === true) {
     throw refuseRecord(stage, [`Setup is still required (${derived.scaffold_reason || "Build Context scaffold.required is true"}); run ${cmd("record")} setup first.`]);
   }
-  if (stage === "polish" || stage === "theme") {
+  if (stage === "polish" || stage === "theme" || stage === "deploy") {
     const recorded = optionalString(report?.stages?.assembly?.build_fingerprint);
     if (!String(report?.stages?.assembly?.status || "").startsWith("completed") || !recorded) {
       throw refuseRecord(stage, [`Build is not recorded (stages.assembly needs a completed status and build_fingerprint); run ${cmd("record")} build first.`]);
     }
     if (recorded !== fingerprint) {
-      throw refuseRecord(stage, [stage === "theme"
-        ? `The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then record theme again.`
+      throw refuseRecord(stage, [stage === "theme" || stage === "deploy"
+        ? `The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then record ${stage} again.`
         : `The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then ${cmd("polish")} capture, then record polish again.`]);
     }
   }
@@ -541,6 +631,37 @@ function assertOutputUnchanged(stage, facts) {
   }
 }
 
+// Under the lock, the probe is checked against the packet as it is now (it
+// could have been retargeted while the probe ran), and the theme gate, which
+// blocks deploy, must not be blocked.
+function deployFacts(doctor, packet, probe) {
+  const { url, problems } = localPreviewUrl(packet, probe.url);
+  if (problems.length) throw refuseRecord("deploy", problems);
+  if (url !== probe.url) {
+    throw refuseRecord("deploy", [`The packet's route root changed while the preview was probed (probed ${probe.url}, now ${url}); run ${cmd("record")} deploy again.`]);
+  }
+  const gate = doctor.derived?.theme_gate;
+  if (gate?.status === "blocked") {
+    throw refuseRecord("deploy", [
+      `${gate.code}: ${gate.reason}`,
+      ...(gate.required_actions || []).map((action) => `required action: ${action.command || action.description}`),
+    ]);
+  }
+}
+
+/**
+ * The `record` command as the CLI runs it: `record deploy` first probes the
+ * served preview (asynchronously, before the target lock), then every kind
+ * records through recordStageCommand.
+ */
+export async function recordCommand(args, options = {}) {
+  const { stage, packetPath, baseUrl } = parseRecordArgs(args);
+  const probe = stage === "deploy" && existsSync(packetPath)
+    ? await probeLocalPreview({ packetPath, baseUrl, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) })
+    : null;
+  return recordStageCommand(args, { ...options, probe });
+}
+
 function readPacketFile(stage, packetPath) {
   try {
     return JSON.parse(readFileSync(packetPath, "utf8"));
@@ -559,11 +680,13 @@ function readPacketFile(stage, packetPath) {
  * target lock, after doctor has read the target and before anything is
  * composed or written.
  */
-export function recordStageCommand(args, { now = () => new Date(), beforeLock = null, afterDoctorRead = null } = {}) {
+export function recordStageCommand(args, { now = () => new Date(), beforeLock = null, afterDoctorRead = null, probe = null } = {}) {
   const { stage, packetPath, evidencePath, dryRun } = parseRecordArgs(args);
   if (!existsSync(packetPath)) throw new Error(`record ${stage}: Build Packet not found at ${packetPath}; run ${cmd("start")} or ${cmd("prepare-build")} first.`);
+  if (stage === "deploy" && !probe) throw new Error("record deploy needs the served-route probe; run it through recordCommand.");
   // Operator input, not target state: no campaigns-os writer produces it.
-  const input = stage === "polish" ? readPolishEvidenceFile(evidencePath) : null;
+  // For deploy, the probe of the running server (probeLocalPreview).
+  const input = stage === "polish" ? readPolishEvidenceFile(evidencePath) : stage === "deploy" ? probe : null;
   const sidecars = {
     contextPath: args.context ? resolve(args.context) : undefined,
     reportPath: args.report ? resolve(args.report) : undefined,
@@ -585,8 +708,11 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   const { composed, facts, layer, reportPath, contextPath, after } = recorded;
 
   const stageKey = stage === "build" ? "assembly" : stage;
-  const writes = [...(composed.context ? [contextPath] : []), reportPath];
-  const ready = stage === "theme" ? [
+  const writes = [...(composed.context ? [contextPath] : []), ...(composed.packet ? [packetPath] : []), reportPath];
+  const ready = stage === "deploy" ? [
+    `stages.deploy.status = completed; deploy.preview_url = ${input.url}`,
+    ...composed.report.stages.deploy.evidence,
+  ] : stage === "theme" ? [
     `theme.status = applied, load_order = after-next-core (${layer.cssPath})`,
     ...layer.evidence,
     ...(layer.outOfScope.length ? [`Not built in this scope, so not checked: ${layer.outOfScope.join(", ")}; run record theme again after building them.`] : []),
@@ -656,21 +782,27 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     facts = doctorFacts(stage, doctor, report, packet);
     if (typeof afterDoctorRead === "function") afterDoctorRead();
     if (stage === "theme") layer = brandLayerFacts(doctor);
+    if (stage === "deploy") deployFacts(doctor, packet, input);
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
         ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint })
         : stage === "theme"
           ? composeTheme(report, { now: timestamp, recordedBy, layer })
-          : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input });
+          : stage === "deploy"
+            ? composeDeploy(report, packet, { now: timestamp, recordedBy, probe: input })
+            : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input });
     applyDerivedAssemblyReportSummary(next.report);
+    // The packet's one new value, deploy.preview_url, is checked by
+    // localPreviewUrl; the rest of the packet is as the operator left it.
     validateRecord(stage, { report: next.report, context: next.context, packet, fingerprint: facts.fingerprint });
     assertOutputUnchanged(stage, facts);
     composed = next;
     if (dryRun) return null;
     // Written inside the report's critical section, after every check and
-    // before the report itself, so the two files move together.
+    // before the report itself, so the files move together.
     if (next.context) writeJsonAtomic(contextPath, next.context);
+    if (next.packet) writeJsonAtomic(packetPath, next.packet);
     return next.report;
   };
   // Already inside the target lock, which commitAssemblyReport re-enters.

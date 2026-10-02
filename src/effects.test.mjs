@@ -416,6 +416,20 @@ function seedThemeReady(seed) {
 }
 
 /**
+ * Build and polish recorded on a local-serve packet: the state `record deploy`
+ * records from. The receiver stands in for the served preview.
+ */
+function seedDeployReady(seed) {
+  seedPolishReady(seed);
+  const report = readJson(seed.reportPath);
+  report.stages.polish = { ...report.stages.polish, status: "completed" };
+  writeJson(seed.reportPath, report);
+  const packet = readJson(seed.packetPath);
+  packet.deploy = { ...packet.deploy, target: "local-serve" };
+  writeJson(seed.packetPath, packet);
+}
+
+/**
  * What a `record <stage> --dry-run` row must print besides writing nothing:
  * exit 0 and the dry-run result naming the files a real record would write.
  */
@@ -566,6 +580,8 @@ const INVOCATIONS = {
   "record polish|--dry-run": { prepare: seedPolishReady, expect: recordDryRunSucceeded("polish", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "polish", "--packet", s.packetPath, "--evidence", join(s.dir, "polish-evidence.json"), "--dry-run", "--json"] },
   "record theme": { prepare: seedThemeReady, argv: (s) => ["record", "theme", "--packet", s.packetPath, "--json"] },
   "record theme|--dry-run": { prepare: seedThemeReady, expect: recordDryRunSucceeded("theme", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "theme", "--packet", s.packetPath, "--dry-run", "--json"] },
+  "record deploy": { prepare: seedDeployReady, argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--json"] },
+  "record deploy|--dry-run": { prepare: seedDeployReady, expect: recordDryRunSucceeded("deploy", ["build-packet.basic.json", "target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--dry-run", "--json"] },
   "validate-assembly-report": { argv: (s) => ["validate-assembly-report", "--report", s.reportPath, "--json"] },
   "install-skills": { argv: () => ["install-skills", "--platform", "claude", "--json"], target: () => "home" },
   "install-skills|--dry-run": { argv: () => ["install-skills", "--platform", "claude", "--dry-run", "--json"], target: () => "home" },

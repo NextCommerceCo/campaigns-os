@@ -4639,8 +4639,8 @@
       "kind": "release",
       "surface_version": "1.49.0",
       "changelog_section": "1.49.0",
-      "changelog_sha256": "fdd872f21c180fcacc6bac9e0cc263dbd9146f374128f103969ddb414ff985f4",
-      "agent_impact": "Surface 1.49.0. Record an applied brand layer with campaigns-os record theme --packet <p> after record build, instead of editing report.theme by hand: it reads each built commerce page's stylesheet links, requires brand-theme.css (or checkout-brand.css) after next-core.css on every page that loads next-core.css, and writes report.theme (status applied, load_order after-next-core, css_path, commerce_pages, evidence), clearing any earlier theme waiver. It is refused, naming each page and writing nothing, otherwise. Bundled skills carry revision 1.49.0+skills.1: an agent that loaded 1.48.0+skills.1 should start a fresh session. Install the 1.49.0 package with the documented local setup command.",
+      "changelog_sha256": "b7b8123b1270ba0bf21f6eab8cb7884022c3408c56e232552e59155cfb33dc8c",
+      "agent_impact": "Surface 1.49.0. Record an applied brand layer with campaigns-os record theme --packet <p> after record build, instead of editing report.theme by hand: it reads each built commerce page's stylesheet links, requires brand-theme.css (or checkout-brand.css) after next-core.css on every page that loads next-core.css, and writes report.theme (status applied, load_order after-next-core, css_path, commerce_pages, evidence), clearing any earlier theme waiver. Record a local preview with campaigns-os record deploy --packet <p> --base-url <url> after record polish, instead of editing deploy.preview_url and stages.deploy by hand: the URL must be a loopback origin naming the campaign's route root, every built page under it must answer 2xx, and it writes the packet's deploy.preview_url and stages.deploy completed. Both are refused, writing nothing, otherwise. Bundled skills carry revision 1.49.0+skills.1: an agent that loaded 1.48.0+skills.1 should start a fresh session. Install the 1.49.0 package with the documented local setup command.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -4654,7 +4654,7 @@
           "class": "compatibility_policy",
           "path": "contracts/effects.v1.json",
           "surface_entry": "contracts/effects.v1.json",
-          "summary": "Declare record theme (writes the Assembly Report, and the doctor sidecar when one is retained) and its read-only --dry-run form."
+          "summary": "Declare record theme (writes the Assembly Report) and record deploy (writes the Build Packet and the Assembly Report, and requests each built page on the loopback --base-url), each with its --dry-run form, and the doctor sidecar stamp when one is retained."
         },
         {
           "class": "compatibility_policy",
@@ -4672,7 +4672,13 @@
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Add record theme to the record command table and name it in the starter-palette lane."
+          "summary": "Add record theme and record deploy to the record command table, name record theme in the starter-palette lane, and name record deploy where the local-serve URL is recorded."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "In the local proof sequence, record the served URL with record deploy once polish is recorded."
         },
         {
           "class": "named_surface",
@@ -4774,10 +4780,10 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "record",
-          "summary": "Add record theme to the usage text, and name it in the build prompt and the starter-palette notice."
+          "summary": "Add record theme and record deploy to the usage text; name record theme in the build prompt and starter-palette notice, and record deploy in next's local-serve deploy action and the deploy prompt."
         }
       ],
-      "entry_sha256": "7cdef4160a3e7d2128cb53f4cd6844ec97296d8a8c1cc44058b208922d2e0351"
+      "entry_sha256": "ee909ca6daaa805a945e2f5cb749c8be70621b77c888d8240b72489b2afddd49"
     }
   ]
 }
