@@ -2,6 +2,56 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.49.0] - 2026-10-02
+
+### Added
+
+- `campaigns-os record theme --packet <p>` records an applied brand layer on
+  the Assembly Report, where the theme gate previously sent the operator to
+  edit `report.theme` by hand. It reads each built commerce page's stylesheet
+  links in document order. A page that loads `next-core.css` must load
+  `brand-theme.css` (or `checkout-brand.css`) after it, and that file must be
+  in the built output. A page that loads neither renders the design's own
+  markup and is left out, noted in the evidence. When every page passes and at
+  least one loads the brand layer, it writes `report.theme`: status `applied`,
+  `load_order` `after-next-core`, `css_path`, `commerce_pages` and one evidence
+  line per page, and clears any earlier theme waiver. Otherwise it is refused,
+  naming each page, and writes nothing. Build must be recorded for the current
+  output first. `--dry-run` runs every check and writes nothing.
+- `campaigns-os record deploy --packet <p> --base-url <url>` records a local
+  preview (`deploy.target: local-serve`), where `next` previously sent the
+  operator to edit the packet and `stages.deploy` by hand. The URL must be a
+  loopback origin naming the campaign's route root. Every built page is
+  requested under it and must answer 2xx. It then writes the packet's
+  `deploy.preview_url` and `stages.deploy` completed, with the URL in
+  `outputs` and one evidence line per page. It is refused, writing nothing,
+  when any check fails, when polish is not recorded, when the built output
+  changed since build was recorded, or while the theme gate is blocked. The
+  requests stay on this machine. `--dry-run` runs every check, the requests
+  included, and writes nothing.
+
+### Changed
+
+- The theme gate's apply and load-order actions, the starter-palette notice,
+  the build prompt, the build and polish skills, `docs/brand-theme-bridge.md`
+  and `docs/build-packet.md` name `record theme` where they described a hand
+  edit of `report.theme`.
+- `next`'s local-serve deploy action and deploy prompt,
+  `docs/build-packet.md` and `docs/qa-and-test-orders.md` name `record deploy`
+  where they described a hand edit of `deploy.preview_url` and
+  `stages.deploy`.
+- `contracts/effects.v1.json` declares `record theme`, `record deploy` and
+  their `--dry-run` forms.
+- The Build Packet schema's `assembly.template_family` accepts every family
+  the commerce surface catalog and the private template sources name:
+  `apollo`, `apollo-mv-single-step`, `arjuna` and `karna` join the enum, which
+  had fallen behind both. Nothing is removed, so every packet that validated
+  before still does.
+- Package and supported-surface version advance to 1.49.0 for the effects
+  contract and Build Packet schema hashes. The local setup install command pins 1.49.0. Bundled skills
+  carry revision `1.49.0+skills.1`, with each skill version advanced one patch;
+  the build and polish skills also name `record theme`.
+
 ## [1.48.0] - 2026-10-02
 
 ### Changed

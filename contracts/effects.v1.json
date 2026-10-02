@@ -5817,6 +5817,179 @@
       "notes": "record polish --dry-run runs every check the real invocation runs and prints what it would write; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
     },
     {
+      "command": "record",
+      "subcommand": "theme",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the record passes every check — theme.status becomes applied with load_order after-next-core, css_path, commerce_pages and per-page evidence read from the built pages; any earlier theme waiver is cleared",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: record theme",
+      "test_scope": "full",
+      "notes": "Destructive: it replaces report.theme's status, css_path, load_order, commerce_pages, evidence and waiver. Refused, writing nothing, when build is not recorded for the current output, when the campaign ships no commerce pages, when a built commerce page that loads next-core.css does not load brand-theme.css (or checkout-brand.css) after it, or links one that is not in the built output, or when no built commerce page loads next-core.css. The Build Context is read, not written."
+    },
+    {
+      "command": "record",
+      "subcommand": "theme",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: record theme --dry-run",
+      "test_scope": "full",
+      "notes": "record theme --dry-run runs every check the real invocation runs and prints what it would write; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+    },
+    {
+      "command": "record",
+      "subcommand": "deploy",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{packet}",
+          "when": "the record passes every check — deploy.preview_url becomes the served URL",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the record passes every check — stages.deploy becomes completed with the served URL in outputs and one evidence line per page that answered",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{base-url}",
+          "what": "a GET for each built page under the served URL, to prove the local preview answers before it is recorded",
+          "when": "the packet's deploy target is local-serve and --base-url is a loopback origin naming the campaign's route root",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: record deploy",
+      "test_scope": "full",
+      "notes": "Destructive: it replaces stages.deploy and the packet's deploy.preview_url. The requests stay on this machine: --base-url must be a loopback origin. Refused, writing nothing, when the packet is not local-serve, the URL is not loopback or not the campaign's route root, a built page does not answer 2xx, polish is not recorded, the built output changed since build was recorded, or the theme gate is blocked. The Build Context is read, not written."
+    },
+    {
+      "command": "record",
+      "subcommand": "deploy",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [],
+      "sends": [
+        {
+          "destination": "{base-url}",
+          "what": "a GET for each built page under the served URL, to prove the local preview answers before it is recorded",
+          "when": "the packet's deploy target is local-serve and --base-url is a loopback origin naming the campaign's route root",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: record deploy --dry-run",
+      "test_scope": "full",
+      "notes": "record deploy --dry-run runs every check the real invocation runs, the page requests included, and prints what it would write; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+    },
+    {
       "command": "login",
       "subcommand": null,
       "flags": [],
