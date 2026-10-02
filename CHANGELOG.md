@@ -32,6 +32,21 @@ Notable supported-surface changes are recorded here.
   advanced one patch, and the local setup install command pins the 1.48.0
   package. The skill text is unchanged.
 
+## [1.47.0+agent.13] - 2026-10-02
+
+### Changed
+
+- The vendored starter-template catalog is re-synced to
+  campaign-cart-starter-templates `37a8d94` (was `3793b1d`). That brings in
+  the single-offer upsell copy priced outside the offer, order bumps that hide
+  their savings line and badge when the package has no discount, the
+  `is_upsell` wording for order reports, and refreshed template verification
+  evidence for Campaign Cart SDK 0.4.40. The verified SDK and the SDK support
+  policy are unchanged.
+- `fixtures/certified-families` is regenerated at the new pin, and the shared
+  commerce brand contract's payment-chrome `asset_pin` moves with it. The
+  shipped asset bytes are unchanged.
+
 ## [1.47.0+agent.12] - 2026-10-01
 
 ### Changed
