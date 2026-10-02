@@ -60,6 +60,15 @@ test('projection separates saved Map hash, raw bytes, semantic local and output 
  input.report.identity.map_id='other-map';assert.ok(projectProgressObservation(input).stages.every(stage=>stage.status==='unknown'));
 }));
 
+test('the order-bump QA run is a QA run on the wire, never an unknown action that blocks',scratch(async dir=>{
+ const input=setup(dir);
+ input.continuation={...input.continuation,next_actions:[{id:'install_browser',command:'secret'},{id:'qa_run',command:'secret'},{id:'qa_run_bump',command:'secret'}]};
+ const s=projectProgressObservation(input);
+ assert.deepEqual(s.continuation.action_ids,['install_browser','qa_run']);
+ assert.equal(s.continuation.blocked,false);
+ assert.equal(validateProgressSnapshot({...clone(fixture),continuation:s.continuation}).ok,true);
+}));
+
 test('blocked, divergent, stale, unsupported and QA exceptions remain independent observations',scratch(async dir=>{
  const input=setup(dir);
  input.continuation={...input.continuation,ok:false,stage:'doctor-blocked',divergences:[{secret:'private@example.test'}],gates:[{id:'doctor',status:'blocked'}],next_actions:[{id:'divergence_inspect',command:'secret'}]};

@@ -1886,6 +1886,13 @@ use the declared topology instead of a single happy path:
 5. Use `full` when you want every actual terminal path, raising the flood cap to
    the exact planned count when necessary.
 
+`next` names step 4 at the QA stage. When the checkout page the default run
+drives declares an order bump (`is_upsell: true` rows), it lists a second QA
+command, `qa_run_bump`, beside `qa_run`: the same `--test-order common` run
+with `--cart <base>:1,<bump>:1`, where the base is the first selector tier the
+checkout declares. The QA stage prompt and the human `next` output carry the
+same command.
+
 Record order numbers, `ref_id` values, and expected line-item shapes in the
 handoff. If the browser console shows an SDK module-load error but the SDK
 fallback loads and checkout/order proof passes, keep it as platform warning

@@ -2,6 +2,29 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.2] - 2026-10-02
+
+### Changed
+
+- At the QA stage, `next` lists a second QA command when the CampaignSpec's
+  checkout declares an order bump (`is_upsell: true` rows). `qa_run_bump`,
+  beside `qa_run`, is the same `qa run --browser --test-order common` with
+  `--cart <base>:1,<bump>:1`, so its test orders carry the add-on and prove
+  its charge. Until now `next` named only the default run. Its test orders
+  never toggle a bump, because the tier planner skips bump rows by design and
+  bump coverage comes from `--cart`, so a verdict could read ready with the
+  add-on never ordered. The base is the first selector tier the checkout
+  declares; a checkout that declares no tier gets the bump alone, and several
+  declared bumps share one cart. The QA stage prompt and the human `next`
+  output name the same command, and `docs/qa-and-test-orders.md` says so
+  under its launch-grade proof list.
+- A progress snapshot records `qa_run_bump` as `qa_run`. The snapshot's
+  action vocabulary is unchanged, and a ready QA continuation does not read
+  as blocked.
+- The QA tier planner reads its bump and tier helpers from the
+  commercial-journey module, where `next` reads them too. Tier planning is
+  unchanged.
+
 ## [1.50.0+agent.1] - 2026-10-02
 
 ### Changed
