@@ -54,7 +54,7 @@ Guided questions are intentionally short and business-readable. They prioritize:
 
 The CLI avoids SDK/page-kit jargon in questions. The implementation can resolve SDK attributes, responsive CSS, asset paths, routing, template copying, and QA reruns. Business choices should come from the brief or be escalated.
 
-Question 5 is asked only when the CampaignSpec maps a surface that fills the template's promo placeholders: a `funnels[].promo_codes` roster, or a page's `exit_intent` or `promo_code_input`. It never asks for approval of the source design's own promo, proof or urgency copy, which is built as designed (see below). Without such a surface the guided draft sets `header_claim_source` and `timer_label` to `"none"`: the template's promo placeholders are removed.
+Question 5 is asked only when the CampaignSpec maps a surface that fills the template's promo placeholders: a `funnels[].promo_codes` roster, or a checkout page's enabled `exit_intent` or `promo_code_input`. It never asks for approval of the source design's own promo, proof or urgency copy, which is built as designed (see below). Without such a surface the guided draft sets `header_claim_source` and `timer_label` to `"none"`: the template's promo placeholders are removed.
 
 ## Answering The Questions
 

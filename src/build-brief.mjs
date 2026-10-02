@@ -53,6 +53,7 @@ const REQUIRED_HIGH_IMPACT_FIELDS = Object.freeze([
     priority: 5,
     field: "promo_urgency",
     answer_fields: ["promo_urgency.header_claim_source", "promo_urgency.timer_label"],
+    answer_hint: 'promo_urgency.header_claim_source "campaign_offers" and promo_urgency.timer_label the template timer\'s label to fill them, or both "none" to remove them',
     question: "Should the starter template's own promo placeholders (demo countdown timers, promo banners, placeholder voucher codes, exit-pop offers) be filled from this campaign's promo codes and offers, or removed?",
     reason: "Template promo placeholders must not go live with demo values. The source design's own promo, proof and urgency copy is the merchant's content: it is built as designed and is not part of this question.",
   },
@@ -242,8 +243,9 @@ export function createCampaignBuildBriefArtifact({
 // open question with the brief fields that close it.
 function describeOpenQuestions(questions) {
   return questions.map((question) => {
-    const fields = REQUIRED_HIGH_IMPACT_FIELDS.find((entry) => entry.id === question?.id)?.answer_fields
-      || (isNonEmptyString(question?.field) ? [question.field] : []);
+    const entry = REQUIRED_HIGH_IMPACT_FIELDS.find((candidate) => candidate.id === question?.id);
+    if (isNonEmptyString(entry?.answer_hint)) return `${question?.id} (${entry.answer_hint})`;
+    const fields = entry?.answer_fields || (isNonEmptyString(question?.field) ? [question.field] : []);
     return fields.length ? `${question?.id} (${fields.join(", ")})` : String(question?.id);
   }).join(", ");
 }
@@ -683,10 +685,13 @@ function templatePromoSurfaces({ spec = null, activePages = [] } = {}) {
     surfaces.push("promo codes (funnels[].promo_codes)");
   }
   const pages = Array.isArray(activePages) ? activePages : [];
-  if (pages.some((page) => !isDisabledSignal(page?.exit_intent?.enabled))) {
+  // Checkout-only and enabled: true, the rule hasExitPop, doctor's exit-pop
+  // contract and QA's coupon orders use for these surfaces.
+  const checkoutSurface = (page, key) => page?.type === "checkout" && page?.[key]?.enabled === true;
+  if (pages.some((page) => checkoutSurface(page, "exit_intent"))) {
     surfaces.push("an exit-intent offer (exit_intent)");
   }
-  if (pages.some((page) => !isDisabledSignal(page?.promo_code_input?.enabled))) {
+  if (pages.some((page) => checkoutSurface(page, "promo_code_input"))) {
     surfaces.push("a promo-code input (promo_code_input)");
   }
   return surfaces;

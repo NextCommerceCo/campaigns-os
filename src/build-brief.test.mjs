@@ -325,6 +325,14 @@ test("guided drafts ask promo_urgency_copy only about the template's own promo p
   assert.equal(ownCopy.artifact.promo_urgency.header_claim_source, "none");
   assert.equal(ownCopy.artifact.promo_urgency.timer_label, "none");
 
+  // exit_intent and promo_code_input are checkout surfaces: on a landing page
+  // they fill no template placeholder, as hasExitPop and doctor already say.
+  const landingOnly = structuredClone(spec);
+  landingOnly.funnels[0].pages.find((page) => page.id === "landing").exit_intent = { enabled: true, offer_ref_id: 7 };
+  landingOnly.funnels[0].pages.find((page) => page.id === "landing").promo_code_input = { enabled: true };
+  const landing = createCampaignBuildBriefArtifact({ spec: landingOnly, activePages: landingOnly.funnels[0].pages });
+  assert.equal(landing.questions.some((question) => question.id === "promo_urgency_copy"), false);
+
   // A promo-code roster or an exit-intent offer is what fills the template's
   // promo banner, timer and exit-pop, so the question is about those.
   for (const mapped of [

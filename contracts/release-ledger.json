@@ -4972,8 +4972,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.50.0+agent.2",
-      "changelog_sha256": "d09e45fc46c719bf0bad55a51cf7a9f87eadb3dd461fc91d2c91581e7ed74849",
-      "agent_impact": "Do not ask the person to approve the source design's own promo, proof or urgency copy: Build Brief question promo_urgency_copy now covers only the starter template's own promo placeholders (demo timers, promo banners, placeholder voucher codes, exit-pop offers) and is asked only when the CampaignSpec maps funnels[].promo_codes, exit_intent or promo_code_input. To record an answer to any guided question, copy the normalized draft to campaign-build-brief.json in the target repo, set the fields doctor's build_brief.guided_questions warning names, and re-run start or prepare-build; once a stage has recorded evidence that re-run needs --force, which clears it.",
+      "changelog_sha256": "b785ce75fc7dbcc40007e67902ed8e6bd777449abb363c9585516d3ceceba577",
+      "agent_impact": "Do not ask the person to approve the source design's own promo, proof or urgency copy: Build Brief question promo_urgency_copy now covers only the starter template's own promo placeholders (demo timers, promo banners, placeholder voucher codes, exit-pop offers) and is asked only when the CampaignSpec maps funnels[].promo_codes, or a checkout page's enabled exit_intent or promo_code_input. To record an answer to any guided question, copy the normalized draft to campaign-build-brief.json in the target repo, set the fields doctor's build_brief.guided_questions warning names, and re-run start or prepare-build; once a stage has recorded evidence that re-run needs --force, which clears it.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -4996,7 +4996,7 @@
           "summary": "build_brief.guided_questions names the brief fields that close each open question and how to record them (copy the normalized draft to campaign-build-brief.json, set the fields, re-run start or prepare-build; --force clears stage evidence), and build_brief.questions_unanswered names the fields too."
         }
       ],
-      "entry_sha256": "da8974dfc556cb554a53707d8dd0c33f38a219196e283ebf4cc0cbbd60c34845"
+      "entry_sha256": "4c8b92776e9921f8ce629eb8094d30eeb24c4aa25093f7552751e8c86519b4b0"
     }
   ]
 }

@@ -14,8 +14,8 @@ Notable supported-surface changes are recorded here.
   read as a request to approve the source design's own copy; that copy is the
   merchant's content and is built as designed.
 - The question is asked only when the CampaignSpec maps a surface that fills
-  those placeholders: a `funnels[].promo_codes` roster, or a page's
-  `exit_intent` or `promo_code_input`. It used to be asked for any CampaignSpec
+  those placeholders: a `funnels[].promo_codes` roster, or a checkout page's
+  enabled `exit_intent` or `promo_code_input`. It used to be asked for any CampaignSpec
   key naming an offer, discount, timer or urgency, so the offer catalog,
   before-discount prices and design slot names all raised it. Without such a
   surface the guided draft sets `promo_urgency.header_claim_source` and
