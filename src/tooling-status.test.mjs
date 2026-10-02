@@ -710,13 +710,13 @@ test("a single-platform install is ready without --platform, and the skipped pla
     assert.ok(run.json.ready.some((line) => line.startsWith("Skills checked for Claude Code;") && line.includes("Codex")));
     // The login hint names the printed invocation, not a bare campaigns-os.
     const login = run.json.warnings.find((line) => line.startsWith("Gateway login:"));
-    assert.ok(login?.includes(`Use ${run.json.cli.invocation_prefix} login --store <subdomain>`), login);
+    assert.ok(login?.includes(`${run.json.cli.invocation_prefix} login --store <subdomain>`), login);
     // It also says what login is for, so a local-spec run does not log in
     // expecting package data: login fills only the Store Profile fields, and
     // package, offer and shipping refs come from the campaign's public key.
-    assert.ok(login.includes(`Optional: login only lets ${run.json.cli.invocation_prefix} spec derive --from-store <subdomain> fill the Store Profile fields`), login);
-    assert.match(login, /Login never reads package, offer or shipping refs/);
-    assert.ok(login.includes(`docs/build-packet.md, "Reading package, offer and shipping refs"`), login);
+    assert.ok(login.includes("Optional:") && login.includes("only lets spec derive --from-store fill the Store Profile fields"), login);
+    const refs = run.json.warnings.find((line) => line.startsWith("Package, offer and shipping refs never come from the gateway login"));
+    assert.ok(refs?.includes(`docs/build-packet.md, "Reading package, offer and shipping refs"`), refs);
 
     const human = runInHome(home, ["tooling", "status"]);
     assert.match(human.stdout, /Skills checked for Claude Code; Codex, Shared agent skills have no Campaigns OS skills installed and were not checked/);

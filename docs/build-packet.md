@@ -83,12 +83,12 @@ fetch("https://campaign-map.nextcommerce.com/api/campaign", {
 '
 ```
 
-`curl -sS -H "X-Campaign-Key: <public key>" https://campaign-map.nextcommerce.com/api/campaign`
+`curl -sS -H "Accept: application/json" -H "X-Campaign-Key: <public key>" https://campaign-map.nextcommerce.com/api/campaign`
 returns the same. Add `?ref_id=<campaign id>` when one key serves several
 campaigns. Other HTTP clients work with the same header, but the proxy refuses
-some default user agents, Python `urllib`'s among them, with a 403 whose body
-is `error code: 1010`; send another `User-Agent` or use one of the commands
-above.
+some default user agents, Python `urllib`'s and Perl `libwww-perl`'s among
+them, with a 403 whose body is `error code: 1010`; send another `User-Agent`
+or use one of the commands above.
 
 The answer is an envelope, `{ ok, status, endpoint, requested_ref_id,
 retrieved_at, data }`, with `requested_ref_id` present only when `?ref_id=`
