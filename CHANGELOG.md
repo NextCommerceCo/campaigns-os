@@ -42,8 +42,13 @@ Notable supported-surface changes are recorded here.
   `stages.deploy`.
 - `contracts/effects.v1.json` declares `record theme`, `record deploy` and
   their `--dry-run` forms.
+- The Build Packet schema's `assembly.template_family` accepts every family
+  the commerce surface catalog and the private template sources name:
+  `apollo`, `apollo-mv-single-step`, `arjuna` and `karna` join the enum, which
+  had fallen behind both. Nothing is removed, so every packet that validated
+  before still does.
 - Package and supported-surface version advance to 1.49.0 for the effects
-  contract hash. The local setup install command pins 1.49.0. Bundled skills
+  contract and Build Packet schema hashes. The local setup install command pins 1.49.0. Bundled skills
   carry revision `1.49.0+skills.1`, with each skill version advanced one patch;
   the build and polish skills also name `record theme`.
 

@@ -4639,8 +4639,8 @@
       "kind": "release",
       "surface_version": "1.49.0",
       "changelog_section": "1.49.0",
-      "changelog_sha256": "b7b8123b1270ba0bf21f6eab8cb7884022c3408c56e232552e59155cfb33dc8c",
-      "agent_impact": "Surface 1.49.0. Record an applied brand layer with campaigns-os record theme --packet <p> after record build, instead of editing report.theme by hand: it reads each built commerce page's stylesheet links, requires brand-theme.css (or checkout-brand.css) after next-core.css on every page that loads next-core.css, and writes report.theme (status applied, load_order after-next-core, css_path, commerce_pages, evidence), clearing any earlier theme waiver. Record a local preview with campaigns-os record deploy --packet <p> --base-url <url> after record polish, instead of editing deploy.preview_url and stages.deploy by hand: the URL must be a loopback origin naming the campaign's route root, every built page under it must answer 2xx, and it writes the packet's deploy.preview_url and stages.deploy completed. Both are refused, writing nothing, otherwise. Bundled skills carry revision 1.49.0+skills.1: an agent that loaded 1.48.0+skills.1 should start a fresh session. Install the 1.49.0 package with the documented local setup command.",
+      "changelog_sha256": "89c063cc2229b29d161820612d3724a7daecc03c3d1531c0046b503941bd0667",
+      "agent_impact": "Surface 1.49.0. Record an applied brand layer with campaigns-os record theme --packet <p> after record build, instead of editing report.theme by hand: it reads each built commerce page's stylesheet links, requires brand-theme.css (or checkout-brand.css) after next-core.css on every page that loads next-core.css, and writes report.theme (status applied, load_order after-next-core, css_path, commerce_pages, evidence), clearing any earlier theme waiver. Record a local preview with campaigns-os record deploy --packet <p> --base-url <url> after record polish, instead of editing deploy.preview_url and stages.deploy by hand: the URL must be a loopback origin naming the campaign's route root, every built page under it must answer 2xx, and it writes the packet's deploy.preview_url and stages.deploy completed. Both are refused, writing nothing, otherwise. The Build Packet schema now accepts the template families apollo, apollo-mv-single-step, arjuna and karna, so a packet on those families validates. Bundled skills carry revision 1.49.0+skills.1: an agent that loaded 1.48.0+skills.1 should start a fresh session. Install the 1.49.0 package with the documented local setup command.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -4660,7 +4660,7 @@
           "class": "compatibility_policy",
           "path": "contracts/supported-surface.json",
           "surface_entry": "contracts/supported-surface.json",
-          "summary": "Advance the supported surface to 1.49.0 and record the effects contract hash."
+          "summary": "Advance the supported surface to 1.49.0 and record the effects contract and Build Packet schema hashes."
         },
         {
           "class": "named_surface",
@@ -4715,6 +4715,12 @@
           "path": "package.json",
           "surface_entry": null,
           "summary": "Release 1.49.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "assembly.template_family accepts apollo, apollo-mv-single-step, arjuna and karna, every family the catalog and the private template sources name; nothing is removed."
         },
         {
           "class": "skill",
@@ -4783,7 +4789,7 @@
           "summary": "Add record theme and record deploy to the usage text; name record theme in the build prompt and starter-palette notice, and record deploy in next's local-serve deploy action and the deploy prompt."
         }
       ],
-      "entry_sha256": "ee909ca6daaa805a945e2f5cb749c8be70621b77c888d8240b72489b2afddd49"
+      "entry_sha256": "044cecbdb3e7b2bf182ec907320d8beb45361095df4a1df1ec6a119639f1b28d"
     }
   ]
 }

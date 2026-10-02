@@ -95,6 +95,17 @@ function writeFixturePrivateTemplateSource(dir, family) {
   };
 }
 
+test("the Build Packet schema accepts every template family the catalog and the private template sources name", () => {
+  // The schema's enum is a copy of names that live in the catalog and the
+  // private source list; a family prepare-build can certify must validate.
+  const schemaFamilies = new Set(readJson(join(ROOT, "schemas/campaign-runtime-build-packet.v0.schema.json")).properties.assembly.properties.template_family.enum);
+  const named = [
+    ...Object.keys(readJson(join(ROOT, "contracts/commerce-surface-catalog.json")).families),
+    ...Object.keys(readJson(join(ROOT, "contracts/private-template-sources.json")).sources),
+  ];
+  assert.deepEqual(named.filter((family) => !schemaFamilies.has(family)), []);
+});
+
 test("prepare-build refuses an uncertified template family without a waiver", () => {
   withTempDir((dir) => {
     const result = prepareBuild(dir, ["--template-family", "custom"], { allowFail: true });

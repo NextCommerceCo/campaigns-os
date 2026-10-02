@@ -336,6 +336,8 @@
         "template_family": {
           "enum": [
             "undecided",
+            "apollo",
+            "apollo-mv-single-step",
             "olympus",
             "limos",
             "demeter",
@@ -343,6 +345,8 @@
             "olympus-mv-two-step",
             "shop-single-step",
             "shop-three-step",
+            "arjuna",
+            "karna",
             "custom"
           ]
         },
