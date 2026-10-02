@@ -348,7 +348,7 @@ function brandLayerFacts(doctor) {
     const brand = hrefs.findIndex((href, index) => index > core && BRAND_LAYER_FILENAMES.has(hrefName(href)));
     if (core < 0) {
       if (hrefs.some((href) => BRAND_LAYER_FILENAMES.has(hrefName(href)))) {
-        problems.push(`${label}: ${builtRel} links a brand layer but not ${CORE_STYLESHEET}; load ${CORE_STYLESHEET} first, or neither on a page built from the design's own markup.`);
+        problems.push(`${label}: ${builtRel} links a brand layer but not ${CORE_STYLESHEET}. On a page built from the design's own markup, remove the brand layer; only if the page renders family components, load ${CORE_STYLESHEET} before it.`);
       } else {
         unstyled.push(label);
         evidence.push(`${label}: ${builtRel} loads neither ${CORE_STYLESHEET} nor a brand layer (the design's own markup).`);
@@ -363,6 +363,10 @@ function brandLayerFacts(doctor) {
       continue;
     }
     const href = hrefs[brand].split(/[?#]/)[0];
+    if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(href)) {
+      problems.push(`${label}: ${builtRel} loads its brand layer from another origin (${hrefs[brand]}); the brand layer ships with the campaign, so copy it into the campaign assets and link that copy.`);
+      continue;
+    }
     const file = href.startsWith("/") ? join(site.site_root, href) : resolve(dirname(built.built_path), href);
     if (!existsSync(file)) {
       problems.push(`${label}: ${builtRel} links ${hrefs[brand]}, which is not in the built output.`);
@@ -374,7 +378,10 @@ function brandLayerFacts(doctor) {
   }
   if (problems.length) throw refuseRecord("theme", problems);
   if (!styled.length) {
-    throw refuseRecord("theme", [`No built commerce page loads ${CORE_STYLESHEET} (${unstyled.join(", ") || "none built"}), so no page renders family components for a brand layer to style. If shipping without one is intended, record that with ${cmd("theme")} waive.`]);
+    const outOfScope = commerce.out_of_scope.map((page) => page.page_id || page.route || page.type);
+    throw refuseRecord("theme", [!commerce.built.length
+      ? `No commerce page is built in this scope (declared but not built: ${outOfScope.join(", ")}); build them, run ${cmd("record")} build, then record theme.`
+      : `No built commerce page loads ${CORE_STYLESHEET} (${unstyled.join(", ")}${outOfScope.length ? `; declared but not built: ${outOfScope.join(", ")}` : ""}), so no page renders family components for a brand layer to style. If shipping without one is intended, record that with ${cmd("theme")} waive.`]);
   }
   const cssPath = relative(derived.target_repo, layers[0]);
   const generated = resolve(derived.target_repo, ".campaign-runtime/theme/brand-theme.css");
@@ -391,7 +398,9 @@ function brandLayerFacts(doctor) {
 }
 
 // An applied brand layer replaces any earlier waiver: the gate reads a waiver
-// first, and the two answer the same question opposite ways.
+// first, and the two answer the same question opposite ways. Other fields
+// stay: `warnings` come from theme inspect, and `repair_loop_defect` is what
+// `record polish` recorded about the repair loop, history the gate never reads.
 function composeTheme(report, { now, recordedBy, layer }) {
   const theme = {
     ...(isObject(report.theme) ? report.theme : {}),

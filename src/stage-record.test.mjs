@@ -245,7 +245,7 @@ function themeReady(f, links) {
   mkdirSync(css, { recursive: true });
   writeFileSync(join(css, "next-core.css"), ":root {}\n");
   writeFileSync(join(css, "brand-theme.css"), ":root { --brand--color--primary: #0a2540; }\n");
-  const tag = (name) => `<link rel="stylesheet" href="/${f.slug}/css/${name}">`;
+  const tag = (name) => `<link rel="stylesheet" href="${name.includes("//") ? name : `/${f.slug}/css/${name}`}">`;
   buildSite(f, "", (page) => (page.type === "landing" ? "" : links(page).map(tag).join("")));
   recordOk(f, "build");
 }
@@ -269,18 +269,18 @@ test("record theme records the brand layer each commerce page that loads next-co
   });
 });
 
-test("record theme refuses, naming each page and writing nothing, when a commerce page loads the brand layer before next-core.css or not at all", () => {
+test("record theme refuses, naming each page and writing nothing, when a commerce page loads the brand layer before next-core.css, not at all, or from another origin", () => {
   withLifecycle((f) => {
     themeReady(f, (page) => (page.id === "checkout"
       ? ["brand-theme.css", "next-core.css"]
-      : page.id === "upsell" ? ["next-core.css"] : ["next-core.css", "brand-theme.css"]));
+      : page.id === "upsell" ? ["next-core.css"] : ["next-core.css", "https://cdn.example.com/brand-theme.css"]));
     const before = readFileSync(f.reportPath, "utf8");
 
     const result = record(f, "theme");
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /checkout: .* links \/[^ ]+\/brand-theme\.css before next-core\.css/);
     assert.match(result.stderr, /upsell: .* links no brand layer/);
-    assert.doesNotMatch(result.stderr, /receipt:/);
+    assert.match(result.stderr, /receipt: .* loads its brand layer from another origin/);
     assert.equal(readFileSync(f.reportPath, "utf8"), before);
     assert.equal(doctor(f).derived.theme_gate.code, "theme_gate.generatable_not_applied");
   });
