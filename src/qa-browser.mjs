@@ -6913,7 +6913,8 @@ function declaredSelectorTiers(checkoutPage) {
   for (const { pkg, ref, declaredQuantity } of records) {
     // A unique ref is a catalog package bought once, even when that package's
     // own composition is 3x. Only repeated declarations of the SAME ref at
-    // different quantities express shopper purchase multipliers (Keer 1x/2x).
+    // different quantities express shopper purchase multipliers (e.g. a 1x
+    // and a 2x package).
     const quantity = quantitiesByRef.get(ref).size > 1 ? declaredQuantity : 1;
     const identity = `${ref}:${quantity}`;
     if (seen.has(identity)) continue;

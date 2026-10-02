@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.1] - 2026-10-02
+
+### Changed
+
+- No command behaves differently. A comment in the QA browser module that
+  explains how repeated package declarations become purchase multipliers
+  named an internal store as its example; it now gives a neutral one (a 1x
+  and a 2x package). Two QA test files swap the same name in a fixture SKU
+  and a hosted-checkout URL for neutral placeholders. Comment and test
+  fixtures only; every message and every exit code is unchanged.
+- The private-string check adds that store name to its hashed list, so it
+  cannot return.
+
 ## [1.50.0] - 2026-10-02
 
 ### Changed
