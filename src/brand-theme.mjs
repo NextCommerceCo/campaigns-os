@@ -574,6 +574,17 @@ function discoverThemeCandidates({ sourceRoot, pageMappings = [], manifest = nul
     candidates.push(candidateFromFile(path, role, source, referencedBy));
   }
 
+  // A stylesheet that pages of different roles link is the funnel's shared
+  // layer, not the first linking page's: it ranks as shared.
+  function addPageReference(path, role, referencedBy) {
+    const existing = seenFiles.has(resolve(path))
+      ? candidates.find((candidate) => candidate.source === "mapped_html_reference" && resolve(candidate.path) === resolve(path))
+      : null;
+    if (!existing) return addFile(path, role, "mapped_html_reference", referencedBy);
+    existing.referenced_by.push(...referencedBy);
+    if (existing.role !== role) existing.role = "shared";
+  }
+
   for (const conventional of [
     "assets/css/tokens.css",
     "assets/css/landing/tokens.css",
@@ -595,7 +606,7 @@ function discoverThemeCandidates({ sourceRoot, pageMappings = [], manifest = nul
     const content = readFileSync(htmlPath, "utf8");
     for (const ref of extractCssRefs(content)) {
       for (const cssPath of candidateCssPathsForRef(sourceRoot, htmlPath, ref)) {
-        addFile(cssPath, candidateRoleFromPath(ref, role), "mapped_html_reference", [{ page_id: mapping.page_id || null, path: mapping.path, ref }]);
+        addPageReference(cssPath, candidateRoleFromPath(ref, role), [{ page_id: mapping.page_id || null, path: mapping.path, ref }]);
       }
     }
   }
