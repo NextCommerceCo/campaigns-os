@@ -4837,8 +4837,8 @@
       "kind": "release",
       "surface_version": "1.50.0",
       "changelog_section": "1.50.0",
-      "changelog_sha256": "5dc15084f1be4cea34edf8fb5ef4964a296032efeeb96c5b47db440506b35c38",
-      "agent_impact": "Surface 1.50.0. With qa run --browser, page-binding:<page_id> compares the key the Campaign Cart SDK sent on its Campaigns API requests with the expected key (evidence observation sdk_request, source kind sdk_request): match passes and mismatch is a blocker; the key is never recorded. A page that sends no Campaigns API request, a run with no single expected key, and qa run without --browser keep the static declaration read. A verdict consumer must accept observation sdk_request and source kind sdk_request in page-binding evidence. Ships 1.49.0+agent.1 (the agent context spells npx --no-install campaigns-os and carries the build skill's proof rule). Bundled skills carry revision 1.50.0+skills.1 with unchanged text: an agent that loaded an earlier revision should start a fresh session. Install the 1.50.0 package with the documented local setup command.",
+      "changelog_sha256": "dd65c5d7f65efddf1366ea3f1220660d98918bdd558dd18757b61a5152553b23",
+      "agent_impact": "Surface 1.50.0. With qa run --browser, page-binding:<page_id> compares the key the Campaign Cart SDK sent on its Campaigns API requests with the expected key (evidence observation sdk_request, source kind sdk_request): match passes and mismatch is a blocker; the key is never recorded. A page that sends no Campaigns API request, a run with no single expected key, and qa run without --browser keep the static declaration read. A verdict consumer must accept observation sdk_request and source kind sdk_request in page-binding evidence. Ships 1.49.0+agent.1 (the agent context spells npx --no-install campaigns-os and carries the build skill's proof rule) and 1.49.0+agent.2 (a comment-only change). Bundled skills carry revision 1.50.0+skills.1 with unchanged text: an agent that loaded an earlier revision should start a fresh session. Install the 1.50.0 package with the documented local setup command.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -4963,7 +4963,7 @@
           "summary": "Publish the 1.50.0+skills.1 bundle revision."
         }
       ],
-      "entry_sha256": "bcc4430dca2da727d92e7a2a0a9bae237132b5b91949fbef8bc89078613a8cf9"
+      "entry_sha256": "3fed96311daa5f153704a1ec7ded952e1e00065ce9f81fd4d3350f13beba964a"
     }
   ]
 }

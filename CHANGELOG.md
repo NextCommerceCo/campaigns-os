@@ -24,13 +24,25 @@ Notable supported-surface changes are recorded here.
   `observation: "sdk_request"` and the `sdk_request` source kind for that row.
   Nothing is removed, so every verdict that validated before still does.
   `docs/qa-and-test-orders.md` describes both observations.
-- Ships the same-surface change recorded since 1.49.0: the agent context
-  spells every command `npx --no-install campaigns-os …` and carries the
-  build skill's proof rule (`+agent.1`).
+- Ships the same-surface changes recorded since 1.49.0, each described in
+  its own section below: the agent context spells every command
+  `npx --no-install campaigns-os …` and carries the build skill's proof rule
+  (`+agent.1`); and the install-mode module drops a stale comment, with no
+  behavior change (`+agent.2`).
 - Package and supported-surface version advance to 1.50.0 for the QA verdict
   schema hash. The local setup install command pins 1.50.0. Bundled skills
   carry revision `1.50.0+skills.1`, with each skill version advanced one
   patch. The skill text is unchanged.
+
+## [1.49.0+agent.2] - 2026-10-02
+
+### Changed
+
+- No command behaves differently. The install-mode module drops a trailing
+  comment that described `applyInvocationPrefix`, a function removed when
+  commands began to be spelled with their prefix at the source (`cmd()` and
+  `asInvocation` in the install-invocation module). Comment-only; every
+  message and every exit code is unchanged.
 
 ## [1.49.0+agent.1] - 2026-10-02
 
