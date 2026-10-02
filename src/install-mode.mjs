@@ -282,11 +282,3 @@ export function invocationPrefixFor(root, pkg = null) {
   prefixCache.set(root, prefix);
   return prefix;
 }
-
-// Rewrites every command spelled with the canonical bare `campaigns-os <verb>`
-// into the given prefix. Internal bookkeeping (deviation tracking, gate
-// registries, tests) keeps the canonical spelling; only what is printed or
-// emitted for an operator or agent to copy is rewritten. Skill names such as
-// next-campaigns-os-setup, file names (campaigns-os.mjs), and already-prefixed
-// forms (`npx --no-install campaigns-os`, `npm run campaigns-os --`) are left
-// alone.
