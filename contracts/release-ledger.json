@@ -5023,7 +5023,7 @@
           "summary": "build_brief.guided_questions names the brief fields that close each open question and how to record them (copy the normalized draft to campaign-build-brief.json, set the fields, re-run start or prepare-build; --force clears stage evidence), and build_brief.questions_unanswered names the fields too."
         }
       ],
-      "entry_sha256": "4c8b92776e9921f8ce629eb8094d30eeb24c4aa25093f7552751e8c86519b4b0"
+      "entry_sha256": "0d60b7a2fa569cca0f1db2084e5691be0fac49b23954b92851cc28d337e6b7c5"
     }
   ]
 }
