@@ -301,4 +301,8 @@ test("an upsell decline that only proxies to a missing in-offer skip fails route
 
   const hiddenTarget = await declineFor(page(`${offer}<div style="display:none"><a data-next-upsell-action="skip" href="#">No</a></div></div><a data-upsell-proxy="skip" href="#">No thanks</a>`));
   assert.equal(hiddenTarget.status, "pass");
+
+  // upsells.js forwards only to an action inside the offer element.
+  const outsideOffer = await declineFor(page(`${offer}</div><div><a data-next-upsell-action="skip" href="#">No</a></div><a data-upsell-proxy="skip" href="#">No thanks</a>`));
+  assert.equal(outsideOffer.status, "fail");
 });

@@ -3953,8 +3953,34 @@ function findDeadUpsellProxy(html, kind, page) {
   if (page.page_type !== "upsell" || kind === "next") return null;
   const action = kind === "accept" ? "add" : "skip";
   if (!new RegExp(`\\bdata-upsell-proxy\\s*=\\s*["']${action}["']`, "i").test(html)) return null;
-  if (new RegExp(`\\bdata-next-upsell-action\\s*=\\s*["']${action}["']`, "i").test(html)) return null;
-  return `data-upsell-proxy="${action}" with no data-next-upsell-action="${action}" to forward to`;
+  const target = new RegExp(`\\bdata-next-upsell-action\\s*=\\s*["']${action}["']`, "i");
+  if (upsellOfferElements(html).some((offer) => target.test(offer))) return null;
+  return `data-upsell-proxy="${action}" with no data-next-upsell-action="${action}" inside the offer to forward to`;
+}
+
+// The markup of each [data-next-upsell="offer"] element, read to its closing
+// tag by depth of that tag name: the proxy forwards only to actions inside it.
+function upsellOfferElements(html) {
+  const offers = [];
+  const attrRe = /\bdata-next-upsell\s*=\s*["']offer["']/gi;
+  let attr;
+  while ((attr = attrRe.exec(html))) {
+    const start = html.lastIndexOf("<", attr.index);
+    const name = /^<([a-z][\w-]*)/i.exec(html.slice(start))?.[1];
+    if (!name) continue;
+    const tagRe = new RegExp(`<(/?)${name}\\b[^>]*>`, "gi");
+    tagRe.lastIndex = start;
+    let depth = 0;
+    let end = html.length;
+    let match;
+    while ((match = tagRe.exec(html))) {
+      if (match[1]) depth -= 1;
+      else if (!match[0].endsWith("/>")) depth += 1;
+      if (depth === 0) { end = match.index; break; }
+    }
+    offers.push(html.slice(start, end));
+  }
+  return offers;
 }
 
 function findSdkRouteAction(html, kind, page) {

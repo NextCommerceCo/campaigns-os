@@ -88,6 +88,23 @@ browserTest("a decline clicks the visible proxy when the in-offer skip is hidden
   }
 });
 
+browserTest("a proxy is not clicked when the hidden skip sits outside the offer", async () => {
+  // The proxy forwards to [data-next-upsell="offer"] [data-next-upsell-action],
+  // so a skip outside the offer is not its target and the proxy would do nothing.
+  const html = OFFER
+    .replace(/<div class="cc-decline-wrapper"[\s\S]*?<\/div>\n<\/div>/, "</div>\n<div style=\"display:none\"><a data-next-upsell-action=\"skip\" href=\"#\">No thanks</a></div>")
+    .replace(/<script>[\s\S]*<\/script>/, "");
+  assert.doesNotMatch(html, /cc-decline-wrapper/);
+  const { context, page } = await openOffer(html);
+  try {
+    const step = await hooks.clickUpsellPath(page, "decline").catch((error) => ({ clicked: false, error: error.message }));
+    assert.equal(step.clicked, false);
+    assert.match(step.error, /not visible/);
+  } finally {
+    await context.close();
+  }
+});
+
 browserTest("a visible proxy with no in-offer skip is still a missing control", async () => {
   const html = OFFER.replace(/<div class="cc-decline-wrapper"[\s\S]*?<\/div>/, "").replace(/<script>[\s\S]*<\/script>/, "");
   const { context, page } = await openOffer(html);
