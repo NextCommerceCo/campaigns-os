@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.50.0+agent.10] - 2026-10-03
+## [1.50.0+agent.14] - 2026-10-03
 
 ### Fixed
 
@@ -16,6 +16,74 @@ Notable supported-surface changes are recorded here.
     so every family inherits them.
   - Matching is word-bounded, so "Benefit once" does not fire.
   - Doctor's next-step hint and `docs/template-family-contracts.md` list them.
+
+## [1.50.0+agent.13] - 2026-10-03
+
+### Fixed
+
+- The source preparation check `source_html.prep.document_wrapper` reads a
+  page's converted page-kit file once it exists at `page_kit.output_path`, not
+  the design it was converted from. Wrappers are stripped during conversion,
+  and the converted page is what page-kit builds. The check only ever read the
+  mapped design, so a correctly stripped build still failed. To clear it,
+  agents copied built pages over the design source (breaking the Design Source
+  Package hashes) or recorded `preserve_document_wrappers` for pages they had
+  stripped. A converted page that still carries wrappers is reported under its
+  own path. Before conversion the design is checked as before. The frontmatter
+  and source-link checks are unchanged. `docs/source-adapters.md` says so.
+
+## [1.50.0+agent.12] - 2026-10-03
+
+### Fixed
+
+- `record deploy` follows `next` past a polish carried forward on the local
+  preview. On a `local-serve` packet with a loopback preview, `next`'s stage
+  picker skips a polish that was never recorded for this build (the
+  local-preview policy carries it forward as a warning), so after
+  `record build` it answers deploy. `record deploy` checked every earlier
+  stage strictly and refused with "stages.polish.status is "required", so next
+  answers polish", which contradicted `next`. Sessions hand-wrote a polish skip
+  record to get past it. Both now read the same rule, from doctor's
+  `polish_gate`. Polish stays owed on the report and QA still reports it.
+  `record polish` and the waiver commands keep the strict gates.
+  `docs/build-packet.md` names the exception.
+
+## [1.50.0+agent.11] - 2026-10-03
+
+### Added
+
+- Doctor warns `spec.material_stale` when a local-spec campaign's CampaignSpec
+  no longer has the material hash prepare-build bound on the Assembly Report
+  (`identity.spec_material_hash`). `next` prints the warning with the rest of
+  doctor's. QA already refused such a run ("Re-run prepare-build after a
+  material revision"). Until now it was the only command that checked, so a
+  spec edited after `start` was accepted by doctor, `next` and every `record`
+  command, and the problem surfaced only after the build, polish and deploy
+  stages had been recorded against the old spec. The warning names both hashes
+  and says to re-run prepare-build from the edited spec.
+  `docs/build-packet.md` says so.
+
+## [1.50.0+agent.10] - 2026-10-03
+
+### Fixed
+
+- A checkout row marked `is_order_bump: true` is now read as an order bump.
+  The CampaignSpec schema and the authoring guide mark a checkout add-on with
+  that flag, and the certified fixtures use it alone, but the one bump
+  predicate the toolkit shares read only `is_upsell`. Such a row was treated
+  as a main package:
+  - the QA tier planner made it a selector tier of its own;
+  - `next` named no bump-cart QA command (`qa_run_bump`);
+  - commercial-journey priced the bump into the representative checkout and
+    planned no with/without-bump scenarios.
+
+  Either flag now marks a bump, and a row carrying `is_upsell: true` behaves as
+  before. On the certified fixtures, the five checkouts that declare a bump now
+  plan only their real tiers, and their bumps get the bump-cart command.
+- Messages that named a bump `(is_upsell)` now say
+  `(is_order_bump or is_upsell)`: the tier planner's warning and refusal, the
+  `next` bump-command description, the `qa run --help` text and the QA
+  test-order notes. `docs/qa-and-test-orders.md` says the same.
 
 ## [1.50.0+agent.9] - 2026-10-03
 
