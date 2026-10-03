@@ -13,7 +13,7 @@
 //
 // Doctor and QA apply this to the gates they evaluate; `next` reads doctor's
 // gates. Recording a stage (`record polish`) and the waiver commands keep the
-// strict gates.
+// strict gates; `record deploy` follows next past a carried-forward polish.
 import { isLocalServePacket } from "./local-proof.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 

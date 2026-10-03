@@ -104,12 +104,13 @@ function selectedShipping(page) {
 }
 
 // One predicate for "this checkout row is an order bump": the spec marks a
-// bump with `is_upsell: true` on a non-upsell page. Every consumer that must
+// bump with `is_order_bump: true` (the schema's and authoring guide's flag) or
+// `is_upsell: true` on a non-upsell page. Every consumer that must
 // tell a bump from a main selector row (parity scenarios, bump deltas, the QA
 // selector-tier planner, `next`'s order-bump QA command) reads this, so a
 // marker change lands in one place.
 export function isBumpRow(row) {
-  return Boolean(row?.is_upsell);
+  return Boolean(row?.is_order_bump || row?.is_upsell);
 }
 
 // A checkout package row's ref, with the doctor's specPackageRecords
@@ -992,7 +993,7 @@ function makePage(scenarios, catalog) {
       row_index: row.row_index,
       package_id: row.package_id,
       quantity: row.quantity,
-      ...(row.is_upsell ? { is_upsell: true } : {}),
+      ...(isBumpRow(row) ? { is_upsell: true } : {}),
       name: row.name,
       state: PricingState.Unresolved,
       reason: pageReason,

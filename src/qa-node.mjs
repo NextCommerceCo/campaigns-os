@@ -203,7 +203,7 @@ Options:
                                   block before browser launch. The default cap is 6; overflow names the exact raise.
                                   "tiers" is spec-driven: one strict-selection order per selector tier the
                                   CampaignSpec declares on the checkout page (order-bump rows marked
-                                  is_upsell are add-ons, never tiers), plus one coupon order per declared
+                                  is_order_bump or is_upsell are add-ons, never tiers), plus one coupon order per declared
                                   offer code (checkout exit_intent / promo_code_input); "tiers:common" and
                                   "tiers:full" cross every tier with those path shapes. --select-package
                                   <ref[:qty],...> narrows a tiers run to the listed declared tiers;
