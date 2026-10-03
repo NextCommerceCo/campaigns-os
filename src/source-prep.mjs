@@ -8,7 +8,7 @@
 // source asset crawl (source_asset.* codes) so the two checks never disagree
 // about the same reference.
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { collectDocumentWrapperNames } from "./adapter-decision-contract.mjs";
 
 export const SOURCE_PREP_DOCUMENT_WRAPPER = "source_html.prep.document_wrapper";
@@ -225,7 +225,13 @@ function describeFinding(code, pages, { wrapperPolicy }) {
 function convertedPageContent(targetRoot, page) {
   const outputPath = page?.page_kit?.output_path;
   if (!isNonEmptyString(targetRoot) || !isNonEmptyString(outputPath)) return null;
-  const fullPath = resolve(targetRoot, outputPath);
+  // output_path is repo-relative. One that is absolute or climbs out of the
+  // target repo is not a converted page of this campaign, so it reads like a
+  // missing one and the design is checked instead.
+  const root = resolve(targetRoot);
+  const fullPath = resolve(root, outputPath);
+  const rel = relative(root, fullPath);
+  if (isAbsolute(outputPath) || rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
   if (!safeIsFile(fullPath)) return null;
   try {
     return { path: toPosixPath(outputPath), content: readFileSync(fullPath, "utf8") };
