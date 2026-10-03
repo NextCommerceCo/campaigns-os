@@ -30,6 +30,7 @@ import { computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-sco
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { isObject, optionalString, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
 import { LOCAL_PROOF_BUILD_ENVIRONMENT, LOCAL_PROOF_PRODUCTION_ENVIRONMENT, isLocalServePacket } from "./local-proof.mjs";
+import { CARRIED_FORWARD } from "./local-preview-policy.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 import { campaignRouteRoot } from "./route-identity.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
@@ -604,6 +605,9 @@ function ladderProblems(stage, doctor, report) {
   if (gate) return [`next answers prepare-build: ${gate.reason}`];
   const problems = [];
   for (const earlier of NEXT_STAGE_ORDER.slice(0, NEXT_STAGE_ORDER.indexOf(stage))) {
+    // The rule next's stage picker reads: on the local preview a missing polish
+    // is carried forward (local-preview-policy), and next moves on to deploy.
+    if (earlier === "polish" && doctor.derived?.polish_gate?.status === CARRIED_FORWARD) continue;
     const key = reportKeyForCliStage(earlier);
     const status = String(report.stages[key]?.status || "");
     if (!stageIsTerminal(status)) {
