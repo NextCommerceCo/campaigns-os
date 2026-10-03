@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.11] - 2026-10-03
+
+### Added
+
+- Doctor warns `spec.material_stale` when a local-spec campaign's CampaignSpec
+  no longer has the material hash prepare-build bound on the Assembly Report
+  (`identity.spec_material_hash`). `next` prints the warning with the rest of
+  doctor's. QA already refused such a run ("Re-run prepare-build after a
+  material revision"). Until now it was the only command that checked, so a
+  spec edited after `start` was accepted by doctor, `next` and every `record`
+  command, and the problem surfaced only after the build, polish and deploy
+  stages had been recorded against the old spec. The warning names both hashes
+  and says to re-run prepare-build from the edited spec.
+  `docs/build-packet.md` says so.
+
 ## [1.50.0+agent.10] - 2026-10-03
 
 ### Fixed
