@@ -785,7 +785,14 @@ intended) when:
   (`…attribution_drift`).
 
 One error per finding; each names the two files and the two values, so the
-repair is a one-line edit. Pages whose route contains a `-backup-` or `-old-`
+repair is a one-line edit. Every built HTML file under `_site/<slug>/` is
+scanned, because every one is served. When doctor has the CampaignSpec, a
+finding that names a file no active spec page builds to says so and lists it
+under `stray_files`. Such a file is leftover output (page-kit does not prune
+`_site/`) or an HTML file copied into the source, such as a design export's
+`index.html` under `assets/`. The repair is to remove the source file if
+there is one, delete the built file, and rebuild and record the build again,
+not to retag it. Pages whose route contains a `-backup-` or `-old-`
 segment are parked copies: skipped and listed on the gate as `pages_skipped`,
 never scanned. Presence is not asserted: a campaign whose pages carry no key
 at all, or no `setAttribution` anywhere, passes on the funnel tag alone.

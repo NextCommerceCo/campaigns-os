@@ -13,6 +13,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { CAMPAIGN_IDENTITY, CAMPAIGN_IDENTITY_KINDS } from "./campaign-identity.mjs";
+import { validateCampaignIdentity } from "./doctor/checks.mjs";
 import { doctorBuiltOutput } from "./doctor/inspect.mjs";
 
 const FIXTURE_ROOT = resolve(new URL("../fixtures/campaign-identity", import.meta.url).pathname);
@@ -109,6 +110,66 @@ test("next-funnel values that differ across pages block and name the two pages",
     const result = doctorBuiltOutput({ built: repo, slug: SLUG });
     assert.deepEqual(codes(result.errors), [CAMPAIGN_IDENTITY_KINDS.funnel_drift]);
     assert.match(result.errors[0].message, /checkout\/index\.html has "Example V2" but \.\/_site\/example-campaign\/upsell-1\/index\.html has "Example V1A"/);
+  });
+});
+
+test("a drifting built page that no CampaignSpec page builds to is named as leftover output", () => {
+  withTempDir((repo) => {
+    writeConfig(repo, "examplekey");
+    writePage(repo, "", page(head({ pageType: "product" })));
+    writePage(repo, "checkout", page(head()));
+    // A design export copied under assets/ builds as its own page and keeps
+    // the design tool's funnel tag.
+    writePage(repo, "assets/design", page(head({ funnel: "Design Mock", pageType: "product" })));
+    const spec = {
+      funnels: [{
+        id: "main",
+        pages: [
+          { id: "landing", type: "landing", page_url: "/" },
+          { id: "checkout", type: "checkout", page_url: "checkout/" },
+        ],
+      }],
+    };
+    const errors = [], ready = [];
+    const derived = { target_repo: repo, checkpoint_gates: [] };
+    validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, errors, ready, derived, spec);
+
+    assert.deepEqual(codes(errors), [CAMPAIGN_IDENTITY_KINDS.funnel_drift]);
+    assert.match(errors[0].message, /assets\/design\/index\.html is not the built page of any CampaignSpec page/);
+    assert.match(errors[0].message, /^\.?\/?_site\/example-campaign\/assets\/design\/index\.html is not the built page/, "the stray repair leads");
+    assert.match(errors[0].message, /delete the built file, then rebuild/);
+    assert.match(errors[0].message, /What it causes: next-funnel differs across pages: .*\.$/);
+    assert.deepEqual(errors[0].detail.finding.stray_files.map((file) => file.replace(/^\.\//, "")), [`_site/${SLUG}/assets/design/index.html`]);
+
+    // The stray carrying the only funnel tag turns the real pages into
+    // "missing" ones; the lead still sends the agent to the stray, not to
+    // retag the real page.
+    writePage(repo, "", page(head({ funnel: null, pageType: "product" })));
+    writePage(repo, "checkout", page(head({ funnel: null })));
+    const missing = [];
+    validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, missing, [], { target_repo: repo, checkpoint_gates: [] }, spec);
+    assert.deepEqual(codes(missing), [CAMPAIGN_IDENTITY_KINDS.funnel_missing]);
+    assert.match(missing[0].message, /^\.?\/?_site\/example-campaign\/assets\/design\/index\.html is not the built page/);
+    assert.doesNotMatch(missing[0].message, /add the same next-funnel meta/, "the real page is not told to retag");
+    assert.doesNotMatch(errors[0].message, /set the same <meta name="next-funnel"> on both/);
+
+    // The stray supplies the only tag, and an untagged real page calls
+    // setAttribution with another funnel: the stray still leads, rather than
+    // the real page being told to change its call to the stray's funnel.
+    writePage(repo, "checkout", page(head({ funnel: null, pageType: null }), `<script>next.setAttribution({ funnel: "Example V2" })</script>`));
+    const attribution = [];
+    validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, attribution, [], { target_repo: repo, checkpoint_gates: [] }, spec);
+    const drift = attribution.find((issue) => issue.code === CAMPAIGN_IDENTITY_KINDS.attribution_drift);
+    assert.ok(drift, "the call disagrees with the campaign's only tag");
+    assert.match(drift.message, /^\.?\/?_site\/example-campaign\/assets\/design\/index\.html is not the built page/);
+    assert.doesNotMatch(drift.message, /change the call to/);
+
+    // Without a CampaignSpec the finding is unchanged: nothing says which
+    // files are the campaign's pages.
+    const bare = [];
+    validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, bare, [], { target_repo: repo, checkpoint_gates: [] });
+    assert.doesNotMatch(bare[0].message, /not the built page of any CampaignSpec page/);
+    assert.equal(bare[0].detail.finding.stray_files, undefined);
   });
 });
 

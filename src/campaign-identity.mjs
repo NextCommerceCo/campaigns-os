@@ -259,8 +259,15 @@ function gateBase(subject) {
 /**
  * Evaluate cross-page campaign identity over built pages.
  *
+ * A page marked `spec_page: false` is built output that no CampaignSpec page
+ * builds to. It is still scanned, because it is still served, but a finding
+ * that names it says so: such a file is usually left in `_site/` by an earlier
+ * build, or built from an HTML file copied into the source (a design export's
+ * `index.html` under `assets/`), and the repair is to remove it, not to retag
+ * it.
+ *
  * @param {{ subject: object, pages: Array<{ page_id: string, route?: string|null,
- *   file?: string|null, content: string,
+ *   file?: string|null, content: string, spec_page?: boolean,
  *   scripts?: Array<{ src: string, file?: string|null, content: string }> }> }} input
  */
 export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
@@ -300,6 +307,7 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
       code: CAMPAIGN_IDENTITY_KINDS.api_key_drift,
       a: { page_id: firstKey.page_id, file: firstKey.where, source: firstKey.source, value: firstKey.value },
       b: { page_id: observation.page_id, file: observation.where, source: observation.source, value: observation.value },
+      evidence: `API key differs across pages: ${firstKey.where} has ${quote(firstKey.value)} (${firstKey.source}) but ${observation.where} has ${quote(observation.value)} (${observation.source}).`,
       message: `API key differs across pages: ${firstKey.where} has ${quote(firstKey.value)} (${firstKey.source}) but ${observation.where} has ${quote(observation.value)} (${observation.source}). One of these pages was borrowed from another campaign; make both name the same key.`,
     });
     break; // one finding per kind names the first pair; the rest follow from the same edit
@@ -316,6 +324,7 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
       code: CAMPAIGN_IDENTITY_KINDS.funnel_drift,
       a: { page_id: firstFunnel.page_id, file: firstFunnel.file || firstFunnel.page_id, value: firstFunnel.funnel },
       b: { page_id: identity.page_id, file: identity.file || identity.page_id, value: identity.funnel },
+      evidence: `next-funnel differs across pages: ${firstFunnel.file || firstFunnel.page_id} has ${quote(firstFunnel.funnel)} but ${identity.file || identity.page_id} has ${quote(identity.funnel)}.`,
       message: `next-funnel differs across pages: ${firstFunnel.file || firstFunnel.page_id} has ${quote(firstFunnel.funnel)} but ${identity.file || identity.page_id} has ${quote(identity.funnel)}. Orders from the second page attribute to the other funnel; set the same <meta name="next-funnel"> on both.`,
     });
     break;
@@ -336,6 +345,7 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
         code: CAMPAIGN_IDENTITY_KINDS.funnel_missing,
         a: { page_id: identity.page_id, file: identity.file || identity.page_id, value: null },
         b: { page_id: firstFunnel.page_id, file: firstFunnel.file || firstFunnel.page_id, value: firstFunnel.funnel },
+        evidence: `${identity.file || identity.page_id} declares next-page-type=${quote(identity.page_type)} but no <meta name="next-funnel">, while ${firstFunnel.file || firstFunnel.page_id} carries ${quote(firstFunnel.funnel)}.`,
         message: `${identity.file || identity.page_id} declares next-page-type=${quote(identity.page_type)} but no <meta name="next-funnel">, while ${firstFunnel.file || firstFunnel.page_id} carries ${quote(firstFunnel.funnel)}. Orders from the untagged page attribute differently from the rest; add the same next-funnel meta.`,
       });
       break;
@@ -354,12 +364,36 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
       findings.push({
         kind: "attribution_drift",
         code: CAMPAIGN_IDENTITY_KINDS.attribution_drift,
-        a: { page_id: identity.page_id, file: expectedWhere, value: expected },
+        // a is the page the expected tag came from: this page's own tag, or,
+        // when it has none, the campaign's first tagged page.
+        a: { page_id: identity.funnel ? identity.page_id : firstFunnel.page_id, file: expectedWhere, value: expected },
         b: { page_id: identity.page_id, file: attribution.where, value: attribution.value },
+        evidence: `setAttribution({ funnel: ${quote(attribution.value)} }) in ${attribution.where} disagrees with next-funnel ${quote(expected)} in ${expectedWhere}.`,
         message: `setAttribution({ funnel: ${quote(attribution.value)} }) in ${attribution.where} disagrees with next-funnel ${quote(expected)} in ${expectedWhere}. The call overrides the tag, so orders attribute to ${quote(attribution.value)}; change the call to ${quote(expected)} or remove it.`,
       });
     }
   }
+
+  const strayFiles = new Map(scanned
+    .filter((page) => page.spec_page === false)
+    .map((page) => [page.page_id, page.file || page.page_id]));
+  for (const finding of findings) {
+    const stray = [...new Set([finding.a?.page_id, finding.b?.page_id]
+      .filter((pageId) => strayFiles.has(pageId))
+      .map((pageId) => strayFiles.get(pageId)))];
+    if (!stray.length) continue;
+    finding.stray_files = stray;
+    // The stray is the repair, whichever side of the finding it is on, so it
+    // leads, and the drift it causes follows as evidence only. The finding's
+    // own instruction (retag, or add a missing tag to a real page) is dropped:
+    // that edit would land on the wrong file.
+    const named = stray.length > 2 ? `${stray.slice(0, -1).join(", ")}, and ${stray.at(-1)}` : stray.join(" and ");
+    finding.message = `${named} ${stray.length === 1 ? "is" : "are"} not the built page of any CampaignSpec page: built output left by an earlier build, or an HTML file copied into the source (a design export's index.html under assets/ builds as its own page). Remove the source file if there is one, delete the built file, then rebuild and record the build again; do not retag either page. What it causes: ${finding.evidence}`;
+  }
+
+  // evidence is the message's first sentence, kept apart only so a stray
+  // repair can quote it without the finding's own instruction.
+  for (const finding of findings) delete finding.evidence;
 
   const identity = {
     api_key: firstKey ? firstKey.value : null,
