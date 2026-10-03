@@ -5162,6 +5162,27 @@
         }
       ],
       "entry_sha256": "b2cabfff7763b6b5782392b81f4586c6198a74a2300b0d69eff4a48de46f9538"
+    },
+    {
+      "id": "RL-0215",
+      "sequence": 207,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.6",
+      "changelog_sha256": "2ccb892cf8791a90fdfb6e99b4fa82ee1a25b60fe3d6374bb27815c72e857021",
+      "agent_impact": "sdk storage-check now resolves Page Kit campaign_asset script srcs and frontmatter scripts to src/<slug>/assets/<path>, so a clean Page Kit campaign whose scope covers its assets reports source-compatible instead of unknown. A resolved script outside --scope is still unknown, named by its real path.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Say that a Page Kit page's campaign_asset script srcs and frontmatter scripts resolve to src/<slug>/assets/<path>, and that any other campaign_asset value reports unknown."
+        }
+      ],
+      "entry_sha256": "e05c306497eb8e7930df7dc9b0c0cd56d9d864b64c19cbb6f3175847d0fb725e"
     }
   ]
 }

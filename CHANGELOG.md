@@ -2,6 +2,22 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.6] - 2026-10-03
+
+### Fixed
+
+- `sdk storage-check` resolves Page Kit's `campaign_asset` script srcs. A
+  page under `src/<slug>/` that loads `{{ 'js/checkout.js' | campaign_asset }}`
+  is read as `src/<slug>/assets/js/checkout.js`, where Page Kit serves it from,
+  and a page's frontmatter `scripts:` entries resolve the same way, since a
+  layout's `{% for script in scripts %}` loop loads them through that filter.
+  Until now every such tag read as a relative path that was never in scope and
+  reported `shared-script-outside-scope`, so every Page Kit campaign came back
+  `unknown` even when nothing was incompatible (#582). A resolved script left
+  out of `--scope`, or excluded, is still reported, under its real path; a
+  `campaign_asset` value the scan cannot resolve stays unknown.
+  `docs/sdk-storage-compatibility.md` says so.
+
 ## [1.50.0+agent.5] - 2026-10-03
 
 ### Changed

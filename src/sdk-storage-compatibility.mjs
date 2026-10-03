@@ -1,6 +1,7 @@
 // Read-only source evidence. SDK migration names come exclusively from the supplied manifest.
 import { parse as parseJs } from 'acorn';
 import { parse as parseHtml } from 'parse5';
+import { parse as parseYaml } from 'yaml';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, lstatSync, realpathSync, statSync } from 'node:fs';
 import { resolve, relative, dirname, posix, sep } from 'node:path';
@@ -261,6 +262,27 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
   visit(ast, null);
   return findings;
 }
+// Page Kit's campaign_asset filter serves src/<slug>/assets/<path>, <slug> being
+// the campaign folder the template sits in. A layout's {% for script in scripts %}
+// loop loads each page's frontmatter `scripts:` entries through the same filter.
+const CAMPAIGN_ASSET_SRC = /^\{\{-?\s*(?:'([^']*)'|"([^"]*)"|([A-Za-z_]\w*))\s*\|\s*campaign_asset\s*-?\}\}$/;
+function campaignAssetRoot(path) {
+  const match = /^((?:.*\/)?src\/[^/]+)\//.exec(path);
+  return match ? `${match[1]}/assets` : null;
+}
+function loopsOverPageScripts(text, name) {
+  return new RegExp(`\\{%-?\\s*for\\s+${name}\\s+in\\s+(?:page\\.)?scripts\\b`).test(text);
+}
+function frontmatterScripts(text) {
+  const block = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+  if (!block) return [];
+  let data;
+  try { data = parseYaml(block[1]); }
+  catch { return null; }
+  const scripts = data?.scripts;
+  if (scripts === undefined || scripts === null) return [];
+  return Array.isArray(scripts) && scripts.every(item => typeof item === 'string') ? scripts : null;
+}
 export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVersion, manifestPath, scope, exclude = [] }) {
   version(targetSdkVersion);
   if (!Array.isArray(scope) || !scope.length)
@@ -320,20 +342,44 @@ export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVers
       for (const child of node.childNodes ?? []) findBase(child);
     }
     findBase(document);
+    const assetRoot = campaignAssetRoot(path);
+    const requireSelected = (sourcePath, line) => {
+      if (!selected.includes(sourcePath))
+        unknown(path, 'shared-script-outside-scope', sourcePath, line);
+    };
+    if (assetRoot) {
+      const scripts = frontmatterScripts(text);
+      if (scripts === null)
+        unknown(path, 'shared-script-outside-scope', 'Frontmatter scripts are not a list of paths; review the scripts this page loads.');
+      for (const script of scripts ?? []) {
+        if (/^(?:[a-z]+:)?\/\//i.test(script) || script.startsWith('data:')) continue;
+        const line = text.split('\n').findIndex(row => row.includes(script)) + 1 || 1;
+        requireSelected(posix.normalize(`${assetRoot}/${script.split(/[?#]/)[0]}`), line);
+      }
+    }
     function html(node) {
       if (node.tagName === 'script') {
         const attrs = Object.fromEntries((node.attrs ?? []).map(a => [a.name, a.value]));
         const type = (attrs.type ?? '').trim().toLowerCase();
         if (!type || ['module', 'text/javascript', 'application/javascript', 'text/ecmascript', 'application/ecmascript'].includes(type)) {
-          if (attrs.src) {
+          const campaignAsset = attrs.src ? CAMPAIGN_ASSET_SRC.exec(attrs.src.trim()) : null;
+          if (campaignAsset) {
+            const line = node.sourceCodeLocation?.startLine ?? 1;
+            const literal = campaignAsset[1] ?? campaignAsset[2];
+            if (assetRoot && literal !== undefined)
+              requireSelected(posix.normalize(`${assetRoot}/${literal.split(/[?#]/)[0]}`), line);
+            else if (!assetRoot || !loopsOverPageScripts(text, campaignAsset[3]))
+              unknown(path, 'shared-script-outside-scope', attrs.src, line);
+            // A frontmatter scripts loop: each page's own entries are checked above.
+          }
+          else if (attrs.src) {
             if (baseHref !== null && !attrs.src.startsWith('/') && !/^[a-z]+:/i.test(attrs.src)) {
               unknown(path, 'html-base-script-resolution', `Relative script ${attrs.src} resolves against base ${baseHref}; include/review the actual dependency.`, node.sourceCodeLocation?.startLine ?? 1);
             }
             if (!/^(?:[a-z]+:)?\/\//i.test(attrs.src) && !attrs.src.startsWith('data:')) {
               const localSource = attrs.src.split(/[?#]/)[0];
               const sourcePath = posix.normalize(localSource.startsWith('/') ? localSource.slice(1) : posix.join(posix.dirname(path), localSource));
-              if (!selected.includes(sourcePath))
-                unknown(path, 'shared-script-outside-scope', sourcePath, node.sourceCodeLocation?.startLine ?? 1);
+              requireSelected(sourcePath, node.sourceCodeLocation?.startLine ?? 1);
             }
           }
           else if (node.sourceCodeLocation?.startTag) {
