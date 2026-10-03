@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.10] - 2026-10-03
+
+### Fixed
+
+- `record setup|build|polish|theme|deploy` accept `--deviation-reason`, as
+  every other command does. The deviation notice tells an agent that departs
+  from `next` to "Declare intent with --deviation-reason". `record` checks its
+  flags against a strict allowlist, which held only its own flags and the global
+  `--run-id` and `--lifecycle-journal`, so it refused the flag as unknown on
+  every stage. It is now a global flag there too. A bare `--deviation-reason`
+  with no value is refused as before.
+
 ## [1.50.0+agent.9] - 2026-10-03
 
 ### Added

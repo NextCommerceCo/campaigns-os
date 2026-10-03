@@ -748,3 +748,19 @@ test("a record refused for a value outside a schema enum lists the allowed value
     assert.match(result.stderr, /adapter_decisions\.wrapper_policy must be equal to one of the allowed values: "strip_document_wrappers", "preserve_document_wrappers", "not_required", "unknown" \(got "strip"\)/);
   });
 });
+
+test("every record subcommand accepts --deviation-reason, the flag the deviation notice tells agents to declare", () => {
+  // The notice ("Declare intent with --deviation-reason") reaches agents from
+  // the tracked commands; record refused the flag as unknown on every stage.
+  withLifecycle((f) => {
+    scaffold(f);
+    const result = record(f, "setup", ["--deviation-reason", "recording setup by hand", "--dry-run"]);
+    assert.equal(result.status, 0, result.stderr);
+    for (const stage of ["build", "polish", "theme", "deploy"]) {
+      const refused = record(f, stage, ["--deviation-reason", "why", "--dry-run"]);
+      assert.doesNotMatch(refused.stderr, /Unknown flag/, stage);
+    }
+    const empty = record(f, "setup", ["--deviation-reason", "--dry-run"]);
+    assert.notEqual(empty.status, 0, "a bare --deviation-reason is refused like any value flag");
+  });
+});

@@ -51,9 +51,10 @@ import { commerceScopeFromScope } from "./theme-gate.mjs";
 
 export const RECORD_STAGES = Object.freeze(["setup", "build", "polish", "theme", "deploy"]);
 
-// Every flag `record` reads, plus the two any command accepts (run id and
-// lifecycle journal). Anything else is refused before a file is read.
-const RECORD_FLAGS = Object.freeze(["packet", "context", "report", "dry-run", "json", "run-id", "lifecycle-journal"]);
+// Every flag `record` reads, plus the three any command accepts (run id,
+// lifecycle journal, and the deviation reason the deviation notice asks
+// agents to declare). Anything else is refused before a file is read.
+const RECORD_FLAGS = Object.freeze(["packet", "context", "report", "dry-run", "json", "run-id", "lifecycle-journal", "deviation-reason"]);
 const POLISH_RECORD_FLAGS = Object.freeze(["evidence"]);
 const DEPLOY_RECORD_FLAGS = Object.freeze(["base-url"]);
 const BUILD_RECORD_FLAGS = Object.freeze(["build-environment"]);
@@ -126,7 +127,7 @@ export function parseRecordArgs(args) {
   if (unknown.length) {
     throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for record ${stage}: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${[...known].map((key) => `--${key}`).join(", ")}.`);
   }
-  for (const flag of ["context", "report", "run-id", "lifecycle-journal"]) {
+  for (const flag of ["context", "report", "run-id", "lifecycle-journal", "deviation-reason"]) {
     if (Object.hasOwn(args, flag)) requireArg(args, flag);
   }
   if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
