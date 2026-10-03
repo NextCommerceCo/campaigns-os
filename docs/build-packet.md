@@ -1302,9 +1302,10 @@ URL.
 `local-serve` also selects **local proof mode** for the build stage: page-kit
 is built in the development environment (`CPK_ENV=development npx
 campaign-build --json > .campaign-runtime/page-kit-build-summary.json`) into
-`_site/`, and the build records `stages.assembly.evidence.build_environment:
+`_site/`, and `campaigns-os record build --packet <packet> --build-environment
+development` records `stages.assembly.evidence.build_environment:
 "development"` on the Assembly Report (a free-form stage field; no schema
-change). The starter templates gate every vendor loader on the environment,
+change; never hand-edited). The starter templates gate every vendor loader on the environment,
 and a production build's protocol-relative loaders (`//host/...`) fail over a
 plain-HTTP local serve, voiding polish capture unwaivably; the SDK's `dl_*`
 events still fire in development. Before commit, `campaigns-os page-kit parity
@@ -1661,7 +1662,7 @@ hand-editing `.campaign-runtime/` JSON:
 | Command | Writes | Refused (nothing written) when |
 |---|---|---|
 | `campaigns-os record setup --packet <p>` | Build Context `scaffold.required=false` (`handoff_skill` next-campaigns-build) and `stages.setup` completed | the campaign output directory (`assembly.output_dir`) does not exist, or there is no Build Context or Assembly Report |
-| `campaigns-os record build --packet <p>` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, and `stages.polish` reset to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, or `stages.setup` is not terminal |
+| `campaigns-os record build --packet <p> [--build-environment <development\|production>]` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, `evidence.build_environment` = the `--build-environment` value when given (kept from the last record otherwise), and `stages.polish` reset to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, or `stages.setup` is not terminal |
 | `campaigns-os record polish --packet <p> --evidence <file>` | `stages.polish` from the file (`docs/polish-evidence.md` §7: completed, blocked or skipped), bound to doctor's current fingerprint; `report.theme.repair_loop_defect` when the file sets it | build is not recorded for the current output, the file has a shape error (named by field), or, for a completed status, the polish gate doctor evaluates would not pass on the result |
 | `campaigns-os record theme --packet <p>` | `report.theme`: status `applied`, `load_order` `after-next-core`, `css_path`, `commerce_pages` and per-page evidence read from each built commerce page's stylesheet links; any earlier theme waiver is cleared | build is not recorded for the current output, the campaign ships no commerce pages, a built commerce page that loads `next-core.css` does not load `brand-theme.css` (or `checkout-brand.css`) after it or links one missing from the built output, or no built commerce page loads `next-core.css` |
 | `campaigns-os record deploy --packet <p> --base-url <url>` | the packet's `deploy.preview_url` and `stages.deploy` completed with the URL in `outputs` and one evidence line per built page that answered (each page is requested under the URL first) | the packet is not `local-serve`, the URL is not a loopback origin naming the campaign's route root, a built page does not answer 2xx, polish is not recorded, the built output changed since build was recorded, or the theme gate is blocked |
@@ -1690,7 +1691,9 @@ whenever the report's campaign identity does not match the packet, including
 for packets with no Design Source Package. Every command also adds
 `recorded_by`, and `completed_at` unless it records a blocked Polish, to the
 stage it records. `--dry-run` runs every check, takes no lock and writes nothing. A failed
-check exits non-zero with the problems listed, one per line. Re-run `record
+check exits non-zero with the problems listed, one per line; a value outside a
+schema enum (for example an `adapter_decisions` policy) is listed with the
+values the schema allows and the value it got. Re-run `record
 build` after every page-kit build; a rebuild that changes the output needs
 `polish capture` and `record polish` again.
 

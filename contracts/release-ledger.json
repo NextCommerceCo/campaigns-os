@@ -5185,13 +5185,58 @@
       "entry_sha256": "067e8f610214c37f9066a53c418a866fb6c5670193af54ebb77dd204b653e92b"
     },
     {
-      "id": "RL-0216",
+      "id": "RL-0217",
       "sequence": 208,
       "date": "2026-10-03",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.50.0+agent.9",
-      "changelog_sha256": "9c7a58c46fb395fbdde18de695e1d63a7a262f5bd98f906e5fcb24084d0b9fd0",
+      "changelog_sha256": "0b678961d04050148587f2994831880d8e93b86da2dc6a010add319f621d6086",
+      "agent_impact": "Record the page-kit build environment with record build --packet <packet> --build-environment development (local proof mode) instead of hand-editing stages.assembly.evidence.build_environment; next names the command under local-serve. A refused record now lists the allowed values for an enum field.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "record",
+          "summary": "record build takes --build-environment <development|production> and records stages.assembly.evidence.build_environment; a refused record lists a schema enum field's allowed values and the value it got."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "Under deploy.target local-serve, next names record build --packet <packet> --build-environment development in the build action and prompt, and the page-kit parity messages name it too."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The local_proof.build_environment warning names record build --build-environment development; an unknown adapter-decision value lists the allowed values."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document record build --build-environment and that enum refusals list the allowed values."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Local proof mode records the development build with record build --build-environment development."
+        }
+      ],
+      "entry_sha256": "80715cb6b6a421a8929126795d1e38ef88aec3585f15539d162c4908165f06ad"
+    },
+    {
+      "id": "RL-0216",
+      "sequence": 209,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.10",
+      "changelog_sha256": "0f486e2c02fa7cf57cf606277a02d740a0b6d5767d278728462e846a110db3e8",
       "agent_impact": "A checkout package marked is_order_bump: true is an order bump everywhere the toolkit tells bumps from tiers: the QA tier planner skips it, next names qa_run_bump for it, and commercial-journey plans its with/without scenarios. Specs that mark bumps with is_upsell: true are unchanged; no spec edit is needed.",
       "compatibility": "compatible",
       "migration": "none",
@@ -5209,7 +5254,7 @@
           "summary": "Say that order-bump rows are those marked is_order_bump or is_upsell, for tier planning and for the qa_run_bump command."
         }
       ],
-      "entry_sha256": "433051c642f8f6f6ada0580d3a77ffa5416651806e03de3a661ef5d220cf4cae"
+      "entry_sha256": "5646d540954bcbf43556888627b88ba2390e311e8589f093321c3b5350b516b9"
     }
   ]
 }

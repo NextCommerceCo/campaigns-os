@@ -31,6 +31,9 @@ export const LOCAL_PROOF_BUILD_COMMAND = `CPK_ENV=${LOCAL_PROOF_BUILD_ENVIRONMEN
 export const LOCAL_PROOF_PARITY_SCOPE = "local_proof.production_parity";
 export const LOCAL_PROOF_BUILD_ENVIRONMENT_SCOPE = "local_proof.build_environment";
 export const LOCAL_PROOF_PARITY_COMMAND = "campaigns-os page-kit parity --packet <packet>";
+// The command that records the build stage as a development render: record
+// build stamps the fingerprint and writes LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD.
+export const LOCAL_PROOF_RECORD_BUILD_COMMAND = `campaigns-os record build --packet <packet> --build-environment ${LOCAL_PROOF_BUILD_ENVIRONMENT}`;
 // Where the build stage records which environment it rendered, and where the
 // parity command records its result. Both live under the assembly stage's
 // free-form `evidence` object, which the hashed Assembly Report schema already
@@ -43,7 +46,7 @@ export const LOCAL_PROOF_NEVER_EDIT_RULE = "Never edit a generated include (anal
 // a cross-origin http: dependency — the signature of a protocol-relative
 // production loader served locally.
 export function localProofRebuildText() {
-  return `The served build is a production build over plain HTTP: a cross-origin http: dependency failed to load, which is what a protocol-relative vendor loader (//host/...) does off an http://localhost origin. Rebuild in local proof mode — \`${LOCAL_PROOF_BUILD_COMMAND}\` — record ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} as "${LOCAL_PROOF_BUILD_ENVIRONMENT}", serve the development output, and recapture. ${LOCAL_PROOF_NEVER_EDIT_RULE}`;
+  return `The served build is a production build over plain HTTP: a cross-origin http: dependency failed to load, which is what a protocol-relative vendor loader (//host/...) does off an http://localhost origin. Rebuild in local proof mode — \`${LOCAL_PROOF_BUILD_COMMAND}\` — record it with \`${LOCAL_PROOF_RECORD_BUILD_COMMAND}\` (which sets ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} to "${LOCAL_PROOF_BUILD_ENVIRONMENT}"), serve the development output, and recapture. ${LOCAL_PROOF_NEVER_EDIT_RULE}`;
 }
 
 export function isLocalServePacket(packet) {

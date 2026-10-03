@@ -713,3 +713,38 @@ test("existing build and polish argument forms keep their policy and their refus
     assert.deepEqual(snapshotFiles(f), before);
   });
 });
+
+test("record build --build-environment records stages.assembly.evidence.build_environment, so local proof needs no hand edit", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    const refused = record(f, "build", ["--build-environment", "dev", "--dry-run"]);
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /--build-environment must be one of: development, production \(got "dev"\)/);
+
+    const result = recordOk(f, "build", ["--build-environment", "development"]);
+    assert.equal(result.record.evidence.build_environment, "development");
+    const report = readJson(f.reportPath);
+    assert.equal(report.stages.assembly.evidence.build_environment, "development");
+    assert.ok(validReport(report), JSON.stringify(validReport.errors));
+
+    // A later record build without the flag keeps what was recorded.
+    recordOk(f, "build");
+    assert.equal(readJson(f.reportPath).stages.assembly.evidence.build_environment, "development");
+  });
+});
+
+test("a record refused for a value outside a schema enum lists the allowed values", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    const report = readJson(f.reportPath);
+    report.adapter_decisions = { ...report.adapter_decisions, wrapper_policy: "strip" };
+    writeJson(f.reportPath, report);
+    const result = record(f, "build", ["--dry-run"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /adapter_decisions\.wrapper_policy must be equal to one of the allowed values: "strip_document_wrappers", "preserve_document_wrappers", "not_required", "unknown" \(got "strip"\)/);
+  });
+});

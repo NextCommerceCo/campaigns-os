@@ -39,8 +39,10 @@ the toolkit runs that loop in a fixed order:
 1. **Build in development.** The build stage runs page-kit in the development
    environment — `CPK_ENV=development npx campaign-build --json >
    .campaign-runtime/page-kit-build-summary.json` — into the target's normal
-   `_site/`, and records `stages.assembly.evidence.build_environment:
-   "development"` on the Assembly Report. `next build` names the command as
+   `_site/`, and `campaigns-os record build --packet <packet>
+   --build-environment development` records
+   `stages.assembly.evidence.build_environment: "development"` on the Assembly
+   Report. `next build` names the command as
    the `build_local_proof` action and in the build prompt; doctor warns
    (`local_proof.build_environment`) on a completed build that is not recorded
    as a development render. The starter templates gate every vendor loader on
