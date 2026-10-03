@@ -12,11 +12,15 @@ export const BUILD_BRIEF_CANDIDATE_FILENAMES = Object.freeze([
   "campaign-build-brief.json",
 ]);
 
+// answer_fields: the brief fields whose values close the question, as
+// evaluateCampaignBuildBrief reads them. The guided-questions warning names
+// them so an answer given in conversation can be written where it counts.
 const REQUIRED_HIGH_IMPACT_FIELDS = Object.freeze([
   {
     id: "page_design_authority",
     priority: 1,
     field: "design_authority",
+    answer_fields: ["design_authority.<page_id>.source"],
     question: "Which source controls each campaign page: the provided design export, the selected template, or a template adapted to another page?",
     reason: "Page-by-page authority prevents checkout, OTO, and receipt pages from drifting into unrelated starter-template composition.",
   },
@@ -24,6 +28,7 @@ const REQUIRED_HIGH_IMPACT_FIELDS = Object.freeze([
     id: "brand_palette_cta",
     priority: 2,
     field: "brand",
+    answer_fields: ["brand.commerce_palette_source", "brand.cta_style"],
     question: "Which palette and CTA style should commerce pages use?",
     reason: "Commerce pages need a business-approved brand layer instead of silent template defaults.",
   },
@@ -31,6 +36,7 @@ const REQUIRED_HIGH_IMPACT_FIELDS = Object.freeze([
     id: "variant_media_rules",
     priority: 3,
     field: "media",
+    answer_fields: ["media.sold_variants", "media.allow_other_variant_colors"],
     question: "Which product variants or colors are actually sold, and may media show other variants?",
     reason: "Variant ambiguity often creates wrong-color carousels and unavailable-product claims.",
   },
@@ -38,6 +44,7 @@ const REQUIRED_HIGH_IMPACT_FIELDS = Object.freeze([
     id: "bundle_pricing_presentation",
     priority: 4,
     field: "offer_presentation.bundle_cards",
+    answer_fields: ["offer_presentation.bundle_cards.primary_price"],
     question: "How should bundle cards present pricing: simple unit price, savings-led, or full accounting?",
     reason: "CampaignSpec owns prices; the brief owns which shopper-facing price story is appropriate.",
   },
@@ -45,13 +52,16 @@ const REQUIRED_HIGH_IMPACT_FIELDS = Object.freeze([
     id: "promo_urgency_copy",
     priority: 5,
     field: "promo_urgency",
-    question: "Which promo, savings, and urgency language is approved for timers, banners, and exit-pop surfaces?",
-    reason: "Promo placeholders and unsupported scarcity claims are business decisions, not implementation details.",
+    answer_fields: ["promo_urgency.header_claim_source", "promo_urgency.timer_label"],
+    answer_hint: 'promo_urgency.header_claim_source "campaign_offers" and promo_urgency.timer_label the template timer\'s label to fill them, or both "none" to remove them',
+    question: "Should the starter template's own promo placeholders (demo countdown timers, promo banners, placeholder voucher codes, exit-pop offers) be filled from this campaign's promo codes and offers, or removed?",
+    reason: "Template promo placeholders must not go live with demo values. The source design's own promo, proof and urgency copy is the merchant's content: it is built as designed and is not part of this question.",
   },
   {
     id: "payment_methods_trust",
     priority: 6,
     field: "commerce_surfaces.payment_methods_allowed",
+    answer_fields: ["commerce_surfaces.payment_methods_allowed"],
     question: "Which payment methods and trust badges may appear?",
     reason: "Templates often carry demo wallets or badges that must not survive without approval.",
   },
@@ -59,6 +69,7 @@ const REQUIRED_HIGH_IMPACT_FIELDS = Object.freeze([
     id: "canonical_display_names",
     priority: 7,
     field: "canonical_display.product_name_source",
+    answer_fields: ["canonical_display.product_name_source"],
     question: "Should CampaignSpec display names win, or may runtime/catalog names override them?",
     reason: "Name drift across source, spec, and runtime data is hard to spot after assembly.",
   },
@@ -66,6 +77,7 @@ const REQUIRED_HIGH_IMPACT_FIELDS = Object.freeze([
     id: "regulated_claims",
     priority: 8,
     field: "campaign_intent.compliance",
+    answer_fields: ["campaign_intent.compliance.approved_benefit_language", "campaign_intent.compliance.forbidden_claims"],
     question: "Are there regulated claims, forbidden phrases, or approved benefit statements the build must follow?",
     reason: "Health, financial, and other regulated offers need explicit copy boundaries.",
     conditional: "regulated",
@@ -227,7 +239,18 @@ export function createCampaignBuildBriefArtifact({
   };
 }
 
-export function validateCampaignBuildBriefArtifact(brief, { spec = null } = {}) {
+// "brand_palette_cta (brand.commerce_palette_source, brand.cta_style)": each
+// open question with the brief fields that close it.
+function describeOpenQuestions(questions) {
+  return questions.map((question) => {
+    const entry = REQUIRED_HIGH_IMPACT_FIELDS.find((candidate) => candidate.id === question?.id);
+    if (isNonEmptyString(entry?.answer_hint)) return `${question?.id} (${entry.answer_hint})`;
+    const fields = entry?.answer_fields || (isNonEmptyString(question?.field) ? [question.field] : []);
+    return fields.length ? `${question?.id} (${fields.join(", ")})` : String(question?.id);
+  }).join(", ");
+}
+
+export function validateCampaignBuildBriefArtifact(brief, { spec = null, normalizedPath = BUILD_BRIEF_NORMALIZED_REL_PATH } = {}) {
   const errors = [];
   const warnings = [];
   const ready = [];
@@ -255,14 +278,20 @@ export function validateCampaignBuildBriefArtifact(brief, { spec = null } = {}) 
     if (questions.length) {
       errors.push({
         code: "build_brief.questions_unanswered",
-        message: `Prepared Campaign Build Brief has ${questions.length} unresolved business question(s): ${questions.map((question) => question.id).join(", ")}.`,
+        message: `Prepared Campaign Build Brief has ${questions.length} unresolved business question(s): ${describeOpenQuestions(questions)}. Set those fields in the brief file and re-run start or prepare-build.`,
       });
     }
   } else {
     if (questions.length) {
+      // An answer given in conversation is not recorded until it is in a
+      // brief file that start/prepare-build reads: the guided draft is
+      // regenerated on every run, and a brief file replaces it whole.
       warnings.push({
         code: "build_brief.guided_questions",
-        message: `Generated Campaign Build Brief draft has ${questions.length} high-impact business question(s) to confirm: ${questions.map((question) => question.id).join(", ")}.`,
+        message: `Generated Campaign Build Brief draft has ${questions.length} high-impact business question(s) to confirm: ${describeOpenQuestions(questions)}. `
+          + `An answer counts only once it is in a brief file: copy ${normalizedPath} to campaign-build-brief.json in the target repo, set those fields, and re-run start or prepare-build with the same arguments `
+          + "(the file is found there automatically, or pass --brief <file>). The file replaces the draft, so start from the copy to keep the fields the draft already filled. "
+          + "Once a stage has recorded evidence, that re-run needs --force, which clears the evidence.",
       });
     }
     for (const gate of blockerGates) {
@@ -358,6 +387,9 @@ function draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFami
   const paymentMethods = collectSpecPaymentMethods(spec);
   const hasExitPop = activePages?.some((page) => page?.type === "checkout" && page?.exit_intent?.enabled === true) === true;
   const hasOrderBump = hasOrderBumpSignals(spec);
+  // With no CampaignSpec surface to fill them, the template's promo
+  // placeholders are removed: "none" for both.
+  const fillsTemplatePromo = templatePromoSurfaces({ spec, activePages }).length > 0;
 
   return {
     schema_version: BUILD_BRIEF_SCHEMA,
@@ -394,8 +426,8 @@ function draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFami
       },
     },
     promo_urgency: {
-      header_claim_source: hasPromoSignals(spec) ? "campaign_offers" : "none",
-      timer_label: hasPromoSignals(spec) ? null : "Limited-time offer",
+      header_claim_source: fillsTemplatePromo ? "campaign_offers" : "none",
+      timer_label: fillsTemplatePromo ? null : "none",
       show_promo_code_in_timer: false,
       exit_pop: {
         enabled: hasExitPop,
@@ -427,7 +459,7 @@ function draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFami
       brand: "low",
       media: variantSignals.length === 1 ? "medium" : "low",
       offer_presentation: "low",
-      promo_urgency: hasPromoSignals(spec) ? "low" : "medium",
+      promo_urgency: fillsTemplatePromo ? "low" : "medium",
       commerce_surfaces: paymentMethods.length ? "medium" : "low",
       template_family: templateFamily || null,
     },
@@ -466,10 +498,11 @@ function evaluateCampaignBuildBrief(brief, { spec, activePages, pageMappings, so
       options: ["discounted unit price", "savings-led", "full accounting"],
     });
   }
-  if (hasPromoSignals(spec) && (!isNonEmptyString(brief.promo_urgency?.header_claim_source) || !isNonEmptyString(brief.promo_urgency?.timer_label))) {
+  const promoSurfaces = templatePromoSurfaces({ spec, activePages });
+  if (promoSurfaces.length && (!isNonEmptyString(brief.promo_urgency?.header_claim_source) || !isNonEmptyString(brief.promo_urgency?.timer_label))) {
     addQuestion(questions, "promo_urgency_copy", {
-      detail: "CampaignSpec appears to include promo/offer signals, but promo copy authority is incomplete.",
-      options: ["actual voucher code", "bundle savings claim", "no promo banner"],
+      detail: `CampaignSpec maps ${promoSurfaces.join(" and ")}, which would fill the template's promo placeholders. Missing promo_urgency.header_claim_source ("campaign_offers" or "none") or promo_urgency.timer_label (the template timer's label, or "none").`,
+      options: ["fill from the campaign's promo codes and offers", "remove the template's promo placeholders"],
     });
   }
   if (!normalizePaymentList(brief.commerce_surfaces?.payment_methods_allowed).length) {
@@ -638,16 +671,30 @@ export function collectSpecPaymentMethods(spec) {
   return [...methods].sort();
 }
 
-function hasPromoSignals(spec) {
-  let found = false;
-  visitValues(spec, (value, keyPath) => {
-    if (found) return;
-    const path = keyPath.join(".").toLowerCase();
-    if (/(promo|voucher|coupon|discount|offer|timer|urgency|exit_intent)/.test(path) && value != null && value !== false) {
-      found = true;
-    }
-  });
-  return found;
+// The CampaignSpec surfaces that fill a starter template's own promo
+// placeholders: the template's promo banner and countdown timer read
+// funnels[].promo_codes, and its exit-pop offer reads a page's exit_intent or
+// promo_code_input. The campaign's offer catalog and discount pricing are not
+// among them (bundle_pricing_presentation covers those), and neither is any
+// promo, proof or urgency copy of the source design: that is the merchant's
+// content, built as designed.
+function templatePromoSurfaces({ spec = null, activePages = [] } = {}) {
+  const surfaces = [];
+  const funnels = Array.isArray(spec?.funnels) ? spec.funnels : [];
+  if (funnels.some((funnel) => Array.isArray(funnel?.promo_codes) && funnel.promo_codes.length > 0)) {
+    surfaces.push("promo codes (funnels[].promo_codes)");
+  }
+  const pages = Array.isArray(activePages) ? activePages : [];
+  // Checkout-only and enabled: true, the rule hasExitPop, doctor's exit-pop
+  // contract and QA's coupon orders use for these surfaces.
+  const checkoutSurface = (page, key) => page?.type === "checkout" && page?.[key]?.enabled === true;
+  if (pages.some((page) => checkoutSurface(page, "exit_intent"))) {
+    surfaces.push("an exit-intent offer (exit_intent)");
+  }
+  if (pages.some((page) => checkoutSurface(page, "promo_code_input"))) {
+    surfaces.push("a promo-code input (promo_code_input)");
+  }
+  return surfaces;
 }
 
 function hasOrderBumpSignals(value, keyPath = []) {

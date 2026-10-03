@@ -2,6 +2,40 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.3] - 2026-10-02
+
+### Changed
+
+- The Campaign Build Brief question `promo_urgency_copy` now asks only about
+  the starter template's own promo placeholders: demo countdown timers, promo
+  banners, placeholder voucher codes and exit-pop offers. It asks whether to
+  fill them from the campaign's promo codes and offers or remove them. It no
+  longer asks which promo, savings and urgency language is approved, which
+  read as a request to approve the source design's own copy; that copy is the
+  merchant's content and is built as designed.
+- The question is asked only when the CampaignSpec maps a surface that fills
+  those placeholders: a `funnels[].promo_codes` roster, or a checkout page's
+  enabled `exit_intent` or `promo_code_input`. It used to be asked for any CampaignSpec
+  key naming an offer, discount, timer or urgency, so the offer catalog,
+  before-discount prices and design slot names all raised it. Without such a
+  surface the guided draft sets `promo_urgency.header_claim_source` and
+  `promo_urgency.timer_label` to `"none"` (the template's promo placeholders
+  are removed). The draft used to set `timer_label` to "Limited-time offer".
+- Doctor's `build_brief.guided_questions` warning names the brief fields that
+  close each open question and says how to record the answers: copy the
+  normalized draft to `campaign-build-brief.json` in the target repo, set the
+  fields, and re-run `start` or `prepare-build`. It also says the re-run needs
+  `--force`, which clears stage evidence, once a stage has recorded evidence.
+  `build_brief.questions_unanswered` names the fields too. An answer given
+  only in conversation was never recorded, so a later session asked again.
+- `next`'s QA prompt compares the template's own promo placeholders and trust
+  badges with the brief and says not to flag the source design's own proof,
+  urgency or guarantee elements. It used to ask for promo/urgency copy and
+  trust/guarantee claims to be compared. The build prompt names the template's
+  promo placeholders where it named promo/urgency language.
+- `docs/campaign-build-brief.md` rewords question 5 and adds "Answering The
+  Questions", with the fields that close each question.
+
 ## [1.50.0+agent.2] - 2026-10-02
 
 ### Changed
