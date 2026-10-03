@@ -5228,6 +5228,27 @@
         }
       ],
       "entry_sha256": "80715cb6b6a421a8929126795d1e38ef88aec3585f15539d162c4908165f06ad"
+    },
+    {
+      "id": "RL-0220",
+      "sequence": 209,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.10",
+      "changelog_sha256": "90c77cdede47c429c4a3e31399bdd81d91a629cab92bc7045bec25059c0c6ecb",
+      "agent_impact": "Strip document wrappers in the converted page-kit page (page_kit.output_path); once it exists, doctor checks that page, not the design. Do not copy built pages over the design source or record preserve_document_wrappers for stripped pages to clear source_html.prep.document_wrapper.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "source_html.prep.document_wrapper reads the converted page-kit page at page_kit.output_path once it exists, and reports a converted page that kept its wrappers under that path."
+        }
+      ],
+      "entry_sha256": "fe186609b5e65b56b35c125bc7477d83cdc84f66cfd0d79071c6f29be8758536"
     }
   ]
 }

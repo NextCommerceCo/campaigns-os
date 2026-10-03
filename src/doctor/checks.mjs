@@ -3330,6 +3330,7 @@ function validateSourcePreparation(packet, packetPath, errors, warnings, ready, 
     sourceRoot,
     pages,
     wrapperPolicy: packet.source_html?.adapter_contract?.wrapper_policy,
+    targetRoot: resolveFromFile(packetPath, packet.assembly?.target_repo),
   });
   derived.source_preparation = {
     checked_page_count: result.checked_page_count,

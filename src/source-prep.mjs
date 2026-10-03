@@ -201,7 +201,7 @@ function describeFinding(code, pages, { wrapperPolicy }) {
     const policyNote = wrapperPolicy === "preserve_document_wrappers"
       ? " The adapter contract records wrapper_policy \"preserve_document_wrappers\", so this is reported without blocking."
       : "";
-    return `Mapped source HTML is a full browser document, not page-kit-ready source: ${listed}${more}. Strip <!doctype>, <html>, <head>, and <body> so the campaign layout can wrap the page, or, for a standalone page meant to stay whole, record wrapper_policy "preserve_document_wrappers" as an explicit adapter decision: re-run start or prepare-build with --wrapper-policy preserve_document_wrappers, or set "wrapper_policy" in the source-html manifest.${policyNote} See ${docs}.`;
+    return `Mapped source HTML (the converted page-kit page once it exists at page_kit.output_path, else the design) is a full browser document, not page-kit-ready source: ${listed}${more}. Strip <!doctype>, <html>, <head>, and <body> so the campaign layout can wrap the page, or, for a standalone page meant to stay whole, record wrapper_policy "preserve_document_wrappers" as an explicit adapter decision: re-run start or prepare-build with --wrapper-policy preserve_document_wrappers, or set "wrapper_policy" in the source-html manifest.${policyNote} See ${docs}.`;
   }
   if (code === SOURCE_PREP_FRONTMATTER_RESIDUE) {
     const listed = sample.map((page) => {
@@ -220,6 +220,20 @@ function describeFinding(code, pages, { wrapperPolicy }) {
   return `Mapped source HTML still links to source files instead of CampaignSpec routes: ${listed}${more}. Replace internal links and CTA destinations with CampaignSpec-derived routes, usually via campaign_link; source filenames like checkout.html are not built campaign URLs. See ${docs}.`;
 }
 
+// The converted page-kit page for a mapped design (page_kit.output_path under
+// the target repo), when it has been written.
+function convertedPageContent(targetRoot, page) {
+  const outputPath = page?.page_kit?.output_path;
+  if (!isNonEmptyString(targetRoot) || !isNonEmptyString(outputPath)) return null;
+  const fullPath = resolve(targetRoot, outputPath);
+  if (!safeIsFile(fullPath)) return null;
+  try {
+    return { path: toPosixPath(outputPath), content: readFileSync(fullPath, "utf8") };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Evaluates the page-kit source-preparation expectations for every mapped
  * source page. Deterministic: same files in, same findings out. Unreadable or
@@ -227,7 +241,7 @@ function describeFinding(code, pages, { wrapperPolicy }) {
  *
  * @returns {{ checked_page_count: number, findings: Array<{code, severity, message, docs, pages}> }}
  */
-export function evaluateSourcePreparation({ sourceRoot, pages = [], wrapperPolicy = null }) {
+export function evaluateSourcePreparation({ sourceRoot, pages = [], wrapperPolicy = null, targetRoot = null }) {
   const mappedPaths = new Set(
     pages
       .map((page) => (isNonEmptyString(page?.path) ? toPosixPath(page.path) : null))
@@ -247,14 +261,24 @@ export function evaluateSourcePreparation({ sourceRoot, pages = [], wrapperPolic
       continue;
     }
     checked += 1;
-    const pageFindings = inspectPageContent({ content, sourceRoot, pagePath: page.path, mappedPaths });
+    let pageFindings = inspectPageContent({ content, sourceRoot, pagePath: page.path, mappedPaths });
+    // Wrappers are stripped when the design is converted into the page-kit
+    // page at page_kit.output_path, the file page-kit builds. Once that page
+    // exists, it is the one checked; the design keeps its wrappers.
+    const converted = convertedPageContent(targetRoot, page);
+    if (converted) {
+      pageFindings = pageFindings.filter((finding) => finding.code !== SOURCE_PREP_DOCUMENT_WRAPPER);
+      const wrappers = collectDocumentWrapperNames(converted.content);
+      if (wrappers.length) pageFindings.push({ code: SOURCE_PREP_DOCUMENT_WRAPPER, wrappers, path: converted.path });
+    }
     for (const finding of pageFindings) {
       if (!byCode.has(finding.code)) byCode.set(finding.code, new Map());
       const pagesForCode = byCode.get(finding.code);
-      if (!pagesForCode.has(page.path)) {
-        pagesForCode.set(page.path, { page_id: page.page_id || null, path: page.path, wrappers: [], hrefs: [], variants: [] });
+      const findingPath = finding.path || page.path;
+      if (!pagesForCode.has(findingPath)) {
+        pagesForCode.set(findingPath, { page_id: page.page_id || null, path: findingPath, wrappers: [], hrefs: [], variants: [] });
       }
-      const entry = pagesForCode.get(page.path);
+      const entry = pagesForCode.get(findingPath);
       if (finding.wrappers) entry.wrappers.push(...finding.wrappers);
       if (finding.hrefs) entry.hrefs.push(...finding.hrefs);
       if (finding.variant) entry.variants.push({ variant: finding.variant, lines: finding.lines || [] });

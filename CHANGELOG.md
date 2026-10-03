@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.10] - 2026-10-03
+
+### Fixed
+
+- The source preparation check `source_html.prep.document_wrapper` reads a
+  page's converted page-kit file once it exists at `page_kit.output_path`, not
+  the design it was converted from. Wrappers are stripped during conversion,
+  and the converted page is what page-kit builds. The check only ever read the
+  mapped design, so a correctly stripped build still failed. To clear it,
+  agents copied built pages over the design source (breaking the Design Source
+  Package hashes) or recorded `preserve_document_wrappers` for pages they had
+  stripped. A converted page that still carries wrappers is reported under its
+  own path. Before conversion the design is checked as before. The frontmatter
+  and source-link checks are unchanged. `docs/source-adapters.md` says so.
+
 ## [1.50.0+agent.9] - 2026-10-03
 
 ### Added
