@@ -69,7 +69,7 @@ if (!available) {
 
 browserTest("an accepted bump resolves its rendered tick, not the toggle's own aria-hidden checkbox, and reads checked", async () => {
   const { toggles } = await bumpEvidence();
-  assert.equal(toggles.length, 13, "all thirteen visible toggles are read");
+  assert.equal(toggles.length, 14, "all fourteen visible toggles are read");
 
   const accepted = toggles.find((toggle) => toggle.packageId === "4");
   assert.equal(accepted.active, true, "the card carries next-in-cart");
@@ -257,6 +257,9 @@ browserTest("a glyph tick painted transparent reads unchecked", async () => {
   assert.equal(declined.markerSignal, "glyph");
   assert.equal(declined.markerReadable, true);
   assert.equal(declined.markerChecked, false, "a transparent tick is not shown");
+  const hsla = toggles.find((toggle) => toggle.packageId === "17");
+  assert.equal(hsla.markerSignal, "glyph");
+  assert.equal(hsla.markerChecked, false, "a zero-alpha hsla() tick is not shown either");
   assert.equal(declined.markerAgrees, true);
   assert.equal(declined.statesAgree, true);
 });

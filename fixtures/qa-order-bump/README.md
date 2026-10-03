@@ -22,6 +22,7 @@ by the card's state class.
 | `aria-hidden-checkbox` | `#bump-opacity-toggled` (package 14, `next-in-cart`) | tick hidden by `opacity: 0` when unchecked, restored when active | `markerSignal` `display_toggled` — fading a tick all the way out hides it exactly as `display: none` does |
 | `aria-hidden-checkbox` | `#bump-transparent-glyph` (package 15) | `✓` glyph in the marker in both states, painted `color: transparent` until the card is in the cart | `markerSignal` `glyph`, `markerChecked` false — the character is there, but it is not drawn |
 | `aria-hidden-checkbox` | `#bump-coloured-glyph` (package 16, `next-in-cart`) | same marker, accepted; the in-cart rule gives the tick a colour | `markerSignal` `glyph`, `markerChecked` true |
+| `aria-hidden-checkbox` | `#bump-hsla-glyph` (package 17) | the declined marker hidden with `hsla(…, 0)` instead of `transparent` | `markerSignal` `glyph`, `markerChecked` false |
 
 Before the fix, the first two resolved the `<input>` as the marker and the
 third resolved the slider, so an accepted bump could never read checked. The
@@ -34,7 +35,7 @@ walk counts a declaration only when it hides the marker outright, so a marker
 dimmed to `opacity: 0.4` is still visible and still unreadable, while a tick
 faded to `opacity: 0` is state-toggled. The rendered read keeps its own, looser
 threshold — a marker faded to half opacity or less is too faint to read a tick
-off — because it is answering a different question. The last two are a glyph
+off — because it is answering a different question. The last three are a glyph
 tick shown and hidden by its colour: the `✓` is in the marker in both states,
 so a glyph reads checked only when its text colour is not transparent.
 

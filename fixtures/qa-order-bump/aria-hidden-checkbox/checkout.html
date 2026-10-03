@@ -109,6 +109,7 @@
      text is there in both states, so its presence is not the state. */
   .ink-check { display: inline-block; width: 20px; height: 20px; border: 1px solid #9b9b9b; color: transparent; }
   .next-in-cart .ink-check { color: #1a7f37; }
+  .hsla-ink { color: hsla(120, 50%, 30%, 0); }
 </style>
 </head>
 <body>
@@ -254,6 +255,15 @@
   <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="16" id="bump-coloured-glyph">
     <span data-next-toggle-check class="ink-check">✓</span>
     <div class="bump__title">Add-on offer M</div>
+  </div>
+</div>
+
+<!-- 14. The same declined marker hidden with a zero-alpha hsla() colour
+     instead of the keyword. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="17" id="bump-hsla-glyph">
+    <span data-next-toggle-check class="ink-check hsla-ink">✓</span>
+    <div class="bump__title">Add-on offer N</div>
   </div>
 </div>
 

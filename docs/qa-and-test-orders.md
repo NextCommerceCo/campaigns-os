@@ -371,9 +371,10 @@ truth. Proven differences emit warn-severity `pricing` assertions named
 `price-claim-mismatch`, `cadence-disclosure-mismatch`, or
 `voucher-not-applied`. Decorative, ambiguous, stale, unresolved, or malformed
 claims remain silent. A page showing a voucher the normalized plan cannot price
-(for example a live voucher on an upsell) leaves that page's price claims
-unresolved, because the shown price can differ from the planned total for the
-voucher alone. The verdict's top-level `commercial` section records
+(no calculated pair for its code, for example a live voucher on an upsell)
+leaves that page's price claims unresolved: the plan's only Exact truth for
+the page is then the list price, which a voucher-priced page is expected to
+differ from. The verdict's top-level `commercial` section records
 coverage, sanitized missing/unmatched/invalid capture evidence, proxy issues,
 and findings; the same findings are serialized deterministically into the flat
 `assertions` array consumed by existing QA tooling. A proven mismatch keeps the

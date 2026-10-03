@@ -287,15 +287,22 @@ export function orderBumpEvidenceScript() {
     };
 
 
-    // Text painted with a zero-alpha colour (`color: transparent`, or an
-    // `rgba(…, 0)`) occupies its box and draws nothing. Computed colours come
-    // back as `rgb()`/`rgba()` or, for other colour spaces, `color(… / a)`.
+    // Text painted with a zero-alpha colour (`color: transparent`, or any
+    // colour function whose alpha is 0) occupies its box and draws nothing.
+    // Computed colours come back as a function: comma form, where a fourth
+    // argument is the alpha (`rgba(0, 0, 0, 0)`, `hsla(…, 0)`), or space form
+    // with the alpha after a slash (`color(srgb 0 0 0 / 0)`).
     const transparentInk = (style) => {
-      const ink = String(style.webkitTextFillColor || style.color || "").trim();
+      const ink = String(style.webkitTextFillColor || style.color || "").trim().toLowerCase();
       if (ink === "transparent") return true;
-      const alpha = ink.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\s*\)$/) || ink.match(/\/\s*([\d.]+%?)\s*\)$/);
-      if (!alpha) return false;
-      const value = alpha[1].endsWith("%") ? Number.parseFloat(alpha[1]) / 100 : Number.parseFloat(alpha[1]);
+      const fn = ink.match(/^[a-z-]+\((.*)\)$/);
+      if (!fn) return false;
+      const args = fn[1];
+      const alpha = args.includes("/")
+        ? args.slice(args.lastIndexOf("/") + 1).trim()
+        : (args.split(",").length === 4 ? args.split(",")[3].trim() : null);
+      if (alpha === null) return false;
+      const value = alpha.endsWith("%") ? Number.parseFloat(alpha) / 100 : Number.parseFloat(alpha);
       return Number.isFinite(value) && value === 0;
     };
 
