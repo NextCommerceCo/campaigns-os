@@ -69,7 +69,7 @@ if (!available) {
 
 browserTest("an accepted bump resolves its rendered tick, not the toggle's own aria-hidden checkbox, and reads checked", async () => {
   const { toggles } = await bumpEvidence();
-  assert.equal(toggles.length, 11, "all eleven visible toggles are read");
+  assert.equal(toggles.length, 14, "all fourteen visible toggles are read");
 
   const accepted = toggles.find((toggle) => toggle.packageId === "4");
   assert.equal(accepted.active, true, "the card carries next-in-cart");
@@ -243,4 +243,33 @@ browserTest("every toggle on the fixture reads aligned, so a bump run can read c
   const { toggles } = await bumpEvidence();
   const misaligned = toggles.filter((toggle) => !toggle.statesAgree);
   assert.deepEqual(misaligned, [], "no toggle reports a false misalignment");
+});
+
+browserTest("a glyph tick painted transparent reads unchecked", async () => {
+  const { toggles } = await bumpEvidence();
+  const declined = toggles.find((toggle) => toggle.packageId === "15");
+
+  assert.equal(declined.active, false);
+  assert.equal(declined.markerFamily, "[data-next-toggle-check]");
+  // The tick character is in the marker in both states; the page shows it by
+  // giving it a colour. Its text alone is not the state, so a transparent
+  // glyph is not a rendered tick.
+  assert.equal(declined.markerSignal, "glyph");
+  assert.equal(declined.markerReadable, true);
+  assert.equal(declined.markerChecked, false, "a transparent tick is not shown");
+  const hsla = toggles.find((toggle) => toggle.packageId === "17");
+  assert.equal(hsla.markerSignal, "glyph");
+  assert.equal(hsla.markerChecked, false, "a zero-alpha hsla() tick is not shown either");
+  assert.equal(declined.markerAgrees, true);
+  assert.equal(declined.statesAgree, true);
+});
+
+browserTest("the same glyph tick with a colour reads checked", async () => {
+  const { toggles } = await bumpEvidence();
+  const accepted = toggles.find((toggle) => toggle.packageId === "16");
+
+  assert.equal(accepted.active, true);
+  assert.equal(accepted.markerSignal, "glyph");
+  assert.equal(accepted.markerChecked, true);
+  assert.equal(accepted.statesAgree, true);
 });

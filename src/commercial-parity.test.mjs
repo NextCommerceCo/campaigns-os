@@ -223,6 +223,40 @@ test("recurrence and voucher claims make coverage incomplete until one Exact tru
   assert.deepEqual(report.findings, []);
 });
 
+test("a voucher the plan cannot price leaves the page's price claims unresolved, not mismatched", () => {
+  // An upsell priced by a live voucher shows the voucher price; the plan only
+  // knows the list price because the voucher has no calculated pair.
+  const capture = {
+    page_id: "upsell",
+    price_claims: [{ binding: "bundle.upsell.price", value: "29.99" }],
+    recurrence_claims: [],
+    vouchers: [{ code: "FIRE" }],
+  };
+  const page = {
+    page_id: "upsell",
+    representative_total: { state: "Exact", value: "39.99" },
+    rows: [],
+    offers: [],
+  };
+  const report = createCommercialParityReport([capture], { pages: [page] });
+
+  assert.deepEqual(report.findings, []);
+  assert.equal(report.compared_price_claims, 0);
+  assert.equal(report.unresolved_price_claims, 1);
+  assert.equal(report.unresolved_voucher_claims, 1);
+  assert.equal(report.coverage_complete, false);
+
+  // A voucher the plan does price still lets the price claim be compared.
+  const priced = createCommercialParityReport([{ ...capture, vouchers: [{ code: "SAVE10" }] }], {
+    pages: [{
+      ...page,
+      offers: [{ code: "SAVE10", calculation_evidence: "calculated_pair", state: "Exact", status: "Applied" }],
+    }],
+  });
+  assert.equal(priced.compared_price_claims, 1);
+  assert.deepEqual(priced.findings.map((finding) => finding.type), ["price-claim-mismatch"]);
+});
+
 test("multiple distinct quantity recurrence truths are unresolved regardless of row order", () => {
   const capture = {
     page_id: "checkout",

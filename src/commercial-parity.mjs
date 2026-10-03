@@ -607,7 +607,12 @@ function partitionCaptures(capturesValue, { countsOnly = false } = {}) {
 
 function priceComparisonClaims(capture, page) {
   const claims = array(capture?.price_claims);
-  if (!exactMoneyFact(page?.representative_total)) {
+  // A voucher on the page that the plan cannot price (no calculated pair for
+  // its code) can move the shown price away from the planned total, so a
+  // difference there says nothing about the page. Its price claims stay
+  // unresolved, which already keeps coverage incomplete, rather than being
+  // reported as mismatches against the list-price total.
+  if (!exactMoneyFact(page?.representative_total) || voucherComparisonClaims(capture, page).unresolved > 0) {
     return { compared: [], unresolved: claims.length };
   }
   const bindings = [...new Set(claims.map((claim) => String(claim.binding)))];

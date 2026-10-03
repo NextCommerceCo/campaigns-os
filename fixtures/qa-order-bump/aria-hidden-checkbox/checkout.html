@@ -104,6 +104,12 @@
   .auto-check { position: relative; display: inline-block; width: 0; height: 0; }
   .auto-check::after { content: "\2713"; opacity: 0; }
   [data-next-toggle-card].next-in-cart .auto-check::after { opacity: 1; }
+  /* A glyph tick that is always in the DOM and hidden by colour: the base rule
+     paints the tick transparent and the in-cart card gives it a colour. The
+     text is there in both states, so its presence is not the state. */
+  .ink-check { display: inline-block; width: 20px; height: 20px; border: 1px solid #9b9b9b; color: transparent; }
+  .next-in-cart .ink-check { color: #1a7f37; }
+  .hsla-ink { color: hsla(120, 50%, 30%, 0); }
 </style>
 </head>
 <body>
@@ -230,6 +236,34 @@
   <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="14" id="bump-opacity-toggled">
     <span data-next-toggle-check class="fade-check"></span>
     <div class="bump__title">Add-on offer K</div>
+  </div>
+</div>
+
+<!-- 12. Declined bump whose glyph tick stays in the DOM and is painted
+     transparent until the card is in the cart. The tick text is present but
+     not visible, so this marker reads unchecked. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="15" id="bump-transparent-glyph">
+    <span data-next-toggle-check class="ink-check">✓</span>
+    <div class="bump__title">Add-on offer L</div>
+  </div>
+</div>
+
+<!-- 13. The same marker on an accepted bump: the in-cart rule gives the tick a
+     colour, so it reads checked. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="16" id="bump-coloured-glyph">
+    <span data-next-toggle-check class="ink-check">✓</span>
+    <div class="bump__title">Add-on offer M</div>
+  </div>
+</div>
+
+<!-- 14. The same declined marker hidden with a zero-alpha hsla() colour
+     instead of the keyword. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="17" id="bump-hsla-glyph">
+    <span data-next-toggle-check class="ink-check hsla-ink">✓</span>
+    <div class="bump__title">Add-on offer N</div>
   </div>
 </div>
 

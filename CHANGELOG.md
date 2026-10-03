@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.18] - 2026-10-03
+
+### Fixed
+
+- Commercial parity no longer warns `price-claim-mismatch` on a page that shows
+  a voucher the normalized plan cannot price. An upsell priced by a live
+  voucher showed the voucher price, and QA compared it with the list-price
+  total. Those price claims now count as unresolved, as the page's voucher
+  claims already did, so coverage reads incomplete instead.
+- `browser-order-bump-state` reads a `✓` glyph marker as checked only when its
+  text is painted. A tick that stays in the marker and is hidden with
+  `color: transparent` read checked before, so a declined bump failed as
+  misaligned.
+
 ## [1.50.0+agent.17] - 2026-10-03
 
 ### Fixed

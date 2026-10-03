@@ -287,6 +287,25 @@ export function orderBumpEvidenceScript() {
     };
 
 
+    // Text painted with a zero-alpha colour (`color: transparent`, or any
+    // colour function whose alpha is 0) occupies its box and draws nothing.
+    // Computed colours come back as a function: comma form, where a fourth
+    // argument is the alpha (`rgba(0, 0, 0, 0)`, `hsla(…, 0)`), or space form
+    // with the alpha after a slash (`color(srgb 0 0 0 / 0)`).
+    const transparentInk = (style) => {
+      const ink = String(style.webkitTextFillColor || style.color || "").trim().toLowerCase();
+      if (ink === "transparent") return true;
+      const fn = ink.match(/^[a-z-]+\((.*)\)$/);
+      if (!fn) return false;
+      const args = fn[1];
+      const alpha = args.includes("/")
+        ? args.slice(args.lastIndexOf("/") + 1).trim()
+        : (args.split(",").length === 4 ? args.split(",")[3].trim() : null);
+      if (alpha === null) return false;
+      const value = alpha.endsWith("%") ? Number.parseFloat(alpha) / 100 : Number.parseFloat(alpha);
+      return Number.isFinite(value) && value === 0;
+    };
+
     // The positive signals, in the order that settles which vocabulary the
     // marker speaks. Returns null when a rendered marker carries none.
     const checkedSignal = (marker) => {
@@ -296,7 +315,9 @@ export function orderBumpEvidenceScript() {
       // rendering — never the box's.
       const tick = pseudoTick(marker);
       if (tick) return { signal: "pseudo", checked: tick.shown };
-      if (/check|\u2713/.test(marker.textContent || "")) return { signal: "glyph", checked: true };
+      // A glyph tick that is always in the DOM can be shown and hidden by its
+      // colour alone, so the text is a tick only when it is painted.
+      if (/check|\u2713/.test(marker.textContent || "")) return { signal: "glyph", checked: !transparentInk(style) };
       if (style.backgroundColor === acceptedFillColor) return { signal: "fill", checked: true };
       if (hiddenByAMatchingRule(marker)) return { signal: "display_toggled", checked: true };
       return null;
