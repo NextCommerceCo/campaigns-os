@@ -6769,7 +6769,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
     const declaredTiers = declaredSelectorTiers(checkoutPage);
     const bumps = declaredOrderBumps(checkoutPage);
     if (bumps.length) {
-      warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares order bump package(s) ${bumps.join(", ")} (is_upsell) — not planned as selector tiers; bump coverage comes from --cart.`);
+      warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares order bump package(s) ${bumps.join(", ")} (is_order_bump or is_upsell) — not planned as selector tiers; bump coverage comes from --cart.`);
     }
     for (const tier of declaredTiers) declaredIdentities.add(selectorTierIdentity(tier));
     for (const ref of bumps) bumpRefs.add(ref);
@@ -6849,7 +6849,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
     const namedBumps = unmatched.filter((identity) => bumpRefs.has(identity.split(":")[0]));
     throw new Error([
       `--select-package ${unmatched.join(",")}: ${unmatched.length === 1 ? "is not a selector tier" : "are not selector tiers"} the CampaignSpec declares${declaredIdentities.size ? ` (declared tiers: ${[...declaredIdentities].join(", ")}` : " (no tiers declared"}${bumpRefs.size ? `; order bump ref(s) excluded from tiers: ${[...bumpRefs].join(", ")}` : ""}).`,
-      ...(namedBumps.length ? [`${namedBumps.join(",")} ${namedBumps.length === 1 ? "is an order bump (is_upsell)" : "are order bumps (is_upsell)"}, an add-on to a selected tier, not a tier; bump coverage comes from --cart.`] : []),
+      ...(namedBumps.length ? [`${namedBumps.join(",")} ${namedBumps.length === 1 ? "is an order bump (is_order_bump or is_upsell)" : "are order bumps (is_order_bump or is_upsell)"}, an add-on to a selected tier, not a tier; bump coverage comes from --cart.`] : []),
       "Name declared tiers only, as ref or ref:qty, or drop --select-package to iterate every tier.",
     ].join(" "));
   }
