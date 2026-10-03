@@ -3,7 +3,7 @@
     {
       "ruleId": "CampaignMetadata",
       "severity": "warning",
-      "message": "No campaign loaded — campaign key required for spec export.",
+      "message": "No campaign loaded — campaign key required for spec export. campaign.payment_env_key is empty: copy it from the campaign retrieve body (docs/build-packet.md, \"Reading package, offer and shipping refs\"). A Campaigns API key in the spec does not fill this field.",
       "path": "/campaign/payment_env_key",
       "data": {
         "missing": "payment_env_key"

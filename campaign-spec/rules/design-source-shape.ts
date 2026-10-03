@@ -68,7 +68,8 @@ export const DesignSourceShape: Rule = {
           violations.push({
             ruleId: 'DesignSourceShape',
             severity: 'warning',
-            message: `"${pageLabel}" — design_source.file_url is missing; expected the design-tool file URL.`,
+            message: `"${pageLabel}" — design_source.file_url is missing; expected the design-tool file URL. ` +
+              `Hand-written or template HTML has no design tool: remove design_source from the page (see docs/entry-points.md).`,
             path: `${basePath}/file_url`,
             data: { pageId: page.id, check: 'file-url-missing' },
           })

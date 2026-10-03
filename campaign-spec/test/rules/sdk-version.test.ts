@@ -59,7 +59,10 @@ describe('SdkVersion rule', () => {
     const violations = SdkVersion.check(normalize(spec))
     expect(violations).toHaveLength(1)
     expect(violations[0].ruleId).toBe('SdkVersion')
-    expect(violations[0].message).toBe('SDK version is required for spec export.')
+    expect(violations[0].message).toBe(
+      'SDK version is required for spec export. Set global_config.sdk_version ' +
+        'to the released Campaign Cart SDK version the pages load, in MAJOR.MINOR.PATCH form.',
+    )
     expect(violations[0].path).toBe('/global_config/sdk_version')
   })
 

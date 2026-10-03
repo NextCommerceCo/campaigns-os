@@ -3091,7 +3091,7 @@ function coverageErrorMessage(page, { figmaGate = false } = {}) {
       return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="ai-generated"${fileUrlHint} — re-run the producing agent so the source HTML and source-html manifest land in the source root, then rerun prepare-build. ${sourceManifestHint(page, figmaGate)} See docs/entry-points.md for the AI-generated entry point contract.`;
     }
     if (!fileUrl) {
-      return `Active CampaignSpec page "${page.id}" has no source mapping. design_source is set but file_url is missing — add file_url to the spec before requesting a build.`;
+      return `Active CampaignSpec page "${page.id}" has no source mapping. design_source is set but file_url is missing — add file_url to the spec before requesting a build, or, for hand-written or template HTML, remove design_source from the page and map it in the source-html manifest. ${sourceManifestHint(page, figmaGate)}`;
     }
     return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="${designSource.type}" at ${fileUrl}; produce the source HTML for this page (or update design_source.type to a recognized producer — see docs/entry-points.md) before rerunning prepare-build. ${sourceManifestHint(page, figmaGate)}`;
   }

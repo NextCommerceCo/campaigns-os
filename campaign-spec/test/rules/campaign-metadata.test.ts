@@ -28,6 +28,10 @@ describe('CampaignMetadata rule', () => {
     const violations = CampaignMetadata.check(normalize(spec))
     expect(violations).toHaveLength(1)
     expect(violations[0].data?.missing).toBe('payment_env_key')
+    // A spec can carry a Campaigns API key and still lack payment_env_key;
+    // the message names the empty field so it does not read as "no key".
+    expect(violations[0].message).toContain('campaign.payment_env_key is empty')
+    expect(violations[0].message).toContain('A Campaigns API key in the spec does not fill this field.')
   })
 
   test('flags only ref_id when payment_env_key is present', () => {

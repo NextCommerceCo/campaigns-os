@@ -92,6 +92,14 @@ describe('DesignSourceShape rule', () => {
     expect(violations[0].data?.check).toBe('file-url-missing')
   })
 
+  test('missing file_url names the hand-written HTML way out', () => {
+    const spec = baseSpec()
+    spec.funnels[0].pages![0].design_source = { type: 'html' }
+    const violations = DesignSourceShape.check(normalize(spec))
+    expect(violations).toHaveLength(1)
+    expect(violations[0].message).toContain('remove design_source from the page')
+  })
+
   test('flags non-URL file_url', () => {
     const spec = baseSpec()
     spec.funnels[0].pages![0].design_source = {

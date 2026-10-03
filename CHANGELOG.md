@@ -2,6 +2,25 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.10] - 2026-10-03
+
+### Fixed
+
+- Three CampaignSpec validation messages that doctor and `start` print now say
+  which field to change:
+  - The missing-`payment_env_key` warning keeps "No campaign loaded — campaign
+    key required for spec export." and adds that `campaign.payment_env_key` is
+    empty, where its value comes from, and that a Campaigns API key in the spec
+    does not fill it. Before, it printed next to doctor's "Campaigns API key
+    available via the packet-local CampaignSpec" line and read as if the key
+    were missing.
+  - The missing SDK version error keeps "SDK version is required for spec
+    export." and names `global_config.sdk_version` and the form it takes.
+  - The missing `design_source.file_url` warning, and doctor's matching
+    no-source-mapping error, say that hand-written or template HTML leaves
+    `design_source` off the page. Before, a plain HTML page with a
+    `design_source` block was told only to add a design-tool URL.
+
 ## [1.50.0+agent.9] - 2026-10-03
 
 ### Added
