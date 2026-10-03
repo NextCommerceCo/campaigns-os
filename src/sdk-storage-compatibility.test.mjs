@@ -295,3 +295,60 @@ test('canonical realpaths accept filesystem case aliases and reject outside sibl
     assert.equal(report.findings.find(f=>f.path==='outside.js').reason,'unsafe-source-path');
   } finally {rmSync(base,{recursive:true,force:true});}
 });
+test('page-kit campaign_asset script srcs resolve to the campaign assets folder', () => {
+  // Page Kit serves {{ 'js/x.js' | campaign_asset }} from src/<slug>/assets/js/x.js,
+  // and a layout's {% for script in scripts %} loop loads each page's frontmatter
+  // scripts the same way (#582). Read as plain relative paths, every such tag was
+  // an in-scope script reported as shared-script-outside-scope.
+  const cwd = mkdtempSync(join(tmpdir(), 'storage-scan-cpk-'));
+  try {
+    const git = args => execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
+    git(['init']);
+    for (const dir of ['campaigns/src/demo/_layouts', 'campaigns/src/demo/assets/js'])
+      mkdirSync(join(cwd, dir), { recursive: true });
+    writeFileSync(join(cwd, 'campaigns/src/demo/_layouts/base.html'), `<script src="{{ 'config.js' | campaign_asset }}"></script>\n<script src='{{- "js/shared.js" | campaign_asset -}}'></script>\n{% for script in scripts %}\n<script defer src="{{ script | campaign_asset }}"></script>\n{% endfor %}`);
+    writeFileSync(join(cwd, 'campaigns/src/demo/checkout.html'), `---\ntitle: Checkout\nscripts:\n  - js/checkout.js\n  - https://cdn.example.test/lib.js\n---\n<main></main>`);
+    writeFileSync(join(cwd, 'campaigns/src/demo/assets/config.js'), `window.nextConfig = {};`);
+    writeFileSync(join(cwd, 'campaigns/src/demo/assets/js/shared.js'), `useOrderStore.getState();`);
+    writeFileSync(join(cwd, 'campaigns/src/demo/assets/js/checkout.js'), `useOrderStore.getState();`);
+    writeFileSync(join(cwd, 'manifest.json'), JSON.stringify(manifest));
+    git(['add', '.']);
+    const scan = options => scanSdkStorageCompatibility({ cwd, targetSdkVersion: '0.4.38', manifestPath: join(cwd, 'manifest.json'), scope: ['campaigns/src/demo'], ...options });
+    let report = scan();
+    assert.deepEqual(report.findings, []);
+    assert.equal(report.status, 'source-compatible');
+
+    // A resolved script left out of the scan is still named, by its real path.
+    report = scan({ exclude: ['campaigns/src/demo/assets/js'] });
+    assert.equal(report.status, 'unknown');
+    assert.deepEqual(report.findings.map(f => [f.path, f.reason, f.detail]), [
+      ['campaigns/src/demo/_layouts/base.html', 'shared-script-outside-scope', 'campaigns/src/demo/assets/js/shared.js'],
+      ['campaigns/src/demo/checkout.html', 'shared-script-outside-scope', 'campaigns/src/demo/assets/js/checkout.js'],
+    ]);
+
+    // Each frontmatter finding sits on the line that declares the entry, even
+    // when the same path appears earlier in the file.
+    writeFileSync(join(cwd, 'campaigns/src/demo/checkout.html'), `---\ntitle: js/checkout.js\nscripts:\n  - js/checkout.js\n---\n<main></main>`);
+    report = scan({ exclude: ['campaigns/src/demo/assets/js'] });
+    assert.deepEqual(report.findings.filter(f => f.path.endsWith('checkout.html')).map(f => f.line), [4]);
+
+    // An entry that leaves the assets folder, a scripts value that is not a
+    // list, and YAML that does not parse each say so.
+    const frontmatterFinding = body => {
+      writeFileSync(join(cwd, 'campaigns/src/demo/checkout.html'), `---\n${body}\n---\n<main></main>`);
+      return scan().findings.filter(f => f.path.endsWith('checkout.html')).map(f => [f.line, f.detail]);
+    };
+    assert.deepEqual(frontmatterFinding('scripts:\n  - ../js/checkout.js'), [[3, '../js/checkout.js resolves outside campaigns/src/demo/assets']]);
+    assert.deepEqual(frontmatterFinding('scripts: js/checkout.js'), [[2, 'Frontmatter scripts is not a list of paths; review the scripts this page loads.']]);
+    assert.match(frontmatterFinding('title: "unclosed\nscripts:\n  - js/checkout.js')[0][1], /^Frontmatter is not valid YAML/);
+    writeFileSync(join(cwd, 'campaigns/src/demo/checkout.html'), `---\nscripts:\n  - js/checkout.js\n---\n<main></main>`);
+
+    // A campaign_asset value the scan cannot resolve stays unknown.
+    writeFileSync(join(cwd, 'campaigns/src/demo/_layouts/base.html'), `<script src="{{ vendor_script | campaign_asset }}"></script>`);
+    report = scan();
+    assert.deepEqual(report.findings.map(f => [f.reason, f.detail]), [['shared-script-outside-scope', '{{ vendor_script | campaign_asset }}']]);
+  }
+  finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
