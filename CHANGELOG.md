@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.50.0+agent.6] - 2026-10-03
+## [1.50.0+agent.7] - 2026-10-03
 
 ### Fixed
 
@@ -17,6 +17,25 @@ Notable supported-surface changes are recorded here.
   out of `--scope`, or excluded, is still reported, under its real path; a
   `campaign_asset` value the scan cannot resolve stays unknown.
   `docs/sdk-storage-compatibility.md` says so.
+
+## [1.50.0+agent.6] - 2026-10-03
+
+### Fixed
+
+- QA no longer passes an upsell decline or accept that does nothing. Some
+  upsell pages show a `data-upsell-proxy="skip"` (or `"add"`) button that
+  forwards its click to the SDK's `data-next-upsell-action` inside the offer.
+  When the offer has no such action, the static `route-link:<page>:decline`
+  (or `:accept`) check used to pass on the decline URL in the page's meta tag,
+  and only browser QA, after placing the order, found the control missing. The
+  static check now fails as a blocker and says the proxy has nothing to
+  forward to. The starter templates' single-offer upsell shipped this way in
+  every family until the templates kept a hidden in-offer skip.
+- Browser QA declines (and accepts) through the control a shopper sees. When
+  the page's `data-next-upsell-action` is hidden and a visible
+  `data-upsell-proxy` button forwards to it, QA clicks the proxy instead of
+  failing with `Element is not visible` on the hidden action. A proxy with no
+  in-offer action is still reported as a missing upsell control.
 
 ## [1.50.0+agent.5] - 2026-10-03
 
