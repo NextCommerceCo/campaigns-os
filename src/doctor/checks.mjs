@@ -105,6 +105,7 @@ import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-k
 // so a fresh install (including the git-ref consumer) always has dist.
 import { normalize as normalizeCampaignSpec, runRules, specOnlyRules } from "../../campaign-spec/dist/index.js";
 import { cmd, asInvocation } from "../install-invocation.mjs";
+import { specHashesMatch, specMaterialHash } from "../spec-identity.mjs";
 import {
   isObject,
   isNonEmptyString,
@@ -725,6 +726,16 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
         addIssue(errors, localIdentity ? "spec.local_identity" : "spec.map_id", "Packet identity does not match the CampaignSpec map_id/local_spec_id.", { kind: localIdentity ? "local_spec" : "saved_map" });
       }
       ready.push("Local CampaignSpec parsed");
+      // QA refuses a local-spec run whose spec no longer has the material hash
+      // prepare-build bound on the Assembly Report; doctor (and next, which
+      // prints doctor's warnings) name it at the first read instead.
+      const boundMaterialHash = buildState.report?.identity?.spec_material_hash;
+      if (packet.spec?.local_spec_id != null && isNonEmptyString(boundMaterialHash)) {
+        const currentMaterialHash = specMaterialHash(spec);
+        if (!specHashesMatch(boundMaterialHash, currentMaterialHash)) {
+          addIssue(warnings, "spec.material_stale", `The CampaignSpec at ${localSpecPath} changed materially since prepare-build bound it (Assembly Report identity.spec_material_hash ${boundMaterialHash}; the spec now hashes to ${currentMaterialHash}). The build and its recorded evidence predate the edit, and QA refuses a stale spec. Re-run ${cmd("prepare-build")} from the edited spec before building on it further.`, { spec_path: localSpecPath, bound_material_hash: boundMaterialHash, current_material_hash: currentMaterialHash });
+        }
+      }
       runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
     } else {
       runDoctorChecks(
@@ -3104,7 +3115,7 @@ function coverageErrorMessage(page, { figmaGate = false } = {}) {
       return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="ai-generated"${fileUrlHint} — re-run the producing agent so the source HTML and source-html manifest land in the source root, then rerun prepare-build. ${sourceManifestHint(page, figmaGate)} See docs/entry-points.md for the AI-generated entry point contract.`;
     }
     if (!fileUrl) {
-      return `Active CampaignSpec page "${page.id}" has no source mapping. design_source is set but file_url is missing — add file_url to the spec before requesting a build.`;
+      return `Active CampaignSpec page "${page.id}" has no source mapping. design_source is set but file_url is missing — add file_url to the spec before requesting a build, or, for hand-written or template HTML, remove design_source from the page and map it in the source-html manifest. ${sourceManifestHint(page, figmaGate)}`;
     }
     return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="${designSource.type}" at ${fileUrl}; produce the source HTML for this page (or update design_source.type to a recognized producer — see docs/entry-points.md) before rerunning prepare-build. ${sourceManifestHint(page, figmaGate)}`;
   }
@@ -3343,6 +3354,7 @@ function validateSourcePreparation(packet, packetPath, errors, warnings, ready, 
     sourceRoot,
     pages,
     wrapperPolicy: packet.source_html?.adapter_contract?.wrapper_policy,
+    targetRoot: resolveFromFile(packetPath, packet.assembly?.target_repo),
   });
   derived.source_preparation = {
     checked_page_count: result.checked_page_count,

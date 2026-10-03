@@ -20,6 +20,9 @@ by the card's state class.
 | `aria-hidden-checkbox` | `#bump-auto-pseudo` (package 12, `next-in-cart`) | unstyled `::after` on a `0 x 0` host; computed width and height are `auto` | `markerSignal` `pseudo`, `markerChecked` true — the content sizes the box |
 | `aria-hidden-checkbox` | `#bump-dimmed-rule` (package 13) | visible persistent marker, declined; a base rule dims it to `opacity: 0.4` and a more specific rule restores full opacity | `markerSignal` `unresolved` — a dimming declaration is a style, not a way of hiding a tick, so nothing says which state it is in |
 | `aria-hidden-checkbox` | `#bump-opacity-toggled` (package 14, `next-in-cart`) | tick hidden by `opacity: 0` when unchecked, restored when active | `markerSignal` `display_toggled` — fading a tick all the way out hides it exactly as `display: none` does |
+| `aria-hidden-checkbox` | `#bump-transparent-glyph` (package 15) | `✓` glyph in the marker in both states, painted `color: transparent` until the card is in the cart | `markerSignal` `glyph`, `markerChecked` false — the character is there, but it is not drawn |
+| `aria-hidden-checkbox` | `#bump-coloured-glyph` (package 16, `next-in-cart`) | same marker, accepted; the in-cart rule gives the tick a colour | `markerSignal` `glyph`, `markerChecked` true |
+| `aria-hidden-checkbox` | `#bump-hsla-glyph` (package 17) | the declined marker hidden with `hsla(…, 0)` instead of `transparent` | `markerSignal` `glyph`, `markerChecked` false |
 
 Before the fix, the first two resolved the `<input>` as the marker and the
 third resolved the slider, so an accepted bump could never read checked. The
@@ -27,12 +30,14 @@ next two are the other direction: a box whose visibility is read as its state
 fails a correctly declined bump, so the two families have to be told apart
 rather than collapsed. The next two pin two ways that family test can be
 fooled — a hiding rule that does not apply on screen, and a host box whose size
-is not the tick's. The last two are the two sides of one threshold: the rule
+is not the tick's. The two after that are the two sides of one threshold: the rule
 walk counts a declaration only when it hides the marker outright, so a marker
 dimmed to `opacity: 0.4` is still visible and still unreadable, while a tick
 faded to `opacity: 0` is state-toggled. The rendered read keeps its own, looser
 threshold — a marker faded to half opacity or less is too faint to read a tick
-off — because it is answering a different question.
+off — because it is answering a different question. The last three are a glyph
+tick shown and hidden by its colour: the `✓` is in the marker in both states,
+so a glyph reads checked only when its text colour is not transparent.
 
 ## Reading the evidence
 

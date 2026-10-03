@@ -46,7 +46,9 @@ npx --no-install campaigns-os next --packet campaign-runtime.build.json
 The packet and report retain `map_id: null` and carry `local_spec_id`. Doctor,
 report writes, polish capture, progress, run closeout and QA compare that local
 identity. Material spec hashes still bind the current revision; a changed ID or
-content cannot reuse earlier proof. After a material revision, follow `next` to
+content cannot reuse earlier proof. After a material revision, doctor and
+`next` warn `spec.material_stale` (the spec no longer has the material hash
+prepare-build bound on the Assembly Report, which QA refuses); follow `next` to
 refresh preparation and affected evidence. Keep the spec, source, dependency
 pins and canonical sidecars in Git. Use `readback` and `next` after a fresh
 checkout; identity survives the move, but proof freshness is assessed again.
@@ -1676,7 +1678,10 @@ hand-editing `.campaign-runtime/` JSON:
 
 Each command also refuses a stage `next` has not reached: while doctor's
 prepare-build gate is set (`next` answers prepare-build) or while an earlier
-stage in the order below is not terminal.
+stage in the order below is not terminal. The exception is the one `next`
+makes: on the local preview, a polish doctor carries forward (never recorded
+for this build) does not hold `record deploy` back, as it does not hold `next`;
+polish stays owed and QA reports it.
 
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it

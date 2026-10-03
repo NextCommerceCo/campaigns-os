@@ -5230,13 +5230,211 @@
       "entry_sha256": "80715cb6b6a421a8929126795d1e38ef88aec3585f15539d162c4908165f06ad"
     },
     {
-      "id": "RL-0225",
+      "id": "RL-0216",
       "sequence": 209,
       "date": "2026-10-03",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.50.0+agent.10",
-      "changelog_sha256": "f3f9d9e48c7f7b487755058be85578d0940442adc39531920ac13cfd20148e82",
+      "changelog_sha256": "0f486e2c02fa7cf57cf606277a02d740a0b6d5767d278728462e846a110db3e8",
+      "agent_impact": "A checkout package marked is_order_bump: true is an order bump everywhere the toolkit tells bumps from tiers: the QA tier planner skips it, next names qa_run_bump for it, and commercial-journey plans its with/without scenarios. Specs that mark bumps with is_upsell: true are unchanged; no spec edit is needed.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "next names qa_run_bump for a checkout bump marked is_order_bump as well as is_upsell, and its description and the QA test-order notes name both flags."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Say that order-bump rows are those marked is_order_bump or is_upsell, for tier planning and for the qa_run_bump command."
+        }
+      ],
+      "entry_sha256": "5646d540954bcbf43556888627b88ba2390e311e8589f093321c3b5350b516b9"
+    },
+    {
+      "id": "RL-0218",
+      "sequence": 210,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.11",
+      "changelog_sha256": "5e70510bf61da0096d4b381caafe2f9e2f6daaffa4895efa073792ded32f1f22",
+      "agent_impact": "When doctor or next warns spec.material_stale, the local CampaignSpec changed materially after prepare-build bound it; QA will refuse the run. Re-run prepare-build from the edited spec before building, polishing or deploying further.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor warns spec.material_stale when a local-spec campaign's CampaignSpec material hash differs from the Assembly Report's identity.spec_material_hash; next prints it with doctor's other warnings."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Say that doctor and next warn spec.material_stale after a material revision of a local spec."
+        }
+      ],
+      "entry_sha256": "69780cf0debe67051b88def9d99f47ce1e5bcfb947218ed6c7917775c431fbcb"
+    },
+    {
+      "id": "RL-0219",
+      "sequence": 211,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.12",
+      "changelog_sha256": "a69c5a144ba7982e45d0d838f32c9c1d106376527715a9785ec26e054339723d",
+      "agent_impact": "On the local preview (local-serve, loopback), record deploy now accepts the deploy stage next names after record build when polish was never recorded for this build; do not hand-write a polish skip to get past it. Polish stays owed and QA reports it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Say that on the local preview a polish doctor carries forward does not hold record deploy back, as it does not hold next."
+        }
+      ],
+      "entry_sha256": "ab294f178bf7e40547ec76b7b62434c0879a16c5e01b7a34ddb4842d2a9f7e6c"
+    },
+    {
+      "id": "RL-0220",
+      "sequence": 212,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.13",
+      "changelog_sha256": "00252143f793272579a0b9a9ba1f663f8e2f7aa7b6a1ec3e385d68cc4f81dc64",
+      "agent_impact": "Strip document wrappers in the converted page-kit page (page_kit.output_path); once it exists, doctor checks that page, not the design. Do not copy built pages over the design source or record preserve_document_wrappers for stripped pages to clear source_html.prep.document_wrapper.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "source_html.prep.document_wrapper reads the converted page-kit page at page_kit.output_path once it exists, and reports a converted page that kept its wrappers under that path."
+        }
+      ],
+      "entry_sha256": "54969c14bbde17632be2f5256ab2af74b23c41e78687817f8a43d7b522b12683"
+    },
+    {
+      "id": "RL-0221",
+      "sequence": 213,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.14",
+      "changelog_sha256": "eaaef3e69436b9ad7239018040281e5b37363135c37bccedf34874ad04981cdc",
+      "agent_impact": "Replace the starter icon-grid placeholders Benefit one through Benefit four on built pages before QA: the placeholder-text residue gate now blocks on them, as it does on Lorem, Placeholder, TODO and Product Name.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "doctor",
+          "summary": "The placeholder-text next-step hint names Benefit one through Benefit four with Lorem, Placeholder, TODO and Product Name."
+        }
+      ],
+      "entry_sha256": "79e0ced726df96635e2d4210266cc691a9c95f8d5aaed12bd13d983093c060f0"
+    },
+    {
+      "id": "RL-0222",
+      "sequence": 214,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.16",
+      "changelog_sha256": "9739f7ffed587ba5d871a04e4eb1a218d94b47d29cefc9c7798abc49877daa5f",
+      "agent_impact": "A failed brand-theme write no longer leaves theme.warnings[].detail null on the Assembly Report, so record setup and record build stop refusing the report for it. Do not hand-edit the report to clear that refusal.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "prepare-build and start copy theme write errors onto the Assembly Report theme.warnings with detail only when it is an object, so the report validates against its schema."
+        }
+      ],
+      "entry_sha256": "7d5cff84f46160230a531540cbfcf272bad32e3c36979d570586650924d9331b"
+    },
+    {
+      "id": "RL-0223",
+      "sequence": 215,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.17",
+      "changelog_sha256": "a6f2d75a367e3724e7fb581e172dd5bc85db545fbf636b3675ac72d9a5ba592f",
+      "agent_impact": "Doctor and start now say which CampaignSpec field each of three validation messages wants: campaign.payment_env_key (a Campaigns API key in the spec does not fill it), global_config.sdk_version, and design_source (left off pages built from hand-written or template HTML). Fix the named field rather than treating the key line and the missing-key warning as a contradiction.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/campaign-metadata.ts",
+          "surface_entry": null,
+          "summary": "The missing payment_env_key warning keeps its first sentence and adds that campaign.payment_env_key is empty, where its value comes from, and that a Campaigns API key does not fill it."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/sdk-version.ts",
+          "surface_entry": null,
+          "summary": "The missing SDK version error keeps its first sentence and names global_config.sdk_version in MAJOR.MINOR.PATCH form."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/design-source-shape.ts",
+          "surface_entry": null,
+          "summary": "The missing design_source.file_url warning says hand-written or template HTML removes design_source from the page, unless design_source.type is figma or ai-generated."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The no-source-mapping error for a design_source without file_url offers removing design_source for hand-written or template HTML and names the source-html manifest."
+        }
+      ],
+      "entry_sha256": "e9b40ee4e4764bd76dd48a0349e8046bb5e9cff2edb24fd5012566c8fbf05a70"
+    },
+    {
+      "id": "RL-0224",
+      "sequence": 216,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.18",
+      "changelog_sha256": "43b3fda70ba8c201c3c092e248b7ef6eea98813539c6527ca06e12e7643ac7e7",
+      "agent_impact": "QA no longer reports price-claim-mismatch on a page showing a voucher the plan cannot price, and browser-order-bump-state reads a transparent glyph tick as unchecked. Do not rework a voucher-priced upsell or a colour-toggled bump tick to clear either warning.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": null,
+          "summary": "Commercial parity leaves a page's price claims unresolved when the page shows a voucher the normalized plan cannot price."
+        }
+      ],
+      "entry_sha256": "a575bd5b8eb85085f3ba083cc827f1752cb456d3df7584ea2772ef589924e54c"
+    },
+    {
+      "id": "RL-0225",
+      "sequence": 217,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.19",
+      "changelog_sha256": "33836079283beb6ac39aed78ed23f5aa4aa4090f7cc424c9c54dd0846837f0bc",
       "agent_impact": "A campaign-identity finding on a built file that no CampaignSpec page builds to now names it as leftover output under stray_files. Remove the source file if there is one, delete the built file, and rebuild and record the build again; do not retag the stray page.",
       "compatibility": "compatible",
       "migration": "none",
@@ -5254,7 +5452,7 @@
           "summary": "The campaign-identity gate section describes stray_files and the repair for a built file no spec page builds to."
         }
       ],
-      "entry_sha256": "e29add15a5b96b097fdc616754838f17f9a5f71636aad17e08de0af94e76e01a"
+      "entry_sha256": "6b11a07c55a232f4a461288288807198ba62708b62f07056a4a76e0efc2e75ca"
     }
   ]
 }

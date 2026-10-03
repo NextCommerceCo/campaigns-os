@@ -337,3 +337,20 @@ test("paymentMethodMarkupMatches reads the SDK attribute, contract class selecto
   });
   assert.deepEqual(paymentMethodStaticScanGaps(null, "klarna"), { compound_selectors: [], shared_assets: [] });
 });
+
+test("the starter's own icon-grid placeholders (Benefit one…four) are residue terms every family inherits", () => {
+  // The olympus checkouts ship "Benefit one" … "Benefit four" under the icon
+  // grid; a campaign that keeps them passed QA with 0 failures.
+  const fixture = readFileSync(new URL("../fixtures/certified-families/_site/olympus/checkout/index.html", import.meta.url), "utf8");
+  const text = fixture.replace(/<[^>]+>/g, " ");
+  const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
+  for (const family of Object.keys(catalog.families)) {
+    const { terms } = placeholderTextResidueConfig(loadTemplateBrandContract(family));
+    assert.deepEqual(
+      summarizePlaceholderTerms(placeholderTextResidueMatches(text, terms)).filter((term) => term.startsWith("Benefit")),
+      ["Benefit one", "Benefit two", "Benefit three", "Benefit four"],
+      family,
+    );
+  }
+  assert.deepEqual(placeholderTextResidueMatches("Benefit once a month from free shipping", ["Benefit one"]), []);
+});

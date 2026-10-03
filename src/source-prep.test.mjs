@@ -252,3 +252,44 @@ test("findings aggregate per code across pages with deterministic order", () => 
     SOURCE_PREP_INTERNAL_LINK_UNROOTED,
   ]);
 });
+
+test("the wrapper check reads a page's converted page-kit file once it exists, not the design it came from", () => {
+  // The design keeps its document wrappers; page-kit builds the converted page
+  // at page_kit.output_path, and that is where the wrappers must be stripped.
+  const target = mkdtempSync(join(tmpdir(), "source-prep-converted-"));
+  try {
+    const page = { page_id: "landing", path: "full-document.html", page_kit: { output_path: "src/demo/landing.html" } };
+    mkdirSync(join(target, "src/demo"), { recursive: true });
+
+    // Before conversion the design is all there is.
+    let result = evaluateSourcePreparation({ sourceRoot: UNPREPARED_ROOT, pages: [page], targetRoot: target });
+    assert.ok(findingsByCode(result).has(SOURCE_PREP_DOCUMENT_WRAPPER));
+
+    // A converted page with the wrappers stripped clears the finding.
+    writeFileSync(join(target, "src/demo/landing.html"), "---\npage_type: product\n---\n<main><h1>Landing</h1></main>\n");
+    result = evaluateSourcePreparation({ sourceRoot: UNPREPARED_ROOT, pages: [page], targetRoot: target });
+    assert.equal(findingsByCode(result).has(SOURCE_PREP_DOCUMENT_WRAPPER), false);
+
+    // A converted page that kept them is still reported, under its own path.
+    writeFileSync(join(target, "src/demo/landing.html"), "<!doctype html><html><head></head><body><main></main></body></html>\n");
+    result = evaluateSourcePreparation({ sourceRoot: UNPREPARED_ROOT, pages: [page], targetRoot: target });
+    const finding = findingsByCode(result).get(SOURCE_PREP_DOCUMENT_WRAPPER);
+    assert.ok(finding);
+    assert.equal(finding.pages.length, 1, "only the converted page is reported, not the design too");
+    assert.equal(finding.pages[0].path, "src/demo/landing.html");
+    assert.match(finding.message, /src\/demo\/landing\.html \(doctype, html, head, body\)/);
+
+    // An output_path outside the target repo is never read: the design is
+    // checked as if nothing had been converted.
+    writeFileSync(join(target, "src/demo/landing.html"), "---\npage_type: product\n---\n<main></main>\n");
+    for (const outside of ["../outside.html", join(target, "src/demo/landing.html")]) {
+      const escaped = { ...page, page_kit: { ...page.page_kit, output_path: outside } };
+      result = evaluateSourcePreparation({ sourceRoot: UNPREPARED_ROOT, pages: [escaped], targetRoot: target });
+      const designFinding = findingsByCode(result).get(SOURCE_PREP_DOCUMENT_WRAPPER);
+      assert.ok(designFinding, `${outside} is not read as the converted page`);
+      assert.equal(designFinding.pages[0].path, page.path, "the finding is on the design file");
+    }
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});

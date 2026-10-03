@@ -28,6 +28,10 @@
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
 
+// design_source.type values with a producer (docs/entry-points.md). A page of
+// one of these types needs its file_url; any other type gets the hand-written
+// HTML way out as well.
+const DESIGN_TOOL_PRODUCERS = new Set(['figma', 'ai-generated'])
 const FIGMA_URL_PATTERN = /^https:\/\/(?:www\.)?figma\.com\//i
 const ANY_URL_PATTERN = /^https?:\/\/\S+/i
 
@@ -51,6 +55,9 @@ export const DesignSourceShape: Rule = {
 
         const basePath = `/funnels/${funnelIdx}/pages/${pageIdx}/design_source`
         const pageLabel = page.label || page.id || '(unnamed page)'
+        // One normalization for every type comparison below, so "Figma" and
+        // " figma " are the same producer everywhere in this rule.
+        const designType = String(design.type ?? '').trim().toLowerCase()
 
         // 1. type
         if (!isNonEmptyString(design.type)) {
@@ -68,7 +75,11 @@ export const DesignSourceShape: Rule = {
           violations.push({
             ruleId: 'DesignSourceShape',
             severity: 'warning',
-            message: `"${pageLabel}" — design_source.file_url is missing; expected the design-tool file URL.`,
+            message:
+              `"${pageLabel}" — design_source.file_url is missing; expected the design-tool file URL.` +
+              (DESIGN_TOOL_PRODUCERS.has(designType)
+                ? ''
+                : ' Hand-written or template HTML has no design tool: remove design_source from the page (see docs/entry-points.md).'),
             path: `${basePath}/file_url`,
             data: { pageId: page.id, check: 'file-url-missing' },
           })
@@ -80,7 +91,7 @@ export const DesignSourceShape: Rule = {
             path: `${basePath}/file_url`,
             data: { pageId: page.id, check: 'file-url-shape', value: design.file_url },
           })
-        } else if (design.type === 'figma' && !FIGMA_URL_PATTERN.test(design.file_url)) {
+        } else if (designType === 'figma' && !FIGMA_URL_PATTERN.test(design.file_url)) {
           // 3. figma-specific: must be a figma.com URL
           violations.push({
             ruleId: 'DesignSourceShape',
@@ -130,7 +141,7 @@ export const DesignSourceShape: Rule = {
               })
               continue
             }
-            if (design.type === 'figma' && !FIGMA_URL_PATTERN.test(value)) {
+            if (designType === 'figma' && !FIGMA_URL_PATTERN.test(value)) {
               violations.push({
                 ruleId: 'DesignSourceShape',
                 severity: 'warning',
