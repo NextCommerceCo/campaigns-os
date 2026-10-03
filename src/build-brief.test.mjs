@@ -309,6 +309,47 @@ test("guided drafts infer order bumps from structured roles only", () => {
   assert.equal(nestedStructuredRole.artifact.commerce_surfaces.order_bump.enabled, true);
 });
 
+test("guided drafts ask promo_urgency_copy only about the template's own promo placeholders", () => {
+  const spec = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+  // The merchant's own commerce data and design-owned urgency slots: an offer
+  // catalog with a bundle discount, and a landing design that carries its own
+  // countdown and stock counter. None of it fills a template promo placeholder.
+  spec.offers = [{ ref_id: 7, name: "Buy 2, save 20%", condition: { type: "count", value: 2 }, benefit: { type: "package_percentage", value: "20.00" } }];
+  const pages = spec.funnels[0].pages;
+  pages.find((page) => page.id === "landing").design_hooks = {
+    component_slots: { urgency_timer: "Sale ends tonight", stock_counter: "Only 3 left" },
+  };
+
+  const ownCopy = createCampaignBuildBriefArtifact({ spec, activePages: pages });
+  assert.equal(ownCopy.questions.some((question) => question.id === "promo_urgency_copy"), false);
+  assert.equal(ownCopy.artifact.promo_urgency.header_claim_source, "none");
+  assert.equal(ownCopy.artifact.promo_urgency.timer_label, "none");
+
+  // exit_intent and promo_code_input are checkout surfaces: on a landing page
+  // they fill no template placeholder, as hasExitPop and doctor already say.
+  const landingOnly = structuredClone(spec);
+  landingOnly.funnels[0].pages.find((page) => page.id === "landing").exit_intent = { enabled: true, offer_ref_id: 7 };
+  landingOnly.funnels[0].pages.find((page) => page.id === "landing").promo_code_input = { enabled: true };
+  const landing = createCampaignBuildBriefArtifact({ spec: landingOnly, activePages: landingOnly.funnels[0].pages });
+  assert.equal(landing.questions.some((question) => question.id === "promo_urgency_copy"), false);
+
+  // A promo-code roster or an exit-intent offer is what fills the template's
+  // promo banner, timer and exit-pop, so the question is about those.
+  for (const mapped of [
+    (draft) => { draft.funnels[0].promo_codes = [{ id: "spring", code: "SPRING10" }]; },
+    (draft) => { draft.funnels[0].pages.find((page) => page.id === "checkout").exit_intent = { enabled: true, offer_ref_id: 7 }; },
+  ]) {
+    const draft = structuredClone(spec);
+    mapped(draft);
+    const result = createCampaignBuildBriefArtifact({ spec: draft, activePages: draft.funnels[0].pages });
+    const question = result.questions.find((entry) => entry.id === "promo_urgency_copy");
+    assert.ok(question, "a CampaignSpec promo surface asks how the template's placeholders resolve");
+    assert.match(question.question, /template's own promo placeholders/);
+    assert.match(question.reason, /source design's own promo, proof and urgency copy is the merchant's content/);
+    assert.deepEqual(question.options, ["fill from the campaign's promo codes and offers", "remove the template's promo placeholders"]);
+  }
+});
+
 test("guided drafts preserve common wallet payment aliases", () => {
   const result = createCampaignBuildBriefArtifact({
     spec: {
@@ -362,6 +403,39 @@ test("prepare-build without a brief writes a guided draft and high-impact questi
     assert.ok(result.context.build_brief.question_count > 0);
     assert.ok(result.context.prompts_required.some((prompt) => prompt.code.startsWith("BUILD_BRIEF_")));
     assert.ok(existsSync(resolve(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH)));
+  });
+});
+
+test("the guided-questions warning says how to record answers, and following it closes the questions", () => {
+  withBriefFixture(({ sourceRoot, targetRepo, specPath }) => {
+    const intake = ["--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus"];
+    const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
+    runCliJson(["prepare-build", ...intake, "--json"]);
+
+    const before = runCliJson(["doctor", "--packet", packetPath, "--json"], { allowFailure: true });
+    const warning = before.warnings.find((issue) => issue.code === "build_brief.guided_questions");
+    assert.ok(warning, "the guided draft leaves questions open");
+    // Each open question names the brief fields that close it, and the
+    // message names the file, the command and the cost once evidence exists.
+    assert.match(warning.message, /brand_palette_cta \(brand\.commerce_palette_source, brand\.cta_style\)/);
+    assert.match(warning.message, /bundle_pricing_presentation \(offer_presentation\.bundle_cards\.primary_price\)/);
+    assert.match(warning.message, new RegExp(`copy ${BUILD_BRIEF_NORMALIZED_REL_PATH.replaceAll(".", "\\.")} to campaign-build-brief\\.json in the target repo`));
+    assert.match(warning.message, /re-run start or prepare-build with the same arguments/);
+    assert.match(warning.message, /--brief <file>/);
+    assert.match(warning.message, /needs --force, which clears the evidence/);
+
+    // Following the message: copy the draft, set the named fields, re-run.
+    const brief = readJson(resolve(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH));
+    brief.brand.cta_style = "solid dark button";
+    brief.offer_presentation.bundle_cards.primary_price = "discounted_unit_price";
+    writeJson(resolve(targetRepo, "campaign-build-brief.json"), brief);
+    const rerun = runCliJson(["prepare-build", ...intake, "--json"]);
+    assert.equal(rerun.packet.build_brief.mode, "prepared");
+    assert.equal(rerun.packet.build_brief.status, "complete");
+
+    const after = runCliJson(["doctor", "--packet", packetPath, "--json"], { allowFailure: true });
+    assert.equal(after.warnings.some((issue) => issue.code === "build_brief.guided_questions"), false);
+    assert.equal(after.errors.some((issue) => String(issue.code).startsWith("build_brief.")), false);
   });
 });
 

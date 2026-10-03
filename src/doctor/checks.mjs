@@ -852,7 +852,7 @@ function validateBuildBrief(packet, packetPath, spec, context, errors, warnings,
   }
 
   const brief = readJson(resolvedPath);
-  const result = validateCampaignBuildBriefArtifact(brief, { spec });
+  const result = validateCampaignBuildBriefArtifact(brief, { spec, normalizedPath });
   for (const issue of result.errors) errors.push(issue);
   for (const issue of result.warnings) warnings.push(issue);
   ready.push(...result.ready);

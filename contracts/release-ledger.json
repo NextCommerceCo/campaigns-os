@@ -4999,7 +4999,40 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.50.0+agent.3",
-      "changelog_sha256": "fecaba936ec53b768ab568c8a38c95d60bc55339ec8532b5ca9b0b5302d55313",
+      "changelog_sha256": "b2a24c76d61c41e2418bb763e25bdc6290e954e786bd2a58a13e615463605229",
+      "agent_impact": "Do not ask the person to approve the source design's own promo, proof or urgency copy: Build Brief question promo_urgency_copy now covers only the starter template's own promo placeholders (demo timers, promo banners, placeholder voucher codes, exit-pop offers) and is asked only when the CampaignSpec maps funnels[].promo_codes, or a checkout page's enabled exit_intent or promo_code_input. To record an answer to any guided question, copy the normalized draft to campaign-build-brief.json in the target repo, set the fields doctor's build_brief.guided_questions warning names, and re-run start or prepare-build; once a stage has recorded evidence that re-run needs --force, which clears it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Reword question 5 to the template's own promo placeholders and the CampaignSpec surfaces that raise it, and add Answering The Questions with the fields that close each question and the re-run that records them."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "The QA prompt compares the template's own promo placeholders and trust badges with the brief and says not to flag the source design's own proof, urgency or guarantee elements; the build prompt names the template's promo placeholders instead of promo/urgency language."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "build_brief.guided_questions names the brief fields that close each open question and how to record them (copy the normalized draft to campaign-build-brief.json, set the fields, re-run start or prepare-build; --force clears stage evidence), and build_brief.questions_unanswered names the fields too."
+        }
+      ],
+      "entry_sha256": "0d60b7a2fa569cca0f1db2084e5691be0fac49b23954b92851cc28d337e6b7c5"
+    },
+    {
+      "id": "RL-0213",
+      "sequence": 205,
+      "date": "2026-10-02",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.4",
+      "changelog_sha256": "57bc8faea8b376e689029a495035237c67c2767aaa072578313935a2a4112200",
       "agent_impact": "At the QA stage of a campaign whose checkout declares an order bump (is_upsell: true rows), run both QA commands next lists: qa_run, then qa_run_bump, the same qa run --browser --test-order common with --cart <base>:1,<bump>:1, whose test orders carry the add-on. A consumer of next --json that keys on action ids should accept qa_run_bump. Progress snapshots record it as qa_run. The bump is read from the checkout QA's test orders run on; when the CampaignSpec does not parse, next warns next.order_bump_spec_unreadable.",
       "compatibility": "additive",
       "migration": "none",
