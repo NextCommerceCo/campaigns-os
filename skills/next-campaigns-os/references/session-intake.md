@@ -141,9 +141,13 @@ hand-edit deployed routing config as the primary promotion path.
 
 ## Test-Order Proof Policy
 
-Treat test orders as cheap, repeatable proof: global test cards bypass the
-gateway and create no transactions, so they need no permission or approval. The
-only real choice is coverage. Record:
+Treat test orders as repeatable proof. `qa run` has no permission flag:
+coverage is its only control. Test orders still land in the store as real
+orders (global test cards: no charge, no transaction) that someone may have to
+cancel. Unless the operator has already said test orders are fine for this
+campaign, ask once, up front in your first turn with your other setup questions,
+so the answer covers the whole build and QA and neither stops for it later.
+Record:
 
 - Coverage: `common` (every actual terminal path when they fit under the flood cap; above it, checkout, first-offer accept/decline, a deduplicated shortest real receipt path, and one decline path per offer or downsell page not yet declined, up to the cap), `off`, `checkout`, `decline`, `accept`, `both`, `full`, or explicit paths such as `decline-decline-accept`.
 - Cart matrix: base cart, base plus bump, specific package refs/quantities.
