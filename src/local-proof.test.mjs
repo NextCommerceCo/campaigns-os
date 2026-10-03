@@ -87,7 +87,9 @@ test("next's build actions under local-serve run page-kit in the development env
   const build = local.find((action) => action.id === "build_local_proof");
   assert.ok(build, JSON.stringify(local));
   assert.equal(build.command, "CPK_ENV=development npx campaign-build --json > .campaign-runtime/page-kit-build-summary.json");
-  assert.match(build.description, /record stages\.assembly\.evidence\.build_environment as "development"/);
+  assert.match(build.description, /record build --packet \/campaigns\/demo\/campaign-runtime\.build\.json --build-environment development, which sets stages\.assembly\.evidence\.build_environment to "development"/);
+  const skill = local.find((action) => action.id === "build_skill");
+  assert.match(skill.description, /record build --packet \/campaigns\/demo\/campaign-runtime\.build\.json --build-environment development\.$/);
   assert.match(build.description, /Never edit a generated include/);
   const parity = local.find((action) => action.id === "build_production_parity");
   assert.ok(parity, JSON.stringify(local));
@@ -101,7 +103,8 @@ test("next build under local-serve hands off the development build command and t
   const result = nextStage("build", { packet: packetPath, "no-write": true });
   assert.equal(result.stage, "build");
   assert.match(result.prompt, /Local proof mode \(deploy\.target is local-serve\): run the page-kit build in the development environment — `CPK_ENV=development npx campaign-build --json > \.campaign-runtime\/page-kit-build-summary\.json`/);
-  assert.match(result.prompt, /record stages\.assembly\.evidence\.build_environment as "development"/);
+  assert.match(result.prompt, /then record build before polish: `campaigns-os record build --packet \S+ --build-environment development`\. It stamps/);
+  assert.match(result.prompt, /record build --packet \S+ --build-environment development`, which sets stages\.assembly\.evidence\.build_environment to "development"/);
   assert.match(result.prompt, /page-kit parity --packet/);
   assert.match(result.prompt, /Never edit a generated include/);
 });

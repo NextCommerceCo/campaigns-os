@@ -44,6 +44,7 @@ import {
   LOCAL_PROOF_BUILD_ENVIRONMENT_SCOPE,
   LOCAL_PROOF_NEVER_EDIT_RULE,
   LOCAL_PROOF_PARITY_COMMAND,
+  LOCAL_PROOF_RECORD_BUILD_COMMAND,
   LOCAL_PROOF_PARITY_FIELD,
   LOCAL_PROOF_PARITY_SCOPE,
   recordedBuildEnvironment,
@@ -1129,7 +1130,7 @@ export function isLocalhostDevelopmentOrigin(value) {
 // Both facts are read from the assembly stage's free-form evidence.
 function validateLocalProof(packet, report, errors, warnings, ready) {
   if (!stageIsTerminal(report?.stages?.assembly?.status)) {
-    ready.push(`Local proof mode: the build stage renders the development environment (${LOCAL_PROOF_BUILD_COMMAND}) and records ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD}; polish capture and QA run against that served output, and ${asInvocation(LOCAL_PROOF_PARITY_COMMAND)} proves the production render before commit.`);
+    ready.push(`Local proof mode: the build stage renders the development environment (${LOCAL_PROOF_BUILD_COMMAND}) and records ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} with ${asInvocation(LOCAL_PROOF_RECORD_BUILD_COMMAND)}; polish capture and QA run against that served output, and ${asInvocation(LOCAL_PROOF_PARITY_COMMAND)} proves the production render before commit.`);
     return;
   }
   const environment = recordedBuildEnvironment(report);
@@ -1137,8 +1138,8 @@ function validateLocalProof(packet, report, errors, warnings, ready) {
     ready.push(`Local proof mode: the built _site/ is recorded as a ${LOCAL_PROOF_BUILD_ENVIRONMENT} render (${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD}); vendor loaders are environment-gated out, SDK dl_* events still fire.`);
   } else {
     addIssue(warnings, LOCAL_PROOF_BUILD_ENVIRONMENT_SCOPE, environment
-      ? `${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} is "${singleLineField(environment)}" under deploy.target local-serve. A production build served over plain HTTP fails polish capture unwaivably on its protocol-relative vendor loaders (//host/...). Rebuild with ${LOCAL_PROOF_BUILD_COMMAND}, record the environment as "${LOCAL_PROOF_BUILD_ENVIRONMENT}", and recapture. ${LOCAL_PROOF_NEVER_EDIT_RULE}`
-      : `${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} is not recorded under deploy.target local-serve. The build stage renders the development environment for local proof (${LOCAL_PROOF_BUILD_COMMAND}) and records it there; without the record doctor cannot tell a development render from a production build that will fail polish capture over plain HTTP. ${LOCAL_PROOF_NEVER_EDIT_RULE}`);
+      ? `${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} is "${singleLineField(environment)}" under deploy.target local-serve. A production build served over plain HTTP fails polish capture unwaivably on its protocol-relative vendor loaders (//host/...). Rebuild with ${LOCAL_PROOF_BUILD_COMMAND}, record it with ${asInvocation(LOCAL_PROOF_RECORD_BUILD_COMMAND)}, and recapture. ${LOCAL_PROOF_NEVER_EDIT_RULE}`
+      : `${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} is not recorded under deploy.target local-serve. The build stage renders the development environment for local proof (${LOCAL_PROOF_BUILD_COMMAND}) and records it with ${asInvocation(LOCAL_PROOF_RECORD_BUILD_COMMAND)}; without the record doctor cannot tell a development render from a production build that will fail polish capture over plain HTTP. ${LOCAL_PROOF_NEVER_EDIT_RULE}`);
   }
   const parity = recordedProductionParity(report);
   const parityCommand = asInvocation(LOCAL_PROOF_PARITY_COMMAND);

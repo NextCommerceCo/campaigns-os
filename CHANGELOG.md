@@ -2,6 +2,33 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.9] - 2026-10-03
+
+### Added
+
+- `record build --build-environment <development|production>` records the
+  page-kit environment the built output was rendered in, on
+  `stages.assembly.evidence.build_environment`. A later `record build` without
+  the flag keeps the recorded value. Before this, local proof mode
+  (`deploy.target: local-serve`) asked the agent to record the field, but no
+  command wrote it, so it was hand-edited into the Assembly Report.
+  - Under local-serve, `next` now names
+    `record build --packet <packet> --build-environment development` in the
+    build action and the build prompt.
+  - Doctor's `local_proof.build_environment` warning, the parity messages and
+    the local-proof rebuild hint name the same command.
+  - `docs/build-packet.md` and `docs/qa-and-test-orders.md` describe it.
+
+### Fixed
+
+- A `record` refused for a value outside a schema enum now lists the values the
+  schema allows and the value it got. For example,
+  `adapter_decisions.wrapper_policy must be equal to one of the allowed values:
+  "strip_document_wrappers", "preserve_document_wrappers", "not_required",
+  "unknown" (got "strip")`; before, it stopped at "allowed values".
+- Doctor's adapter-decision warning for an unknown value lists the allowed
+  values too.
+
 ## [1.50.0+agent.8] - 2026-10-03
 
 ### Changed

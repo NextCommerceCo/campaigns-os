@@ -317,7 +317,7 @@ function validateTemplateSlicePaths(copied, location, targetRepo, warnings, read
 
 function checkEnum(value, allowed, code, warnings, addIssue) {
   if (value == null) return;
-  if (!allowed.has(value)) addIssue(warnings, code, `${code} has unknown value "${value}".`);
+  if (!allowed.has(value)) addIssue(warnings, code, `${code} has unknown value ${JSON.stringify(value)}; allowed values: ${[...allowed].join(", ")}.`);
 }
 
 function isObject(value) {
