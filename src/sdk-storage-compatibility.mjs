@@ -290,7 +290,8 @@ function frontmatterScripts(text) {
     return { error: 'Frontmatter scripts is not a list of paths; review the scripts this page loads.', line: lineCounter.linePos(scripts.range?.[0] ?? 0).line + 1 };
   // linePos is 1-based within the YAML block, which starts on the file's line 2.
   return { scripts: scripts.items.map(item => ({ value: item.value, line: lineCounter.linePos(item.range[0]).line + 1 })) };
-}export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVersion, manifestPath, scope, exclude = [] }) {
+}
+export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVersion, manifestPath, scope, exclude = [] }) {
   version(targetSdkVersion);
   if (!Array.isArray(scope) || !scope.length)
     throw new Error('At least one explicit --scope is required; include shared script directories explicitly.');
