@@ -48,7 +48,7 @@ function runJson(args, cwd) {
 // hints dropped, so a hand-written built page can satisfy doctor), with the
 // prepare-build gate made terminal the way a cleared Design Source Package
 // leaves it. The target has no campaign output directory yet.
-function withLifecycle(run) {
+function withLifecycle(run, { mutateSpec = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-record-"));
   const cleanup = () => rmSync(dir, { recursive: true, force: true });
   let result;
@@ -59,6 +59,7 @@ function withLifecycle(run) {
     cpSync(join(ROOT, "examples/source-html"), source, { recursive: true });
     const spec = readJson(join(ROOT, "examples/campaignspec.v42.basic.json"));
     for (const funnel of spec.funnels || []) for (const page of funnel.pages || []) delete page.sdk_hints;
+    if (mutateSpec) mutateSpec(spec);
     writeJson(specPath, spec);
     writeJson(join(target, "package.json"), { private: true, devDependencies: { "next-campaign-page-kit": "0.2.0" } });
     const prepared = runCli([
@@ -746,5 +747,35 @@ test("a record refused for a value outside a schema enum lists the allowed value
     const result = record(f, "build", ["--dry-run"]);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /adapter_decisions\.wrapper_policy must be equal to one of the allowed values: "strip_document_wrappers", "preserve_document_wrappers", "not_required", "unknown" \(got "strip"\)/);
+  });
+});
+
+test("doctor and next name a CampaignSpec edited materially after prepare-build, as QA would refuse it", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    const codes = (result) => (result.warnings || []).map((issue) => issue.code);
+    assert.ok(f.packet.spec.local_spec_id != null, "a local-spec packet, the kind QA checks");
+    assert.ok(!codes(doctor(f)).includes("spec.material_stale"), "control: the spec prepare-build bound");
+
+    const specPath = join(f.dir, "campaignspec.json");
+    const spec = readJson(specPath);
+    const checkout = spec.funnels.flatMap((funnel) => funnel.pages).find((page) => page.type === "checkout");
+    checkout.packages[0].qty = Number(checkout.packages[0].qty ?? 1) + 1;
+    writeJson(specPath, spec);
+
+    const after = doctor(f);
+    const warning = after.warnings.find((issue) => issue.code === "spec.material_stale");
+    assert.ok(warning, JSON.stringify(codes(after)));
+    assert.match(warning.message, /changed materially since prepare-build bound it/);
+    assert.match(warning.message, /QA refuses/);
+    const { json } = runJson(["next", "--packet", f.packetPath, "--no-write"], f.dir);
+    assert.ok((json.warnings || []).some((issue) => issue.code === "spec.material_stale"), "next shows it before QA does");
+  }, {
+    // A local-spec campaign, the kind QA checks the material hash for.
+    mutateSpec(spec) {
+      spec.spec_identity = { local_spec_id: "record-local-demo", public_route_slug: spec.spec_identity.public_route_slug };
+      delete spec.map_id;
+    },
   });
 });
