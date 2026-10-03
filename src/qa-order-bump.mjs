@@ -287,6 +287,18 @@ export function orderBumpEvidenceScript() {
     };
 
 
+    // Text painted with a zero-alpha colour (`color: transparent`, or an
+    // `rgba(…, 0)`) occupies its box and draws nothing. Computed colours come
+    // back as `rgb()`/`rgba()` or, for other colour spaces, `color(… / a)`.
+    const transparentInk = (style) => {
+      const ink = String(style.webkitTextFillColor || style.color || "").trim();
+      if (ink === "transparent") return true;
+      const alpha = ink.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\s*\)$/) || ink.match(/\/\s*([\d.]+%?)\s*\)$/);
+      if (!alpha) return false;
+      const value = alpha[1].endsWith("%") ? Number.parseFloat(alpha[1]) / 100 : Number.parseFloat(alpha[1]);
+      return Number.isFinite(value) && value === 0;
+    };
+
     // The positive signals, in the order that settles which vocabulary the
     // marker speaks. Returns null when a rendered marker carries none.
     const checkedSignal = (marker) => {
@@ -296,7 +308,9 @@ export function orderBumpEvidenceScript() {
       // rendering — never the box's.
       const tick = pseudoTick(marker);
       if (tick) return { signal: "pseudo", checked: tick.shown };
-      if (/check|\u2713/.test(marker.textContent || "")) return { signal: "glyph", checked: true };
+      // A glyph tick that is always in the DOM can be shown and hidden by its
+      // colour alone, so the text is a tick only when it is painted.
+      if (/check|\u2713/.test(marker.textContent || "")) return { signal: "glyph", checked: !transparentInk(style) };
       if (style.backgroundColor === acceptedFillColor) return { signal: "fill", checked: true };
       if (hiddenByAMatchingRule(marker)) return { signal: "display_toggled", checked: true };
       return null;

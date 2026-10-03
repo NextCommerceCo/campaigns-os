@@ -5228,6 +5228,27 @@
         }
       ],
       "entry_sha256": "80715cb6b6a421a8929126795d1e38ef88aec3585f15539d162c4908165f06ad"
+    },
+    {
+      "id": "RL-0224",
+      "sequence": 209,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.10",
+      "changelog_sha256": "64d04b0074e59db2a1453b403899d3ffa08c4949cf2a905b1ac8a392a0b2e317",
+      "agent_impact": "QA no longer reports price-claim-mismatch on a page showing a voucher the plan cannot price, and browser-order-bump-state reads a transparent glyph tick as unchecked. Do not rework a voucher-priced upsell or a colour-toggled bump tick to clear either warning.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": null,
+          "summary": "Commercial parity leaves a page's price claims unresolved when the page shows a voucher the normalized plan cannot price."
+        }
+      ],
+      "entry_sha256": "d14e37d5a8577608d7d468b7579722eb436e525c04987ec36303ad93c4034929"
     }
   ]
 }
