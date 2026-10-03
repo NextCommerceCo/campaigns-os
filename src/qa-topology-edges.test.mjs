@@ -277,3 +277,28 @@ test("the remediation hint names the forward field this page type can actually u
   assert.deepEqual(select.evidence.applicable_forward_fields, ["next_page"]);
   assert.doesNotMatch(select.evidence.note, /on_accept|Set next_page to the real next step/);
 });
+
+test("an upsell decline that only proxies to a missing in-offer skip fails route-link", async () => {
+  // A closing-card decline (data-upsell-proxy="skip") clicks the real
+  // data-next-upsell-action="skip" inside the offer. With no such action the
+  // click does nothing, yet the decline URL still sits in the page's meta tag,
+  // so the reference match used to pass the shopper's dead end.
+  const byId = topologyFor([
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+  const page = (body) => `<html><head><meta name="next-upsell-decline-url" content="/campaign/receipt/"></head><body>${body}</body></html>`;
+  const offer = '<div data-next-upsell="offer"><a data-next-upsell-action="add" href="#">Yes</a>';
+  const declineFor = async (html) => {
+    const { assertions } = await runPageChecks(byId.upsell, {}, { sourceLoader: stubbedSource(html) });
+    return assertions.find((a) => a.id === "route-link:upsell:decline");
+  };
+
+  const dead = await declineFor(page(`${offer}</div><a data-upsell-proxy="skip" href="#">No thanks</a>`));
+  assert.equal(dead.status, "fail");
+  assert.equal(dead.severity, "blocker");
+  assert.match(dead.actual, /data-upsell-proxy="skip"/);
+
+  const hiddenTarget = await declineFor(page(`${offer}<div style="display:none"><a data-next-upsell-action="skip" href="#">No</a></div></div><a data-upsell-proxy="skip" href="#">No thanks</a>`));
+  assert.equal(hiddenTarget.status, "pass");
+});

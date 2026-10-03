@@ -5219,11 +5219,27 @@ async function clickControl(locator, { timeout, forceFallback = true, perpetual 
   }
 }
 
+// The control a shopper would click. A page may keep the SDK action hidden in
+// the offer and show a data-upsell-proxy button elsewhere that forwards its
+// click to it (the starter templates' closing-card decline on a box-style
+// single offer). Clicking the hidden action fails as not visible, so the
+// visible proxy is clicked instead, but only while there is an SDK action for
+// it to forward to: a proxy alone still reads as a missing control.
+async function shopperUpsellControl(page, action) {
+  const actions = page.locator(`[data-next-upsell-action="${action}"]`);
+  if (!await actions.count().catch(() => 0)) return actions.first();
+  const visibleAction = actions.filter({ visible: true }).first();
+  if (await visibleAction.count().catch(() => 0)) return visibleAction;
+  const proxy = page.locator(`[data-upsell-proxy="${action}"]`).filter({ visible: true }).first();
+  if (await proxy.count().catch(() => 0)) return proxy;
+  return actions.first();
+}
+
 async function clickUpsellPath(page, path, { trace = null } = {}) {
   const offerUrl = safePageUrl(page);
   const action = path === "accept" ? "add" : "skip";
   const selector = `[data-next-upsell-action="${action}"]`;
-  const control = page.locator(selector).first();
+  const control = await shopperUpsellControl(page, action);
   if (!await control.count().catch(() => 0)) {
     return { path, clicked: false, error: `Missing upsell control ${selector}` };
   }

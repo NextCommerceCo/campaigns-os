@@ -2944,6 +2944,23 @@ async function runPageChecks(page, args, {
     ["decline", page.expected_decline_url],
   ]) {
     if (!expectedUrl) continue;
+    const deadProxy = findDeadUpsellProxy(html, kind, page);
+    if (deadProxy) {
+      assertions.push(assertion({
+        id: `route-link:${page.page_id}:${kind}`,
+        family: "funnel-flow",
+        page,
+        status: STATUS.FAIL,
+        severity: SEVERITY.BLOCKER,
+        expected: expectedUrl,
+        actual: deadProxy,
+        evidence: {
+          expected: expectedUrl,
+          note: `The page's ${kind} button only forwards its click to the SDK's data-next-upsell-action inside the offer, and the offer has none, so the shopper's click does nothing. Render the in-offer action (it may be hidden).`,
+        },
+      }));
+      continue;
+    }
     const staticFound = htmlIncludesRouteReference(html, expectedUrl);
     const sdkAction = staticFound ? null : findSdkRouteAction(html, kind, page);
     const found = staticFound || Boolean(sdkAction);
@@ -3927,6 +3944,17 @@ function htmlIncludesRouteReference(html, expectedUrl) {
   if (!expectedUrl) return false;
   const path = stripOrigin(expectedUrl);
   return html.includes(expectedUrl) || html.includes(path);
+}
+
+// A data-upsell-proxy button forwards its click to the SDK action inside the
+// offer. With no such action, the route's URL can still sit in the page's meta
+// tags, so the reference match would pass a control that does nothing.
+function findDeadUpsellProxy(html, kind, page) {
+  if (page.page_type !== "upsell" || kind === "next") return null;
+  const action = kind === "accept" ? "add" : "skip";
+  if (!new RegExp(`\\bdata-upsell-proxy\\s*=\\s*["']${action}["']`, "i").test(html)) return null;
+  if (new RegExp(`\\bdata-next-upsell-action\\s*=\\s*["']${action}["']`, "i").test(html)) return null;
+  return `data-upsell-proxy="${action}" with no data-next-upsell-action="${action}" to forward to`;
 }
 
 function findSdkRouteAction(html, kind, page) {
