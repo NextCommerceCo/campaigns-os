@@ -138,7 +138,7 @@ test("a drifting built page that no CampaignSpec page builds to is named as left
     assert.match(errors[0].message, /assets\/design\/index\.html is not the built page of any CampaignSpec page/);
     assert.match(errors[0].message, /^\.?\/?_site\/example-campaign\/assets\/design\/index\.html is not the built page/, "the stray repair leads");
     assert.match(errors[0].message, /delete the built file, then rebuild/);
-    assert.match(errors[0].message, /The finding it causes: next-funnel differs across pages/);
+    assert.match(errors[0].message, /What it causes: next-funnel differs across pages: .*\.$/);
     assert.deepEqual(errors[0].detail.finding.stray_files.map((file) => file.replace(/^\.\//, "")), [`_site/${SLUG}/assets/design/index.html`]);
 
     // The stray carrying the only funnel tag turns the real pages into
@@ -150,6 +150,8 @@ test("a drifting built page that no CampaignSpec page builds to is named as left
     validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, missing, [], { target_repo: repo, checkpoint_gates: [] }, spec);
     assert.deepEqual(codes(missing), [CAMPAIGN_IDENTITY_KINDS.funnel_missing]);
     assert.match(missing[0].message, /^\.?\/?_site\/example-campaign\/assets\/design\/index\.html is not the built page/);
+    assert.doesNotMatch(missing[0].message, /add the same next-funnel meta/, "the real page is not told to retag");
+    assert.doesNotMatch(errors[0].message, /set the same <meta name="next-funnel"> on both/);
 
     // Without a CampaignSpec the finding is unchanged: nothing says which
     // files are the campaign's pages.
