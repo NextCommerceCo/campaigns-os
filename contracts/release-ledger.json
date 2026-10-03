@@ -5324,6 +5324,27 @@
         }
       ],
       "entry_sha256": "54969c14bbde17632be2f5256ab2af74b23c41e78687817f8a43d7b522b12683"
+    },
+    {
+      "id": "RL-0221",
+      "sequence": 213,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.14",
+      "changelog_sha256": "eaaef3e69436b9ad7239018040281e5b37363135c37bccedf34874ad04981cdc",
+      "agent_impact": "Replace the starter icon-grid placeholders Benefit one through Benefit four on built pages before QA: the placeholder-text residue gate now blocks on them, as it does on Lorem, Placeholder, TODO and Product Name.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "doctor",
+          "summary": "The placeholder-text next-step hint names Benefit one through Benefit four with Lorem, Placeholder, TODO and Product Name."
+        }
+      ],
+      "entry_sha256": "79e0ced726df96635e2d4210266cc691a9c95f8d5aaed12bd13d983093c060f0"
     }
   ]
 }

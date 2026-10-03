@@ -117,7 +117,8 @@ Two residue surfaces keep a build from silently shipping template placeholders:
 
 - **`qa_inspection.placeholder_text_residue`** (declared in
   `shared-commerce`, inherited by every family): literal placeholder copy —
-  `Lorem`, `lorem ipsum`, `Placeholder`, `TODO`, `Product Name` — matched on
+  `Lorem`, `lorem ipsum`, `Placeholder`, `TODO`, `Product Name`, and the
+  starter's own icon-grid placeholders `Benefit one` … `Benefit four` — matched on
   word boundaries, case-insensitive. Doctor warns on the **visible text** of
   built HTML (tags, attribute values, `<script>`/`<style>` bodies and comments
   stripped, `alt` text kept), the same surface the browser gate reads — so an
