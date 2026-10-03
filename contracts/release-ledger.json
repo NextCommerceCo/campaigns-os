@@ -5366,6 +5366,45 @@
         }
       ],
       "entry_sha256": "7d5cff84f46160230a531540cbfcf272bad32e3c36979d570586650924d9331b"
+    },
+    {
+      "id": "RL-0223",
+      "sequence": 215,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.17",
+      "changelog_sha256": "a6f2d75a367e3724e7fb581e172dd5bc85db545fbf636b3675ac72d9a5ba592f",
+      "agent_impact": "Doctor and start now say which CampaignSpec field each of three validation messages wants: campaign.payment_env_key (a Campaigns API key in the spec does not fill it), global_config.sdk_version, and design_source (left off pages built from hand-written or template HTML). Fix the named field rather than treating the key line and the missing-key warning as a contradiction.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/campaign-metadata.ts",
+          "surface_entry": null,
+          "summary": "The missing payment_env_key warning keeps its first sentence and adds that campaign.payment_env_key is empty, where its value comes from, and that a Campaigns API key does not fill it."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/sdk-version.ts",
+          "surface_entry": null,
+          "summary": "The missing SDK version error keeps its first sentence and names global_config.sdk_version in MAJOR.MINOR.PATCH form."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/design-source-shape.ts",
+          "surface_entry": null,
+          "summary": "The missing design_source.file_url warning says hand-written or template HTML removes design_source from the page, unless design_source.type is figma or ai-generated."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The no-source-mapping error for a design_source without file_url offers removing design_source for hand-written or template HTML and names the source-html manifest."
+        }
+      ],
+      "entry_sha256": "e9b40ee4e4764bd76dd48a0349e8046bb5e9cff2edb24fd5012566c8fbf05a70"
     }
   ]
 }

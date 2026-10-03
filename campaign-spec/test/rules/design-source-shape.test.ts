@@ -90,6 +90,28 @@ describe('DesignSourceShape rule', () => {
     const violations = DesignSourceShape.check(normalize(spec))
     expect(violations).toHaveLength(1)
     expect(violations[0].data?.check).toBe('file-url-missing')
+    // A Figma page needs its URL; it is not told to drop design_source.
+    expect(violations[0].message.includes('remove design_source')).toBe(false)
+  })
+
+  test('design_source.type is compared without regard to case or padding', () => {
+    const spec = baseSpec()
+    spec.funnels[0].pages![0].design_source = { type: ' Figma ', file_url: '' }
+    const missing = DesignSourceShape.check(normalize(spec))
+    expect(missing).toHaveLength(1)
+    expect(missing[0].message.includes('remove design_source')).toBe(false)
+
+    spec.funnels[0].pages![0].design_source = { type: 'FIGMA', file_url: 'https://example.com/design' }
+    const notFigma = DesignSourceShape.check(normalize(spec))
+    expect(notFigma.map((v) => v.data?.check)).toEqual(['file-url-not-figma'])
+  })
+
+  test('missing file_url names the hand-written HTML way out', () => {
+    const spec = baseSpec()
+    spec.funnels[0].pages![0].design_source = { type: 'html' }
+    const violations = DesignSourceShape.check(normalize(spec))
+    expect(violations).toHaveLength(1)
+    expect(violations[0].message).toContain('remove design_source from the page')
   })
 
   test('flags non-URL file_url', () => {
