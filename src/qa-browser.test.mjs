@@ -522,7 +522,7 @@ test("selector tiers exclude is_upsell order-bump rows: 3 tiers + 1 bump plan 12
     "checkout@tier:1x3", "accept@tier:1x3", "decline@tier:1x3", "accept-decline@tier:1x3",
   ]);
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /declares order bump package\(s\) 2 \(is_upsell\) — not planned as selector tiers/);
+  assert.match(warnings[0], /declares order bump package\(s\) 2 \(is_order_bump or is_upsell\) — not planned as selector tiers/);
 
   // the same spec under the default cap names the real 12-path raise
   assert.throws(
@@ -600,6 +600,30 @@ test("--select-package narrows a tiers run to the listed declared tiers; coupon 
   );
 });
 
+test("a row marked is_order_bump alone is an order bump, not a selector tier", () => {
+  // The schema and the authoring guide mark a checkout add-on with
+  // is_order_bump, and the certified fixtures use it alone.
+  const { testOrderPlans, declaredSelectorTiers } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const checkoutPage = {
+    page_id: "checkout",
+    page_type: "checkout",
+    url: route("checkout/"),
+    expected_next_url: route("receipt/"),
+    packages: [
+      { ref_id: "1", qty: 1 },
+      { ref_id: "1", qty: 2 },
+      { ref_id: "2", qty: 1, is_order_bump: true },
+    ],
+  };
+  assert.deepEqual(declaredSelectorTiers(checkoutPage).map((tier) => `${tier.ref}:${tier.quantity}`), ["1:1", "1:2"]);
+  const warnings = [];
+  const plans = testOrderPlans("tiers", [{ pages: [checkoutPage, { page_id: "receipt", page_type: "thankyou", url: route("receipt/") }] }], {}, { warn: (line) => warnings.push(line) });
+  assert.ok(!plans.some((plan) => plan.select_package === "2"), "the bump ref is never strict-selected as a tier");
+  assert.match(warnings[0], /declares order bump package\(s\) 2 \(is_order_bump or is_upsell\)/);
+});
+
 test("--select-package naming a bump ref or a tier on a URL-less secondary checkout is refused by cause", () => {
   const { testOrderPlans, planId } = __qaBrowserTestHooks;
   const base = "https://campaign.example/";
@@ -618,7 +642,7 @@ test("--select-package naming a bump ref or a tier on a URL-less secondary check
   // it is a bump, lists it beside the tiers, and points at --cart
   assert.throws(
     () => testOrderPlans("tiers", topo, { "select-package": "2" }, quiet),
-    /--select-package 2: is not a selector tier the CampaignSpec declares \(declared tiers: 1, 1:2, 8; order bump ref\(s\) excluded from tiers: 2\)\. 2 is an order bump \(is_upsell\), an add-on to a selected tier, not a tier; bump coverage comes from --cart\./,
+    /--select-package 2: is not a selector tier the CampaignSpec declares \(declared tiers: 1, 1:2, 8; order bump ref\(s\) excluded from tiers: 2\)\. 2 is an order bump \(is_order_bump or is_upsell\), an add-on to a selected tier, not a tier; bump coverage comes from --cart\./,
   );
   // an unknown ref on a spec with bumps still lists the bumps, but is not called one
   let message = null;

@@ -5230,13 +5230,40 @@
       "entry_sha256": "80715cb6b6a421a8929126795d1e38ef88aec3585f15539d162c4908165f06ad"
     },
     {
-      "id": "RL-0218",
+      "id": "RL-0216",
       "sequence": 209,
       "date": "2026-10-03",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.50.0+agent.10",
-      "changelog_sha256": "04fd900f69a668b4697374b3413cbcfe4c3506c1943b150cbc99513930cb0514",
+      "changelog_sha256": "0f486e2c02fa7cf57cf606277a02d740a0b6d5767d278728462e846a110db3e8",
+      "agent_impact": "A checkout package marked is_order_bump: true is an order bump everywhere the toolkit tells bumps from tiers: the QA tier planner skips it, next names qa_run_bump for it, and commercial-journey plans its with/without scenarios. Specs that mark bumps with is_upsell: true are unchanged; no spec edit is needed.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "next names qa_run_bump for a checkout bump marked is_order_bump as well as is_upsell, and its description and the QA test-order notes name both flags."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Say that order-bump rows are those marked is_order_bump or is_upsell, for tier planning and for the qa_run_bump command."
+        }
+      ],
+      "entry_sha256": "5646d540954bcbf43556888627b88ba2390e311e8589f093321c3b5350b516b9"
+    },
+    {
+      "id": "RL-0218",
+      "sequence": 210,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.11",
+      "changelog_sha256": "5e70510bf61da0096d4b381caafe2f9e2f6daaffa4895efa073792ded32f1f22",
       "agent_impact": "When doctor or next warns spec.material_stale, the local CampaignSpec changed materially after prepare-build bound it; QA will refuse the run. Re-run prepare-build from the edited spec before building, polishing or deploying further.",
       "compatibility": "additive",
       "migration": "none",
@@ -5254,7 +5281,7 @@
           "summary": "Say that doctor and next warn spec.material_stale after a material revision of a local spec."
         }
       ],
-      "entry_sha256": "c21e967bd200c251b1ad1e58383b836154c3e1cf721ce45aaf8ecf05c0388dd4"
+      "entry_sha256": "69780cf0debe67051b88def9d99f47ce1e5bcfb947218ed6c7917775c431fbcb"
     }
   ]
 }
