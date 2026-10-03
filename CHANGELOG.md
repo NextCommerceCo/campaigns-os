@@ -2,6 +2,22 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.10] - 2026-10-03
+
+### Fixed
+
+- `record deploy` follows `next` past a polish carried forward on the local
+  preview. On a `local-serve` packet with a loopback preview, `next`'s stage
+  picker skips a polish that was never recorded for this build (the
+  local-preview policy carries it forward as a warning), so after
+  `record build` it answers deploy. `record deploy` checked every earlier
+  stage strictly and refused with "stages.polish.status is "required", so next
+  answers polish", which contradicted `next`. Sessions hand-wrote a polish skip
+  record to get past it. Both now read the same rule, from doctor's
+  `polish_gate`. Polish stays owed on the report and QA still reports it.
+  `record polish` and the waiver commands keep the strict gates.
+  `docs/build-packet.md` names the exception.
+
 ## [1.50.0+agent.9] - 2026-10-03
 
 ### Added

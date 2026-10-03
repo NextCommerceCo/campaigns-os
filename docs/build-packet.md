@@ -1669,7 +1669,10 @@ hand-editing `.campaign-runtime/` JSON:
 
 Each command also refuses a stage `next` has not reached: while doctor's
 prepare-build gate is set (`next` answers prepare-build) or while an earlier
-stage in the order below is not terminal.
+stage in the order below is not terminal. The exception is the one `next`
+makes: on the local preview, a polish doctor carries forward (never recorded
+for this build) does not hold `record deploy` back, as it does not hold `next`;
+polish stays owed and QA reports it.
 
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it

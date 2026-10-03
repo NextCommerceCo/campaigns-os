@@ -5228,6 +5228,27 @@
         }
       ],
       "entry_sha256": "80715cb6b6a421a8929126795d1e38ef88aec3585f15539d162c4908165f06ad"
+    },
+    {
+      "id": "RL-0219",
+      "sequence": 209,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.10",
+      "changelog_sha256": "239f12905ebbb9c44dd3a0b0cbfa34b90ba3364a04e04d2ce33ee542f34cc9b2",
+      "agent_impact": "On the local preview (local-serve, loopback), record deploy now accepts the deploy stage next names after record build when polish was never recorded for this build; do not hand-write a polish skip to get past it. Polish stays owed and QA reports it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Say that on the local preview a polish doctor carries forward does not hold record deploy back, as it does not hold next."
+        }
+      ],
+      "entry_sha256": "933a3b06469008b4ba53aaf13aa85256013a8267d7d6d4250d61262724971e37"
     }
   ]
 }

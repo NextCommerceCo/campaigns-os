@@ -748,3 +748,30 @@ test("a record refused for a value outside a schema enum lists the allowed value
     assert.match(result.stderr, /adapter_decisions\.wrapper_policy must be equal to one of the allowed values: "strip_document_wrappers", "preserve_document_wrappers", "not_required", "unknown" \(got "strip"\)/);
   });
 });
+
+test("on the local preview, record deploy follows next past a polish it carries forward", async () => {
+  // next skips a missing polish on the local preview (local-preview-policy:
+  // carried forward as a warning), so after record build it answers deploy.
+  // record deploy's ladder must read the same rule, or it refuses the stage
+  // next just named.
+  await withLifecycle(async (f) => {
+    const packet = readJson(f.packetPath);
+    packet.deploy = { ...packet.deploy, target: "local-serve" };
+    writeJson(f.packetPath, packet);
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
+    assert.equal(doctor(f).derived.polish_gate.status, "carried_forward");
+    assert.equal(nextStage(f).stage, "deploy", "next carries the missing polish forward");
+    const site = await serveSite(f);
+    try {
+      const result = await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
+      assert.equal(readJson(f.reportPath).stages.deploy.status, "completed", JSON.stringify(result));
+      assert.equal(readJson(f.reportPath).stages.polish.status, "required", "polish stays owed; nothing recorded it");
+    } finally {
+      await site.close();
+    }
+  });
+});
