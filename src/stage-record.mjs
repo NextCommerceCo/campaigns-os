@@ -29,7 +29,7 @@ import { BRAND_LAYER_FILENAMES } from "./brand-theme.mjs";
 import { computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { isObject, optionalString, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
-import { isLocalServePacket } from "./local-proof.mjs";
+import { LOCAL_PROOF_BUILD_ENVIRONMENT, LOCAL_PROOF_PRODUCTION_ENVIRONMENT, isLocalServePacket } from "./local-proof.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 import { campaignRouteRoot } from "./route-identity.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
@@ -56,6 +56,11 @@ export const RECORD_STAGES = Object.freeze(["setup", "build", "polish", "theme",
 const RECORD_FLAGS = Object.freeze(["packet", "context", "report", "dry-run", "json", "run-id", "lifecycle-journal"]);
 const POLISH_RECORD_FLAGS = Object.freeze(["evidence"]);
 const DEPLOY_RECORD_FLAGS = Object.freeze(["base-url"]);
+const BUILD_RECORD_FLAGS = Object.freeze(["build-environment"]);
+// The page-kit environment the built output was rendered in, recorded on
+// stages.assembly.evidence.build_environment (local proof mode builds in
+// development; doctor and page-kit parity read it).
+export const BUILD_ENVIRONMENTS = Object.freeze([LOCAL_PROOF_BUILD_ENVIRONMENT, LOCAL_PROOF_PRODUCTION_ENVIRONMENT]);
 
 // The keys a --evidence file may carry. `evidence` is stages.polish.evidence;
 // `repair_loop_defect` is report.theme.repair_loop_defect; `blockers` (status
@@ -74,6 +79,13 @@ function schemaValidator(file) {
   return validators.get(file);
 }
 
+// The value at an Ajv instancePath (JSON Pointer) in the validated document.
+function valueAt(document, pointer) {
+  return pointer.split("/").slice(1)
+    .map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~"))
+    .reduce((node, key) => (node == null ? undefined : node[key]), document);
+}
+
 // Ajv's instancePath (`/theme/repair_loop_defect`) as the dotted field name
 // the rest of the toolkit prints (`theme.repair_loop_defect`).
 function schemaProblems(file, value, label) {
@@ -83,7 +95,11 @@ function schemaProblems(file, value, label) {
   const problems = [];
   for (const error of validate.errors || []) {
     const field = error.instancePath.split("/").filter(Boolean).join(".") || "(root)";
-    const line = `${label} ${field} ${error.message}`;
+    // Ajv's enum message names no values; the allowed list is the remedy.
+    const allowed = error.keyword === "enum" && Array.isArray(error.params?.allowedValues)
+      ? `: ${error.params.allowedValues.map((allowedValue) => JSON.stringify(allowedValue)).join(", ")} (got ${JSON.stringify(valueAt(value, error.instancePath))})`
+      : "";
+    const line = `${label} ${field} ${error.message}${allowed}`;
     if (seen.has(line)) continue;
     seen.add(line);
     problems.push(line);
@@ -103,9 +119,9 @@ function refuseRecord(stage, problems) {
 export function parseRecordArgs(args) {
   const stage = args._[1];
   if (!RECORD_STAGES.includes(stage) || args._.length !== 2) {
-    throw refused(`Use: ${cmd("record")} <${RECORD_STAGES.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, and record deploy --base-url <served url>.`);
+    throw refused(`Use: ${cmd("record")} <${RECORD_STAGES.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, record deploy --base-url <served url>, and record build [--build-environment <${BUILD_ENVIRONMENTS.join("|")}>].`);
   }
-  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : [])]);
+  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : []), ...(stage === "build" ? BUILD_RECORD_FLAGS : [])]);
   const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
   if (unknown.length) {
     throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for record ${stage}: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${[...known].map((key) => `--${key}`).join(", ")}.`);
@@ -117,12 +133,17 @@ export function parseRecordArgs(args) {
     throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
   }
   if (Object.hasOwn(args, "json") && args.json !== true) throw refused("--json is a boolean flag and takes no value.");
+  const buildEnvironment = Object.hasOwn(args, "build-environment") ? args["build-environment"] : null;
+  if (buildEnvironment !== null && !BUILD_ENVIRONMENTS.includes(buildEnvironment)) {
+    throw refused(`--build-environment must be one of: ${BUILD_ENVIRONMENTS.join(", ")} (got ${JSON.stringify(buildEnvironment)}).`);
+  }
   return {
     stage,
     packetPath: resolve(requireArg(args, "packet")),
     evidencePath: stage === "polish" ? resolve(requireArg(args, "evidence")) : null,
     baseUrl: stage === "deploy" ? requireArg(args, "base-url") : null,
     dryRun: args["dry-run"] === true,
+    buildEnvironment,
   };
 }
 
@@ -235,10 +256,12 @@ function composeSetup(report, context, { now, recordedBy }) {
   return { report: nextReport, context: nextContext };
 }
 
-function composeBuild(report, { now, recordedBy, fingerprint }) {
+function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment = null }) {
   const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
+  const previousAssembly = stageObject(report, "assembly");
   const assembly = {
-    ...withoutKeys(stageObject(report, "assembly"), ["source_package_material_fingerprint"]),
+    ...withoutKeys(previousAssembly, ["source_package_material_fingerprint"]),
+    ...(buildEnvironment ? { evidence: { ...(isObject(previousAssembly.evidence) ? previousAssembly.evidence : {}), build_environment: buildEnvironment } } : {}),
     stage: "assembly",
     status: "completed",
     build_fingerprint: fingerprint,
@@ -697,7 +720,7 @@ function readPacketFile(stage, packetPath) {
  * composed or written.
  */
 export function recordStageCommand(args, { now = () => new Date(), beforeLock = null, afterDoctorRead = null, probe = null } = {}) {
-  const { stage, packetPath, evidencePath, dryRun } = parseRecordArgs(args);
+  const { stage, packetPath, evidencePath, dryRun, buildEnvironment } = parseRecordArgs(args);
   if (!existsSync(packetPath)) throw new Error(`record ${stage}: Build Packet not found at ${packetPath}; run ${cmd("start")} or ${cmd("prepare-build")} first.`);
   if (stage === "deploy" && !probe) throw new Error("record deploy needs the served-route probe; run it through recordCommand.");
   // Operator input, not target state: no campaigns-os writer produces it.
@@ -718,7 +741,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   // A dry run writes nothing, so it takes no lock and creates no lock files
   // (the commitAssemblyReport preview convention); it reads in the same order.
   const run = () => recordUnderLock({
-    stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead,
+    stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment,
   });
   const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
   const { composed, facts, layer, reportPath, contextPath, after } = recorded;
@@ -735,6 +758,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   ] : [
     `stages.${stageKey}.status = ${composed.report.stages[stageKey].status}`,
     ...(facts.fingerprint ? [`build output fingerprint ${facts.fingerprint} (doctor derived.build_output_fingerprint.value)`] : []),
+    ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
     ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
   ];
@@ -767,7 +791,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
 // re-check, and the post-write doctor read for `next_stage`. No campaigns-os
 // writer can rebind, rewrite or republish any of them between the read and
 // the write.
-function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead }) {
+function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment = null }) {
   // The same workspace `next` resolves, so the record lands in the report
   // `next` reads now, not the one it read before the lock was free.
   const workspace = resolveCampaignWorkspace(packetPath, { ...sidecars, followContextPointer: true });
@@ -802,7 +826,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
-        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint })
+        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, buildEnvironment })
         : stage === "theme"
           ? composeTheme(report, { now: timestamp, recordedBy, layer })
           : stage === "deploy"
