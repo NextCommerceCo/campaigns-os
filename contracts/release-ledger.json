@@ -5228,6 +5228,27 @@
         }
       ],
       "entry_sha256": "80715cb6b6a421a8929126795d1e38ef88aec3585f15539d162c4908165f06ad"
+    },
+    {
+      "id": "RL-0222",
+      "sequence": 209,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.10",
+      "changelog_sha256": "ca0c5e81f943580dac50205ee4019da74088d97a4e323cf46a002a01017d15a5",
+      "agent_impact": "A failed brand-theme write no longer leaves theme.warnings[].detail null on the Assembly Report, so record setup and record build stop refusing the report for it. Do not hand-edit the report to clear that refusal.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "prepare-build and start copy theme write errors onto the Assembly Report theme.warnings with detail only when it is an object, so the report validates against its schema."
+        }
+      ],
+      "entry_sha256": "5cb6c295c8b39fcf9166b233e1729eafe37024be475f120c674f7a24a87c4914"
     }
   ]
 }

@@ -993,3 +993,26 @@ test("prepare-build records inspect-only theme context and report without writin
     assert.equal(result.report.theme.status, "needs_review");
   });
 });
+
+test("a theme write error copied onto the Assembly Report validates against themeIssue, with or without detail", async () => {
+  // prepare-build copied each theme write error as { code, message, detail:
+  // error.detail || null }; themeIssue.detail is an object, so a not_ready or
+  // empty error made the report fail its own schema and record setup/build
+  // refused it ("theme.warnings.0.detail must be object").
+  const { themeIssueForReport } = await import("./brand-theme.mjs");
+  const { default: Ajv2020 } = await import("ajv/dist/2020.js");
+  const { readFileSync } = await import("node:fs");
+  const schema = JSON.parse(readFileSync(new URL("../schemas/campaign-runtime-assembly-report.v0.schema.json", import.meta.url), "utf8"));
+  const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: false });
+  ajv.addSchema(schema, "report");
+  const validIssue = ajv.compile({ $ref: "report#/$defs/themeIssue" });
+
+  const bare = themeIssueForReport({ code: "theme.generate.not_ready", message: "not ready", detail: null });
+  assert.deepEqual(bare, { code: "theme.generate.not_ready", message: "not ready" });
+  assert.ok(validIssue(bare), JSON.stringify(validIssue.errors));
+  const withDetail = themeIssueForReport({ code: "theme.generate.exists", message: "exists", detail: { safe_commands: ["x"] } });
+  assert.deepEqual(withDetail.detail, { safe_commands: ["x"] });
+  assert.ok(validIssue(withDetail), JSON.stringify(validIssue.errors));
+  // The shape prepare-build used to write is the one the schema rejects.
+  assert.equal(validIssue({ code: "theme.generate.not_ready", message: "not ready", detail: null }), false);
+});

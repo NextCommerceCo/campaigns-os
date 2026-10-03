@@ -120,6 +120,7 @@ import { crawlSourceAssetPaths } from "./source-asset-crawl.mjs";
 import {
   THEME_POLICIES,
   inspectBrandTheme,
+  themeIssueForReport,
   writeThemeArtifacts,
 } from "./brand-theme.mjs";
 import {
@@ -2023,7 +2024,7 @@ function prepareBuildUnderLock({
   if (!writtenTheme.ok && Array.isArray(writtenTheme.errors) && writtenTheme.errors.length > 0) {
     context.theme.warnings = [
       ...(context.theme.warnings || []),
-      ...writtenTheme.errors.map((error) => ({ code: error.code, message: error.message, detail: error.detail || null })),
+      ...writtenTheme.errors.map(themeIssueForReport),
     ];
   }
 

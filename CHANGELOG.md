@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.10] - 2026-10-03
+
+### Fixed
+
+- `prepare-build` (and `start`) no longer write an Assembly Report that fails
+  its own schema. When the brand-theme write failed, each error was copied
+  onto `theme.warnings[]` as `{ code, message, detail: error.detail || null }`.
+  The schema's `themeIssue.detail` is an object, so an error with no detail
+  (`theme.generate.not_ready`, `theme.generate.empty`) left `detail: null`.
+  `record setup` and `record build` then refused the report with
+  "Assembly Report theme.warnings.0.detail must be object". `detail` is now
+  written only when the error carries an object. The schema is unchanged.
+
 ## [1.50.0+agent.9] - 2026-10-03
 
 ### Added
