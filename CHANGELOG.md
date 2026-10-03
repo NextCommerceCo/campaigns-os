@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.50.0+agent.8] - 2026-10-03
+## [1.50.0+agent.9] - 2026-10-03
 
 ### Fixed
 
@@ -23,6 +23,27 @@ Notable supported-surface changes are recorded here.
   `(is_order_bump or is_upsell)`: the tier planner's warning and refusal, the
   `next` bump-command description, the `qa run --help` text and the QA
   test-order notes. `docs/qa-and-test-orders.md` says the same.
+
+## [1.50.0+agent.8] - 2026-10-03
+
+### Changed
+
+- The vendored commerce-surface catalog is re-synced to
+  campaign-cart-starter-templates `02ffc61`, from `37a8d94`. That brings in
+  three starter changes:
+  - the single-offer upsell keeps a hidden in-offer skip, so its closing-card
+    decline works in every family (#205);
+  - `payment-methods.html` takes `method_order` and `default_method` (#202);
+  - fresh SDK 0.4.40 verification evidence (#203).
+
+  The upstream order-bump notes were consolidated, and the vendored copy
+  follows them.
+- `fixtures/certified-families/` is regenerated at the new pin. Every
+  `upsell-single` fixture now carries the in-offer skip, so QA's static
+  `route-link:<page>:decline` check, which fails a proxy decline with no
+  target, passes on all eight families instead of failing on each.
+- The shared commerce payment-chrome `asset_pin` moves to the new pin. The
+  asset bytes are unchanged.
 
 ## [1.50.0+agent.7] - 2026-10-03
 

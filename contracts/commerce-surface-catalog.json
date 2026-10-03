@@ -849,8 +849,8 @@
       },
       "verification": {
         "sdk_version": "0.4.40",
-        "verified_at": "2026-10-01T16:01:10Z",
-        "evidence": "sdk-0.4.40-2026-10-01.2",
+        "verified_at": "2026-10-02T17:37:18Z",
+        "evidence": "sdk-0.4.40-2026-10-02.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -861,7 +861,7 @@
         "id": "template-reference-apollo",
         "family": "apollo",
         "version": "sdk-0.4.38-composable-upsells-2026-09-25",
-        "source_commit": "6c96525b6416872ad0e51918fe6ec82a9673808c",
+        "source_commit": "80f0e30f873b5a13a5232ffd76b20da53480ae57",
         "provenance_url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/README.md",
         "contract_path": "contracts/commerce-surface-catalog.json",
         "standard_viewport_refs": [
@@ -1273,8 +1273,8 @@
       },
       "verification": {
         "sdk_version": "0.4.40",
-        "verified_at": "2026-10-01T16:01:10Z",
-        "evidence": "sdk-0.4.40-2026-10-01.2",
+        "verified_at": "2026-10-02T17:37:18Z",
+        "evidence": "sdk-0.4.40-2026-10-02.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1584,8 +1584,8 @@
       },
       "verification": {
         "sdk_version": "0.4.40",
-        "verified_at": "2026-10-01T16:01:10Z",
-        "evidence": "sdk-0.4.40-2026-10-01.2",
+        "verified_at": "2026-10-02T17:37:18Z",
+        "evidence": "sdk-0.4.40-2026-10-02.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1887,8 +1887,8 @@
       },
       "verification": {
         "sdk_version": "0.4.40",
-        "verified_at": "2026-10-01T16:01:10Z",
-        "evidence": "sdk-0.4.40-2026-10-01.2",
+        "verified_at": "2026-10-02T17:37:18Z",
+        "evidence": "sdk-0.4.40-2026-10-02.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2228,8 +2228,8 @@
       },
       "verification": {
         "sdk_version": "0.4.40",
-        "verified_at": "2026-10-01T16:01:10Z",
-        "evidence": "sdk-0.4.40-2026-10-01.2",
+        "verified_at": "2026-10-02T17:37:18Z",
+        "evidence": "sdk-0.4.40-2026-10-02.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2667,8 +2667,8 @@
       },
       "verification": {
         "sdk_version": "0.4.40",
-        "verified_at": "2026-10-01T16:01:10Z",
-        "evidence": "sdk-0.4.40-2026-10-01.2",
+        "verified_at": "2026-10-02T17:37:18Z",
+        "evidence": "sdk-0.4.40-2026-10-02.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3024,8 +3024,8 @@
       },
       "verification": {
         "sdk_version": "0.4.40",
-        "verified_at": "2026-10-01T16:01:10Z",
-        "evidence": "sdk-0.4.40-2026-10-01.2",
+        "verified_at": "2026-10-02T17:37:18Z",
+        "evidence": "sdk-0.4.40-2026-10-02.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3314,8 +3314,8 @@
       },
       "verification": {
         "sdk_version": "0.4.40",
-        "verified_at": "2026-10-01T16:01:10Z",
-        "evidence": "sdk-0.4.40-2026-10-01.2",
+        "verified_at": "2026-10-02T17:37:18Z",
+        "evidence": "sdk-0.4.40-2026-10-02.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3334,30 +3334,15 @@
           {
             "families": [
               "olympus",
-              "apollo"
-            ],
-            "note": "Single-package check-style bump."
-          },
-          {
-            "families": [
+              "apollo",
+              "demeter",
               "olympus-mv-single-step",
               "apollo-mv-single-step",
-              "olympus-mv-two-step"
-            ],
-            "note": "MV/configurable bump: quantity sync via data-next-product-sync (product_id), so it sums across variant swaps (SDK 0.4.25+). See CLAUDE.md."
-          },
-          {
-            "families": [
+              "olympus-mv-two-step",
               "shop-single-step",
               "shop-three-step"
             ],
-            "note": "Shop bump layout for selector-less checkouts."
-          },
-          {
-            "families": [
-              "demeter"
-            ],
-            "note": "Editorial bump styling."
+            "note": "GENERATED from _shared/checkout/_includes/ (sync:shared, byte-identical by construction, lint:shared-enforced) since the #194 consolidation — edit the _shared source, never a family copy. Superset contract: pricing_mode + legacy show_* bools; package_sync/sync_quantity AND product_sync (product_id match for MV mains, wins when both set); per-family demo values live in page frontmatter (order_bump.check01)."
           }
         ]
       },
@@ -3375,7 +3360,7 @@
               "shop-single-step",
               "shop-three-step"
             ],
-            "note": "Shared unsynced product-card bump with optional PackageToggle line-item property field (SDK 0.4.27+)."
+            "note": "GENERATED from _shared/checkout/_includes/ (sync:shared, byte-identical by construction, lint:shared-enforced) since the #194 consolidation — edit the _shared source, never a family copy. Unsynced product-card bump with optional PackageToggle line-item property field (SDK 0.4.27+)."
           }
         ]
       },
@@ -3384,21 +3369,16 @@
         "lineages": [
           {
             "families": [
-              "demeter"
-            ],
-            "note": "Switch-style bump with demeter styling."
-          },
-          {
-            "families": [
               "olympus",
               "apollo",
+              "demeter",
               "olympus-mv-single-step",
               "apollo-mv-single-step",
               "olympus-mv-two-step",
               "shop-single-step",
               "shop-three-step"
             ],
-            "note": "Shared switch-style bump."
+            "note": "GENERATED from _shared/checkout/_includes/ (sync:shared, byte-identical by construction, lint:shared-enforced) since the #194 consolidation — edit the _shared source, never a family copy. Switch-style bump; intentionally never quantity-synced."
           }
         ]
       },
@@ -3525,5 +3505,5 @@
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
   "_synced_from_ref": "main",
-  "_synced_from_sha": "37a8d945db4c360739ded98348814cfd632da94f"
+  "_synced_from_sha": "02ffc618c1948f8246255e6f4ae8cd470038a1e2"
 }

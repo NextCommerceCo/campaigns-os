@@ -5190,8 +5190,8 @@
       "date": "2026-10-03",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.50.0+agent.8",
-      "changelog_sha256": "5c3591a77faf0542074033cff548c8c1c49400b66481e3e5b5f555cd5caa70c1",
+      "changelog_section": "1.50.0+agent.9",
+      "changelog_sha256": "9c7a58c46fb395fbdde18de695e1d63a7a262f5bd98f906e5fcb24084d0b9fd0",
       "agent_impact": "A checkout package marked is_order_bump: true is an order bump everywhere the toolkit tells bumps from tiers: the QA tier planner skips it, next names qa_run_bump for it, and commercial-journey plans its with/without scenarios. Specs that mark bumps with is_upsell: true are unchanged; no spec edit is needed.",
       "compatibility": "compatible",
       "migration": "none",
@@ -5209,7 +5209,7 @@
           "summary": "Say that order-bump rows are those marked is_order_bump or is_upsell, for tier planning and for the qa_run_bump command."
         }
       ],
-      "entry_sha256": "d8c5b92332010dae447bdd02f94c96a2c2672c45570afce63c4a25956fb0b719"
+      "entry_sha256": "433051c642f8f6f6ada0580d3a77ffa5416651806e03de3a661ef5d220cf4cae"
     }
   ]
 }
