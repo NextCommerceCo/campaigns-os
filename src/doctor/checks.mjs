@@ -733,7 +733,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
       if (packet.spec?.local_spec_id != null && isNonEmptyString(boundMaterialHash)) {
         const currentMaterialHash = specMaterialHash(spec);
         if (!specHashesMatch(boundMaterialHash, currentMaterialHash)) {
-          addIssue(warnings, "spec.material_stale", `The CampaignSpec at ${localSpecPath} changed materially since prepare-build bound it (Assembly Report identity.spec_material_hash ${boundMaterialHash}; the spec now hashes to ${currentMaterialHash}). The build and its recorded evidence predate the edit, and QA refuses a stale spec. Re-run ${cmd("prepare-build")} from the edited spec before building on it further.`);
+          addIssue(warnings, "spec.material_stale", `The CampaignSpec at ${localSpecPath} changed materially since prepare-build bound it (Assembly Report identity.spec_material_hash ${boundMaterialHash}; the spec now hashes to ${currentMaterialHash}). The build and its recorded evidence predate the edit, and QA refuses a stale spec. Re-run ${cmd("prepare-build")} from the edited spec before building on it further.`, { spec_path: localSpecPath, bound_material_hash: boundMaterialHash, current_material_hash: currentMaterialHash });
         }
       }
       runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });

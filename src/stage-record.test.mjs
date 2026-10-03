@@ -761,6 +761,7 @@ test("doctor and next name a CampaignSpec edited materially after prepare-build,
     const specPath = join(f.dir, "campaignspec.json");
     const spec = readJson(specPath);
     const checkout = spec.funnels.flatMap((funnel) => funnel.pages).find((page) => page.type === "checkout");
+    assert.ok(checkout?.packages?.[0] != null, "the example spec has a checkout package, so a material edit is observable");
     checkout.packages[0].qty = Number(checkout.packages[0].qty ?? 1) + 1;
     writeJson(specPath, spec);
 
@@ -769,6 +770,9 @@ test("doctor and next name a CampaignSpec edited materially after prepare-build,
     assert.ok(warning, JSON.stringify(codes(after)));
     assert.match(warning.message, /changed materially since prepare-build bound it/);
     assert.match(warning.message, /QA refuses/);
+    assert.equal(warning.detail.bound_material_hash, readJson(f.reportPath).identity.spec_material_hash);
+    assert.match(warning.detail.current_material_hash, /^sha256:[0-9a-f]{64}$/);
+    assert.notEqual(warning.detail.current_material_hash, warning.detail.bound_material_hash);
     const { json } = runJson(["next", "--packet", f.packetPath, "--no-write"], f.dir);
     assert.ok((json.warnings || []).some((issue) => issue.code === "spec.material_stale"), "next shows it before QA does");
   }, {
