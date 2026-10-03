@@ -299,6 +299,20 @@ test("a checkout order bump gets its own QA command with the bump in the cart", 
   assert.ok(nextTinyPromptLines(result).some((line) => line.endsWith(bumpRun.command)), "and so does the human next output");
 });
 
+test("a bump marked is_order_bump alone also gets the bump-cart QA command", () => {
+  const fixture = target({
+    prefix: "closeout-evidence-order-bump-",
+    mutateSpec(spec) {
+      const checkout = spec.funnels.flatMap((funnel) => funnel.pages).find((page) => page.type === "checkout");
+      checkout.packages.push({ ref_id: "2", qty: 1, name: "Add-on", price: "9.00", is_order_bump: true });
+    },
+  });
+  const result = runNext(fixture.packetPath);
+  const bumpRun = action(result, "qa_run_bump");
+  assert.ok(bumpRun, "an is_order_bump row is the documented bump marker");
+  assert.equal(bumpRun.command, `${action(result, "qa_run").command} --cart 1:1,2:1`);
+});
+
 // An unreadable CampaignSpec leaves next unable to tell whether the checkout
 // declares a bump; it says so instead of silently naming no bump command.
 test("next warns when the spec it reads for the order-bump command does not parse", () => {

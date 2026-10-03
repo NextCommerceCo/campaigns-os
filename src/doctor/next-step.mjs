@@ -591,7 +591,7 @@ function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGat
     actions.push("Confirm any rendered promo discount percentage claims against the build request, merchant notes, or CampaignSpec before launch.");
   }
   if (codes.has("template_contract.placeholder_text_residue")) {
-    actions.push("Replace literal template placeholder text (Lorem/Placeholder/TODO/Product Name) with CampaignSpec/design copy before QA; the browser residue gate blocks on these terms.");
+    actions.push("Replace literal template placeholder text (Lorem/Placeholder/TODO/Product Name/Benefit one…four) with CampaignSpec/design copy before QA; the browser residue gate blocks on these terms.");
   }
   if (codes.has("template_contract.demo_asset_residue")) {
     actions.push("Re-skin template demo placeholder assets (spacer SVGs, repeated benefit icons, starter imagery) to the campaign's real assets before launch.");
