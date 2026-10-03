@@ -5051,6 +5051,117 @@
         }
       ],
       "entry_sha256": "baedf0070bd55ad5e899b3d697911309bffb4541df7a2c6c1039375ffcf4764d"
+    },
+    {
+      "id": "RL-0214",
+      "sequence": 206,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.5",
+      "changelog_sha256": "ac3f1499849d83b2e4ee2610577a0a996eca1199b2fc1ddd95abe95af8d5e423",
+      "agent_impact": "Before the first test order, unless the operator has already said test orders are fine for this campaign, ask once, up front in your first turn with your other setup questions: test orders land in the store as real orders someone may have to cancel. qa run is unchanged and has no permission flag. An installed agent context keeps the old text until install-agent-context refreshes it; start a fresh session after install-skills, since the bundle revision moved to 1.50.0+skills.2.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Say qa run has no permission flag and coverage is its only control, that test orders still land in the store as real orders someone may have to cancel, and to ask once, up front in the first turn, unless the operator has already said test orders are fine for the campaign."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "Say qa run has no permission flag and coverage is its only control, that test orders still land in the store as real orders someone may have to cancel, and to ask once, up front in the first turn, unless the operator has already said test orders are fine for the campaign."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "Say qa run has no permission flag and coverage is its only control, that test orders still land in the store as real orders someone may have to cancel, and to ask once, up front in the first turn, unless the operator has already said test orders are fine for the campaign."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "Say qa run has no permission flag and coverage is its only control, that test orders still land in the store as real orders someone may have to cancel, and to ask once, up front in the first turn, unless the operator has already said test orders are fine for the campaign."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.50.0+skills.2 bundle in executable examples."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.50.0+skills.2 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Step 11 says qa run has no permission flag, that test orders land in the store as real orders someone may have to cancel, and to ask once, up front in the first turn, unless the operator has already said test orders are fine. Publish the 1.50.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/references/session-intake.md",
+          "surface_entry": null,
+          "summary": "The test-order proof policy asks once, up front in the first turn, whether test orders are fine for the campaign, unless the operator has already said so, instead of saying they need no permission or approval."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "QA follows an answer the operator already gave on test orders and does not pause to ask again; when nobody asked, it asks once before the first test order. Test orders are no longer called safe to fire any time. Publish the 1.50.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.50.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.50.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.50.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.50.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.50.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.50.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.50.0+skills.2 bundle revision."
+        }
+      ],
+      "entry_sha256": "b2cabfff7763b6b5782392b81f4586c6198a74a2300b0d69eff4a48de46f9538"
     }
   ]
 }

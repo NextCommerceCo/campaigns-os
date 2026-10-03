@@ -2,6 +2,30 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.5] - 2026-10-03
+
+### Changed
+
+- The agent context the toolkit installs (`agents/claude/CLAUDE.md`,
+  `agents/codex/AGENTS.md`, `agents/cursor/campaigns-os.mdc`,
+  `agents/copilot/copilot-instructions.md`) and the `next-campaigns-os` and
+  `next-campaigns-qa` skills no longer say test orders need no permission or
+  approval, or are safe to fire any time. They say `qa run` has no permission
+  flag and coverage is its only control, and that test orders still land in
+  the store as real orders (global test cards: no charge, no transaction) that
+  someone may have to cancel. Unless the operator has already said test orders
+  are fine for the campaign, the agent asks once, up front in its first turn
+  with its other setup questions, so the answer covers the whole build and QA
+  and neither stops for it later. The skill's session-intake reference says
+  the same in its test-order proof policy.
+- The QA skill follows an answer the operator already gave and does not pause
+  QA to ask again. When nobody asked earlier, it asks once before the first
+  test order.
+- `qa run` is unchanged: it has no permission flag and none is added. Its
+  help text and the docs are unchanged.
+- Bundled skills carry revision `1.50.0+skills.2`, with each skill version
+  advanced one patch.
+
 ## [1.50.0+agent.4] - 2026-10-02
 
 ### Changed
