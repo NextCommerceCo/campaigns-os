@@ -429,7 +429,7 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: CAMPAIGN_IDENTITY,
     phase: "built-output",
-    run: ({ packet, errors, ready, derived }) => validateCampaignIdentity(packet, errors, ready, derived),
+    run: ({ spec, packet, errors, ready, derived }) => validateCampaignIdentity(packet, errors, ready, derived, spec),
   },
   {
     id: SDK_MARKUP,
@@ -1984,17 +1984,30 @@ function recordUpsellSelectorScopeGate({ subject, pages, waivers, errors, warnin
 // carries another funnel's key or tag arrives in a later edit round as often
 // as at first assembly. Enumerates from the filesystem so both doctor paths
 // scan the same pages, and stays blocking regardless of stage status.
-function validateCampaignIdentity(packet, errors, ready, derived) {
+//
+// With a CampaignSpec, each built page is marked by whether some active spec
+// page builds to it (the same path route drift claims), so a finding on a
+// file no spec page produces names it as leftover output.
+export function validateCampaignIdentity(packet, errors, ready, derived, spec = null) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
   const scope = siteRoot && existsSync(siteRoot) ? resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug }) : null;
+  const pages = scope?.ok ? collectBuiltPageIdentityInputs(scope, targetRepo) : [];
+  const specPages = isObject(spec) ? activeSpecPages(spec) : [];
+  if (specPages.length) {
+    const claimed = new Set(specPages
+      .map((page) => builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived))
+      .filter(Boolean)
+      .map((path) => resolve(path)));
+    for (const page of pages) page.spec_page = claimed.has(resolve(targetRepo, page.file));
+  }
   recordCampaignIdentityGate({
     subject: {
       public_route_slug: publicRouteSlug || null,
       site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
     },
-    pages: scope?.ok ? collectBuiltPageIdentityInputs(scope, targetRepo) : [],
+    pages,
     errors,
     ready,
     derived,

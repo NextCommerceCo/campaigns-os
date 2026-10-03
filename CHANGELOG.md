@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.10] - 2026-10-03
+
+### Fixed
+
+- A campaign-identity finding (`funnel_drift`, `funnel_missing`,
+  `api_key_drift`, `attribution_drift`) that names a built file no active
+  CampaignSpec page builds to now says so, and lists the file on the finding as
+  `stray_files`. The message says to remove the source file if there is one,
+  delete the built file, and rebuild and record the build again. Before, a
+  design `index.html` copied under `assets/` built as its own page and blocked
+  as funnel drift, with the message telling the agent to retag a page it never
+  meant to ship. The gate still blocks, because the file is still served.
+
 ## [1.50.0+agent.9] - 2026-10-03
 
 ### Added

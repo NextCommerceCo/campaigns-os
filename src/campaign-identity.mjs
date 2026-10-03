@@ -259,8 +259,15 @@ function gateBase(subject) {
 /**
  * Evaluate cross-page campaign identity over built pages.
  *
+ * A page marked `spec_page: false` is built output that no CampaignSpec page
+ * builds to. It is still scanned, because it is still served, but a finding
+ * that names it says so: such a file is usually left in `_site/` by an earlier
+ * build, or built from an HTML file copied into the source (a design export's
+ * `index.html` under `assets/`), and the repair is to remove it, not to retag
+ * it.
+ *
  * @param {{ subject: object, pages: Array<{ page_id: string, route?: string|null,
- *   file?: string|null, content: string,
+ *   file?: string|null, content: string, spec_page?: boolean,
  *   scripts?: Array<{ src: string, file?: string|null, content: string }> }> }} input
  */
 export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
@@ -359,6 +366,18 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
         message: `setAttribution({ funnel: ${quote(attribution.value)} }) in ${attribution.where} disagrees with next-funnel ${quote(expected)} in ${expectedWhere}. The call overrides the tag, so orders attribute to ${quote(attribution.value)}; change the call to ${quote(expected)} or remove it.`,
       });
     }
+  }
+
+  const strayFiles = new Map(scanned
+    .filter((page) => page.spec_page === false)
+    .map((page) => [page.page_id, page.file || page.page_id]));
+  for (const finding of findings) {
+    const stray = [...new Set([finding.a?.page_id, finding.b?.page_id]
+      .filter((pageId) => strayFiles.has(pageId))
+      .map((pageId) => strayFiles.get(pageId)))];
+    if (!stray.length) continue;
+    finding.stray_files = stray;
+    finding.message += ` ${stray.join(" and ")} ${stray.length === 1 ? "is" : "are"} not the built page of any CampaignSpec page: built output left by an earlier build, or an HTML file copied into the source (a design export's index.html under assets/ builds as its own page). Remove the source file if there is one, delete the built file, then rebuild and record the build again; do not retag it.`;
   }
 
   const identity = {

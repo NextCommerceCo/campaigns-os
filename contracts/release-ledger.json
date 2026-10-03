@@ -5228,6 +5228,33 @@
         }
       ],
       "entry_sha256": "80715cb6b6a421a8929126795d1e38ef88aec3585f15539d162c4908165f06ad"
+    },
+    {
+      "id": "RL-0225",
+      "sequence": 209,
+      "date": "2026-10-03",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.10",
+      "changelog_sha256": "f3f9d9e48c7f7b487755058be85578d0940442adc39531920ac13cfd20148e82",
+      "agent_impact": "A campaign-identity finding on a built file that no CampaignSpec page builds to now names it as leftover output under stray_files. Remove the source file if there is one, delete the built file, and rebuild and record the build again; do not retag the stray page.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor marks each built page by whether an active CampaignSpec page builds to it before the campaign-identity gate runs."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": null,
+          "summary": "The campaign-identity gate section describes stray_files and the repair for a built file no spec page builds to."
+        }
+      ],
+      "entry_sha256": "e29add15a5b96b097fdc616754838f17f9a5f71636aad17e08de0af94e76e01a"
     }
   ]
 }
