@@ -153,6 +153,17 @@ test("a drifting built page that no CampaignSpec page builds to is named as left
     assert.doesNotMatch(missing[0].message, /add the same next-funnel meta/, "the real page is not told to retag");
     assert.doesNotMatch(errors[0].message, /set the same <meta name="next-funnel"> on both/);
 
+    // The stray supplies the only tag, and an untagged real page calls
+    // setAttribution with another funnel: the stray still leads, rather than
+    // the real page being told to change its call to the stray's funnel.
+    writePage(repo, "checkout", page(head({ funnel: null, pageType: null }), `<script>next.setAttribution({ funnel: "Example V2" })</script>`));
+    const attribution = [];
+    validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, attribution, [], { target_repo: repo, checkpoint_gates: [] }, spec);
+    const drift = attribution.find((issue) => issue.code === CAMPAIGN_IDENTITY_KINDS.attribution_drift);
+    assert.ok(drift, "the call disagrees with the campaign's only tag");
+    assert.match(drift.message, /^\.?\/?_site\/example-campaign\/assets\/design\/index\.html is not the built page/);
+    assert.doesNotMatch(drift.message, /change the call to/);
+
     // Without a CampaignSpec the finding is unchanged: nothing says which
     // files are the campaign's pages.
     const bare = [];

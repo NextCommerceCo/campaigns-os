@@ -364,7 +364,9 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
       findings.push({
         kind: "attribution_drift",
         code: CAMPAIGN_IDENTITY_KINDS.attribution_drift,
-        a: { page_id: identity.page_id, file: expectedWhere, value: expected },
+        // a is the page the expected tag came from: this page's own tag, or,
+        // when it has none, the campaign's first tagged page.
+        a: { page_id: identity.funnel ? identity.page_id : firstFunnel.page_id, file: expectedWhere, value: expected },
         b: { page_id: identity.page_id, file: attribution.where, value: attribution.value },
         evidence: `setAttribution({ funnel: ${quote(attribution.value)} }) in ${attribution.where} disagrees with next-funnel ${quote(expected)} in ${expectedWhere}.`,
         message: `setAttribution({ funnel: ${quote(attribution.value)} }) in ${attribution.where} disagrees with next-funnel ${quote(expected)} in ${expectedWhere}. The call overrides the tag, so orders attribute to ${quote(attribution.value)}; change the call to ${quote(expected)} or remove it.`,
