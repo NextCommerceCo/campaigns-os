@@ -102,3 +102,17 @@ test("deriveState treats a prefix or case difference in the spec hash as the sam
   // nor marks the result stale, so the state falls through to the time axes.
   assert.equal(deriveState({ ok: true, calculated_at: calculatedAt }, { calculated_at: calculatedAt }), PricingState.Exact);
 });
+
+test("a checkout row marked is_order_bump alone is a bump, not part of the representative cart", () => {
+  // The schema and the authoring guide mark a checkout add-on with
+  // is_order_bump; the certified fixtures use it alone. Read as a main row,
+  // the bump was priced into the representative checkout and never got its
+  // with/without scenarios.
+  for (const flag of ["is_upsell", "is_order_bump"]) {
+    const page = { id: "checkout", type: "checkout", order: 1, packages: [{ ref_id: "1", qty: 1 }, { ref_id: "2", qty: 1, [flag]: true }] };
+    const plan = planScenarios(page, { campaign: { currency: "USD" }, funnels: [{ id: "default", pages: [page] }] });
+    const byRole = (role) => plan.filter((descriptor) => descriptor.context.role === role).map((descriptor) => descriptor.body.lines);
+    assert.deepEqual(byRole("representative"), [[{ package_id: 1, quantity: 1 }]], flag);
+    assert.deepEqual(byRole("bump-with"), [[{ package_id: 1, quantity: 1 }, { package_id: 2, quantity: 1, is_upsell: true }]], flag);
+  }
+});

@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.50.0+agent.10] - 2026-10-03
+## [1.50.0+agent.12] - 2026-10-03
 
 ### Fixed
 
@@ -17,6 +17,43 @@ Notable supported-surface changes are recorded here.
   `polish_gate`. Polish stays owed on the report and QA still reports it.
   `record polish` and the waiver commands keep the strict gates.
   `docs/build-packet.md` names the exception.
+
+## [1.50.0+agent.11] - 2026-10-03
+
+### Added
+
+- Doctor warns `spec.material_stale` when a local-spec campaign's CampaignSpec
+  no longer has the material hash prepare-build bound on the Assembly Report
+  (`identity.spec_material_hash`). `next` prints the warning with the rest of
+  doctor's. QA already refused such a run ("Re-run prepare-build after a
+  material revision"). Until now it was the only command that checked, so a
+  spec edited after `start` was accepted by doctor, `next` and every `record`
+  command, and the problem surfaced only after the build, polish and deploy
+  stages had been recorded against the old spec. The warning names both hashes
+  and says to re-run prepare-build from the edited spec.
+  `docs/build-packet.md` says so.
+
+## [1.50.0+agent.10] - 2026-10-03
+
+### Fixed
+
+- A checkout row marked `is_order_bump: true` is now read as an order bump.
+  The CampaignSpec schema and the authoring guide mark a checkout add-on with
+  that flag, and the certified fixtures use it alone, but the one bump
+  predicate the toolkit shares read only `is_upsell`. Such a row was treated
+  as a main package:
+  - the QA tier planner made it a selector tier of its own;
+  - `next` named no bump-cart QA command (`qa_run_bump`);
+  - commercial-journey priced the bump into the representative checkout and
+    planned no with/without-bump scenarios.
+
+  Either flag now marks a bump, and a row carrying `is_upsell: true` behaves as
+  before. On the certified fixtures, the five checkouts that declare a bump now
+  plan only their real tiers, and their bumps get the bump-cart command.
+- Messages that named a bump `(is_upsell)` now say
+  `(is_order_bump or is_upsell)`: the tier planner's warning and refusal, the
+  `next` bump-command description, the `qa run --help` text and the QA
+  test-order notes. `docs/qa-and-test-orders.md` says the same.
 
 ## [1.50.0+agent.9] - 2026-10-03
 
