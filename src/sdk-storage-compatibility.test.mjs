@@ -326,6 +326,23 @@ test('page-kit campaign_asset script srcs resolve to the campaign assets folder'
       ['campaigns/src/demo/checkout.html', 'shared-script-outside-scope', 'campaigns/src/demo/assets/js/checkout.js'],
     ]);
 
+    // Each frontmatter finding sits on the line that declares the entry, even
+    // when the same path appears earlier in the file.
+    writeFileSync(join(cwd, 'campaigns/src/demo/checkout.html'), `---\ntitle: js/checkout.js\nscripts:\n  - js/checkout.js\n---\n<main></main>`);
+    report = scan({ exclude: ['campaigns/src/demo/assets/js'] });
+    assert.deepEqual(report.findings.filter(f => f.path.endsWith('checkout.html')).map(f => f.line), [4]);
+
+    // An entry that leaves the assets folder, a scripts value that is not a
+    // list, and YAML that does not parse each say so.
+    const frontmatterFinding = body => {
+      writeFileSync(join(cwd, 'campaigns/src/demo/checkout.html'), `---\n${body}\n---\n<main></main>`);
+      return scan().findings.filter(f => f.path.endsWith('checkout.html')).map(f => [f.line, f.detail]);
+    };
+    assert.deepEqual(frontmatterFinding('scripts:\n  - ../js/checkout.js'), [[3, '../js/checkout.js resolves outside campaigns/src/demo/assets']]);
+    assert.deepEqual(frontmatterFinding('scripts: js/checkout.js'), [[2, 'Frontmatter scripts is not a list of paths; review the scripts this page loads.']]);
+    assert.match(frontmatterFinding('title: "unclosed\nscripts:\n  - js/checkout.js')[0][1], /^Frontmatter is not valid YAML/);
+    writeFileSync(join(cwd, 'campaigns/src/demo/checkout.html'), `---\nscripts:\n  - js/checkout.js\n---\n<main></main>`);
+
     // A campaign_asset value the scan cannot resolve stays unknown.
     writeFileSync(join(cwd, 'campaigns/src/demo/_layouts/base.html'), `<script src="{{ vendor_script | campaign_asset }}"></script>`);
     report = scan();

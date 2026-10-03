@@ -1,7 +1,7 @@
 // Read-only source evidence. SDK migration names come exclusively from the supplied manifest.
 import { parse as parseJs } from 'acorn';
 import { parse as parseHtml } from 'parse5';
-import { parse as parseYaml } from 'yaml';
+import { parseDocument, isSeq, isScalar, LineCounter } from 'yaml';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, lstatSync, realpathSync, statSync } from 'node:fs';
 import { resolve, relative, dirname, posix, sep } from 'node:path';
@@ -273,17 +273,24 @@ function campaignAssetRoot(path) {
 function loopsOverPageScripts(text, name) {
   return new RegExp(`\\{%-?\\s*for\\s+${name}\\s+in\\s+(?:page\\.)?scripts\\b`).test(text);
 }
+// Each local-or-remote entry of a page's frontmatter `scripts:` list with the
+// file line it is declared on, or an error naming why the list cannot be read.
 function frontmatterScripts(text) {
   const block = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
-  if (!block) return [];
-  let data;
-  try { data = parseYaml(block[1]); }
-  catch { return null; }
-  const scripts = data?.scripts;
-  if (scripts === undefined || scripts === null) return [];
-  return Array.isArray(scripts) && scripts.every(item => typeof item === 'string') ? scripts : null;
-}
-export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVersion, manifestPath, scope, exclude = [] }) {
+  if (!block) return { scripts: [] };
+  const lineCounter = new LineCounter();
+  const document = parseDocument(block[1], { lineCounter });
+  if (document.errors.length) {
+    const { line } = lineCounter.linePos(document.errors[0].pos[0]);
+    return { error: `Frontmatter is not valid YAML (${document.errors[0].code}); review the scripts this page loads.`, line: line + 1 };
+  }
+  const scripts = document.get('scripts', true);
+  if (scripts === undefined || scripts === null || (isScalar(scripts) && scripts.value === null)) return { scripts: [] };
+  if (!isSeq(scripts) || !scripts.items.every(item => isScalar(item) && typeof item.value === 'string'))
+    return { error: 'Frontmatter scripts is not a list of paths; review the scripts this page loads.', line: lineCounter.linePos(scripts.range?.[0] ?? 0).line + 1 };
+  // linePos is 1-based within the YAML block, which starts on the file's line 2.
+  return { scripts: scripts.items.map(item => ({ value: item.value, line: lineCounter.linePos(item.range[0]).line + 1 })) };
+}export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVersion, manifestPath, scope, exclude = [] }) {
   version(targetSdkVersion);
   if (!Array.isArray(scope) || !scope.length)
     throw new Error('At least one explicit --scope is required; include shared script directories explicitly.');
@@ -347,14 +354,20 @@ export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVers
       if (!selected.includes(sourcePath))
         unknown(path, 'shared-script-outside-scope', sourcePath, line);
     };
+    // Page Kit serves campaign_asset paths from the assets folder only; an entry
+    // that normalizes outside it is not a file the page loads from there.
+    const requireAsset = (asset, line) => {
+      const sourcePath = posix.normalize(`${assetRoot}/${asset.split(/[?#]/)[0]}`);
+      if (sourcePath.startsWith(`${assetRoot}/`)) requireSelected(sourcePath, line);
+      else unknown(path, 'shared-script-outside-scope', `${asset} resolves outside ${assetRoot}`, line);
+    };
     if (assetRoot) {
-      const scripts = frontmatterScripts(text);
-      if (scripts === null)
-        unknown(path, 'shared-script-outside-scope', 'Frontmatter scripts are not a list of paths; review the scripts this page loads.');
-      for (const script of scripts ?? []) {
-        if (/^(?:[a-z]+:)?\/\//i.test(script) || script.startsWith('data:')) continue;
-        const line = text.split('\n').findIndex(row => row.includes(script)) + 1 || 1;
-        requireSelected(posix.normalize(`${assetRoot}/${script.split(/[?#]/)[0]}`), line);
+      const frontmatter = frontmatterScripts(text);
+      if (frontmatter.error)
+        unknown(path, 'shared-script-outside-scope', frontmatter.error, frontmatter.line);
+      for (const { value, line } of frontmatter.scripts ?? []) {
+        if (/^(?:[a-z]+:)?\/\//i.test(value) || value.startsWith('data:')) continue;
+        requireAsset(value, line);
       }
     }
     function html(node) {
@@ -367,7 +380,7 @@ export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVers
             const line = node.sourceCodeLocation?.startLine ?? 1;
             const literal = campaignAsset[1] ?? campaignAsset[2];
             if (assetRoot && literal !== undefined)
-              requireSelected(posix.normalize(`${assetRoot}/${literal.split(/[?#]/)[0]}`), line);
+              requireAsset(literal, line);
             else if (!assetRoot || !loopsOverPageScripts(text, campaignAsset[3]))
               unknown(path, 'shared-script-outside-scope', attrs.src, line);
             // A frontmatter scripts loop: each page's own entries are checked above.
