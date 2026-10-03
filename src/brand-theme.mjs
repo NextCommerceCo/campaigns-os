@@ -88,6 +88,18 @@ function loadContracts(repoRoot = ROOT) {
   };
 }
 
+// A theme write error as the Assembly Report's theme.warnings[] carries it
+// (schema $defs.themeIssue): detail, when present, must be an object, so an
+// issue without one omits the key rather than writing null.
+export function themeIssueForReport(error) {
+  const detail = error?.detail;
+  return {
+    code: error?.code,
+    message: error?.message,
+    ...(detail && typeof detail === "object" && !Array.isArray(detail) ? { detail } : {}),
+  };
+}
+
 function issue(code, message, detail = null) {
   return detail ? { code, message, detail } : { code, message };
 }

@@ -1606,7 +1606,7 @@ the CampaignSpec instead:
   purchase multipliers (`ref` and `ref:2`). A uniquely referenced catalog
   package with its own `qty: 3` composition is still bought once (`ref`), not
   multiplied by three. **Order-bump rows — `packages[]` entries marked
-  `is_upsell: true` — are add-ons offered beside the selected tier, not tiers**:
+  `is_order_bump: true` or `is_upsell: true` — are add-ons offered beside the selected tier, not tiers**:
   they never become a plan (a three-tier checkout with one bump plans three
   tiers, so `tiers:common` on a two-upsell funnel is 12 orders, not 16), and
   the runner prints a `[qa:test-order]` line naming the bump ref(s) it left
@@ -1893,7 +1893,7 @@ use the declared topology instead of a single happy path:
    the exact planned count when necessary.
 
 `next` names step 4 at the QA stage. When the checkout page the default run
-drives declares an order bump (`is_upsell: true` rows), it lists a second QA
+drives declares an order bump (`is_order_bump: true` or `is_upsell: true` rows), it lists a second QA
 command, `qa_run_bump`, beside `qa_run`: the same `--test-order common` run
 with `--cart <base>:1,<bump>:1`, where the base is the first selector tier the
 checkout declares. The QA stage prompt and the human `next` output carry the
