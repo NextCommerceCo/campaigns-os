@@ -5024,6 +5024,33 @@
         }
       ],
       "entry_sha256": "0d60b7a2fa569cca0f1db2084e5691be0fac49b23954b92851cc28d337e6b7c5"
+    },
+    {
+      "id": "RL-0213",
+      "sequence": 205,
+      "date": "2026-10-02",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.50.0+agent.4",
+      "changelog_sha256": "57bc8faea8b376e689029a495035237c67c2767aaa072578313935a2a4112200",
+      "agent_impact": "At the QA stage of a campaign whose checkout declares an order bump (is_upsell: true rows), run both QA commands next lists: qa_run, then qa_run_bump, the same qa run --browser --test-order common with --cart <base>:1,<bump>:1, whose test orders carry the add-on. A consumer of next --json that keys on action ids should accept qa_run_bump. Progress snapshots record it as qa_run. The bump is read from the checkout QA's test orders run on; when the CampaignSpec does not parse, next warns next.order_bump_spec_unreadable.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "At the QA stage, when the checkout declares an order bump, next lists qa_run_bump beside qa_run: the same QA command with --cart <first selector tier>:1,<bump>:1. The QA stage prompt and the human next output name it too."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Say that next names the base-plus-bump QA run (qa_run_bump) at the QA stage when the checkout declares an order bump."
+        }
+      ],
+      "entry_sha256": "baedf0070bd55ad5e899b3d697911309bffb4541df7a2c6c1039375ffcf4764d"
     }
   ]
 }

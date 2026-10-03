@@ -14,6 +14,10 @@ export const PROGRESS_ENDPOINT = '/api/progress';
 // A projection keeps the first PROGRESS_GATE_LIMIT continuation gates (the snapshot schema's gates maxItems).
 export const PROGRESS_GATE_LIMIT = 16;
 const accepted = (value,values,fallback='unknown')=>values.includes(value)?value:fallback;
+// A next action that is a variant of a fixed action projects onto it: the
+// order-bump QA run is a QA run. Without this, the closed v0 vocabulary would
+// read it as unknown and mark a ready QA continuation blocked.
+const PROGRESS_ACTION_ALIASES = new Map([['qa_run_bump','qa_run']]);
 const hash = value=>typeof value==='string'&&/^(?:sha256:)?[0-9a-f]{64}$/i.test(value)?`sha256:${value.replace(/^sha256:/i,'').toLowerCase()}`:null;
 const id = value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(value)?value:null;
 const digest = value=>`sha256:${createHash('sha256').update(value).digest('hex')}`;
@@ -63,7 +67,7 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
   // here (never pass).
   const gateState=status=>accepted(status==='carried_forward'?'not_applicable':status,['pass','blocked','waived','not_applicable']);
   const gates=(Array.isArray(continuation?.gates)?continuation.gates:[]).slice(0,PROGRESS_GATE_LIMIT).map(gate=>({id:accepted(gate?.id,PROGRESS_GATE_IDS),state:PROGRESS_GATE_IDS.includes(gate?.id)?gateState(gate?.status):'unknown'}));
-  const actions=[...new Set((Array.isArray(continuation?.next_actions)?continuation.next_actions:[]).slice(0,64).map(action=>accepted(action?.id,PROGRESS_ACTION_IDS)))];
+  const actions=[...new Set((Array.isArray(continuation?.next_actions)?continuation.next_actions:[]).slice(0,64).map(action=>accepted(PROGRESS_ACTION_ALIASES.get(action?.id)||action?.id,PROGRESS_ACTION_IDS)))];
   const stage=accepted(continuation?.stage,PROGRESS_CONTINUATIONS);
   const preview=typeof packet?.deploy?.preview_url==='string'&&packet.deploy.preview_url?packet.deploy.preview_url:null;
   return {

@@ -106,9 +106,69 @@ function selectedShipping(page) {
 // One predicate for "this checkout row is an order bump": the spec marks a
 // bump with `is_upsell: true` on a non-upsell page. Every consumer that must
 // tell a bump from a main selector row (parity scenarios, bump deltas, the QA
-// selector-tier planner) reads this, so a marker change lands in one place.
+// selector-tier planner, `next`'s order-bump QA command) reads this, so a
+// marker change lands in one place.
 export function isBumpRow(row) {
   return Boolean(row?.is_upsell);
+}
+
+// A checkout package row's ref, with the doctor's specPackageRecords
+// tolerance (ref_id, then package_id, then id).
+function checkoutRowRef(pkg) {
+  return [pkg.ref_id, pkg.package_id, pkg.id]
+    .map((value) => (value == null ? "" : String(value).trim()))
+    .find(Boolean);
+}
+
+// Order bumps declared on a checkout page (isBumpRow rows), as refs in
+// declaration order. They are add-ons to a selected tier, not tiers, so the
+// QA tier planner reports and skips them and `next` names the --cart run that
+// toggles them.
+export function declaredOrderBumps(checkoutPage) {
+  const refs = [];
+  for (const pkg of array(checkoutPage?.packages)) {
+    if (!pkg || typeof pkg !== "object" || !isBumpRow(pkg)) continue;
+    const ref = checkoutRowRef(pkg);
+    if (ref && !refs.includes(ref)) refs.push(ref);
+  }
+  return refs;
+}
+
+// Selector tiers are the packages a spec declares on a checkout page, in
+// declaration order. Order-bump rows are add-ons offered alongside the
+// selected tier, not tiers of their own: they never become a tier.
+export function declaredSelectorTiers(checkoutPage) {
+  const records = [];
+  const quantitiesByRef = new Map();
+  for (const pkg of array(checkoutPage?.packages)) {
+    if (!pkg || typeof pkg !== "object" || isBumpRow(pkg)) continue;
+    const ref = checkoutRowRef(pkg);
+    const declaredQuantity = Number(pkg.qty ?? pkg.quantity ?? 1);
+    if (!ref || !Number.isInteger(declaredQuantity) || declaredQuantity < 1) continue;
+    records.push({ pkg, ref, declaredQuantity });
+    if (!quantitiesByRef.has(ref)) quantitiesByRef.set(ref, new Set());
+    quantitiesByRef.get(ref).add(declaredQuantity);
+  }
+
+  const tiers = [];
+  const seen = new Set();
+  for (const { pkg, ref, declaredQuantity } of records) {
+    // A unique ref is a catalog package bought once, even when that package's
+    // own composition is 3x. Only repeated declarations of the SAME ref at
+    // different quantities express shopper purchase multipliers (e.g. a 1x
+    // and a 2x package).
+    const quantity = quantitiesByRef.get(ref).size > 1 ? declaredQuantity : 1;
+    const identity = `${ref}:${quantity}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    const label = [pkg.name, pkg.title].find((value) => typeof value === "string" && value.trim());
+    tiers.push({
+      ref,
+      quantity,
+      declared_by: label ? label.trim() : undefined,
+    });
+  }
+  return tiers;
 }
 
 function lineForRow(row) {

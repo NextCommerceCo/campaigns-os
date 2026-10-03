@@ -44,7 +44,7 @@ import {
 } from "./qa-cart-entry.mjs";
 import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump.mjs";
 import { assessPurchaseDataLayer, expectedOrderReferences, purchaseDataLayerAssertion, purchaseDataLayerProbe } from "./qa-purchase-data-layer.mjs";
-import { isBumpRow } from "./commercial-journey.mjs";
+import { declaredOrderBumps, declaredSelectorTiers } from "./commercial-journey.mjs";
 import { bindingAssertion, isSdkApiRequest, sentBinding } from "./qa-binding-evidence.mjs";
 import {
   RESIDUE_PAGE_TYPES,
@@ -6872,60 +6872,6 @@ function selectorTierNarrowing(value) {
     return selectorTierIdentity({ ref, quantity });
   });
   return identities.length ? new Set(identities) : null;
-}
-
-// Order bumps declared on the checkout page (`is_upsell: true` rows — the
-// same marker the commercial-journey planner reads). They are add-ons to a
-// selected tier, not tiers, so the tier planner reports and skips them.
-function declaredOrderBumps(checkoutPage) {
-  const refs = [];
-  for (const pkg of Array.isArray(checkoutPage?.packages) ? checkoutPage.packages : []) {
-    if (!pkg || typeof pkg !== "object" || !isBumpRow(pkg)) continue;
-    const ref = [pkg.ref_id, pkg.package_id, pkg.id]
-      .map((value) => (value == null ? "" : String(value).trim()))
-      .find(Boolean);
-    if (ref && !refs.includes(ref)) refs.push(ref);
-  }
-  return refs;
-}
-
-// Selector tiers are the packages the spec declares on the checkout page —
-// same ref tolerance as the doctor's specPackageRecords (ref_id/package_id/id).
-// Order-bump rows (`is_upsell: true`) are add-ons offered alongside the
-// selected tier, not tiers of their own: they never become a plan.
-function declaredSelectorTiers(checkoutPage) {
-  const records = [];
-  const quantitiesByRef = new Map();
-  for (const pkg of Array.isArray(checkoutPage?.packages) ? checkoutPage.packages : []) {
-    if (!pkg || typeof pkg !== "object" || isBumpRow(pkg)) continue;
-    const ref = [pkg.ref_id, pkg.package_id, pkg.id]
-      .map((value) => (value == null ? "" : String(value).trim()))
-      .find(Boolean);
-    const declaredQuantity = Number(pkg.qty ?? pkg.quantity ?? 1);
-    if (!ref || !Number.isInteger(declaredQuantity) || declaredQuantity < 1) continue;
-    records.push({ pkg, ref, declaredQuantity });
-    if (!quantitiesByRef.has(ref)) quantitiesByRef.set(ref, new Set());
-    quantitiesByRef.get(ref).add(declaredQuantity);
-  }
-
-  const tiers = [];
-  const seen = new Set();
-  for (const { pkg, ref, declaredQuantity } of records) {
-    // A unique ref is a catalog package bought once, even when that package's
-    // own composition is 3x. Only repeated declarations of the SAME ref at
-    // different quantities express shopper purchase multipliers (e.g. a 1x
-    // and a 2x package).
-    const quantity = quantitiesByRef.get(ref).size > 1 ? declaredQuantity : 1;
-    const identity = `${ref}:${quantity}`;
-    if (seen.has(identity)) continue;
-    seen.add(identity);
-    tiers.push({
-      ref,
-      quantity,
-      declared_by: stringArg(pkg.name) || stringArg(pkg.title) || undefined,
-    });
-  }
-  return tiers;
 }
 
 // Declared coupons follow the repo's offer-surface rule (build-brief, cli

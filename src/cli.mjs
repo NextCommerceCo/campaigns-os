@@ -20,6 +20,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { shellToken } from "./shell-token.mjs";
+import { declaredOrderBumps, declaredSelectorTiers } from "./commercial-journey.mjs";
 import { diagnosticExport, diagnosticTextLines } from "./diagnostic.mjs";
 import { observeProgress, PROGRESS_OBSERVATION } from "./progress-node.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
@@ -4062,6 +4063,16 @@ export function nextStage(stage, args, ambient = null) {
     reportPath: args.report ? resolve(args.report) : undefined,
   });
   const prepareBuildGate = doctor.derived?.prepare_build_gate || null;
+  // The CampaignSpec doctor just read (spec.local_path), for the QA stage's
+  // order-bump command. Best-effort: doctor reports an unreadable spec itself.
+  let spec = null;
+  let specReadError = null;
+  try {
+    spec = readJsonIfExists(doctor.derived?.spec_path || null);
+  } catch (error) {
+    spec = null;
+    specReadError = error;
+  }
   // #171: `next` recomputes doctor state on every call; persist that fresh
   // snapshot so the retained sidecar can never stay a green lie from an
   // earlier stage while the campaign degrades (the dogfood target sat
@@ -4127,13 +4138,19 @@ export function nextStage(stage, args, ambient = null) {
     } });
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
     recordNextRecommendation(ambient, result);
     return result;
   };
   const doctorHasOnlyPolishGateErrors = doctorErrorsAreOnlyPolishGate(doctor.errors);
   const errors = [];
   const warnings = doctor.warnings.map((issue) => withPacketSubstitutedIssue(issue, packetPath));
+  if (specReadError) {
+    warnings.push({
+      code: "next.order_bump_spec_unreadable",
+      message: `The CampaignSpec at ${doctor.derived?.spec_path} could not be read (${singleLineField(specReadError.message)}), so next cannot tell whether the checkout declares an order bump and names no order-bump QA command. Fix the spec and run next again.`,
+    });
+  }
   const ready = [...doctor.ready];
   if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors.map((issue) => withPacketSubstitutedIssue(issue, packetPath)));
 
@@ -4246,7 +4263,7 @@ export function nextStage(stage, args, ambient = null) {
     addPolishGateErrors(errors, polishGate, "qa");
     addPolishCheckpointGateErrors(errors, polishCheckpointGate, "qa");
     addThemeGateErrors(errors, themeGate, "qa");
-    prompt = qaPrompt(packetPath, reportPath, packet);
+    prompt = qaPrompt(packetPath, reportPath, packet, spec);
   }
   const status = errors.length
     ? "blocked"
@@ -4513,7 +4530,7 @@ function divergenceInspectAction(divergences, packetPath) {
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, brandContract = null, context = null, targetRepo = null }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, brandContract = null, context = null, targetRepo = null, spec = null }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   const pushPolishCheckpointActions = () => {
@@ -4661,7 +4678,9 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   } else if (result.stage === "qa") {
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
     push("install_browser", "command", `${cmd("qa")} install-browser`, "Install the Playwright browser once after install/update (npm run qa:install-browser from a checkout).");
-    push("qa_run", "command", `${cmd("qa")} run --packet ${packetPath} --base-url ${url} --browser --test-order common`, "Run browser + typed-card QA and publish the verdict.");
+    push("qa_run", "command", qaRunCommand(packetPath, url), "Run browser + typed-card QA and publish the verdict.");
+    const bumpCart = checkoutOrderBumpCart(spec);
+    if (bumpCart) push("qa_run_bump", "command", qaRunCommand(packetPath, url, bumpCart), `Prove the charged add-on. ${orderBumpRunReason(bumpCart)}`);
   } else if (result.stage === "done") {
     // #171: run-record closeout is a REQUIRED terminal action, not an
     // optional nicety — the dogfood run ended at a terminal stage with the
@@ -4952,9 +4971,57 @@ After deploy succeeds:
 If the deploy is blocked (non-localhost allowed-domain not yet added, CI permission missing, host-side outage), set stages.deploy.status to "blocked" with a clear reason in outputs so the orchestration loop surfaces it rather than skipping past.`;
 }
 
-function qaPrompt(packetPath, reportPath, packet) {
+// The QA command the QA stage hands over. Given a bump cart it is the
+// order-bump run: the same command with --cart selecting the base tier and
+// toggling each declared bump.
+function qaRunCommand(packetPath, url, bumpCart = null) {
+  return `${cmd("qa")} run --packet ${packetPath} --base-url ${url} --browser --test-order common${bumpCart ? ` --cart ${shellToken(bumpCart.cart)}` : ""}`;
+}
+
+// `qa run --test-order common` never puts a checkout order bump in a test
+// order: the tier planner skips bump rows by design and bump coverage comes
+// from --cart. So when the spec declares one, `next` names a second run with
+// the bump in the cart. It reads the one checkout QA drives, with QA's own row
+// classifiers: QA's test orders run on findPage(topologies, "checkout"), the
+// first checkout across funnels in array order, each funnel's pages filtered
+// to enabled and sorted by `order || 0` (extractTopologies). This picks the
+// same page, and when that checkout declares no bump it returns null rather
+// than looking at a later funnel: QA never drives a later funnel's checkout,
+// so that funnel's bump ref in --cart would land on a checkout without it. The base is the first selector tier QA would plan: QA's default
+// keeps the page's pre-selected card, which a spec does not name. A checkout
+// that declares no tier (the cart is filled on an entry page) gets the bump
+// alone, on whatever selection the entry page made.
+export function checkoutOrderBumpCart(spec) {
+  const funnels = Array.isArray(spec?.funnels)
+    ? spec.funnels
+    : Array.isArray(spec?.funnel_pages) ? [{ pages: spec.funnel_pages }] : [];
+  for (const funnel of funnels) {
+    const checkout = (Array.isArray(funnel?.pages) ? funnel.pages : [])
+      .filter((page) => page && page.enabled !== false)
+      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .find((page) => page.type === "checkout");
+    if (!checkout) continue;
+    const bumps = declaredOrderBumps(checkout);
+    if (!bumps.length) return null;
+    const base = declaredSelectorTiers(checkout)[0]?.ref || null;
+    return { base, bumps, cart: [base, ...bumps].filter(Boolean).map((ref) => `${ref}:1`).join(",") };
+  }
+  return null;
+}
+
+// Why the order-bump run exists, as one sentence for the action and the prompt.
+function orderBumpRunReason(bumpCart) {
+  const cart = bumpCart.base ? `base tier ${bumpCart.base} plus the bump` : "the bump";
+  return `The checkout declares order bump ${bumpCart.bumps.join(", ")} (is_upsell), and the default run never puts it in a test order. This run repeats QA with ${cart} in the cart.`;
+}
+
+function qaPrompt(packetPath, reportPath, packet, spec = null) {
   const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
+  const bumpCart = checkoutOrderBumpCart(spec);
+  const bumpCommand = bumpCart
+    ? `\n\nOrder bump QA command (proves the charged add-on):\n${qaRunCommand(packetPath, url, bumpCart)}\n${orderBumpRunReason(bumpCart)}`
+    : "";
   return `Use next-campaigns-qa for this deployed campaign.
 
 ${packet.spec.local_spec_id ? "Local spec ID" : "Map ID"}: ${packet.spec.local_spec_id || packet.spec.map_id}
@@ -4966,7 +5033,7 @@ Browser install command:
 ${cmd("qa")} install-browser
 
 Node QA command:
-${cmd("qa")} run --packet ${packetPath} --base-url ${url} --browser --test-order common
+${qaRunCommand(packetPath, url)}${bumpCommand}
 
 Run the browser install once after install/update before --browser or --test-order. Test-order proof must exercise the campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Compare visible placeholders, payment methods and template trust badges, variant media, the template's own promo placeholders (demo timers, promo banners, placeholder voucher codes, exit-pop offers), and pricing presentation against the Campaign Build Brief. Do not flag the source design's own proof, urgency or guarantee elements: they are the merchant's content. Test Orders use global test cards that bypass the payment gateway and create no transactions, so they are safe to run any time and need no permission flags, packet policy, or merchant setup. Localhost on any port is a globally allowed Development domain for SDK initialization and suppresses Campaigns analytics events; non-localhost preview/production origins still need the SDK origin allowlist. Use --test-order common for the default depth: every actual terminal path when they fit under the flood cap, otherwise checkout, first-offer accept/decline and a deduplicated shortest real receipt path plus the shortest path that clicks the decline on each offer or downsell page not yet declined, up to the cap (the verdict row browser-test-order:upsell-action-coverage warns naming each offer page whose decline no order clicked); use an explicit path such as accept-decline-accept for a targeted matrix; or use --test-order full for every actual terminal path in the selected checkout topology. Cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The default accidental-flood cap is 6, and an overflow names the exact explicit --max-test-orders raise. That cap bounds planned paths; --max-order-creations bounds actual order creations and is reserved before each submit click, defaulting to the planned path count. A path whose failure is classified as created (the order is already placed) is inspected read-only and never resubmitted. A not_created failure may be re-run once, if the creation budget has a slot no still-unrun planned path needs; an ambiguous failure stops that path with an explicit operator check instead of buying again. Read evidence.recovery to tell a recovered pass from a first-attempt pass. Click rendered SDK upsell accept/decline controls for upsell proof. For multi-tier package selectors, drive a specific card with --select-package <ref[:qty],...> (strict: the path fails if the requested card cannot be found or selected, unlike best-effort --cart), or use --test-order tiers / tiers:common / tiers:full to drive every selector tier the CampaignSpec declares on the checkout page in one run (order-bump rows marked is_upsell are add-ons, not tiers; --select-package narrows a tiers run to the listed tiers); prove coupon-bearing orders with --apply-coupon <code> (typed into the rendered promo input, verified against the persisted-order voucher read-back). Reuse one test customer email via --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL (a real monitored inbox in internal runs) so repeated QA does not litter the customer list.
 
@@ -8039,6 +8106,8 @@ export function nextTinyPromptLines(result) {
   if (result.stage !== "qa") return lines;
   lines.push("");
   lines.push(`Next expected proof: browser QA + typed-card proof. Run: ${cmd("qa")} run --packet <packet> --base-url <url> --browser --test-order common`);
+  const bumpRun = (result.next_actions || []).find((action) => action?.id === "qa_run_bump");
+  if (bumpRun) lines.push(`That run never orders the checkout order bump. Prove the charged add-on with: ${bumpRun.command}`);
   lines.push("Localhost on any port is a Development domain (SDK allowed, analytics suppressed). Non-localhost origins still need SDK allowlist confirmation.");
   lines.push(`Build/polish done but no QA verdict yet is a Completeness Signal, not a build failure: ${cmd("findings")} add --stage qa --kind missing_prompt --summary "..."`);
   return lines;
