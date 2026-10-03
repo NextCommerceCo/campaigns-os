@@ -90,6 +90,8 @@ describe('DesignSourceShape rule', () => {
     const violations = DesignSourceShape.check(normalize(spec))
     expect(violations).toHaveLength(1)
     expect(violations[0].data?.check).toBe('file-url-missing')
+    // A Figma page needs its URL; it is not told to drop design_source.
+    expect(violations[0].message.includes('remove design_source')).toBe(false)
   })
 
   test('missing file_url names the hand-written HTML way out', () => {

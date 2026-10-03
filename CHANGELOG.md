@@ -16,9 +16,10 @@ Notable supported-surface changes are recorded here.
     were missing.
   - The missing SDK version error keeps "SDK version is required for spec
     export." and names `global_config.sdk_version` and the form it takes.
-  - The missing `design_source.file_url` warning, and doctor's matching
-    no-source-mapping error, say that hand-written or template HTML leaves
-    `design_source` off the page. Before, a plain HTML page with a
+  - The missing `design_source.file_url` warning, for a page whose
+    `design_source.type` is not `figma` or `ai-generated`, and doctor's
+    matching no-source-mapping error, say that hand-written or template HTML
+    leaves `design_source` off the page. Before, a plain HTML page with a
     `design_source` block was told only to add a design-tool URL.
 
 ## [1.50.0+agent.9] - 2026-10-03

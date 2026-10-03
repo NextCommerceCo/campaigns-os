@@ -5236,7 +5236,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.50.0+agent.10",
-      "changelog_sha256": "18cad199d37e49584686937f03fee09f67a1173e0c4194743a76058a9cd8277c",
+      "changelog_sha256": "e41bb5ae410b87ea8617be75f459099278623470ffeca693d03d6bd37ef64a46",
       "agent_impact": "Doctor and start now say which CampaignSpec field each of three validation messages wants: campaign.payment_env_key (a Campaigns API key in the spec does not fill it), global_config.sdk_version, and design_source (left off pages built from hand-written or template HTML). Fix the named field rather than treating the key line and the missing-key warning as a contradiction.",
       "compatibility": "compatible",
       "migration": "none",
@@ -5257,7 +5257,7 @@
           "class": "generated_runtime",
           "path": "campaign-spec/rules/design-source-shape.ts",
           "surface_entry": null,
-          "summary": "The missing design_source.file_url warning says hand-written or template HTML removes design_source from the page."
+          "summary": "The missing design_source.file_url warning says hand-written or template HTML removes design_source from the page, unless design_source.type is figma or ai-generated."
         },
         {
           "class": "cli_surface",
@@ -5266,7 +5266,7 @@
           "summary": "The no-source-mapping error for a design_source without file_url offers removing design_source for hand-written or template HTML and names the source-html manifest."
         }
       ],
-      "entry_sha256": "e7aa6c6a676e444c6038b5ebd8995951cb88993a28226453cfbab3ebde31b60a"
+      "entry_sha256": "071bd55831fb67a6ed3132394f8852fd01c04f1eb435697ab65c945268eafb3f"
     }
   ]
 }

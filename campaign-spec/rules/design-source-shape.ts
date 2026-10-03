@@ -28,6 +28,10 @@
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
 
+// design_source.type values with a producer (docs/entry-points.md). A page of
+// one of these types needs its file_url; any other type gets the hand-written
+// HTML way out as well.
+const DESIGN_TOOL_PRODUCERS = new Set(['figma', 'ai-generated'])
 const FIGMA_URL_PATTERN = /^https:\/\/(?:www\.)?figma\.com\//i
 const ANY_URL_PATTERN = /^https?:\/\/\S+/i
 
@@ -68,8 +72,11 @@ export const DesignSourceShape: Rule = {
           violations.push({
             ruleId: 'DesignSourceShape',
             severity: 'warning',
-            message: `"${pageLabel}" — design_source.file_url is missing; expected the design-tool file URL. ` +
-              `Hand-written or template HTML has no design tool: remove design_source from the page (see docs/entry-points.md).`,
+            message:
+              `"${pageLabel}" — design_source.file_url is missing; expected the design-tool file URL.` +
+              (DESIGN_TOOL_PRODUCERS.has(String(design.type ?? '').trim().toLowerCase())
+                ? ''
+                : ' Hand-written or template HTML has no design tool: remove design_source from the page (see docs/entry-points.md).'),
             path: `${basePath}/file_url`,
             data: { pageId: page.id, check: 'file-url-missing' },
           })
