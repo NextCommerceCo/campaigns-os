@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.10] - 2026-10-03
+
+### Fixed
+
+- QA's placeholder text-residue gate (`template-residue:<page>:placeholder-text`,
+  and doctor's built-output warning) now also matches the starter templates'
+  own icon-grid placeholders, `Benefit one`, `Benefit two`, `Benefit three` and
+  `Benefit four`. The olympus checkouts ship them, and a campaign that kept
+  them passed QA with no failures, because the shared-commerce term list held
+  only `Lorem`, `lorem ipsum`, `Placeholder`, `TODO` and `Product Name`.
+  - The terms live in `contracts/template-brand-contract.shared-commerce.v0.json`,
+    so every family inherits them.
+  - Matching is word-bounded, so "Benefit once" does not fire.
+  - Doctor's next-step hint and `docs/template-family-contracts.md` list them.
+
 ## [1.50.0+agent.9] - 2026-10-03
 
 ### Added
