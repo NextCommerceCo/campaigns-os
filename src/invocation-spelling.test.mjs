@@ -87,7 +87,10 @@ test("the installed agent context spells every command the way the campaign fold
 // the store as a real order someone may have to cancel. So the agent asks
 // once, up front with its other setup questions, unless the operator already
 // said test orders are fine, and never reads the missing flag as "no approval
-// needed".
+// needed". The list is the files that teach an agent to place or plan test
+// orders; every agents/ and skills/ file is scanned for approval-free wording
+// below, so a new skill that mentions test orders cannot call them
+// approval-free, and one that teaches them belongs on this list.
 const TEST_ORDER_GUIDANCE = [
   ...filesUnder("agents", () => true),
   "skills/next-campaigns-os/SKILL.md",
@@ -97,10 +100,15 @@ const TEST_ORDER_GUIDANCE = [
 
 test("the agent context asks about test orders once, up front, instead of calling them approval-free", () => {
   const flat = (path) => readFileSync(join(ROOT, path), "utf8").replace(/\s+/g, " ");
-  const approvalFree = /no permission\/approval|needs? no permission|no permission or approval|safe to (?:fire|run) any time/gi;
+  // Phrasings that read the missing flag as "no approval needed". The tool
+  // fact itself ("`qa run` has no permission flag") is allowed.
+  const approvalFree = /no permission\/approval|needs? no (?:permission|approval)(?! flag)|no (?:permission|approval|sign-off)(?: or approval)?(?: step)?(?: is)? (?:needed|required)|no permission or approval|without (?:needing |asking for )?(?:permission|approval)|safe to (?:fire|run|execute|place)(?: them| test orders)? (?:at )?any ?time/gi;
   const claims = [...filesUnder("agents", () => true), ...filesUnder("skills", (name) => name.endsWith(".md"))]
     .flatMap((path) => [...flat(path).matchAll(approvalFree)].map((match) => `${path}: ${match[0]}`));
   assert.deepEqual(claims, [], "test orders land in the store as real orders; say `qa run` has no permission flag instead");
+  // The two phrases are the contract wording, kept identical across these
+  // files on purpose: a rewording here should be a deliberate edit of every
+  // file and this test together.
   const silent = TEST_ORDER_GUIDANCE.filter((path) =>
     !/ask once, up front/i.test(flat(path)) || !/already said test orders are fine/i.test(flat(path)));
   assert.deepEqual(silent, [], "tell the agent to ask once, up front, unless the operator already said test orders are fine");
