@@ -377,7 +377,12 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
       .map((pageId) => strayFiles.get(pageId)))];
     if (!stray.length) continue;
     finding.stray_files = stray;
-    finding.message += ` ${stray.join(" and ")} ${stray.length === 1 ? "is" : "are"} not the built page of any CampaignSpec page: built output left by an earlier build, or an HTML file copied into the source (a design export's index.html under assets/ builds as its own page). Remove the source file if there is one, delete the built file, then rebuild and record the build again; do not retag it.`;
+    // The stray is the repair, whichever side of the finding it is on, so it
+    // leads; the drift it causes follows as the evidence. Appending it would
+    // leave the finding's own instruction (retag, or add a missing tag to a
+    // real page) first, and that edit lands on the wrong file.
+    const named = stray.length > 2 ? `${stray.slice(0, -1).join(", ")}, and ${stray.at(-1)}` : stray.join(" and ");
+    finding.message = `${named} ${stray.length === 1 ? "is" : "are"} not the built page of any CampaignSpec page: built output left by an earlier build, or an HTML file copied into the source (a design export's index.html under assets/ builds as its own page). Remove the source file if there is one, delete the built file, then rebuild and record the build again; do not retag either page. The finding it causes: ${finding.message}`;
   }
 
   const identity = {
