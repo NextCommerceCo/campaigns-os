@@ -1,5 +1,6 @@
 // Raw cart placeholders (`built_output.cart_placeholders`): ownership per
-// kind, whitespace in a field, for/event scripts, the row template the SDK
+// kind, whitespace in a field, for/event scripts, a loader src resolved
+// against the document base URL (<base href>), the row template the SDK
 // reads (CSS identifiers included), exactly balanced double braces, symbolic
 // links under the campaign directory, and read failures versus defects.
 // Every page here is synthetic; hosts are example.invalid.
@@ -156,6 +157,58 @@ test("loader eligibility: a classic script with both `for` and `event` never run
   const rows = await builtDoctor(t, page(table[0][0]));
   assert.deepEqual(summary(rows), ["unexercised/sdk_pin_unknown page"]);
   assert.equal(rows[0].observation.sdk_pin, null);
+});
+
+test("loader URL: a loader src resolves against the document base URL, the href of the first <base> that has one (itself resolved against the page URL), before the loader's scope, package, path and exact version are read", async (t) => {
+  const CDN = "https://cdn.example.invalid";
+  const base = (href) => `<base href="${href}">`;
+  const loader = (src) => `<script src="${src}"></script>`;
+  const page = (head, body = "") => `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Synthetic cart placeholder page</title>\n${head}\n</head>\n<body>\n${body}\n${TEMPLATE_ONLY}\n</body>\n</html>\n`;
+  const RELATIVE = "campaign-cart@v0.4.40/dist/loader.js";
+  // [head, body, pin]
+  const table = [
+    // A <base> naming another npm scope puts the loader in that scope.
+    [`${base(`${CDN}/@outsider/`)}\n${loader(RELATIVE)}`, "", null],
+    [`${base("/@outsider/")}\n${loader(RELATIVE)}`, "", null],
+    // A relative loader cannot resolve against an opaque base.
+    [`${base("mailto:fixture@example.invalid")}\n${loader(RELATIVE)}`, "", null],
+    // A <base> on the right CDN path completes a relative loader; its version must still be exact.
+    [`${base(`${CDN}/npm/@nextcommerce/campaign-cart@v0.4.40/`)}\n${loader("dist/loader.js")}`, "", "0.4.40"],
+    [`${base(`${CDN}/@nextcommerce/`)}\n${loader(RELATIVE)}`, "", "0.4.40"],
+    [`${base(`${CDN}/npm/campaign-cart@0.4.40/dist/`)}\n${loader("loader.js")}`, "", "0.4.40"],
+    [`${base(`${CDN}/npm/@nextcommerce/campaign-cart@latest/`)}\n${loader("dist/loader.js")}`, "", null],
+    [`${base(`${CDN}/npm/@nextcommerce/campaign-cart@^0.4.40/`)}\n${loader("dist/loader.js")}`, "", null],
+    // An absolute loader ignores the base.
+    [`${base(`${CDN}/@outsider/`)}\n${loader(`${CDN}/${RELATIVE}`)}`, "", "0.4.40"],
+    // Only the first <base> with an href counts; a later one is ignored.
+    [`${base(`${CDN}/@nextcommerce/campaign-cart@v0.4.40/`)}\n${base(`${CDN}/@outsider/campaign-cart@v0.4.40/`)}\n${loader("dist/loader.js")}`, "", "0.4.40"],
+    [`${base(`${CDN}/@outsider/campaign-cart@v0.4.40/`)}\n${base(`${CDN}/@nextcommerce/campaign-cart@v0.4.40/`)}\n${loader("dist/loader.js")}`, "", null],
+    // A <base> without href is not read; the first one with an href is.
+    [`<base target="_blank">\n${base(`${CDN}/@nextcommerce/campaign-cart@v0.4.40/`)}\n${loader("dist/loader.js")}`, "", "0.4.40"],
+    [`<base target="_blank">\n${loader(RELATIVE)}`, "", "0.4.40"],
+    // A <base> later in the document still sets the base for an earlier script.
+    [loader("dist/loader.js"), base(`${CDN}/@nextcommerce/campaign-cart@v0.4.40/`), "0.4.40"],
+    // No <base> in template content or SVG, and no data: or javascript: base.
+    [`${loader("dist/loader.js")}`, `<template>${base(`${CDN}/@nextcommerce/campaign-cart@v0.4.40/`)}</template>`, null],
+    [`${loader(RELATIVE)}`, `<svg>${base(`${CDN}/@outsider/`)}</svg>`, "0.4.40"],
+    [`${base("javascript:void(0)")}\n${loader(RELATIVE)}`, "", "0.4.40"],
+    [`${base("data:text/html,x")}\n${loader(RELATIVE)}`, "", "0.4.40"],
+  ];
+  const byPage = evaluate(table.map(([head, body], i) => [`case-${i}.html`, page(head, body)]));
+  table.forEach(([head, body, pin], i) => {
+    const rows = byPage.get(`case-${i}.html`);
+    const markup = `${head} | ${body}`;
+    assert.deepEqual(summary(rows), [pin ? "pass/null page" : "unexercised/sdk_pin_unknown page"], markup);
+    assert.equal(rows[0].observation.sdk_pin, pin, `${markup}: pin`);
+  });
+
+  // End to end through doctor --built.
+  const outsider = await builtDoctor(t, page(table[0][0]));
+  assert.deepEqual(summary(outsider), ["unexercised/sdk_pin_unknown page"]);
+  assert.equal(outsider[0].observation.sdk_pin, null);
+  const completed = await builtDoctor(t, page(table[3][0]));
+  assert.deepEqual(summary(completed), ["pass/null page"]);
+  assert.equal(completed[0].observation.sdk_pin, "0.4.40");
 });
 
 test("row template resolution matches the SDK: a non-empty data-item-template-id wins over the selector, an empty attribute is not read, and a selector that is no valid CSS selector is unresolved", async (t) => {
