@@ -77,12 +77,17 @@ const R = CART_PLACEHOLDERS_REASONS;
 //            {<namespace>.<field>[.<field>...]} at any depth in one of the
 //            seven namespaces (every namespaced renderer takes any key path)
 //   unknown  {name} or {name.field} that is not known
-// Any other brace string is not a candidate. `{{...}}` is left to
-// sdk_markup's double-brace check, so a brace pair directly inside another is
-// not a candidate.
+// Any other brace string is not a candidate. A field is any run of
+// characters other than whitespace, a brace or the `.` separator: the
+// renderers read every key as /\{([^}]+)\}/ and the package, bundle and
+// toggle keys come from arbitrary JSON keys ({toggle.first-name}).
+// Every single-brace pair is a candidate whatever surrounds it ({item.name}},
+// }{item.name}, {{item.name}); only the inner pair of a balanced
+// `{{...}}` is not, being left to sdk_markup's double-brace check.
 const QTY_FORMS = SDK_TEMPLATE_PLACEHOLDERS.quantity_text.qty_forms;
-const CANDIDATE = new RegExp(`(?<!\\{)\\{([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*|${QTY_FORMS})\\}(?!\\})`, "g");
-const NAMESPACED = /^([A-Za-z_][A-Za-z0-9_]*)(?:\.[A-Za-z0-9_]+)+$/;
+const FIELD = "[^\\s{}.]+";
+const CANDIDATE = new RegExp(`\\{([A-Za-z_][A-Za-z0-9_]*(?:\\.${FIELD})*|${QTY_FORMS})\\}`, "g");
+const NAMESPACED = new RegExp(`^([A-Za-z_][A-Za-z0-9_]*)(?:\\.${FIELD})+$`);
 const UNKNOWN_SHAPE = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)?$/;
 const QTY = new RegExp(`^(?:${QTY_FORMS})$`);
 
@@ -119,6 +124,9 @@ export function isKnownCartPlaceholder(name) {
 }
 
 const isCandidate = (name) => isKnownCartPlaceholder(name) || UNKNOWN_SHAPE.test(name);
+
+// Whether the brace pair at `index` is the inner pair of a balanced `{{...}}`.
+const isDoubleBraced = (text, index, length) => text[index - 1] === "{" && text[index + length] === "}";
 
 // Whether a <script src> is the Campaign Cart loader: `{ version }` (the
 // exact version, or null when it names none) or null when it is not. The URL
@@ -294,7 +302,7 @@ function scanPage(document, { selectorTargets, idTemplates }, onCandidate) {
   const emit = (text, where, line, ctx, elementPath) => {
     for (const match of text.matchAll(CANDIDATE)) {
       const name = match[1];
-      if (!isCandidate(name)) continue;
+      if (!isCandidate(name) || isDoubleBraced(text, match.index, match[0].length)) continue;
       const owned = ctx.template || ctx.itemList || ctx.allowed.has(name) || (ctx.quantityText && QTY.test(name));
       const prefix = text.slice(0, match.index);
       const lineOf = line == null ? null : line + (where === "text" ? prefix.split("\n").length - 1 : 0);

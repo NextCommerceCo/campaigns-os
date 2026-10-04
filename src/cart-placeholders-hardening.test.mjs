@@ -297,3 +297,92 @@ test("depth: a deeply nested page within the byte cap never throws; nesting past
   // Within the depth a browser builds, the page is scanned in full.
   assert.deepEqual(summary(byPage.get("deep-500.html")), ["warning/live_token {item.name}"]);
 });
+
+test("tokenizer: every single-brace pair is a candidate whatever surrounds it; only the inner pair of a balanced {{...}} is not", async (t) => {
+  // Before the opening and after the closing brace: nothing, a letter, space,
+  // punctuation, a stray brace of either kind (literal or as an entity), and
+  // doubled braces. Entities reach the scan decoded.
+  const before = ["", "x", " ", "-", "{", "}", "&#123;", "&#125;", "{{", "}}"];
+  const after = ["", "y", " ", ".", "}", "{", "&#125;", "&#123;", "}}", "{{"];
+  const decode = (s) => s.replaceAll("&#123;", "{").replaceAll("&#125;", "}");
+  const cases = [];
+  for (const [token, expected] of [["{item.name}", "warning/live_token {item.name}"], ["{subtotal}", "warning/live_token {subtotal}"], ["{tax}", "review/unknown_brace"]]) {
+    for (const b of before) {
+      for (const a of after) {
+        const balanced = decode(b).endsWith("{") && decode(a).startsWith("}");
+        cases.push({ text: `${b}${token}${a}`, expected: balanced ? "pass/null page" : expected });
+      }
+    }
+  }
+  const seen = (rows) => rows.map((row) => (row.reason_code === "unknown_brace" ? "review/unknown_brace" : `${row.result}/${row.reason_code} ${row.subject.key}`));
+  // One evaluation per case keeps every page under the page cap.
+  for (const { text, expected } of cases) {
+    const byPage = evaluate([
+      ["text.html", html({ body: `<p>${text}</p>` })],
+      ["attr.html", html({ body: `<img src="data:," alt="${text}">` })],
+    ]);
+    assert.deepEqual(seen(byPage.get("text.html")), [expected], `${text} in text`);
+    assert.deepEqual(seen(byPage.get("attr.html")), [expected], `${text} in alt`);
+  }
+  assert.equal(cases.filter(({ expected }) => expected === "pass/null page").length, 3 * 3 * 3, "setup: balanced only where both neighbours are braces");
+
+  // The challenged forms by name, and adjacent pairs, all read in one pass.
+  const named = evaluate([
+    ["known-extra-close.html", html({ body: "<p>{item.name}}</p>" })],
+    ["known-stray-open.html", html({ body: "<p>}{item.name}</p>" })],
+    ["known-unbalanced-double.html", html({ body: "<p>{{item.name}</p>" })],
+    ["bare-extra-close.html", html({ body: "<p>x{subtotal}}y</p>" })],
+    ["unknown-extra-close.html", html({ body: "<p>{tax}}</p>" })],
+    ["adjacent.html", html({ body: "<p>{item.name}}{subtotal}</p>" })],
+    ["balanced.html", html({ body: "<p>{{item.name}} {{{subtotal}}} {{tax}}</p>" })],
+  ]);
+  assert.deepEqual(summary(named.get("known-extra-close.html")), ["warning/live_token {item.name}"]);
+  assert.deepEqual(summary(named.get("known-stray-open.html")), ["warning/live_token {item.name}"]);
+  assert.deepEqual(summary(named.get("known-unbalanced-double.html")), ["warning/live_token {item.name}"]);
+  assert.deepEqual(summary(named.get("bare-extra-close.html")), ["warning/live_token {subtotal}"]);
+  assert.deepEqual(seen(named.get("unknown-extra-close.html")), ["review/unknown_brace"]);
+  assert.deepEqual(summary(named.get("adjacent.html")), ["warning/live_token {item.name}", "warning/live_token {subtotal}"]);
+  assert.deepEqual(summary(named.get("balanced.html")), ["pass/null page"]);
+
+  // End to end through doctor --built, text and a rendered attribute.
+  assert.deepEqual(summary(await builtDoctor(t, html({ body: "<p>{item.name}}</p>" }))), ["warning/live_token {item.name}"]);
+  assert.deepEqual(summary(await builtDoctor(t, html({ body: "<img src=\"data:,\" alt=\"{subtotal}}\">" }))), ["warning/live_token {subtotal}"]);
+  assert.deepEqual(seen(await builtDoctor(t, html({ body: "<p>{tax}}</p>" }))), ["review/unknown_brace"]);
+});
+
+test("token grammar: a field is any run of non-space, non-brace, non-dot characters, so {<namespace>.first-name} reads warning (live_token) in all seven namespaces", async (t) => {
+  const fields = ["first-name", "a-b.c-d.e-f", "x_y-z.0", "9lives", "Prénom", "a:b"];
+  const tokens = SDK_TEMPLATE_PLACEHOLDERS.namespaces.flatMap((namespace) => fields.map((field) => `{${namespace}.${field}}`));
+  assert.equal(tokens.length, 7 * fields.length, "setup: every namespace");
+  const pages = tokens.flatMap((token, i) => [
+    [`text-${i}.html`, html({ body: `<p>${token}</p>` })],
+    [`attr-${i}.html`, html({ body: `<input type="submit" value="${token}">` })],
+  ]);
+  const byPage = evaluate(pages);
+  tokens.forEach((token, i) => {
+    for (const [file, where] of [[`text-${i}.html`, "text"], [`attr-${i}.html`, "attr:value"]]) {
+      const rows = byPage.get(file);
+      assert.deepEqual(summary(rows), [`warning/live_token ${token}`], `${token} in ${where}`);
+      assert.equal(rows[0].observation.known, true);
+    }
+  });
+
+  // Owned scopes still own the wider fields.
+  const owned = evaluate([
+    ["template.html", html({ body: "<template><p>{toggle.first-name}</p></template>" })],
+    ["list.html", html({ body: "<div data-next-cart-items><p>{item.first-name}</p></div>" })],
+  ]);
+  for (const [file, rows] of owned) assert.deepEqual(summary(rows), ["pass/null page"], `${file}: owned`);
+
+  // Outside the grammar: whitespace or an empty field, and a hyphenated
+  // field in no SDK namespace, are not candidates.
+  const outside = evaluate([
+    ["space.html", html({ body: "<p>{item.first name} {item. name}</p>" })],
+    ["empty.html", html({ body: "<p>{item.} {item..name} {item.name.}</p>" })],
+    ["no-namespace.html", html({ body: "<p>{foo.first-name}</p>" })],
+  ]);
+  for (const [file, rows] of outside) assert.deepEqual(summary(rows), ["pass/null page"], `${file}: not a candidate`);
+
+  // End to end through doctor --built.
+  assert.deepEqual(summary(await builtDoctor(t, html({ body: "<p>{item.first-name}</p>" }))), ["warning/live_token {item.first-name}"]);
+});
