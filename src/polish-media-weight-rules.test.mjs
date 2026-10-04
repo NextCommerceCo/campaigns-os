@@ -436,3 +436,413 @@ test("a step whose completion delays timer servicing past its bound issues nothi
     assert.deepEqual(fake.calls.slice(mark.calls), [], `${step}: no probe step after the bound`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Repair after challenge round 2: classes I (identity binding), R (identity
+// fields re-derive from page_load), T (threshold boundaries) and S (an
+// unreadable source type).
+
+const { OTHER_ORIGIN, SLUG } = await import("./qc-test-factories.mjs");
+const E = "evidence_not_reproducible";
+
+// One collector response (the polish-browser.mjs projection) for `url`.
+const hop = (url, { type = "Image", mime = "image/jpeg", status = 200, bytes, ...rest } = {}) => ({
+  url,
+  resource_type: type,
+  status,
+  mime_type: mime,
+  ...(bytes === undefined ? {} : { encoded_data_length: bytes }),
+  source_urls: [url],
+  from_disk_cache: false,
+  from_prefetch_cache: false,
+  from_service_worker: false,
+  request_served_from_cache: false,
+  failed: false,
+  ...rest,
+});
+// One probed <img>, geometry included.
+const probed = (currentSrc, index, geometry = {}) => ({
+  element_path: `body>img:nth-of-type(${index})`,
+  current_src: currentSrc,
+  svg_data: false,
+  loading: "eager",
+  complete: true,
+  natural: [1000, 1000],
+  rendered: [1000, 1000],
+  object_fit: "fill",
+  hidden: false,
+  ...geometry,
+});
+
+// Evidence built the way the producer builds it (src/polish-node.mjs):
+// collector response records → buildPageLoadCapture →
+// buildPolishPageLoadEvidence, then buildMediaWeightCell /
+// buildMediaWeightRecord, so every ledger entry, chain and integrity is the
+// package's own. cells: [{ route, responses, images, mediaElements }]; each
+// cell's document response is added first.
+async function builtEvidence(cells) {
+  const { buildPageLoadCapture } = await import("./polish-capture.mjs");
+  const { buildPolishPageLoadEvidence } = await import("./polish-page-load.mjs");
+  const { buildMediaWeightCell, buildMediaWeightRecord } = await import("./polish-media-weight.mjs");
+  const inputs = cells.map(({ route, responses, images = [], mediaElements = [] }) => ({
+    route,
+    viewport: VIEWPORT,
+    observation: {
+      finalDocumentUrl: `${ORIGIN}${route}`,
+      responseCollectionStatus: "complete",
+      networkidle: { status: "settled", duration_ms: 500 },
+      mediaElements,
+      responses: [
+        singleResponseRecord(`${route}:doc`, hop(`${ORIGIN}${route}`, { type: "Document", mime: "text/html", bytes: 4_000, is_final_main_document: true, document_context_fingerprint: `sha256:${"a".repeat(64)}` })),
+        ...responses,
+      ],
+    },
+    probe: { status: "complete", dpr: 1, images },
+  }));
+  const captures = inputs.map(({ route, viewport, observation }) => buildPageLoadCapture({
+    buildFingerprint: BUILD_FP,
+    slug: SLUG,
+    requestedRoute: route,
+    viewport,
+    requestedDocumentUrl: observation.finalDocumentUrl,
+    ...observation,
+  }));
+  const pageLoad = buildPolishPageLoadEvidence({ buildFingerprint: BUILD_FP, slug: SLUG, routeScope: "all", routes: cells.map((cell) => cell.route), viewports: [VIEWPORT], captures });
+  const record = buildMediaWeightRecord({
+    pageLoad,
+    cells: inputs.map((input) => buildMediaWeightCell({
+      ...input,
+      capture: pageLoad.captures.find((capture) => capture.subject.requested_route === input.route),
+    })),
+    measuredAt: "2026-10-04T00:00:00.000Z",
+  });
+  return { pageLoad, record };
+}
+
+const { redirectChainRecord, singleResponseRecord } = await import("./polish-capture.mjs");
+
+// Challenge P1-1: https://…/img/a.jpg requested twice, once answered 200
+// directly (300,000 B) and once redirected 302 (200 B) to /img/final.jpg;
+// the <img> keeps currentSrc /img/a.jpg. The ledger's a.jpg entry mixes 200
+// and 302, so the URL stands for two chains (bindLedgerChain: ambiguous).
+// Either the final transfer completed or it was canceled at 100,000 B of a
+// declared 600,000 B. Both request orders give the same record and the same
+// results: every result of the cell unexercised / evidence_not_reproducible
+// (contract :163, :936), none pass, none accept-eligible.
+test("P1-1 one image URL bound to two request chains: never pass, never accept-eligible, the same for both request orders (complete and canceled final transfer)", async () => {
+  const A = `${ORIGIN}/img/a.jpg`;
+  const FINAL = `${ORIGIN}/img/final.jpg`;
+  const finals = {
+    complete: hop(FINAL, { bytes: 300_000 }),
+    canceled: hop(FINAL, { bytes: 100_000, canceled: true, declared_data_length: 600_000 }),
+  };
+  for (const [variant, finalHop] of Object.entries(finals)) {
+    const direct = singleResponseRecord("direct", hop(A, { bytes: 300_000 }));
+    const redirected = redirectChainRecord("redirected", [hop(A, { status: 302, bytes: 200, mime: "text/html" }), finalHop]);
+    const read_ = {};
+    for (const [order, responses] of [["direct-first", [direct, redirected]], ["redirect-first", [redirected, direct]]]) {
+      const evidence = await builtEvidence([{ route: ROUTES[0], responses, images: [probed(A, 1)] }]);
+      const entry = evidence.pageLoad.captures[0].resource_ledger.entries.find((candidate) => candidate.resource_id === resourceIdOf(A));
+      assert.deepEqual(entry.statuses, [200, 302], `setup (${variant}, ${order}): one ledger entry mixes the direct and the redirected answer`);
+      const results = await read(evidence);
+      for (const row of results) {
+        assert.notEqual(row.result, "pass", `${variant} ${order} ${row.check} ${row.subject.key}: never pass from one of two chains`);
+        assert.equal(row.accept_eligible, false, `${variant} ${order} ${row.check} ${row.subject.key}: not accept-eligible`);
+      }
+      sameRows(results, [
+        [ROUTES[0], resourceIdOf(`${ORIGIN}${ROUTES[0]}`), "media.weight", "unexercised", E, false],
+        [ROUTES[0], resourceIdOf(A), "media.weight", "unexercised", E, false],
+        [ROUTES[0], resourceIdOf(FINAL), "media.weight", "unexercised", E, false],
+        [ROUTES[0], `${resourceIdOf(A)}:body>img:nth-of-type(1)`, "media.oversize", "unexercised", E, false],
+      ]);
+      read_[order] = { record: evidence.record, results };
+    }
+    assert.deepEqual(read_["redirect-first"].record, read_["direct-first"].record, `${variant}: the record does not depend on the request order`);
+    assert.deepEqual(read_["redirect-first"].results, read_["direct-first"].results, `${variant}: the results do not depend on the request order`);
+  }
+});
+
+// Mutation M16 (an <img> bound to the first chain whose first hop URL
+// matches, instead of the identity its currentSrc names): two requests for
+// one origin+path that differ only in the query, an SVG and a PNG. Each
+// <img> binds to its own request, in either response order.
+test("M16 an <img> binds to the request its currentSrc names (query included), never to another request for the same origin+path", async () => {
+  const SVG = `${ORIGIN}/img/icon?v=1`;
+  const PNG = `${ORIGIN}/img/icon?v=2`;
+  const svgRecord = singleResponseRecord("svg", hop(SVG, { mime: "image/svg+xml", bytes: 2_000 }));
+  const pngRecord = singleResponseRecord("png", hop(PNG, { mime: "image/png", bytes: 40_000 }));
+  // Both shown at a tenth of 1000×1000 (F = 10): the PNG is oversized, the SVG is vector.
+  const images = [probed(PNG, 1, { rendered: [100, 100] }), probed(SVG, 2, { rendered: [100, 100] })];
+  for (const responses of [[svgRecord, pngRecord], [pngRecord, svgRecord]]) {
+    const evidence = await builtEvidence([{ route: ROUTES[0], responses, images }]);
+    const order = responses.map((record) => record.request_id).join(" then ");
+    const cell = evidence.record.cells[0];
+    assert.deepEqual(cell.images.map((image) => [image.resource_id, image.vector]), [[resourceIdOf(PNG), false], [resourceIdOf(SVG), true]], `${order}: each <img> binds to its own request`);
+    sameRows(await read(evidence), [
+      [ROUTES[0], resourceIdOf(`${ORIGIN}${ROUTES[0]}`), "media.weight", "pass", null, false],
+      [ROUTES[0], resourceIdOf(SVG), "media.weight", "pass", null, false],
+      [ROUTES[0], resourceIdOf(PNG), "media.weight", "pass", null, false],
+      [ROUTES[0], `${resourceIdOf(PNG)}:body>img:nth-of-type(1)`, "media.oversize", "warning", "image_oversized", true],
+      [ROUTES[0], `${resourceIdOf(SVG)}:body>img:nth-of-type(2)`, "media.oversize", "unexercised", "vector_image", false],
+    ]);
+  }
+});
+
+// The binder the rules use: a cell (evaluated directly, before any reader
+// check) in which two resources' chains share a hop. Neither resource, and
+// no <img> that names the shared hop, reads a result taken from one chain.
+test("the 1.3 rules read a resource that shares a hop with another, and an <img> bound to it, as evidence_not_reproducible", () => {
+  const A = resourceIdOf(`${ORIGIN}/img/a.jpg`);
+  const B = resourceIdOf(`${ORIGIN}/img/b.jpg`);
+  const FINAL = resourceIdOf(`${ORIGIN}/img/final.jpg`);
+  const resource = (id, url, chain) => ({ resource_id: id, url, type: "image", transferred_bytes: 300_000, declared_bytes: null, measurement: "complete", failed: false, final_origin_equal: true, chain });
+  const cell = {
+    route: ROUTES[0],
+    viewport: VIEWPORT,
+    dpr: 1,
+    capture_status: "complete",
+    probe_status: "complete",
+    resources: [
+      resource(A, `${ORIGIN}/img/a.jpg`, [{ url: `${ORIGIN}/img/a.jpg`, resource_id: A, status: 302 }, { url: `${ORIGIN}/img/final.jpg`, resource_id: FINAL, status: 200 }]),
+      resource(B, `${ORIGIN}/img/b.jpg`, [{ url: `${ORIGIN}/img/b.jpg`, resource_id: B, status: 302 }, { url: `${ORIGIN}/img/final.jpg`, resource_id: FINAL, status: 200 }]),
+    ],
+    videos: [],
+    images: [
+      { resource_id: FINAL, element_path: "body>img:nth-of-type(1)", complete: true, natural: [1000, 1000], rendered: [1000, 1000], object_fit: "fill", loading: "eager", hidden: false },
+      { resource_id: A, element_path: "body>img:nth-of-type(2)", complete: true, natural: [1000, 1000], rendered: [1000, 1000], object_fit: "fill", loading: "eager", hidden: false },
+    ],
+  };
+  const rows = evaluateMediaWeight(cell).map((row) => [row.subject.key, row.check, row.result, row.reason_code, row.accept_eligible]).sort();
+  assert.deepEqual(rows, [
+    [A, "media.weight", "unexercised", E, false],
+    [`${A}:body>img:nth-of-type(2)`, "media.oversize", "unexercised", E, false],
+    [B, "media.weight", "unexercised", E, false],
+    [`${FINAL}:body>img:nth-of-type(1)`, "media.oversize", "unexercised", E, false],
+  ].sort());
+});
+
+// Candidate S, node leg: a source whose type the capture cannot read. A
+// blob: currentSrc, and an http currentSrc the ledger has no entry for, keep
+// resource_id null and vector null; their oversize result is unexercised /
+// not_in_ledger, never pass. A data: source's type is its own (svg or not).
+test("an <img> whose source type cannot be read (blob:, or http with no ledger entry) reads oversize unexercised (not_in_ledger), never pass", async () => {
+  const CACHED = `${ORIGIN}/img/cached.png`;
+  const images = [
+    { ...probed("blob:", 1, { rendered: [300, 150], natural: [300, 150] }) },
+    { ...probed(CACHED, 2, { natural: [40, 30], rendered: [40, 30] }) },
+    { ...probed("data:", 3, { natural: [40, 30], rendered: [40, 30] }), svg_data: true },
+    { ...probed("data:", 4, { natural: [40, 30], rendered: [40, 30] }) },
+  ];
+  const evidence = await builtEvidence([{ route: ROUTES[0], responses: [], images }]);
+  assert.deepEqual(evidence.record.cells[0].images.map((image) => [image.resource_id, image.vector]), [[null, null], [null, null], [null, true], [null, false]]);
+  const rows = await read(evidence);
+  const oversize = rows.filter((row) => row.check === "media.oversize").map((row) => [row.subject.key, row.result, row.reason_code]).sort();
+  assert.deepEqual(oversize, [
+    ["null:body>img:nth-of-type(1)", "unexercised", "not_in_ledger"],
+    ["null:body>img:nth-of-type(2)", "unexercised", "not_in_ledger"],
+    ["null:body>img:nth-of-type(3)", "unexercised", "vector_image"],
+    ["null:body>img:nth-of-type(4)", "pass", null],
+  ]);
+});
+
+// ---------------------------------------------------------------------------
+// Class R: every identity-bearing field of the record re-derives from
+// page_load. One package-built two-cell record: the cell under test (route
+// 0) holds the document, a 300,000 B hero image, a script, a cross-origin
+// 302 to a same-origin image, and a <video> that fetched its source; two
+// <img> (the hero shown at 100×100, F = 10, an accept-eligible warning, and
+// the redirected image). Each mutation changes one field, recomputes the
+// record integrity and must leave every result of that cell unexercised /
+// evidence_not_reproducible and not accept-eligible (the build fingerprint:
+// stale_binding, contract :936).
+async function identityEvidence() {
+  const HERO_URL = `${ORIGIN}/img/hero.jpg`;
+  const SCRIPT = `${ORIGIN}/app.js`;
+  const HOP = `${OTHER_ORIGIN}/img/moved.jpg`;
+  const MOVED = `${ORIGIN}/img/moved.jpg`;
+  const CLIP = `${ORIGIN}/media/clip.mp4`;
+  const video = {
+    tag_name: "video",
+    current_src: CLIP,
+    src_attribute: CLIP,
+    source_src_attributes: [],
+    observed_source_urls: [],
+    preload_attribute: "auto",
+    computed_style: { display: "inline", visibility: "visible" },
+    ancestor_styles: [],
+    bounding_box: { width: 320, height: 180 },
+  };
+  return builtEvidence([
+    {
+      route: ROUTES[0],
+      responses: [
+        singleResponseRecord("hero", hop(HERO_URL, { bytes: 300_000 })),
+        singleResponseRecord("script", hop(SCRIPT, { type: "Script", mime: "text/javascript", bytes: 9_000 })),
+        redirectChainRecord("moved", [hop(HOP, { status: 302, bytes: 300, mime: "text/html" }), hop(MOVED, { bytes: 50_000 })]),
+        singleResponseRecord("clip", hop(CLIP, { type: "Media", mime: "video/mp4", bytes: 80_000 })),
+      ],
+      images: [probed(HERO_URL, 1, { rendered: [100, 100] }), probed(HOP, 2, { natural: [40, 30], rendered: [40, 30] })],
+      mediaElements: [video],
+    },
+    {
+      route: ROUTES[1],
+      responses: [singleResponseRecord("control", hop(`${ORIGIN}/img/control.jpg`, { bytes: 600_000 }))],
+      images: [probed(`${ORIGIN}/img/control.jpg`, 1)],
+    },
+  ]);
+}
+
+const upperHex = (id) => id.replace(/^sha256:/, "").toUpperCase().replace(/^/, "sha256:");
+const NOWHERE_ID = `sha256:${"0".repeat(64)}`;
+
+test("table R: each identity field of a media_weight cell, re-cased, swapped with another real value or pointed nowhere, reads evidence_not_reproducible and is never accept-eligible", async () => {
+  const evidence = await identityEvidence();
+  const control = await read(evidence);
+  const cellRowsOf = (results) => results.filter((row) => row.subject.page !== ROUTES[1]);
+  // Control: the untouched record re-derives, and the cell under test holds
+  // an accept-eligible warning and passes that a mutation must not keep.
+  assert.ok(cellRowsOf(control).some((row) => row.result === "warning" && row.accept_eligible), "control: the hero oversize warning is accept-eligible");
+  assert.ok(cellRowsOf(control).some((row) => row.result === "pass"), "control: the cell holds passes");
+  assert.ok(control.every((row) => row.reason_code !== E), "control: nothing reads evidence_not_reproducible");
+
+  const cell0 = evidence.record.cells[0];
+  const cell1 = evidence.record.cells[1];
+  const byUrl = (url) => cell0.resources.find((resource) => resource.url === url);
+  const hero = cell0.resources.indexOf(byUrl(`${ORIGIN}/img/hero.jpg`));
+  const script = byUrl(`${ORIGIN}/app.js`);
+  const moved = cell0.resources.indexOf(byUrl(`${OTHER_ORIGIN}/img/moved.jpg`));
+  const documentResource = byUrl(`${ORIGIN}${ROUTES[0]}`);
+  const movedChain = cell0.resources[moved].chain;
+  assert.equal(movedChain.length, 2, "setup: the redirected image has a two-hop chain");
+  assert.equal(cell0.videos.length, 1, "setup: one <video>");
+  assert.equal(cell0.videos[0].resource_ids.length, 1, "setup: the <video> fetched its source");
+  assert.equal(cell0.images[0].resource_id, cell0.resources[hero].resource_id, "setup: <img> 1 is the hero");
+
+  // [field, mutation, edit(record)]
+  const R = [
+    ["cells[].route", "re-cased", (r) => { r.cells[0].route = ROUTES[0].toUpperCase(); }],
+    ["cells[].route", "another real route", (r) => { r.cells[0].route = ROUTES[1]; }],
+    ["cells[].route", "nowhere", (r) => { r.cells[0].route = "/runtime-packet-demo/nowhere/"; }],
+    ["cells[].viewport", "re-cased", (r) => { r.cells[0].viewport = "Desktop"; }],
+    ["cells[].viewport", "another real viewport", (r) => { r.cells[0].viewport = "mobile"; }],
+    ["cells[].document_origin", "re-cased", (r) => { r.cells[0].document_origin = ORIGIN.toUpperCase(); }],
+    ["cells[].document_origin", "another real origin", (r) => { r.cells[0].document_origin = OTHER_ORIGIN; }],
+    ["cells[].document_origin", "nowhere", (r) => { r.cells[0].document_origin = "https://nowhere.example.invalid"; }],
+    ["cells[].page_load_integrity", "re-cased", (r) => { r.cells[0].page_load_integrity = upperHex(cell0.page_load_integrity); }],
+    ["cells[].page_load_integrity", "another real capture's", (r) => { r.cells[0].page_load_integrity = cell1.page_load_integrity; }],
+    ["cells[].page_load_integrity", "nowhere", (r) => { r.cells[0].page_load_integrity = NOWHERE_ID; }],
+    ["resources[].resource_id", "re-cased", (r) => { r.cells[0].resources[hero].resource_id = upperHex(cell0.resources[hero].resource_id); }],
+    ["resources[].resource_id", "another real id", (r) => { r.cells[0].resources[hero].resource_id = script.resource_id; }],
+    ["resources[].resource_id", "nowhere", (r) => { r.cells[0].resources[hero].resource_id = NOWHERE_ID; }],
+    ["resources[].url", "re-cased", (r) => { r.cells[0].resources[hero].url = `${ORIGIN}/IMG/HERO.JPG`; }],
+    ["resources[].url", "another real url", (r) => { r.cells[0].resources[hero].url = script.url; }],
+    ["resources[].url", "nowhere", (r) => { r.cells[0].resources[hero].url = `${ORIGIN}/img/nowhere.jpg`; }],
+    ["resources[].chain[0].resource_id", "re-cased", (r) => { r.cells[0].resources[hero].chain[0].resource_id = upperHex(cell0.resources[hero].resource_id); }],
+    ["resources[].chain[0].resource_id", "another real id", (r) => { r.cells[0].resources[hero].chain[0].resource_id = script.resource_id; }],
+    ["resources[].chain[0].resource_id", "nowhere", (r) => { r.cells[0].resources[hero].chain[0].resource_id = NOWHERE_ID; }],
+    ["resources[].chain[0].url", "re-cased", (r) => { r.cells[0].resources[hero].chain[0].url = `${ORIGIN}/IMG/HERO.JPG`; }],
+    ["resources[].chain[0].url", "another real url", (r) => { r.cells[0].resources[hero].chain[0].url = script.url; }],
+    ["resources[].chain[0].url", "nowhere", (r) => { r.cells[0].resources[hero].chain[0].url = `${ORIGIN}/img/nowhere.jpg`; }],
+    ["resources[].chain[final].resource_id", "re-cased", (r) => { r.cells[0].resources[moved].chain[1].resource_id = upperHex(movedChain[1].resource_id); }],
+    ["resources[].chain[final].resource_id", "another real id", (r) => { r.cells[0].resources[moved].chain[1].resource_id = cell0.resources[hero].resource_id; }],
+    ["resources[].chain[final].resource_id", "nowhere", (r) => { r.cells[0].resources[moved].chain[1].resource_id = NOWHERE_ID; }],
+    ["resources[].chain[final].url (final_url)", "re-cased", (r) => { r.cells[0].resources[moved].chain[1].url = `${ORIGIN}/IMG/MOVED.JPG`; }],
+    ["resources[].chain[final].url (final_url)", "another real url", (r) => { r.cells[0].resources[moved].chain[1].url = `${ORIGIN}/img/hero.jpg`; }],
+    ["resources[].chain[final].url (final_url)", "nowhere", (r) => { r.cells[0].resources[moved].chain[1].url = `${ORIGIN}/img/nowhere.jpg`; }],
+    ["images[].resource_id", "re-cased", (r) => { r.cells[0].images[0].resource_id = upperHex(cell0.images[0].resource_id); }],
+    ["images[].resource_id", "another real id (the document)", (r) => { r.cells[0].images[0].resource_id = documentResource.resource_id; }],
+    ["images[].resource_id", "another real id (a script)", (r) => { r.cells[0].images[0].resource_id = script.resource_id; }],
+    ["images[].resource_id", "another real id (a redirect's final hop)", (r) => { r.cells[0].images[0].resource_id = movedChain[1].resource_id; }],
+    ["images[].resource_id", "nowhere", (r) => { r.cells[0].images[0].resource_id = NOWHERE_ID; }],
+    ["videos[].element_index", "another index", (r) => { r.cells[0].videos[0].element_index = 1; }],
+    ["videos[].resource_ids", "re-cased", (r) => { r.cells[0].videos[0].resource_ids = [upperHex(cell0.videos[0].resource_ids[0])]; }],
+    ["videos[].resource_ids", "another real id", (r) => { r.cells[0].videos[0].resource_ids = [cell0.resources[hero].resource_id]; }],
+    ["videos[].resource_ids", "nowhere", (r) => { r.cells[0].videos[0].resource_ids = [NOWHERE_ID]; }],
+    ["subject.campaign_slug", "re-cased", (r) => { r.subject.campaign_slug = SLUG.toUpperCase(); }],
+    ["subject.campaign_slug", "nowhere", (r) => { r.subject.campaign_slug = "nowhere"; }],
+    ["subject.routes", "re-cased", (r) => { r.subject.routes = [ROUTES[0].toUpperCase(), ROUTES[1]]; }],
+    ["subject.routes", "nowhere", (r) => { r.subject.routes = [ROUTES[0], "/runtime-packet-demo/nowhere/"]; }],
+    ["subject.viewports", "another real viewport", (r) => { r.subject.viewports = ["mobile"]; }],
+    ["subject.build_fingerprint", "re-cased", (r) => { r.subject.build_fingerprint = BUILD_FP.toUpperCase(); }],
+    ["subject.build_fingerprint", "nowhere", (r) => { r.subject.build_fingerprint = NOWHERE_ID; }],
+  ];
+  for (const [field, mutation, edit] of R) {
+    const record = structuredClone(evidence.record);
+    edit(record);
+    const label = `${field} ${mutation}`;
+    assert.notDeepEqual(record, evidence.record, `${label}: the mutation changes the record`);
+    const results = await read({ record: withRecomputedIntegrity(record), pageLoad: evidence.pageLoad });
+    const rows = cellRowsOf(results);
+    const expected = field === "subject.build_fingerprint" ? "stale_binding" : E;
+    for (const check of ["media.weight", "media.oversize"]) {
+      assert.ok(rows.some((row) => row.check === check && row.subject.page === ROUTES[0]), `${label}: the cell still lists a ${check} result`);
+    }
+    for (const row of rows) {
+      const where = `${label}: ${row.check} ${row.subject.page} ${row.subject.key}`;
+      assert.equal(row.result, "unexercised", where);
+      assert.equal(row.reason_code, expected, where);
+      assert.equal(row.accept_eligible, false, `${where}: not accept-eligible`);
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Class T: each threshold at, under and over its value, on the contract's
+// side. Weight (contract :963-967): over is strictly greater than 500,000
+// measured bytes, and strictly greater than 500,000 declared bytes. Oversize
+// (:988): F ≥ 2.0 and nw·nh ≥ 250,000, both inclusive. Read through the
+// reader site with the real rules.
+test("table T: image_bytes 500,000 (complete and lower_bound) and declared bytes: over means strictly greater", async () => {
+  const weight = async (spec) => {
+    const evidence = mediaWeightFixture({ cells: [{ route: ROUTES[0], resources: [{ path: HERO, ...spec }] }] });
+    const row = (await read(evidence)).find((item) => item.check === "media.weight" && item.subject.key === HERO_KEY);
+    return [row.result, row.reason_code];
+  };
+  const cases = [
+    [{ bytes: 499_999 }, ["pass", null]],
+    [{ bytes: 500_000 }, ["pass", null]],
+    [{ bytes: 500_001 }, ["warning", "image_over_threshold"]],
+    [{ bytes: 499_999, canceled: 1 }, ["unexercised", "transfer_partial"]],
+    [{ bytes: 500_000, canceled: 1 }, ["unexercised", "transfer_partial"]],
+    [{ bytes: 500_001, canceled: 1 }, ["warning", "image_over_threshold"]],
+    [{ bytes: 100_000, canceled: 1, declared: 499_999 }, ["unexercised", "transfer_partial"]],
+    [{ bytes: 100_000, canceled: 1, declared: 500_000 }, ["unexercised", "transfer_partial"]],
+    [{ bytes: 100_000, canceled: 1, declared: 500_001 }, ["review", "declared_over_threshold_unmeasured"]],
+    [{ bytes: 500_000, canceled: 1, declared: 500_001 }, ["review", "declared_over_threshold_unmeasured"]],
+  ];
+  for (const [spec, expected] of cases) assert.deepEqual(await weight(spec), expected, JSON.stringify(spec));
+});
+
+test("table T: oversize_factor 2.0 and min_natural_area 250,000 are inclusive; the observed DPR divides F", async () => {
+  const oversize = async (geometry, dpr = 1) => {
+    const evidence = heroCell((cell) => {
+      cell.dpr = dpr;
+      Object.assign(cell.images[0], { object_fit: "contain", ...geometry });
+    });
+    const row = (await read(evidence)).find((item) => item.check === "media.oversize");
+    return [row.result, row.reason_code];
+  };
+  const WARN = ["warning", "image_oversized"];
+  const PASS = ["pass", null];
+  const cases = [
+    // F at 2.0 exactly (contain, s = 0.5), just under and just over; area 1,000,000.
+    [{ natural: [1000, 1000], rendered: [500, 500] }, 1, WARN],
+    [{ natural: [1000, 1000], rendered: [501, 1000] }, 1, PASS],
+    [{ natural: [1000, 1000], rendered: [499, 1000] }, 1, WARN],
+    // The same at DPR 2: s = 0.25 gives F = 2.0.
+    [{ natural: [1000, 1000], rendered: [250, 250] }, 2, WARN],
+    [{ natural: [1000, 1000], rendered: [251, 1000] }, 2, PASS],
+    // Area at 250,000 exactly, one under and one over, at F = 2.0.
+    [{ natural: [1, 249_999], rendered: [0.5, 249_999] }, 1, PASS],
+    [{ natural: [1, 250_000], rendered: [0.5, 250_000] }, 1, WARN],
+    [{ natural: [1, 250_001], rendered: [0.5, 250_001] }, 1, WARN],
+    // The zero edges: no natural width is not_loaded, no rendered width is not_rendered.
+    [{ natural: [0, 1000], rendered: [500, 500] }, 1, ["unexercised", "not_loaded"]],
+    [{ natural: [1000, 1000], rendered: [0, 500] }, 1, ["unexercised", "not_rendered"]],
+  ];
+  for (const [geometry, dpr, expected] of cases) assert.deepEqual(await oversize(geometry, dpr), expected, `${JSON.stringify(geometry)} at DPR ${dpr}`);
+  // scale-down clamps s at 1, so it never makes F smaller than contain does:
+  // at contain s = 0.5 both read F = 2.0; above natural size both pass.
+  assert.deepEqual(await oversize({ object_fit: "scale-down", natural: [1000, 1000], rendered: [500, 500] }), WARN);
+  assert.deepEqual(await oversize({ object_fit: "scale-down", natural: [1000, 1000], rendered: [501, 1000] }), PASS);
+});

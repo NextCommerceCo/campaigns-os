@@ -23,7 +23,11 @@
 // Two requested hrefs that share a redirect or final hop cannot each own the
 // shared entry: the producer lists both chains as observed, and the reader,
 // which requires every ledger entry in exactly one chain, reads that cell as
-// evidence_not_reproducible (never pass).
+// evidence_not_reproducible (never pass). One requested href that stands for
+// more than one chain (requested twice, answered once and redirected once)
+// is bound to none (bindLedgerChain): the producer lists its ledger entries
+// as one-hop chains, the same for either request order, and the reader
+// refuses that cell the same way.
 import {
   captureOrigin,
   captureProblemRecordCode,
@@ -32,7 +36,7 @@ import {
   resourceLedgerSort,
   responseRecordResponses,
 } from "./polish-capture.mjs";
-import { MEDIA_WEIGHT_SCHEMA, QC_PRODUCERS, mediaWeightIntegrity } from "./qc-results.mjs";
+import { MEDIA_WEIGHT_SCHEMA, QC_PRODUCERS, bindLedgerChain, mediaChainBinder, mediaWeightIntegrity } from "./qc-results.mjs";
 
 export const MEDIA_WEIGHT_SCHEMA_VERSION = MEDIA_WEIGHT_SCHEMA;
 export const MEDIA_WEIGHT_PRODUCER = QC_PRODUCERS.polish;
@@ -95,13 +99,12 @@ function measurementOf(entry) {
   return "complete";
 }
 
-// Each request's hops in transfer order, from the collector's response
-// records (a redirect chain record keeps its hops in order; the ledger does
-// not), keyed by the requested href's resource_id. A request whose hops do not
-// all resolve to ledger entries is left out; its entries are listed below as
-// one-hop chains.
-function requestChains(responses, byId, documentUrl) {
-  const chains = new Map();
+// Each requested href's observed hop sequences in transfer order, from the
+// collector's response records (a redirect chain record keeps its hops in
+// order; the ledger does not), keyed by the requested href's resource_id. A
+// sequence whose hops do not all resolve to ledger entries is left out.
+function observedSequences(responses, byId, documentUrl) {
+  const sequences = new Map();
   for (const record of Array.isArray(responses) ? responses : []) {
     if (!isPlainObject(record) || captureProblemRecordCode(record)) continue;
     const hops = responseRecordResponses(record).map((hop) => ({
@@ -110,9 +113,33 @@ function requestChains(responses, byId, documentUrl) {
       mime_type: typeof hop?.mime_type === "string" ? hop.mime_type.toLowerCase() : null,
     }));
     if (!hops.length || hops.some((hop) => !byId.has(hop.resource_id))) continue;
-    if (!chains.has(hops[0].resource_id)) chains.set(hops[0].resource_id, hops);
+    if (!sequences.has(hops[0].resource_id)) sequences.set(hops[0].resource_id, []);
+    sequences.get(hops[0].resource_id).push(hops);
   }
-  return chains;
+  return sequences;
+}
+
+// The request chain of each requested href, keyed by its resource_id. The
+// ledger decides which chain an href has (bindLedgerChain, the reader's own
+// rule, so the producer and the reader cannot disagree and request order
+// does not matter); the response records only order its hops. An href keeps
+// the observed sequence with exactly the bound hop set and final hop, the
+// least one in JSON order when several do. An href the ledger binds to more
+// than one chain (ambiguous) keeps none: its entries are listed as one-hop
+// chains below, which the reader refuses.
+function requestChains(entries, byId, responses, documentUrl) {
+  const chains = new Map();
+  const sequences = observedSequences(responses, byId, documentUrl);
+  for (const [requestedId, candidates] of sequences) {
+    const binding = bindLedgerChain(requestedId, entries, byId);
+    if (binding.status !== "bound") continue;
+    const matching = candidates.filter((hops) => hops.at(-1).resource_id === binding.final.resource_id
+      && new Set(hops.map((hop) => hop.resource_id)).size === hops.length
+      && hops.length === binding.hops.size
+      && hops.every((hop) => binding.hops.has(hop.resource_id)));
+    if (matching.length) chains.set(requestedId, matching.map((hops) => JSON.stringify(hops)).sort()[0]);
+  }
+  return new Map([...chains].map(([requestedId, hops]) => [requestedId, JSON.parse(hops)]));
 }
 
 function cellResources(entries, chains) {
@@ -158,13 +185,23 @@ const normalizedLoading = (value) => {
 
 // The probe's <img> entries for the record. Geometry is kept only from a
 // probe that completed; any other probe keeps each image's identity alone.
-function cellImages(probe, chains, documentUrl) {
+// An <img> binds by the identity it used: its currentSrc's resource_id (query
+// included) when the ledger has that entry, else null (weight not_in_ledger).
+// `vector` is whether its source is SVG: read from a data: URL's own type or
+// from its request chain's final hop; null when neither can be read (a blob:
+// or other non-http source, an http source with no ledger entry or no chain),
+// which the rules never read as pass.
+function cellImages(probe, chains, byId, documentUrl) {
   const complete = probe.status === "complete";
   return (Array.isArray(probe.images) ? probe.images : []).map((image) => {
     const identity = ledgerIdentity(image?.current_src, documentUrl);
-    const finalHop = identity.resource_id ? chains.get(identity.resource_id)?.at(-1) : null;
+    const resourceId = byId.has(identity.resource_id) ? identity.resource_id : null;
+    const finalHop = resourceId ? chains.get(resourceId)?.at(-1) : null;
+    let vector = null;
+    if (image?.current_src === "data:") vector = image?.svg_data === true;
+    else if (finalHop) vector = Boolean(finalHop.mime_type?.startsWith("image/svg+xml"));
     return {
-      resource_id: identity.resource_id,
+      resource_id: resourceId,
       element_path: image?.element_path,
       complete: complete ? image?.complete : null,
       natural: complete ? image?.natural : null,
@@ -172,7 +209,7 @@ function cellImages(probe, chains, documentUrl) {
       object_fit: complete ? image?.object_fit : null,
       loading: normalizedLoading(image?.loading),
       hidden: complete ? image?.hidden : null,
-      vector: image?.svg_data === true || Boolean(finalHop?.mime_type?.startsWith("image/svg+xml")),
+      vector,
     };
   });
 }
@@ -191,7 +228,7 @@ export function buildMediaWeightCell({ route, viewport, capture, observation = n
   const documentOrigin = capture?.document_response?.final_origin ?? null;
   const entries = (Array.isArray(capture?.resource_ledger?.entries) ? capture.resource_ledger.entries : []).filter((entry) => isPlainObject(entry) && isNonEmptyString(entry.resource_id));
   const byId = new Map(entries.map((entry) => [entry.resource_id, entry]));
-  const chains = requestChains(observation?.responses, byId, documentUrl);
+  const chains = requestChains(entries, byId, observation?.responses, documentUrl);
   return {
     route,
     viewport,
@@ -201,7 +238,7 @@ export function buildMediaWeightCell({ route, viewport, capture, observation = n
     capture_status: capture?.measurement_status ?? "incomplete",
     probe_status: imageProbe.status,
     resources: cellResources(entries, chains),
-    images: cellImages(imageProbe, chains, documentUrl),
+    images: cellImages(imageProbe, chains, byId, documentUrl),
     videos: cellVideos(capture, entries, documentOrigin),
   };
 }
@@ -227,6 +264,9 @@ export function buildMediaWeightRecord({ pageLoad, cells, uncapturedRoutes = [],
 // Rules (contract 1.3 Result rules)
 
 const CAPTURE_INCOMPLETE = "capture_incomplete";
+// Contract 1.0 Polish reader checks (:163) and 1.3 Observations (:936): a
+// result that cannot be re-derived reads unexercised / evidence_not_reproducible.
+const NOT_REPRODUCIBLE = "evidence_not_reproducible";
 
 function invalid(message) {
   throw new TypeError(`media_weight cell ${message}`);
@@ -269,6 +309,8 @@ function oversizeRule(image, { requested, dpr, thresholds }) {
   if (image.loading === "lazy" && !requested && !image.complete) return { result: ["unexercised", "lazy_not_requested"] };
   if (!image.complete || nw === 0 || nh === 0) return { result: ["unexercised", "not_loaded"] };
   if (image.vector === true) return { result: ["unexercised", "vector_image"] };
+  // A source whose type the capture could not read (vector null) may be SVG.
+  if (image.vector === null) return { result: ["unexercised", "not_in_ledger"] };
   if (image.hidden || rw === 0 || rh === 0) return { result: ["unexercised", "not_rendered"] };
   const scale = renderedScale(image.object_fit, image.natural, image.rendered);
   const factor = 1 / (scale * dpr);
@@ -324,19 +366,37 @@ export function evaluateMediaWeight(cell, thresholds = MEDIA_WEIGHT_THRESHOLDS) 
     });
   };
 
-  const videoIds = new Set(videos.flatMap((video) => (Array.isArray(video?.resource_ids) ? video.resource_ids : [])));
-  const imageIds = new Set(images.map((image) => image?.resource_id).filter(Boolean));
-  const chainOf = new Map();
   for (const resource of resources) {
     if (!isPlainObject(resource) || !Array.isArray(resource.chain) || !resource.chain.length) invalid("resource has no chain");
-    for (const hop of resource.chain) if (!chainOf.has(hop?.resource_id)) chainOf.set(hop?.resource_id, resource);
+  }
+  // Every element binds to its resource through the one binder: a <video>
+  // by each ledger id it fetched, an <img> by its currentSrc's id. A
+  // resource that shares a hop with another resource is bound to no element
+  // alone: it and every element that names it read evidence_not_reproducible,
+  // never a result taken from one of the chains.
+  const bind = mediaChainBinder(resources);
+  const shared = new Set(resources.filter((resource) => resource.chain.some((hop) => bind(hop?.resource_id).status === "ambiguous")));
+  const videoBound = new Set();
+  const imageBound = new Set();
+  for (const video of videos) {
+    for (const id of Array.isArray(video?.resource_ids) ? video.resource_ids : []) {
+      const binding = bind(id);
+      if (binding.status === "bound") videoBound.add(binding.resource);
+    }
+  }
+  for (const image of images) {
+    const binding = bind(image?.resource_id);
+    if (binding.status === "bound") imageBound.add(binding.resource);
   }
 
   for (const resource of resources) {
-    const video = resource.chain.some((hop) => videoIds.has(hop?.resource_id));
-    const image = resource.type === "image" || resource.chain.some((hop) => imageIds.has(hop?.resource_id));
+    const video = videoBound.has(resource);
+    const image = resource.type === "image" || imageBound.has(resource);
     const finalUrl = resource.chain.at(-1)?.url ?? null;
-    const outcome = incomplete ? ["unexercised", CAPTURE_INCOMPLETE] : weightRule(resource, { video, image, thresholds });
+    let outcome;
+    if (incomplete) outcome = ["unexercised", CAPTURE_INCOMPLETE];
+    else if (shared.has(resource)) outcome = ["unexercised", NOT_REPRODUCIBLE];
+    else outcome = weightRule(resource, { video, image, thresholds });
     push("media.weight", resource.resource_id, outcome, {
       measurement: resource.measurement,
       transferred_bytes: resource.transferred_bytes,
@@ -368,7 +428,7 @@ export function evaluateMediaWeight(cell, thresholds = MEDIA_WEIGHT_THRESHOLDS) 
 
   const unledgered = new Set();
   for (const image of images) {
-    if (image?.resource_id && chainOf.has(image.resource_id)) continue;
+    if (bind(image?.resource_id).status !== "absent") continue;
     if (unledgered.has(image?.element_path)) continue;
     unledgered.add(image?.element_path);
     push("media.weight", `img:${image?.element_path}`, incomplete ? ["unexercised", CAPTURE_INCOMPLETE] : ["unexercised", "not_in_ledger"], {
@@ -382,12 +442,14 @@ export function evaluateMediaWeight(cell, thresholds = MEDIA_WEIGHT_THRESHOLDS) 
   }
   for (const image of images) {
     if (!isPlainObject(image) || !isNonEmptyString(image.element_path)) invalid("image has no element_path");
-    if (image.vector !== undefined && typeof image.vector !== "boolean") invalid("image vector flag is not a boolean");
-    const matched = image.resource_id ? chainOf.get(image.resource_id) ?? null : null;
+    if (image.vector !== undefined && image.vector !== null && typeof image.vector !== "boolean") invalid("image vector flag is not a boolean or null");
+    const binding = bind(image.resource_id);
+    const matched = binding.status === "bound" ? binding.resource : null;
     const finalUrl = matched ? matched.chain.at(-1)?.url ?? null : null;
     let outcome;
     let measured = {};
     if (incomplete) outcome = ["unexercised", CAPTURE_INCOMPLETE];
+    else if (binding.status === "ambiguous" || shared.has(matched)) outcome = ["unexercised", NOT_REPRODUCIBLE];
     else if (!probeComplete) outcome = ["unexercised", cell.probe_status];
     else {
       const judged = oversizeRule(image, { requested: Boolean(matched), dpr: cell.dpr, thresholds });
@@ -409,7 +471,7 @@ export function evaluateMediaWeight(cell, thresholds = MEDIA_WEIGHT_THRESHOLDS) 
       loading: image.loading,
       complete: image.complete ?? null,
       hidden: image.hidden ?? null,
-      vector: image.vector === true,
+      vector: image.vector === undefined ? false : image.vector,
       final_url: finalUrl,
       probe_status: cell.probe_status,
       ...measured,

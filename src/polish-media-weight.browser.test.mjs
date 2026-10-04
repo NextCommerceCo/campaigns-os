@@ -1085,3 +1085,99 @@ browserTest("F1.3-I17 same-origin image request fails (connection reset): weight
 browserTest("F1.3-I19 loaded image styled width:0;height:0 with no hidden ancestor: oversize unexercised (not_rendered)", async (t) => {
   await notRenderedRow(t, "i19", (path) => img(`src="${path}" style="width:0;height:0"`), FIRST_IMG);
 });
+
+// ---------------------------------------------------------------------------
+// Repair rows after challenge round 2 (classes I and S)
+
+// A handler that answers each request for its path in turn within a cell:
+// the n-th request gets handlers[n] (the last one repeats). The page handler
+// calls reset() so each viewport's cell starts again at the first.
+function inTurn(handlers) {
+  let count = 0;
+  const handler = (socket) => handlers[Math.min(count++, handlers.length - 1)](socket);
+  handler.reset = () => { count = 0; };
+  return handler;
+}
+
+const NO_STORE = ["Cache-Control: no-store"];
+
+// Challenge P1-1, browser leg. Two <img> name one URL; the second
+// (crossorigin, so the document cannot reuse the first one's response) is
+// inserted when the first loads, so the stub sees two image requests for
+// /img/p1.png in a known order. One request is answered 200 directly, the
+// other 302 to /img/p1-final.png. Both <img> keep currentSrc /img/p1.png.
+// `order` names which answer comes first. The ledger's /img/p1.png entry
+// mixes a redirect and a non-redirect status, so the URL is bound to two
+// request chains: no result of the cell may pass or be accept-eligible, and
+// both orders read the same.
+async function twoChainRow(t, name, order) {
+  const path = `/img/${name}.png`;
+  const finalPath = `/img/${name}-final.png`;
+  const direct = respond("200 OK", "image/png", png(40, 30), NO_STORE);
+  const redirected = respond("302 Found", null, Buffer.alloc(0), [`Location: ${finalPath}`, ...NO_STORE]);
+  const image = inTurn(order === "direct-first" ? [direct, redirected] : [redirected, direct]);
+  const document = page(img(`src="${path}" width="40" height="30" onload="if(!window.second){window.second=1;document.body.insertAdjacentHTML('beforeend','<img alt=&quot;&quot; src=&quot;${path}&quot; crossorigin=&quot;anonymous&quot; width=&quot;40&quot; height=&quot;30&quot;>')}"`));
+  const { same, other, output } = await captureOne(t, name, ({ same: origin }) => {
+    origin.serve(route(name), (socket) => {
+      image.reset();
+      document(socket);
+    });
+    origin.serve(path, image);
+    origin.serve(finalPath, respond("200 OK", "image/png", png(40, 30), NO_STORE));
+  });
+  const url = same.url(path);
+  assertRequestLog({ same, other }, { same: requests([route(name), path, path, finalPath]) }, `setup (${order})`);
+  eachCapture(output, name, (part, viewport) => {
+    assert.equal(part.measurement_status, "complete", `setup (${order} ${viewport}): the capture is complete`);
+    assertLedgerUrls(part, [same.url(route(name)), url, same.url(finalPath)], `${order} ${viewport}`);
+    assertEntry(ledgerEntry(part, url), { request_count: 2, statuses: [200, 302], resource_type: "image" }, `${order} ${viewport}: one URL, a direct and a redirected request`);
+  });
+  const { record, results } = await readCells(output);
+  for (const viewport of VIEWPORTS) {
+    const images = mediaWeightCell(record, route(name), viewport).images;
+    assert.deepEqual(images.map((entry) => entry.resource_id), [rid(url), rid(url)], `setup (${order} ${viewport}): both <img> name /img/${name}.png`);
+  }
+  for (const row of results) {
+    assert.notEqual(row.result, "pass", `${order} ${row.check} ${row.subject.key}: never pass from one of two chains`);
+    assert.equal(row.accept_eligible, false, `${order} ${row.check} ${row.subject.key}: not accept-eligible`);
+  }
+  return { same, results };
+}
+
+browserTest("P1-1 one image URL requested twice, once direct and once redirected: no 1.3 result passes and both request orders read the same", async (t) => {
+  // Each order's full result set, with the route's own names masked so the
+  // two orders compare.
+  const expected = (same, name) => bothCells(route(name), {
+    weight: [doc(same, name), rid(same.url(`/img/${name}.png`)), rid(same.url(`/img/${name}-final.png`))].map((key) => [key, "unexercised", "evidence_not_reproducible"]),
+    oversize: [FIRST_IMG, imgPath(2)].map((path) => [oversizeKey(rid(same.url(`/img/${name}.png`)), path), "unexercised", "evidence_not_reproducible"]),
+  });
+  for (const [name, order] of [["p1-direct", "direct-first"], ["p1-redirect", "redirect-first"]]) {
+    const { same, results } = await twoChainRow(t, name, order);
+    assertResultSet(results, expected(same, name), `${route(name)} (${order})`);
+  }
+});
+
+// Candidate S: an SVG served from a blob: URL. Contract 1.3 (:975) makes an
+// SVG unexercised / vector_image. The capture cannot read a blob: source's
+// type (the probe reads the scheme alone and adds no request), so the image
+// may be SVG: its oversize result reads unexercised with the code the
+// contract gives an <img> whose currentSrc has no ledger entry
+// (not_in_ledger), never pass.
+browserTest("S an <img> showing an SVG from a blob: URL: source type unreadable, oversize unexercised (not_in_ledger), weight not_in_ledger", async (t) => {
+  const stimulus = `<!doctype html><link rel="icon" href="data:,"><img width="300" height="150"><script>const svg='<svg xmlns="http://www.w3.org/2000/svg" width="300" height="150"/>';document.querySelector('img').src=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));</script>`;
+  const { same, other, output } = await captureOne(t, "s-blob", ({ same: origin }) => {
+    origin.serve(route("s-blob"), respond("200 OK", "text/html; charset=utf-8", stimulus));
+  });
+  assertRequestLog({ same, other }, { same: requests([route("s-blob")]) }, "setup");
+  const { record, results } = await readCells(output);
+  for (const viewport of VIEWPORTS) {
+    const [probed] = mediaWeightCell(record, route("s-blob"), viewport).images;
+    assert.equal(probed.resource_id, null, `setup (${viewport}): a blob: currentSrc has no ledger identity`);
+    assert.equal(probed.complete, true, `setup (${viewport}): the blob: SVG loaded`);
+    assert.equal(probed.vector, null, `${viewport}: the source type is recorded as unknown`);
+  }
+  assertResultSet(results, bothCells(route("s-blob"), {
+    weight: [[doc(same, "s-blob"), "pass"], [unledgeredImageKey(FIRST_IMG), "unexercised", "not_in_ledger"]],
+    oversize: [[oversizeKey(null, FIRST_IMG), "unexercised", "not_in_ledger"]],
+  }), route("s-blob"));
+});
