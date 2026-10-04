@@ -2,7 +2,7 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "../spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanText } from "../html-scan.mjs";
 import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "../sdk-meta-tags.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthsDisagree } from "../proof-policy.mjs";
 import { QA_GATE_PLACEHOLDER_TEXT_RESIDUE, qaGatePassedForCurrentBuild } from "../stage-ledger.mjs";
@@ -85,8 +85,8 @@ import {
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "../campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
-import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders, isFileReadFailure, isPageReadFailure } from "../cart-placeholders.mjs";
-import { SMOKE_QC, SMOKE_QC_LIMITS, builtFileOf, evaluateSmokeQc, pageScriptSources } from "../built-smoke-qc.mjs";
+import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders, isFileReadFailure } from "../cart-placeholders.mjs";
+import { SMOKE_QC, SMOKE_QC_LIMITS, builtFileOf, evaluateSmokeQc, insideRoot, isBuiltPageReadFailure, pageScriptSources, parseBuiltPage, realPathOf } from "../built-smoke-qc.mjs";
 import { recordQcResults } from "../qc-results.mjs";
 import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
@@ -2048,27 +2048,21 @@ export function validateCampaignIdentity(packet, errors, ready, derived, spec = 
 // emits `/config.js`); relative srcs resolve against the page. Remote and
 // missing scripts contribute nothing.
 //
-// The bounded form ({ pages, bounds }, the smoke check's anchor script hint)
-// takes pages the caller already read ({file, content?}, as
-// collectCartPlaceholderPages gives them) and lists every local script a page
-// loads, read or not, from the page's parse5 tree (pageScriptSources: any
-// attribute quoting, spacing or case; never a non-JavaScript type or a script
-// in <template> or <noscript>): the first `bounds.scripts` are read when
-// their real path lies inside the site root and they hold at most
-// `bounds.script_bytes` bytes ({src, file, content}); any other reads
-// {src, file, unread} with `missing`, `outside_site`, `too_large`,
-// `unreadable` or `script_cap`, or {src, unread: "unmappable"} when its src
-// names no file. Each src maps to its file through builtFileOf: the URL
-// parser resolves it against the page's URL under the site root (a
-// root-relative src starts at the site root, never the campaign directory),
-// and its path segments are percent-decoded. A page with no content, or one
-// that cannot be parsed, is returned as given.
+// The bounded form ({ pages, bounds }) takes pages the caller already read
+// ({file, content?}, as collectCartPlaceholderPages gives them) and adds each
+// page's `scripts` as the smoke check's anchor script hint reads them
+// (boundedPageScripts), listed from the page's bounded parse5 tree
+// (pageScriptSources: any attribute quoting, spacing or case; never a
+// non-JavaScript type or a script in <template> or <noscript>). A page with
+// no content, or one that cannot be parsed, is returned as given. The smoke
+// check itself hands boundedPageScripts the srcs its own parse lists, so a
+// page is parsed once.
 function collectBuiltPageIdentityInputs(scope, targetRepo, { pages = null, bounds = null } = {}) {
   if (pages && bounds) {
-    const scriptsOf = boundedPageScripts(scope, targetRepo, bounds);
+    const scriptsOf = boundedPageScripts(scope.site_root, targetRepo, bounds);
     return pages.map((page) => {
-      const scripts = typeof page?.content === "string" ? scriptsOf(page.content, join(targetRepo, page.file)) : null;
-      return scripts ? { ...page, scripts } : page;
+      const sources = typeof page?.content === "string" ? boundedScriptSources(page.content) : null;
+      return sources ? { ...page, scripts: scriptsOf(sources, join(targetRepo, page.file)) } : page;
     });
   }
   const scriptCache = new Map();
@@ -2119,27 +2113,38 @@ function builtLocalScriptPath(scope, src, builtPath) {
   return resolve(dirname(builtPath), clean);
 }
 
-// The bounded script list of one page (see collectBuiltPageIdentityInputs),
-// each script file read at most once per run; null when the page cannot be
-// parsed.
-function boundedPageScripts(scope, targetRepo, bounds) {
-  const realSiteRoot = realPathOrNull(scope.site_root);
+// The srcs of the scripts a page loads, or null when it cannot be parsed.
+function boundedScriptSources(content) {
+  try {
+    return pageScriptSources(parseBuiltPage(content));
+  } catch (error) {
+    if (!isBuiltPageReadFailure(error)) throw error;
+    return null;
+  }
+}
+
+// The smoke check's script reader: given the srcs a page loads and the
+// page's file, every local script, read or not. The first `bounds.scripts`
+// are read when their real path lies inside the site root and they hold at
+// most `bounds.script_bytes` bytes ({src, file, content}); any other reads
+// {src, file, unread} with `missing`, `outside_site`, `too_large`,
+// `unreadable` or `script_cap`, or {src, unread: "unmappable"} when its src
+// names no file. Each src maps to its file through builtFileOf: the URL
+// parser resolves it against the page's URL under the site root (a
+// root-relative src starts at the site root, never the campaign directory),
+// and its path segments are percent-decoded. Each script file is read at most
+// once per run.
+function boundedPageScripts(siteRoot, targetRepo, bounds) {
+  const realSiteRoot = realPathOf(siteRoot);
   const cache = new Map();
   const read = (path) => {
     if (!cache.has(path)) cache.set(path, readBoundedScript(realSiteRoot, path, bounds.script_bytes));
     return cache.get(path);
   };
-  return (content, builtPath) => {
-    let sources;
-    try {
-      sources = pageScriptSources(content);
-    } catch (error) {
-      if (!isPageReadFailure(error)) throw error;
-      return null;
-    }
+  return (sources, builtPath) => {
     const scripts = [];
     for (const src of sources) {
-      const mapped = builtFileOf(src, builtPath, scope.site_root);
+      const mapped = builtFileOf(src, builtPath, siteRoot);
       if (!mapped) continue;
       if (mapped.unmappable) {
         scripts.push({ src, unread: "unmappable" });
@@ -2158,8 +2163,7 @@ function boundedPageScripts(scope, targetRepo, bounds) {
 function readBoundedScript(realSiteRoot, path, maxBytes) {
   try {
     const real = realpathSync(path);
-    const rel = realSiteRoot ? relative(realSiteRoot, real) : "";
-    if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return { unread: "outside_site" };
+    if (!realSiteRoot || !insideRoot(realSiteRoot, real)) return { unread: "outside_site" };
     const stat = statSync(real);
     if (!stat.isFile()) return { unread: "unreadable" };
     if (stat.size > maxBytes) return { unread: "too_large" };
@@ -2168,16 +2172,6 @@ function readBoundedScript(realSiteRoot, path, maxBytes) {
   } catch (error) {
     if (!isFileReadFailure(error)) throw error;
     return { unread: error.code === "ENOENT" || error.code === "ENOTDIR" ? "missing" : "unreadable" };
-  }
-}
-
-function realPathOrNull(path) {
-  if (!path) return null;
-  try {
-    return realpathSync(path);
-  } catch (error) {
-    if (!isFileReadFailure(error)) throw error;
-    return null;
   }
 }
 
@@ -2385,15 +2379,19 @@ function validateSmokeQc(packet, warnings, ready, derived, buildState = {}) {
 }
 
 function recordSmokeQc({ subject, targetRepo, pages, environment, deployBase, warnings, ready, derived }) {
-  // The anchor script hint reads each page's local scripts through the
-  // identity collector's bounded form. With no scope to resolve them in, the
-  // pages go as given and their local scripts read unread.
+  // The site root is the scope's, whichever form of target doctor was given
+  // (the repo, its _site/ or a campaign directory). The anchor script hint
+  // reads each page's local scripts through boundedPageScripts, from the srcs
+  // the gate's own parse lists. With no scope to resolve them in, a page's
+  // local scripts read unread.
   const scope = targetRepo && pages.length ? resolveBuiltSiteScope(targetRepo, { slug: subject?.public_route_slug || null }) : null;
+  const siteRoot = scope?.site_root || null;
   const results = evaluateSmokeQc({
-    subject,
-    pages: scope?.site_root && scope?.campaign_dir ? collectBuiltPageIdentityInputs(scope, targetRepo, { pages, bounds: SMOKE_QC_LIMITS }) : pages,
+    pages,
     environment,
-    siteRoot: targetRepo ? join(targetRepo, "_site") : null,
+    siteRoot,
+    targetDir: targetRepo || null,
+    readScripts: siteRoot ? boundedPageScripts(siteRoot, targetRepo, SMOKE_QC_LIMITS) : null,
     deployBase,
   });
   recordQcResults({ derived, warnings, results });

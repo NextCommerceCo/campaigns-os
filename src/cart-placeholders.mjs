@@ -161,7 +161,7 @@ const EXACT_VERSION = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/;
 
 // Nesting deeper than a browser's HTML parser builds (Blink stops nesting at
 // 512) is not the DOM a shopper gets, so such a page is not read.
-const MAX_ELEMENT_DEPTH = 512;
+export const MAX_ELEMENT_DEPTH = 512;
 
 export function isKnownCartPlaceholder(name) {
   const value = String(name ?? "");
@@ -250,8 +250,9 @@ class TooDeep extends Error {}
 // parse5 with a tree adapter that stops the parse once an element would sit
 // deeper than MAX_ELEMENT_DEPTH (template content counts from its
 // <template>). parse5's own cost grows with the square of the nesting, so the
-// bound has to hold during the parse, not after it.
-function parseBounded(html) {
+// bound has to hold during the parse, not after it. Its error is one
+// isPageReadFailure reads as a page that cannot be read.
+export function parseBounded(html) {
   const templateOf = new WeakMap();
   const check = (parent, node) => {
     if (!node.tagName) return;

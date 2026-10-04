@@ -28,12 +28,14 @@
 //                     og_image_not_absolute, or og_image_missing_file when it
 //                     maps into _site/ and the file is not there (a
 //                     scheme-relative URL maps only through a deploy base
-//                     host; otherwise its file is never looked for and it
-//                     reads `relative_present`); an absolute URL on a deploy
-//                     base passes when its file is in _site/ and is
+//                     host and path; otherwise its file is never looked for
+//                     and it reads `relative_present`); an absolute URL under
+//                     a deploy base (its origin, and a path inside the base's
+//                     path) passes when its file is in _site/ and is
 //                     og_image_missing_file otherwise; with no known deploy
-//                     base it is unexercised og_image_base_unknown, and on
-//                     another host og_image_remote_not_fetched (never fetched)
+//                     base it is unexercised og_image_base_unknown, and
+//                     anywhere else og_image_remote_not_fetched (never
+//                     fetched)
 //   tailwind_cdn:cdn.tailwindcss.com, loopback:loopback
 //                     decided only for a recorded production build: warning
 //                     tailwind_cdn_in_production / loopback_url, else pass; a
@@ -50,11 +52,21 @@
 // other attribute whose whole value is a URL, and the url() and string tokens
 // of a style attribute or <style> text (cssUrlValues), so a URL inside
 // another URL's query names no host. Every host, the Tailwind script's
-// included, is the URL parser's hostname (hostOf). Text nodes and script
-// bodies are not scanned. The per-page candidate cap
-// counts each in-page anchor, each <meta> and <link> (in <template> content
-// too), each URL_ATTRIBUTES value whether relative or absolute, any other
-// attribute value holding an absolute URL, and each <style> holding one.
+// included, is the URL parser's hostname (hostOf). Whether a value is
+// absolute or scheme-relative is read from its own text, never from where it
+// resolves. Markup the HTML parser keeps as text but a visitor can load, the
+// text of a <noscript> and the srcdoc of an <iframe>, is parsed as a document
+// of its own and read by the same two rules. Text nodes and script bodies are
+// not scanned. The per-page candidate cap counts each in-page anchor, each
+// <meta> and <link> (in <template> content too), each URL_ATTRIBUTES value
+// whether relative or absolute, any other attribute value holding an absolute
+// URL, each <style> holding one, and each <noscript> or srcdoc holding markup
+// (whose own candidates count on the page too); that markup together may not
+// exceed the page size cap, and past it the page is capped as well.
+//
+// Every parse goes through the 1.5 gate's bounded parser (parseBounded), so
+// nesting deeper than MAX_ELEMENT_DEPTH (a nested document's depth counting
+// from its host element) stops the parse and reads page_unreadable.
 //
 // Page-level outcomes apply first to every rule key (the bare `anchor` key
 // standing for the anchor rule): page_unreadable, page_too_large and
@@ -72,24 +84,24 @@
 // element paths, attribute names and counts are kept; no query string, script
 // body or page text.
 //
-// Callers hand in built HTML and, per page, the local scripts it loads
-// (`page.scripts`, from collectBuiltPageIdentityInputs in its bounded form,
-// which lists them through pageScriptSources: {src, file, content} when read,
-// {src, file, unread} when not); a page with no such list reads every local
-// script it loads unread. Every URL reference that names a file under _site/
-// (the og:image file, each local script) maps through builtFileOf: the URL
-// parser resolves it against the page's own URL under the site root, and each
-// segment of the resulting path is percent-decoded onto `siteRoot`; a path
-// that names no file (`%ZZ`, bytes that are not UTF-8) is never a file. The og:image file is stat-ed here, once per og:image, and counts only
-// when its real path (symlinks followed) lies inside `siteRoot`.
-// No network request.
+// Callers hand in built HTML and the local scripts each page loads: either
+// `readScripts`, called with the srcs of the scripts the page's own parse
+// lists (doctor's bounded script collector), or a `page.scripts` list
+// ({src, file, content} when read, {src, file, unread} when not); a page with
+// neither reads every local script it loads unread. Every URL reference that
+// names a file under _site/ (the og:image file, each local script) maps
+// through builtFileOf: the URL parser resolves it against the page's own URL
+// under the site root, and each segment of the resulting path is
+// percent-decoded onto `siteRoot`. A path that names no file (`%ZZ`, bytes
+// that are not UTF-8, an empty segment, so a trailing `/`) is never a file.
+// The og:image file is stat-ed here, once per og:image, and counts only when
+// its real path (symlinks followed) lies inside `siteRoot`. No network
+// request.
 
 import { realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
-import { parse } from "parse5";
-
-import { CART_PLACEHOLDERS_LIMITS, isFileReadFailure, isPageReadFailure, scriptKind } from "./cart-placeholders.mjs";
+import { CART_PLACEHOLDERS_LIMITS, MAX_ELEMENT_DEPTH, isFileReadFailure, isPageReadFailure, parseBounded, scriptKind } from "./cart-placeholders.mjs";
 import { aggregateQcResults, buildQcResult } from "./qc-results.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 
@@ -160,7 +172,9 @@ const ASCII_WHITESPACE = /[\t\n\f\r ]+/;
 
 // The origin built pages are read from: the site root (_site/) is its path
 // `/`, so a page's URL is its path under _site/ and every reference on it
-// resolves as a browser resolves it there.
+// resolves as a browser resolves it there. Only a path reference resolves
+// against it; no reference is ever judged by whether it lands on this origin,
+// so an absolute URL that names it is just another remote URL.
 const SITE_ORIGIN = "https://built.invalid";
 const SITE_BASE = `${SITE_ORIGIN}/`;
 
@@ -172,13 +186,27 @@ const parseUrl = (value, base) => {
   }
 };
 
+// What a reference is, read from its own text and never from where it
+// resolves: `absolute` when the URL parser reads it with no base (it has a
+// scheme), `scheme_relative` when it starts with two slashes or backslashes
+// (after the leading C0 controls and spaces, and the tabs and newlines, the
+// parser drops), else a `path`. `url` is the parsed URL of an absolute
+// reference, or of a scheme-relative one resolved against `base`.
+function readReference(value, base = SITE_BASE) {
+  const absolute = parseUrl(value);
+  if (absolute) return { kind: "absolute", url: absolute };
+  const text = String(value).replace(/^[\u0000- ]+/, "").replace(/[\t\n\r]/g, "");
+  if (/^[/\\]{2}/.test(text)) return { kind: "scheme_relative", url: parseUrl(value, base) };
+  return { kind: "path", url: null };
+}
+
 // The host a candidate names, read by the URL parser (userinfo, port, IPv6
 // brackets, IDN, case and IPv4 forms are its own): an http(s) URL that is
 // absolute or protocol-relative, its hostname without a trailing root dot.
 // Anything else, a relative path included, names no host.
 function hostOf(candidate) {
-  const url = parseUrl(candidate, SITE_BASE);
-  if (!url || !WEB_PROTOCOLS.has(url.protocol) || url.origin === SITE_ORIGIN) return null;
+  const { kind, url } = readReference(candidate);
+  if (kind === "path" || !url || !WEB_PROTOCOLS.has(url.protocol)) return null;
   return url.hostname.replace(/\.$/, "") || null;
 }
 
@@ -487,40 +515,65 @@ function pageUrlOf(builtPath, siteRoot) {
  * resolves the reference against the page's own URL (pageUrlOf), as a browser
  * does: backslashes read as `/`, dot segments are removed, a root-relative
  * reference starts at the site root, and the query and fragment are not part
- * of the path. Only a URL on the site's own origin, or on one of `origins`
- * (the deploy base, for an absolute og:image), is local. Each segment of its
- * path is then percent-decoded and joined onto `siteRoot`: `a%23b.png` names
- * `a#b.png`, never a file literally called `a%23b.png`. Whether the file is
- * inside the site root is the reader's check (its real path).
+ * of the path. Only a path reference (see readReference) is local, or an
+ * absolute or scheme-relative one under one of `bases` (a deploy base: its
+ * origin, or its host for a scheme-relative one, and a path starting with the
+ * base's path). Each segment of its path is then percent-decoded and joined
+ * onto `siteRoot`: `a%23b.png` names `a#b.png`, never a file literally called
+ * `a%23b.png`. An empty segment names no file: `og.png/` (or `og.png/%2e`,
+ * which the parser reads as `og.png/`) is a directory, and `a//b.png` is not
+ * `a/b.png`. Whether the file is inside the site root is the reader's check
+ * (its real path).
  *
  * @param {string} reference  the attribute value
  * @param {string} builtPath  the page's file
  * @param {string|null} siteRoot  the built `_site/` directory
- * @param {{ origins?: Set<string>|null }} [options]
+ * @param {{ bases?: Array<{ origin: string, host: string, prefix: string }> }} [options]
  * @returns {null|{ path: string, site_path: string }|{ unmappable: true, site_path?: string }}
- *   null when the reference is not local (another origin, data:, or no path
- *   at all); unmappable when its path names no file (see decodePathSegment),
- *   or when there is no site root or page URL to resolve it from.
+ *   null when the reference is not local (anywhere but a deploy base, data:,
+ *   or no path at all); unmappable when its path names no file (see
+ *   decodePathSegment, and an empty segment), or when there is no site root
+ *   or page URL to resolve it from.
  */
-export function builtFileOf(reference, builtPath, siteRoot, { origins = null } = {}) {
+export function builtFileOf(reference, builtPath, siteRoot, { bases = [] } = {}) {
   const value = String(reference ?? "").trim();
   // An empty reference, or one with only a query or fragment, names the page
   // itself, not a file it loads.
   if (!value || value.startsWith("?") || value.startsWith("#")) return null;
   const pageUrl = pageUrlOf(builtPath, siteRoot);
-  const url = parseUrl(value, pageUrl ?? SITE_BASE);
-  if (!url || (url.origin !== SITE_ORIGIN && !origins?.has(url.origin))) return null;
-  if (!siteRoot || (url.origin === SITE_ORIGIN && !pageUrl)) return { unmappable: true };
+  const read = readReference(value, pageUrl ?? SITE_BASE);
+  let url;
+  if (read.kind === "path") {
+    if (!pageUrl) return parseUrl(value, SITE_BASE) ? { unmappable: true } : null;
+    url = parseUrl(value, pageUrl);
+    if (!url) return null;
+  } else {
+    url = read.url;
+    if (!url || !WEB_PROTOCOLS.has(url.protocol)) return null;
+    const same = read.kind === "absolute" ? (base) => base.origin === url.origin : (base) => base.host === url.host;
+    if (!bases.some((base) => same(base) && url.pathname.startsWith(base.prefix))) return null;
+    if (!siteRoot) return { unmappable: true };
+  }
   const segments = url.pathname.split("/").slice(1).map(decodePathSegment);
-  if (segments.some((segment) => segment == null || segment === "." || segment === "..")) return { unmappable: true, site_path: url.pathname };
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) return { unmappable: true, site_path: url.pathname };
   return { path: join(siteRoot, ...segments), site_path: url.pathname };
 }
 
-// Every element in document order with its path (`html[1]/body[1]/a[2]`) and
-// whether it sits in <template> content, without recursion.
-function walkElements(document, visit) {
+// Nesting past MAX_ELEMENT_DEPTH found after the parse: nodes the parser
+// moved, or a nested document's depth added to its host element's.
+class TooDeep extends Error {}
+
+// Whether an error means the page cannot be read or parsed (see
+// isPageReadFailure), nesting past the bound found after the parse included.
+export const isBuiltPageReadFailure = (error) => error instanceof TooDeep || isPageReadFailure(error);
+
+// Every element in document order with its path (`html[1]/body[1]/a[2]`),
+// its depth (the root element is 1) and whether it sits in <template>
+// content, without recursion. A nested document starts at its host element's
+// `path` and `depth`. An element deeper than MAX_ELEMENT_DEPTH throws TooDeep.
+function walkElements(document, visit, { path: rootPath = "", depth: rootDepth = 0 } = {}) {
   const stack = [];
-  const pushChildren = (node, path, inTemplate) => {
+  const pushChildren = (node, path, inTemplate, depth) => {
     const counts = new Map();
     const frames = [];
     for (const child of childrenOf(node)) {
@@ -528,23 +581,26 @@ function walkElements(document, visit) {
       const tag = child.tagName.toLowerCase();
       const index = (counts.get(tag) || 0) + 1;
       counts.set(tag, index);
-      frames.push({ node: child, tag, path: `${path ? `${path}/` : ""}${tag}[${index}]`, inTemplate });
+      frames.push({ node: child, tag, path: `${path ? `${path}/` : ""}${tag}[${index}]`, inTemplate, depth: depth + 1 });
     }
     for (let i = frames.length - 1; i >= 0; i -= 1) stack.push(frames[i]);
   };
-  pushChildren(document, "", false);
+  pushChildren(document, rootPath, false, rootDepth);
   while (stack.length) {
     const frame = stack.pop();
+    if (frame.depth > MAX_ELEMENT_DEPTH) throw new TooDeep();
     visit(frame);
-    pushChildren(frame.node, frame.path, frame.inTemplate || frame.tag === "template");
+    pushChildren(frame.node, frame.path, frame.inTemplate || frame.tag === "template", frame.depth);
   }
 }
 
 class CandidateCap {
-  constructor(limit) {
+  constructor(limit, markupBytes) {
     this.limit = limit;
     this.count = 0;
     this.reached = false;
+    this.markupBytes = markupBytes;
+    this.markupRead = 0;
   }
 
   // Whether one more candidate may be examined.
@@ -555,6 +611,19 @@ class CandidateCap {
       return false;
     }
     this.count += 1;
+    return true;
+  }
+
+  // Whether one more nested document of `bytes` may be parsed: one candidate,
+  // and the page's nested markup all together within the page size cap.
+  takeMarkup(bytes) {
+    if (this.reached) return false;
+    if (this.markupRead + bytes > this.markupBytes) {
+      this.reached = true;
+      return false;
+    }
+    if (!this.take()) return false;
+    this.markupRead += bytes;
     return true;
   }
 }
@@ -576,7 +645,7 @@ export const URL_ATTRIBUTES = Object.freeze(new Set([
 // The src of a <script> the page loads, or null: an HTML <script> with a
 // non-empty src whose type runs as JavaScript (classic or module) and that is
 // not in <template> content. <noscript> content parses as text, so a script
-// there is never an element.
+// there is never an element of the page.
 function loadedScriptSrc(node, tag, inTemplate) {
   if (inTemplate || tag !== "script" || node.namespaceURI !== HTML_NAMESPACE) return null;
   const attrs = attrsOf(node);
@@ -585,26 +654,46 @@ function loadedScriptSrc(node, tag, inTemplate) {
 }
 
 /**
- * The src of every script a built page loads, in document order, read from
- * its parse5 tree (see loadedScriptSrc). Throws what parse5 throws.
+ * One built page's parse5 tree, through the 1.5 gate's bounded parser. Throws
+ * what it throws (isBuiltPageReadFailure reads it).
  *
  * @param {string} content  the page's HTML
+ */
+export const parseBuiltPage = (content) => parseBounded(content);
+
+/**
+ * The src of every script a built page loads, in document order, read from
+ * its parse5 tree (see loadedScriptSrc).
+ *
+ * @param {object} document  the page's tree (parseBuiltPage)
  * @returns {string[]}
  */
-export function pageScriptSources(content) {
+export function pageScriptSources(document) {
   const sources = [];
-  walkElements(parse(content), ({ node, tag, inTemplate }) => {
+  walkElements(document, ({ node, tag, inTemplate }) => {
     const src = loadedScriptSrc(node, tag, inTemplate);
     if (src != null) sources.push(src);
   });
   return sources;
 }
 
+// The markup an element holds that the HTML parser keeps as text but a
+// visitor can load, or null: a <noscript>'s text (parse5 parses with
+// scripting on, so its content is one text node) and an <iframe>'s srcdoc.
+// `at` names it in the element paths of what it holds.
+function nestedMarkupOf(node, tag, attrs) {
+  if (node.namespaceURI !== HTML_NAMESPACE) return null;
+  if (tag === "noscript") return { markup: textOf(node), at: "" };
+  if (tag === "iframe" && attrs.has("srcdoc")) return { markup: attrs.get("srcdoc"), at: "@srcdoc/" };
+  return null;
+}
+
 // One parsed page's raw observation. Candidates past the cap are not
-// examined; ids, names and the page's loaded scripts (used only when the
-// caller lists no scripts) are read from the whole tree.
+// examined; ids, names and the page's loaded scripts are read from the whole
+// tree. A nested document (nestedMarkupOf) is read only for the asset-host
+// and loopback rules, its element paths under its host element's.
 function observeDocument(document) {
-  const cap = new CandidateCap(SMOKE_QC_LIMITS.candidates);
+  const cap = new CandidateCap(SMOKE_QC_LIMITS.candidates, SMOKE_QC_LIMITS.page_bytes);
   const observed = {
     liveTargets: new Set(),
     templateTargets: new Set(),
@@ -629,8 +718,8 @@ function observeDocument(document) {
     if (hosts.some((host) => isLoopbackHostname(host))) addRef(observed.loopback, ref);
   };
 
-  walkElements(document, ({ node, tag, path, inTemplate }) => {
-    const attrs = attrsOf(node);
+  // The page's own elements: every rule.
+  const visitPage = ({ node, tag, path, inTemplate }, attrs) => {
     const html = node.namespaceURI === HTML_NAMESPACE;
     const targets = inTemplate ? observed.templateTargets : observed.liveTargets;
     if (attrs.get("id")) targets.add(attrs.get("id"));
@@ -659,59 +748,54 @@ function observeDocument(document) {
       }
     }
     const scriptSrc = loadedScriptSrc(node, tag, inTemplate);
-    if (scriptSrc != null) observed.scripts.push({ src: scriptSrc, element_path: path });
+    if (scriptSrc != null) observed.scripts.push(scriptSrc);
+    readUrls(node, tag, path, { skipHref: anchorHref, tailwind: !inTemplate && html && tag === "script" });
+  };
 
-    // Every URL-bearing attribute value is a candidate, relative or absolute;
-    // only the absolute ones are matched by host.
+  // Every URL-bearing attribute value is a candidate, relative or absolute;
+  // only the absolute ones are matched by host.
+  const readUrls = (node, tag, path, { skipHref = false, tailwind = false } = {}) => {
     for (const attr of node.attrs || []) {
       const name = attrName(attr);
-      if (anchorHref && name === "href") continue;
+      if (skipHref && name === "href") continue;
       const hosts = hostsOf(attributeCandidates(name, attr.value));
       if (!hosts.length && !(URL_ATTRIBUTES.has(name) && attr.value.trim())) continue;
       if (!cap.take() || !hosts.length) continue;
       recordHosts(hosts, { element_path: path, attr: name });
-      if (!inTemplate && html && tag === "script" && name === "src" && hostOf(attr.value) === TAILWIND_CDN_HOST) observed.tailwind.push(path);
+      if (tailwind && name === "src" && hostOf(attr.value) === TAILWIND_CDN_HOST) observed.tailwind.push(path);
     }
     if (tag === "style") {
       const hosts = hostsOf(cssUrlValues(textOf(node)));
       if (hosts.length && cap.take()) recordHosts(hosts, { element_path: path, attr: "style" });
     }
-  });
+  };
+
+  // A page or nested document; a nested one is read for its URLs only.
+  const walk = (tree, nested, start) => walkElements(tree, (frame) => {
+    const attrs = attrsOf(frame.node);
+    if (nested) readUrls(frame.node, frame.tag, frame.path);
+    else visitPage(frame, attrs);
+    const inner = nestedMarkupOf(frame.node, frame.tag, attrs);
+    // Markup with no `<` holds no element, so it is not parsed or counted.
+    if (!inner || !inner.markup.includes("<")) return;
+    if (!cap.takeMarkup(Buffer.byteLength(inner.markup, "utf8"))) return;
+    walk(parseBuiltPage(inner.markup), true, { path: `${frame.path}/${inner.at}`.replace(/\/$/, ""), depth: frame.depth });
+  }, start);
+  walk(document, false, {});
   return observed;
 }
 
-const insideRoot = (root, path) => {
+// Whether `path` lies strictly inside `root` (both already real paths when
+// the caller compares real paths).
+export const insideRoot = (root, path) => {
   const rel = relative(root, path);
   return rel !== "" && !rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel);
 };
 
-// The page's local scripts for the anchor hint: `contents` holds what was
-// read, `complete` whether every local script the page loads was. The list is
-// the caller's (`page.scripts`); without one, every local <script src> on the
-// page counts as loaded and unread.
-function pageScripts(page, observed, builtPath, ctx) {
-  const listed = Array.isArray(page.scripts)
-    ? page.scripts
-    : observed.scripts.filter((script) => builtFileOf(script.src, builtPath, ctx.siteRoot) != null).map((script) => ({ src: script.src, unread: "not_listed" }));
-  const contents = listed.filter((script) => typeof script?.content === "string").map((script) => script.content);
-  return { contents, loaded: listed.length, read: contents.length, complete: contents.length === listed.length };
-}
-
-// Whether a local asset is a file inside the site root, its real path (every
-// symlink followed) compared with the site root's own. A path that cannot be
-// resolved or stat-ed reads as no file.
-function fileExists(realSiteRoot, path) {
-  if (!realSiteRoot || path == null) return false;
-  try {
-    const real = realpathSync(path);
-    return insideRoot(realSiteRoot, real) && statSync(real).isFile();
-  } catch (error) {
-    if (!isFileReadFailure(error)) throw error;
-    return false;
-  }
-}
-
-function realPathOf(path) {
+// A path's real path (every symlink followed), or null when it cannot be
+// resolved. Only a file-system read failure reads null; any other error is a
+// defect and throws.
+export function realPathOf(path) {
   if (!path) return null;
   try {
     return realpathSync(path);
@@ -721,24 +805,53 @@ function realPathOf(path) {
   }
 }
 
+// The page's local scripts for the anchor hint: `contents` holds what was
+// read, `complete` whether every local script the page loads was. The list is
+// the caller's (`page.scripts`, or `readScripts` given the srcs the page
+// loads); without one, every local <script src> on the page counts as loaded
+// and unread.
+function pageScripts(page, observed, builtPath, ctx) {
+  const listed = Array.isArray(page.scripts)
+    ? page.scripts
+    : ctx.readScripts
+      ? ctx.readScripts(observed.scripts, builtPath)
+      : observed.scripts.filter((src) => builtFileOf(src, builtPath, ctx.siteRoot) != null).map((src) => ({ src, unread: "not_listed" }));
+  const contents = listed.filter((script) => typeof script?.content === "string").map((script) => script.content);
+  return { contents, loaded: listed.length, read: contents.length, complete: contents.length === listed.length };
+}
+
+// Whether a local asset is a file inside the site root, its real path (every
+// symlink followed) compared with the site root's own. A path that cannot be
+// resolved or stat-ed reads as no file.
+function fileExists(realSiteRoot, path) {
+  if (!realSiteRoot || path == null) return false;
+  const real = realPathOf(path);
+  if (!real || !insideRoot(realSiteRoot, real)) return false;
+  try {
+    return statSync(real).isFile();
+  } catch (error) {
+    if (!isFileReadFailure(error)) throw error;
+    return false;
+  }
+}
+
 // Where the page's og:image points: { image, image_target }. Absolute means
-// a scheme and a host; a scheme-relative one (`//host/x`, or `\\host/x`,
-// which the URL parser reads the same way) is not absolute. Every file it
-// names comes from builtFileOf; a reference whose path names no file is never
-// a file in _site/, so it reads missing.
+// a scheme and a host; a scheme-relative one (`//host/x`, or `\\host/x`) is
+// not absolute, whatever host it names (readReference). Every file it names
+// comes from builtFileOf; a reference whose path names no file is never a
+// file in _site/, so it reads missing.
 function resolveOgImage(content, builtPath, ctx) {
   const value = content.trim();
-  const url = parseUrl(value);
-  if (url && !WEB_PROTOCOLS.has(url.protocol)) return { image: "absolute_remote", image_target: url.protocol };
-  if (url) {
+  const { kind, url } = readReference(value);
+  if (kind === "absolute") {
+    if (!WEB_PROTOCOLS.has(url.protocol)) return { image: "absolute_remote", image_target: url.protocol };
     const target = `${url.protocol}//${url.host}${url.pathname}`;
-    if (!ctx.origins.size) return { image: "absolute_same_base_unmapped", image_target: target };
-    if (!ctx.origins.has(url.origin)) return { image: "absolute_remote", image_target: target };
-    const path = builtFileOf(value, builtPath, ctx.siteRoot, { origins: ctx.origins })?.path ?? null;
-    return { image: fileExists(ctx.realSiteRoot, path) ? "absolute_same_base_present" : "absolute_same_base_missing", image_target: target };
+    if (!ctx.bases.length) return { image: "absolute_same_base_unmapped", image_target: target };
+    const mapped = builtFileOf(value, builtPath, ctx.siteRoot, { bases: ctx.bases });
+    if (!mapped) return { image: "absolute_remote", image_target: target };
+    return { image: fileExists(ctx.realSiteRoot, mapped.path ?? null) ? "absolute_same_base_present" : "absolute_same_base_missing", image_target: target };
   }
-  const hosted = parseUrl(value, SITE_BASE);
-  if (hosted && hosted.origin !== SITE_ORIGIN) return resolveSchemeRelativeOgImage(value, hosted, builtPath, ctx);
+  if (kind === "scheme_relative" && url) return resolveSchemeRelativeOgImage(value, url, builtPath, ctx);
   const mapped = builtFileOf(value, builtPath, ctx.siteRoot);
   const path = mapped?.path ?? null;
   const target = path != null ? `/${relative(ctx.siteRoot, path).split(sep).join("/")}` : mapped?.site_path ?? null;
@@ -746,14 +859,15 @@ function resolveOgImage(content, builtPath, ctx) {
 }
 
 // A scheme-relative og:image, `url` as the parser reads it: relative, so never
-// a pass. On a deploy base host its path maps into _site/ like an absolute
-// same-base URL; on any other host, or with no known base, its file is not
-// looked for and it reads relative_present (the observation enum is closed).
+// a pass. Under a deploy base (its host and path) its path maps into _site/
+// like an absolute same-base URL; anywhere else, or with no known base, its
+// file is not looked for and it reads relative_present (the observation enum
+// is closed).
 function resolveSchemeRelativeOgImage(value, url, builtPath, ctx) {
   const target = `//${url.host}${url.pathname}`;
-  if (!ctx.origins.has(`https://${url.host}`) && !ctx.origins.has(`http://${url.host}`)) return { image: "relative_present", image_target: target };
-  const path = builtFileOf(value, builtPath, ctx.siteRoot, { origins: new Set([url.origin]) })?.path ?? null;
-  return { image: fileExists(ctx.realSiteRoot, path) ? "relative_present" : "relative_missing", image_target: target };
+  const mapped = builtFileOf(value, builtPath, ctx.siteRoot, { bases: ctx.bases });
+  if (!mapped) return { image: "relative_present", image_target: target };
+  return { image: fileExists(ctx.realSiteRoot, mapped.path ?? null) ? "relative_present" : "relative_missing", image_target: target };
 }
 
 const OG_IMAGE_RESULT = Object.freeze({
@@ -869,35 +983,40 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  * Evaluate the built-output smoke checks.
  *
  * @param {{
- *   subject?: object,
  *   pages: Array<{ file: string, content?: string, bytes?: number, unreadable?: boolean, scripts?: Array<{ src: string, file?: string, content?: string, unread?: string }> }>,
  *   environment?: string|null,
  *   siteRoot: string|null,
+ *   targetDir?: string|null,
+ *   readScripts?: ((srcs: string[], builtPath: string) => Array<{ src: string, file?: string, content?: string, unread?: string }>)|null,
  *   deployBase?: string|string[]|null,
  *   measuredAt?: string,
  * }} input  `pages` in a stable order, `file` relative to the doctor target
  *   ("_site/<slug>/index.html"); pages past the page cap may omit `content`.
  *   `scripts` lists every local script the page loads, read or not (see the
- *   header); a page without it reads its local scripts unread.
- *   `environment` is the recorded build environment ("production" or
- *   "development"; anything else is unknown). `siteRoot` is the built `_site/`
- *   directory: page files resolve against its parent, every local reference
- *   maps onto it through builtFileOf (none does without it), and a local
- *   asset whose real path lies outside it reads as missing. `deployBase`
- *   lists the deploy URLs whose origins map an absolute og:image into
- *   `_site/`; none means the base is unknown. `subject` names the scanned
- *   site for the caller; every result carries its own {check, page, key}
- *   subject.
+ *   header); without it `readScripts`, when given, lists them from the srcs
+ *   the page's parse found, and otherwise the page's local scripts read
+ *   unread. `environment` is the recorded build environment ("production" or
+ *   "development"; anything else is unknown). `siteRoot` is the built site
+ *   root (the scope's `_site/`, or the directory doctor was pointed at when
+ *   it has none): every local reference maps onto it through builtFileOf
+ *   (none does without it), and a local asset whose real path lies outside it
+ *   reads as missing. Page files resolve against `targetDir`, the doctor
+ *   target (by default the site root's parent). `deployBase` lists the deploy
+ *   URLs under which an absolute og:image maps into the site root (each
+ *   one's origin and path); none means the base is unknown. Every result
+ *   carries its own {check, page, key} subject.
  * @returns {object[]} QC results (src/qc-results.mjs buildQcResult).
  */
-export function evaluateSmokeQc({ subject = null, pages = [], environment = null, siteRoot = null, deployBase = null, measuredAt = new Date().toISOString() } = {}) {
+export function evaluateSmokeQc({ pages = [], environment = null, siteRoot = null, targetDir = null, readScripts = null, deployBase = null, measuredAt = new Date().toISOString() } = {}) {
   const check = SMOKE_QC_CHECK;
   const ctx = {
     environment: environmentOf(environment),
     siteRoot,
-    origins: deployOrigins(deployBase),
+    bases: deployBases(deployBase),
     realSiteRoot: realPathOf(siteRoot),
+    readScripts,
   };
+  const pageDir = targetDir ?? (siteRoot ? dirname(siteRoot) : null);
   const results = [];
   const row = (page, { key, result, reason_code = null, state = {}, observation = {} }, { members = [], coverage } = {}) => buildQcResult({
     check,
@@ -932,9 +1051,9 @@ export function evaluateSmokeQc({ subject = null, pages = [], environment = null
     let observed;
     try {
       observed = observeDocument(read.document);
-      findings = pageFindings(page, file, observed, siteRoot ? join(siteRoot, "..", file) : file, ctx);
+      findings = pageFindings(page, file, observed, pageDir ? join(pageDir, file) : file, ctx);
     } catch (error) {
-      if (!isPageReadFailure(error)) throw error;
+      if (!isBuiltPageReadFailure(error)) throw error;
       pageLevel(file, R.PAGE_UNREADABLE, { bytes: read.bytes });
       return;
     }
@@ -967,31 +1086,32 @@ export function evaluateSmokeQc({ subject = null, pages = [], environment = null
   return results;
 }
 
-// One page's parse5 tree, or a page-level outcome. A read or parse failure
-// reads the page unreadable; any other error is a defect and throws.
+// One page's parse5 tree (parseBuiltPage), or a page-level outcome. A read or
+// parse failure, nesting past MAX_ELEMENT_DEPTH included, reads the page
+// unreadable; any other error is a defect and throws.
 function readPage(page) {
   if (page.unreadable) return { outcome: R.PAGE_UNREADABLE };
   const bytes = Number.isFinite(page.bytes) ? page.bytes : typeof page.content === "string" ? Buffer.byteLength(page.content, "utf8") : null;
   if (bytes != null && bytes > SMOKE_QC_LIMITS.page_bytes) return { outcome: R.PAGE_TOO_LARGE, bytes };
   if (typeof page.content !== "string") return { outcome: R.PAGE_UNREADABLE };
   try {
-    return { document: parse(page.content), bytes };
+    return { document: parseBuiltPage(page.content), bytes };
   } catch (error) {
-    if (!isPageReadFailure(error)) throw error;
+    if (!isBuiltPageReadFailure(error)) throw error;
     return { outcome: R.PAGE_UNREADABLE, bytes };
   }
 }
 
-function deployOrigins(deployBase) {
-  const origins = new Set();
+// Each deploy URL as a base an og:image maps through: its origin, its host
+// and its path as a directory (`https://deploy.example/s` and `/s/` both
+// read `/s/`), so only a path under it maps into the site root.
+function deployBases(deployBase) {
+  const bases = [];
   for (const value of [deployBase].flat()) {
     if (typeof value !== "string" || !value.trim()) continue;
-    try {
-      const url = new URL(value.trim());
-      if (WEB_PROTOCOLS.has(url.protocol)) origins.add(url.origin);
-    } catch {
-      // Not a URL: no base.
-    }
+    const url = parseUrl(value.trim());
+    if (!url || !WEB_PROTOCOLS.has(url.protocol)) continue;
+    bases.push({ origin: url.origin, host: url.host, prefix: url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/` });
   }
-  return origins;
+  return bases;
 }

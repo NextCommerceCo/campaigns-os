@@ -31,7 +31,17 @@
 //      per HTML, ping per whitespace), any other attribute whose whole value
 //      is a URL, and the url() and string tokens of CSS (CSS Syntax 3, escapes
 //      decoded; comments, bad-url and bad-string tokens give none), so a URL
-//      inside another URL's query is never matched.
+//      inside another URL's query is never matched;
+//   C11 every parse goes through the 1.5 gate's bounded parser, so a page
+//      nested past its depth bound reads page_unreadable at once;
+//   C12 markup a visitor loads but the parser keeps as text (<noscript>,
+//      srcdoc) is read by the asset-host and loopback rules, within the
+//      page's caps; text mentions still are not;
+//   C13 a URL path with an empty segment (a trailing `/`) names no file;
+//   C14 absolute or scheme-relative is read from the reference's own text,
+//      never from the origin pages resolve against;
+//   C15 the site root is the scope's for every doctor --built target;
+//   C16 a deploy base maps only paths under its own path;
 // Row shapes follow src/built-smoke-qc.test.mjs (its API assumptions).
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -58,7 +68,7 @@ afterEach(() => assertNoNetworkAttempts());
 after(() => assertNoNetworkAttempts());
 
 const { doctorBuiltOutput } = await import("./doctor/inspect.mjs");
-const { collectBuiltPageIdentityInputs, collectCartPlaceholderPages } = await import("./doctor/checks.mjs");
+const { collectBuiltPageIdentityInputs, collectCartPlaceholderPages, recordSmokeQc } = await import("./doctor/checks.mjs");
 const { computeBuildFingerprint, resolveBuiltSiteScope } = await import("./built-site-scope.mjs");
 const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, cssUrlValues, evaluateSmokeQc } = await import("./built-smoke-qc.mjs");
 
@@ -1084,5 +1094,210 @@ test("C10 through the packet doctor, recorded production: url(https://u\\)@cdn.2
     assertSmoke(doctorOf(f.packetPath, {}), packetRows({ landing: { set: { [key]: ["warning", reason] } } }));
     const g = builtPacket(t, { env: "production", landing: packetPage("landing", { body: inverse }) });
     assertSmoke(doctorOf(g.packetPath, {}), packetRows());
+  }
+});
+
+// ---------------------------------------------------------------------------
+// C11: one bounded parser
+
+const nested = (count, inner) => `${"<div>".repeat(count)}${inner}${"</div>".repeat(count)}`;
+const timed = (run) => {
+  const started = performance.now();
+  const value = run();
+  return { value, ms: performance.now() - started };
+};
+
+test("C11 100,000 nested <div> then an anchor through evaluateSmokeQc: returns within 2 s and reads page_unreadable on every rule key", () => {
+  const content = page({ body: nested(100_000, "<a href=\"#x\">x</a>") });
+  const { value: results, ms } = timed(() => evaluateProduction(content));
+  assert.ok(ms < 2000, `the gate returned in ${Math.round(ms)} ms`);
+  assert.deepEqual(results.map(summarize).sort(byId), pageLevelRows(PAGE, "page_unreadable").sort(byId));
+});
+
+test("C11 100,000 nested <div> then an anchor through doctor's smoke wiring (its script collector and the gate): returns within 2 s and reads page_unreadable on every rule key", (t) => {
+  const dir = tempTree(t, { "index.html": page({ head: "<script src=\"js/tabs.js\"></script>", body: nested(100_000, "<a href=\"#x\">x</a>") }), "js/tabs.js": "window.x = 1;\n" });
+  const pages = collectCartPlaceholderPages(dir, CAMPAIGN);
+  const { value: results, ms } = timed(() => recordSmokeQc({ subject: { public_route_slug: CAMPAIGN }, targetRepo: dir, pages, environment: "unknown", deployBase: null, warnings: [], ready: [], derived: { qc_results: [] } }));
+  assert.ok(ms < 2000, `the smoke wiring returned in ${Math.round(ms)} ms`);
+  assert.deepEqual(results.map(summarize).sort(byId), pageLevelRows(PAGE, "page_unreadable").sort(byId));
+});
+
+test("C11 the depth bound is the 1.5 gate's: an anchor at depth 512 (509 <div>s) reads as usual, one more <div> reads page_unreadable", () => {
+  const production = (set) => pageRows(PAGE, { env: "production", set: { [KEY.ogImageTarget]: ["unexercised", "og_image_base_unknown"], ...set } });
+  assert.deepEqual(evaluateProduction(page({ body: nested(509, "<a href=\"#x\">x</a>") })).map(summarize).sort(byId), production({ [anchorKey("x")]: ["warning", "anchor_target_missing"] }).sort(byId));
+  assert.deepEqual(evaluateProduction(page({ body: nested(510, "<a href=\"#x\">x</a>") })).map(summarize).sort(byId), pageLevelRows(PAGE, "page_unreadable").sort(byId));
+});
+
+test("C11 a <noscript>'s markup counts its depth from the <noscript>: within the bound it is read, past it the page reads page_unreadable", () => {
+  // <noscript> at depth 508; its document's <html> at 509, <body> at 510.
+  const inside = page({ body: nested(505, "<noscript><div><img src=\"https://cdn.29next.store/p.png\" alt=\"\"></div></noscript>") });
+  assert.deepEqual(evaluateProduction(inside).map(summarize).sort(byId), productionRows({ [KEY.assetHost]: ["warning", "primary_asset_host"] }).sort(byId));
+  const past = page({ body: nested(505, "<noscript><div><div><img src=\"https://cdn.29next.store/p.png\" alt=\"\"></div></div></noscript>") });
+  assert.deepEqual(evaluateProduction(past).map(summarize).sort(byId), pageLevelRows(PAGE, "page_unreadable").sort(byId));
+});
+
+// ---------------------------------------------------------------------------
+// C12: markup kept as text but loaded by a visitor
+
+for (const [label, where, markup, key, reason] of [
+  ["<noscript><img src=\"https://cdn.29next.store/p.png\"></noscript>", "body", "<noscript><img src=\"https://cdn.29next.store/p.png\"></noscript>", KEY.assetHost, "primary_asset_host"],
+  ["<noscript><link rel=stylesheet href=\"http://localhost:3000/a.css\"></noscript> in <head>", "head", "<noscript><link rel=stylesheet href=\"http://localhost:3000/a.css\"></noscript>", KEY.loopback, "loopback_url"],
+  ["<iframe srcdoc=\"<img src='https://cdn.29next.store/p.png'>\">", "body", "<iframe srcdoc=\"<img src='https://cdn.29next.store/p.png'>\"></iframe>", KEY.assetHost, "primary_asset_host"],
+]) {
+  test(`C12 ${label} in a production build: warns ${reason}`, () => {
+    const results = evaluateProduction(page({ [where]: markup }));
+    assert.deepEqual(results.map(summarize).sort(byId), productionRows({ [key]: ["warning", reason] }).sort(byId));
+  });
+}
+
+test("C12 a reference inside <noscript> or srcdoc names its element under its host element, with the attribute that holds it", () => {
+  const results = evaluateProduction(page({ body: "<noscript><img src=\"https://cdn.29next.store/p.png\"></noscript>\n<iframe srcdoc=\"<p style='background:url(https://cdn.29next.store/q.png)'>\"></iframe>" }));
+  const row = results.find((candidate) => candidate.subject.key === KEY.assetHost);
+  assert.deepEqual(row.observation.asset_host_refs, [
+    { element_path: "html[1]/body[1]/noscript[1]/html[1]/body[1]/img[1]", attr: "src" },
+    { element_path: "html[1]/body[1]/iframe[1]/@srcdoc/html[1]/body[1]/p[1]", attr: "style" },
+  ]);
+});
+
+test("C12 under the real doctor --built: an asset-host URL inside <noscript> or srcdoc warns primary_asset_host", async (t) => {
+  for (const body of ["<noscript><img src=\"https://cdn.29next.store/p.png\"></noscript>", "<iframe srcdoc=\"<img src='https://cdn.29next.store/p.png'>\"></iframe>"]) {
+    assertSmoke(await builtDoctor(tempTree(t, { "index.html": page({ body }) })), pageRows(PAGE, { set: { [KEY.assetHost]: ["warning", "primary_asset_host"] } }));
+  }
+});
+
+for (const [label, markup] of [
+  ["plain text", "<p>See https://cdn.29next.store/p.png and http://localhost/x</p>"],
+  ["text inside <noscript>", "<noscript>See https://cdn.29next.store/p.png and http://localhost/x</noscript>"],
+  ["text inside srcdoc", "<iframe srcdoc=\"See https://cdn.29next.store/p.png and http://localhost/x\"></iframe>"],
+  ["text inside <noscript> markup", "<noscript><p>See https://cdn.29next.store/p.png and http://localhost/x</p></noscript>"],
+  ["markup inside <textarea> (text, never loaded)", "<textarea><img src=\"https://cdn.29next.store/p.png\"><img src=\"http://localhost/x\"></textarea>"],
+]) {
+  test(`C12 an inert mention in ${label}: the asset-host and loopback rules pass`, () => {
+    assert.deepEqual(evaluateProduction(page({ body: markup })).map(summarize).sort(byId), productionRows({}).sort(byId));
+  });
+}
+
+test("C12 nested markup is bounded by the page's caps: each <noscript> holding markup is a candidate, and all of it together may not exceed the page size cap", () => {
+  const noscripts = (count) => Array.from({ length: count }, () => "<noscript><b></b></noscript>").join("\n");
+  assertCandidateCapped(evaluateProduction(page({ body: noscripts(2000 - PAGE_CANDIDATES + 1) })), "2,001 candidates with <noscript> markup");
+  assertNotCandidateCapped(evaluateProduction(page({ body: noscripts(2000 - PAGE_CANDIDATES) })), "2,000 candidates with <noscript> markup");
+  assertNotCandidateCapped(evaluateProduction(page({ body: noscripts(3000).replaceAll("<b></b>", "plain") })), "<noscript> text with no markup");
+  // Two nested <noscript>s each hold the same 3 MiB: 6 MiB of nested markup.
+  const deep = page({ body: `<noscript><noscript><p>${"x".repeat(3 * MiB)}</p></noscript>` });
+  assertCandidateCapped(evaluateProduction(deep), "6 MiB of nested markup on a 3 MiB page");
+});
+
+// ---------------------------------------------------------------------------
+// C13: a URL path that ends in `/` names a directory
+
+const OG_PRESENT = { "img/og.png": "synthetic og image bytes\n" };
+
+for (const [label, ogImage] of [
+  ["a trailing slash", `${DEPLOY}${CAMPAIGN}/img/og.png/`],
+  ["two trailing slashes", `${DEPLOY}${CAMPAIGN}/img/og.png//`],
+  ["a trailing /%2e (the parser reads og.png/)", `${DEPLOY}${CAMPAIGN}/img/og.png/%2e`],
+  ["a trailing /.", `${DEPLOY}${CAMPAIGN}/img/og.png/.`],
+  ["empty segments between the directories", `${DEPLOY}/${CAMPAIGN}//img//og.png`],
+]) {
+  test(`C13 absolute same-base og:image with ${label}, the file present without it: og_image_missing_file, never pass`, (t) => {
+    const dir = tempTree(t, { "index.html": page({ ogImage }), ...OG_PRESENT });
+    assert.deepEqual(evaluateTree(dir, { deployBase: DEPLOY, environment: "production" }).map(summarize).sort(byId), deployRows({ [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] }).sort(byId));
+  });
+}
+
+test("C13 empty segments outside a deploy base's path: never mapped, so og_image_remote_not_fetched (unexercised), not pass", (t) => {
+  const dir = tempTree(t, { "index.html": page({ ogImage: `${DEPLOY}/${CAMPAIGN}//img/og.png` }), ...OG_PRESENT });
+  assert.deepEqual(evaluateTree(dir, { deployBase: `${DEPLOY}${CAMPAIGN}/`, environment: "production" }).map(summarize).sort(byId), deployRows({ [KEY.ogImageTarget]: ["unexercised", "og_image_remote_not_fetched"] }).sort(byId));
+});
+
+for (const ogImage of ["img/og.png/", "img/og.png/%2e", "img//og.png"]) {
+  test(`C13 relative og:image ${ogImage}, the file present without the empty segment: og_image_missing_file under doctor --built, not og_image_not_absolute`, async (t) => {
+    const dir = tempTree(t, { "index.html": page({ ogImage }), ...OG_PRESENT });
+    assertSmoke(await builtDoctor(dir), pageRows(PAGE, { set: { [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] } }));
+  });
+}
+
+for (const src of ["js/app.js/", "js//app.js"]) {
+  test(`C13 <script src="${src}"> with js/app.js naming the target: unexercised (script_unreadable) under doctor --built and evaluateSmokeQc, never review`, async (t) => {
+    const dir = tempTree(t, { "index.html": page({ head: `<script src="${src}"></script>`, body: uniqueAnchor }), "js/app.js": namesUnique });
+    const expected = pageRows(PAGE, { anchors: { [unique]: ["unexercised", "script_unreadable"] } });
+    assertSmoke(await builtDoctor(dir), expected);
+    assert.deepEqual(evaluateTree(dir).map(summarize).sort(byId), [...expected].sort(byId));
+    assert.deepEqual(boundedScriptsOf(dir), [{ src, unread: "unmappable" }]);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// C14: absolute or scheme-relative is read from the reference itself
+
+const SYNTHETIC_ORIGIN = "https://built.invalid";
+
+test("C14 2,001 data-url values on built.invalid, the origin pages resolve against, cap the page as any other absolute URL does", () => {
+  for (const host of ["built.invalid", "example.invalid"]) {
+    const body = Array.from({ length: 2001 }, () => `<div data-url="https://${host}/x"></div>`).join("\n");
+    assertCandidateCapped(evaluateProduction(page({ body })), `2,001 data-url values on ${host}`);
+  }
+});
+
+test("C14 an absolute og:image on built.invalid, its file present in _site: unmapped with no deploy base, remote under another deploy base, never a local file", async (t) => {
+  const dir = tempTree(t, { "index.html": page({ ogImage: `${SYNTHETIC_ORIGIN}/${CAMPAIGN}/img/og.png` }), ...OG_PRESENT });
+  assertSmoke(await builtDoctor(dir), pageRows(PAGE));
+  assert.deepEqual(evaluateTree(dir, { deployBase: DEPLOY, environment: "production" }).map(summarize).sort(byId), deployRows({ [KEY.ogImageTarget]: ["unexercised", "og_image_remote_not_fetched"] }).sort(byId));
+});
+
+test("C14 a scheme-relative og:image on built.invalid, no file there: og_image_not_absolute (relative_present, never looked for), not og_image_missing_file", async (t) => {
+  const ogImage = `//built.invalid/${CAMPAIGN}/img/og.png`;
+  const result = await builtDoctor(tempTree(t, { "index.html": page({ ogImage }) }));
+  assertSmoke(result, pageRows(PAGE, { set: { [KEY.ogImageTarget]: ["warning", "og_image_not_absolute"] } }));
+  const row = rowsOf(result).find((candidate) => candidate.subject.key === KEY.ogImageTarget);
+  assert.deepEqual([row.observation.og.image, row.observation.og.image_target], ["relative_present", ogImage]);
+});
+
+for (const src of [`${SYNTHETIC_ORIGIN}/${CAMPAIGN}/js/app.js`, `//built.invalid/${CAMPAIGN}/js/app.js`]) {
+  test(`C14 <script src="${src}"> is a remote script: never read for the anchor hint, so the missing target warns`, async (t) => {
+    const dir = tempTree(t, { "index.html": page({ head: `<script src="${src}"></script>`, body: uniqueAnchor }), "js/app.js": namesUnique });
+    const expected = pageRows(PAGE, { anchors: { [unique]: ["warning", "anchor_target_missing"] } });
+    assertSmoke(await builtDoctor(dir), expected);
+    assert.deepEqual(boundedScriptsOf(dir), []);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// C15: the site root is the scope's for every doctor --built target
+
+for (const [label, target, slug, file] of [
+  ["the repo root", (dir) => dir, CAMPAIGN, PAGE],
+  ["its _site/", (dir) => join(dir, "_site"), CAMPAIGN, `${CAMPAIGN}/index.html`],
+  ["the campaign directory", (dir) => join(dir, "_site", CAMPAIGN), undefined, "index.html"],
+]) {
+  test(`C15 doctor --built on ${label}: a relative og:image whose file exists reads og_image_not_absolute, and the local script naming the target is read`, async (t) => {
+    const dir = tempTree(t, { "index.html": page({ ogImage: "img/og.png", head: "<script src=\"js/app.js\"></script>", body: uniqueAnchor }), ...OG_PRESENT, "js/app.js": namesUnique });
+    const result = await withNoNetwork(() => doctorBuiltOutput({ built: target(dir), ...(slug ? { slug } : {}) }));
+    assertSmoke(result, pageRows(file, {
+      anchors: { [unique]: ["review", "anchor_target_possibly_script_created"] },
+      set: { [KEY.ogImageTarget]: ["warning", "og_image_not_absolute"] },
+    }));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// C16: a deploy base's path
+
+test("C16 deploy base https://preview.example.invalid/<campaign>/: an og:image under it maps into _site and passes; one outside it is never mapped", (t) => {
+  const base = `${DEPLOY}${CAMPAIGN}/`;
+  for (const deployBase of [base, base.replace(/\/$/, "")]) {
+    const inside = tempTree(t, { "index.html": page({ ogImage: `${base}img/og.png` }), ...OG_PRESENT });
+    assert.deepEqual(evaluateTree(inside, { deployBase, environment: "production" }).map(summarize).sort(byId), deployRows().sort(byId), `${deployBase}: inside`);
+
+    const outside = tempTree(t, { "index.html": page({ ogImage: `${DEPLOY}other/og.png` }) });
+    writeFile(join(outside, "_site", "other", "og.png"), "synthetic og image bytes\n");
+    assert.deepEqual(evaluateTree(outside, { deployBase, environment: "production" }).map(summarize).sort(byId), deployRows({ [KEY.ogImageTarget]: ["unexercised", "og_image_remote_not_fetched"] }).sort(byId), `${deployBase}: outside, file present`);
+
+    const missing = tempTree(t, { "index.html": page({ ogImage: `${DEPLOY}other/og.png` }) });
+    assert.deepEqual(evaluateTree(missing, { deployBase, environment: "production" }).map(summarize).sort(byId), deployRows({ [KEY.ogImageTarget]: ["unexercised", "og_image_remote_not_fetched"] }).sort(byId), `${deployBase}: outside, no file`);
+
+    const schemeRelative = tempTree(t, { "index.html": page({ ogImage: "//preview.example.invalid/other/og.png" }) });
+    const rows = evaluateTree(schemeRelative, { deployBase, environment: "production" });
+    assert.deepEqual(rows.map(summarize).sort(byId), deployRows({ [KEY.ogImageTarget]: ["warning", "og_image_not_absolute"] }).sort(byId), `${deployBase}: scheme-relative outside, no file`);
   }
 });
