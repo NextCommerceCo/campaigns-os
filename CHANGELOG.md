@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.51.0+agent.1] - 2026-10-04
+
+### Added
+
+- Doctor now warns on SDK cart placeholders printed in live built HTML (`built_output.cart_placeholders`), ported from the public starter-template lint.
+
 ## [1.51.0] - 2026-10-04
 
 ### Added

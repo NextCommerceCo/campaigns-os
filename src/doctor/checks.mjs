@@ -1,7 +1,7 @@
 // Doctor checks: the check registries, validatePacket and the validators they run.
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "../spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanText } from "../html-scan.mjs";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "../sdk-meta-tags.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthsDisagree } from "../proof-policy.mjs";
@@ -85,6 +85,8 @@ import {
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "../campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
+import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders } from "../cart-placeholders.mjs";
+import { recordQcResults } from "../qc-results.mjs";
 import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
@@ -441,6 +443,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: SCRIPT_SYNTAX,
     phase: "built-output",
     run: ({ packet, errors, warnings, ready, derived }) => validateBuiltScriptSyntax(packet, errors, warnings, ready, derived),
+  },
+  {
+    id: CART_PLACEHOLDERS,
+    phase: "built-output",
+    run: ({ packet, warnings, ready, derived }) => validateCartPlaceholders(packet, warnings, ready, derived),
   },
   {
     id: "built_output.sdk_meta_tags",
@@ -2166,6 +2173,93 @@ function recordScriptSyntaxGate({ subject, inputs, errors, warnings, ready, deri
   }
   ready.push(`All ${gate.scripts_scanned} campaign-owned script(s) loaded by built pages parse`);
   return gate;
+}
+
+// Raw cart placeholders. Every doctor invocation, both entry
+// points, filesystem enumeration, like the gates above; but a QC check, not a
+// checkpoint gate: its results land in derived.qc_results (warning and review
+// also in warnings[]), never in errors[] or derived.checkpoint_gates, so no
+// blocker elsewhere can withhold them and checkpoint waive never sees them.
+function validateCartPlaceholders(packet, warnings, ready, derived) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  recordCartPlaceholders({
+    subject: {
+      public_route_slug: publicRouteSlug || null,
+      site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
+    },
+    pages: siteRoot && existsSync(siteRoot) ? collectCartPlaceholderPages(targetRepo, publicRouteSlug) : [],
+    warnings,
+    ready,
+    derived,
+  });
+}
+
+// Every built page under the campaign directory, in path order, including the
+// symlinked *.html entries the page scope skips (read as unreadable, never
+// followed). Pages within the page cap carry their HTML through
+// collectBuiltPageIdentityInputs, unless they are over the size cap or cannot
+// be read; pages past it carry only their path.
+function collectCartPlaceholderPages(targetRepo, slug) {
+  const scope = resolveBuiltSiteScope(targetRepo, { slug, includeLinkedPages: true });
+  const linked = new Set((scope.linked_pages || []).map((page) => page.built_path));
+  const all = [...(scope.ok ? scope.pages : []), ...(scope.linked_pages || [])]
+    .sort((a, b) => (a.built_path < b.built_path ? -1 : a.built_path > b.built_path ? 1 : 0));
+  const fileOf = (page) => builtPageFile(targetRepo, page.built_path);
+  const examined = all.slice(0, CART_PLACEHOLDERS_LIMITS.pages);
+  const entries = new Map();
+  const readable = [];
+  for (const page of examined) {
+    let bytes = null;
+    try {
+      if (!linked.has(page.built_path)) bytes = statSync(page.built_path).size;
+    } catch {
+      bytes = null;
+    }
+    if (bytes == null || !isReadableFile(page.built_path)) entries.set(page, { file: fileOf(page), unreadable: true });
+    else if (bytes > CART_PLACEHOLDERS_LIMITS.page_bytes) entries.set(page, { file: fileOf(page), bytes });
+    else readable.push(page);
+  }
+  // collectBuiltPageIdentityInputs keeps the order of the pages it is given.
+  collectBuiltPageIdentityInputs({ ...scope, pages: readable }, targetRepo)
+    .forEach((input, index) => entries.set(readable[index], { file: fileOf(readable[index]), content: input.content }));
+  return [
+    ...examined.map((page) => entries.get(page)),
+    ...all.slice(CART_PLACEHOLDERS_LIMITS.pages).map((page) => ({ file: fileOf(page) })),
+  ];
+}
+
+// A built page's path relative to the doctor target, "/"-separated and with no
+// "./" prefix ("_site/<slug>/index.html"). The directory is resolved, the file
+// name never is, so a symlinked page keeps its own name.
+function builtPageFile(targetRepo, path) {
+  const dir = relFromDir(targetRepo, dirname(path)).replace(/^\.(?:\/|$)/, "");
+  return [...(dir ? dir.split(sep) : []), basename(path)].join("/");
+}
+
+function isReadableFile(path) {
+  try {
+    accessSync(path, fsConstants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function recordCartPlaceholders({ subject, pages, warnings, ready, derived }) {
+  const results = evaluateCartPlaceholders({ subject, pages });
+  recordQcResults({ derived, warnings, results });
+  if (!pages.length) {
+    ready.push("Cart placeholder check not applicable: no built page to scan yet.");
+    return results;
+  }
+  // A ready line only when no page went unexercised.
+  if (results.some((row) => row.result === "unexercised")) return results;
+  const passed = results.filter((row) => row.result === "pass").length;
+  const flagged = results.filter((row) => row.result === "warning" || row.result === "review").length;
+  ready.push(`Cart placeholder check on ${pages.length} built page(s): ${passed} page(s) pass, ${flagged} warning or review result(s)`);
+  return results;
 }
 
 function recordSdkMarkupGate({ subject, pages, errors, warnings, ready, derived }) {
@@ -4662,6 +4756,8 @@ export {
   recordCampaignIdentityGate,
   recordScriptSyntaxGate,
   recordSdkMarkupGate,
+  recordCartPlaceholders,
+  collectCartPlaceholderPages,
   summarizeCopyMatches,
   resolveBrandContract,
   resolveBrandContractOnce,

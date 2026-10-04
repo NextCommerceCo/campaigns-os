@@ -5606,6 +5606,33 @@
         }
       ],
       "entry_sha256": "422a061d7e5847b25bbab0ea3f194d129eb0bdbed9248e40a3fb04193ab82e91"
+    },
+    {
+      "id": "RL-0228",
+      "sequence": 219,
+      "date": "2026-10-04",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.51.0+agent.1",
+      "changelog_sha256": "d01e35ae07379f131e9a57ce7651061b0e93644b5f18a4a5cd39aa3b4d7f9478",
+      "agent_impact": "Doctor (the packet path and doctor --built) now runs built_output.cart_placeholders on every built page. A known SDK placeholder such as {item.name}, {subtotal} or {package.name} in live built HTML text, or in an alt, title, placeholder, aria-label or button value attribute outside every SDK-owned scope, is a warning (built_output.cart_placeholders.live_token) that next lists in its QC handoff; unknown brace strings and placeholders on a page whose item template selector is not an #id are review results. Move the placeholder into the SDK-owned <template> or item list that renders it, or remove it, and rebuild. A page passes only when its campaign-cart loader names an exact version in the verified list; otherwise, and on a page over a size, candidate, result or page cap or one that cannot be read, the page reads unexercised, never pass. These results are never blockers and never checkpoint gates, so checkpoint waive does not see them.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor runs the raw cart placeholder check after the script syntax gate on the packet path and records its results in derived.qc_results, with warning and review results in warnings[]."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Describe the raw cart placeholder check: what it warns on, what is expected, and when a page reads unexercised."
+        }
+      ],
+      "entry_sha256": "2cf3f08f6592afcba9c315e3256db941c79271e285a2179d0557ccaa249ce8f0"
     }
   ]
 }

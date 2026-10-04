@@ -20,6 +20,7 @@ import { UPSELL_SELECTOR_SCOPE, builtPageTypeOverRouteGuess } from "../upsell-se
 import { CAMPAIGN_IDENTITY } from "../campaign-identity.mjs";
 import { SDK_MARKUP } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs } from "../built-script-syntax.mjs";
+import { CART_PLACEHOLDERS } from "../cart-placeholders.mjs";
 import { stageIsTerminal } from "../orchestration-stage-contract.mjs";
 import { evaluatePolishGate } from "../polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "../polish-node.mjs";
@@ -43,6 +44,8 @@ import {
   recordCampaignIdentityGate,
   recordScriptSyntaxGate,
   recordSdkMarkupGate,
+  recordCartPlaceholders,
+  collectCartPlaceholderPages,
   summarizeCopyMatches,
   resolveBrandContractOnce,
   reportBrandContractDefectOnce,
@@ -348,6 +351,20 @@ export function doctorBuiltOutput(args) {
     derived,
   });
   derived.doctor_checks.push(SCRIPT_SYNTAX);
+
+  // Raw cart placeholders. Same placement, same reasons; a QC
+  // check whose warnings no blocker above withholds.
+  recordCartPlaceholders({
+    subject: {
+      public_route_slug: scope.slug || null,
+      site_root: relFromDir(targetRepo, scope.campaign_dir),
+    },
+    pages: collectCartPlaceholderPages(targetRepo, optionalString(args.slug)),
+    warnings,
+    ready,
+    derived,
+  });
+  derived.doctor_checks.push(CART_PLACEHOLDERS);
 
   const synthesized = synthesizeMinimalBuildPacket({
     schemaVersion: PACKET_SCHEMA,
