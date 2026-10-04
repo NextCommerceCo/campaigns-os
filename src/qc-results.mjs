@@ -44,6 +44,13 @@ export const QC_PRODUCERS = Object.freeze({
 });
 export const MEDIA_WEIGHT_SCHEMA = "campaigns-os-polish-media-weight/v0";
 const PAGE_LOAD_SCHEMA = "campaigns-os-polish-page-load/v0";
+const ROUTE_CAPTURE_SCHEMA = "campaigns-os-polish-route-capture/v0";
+// The binding fields of the page_load subject (pageLoadCheckpointSubject) and
+// of one route capture's subject (captureSubject), exactly, besides
+// build_fingerprint. The build binding is read apart: absent, null or another
+// build is staleness (stale_binding), never a malformed subject.
+const PAGE_LOAD_SUBJECT_FIELDS = Object.freeze(["campaign_slug", "route_scope", "routes", "viewports"]);
+const CAPTURE_SUBJECT_FIELDS = Object.freeze(["campaign_slug", "requested_route", "final_document_route", "viewport"]);
 const QA_RUNTIME_PREFIX = "campaigns-os-node-qa@";
 const FINGERPRINT = /^sha256:[a-f0-9]{64}$/;
 const E = QC_REASON.EVIDENCE_NOT_REPRODUCIBLE;
@@ -557,39 +564,127 @@ function cellReproduces(cell, capture) {
   return true;
 }
 
+const cellKey = (route, viewport) => JSON.stringify([route, viewport]);
+const uniqueStrings = (list) => Array.isArray(list) && list.length > 0 && list.every(isNonEmptyString) && new Set(list).size === list.length;
+// A subject without its build binding, and whether its other fields are
+// exactly `fields`.
+const unbound = (subject) => {
+  if (!isPlainObject(subject)) return subject;
+  const { build_fingerprint: _build, ...rest } = subject;
+  return rest;
+};
+const hasExactly = (object, fields) => isPlainObject(object) && sameJson(Object.keys(unbound(object)).sort(), [...fields].sort());
+
+// The record's declared subject: exactly the page_load subject fields, each
+// well formed. Its routes × viewports is the declared cell grid.
+function declaredSubjectOk(subject) {
+  return hasExactly(subject, PAGE_LOAD_SUBJECT_FIELDS)
+    && isNonEmptyString(subject.campaign_slug)
+    && ["all", "selected"].includes(subject.route_scope)
+    && uniqueStrings(subject.routes)
+    && uniqueStrings(subject.viewports);
+}
+
+const declaredGrid = (subject) => (Array.isArray(subject?.routes) ? subject.routes : [])
+  .flatMap((route) => (Array.isArray(subject?.viewports) ? subject.viewports : []).map((viewport) => ({ route, viewport })));
+
+// The page_load measurement summary agrees with the declared grid and the
+// captures: it expects every declared cell, counts every capture, and lists
+// nothing missing, duplicated or unexpected; any cell it calls incomplete is
+// a declared one.
+function measurementSummaryOk(measurement, grid, captureCount) {
+  const gridKeys = new Set(grid.map(({ route, viewport }) => cellKey(route, viewport)));
+  return isPlainObject(measurement)
+    && measurement.expected_capture_count === grid.length
+    && measurement.captured_count === captureCount
+    && ["missing", "duplicate", "unexpected"].every((field) => Array.isArray(measurement[field]) && measurement[field].length === 0)
+    && Array.isArray(measurement.incomplete)
+    && measurement.incomplete.every((entry) => isPlainObject(entry) && gridKeys.has(cellKey(entry.route, entry.viewport)));
+}
+
+// A route capture's own identity and binding, against the record's declared
+// subject: producer and schema, exactly the capture subject fields, the same
+// campaign, a document that stayed on the requested route, and a declared
+// route and viewport. Returns "fail" when any of that does not hold, else
+// "stale" when the capture's build is absent, null or not the current build,
+// else null.
+function captureBindingProblem(capture, subject, currentBuild) {
+  const own = capture?.subject;
+  if (capture?.schema_version !== ROUTE_CAPTURE_SCHEMA
+    || capture?.performed_by !== QC_PRODUCERS.polish
+    || !hasExactly(own, CAPTURE_SUBJECT_FIELDS)
+    || own.campaign_slug !== subject.campaign_slug
+    || !isNonEmptyString(own.requested_route)
+    || own.final_document_route !== own.requested_route
+    || !subject.routes.includes(own.requested_route)
+    || !subject.viewports.includes(own.viewport)) return "fail";
+  return isNonEmptyString(currentBuild) && own.build_fingerprint === currentBuild ? null : "stale";
+}
+
 export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStandIns = null, rederivers = null } = {}) {
   if (record === undefined || record === null) return [];
   const measuredAt = validTime(record?.measured_at) ? record.measured_at : null;
   const cells = Array.isArray(record?.cells) ? record.cells.filter(isPlainObject) : [];
-  const failAll = (cellList = cells) => {
-    const rows = cellList.flatMap((cell) => cellSubjects(cell).map((subject) => unreproducedRow({ subject, check: subject.check }, E, { leg: "polish", measuredAt })));
-    return rows.length ? rows : [unreproducedRow({ subject: { check: "media.weight", page: null, key: "media_weight" }, check: "media.weight" }, E, { leg: "polish", measuredAt })];
+  const unreproduced = (subject) => unreproducedRow({ subject, check: subject.check }, E, { leg: "polish", measuredAt });
+  const cellResult = (check, route, viewport) => unreproduced({ check, page: route, viewport, key: "cell" });
+  // A failed cell: one result per subject it lists, and one per 1.3 check it
+  // lists no subject for, so a failed cell, even one listing nothing, is
+  // never silent.
+  const failCell = (cell) => {
+    const subjects = cellSubjects(cell);
+    return [
+      ...subjects.map(unreproduced),
+      ...POLISH_CHECKS.filter((check) => !subjects.some((subject) => subject.check === check)).map((check) => cellResult(check, cell?.route ?? null, cell?.viewport ?? null)),
+    ];
+  };
+  // A record-level failure: every listed cell fails, and every route ×
+  // viewport that the record or page_load declares or captured but no cell
+  // lists gets one result per 1.3 check, so a missing route is never silent.
+  const failAll = () => {
+    const listed = new Set(cells.map((cell) => cellKey(cell.route, cell.viewport)));
+    const unlisted = new Map();
+    const note = (route, viewport) => {
+      const key = cellKey(route, viewport);
+      if (isNonEmptyString(route) && isNonEmptyString(viewport) && !listed.has(key)) unlisted.set(key, { route, viewport });
+    };
+    for (const { route, viewport } of [...declaredGrid(record?.subject), ...declaredGrid(pageLoad?.subject)]) note(route, viewport);
+    for (const capture of Array.isArray(pageLoad?.captures) ? pageLoad.captures : []) note(capture?.subject?.requested_route, capture?.subject?.viewport);
+    for (const entry of Array.isArray(pageLoad?.measurement?.missing) ? pageLoad.measurement.missing : []) note(entry?.route, entry?.viewport);
+    const rows = [
+      ...cells.flatMap(failCell),
+      ...[...unlisted.values()].flatMap(({ route, viewport }) => POLISH_CHECKS.map((check) => cellResult(check, route, viewport))),
+    ];
+    return rows.length ? rows : [unreproduced({ check: "media.weight", page: null, key: "media_weight" })];
   };
   const resolved = resolvePolishRules({ qcStandIns, rederivers });
   if (resolved.status === "missing") return [];
   if (resolved.status !== "loaded") return failAll();
   const { rules } = resolved;
 
-  // Record level: producer, integrity, thresholds, binding to page_load, and
-  // the record vocabulary. Any failure makes every result unreproducible.
+  // Record level: producer, integrity, thresholds, the declared subject and
+  // its binding to page_load, the page_load measurement summary, and the
+  // record vocabulary. Any failure makes every result unreproducible.
   if (!isPlainObject(record)
     || record.schema_version !== MEDIA_WEIGHT_SCHEMA
     || record.performed_by !== QC_PRODUCERS.polish
     || !measuredAt
     || record.integrity !== mediaWeightIntegrity(record)
     || !sameJson(record.thresholds, rules.thresholds)
+    || !declaredSubjectOk(record.subject)
     || !isPlainObject(pageLoad)
     || pageLoad.schema_version !== PAGE_LOAD_SCHEMA
     || pageLoad.performed_by !== QC_PRODUCERS.polish
-    || !sameJson(record.subject, pageLoad.subject)
+    || !sameJson(unbound(record.subject), unbound(pageLoad.subject))
     || !Array.isArray(pageLoad.captures)
+    || !measurementSummaryOk(pageLoad.measurement, declaredGrid(record.subject), pageLoad.captures.length)
     || !Array.isArray(record.cells)
     || cells.length !== record.cells.length
     || !recordVocabularyOk(record, rules.vocabulary)) return failAll();
 
-  // The cell set is the capture set: exactly one cell per page_load capture
-  // (route and viewport), none dropped, none added, none twice.
-  const cellKey = (route, viewport) => JSON.stringify([route, viewport]);
+  // The declared grid (routes × viewports) is the capture set and the cell
+  // set: exactly one page_load capture and one cell per declared route and
+  // viewport, none missing, none added, none twice.
+  const gridKeys = declaredGrid(record.subject).map(({ route, viewport }) => cellKey(route, viewport));
   const captureByKey = new Map();
   for (const capture of pageLoad.captures) {
     const key = cellKey(capture?.subject?.requested_route, capture?.subject?.viewport);
@@ -598,24 +693,35 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
   }
   const cellKeys = cells.map((cell) => cellKey(cell.route, cell.viewport));
   if (new Set(cellKeys).size !== cellKeys.length
-    || cellKeys.length !== captureByKey.size
-    || !cellKeys.every((key) => captureByKey.has(key))) return failAll();
+    || cellKeys.length !== gridKeys.length
+    || captureByKey.size !== gridKeys.length
+    || !gridKeys.every((key) => captureByKey.has(key) && cellKeys.includes(key))) return failAll();
 
-  const bound = isNonEmptyString(currentBuild) && record.subject?.build_fingerprint === currentBuild;
+  // Both enclosing subjects are bound to the current build; an absent, null
+  // or other build on either reads stale_binding.
+  const recordBound = isNonEmptyString(currentBuild)
+    && record.subject.build_fingerprint === currentBuild
+    && pageLoad.subject.build_fingerprint === currentBuild;
   const results = [];
   for (const cell of cells) {
-    if (!cellReproduces(cell, captureByKey.get(cellKey(cell.route, cell.viewport)))) {
-      results.push(...failAll([cell]));
+    const capture = captureByKey.get(cellKey(cell.route, cell.viewport));
+    const binding = captureBindingProblem(capture, record.subject, currentBuild);
+    if (binding === "fail" || !cellReproduces(cell, capture)) {
+      results.push(...failCell(cell));
       continue;
     }
+    const bound = recordBound && binding === null;
     let derived;
     try {
       derived = rules.evaluate(cell, record.thresholds);
     } catch {
       derived = null;
     }
-    if (!Array.isArray(derived) || !derived.every((item) => ["media.weight", "media.oversize"].includes(item?.check) && validDerived(item, item.check) && item.subject.page === cell.route)) {
-      results.push(...failAll([cell]));
+    // Every derived subject is one the cell lists (cellSubjects), exactly:
+    // its own page, viewport and key, and no other field.
+    const own = new Set(cellSubjects(cell).map((subject) => canonicalJson(subject)));
+    if (!Array.isArray(derived) || !derived.every((item) => ["media.weight", "media.oversize"].includes(item?.check) && validDerived(item, item.check) && own.has(canonicalJson(item.subject)))) {
+      results.push(...failCell(cell));
       continue;
     }
     for (const item of derived) {
