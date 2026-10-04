@@ -179,15 +179,37 @@ const isBrace = (char) => char === "{" || char === "}";
 const isDoubleBraced = (text, index, length) =>
   text[index - 1] === "{" && text[index + length] === "}" && !isBrace(text[index - 2]) && !isBrace(text[index + length + 1]);
 
-// Whether a <script src> is the Campaign Cart loader: `{ version }` (the
-// exact version, or null when it names none) or null when it is not. The URL
-// resolves as the browser resolves it, so a relative or protocol-relative src
-// lands on http(s) and an opaque one (data:, javascript:, blob: ...) keeps its
-// own scheme and is never the loader. Path segments are compared decoded.
-export function campaignCartLoader(src) {
+// The page's own URL is not known here; an http(s) stand-in takes its place.
+const PAGE_URL = "https://base.invalid/";
+
+// The document base URL (HTML "document base URL"): the frozen base URL of
+// the first HTML <base> in tree order that has an href attribute (template
+// content is not in the tree), else the page URL. That href resolves against
+// the page URL; one that fails to parse, or names a data: or javascript: URL,
+// leaves the page URL. A later <base>, or one without href, is not read.
+export function documentBaseUrl(document) {
+  const base = liveElements(document).find((node) => node.namespaceURI === HTML_NAMESPACE && node.tagName === "base" && attrsOf(node).has("href"));
+  if (!base) return PAGE_URL;
   let url;
   try {
-    url = new URL(String(src), "https://base.invalid/");
+    url = new URL(attrsOf(base).get("href"), PAGE_URL);
+  } catch {
+    return PAGE_URL;
+  }
+  return url.protocol === "data:" || url.protocol === "javascript:" ? PAGE_URL : url.href;
+}
+
+// Whether a <script src> is the Campaign Cart loader: `{ version }` (the
+// exact version, or null when it names none) or null when it is not. The URL
+// resolves as the browser resolves it, against the document base URL, so a
+// relative or protocol-relative src lands where the page's <base> puts it, an
+// src that cannot resolve against that base is no loader, and an opaque one
+// (data:, javascript:, blob: ...) keeps its own scheme and is never the
+// loader. Path segments are compared decoded.
+export function campaignCartLoader(src, baseUrl = PAGE_URL) {
+  let url;
+  try {
+    url = new URL(String(src), baseUrl);
   } catch {
     return null;
   }
@@ -322,14 +344,16 @@ function executableScripts(document) {
 }
 
 // The page's SDK pin, read from its own loader <script src> only, among the
-// scripts a browser runs. No loader, any loader with no exact version (none,
-// @latest, a range), or two loaders that disagree give no pin.
+// scripts a browser runs, each src resolved against the document base URL.
+// No loader, any loader with no exact version (none, @latest, a range), or
+// two loaders that disagree give no pin.
 export function readLoaderPin(document) {
+  const baseUrl = documentBaseUrl(document);
   const versions = new Set();
   let unpinned = false;
   for (const element of executableScripts(document)) {
     const src = attrsOf(element).get("src");
-    const loader = typeof src === "string" ? campaignCartLoader(src) : null;
+    const loader = typeof src === "string" ? campaignCartLoader(src, baseUrl) : null;
     if (!loader) continue;
     if (loader.version) versions.add(loader.version);
     else unpinned = true;
