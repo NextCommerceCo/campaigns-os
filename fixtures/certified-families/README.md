@@ -30,3 +30,11 @@ the render is committed. One rewrite is applied and recorded in the manifest:
 the `<link rel="dns-prefetch">` / `<link rel="preconnect">` resource hint for the campaign API host is dropped, because
 that host is on this repository's private-string denylist and a resource hint
 carries no SDK-markup meaning. Everything else is byte-for-byte the render.
+
+One render input is set and recorded in the manifest (`render_inputs`): each
+certified family's `_data/campaigns.json` entry gets
+`og_image: "https://example.com/og-image.png"` before the build. The starters
+leave `og:image` out until a campaign sets one, and every real campaign is
+expected to. The reserved domain keeps the value plainly synthetic; doctor
+`--built` neither maps it to `_site` nor fetches it, so it reads unexercised
+rather than missing.

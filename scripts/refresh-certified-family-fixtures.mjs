@@ -27,7 +27,13 @@
 //   4. Drops the `<link rel="dns-prefetch">` / `<link rel="preconnect">`
 //      resource hint for the campaign API host. It carries no SDK-markup meaning and its host is on this
 //      repository's private-string denylist. Nothing else is rewritten.
-//   5. Writes manifest.json with the source sha, page-kit version, families
+//   5. Before the render, sets `og_image` on each certified family's
+//      `_data/campaigns.json` entry to FIXTURE_OG_IMAGE. The starters omit
+//      `og:image` until a campaign sets one (no deploy base, no real image to
+//      point at), and every real campaign is expected to; without it each page
+//      reads `og_image_missing`. The value is on the reserved documentation
+//      domain, so it is plainly synthetic and never resolves to a real asset.
+//   6. Writes manifest.json with the source sha, page-kit version, families
 //      and per-file sha256 so the tree's provenance is checkable.
 //
 // Usage: node scripts/refresh-certified-family-fixtures.mjs [--sha <sha>]
@@ -90,16 +96,30 @@ function walk(dir, acc = []) {
 // https): same hint, same host, same reason to drop it.
 const API_HOST_RESOURCE_HINT = /^[ \t]*<link rel="(?:dns-prefetch|preconnect)" href="(?:https?:)?\/\/campaigns\.apps\.[a-z0-9.-]+"(?: crossorigin)?>\r?\n/gm;
 
+// An absolute URL on a reserved domain (RFC 2606): doctor --built cannot map it
+// to _site and does not fetch it, so og:image reads unexercised, not missing.
+const FIXTURE_OG_IMAGE = "https://example.com/og-image.png";
+
 const work = mkdtempSync(join(tmpdir(), "certified-family-fixtures-"));
 try {
   const archive = execFileSync("git", ["-C", templatesCheckout, "archive", "--format=tar", sha], { maxBuffer: 1 << 28 });
   execFileSync("tar", ["-x", "-C", work], { input: archive });
   symlinkSync(join(templatesCheckout, "node_modules"), join(work, "node_modules"));
+  // Render input, not output: the campaign config a real campaign would carry.
+  const families = certifiedFamilies();
+  const campaignsFile = join(work, "_data", "campaigns.json");
+  if (!existsSync(campaignsFile)) throw new Error(`The templates source at ${sha.slice(0, 7)} has no _data/campaigns.json; the render needs it to set og_image.`);
+  const campaigns = JSON.parse(readFileSync(campaignsFile, "utf8"));
+  for (const family of families) {
+    const entry = campaigns[family];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`Certified family "${family}" has no _data/campaigns.json entry object at ${sha.slice(0, 7)}.`);
+    entry.og_image = FIXTURE_OG_IMAGE;
+  }
+  writeFileSync(campaignsFile, `${JSON.stringify(campaigns, null, 2)}\n`);
   // page-kit logs every written page to stderr; keep it unless the build fails.
   const build = spawnSync("npx", ["campaign-build"], { cwd: work, encoding: "utf8", env: { ...process.env, CPK_ENV: "production" } });
   if (build.status !== 0) throw new Error(`campaign-build failed (${build.status}):\n${build.stderr}${build.stdout}`);
 
-  const families = certifiedFamilies();
   const files = {};
   // Every family is checked and read before anything on disk is replaced, so a
   // refusal leaves the committed fixture tree as it was.
@@ -156,6 +176,7 @@ try {
     source_note: argValue("--note") || (sha === catalog._synced_from_sha ? "catalog pin (_synced_from_sha)" : "differs from the catalog pin; no --note given"),
     page_kit_version: pageKitVersion,
     rendered_with: "campaign-build (CPK_ENV=production)",
+    render_inputs: [`set og_image to ${FIXTURE_OG_IMAGE} on each certified family's _data/campaigns.json entry`],
     rewrites: ["dropped the <link rel=\"dns-prefetch\"|\"preconnect\"> resource hint for the campaign API host"],
     families,
     files: Object.fromEntries(Object.entries(files).sort(([a], [b]) => (a < b ? -1 : 1))),
