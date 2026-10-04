@@ -1,17 +1,18 @@
-// Operator accepts of QC warnings (Increment 1, unit 1.0). An accept is stored
+// Operator accepts of QC warnings. An accept is stored
 // apart from the measurement, in report.qc_accepts[], and changes only a
 // result's disposition (open → operator_accepted). It never changes the
 // result, doctor status, `next` status, QA disposition, or a stage status.
 //
 // Records are checked on every read (assessQcAccepts). The integrity checksum
 // is unkeyed tamper evidence, not proof of authorship: a record a process with
-// the same file access fully reconstructs reads as active (contract
-// amendment A1).
+// the same file access fully reconstructs reads as active, and that is the
+// documented outcome.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 
 import { isNamedHuman, validateWaiverAttribution } from "./checkpoint-waiver.mjs";
 import { DOCTOR_SIDECAR_SCHEMA } from "./doctor-sidecar.mjs";
+import { cmd } from "./install-invocation.mjs";
 import { canonicalJson } from "./polish-capture.mjs";
 import { QC_LEGS, QC_REASON, fingerprint12, qcResultRef } from "./qc-results.mjs";
 import { shellToken } from "./shell-token.mjs";
@@ -336,7 +337,20 @@ function groupOpenWarnings(entries) {
   });
 }
 
-export function buildQcHandoff({ results, coverage = [], accepts, now = new Date().toISOString(), packetPath = "<packet>" }) {
+// The accept command for the invocation that produced the handoff: this
+// install's spelling of the command, the packet `next` read and, when `next`
+// read a report other than the packet's default one, `--report` naming it
+// (checkpoint accept never follows the Build Context pointer). Only the
+// operator's reason and name are left as placeholders.
+function acceptCommand(refs, { packetPath, reportPath }) {
+  const packet = packetPath == null ? "<packet>" : shellToken(packetPath);
+  const report = reportPath == null ? "" : ` --report ${shellToken(reportPath)}`;
+  return cmd("checkpoint", `accept --packet ${packet}${report} ${refs.map((ref) => `--result ${shellToken(ref)}`).join(" ")} --reason "<operator's reason>" --accepted-by "<operator's name>"`);
+}
+
+// `reportPath` is given only when it is not the packet's default report
+// (explicitReportPath).
+export function buildQcHandoff({ results, coverage = [], accepts, now = new Date().toISOString(), packetPath = null, reportPath = null }) {
   const records = Array.isArray(accepts) ? accepts : [];
   const assessed = assessQcAccepts(records, results, { now });
   const applied = new Map();
@@ -400,9 +414,7 @@ export function buildQcHandoff({ results, coverage = [], accepts, now = new Date
     coverage: coverageEntries,
     accepted,
     inert_accepts: inert,
-    accept_command: eligible.length
-      ? `campaigns-os checkpoint accept --packet ${packetPath === "<packet>" ? packetPath : shellToken(packetPath)} ${eligible.map((ref) => `--result ${shellToken(ref)}`).join(" ")} --reason "<operator's reason>" --accepted-by "<operator's name>"`
-      : null,
+    accept_command: eligible.length ? acceptCommand(eligible, { packetPath, reportPath }) : null,
   };
 }
 
