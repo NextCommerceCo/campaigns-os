@@ -106,18 +106,20 @@ try {
   execFileSync("tar", ["-x", "-C", work], { input: archive });
   symlinkSync(join(templatesCheckout, "node_modules"), join(work, "node_modules"));
   // Render input, not output: the campaign config a real campaign would carry.
+  const families = certifiedFamilies();
   const campaignsFile = join(work, "_data", "campaigns.json");
+  if (!existsSync(campaignsFile)) throw new Error(`The templates source at ${sha.slice(0, 7)} has no _data/campaigns.json; the render needs it to set og_image.`);
   const campaigns = JSON.parse(readFileSync(campaignsFile, "utf8"));
-  for (const family of certifiedFamilies()) {
-    if (!campaigns[family]) throw new Error(`Certified family "${family}" has no _data/campaigns.json entry at ${sha.slice(0, 7)}.`);
-    campaigns[family].og_image = FIXTURE_OG_IMAGE;
+  for (const family of families) {
+    const entry = campaigns[family];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`Certified family "${family}" has no _data/campaigns.json entry object at ${sha.slice(0, 7)}.`);
+    entry.og_image = FIXTURE_OG_IMAGE;
   }
   writeFileSync(campaignsFile, `${JSON.stringify(campaigns, null, 2)}\n`);
   // page-kit logs every written page to stderr; keep it unless the build fails.
   const build = spawnSync("npx", ["campaign-build"], { cwd: work, encoding: "utf8", env: { ...process.env, CPK_ENV: "production" } });
   if (build.status !== 0) throw new Error(`campaign-build failed (${build.status}):\n${build.stderr}${build.stdout}`);
 
-  const families = certifiedFamilies();
   const files = {};
   // Every family is checked and read before anything on disk is replaced, so a
   // refusal leaves the committed fixture tree as it was.
