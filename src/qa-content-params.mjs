@@ -433,6 +433,15 @@ export function contentParamNotRequestedRows(spec, topologies, { measuredAt = ne
 // a node is stable when it is still connected at the same path with the same
 // attribute values, and visible per the contract's rule.
 //
+// Every reading carries the URL its document was loaded at (after any
+// redirect), taken at document start. The driver uses a reading only when that
+// URL has the requested origin and path and, with `?<name>=n`, carries
+// `<name>=n` exactly once (the baseline: no `<name>`). A redirect that drops
+// the parameter or lands on another path, or a page that replaces itself with
+// another document before it is read, is not the page that was asked for: the
+// load reads page_not_served (the requested page got no response of its own).
+// The URL is compared in memory and never stored.
+//
 // The world's script carries its own copy of the element path rule: "body",
 // then ">tag[index]" per step, index 0-based among same-tag element siblings
 // (null for a detached element).
@@ -443,6 +452,7 @@ const WORLD_KEY = "__campaignsOsContentParams";
 const READ_MARGIN_MS = 1_000;
 
 function installReader(key) {
+  const url = location.href;
   const pathOf = (element) => {
     const steps = [];
     let node = element;
@@ -496,12 +506,12 @@ function installReader(key) {
   Object.defineProperty(globalThis, key, {
     value: Object.freeze({
       // The reading, or { ready: false } when the signal has not appeared
-      // within `timeoutMs`.
+      // within `timeoutMs`; either way with the document's URL.
       read: (timeoutMs) => new Promise((resolve) => {
-        const timer = setTimeout(() => resolve({ ready: false, elements: [] }), timeoutMs);
+        const timer = setTimeout(() => resolve({ url, ready: false, elements: [] }), timeoutMs);
         reading.then((elements) => {
           clearTimeout(timer);
-          resolve({ ready: true, elements });
+          resolve({ url, ready: true, elements });
         });
       }),
     }),
@@ -561,12 +571,27 @@ function contextReferences(described, name) {
   return references;
 }
 
+// Whether the document a reading came from is the one requested for
+// `variant`: its URL has the requested origin and path, and carries `<name>=n`
+// once (param_n) or no `<name>` (baseline).
+function servesRequested(documentUrl, requestedUrl, name, variant) {
+  try {
+    const loaded = new URL(documentUrl);
+    const requested = new URL(requestedUrl);
+    if (loaded.origin !== requested.origin || loaded.pathname !== requested.pathname) return false;
+    const values = loaded.searchParams.getAll(name);
+    return variant === "param_n" ? values.length === 1 && values[0] === PARAM_VALUE : values.length === 0;
+  } catch {
+    return false;
+  }
+}
+
 const withinDeadline = (operation, timeoutMs) => runWithDeadline(operation, { timeoutMs });
 
 // One load in a fresh context. Never throws: every failure is a readiness
 // outcome. `run.cancelled` is set when the budget ends; no new context opens
 // after that, and the contexts still open are closed by the budget cut.
-async function loadVariant(url, name, run) {
+async function loadVariant(url, name, variant, run) {
   if (!url) return { readiness: "navigation_failed" };
   if (run.cancelled) return { readiness: null };
   let context = null;
@@ -584,15 +609,18 @@ async function loadVariant(url, name, run) {
     }
     const status = response?.status?.() ?? null;
     if (!response || !Number.isFinite(status) || status >= 400) return { readiness: "page_not_served" };
-    // A page that does not signal readiness in time, navigates away or
-    // stalls before it can be read, or returns an incomplete reading did not
-    // reach a readable ready state.
-    let elements = null;
+    // A reading from a document other than the one requested is no reading
+    // of the requested page. A page that does not signal readiness in time,
+    // navigates away or stalls before it can be read, or returns an
+    // incomplete reading did not reach a readable ready state.
+    let reading = null;
     try {
-      elements = readElements(await withinDeadline(() => readDocument(session, CONTENT_PARAM_LIMITS.readinessMs), CONTENT_PARAM_LIMITS.readinessMs + READ_MARGIN_MS));
+      reading = await withinDeadline(() => readDocument(session, CONTENT_PARAM_LIMITS.readinessMs), CONTENT_PARAM_LIMITS.readinessMs + READ_MARGIN_MS);
     } catch {
-      elements = null;
+      reading = null;
     }
+    if (isPlainObject(reading) && !servesRequested(reading.url, url, name, variant)) return { readiness: "page_not_served" };
+    const elements = readElements(reading);
     if (!elements) return { readiness: "readiness_timeout" };
     const references = contextReferences(elements, name);
     const targets = references.filter(isTarget);
@@ -665,8 +693,8 @@ async function runPair(pair, { newContext, withQueryParam, deadline, now }) {
   const run = { newContext, open: new Set(), cancelled: false };
   const closeOpen = () => Promise.all([...run.open].map((context) => context.close().catch(() => {})));
   const work = (async () => {
-    const baseline = await loadVariant(pair.url ? baselineUrl(pair.url, pair.param) : null, pair.param, run);
-    const paramN = await loadVariant(pair.url ? withQueryParam(baselineUrl(pair.url, pair.param), pair.param, PARAM_VALUE) : null, pair.param, run);
+    const baseline = await loadVariant(pair.url ? baselineUrl(pair.url, pair.param) : null, pair.param, "baseline", run);
+    const paramN = await loadVariant(pair.url ? withQueryParam(baselineUrl(pair.url, pair.param), pair.param, PARAM_VALUE) : null, pair.param, "param_n", run);
     return { baseline, paramN };
   })();
   try {

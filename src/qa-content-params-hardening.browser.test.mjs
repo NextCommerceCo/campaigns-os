@@ -99,9 +99,45 @@ function pageScript({ toggle, overrides = [], variantOnly = true, ready = true, 
   })();`;
 }
 
-const pageHtml = (script) => `<!doctype html><html><head><meta charset="utf-8"><title>Synthetic content params</title></head>`
-  + `<body data-next-sdk-loading="true"><main><section data-next-hide="param.${NAME}"><h2>Synthetic section</h2><p>Synthetic copy.</p></section></main>`
+// `before`: markup placed in <main> ahead of the section.
+const pageHtml = (script, before = "") => `<!doctype html><html><head><meta charset="utf-8"><title>Synthetic content params</title></head>`
+  + `<body data-next-sdk-loading="true"><main>${before}<section data-next-hide="param.${NAME}"><h2>Synthetic section</h2><p>Synthetic copy.</p></section></main>`
   + `<script>${script}</script></body></html>`;
+
+// Pages whose ?reviews=n load does not end on the document it asked for. The
+// server answers the ?reviews=n request for /drop-param/ or /redirect-away/
+// with a 302 that sets a cookie and points at /drop-param/ (the parameter
+// dropped) or /elsewhere/ (another path). Those pages hide their section only
+// when the cookie is set, so without the check on the read document the
+// landing page would read as the variant. /self-navigate/ with ?reviews=n sets
+// the cookie and the readiness signal, then replaces itself with /elsewhere/.
+const HIDDEN_COOKIE = "synthetic-hidden=1";
+const REDIRECTS = { "/drop-param/": "/drop-param/", "/redirect-away/": "/elsewhere/" };
+const cookiePageScript = `(function () {
+    if (document.cookie.indexOf("${HIDDEN_COOKIE}") !== -1) document.querySelector("main > section").style.display = "none";
+    setTimeout(function () { document.body.setAttribute("data-next-sdk-loading", "false"); }, 300);
+  })();`;
+const selfNavigateScript = `(function () {
+    if (new URLSearchParams(location.search).get("${NAME}") === "n") {
+      document.cookie = "${HIDDEN_COOKIE}; Path=/";
+      document.body.setAttribute("data-next-sdk-loading", "false");
+      location.replace("/elsewhere/");
+    } else {
+      setTimeout(function () { document.body.setAttribute("data-next-sdk-loading", "false"); }, 300);
+    }
+  })();`;
+
+// /remove-with-n/ removes the section with ?reviews=n instead of hiding it.
+// /template-and-live/ has a <template> holding a second
+// data-next-hide="param.reviews" section ahead of the live one, which hides
+// with ?reviews=n.
+const removeScript = `(function () {
+    if (new URLSearchParams(location.search).get("${NAME}") === "n") document.querySelector("main > section").remove();
+    setTimeout(function () { document.body.setAttribute("data-next-sdk-loading", "false"); }, 300);
+  })();`;
+const PAGES = {
+  "/template-and-live/": pageHtml(pageScript({ toggle: true }), `<template><section data-next-hide="param.${NAME}"><p>Synthetic template copy.</p></section></template>`),
+};
 
 const CASES = {
   "/spoof-visibility/": pageScript({ toggle: false, overrides: ["visibility"] }),
@@ -109,6 +145,11 @@ const CASES = {
   "/spoof-readiness/": pageScript({ toggle: true, overrides: ["readiness"], variantOnly: false, ready: false }),
   "/replace-first-frame/": pageScript({ toggle: true, firstFrame: "replace" }),
   "/move-first-frame/": pageScript({ toggle: true, firstFrame: "move" }),
+  "/drop-param/": cookiePageScript,
+  "/redirect-away/": cookiePageScript,
+  "/elsewhere/": cookiePageScript,
+  "/self-navigate/": selfNavigateScript,
+  "/remove-with-n/": removeScript,
 };
 
 let stub = null;
@@ -116,13 +157,18 @@ async function stubServer() {
   if (stub) return stub;
   const server = createServer((request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
-    const script = CASES[url.pathname];
-    if (!script) {
+    const redirect = REDIRECTS[url.pathname];
+    if (redirect && url.searchParams.get(NAME) === "n") {
+      response.writeHead(302, { "set-cookie": `${HIDDEN_COOKIE}; Path=/`, location: redirect });
+      return response.end();
+    }
+    const html = PAGES[url.pathname] ?? (CASES[url.pathname] ? pageHtml(CASES[url.pathname]) : null);
+    if (!html) {
       response.writeHead(404, { "content-type": "text/plain" });
       return response.end("not found");
     }
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    return response.end(pageHtml(script));
+    return response.end(html);
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   stub = {
@@ -199,4 +245,49 @@ browserTest("the target is moved by a sibling inserted before it in the first fr
   const row = await contentRow("/move-first-frame/");
   assertResult(row, UNRESOLVED);
   assert.deepEqual(row.observation.targets.map((entry) => [entry.element_path, entry.baseline.stable, entry.param_n.stable]), [["body>main[0]>section[0]", false, false]], "the target is captured at its readiness path and reads moved");
+});
+
+// ---------------------------------------------------------------------------
+// The document read is the one requested
+
+const NOT_SERVED = Object.freeze({ result: "unexercised", reasonCode: "page_not_served", acceptEligible: false, members: {} });
+
+browserTest("the ?reviews=n load is redirected to the same path without the parameter, where a cookie hides the section: unexercised (page_not_served), never pass", T, async () => {
+  const row = await contentRow("/drop-param/");
+  assertResult(row, NOT_SERVED);
+  assert.deepEqual(row.observation.readiness, { baseline: "ready", param_n: "page_not_served" }, "the variant document is not the one requested");
+});
+
+browserTest("the ?reviews=n load is redirected to another path, where a cookie hides the section: unexercised (page_not_served), never pass", T, async () => {
+  const row = await contentRow("/redirect-away/");
+  assertResult(row, NOT_SERVED);
+  assert.deepEqual(row.observation.readiness, { baseline: "ready", param_n: "page_not_served" }, "the variant document is not the one requested");
+});
+
+// The replacement document is what the check finds once the load returns; if
+// it ever caught the replacement mid-read, the lost read would be
+// readiness_timeout, also never a pass.
+browserTest("the ?reviews=n page signals readiness, then replaces itself with another path, where a cookie hides the section: unexercised (page_not_served), never pass", T, async () => {
+  const row = await contentRow("/self-navigate/");
+  assert.notEqual(row.result, "pass", "a variant read from another document never passes");
+  assert.equal(row.result, "unexercised", "the variant document is not the one requested");
+  assert.ok(["page_not_served", "readiness_timeout"].includes(row.reason_code), `${row.reason_code} is a load outcome`);
+  assert.equal(row.observation.readiness.baseline, "ready", "the baseline is read");
+});
+
+// ---------------------------------------------------------------------------
+// Counts and live targets
+
+browserTest("the ?reviews=n page removes the section instead of hiding it: review (target_count_changed)", T, async () => {
+  const row = await contentRow("/remove-with-n/");
+  assertResult(row, { result: "review", reasonCode: "target_count_changed", acceptEligible: false, members: {} });
+  assert.deepEqual(row.observation.counts, { baseline: 1, param_n: 0 }, "one target at baseline, none with ?reviews=n");
+});
+
+browserTest("a data-next-hide=\"param.reviews\" section inside <template> beside a live one that hides with ?reviews=n: pass on the live section only", T, async () => {
+  const row = await contentRow("/template-and-live/");
+  assertResult(row, { result: "pass", reasonCode: null, acceptEligible: false, members: { [KEY]: ["pass", null] } });
+  assert.deepEqual(row.observation.counts, { baseline: 1, param_n: 1 }, "the template's section is not counted");
+  assert.deepEqual(row.observation.targets.map((entry) => entry.element_path), ["body>main[0]>section[0]"], "only the live section is a target");
+  assert.deepEqual(row.observation.references.map((entry) => entry.element_path), ["body>main[0]>section[0]"], "only the live section is a reference");
 });

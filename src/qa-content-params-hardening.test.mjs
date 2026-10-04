@@ -6,7 +6,9 @@
 // attribute and path is its own member, so the row never passes. The browser
 // driver, run against a fake page and a fake protocol session, reads the
 // document only through the isolated world: the page's own world answers
-// with a spoofed reading that is never used.
+// with a spoofed reading that is never used. It uses a reading only from the
+// document it asked for, never opens a context once the budget is spent, and
+// reads a variant with fewer targets than the baseline as a count change.
 import assert from "node:assert/strict";
 import test, { after, afterEach } from "node:test";
 
@@ -190,11 +192,16 @@ const withQueryParam = (url, key, value) => {
 
 // One fake browser. `pageWorld(variant)` is what the page's own world would
 // report for the one hide section (a spoof); `isolated(variant)` is the
-// isolated world's reading. Every call is logged.
-function fakeBrowser({ pageWorld, isolated }) {
+// isolated world's reading, which carries the URL the document was loaded at:
+// the requested URL, or `landAt(url, variant)` when that returns one (a
+// redirect or a page that replaced itself). `onGoto(url, variant)` runs on
+// each navigation. Every call is logged.
+function fakeBrowser({ pageWorld = () => ({ visible: true, stable: true }), isolated, landAt = () => null, onGoto = () => {} }) {
   const log = [];
   const newContext = async () => {
+    log.push(["browser", "newContext"]);
     let variant = null;
+    let loaded = null;
     const pageCall = (method) => {
       log.push(["page", method]);
     };
@@ -212,7 +219,9 @@ function fakeBrowser({ pageWorld, isolated }) {
     const page = {
       goto: async (url) => {
         variant = new URL(url).searchParams.get(NAME) === "n" ? "param_n" : "baseline";
-        log.push(["page", "goto", variant]);
+        log.push(["page", "goto", variant, url]);
+        onGoto(url, variant);
+        loaded = landAt(url, variant) ?? url;
         return { status: () => 200 };
       },
       waitForFunction: async () => pageCall("waitForFunction"),
@@ -235,7 +244,7 @@ function fakeBrowser({ pageWorld, isolated }) {
         }
         if (method === "Runtime.evaluate") {
           if (params.contextId !== ISOLATED_CONTEXT) return { result: { value: { ready: true, elements: [{ hide: EXPRESSION, show: null, path: PATH_0, ...pageWorld(variant) }] } } };
-          return { result: { value: isolated(variant) } };
+          return { result: { value: { url: loaded, ...isolated(variant) } } };
         }
         return {};
       },
@@ -276,7 +285,7 @@ test("driver: the page world reports the target hidden with ?reviews=n, the isol
   // Per load: the reader goes in before navigation, then the main frame's
   // isolated world is read.
   const perLoad = browser.log.map((entry) => entry.slice(0, 2).join(" "));
-  const load = ["context newCDPSession", "cdp Page.enable", "cdp Page.addScriptToEvaluateOnNewDocument", "page goto", "cdp Page.getFrameTree", "cdp Page.createIsolatedWorld", "cdp Runtime.evaluate", "context close"];
+  const load = ["browser newContext", "context newCDPSession", "cdp Page.enable", "cdp Page.addScriptToEvaluateOnNewDocument", "page goto", "cdp Page.getFrameTree", "cdp Page.createIsolatedWorld", "cdp Runtime.evaluate", "context close"];
   assert.deepEqual(perLoad, [...load, ...load], "each load installs the reader before navigating and reads after");
   assert.deepEqual(browser.log.filter(([, method]) => method === "Page.addScriptToEvaluateOnNewDocument" || method === "Page.createIsolatedWorld").map(([, , world]) => world), Array(4).fill("campaigns-os-content-params"), "the installed reader and the read share one named world");
 });
@@ -317,4 +326,92 @@ test("driver: an element with data-next-hide and an empty data-next-show, hidden
   const row = await runFake(browser);
   assert.notEqual(row.result, "pass", "an element carrying both attributes never passes");
   assert.deepEqual([row.result, row.reason_code], ["review", "show_overrides_hide"], "both attributes present, one of them empty");
+});
+
+// ---------------------------------------------------------------------------
+// The document read is the one requested
+
+// The working toggle: the section is visible at baseline and hidden with
+// ?reviews=n wherever it is read.
+const toggled = (variant) => reading(variant === "baseline");
+const NOT_SERVED = Object.freeze({ baseline: "ready", param_n: "page_not_served" });
+
+async function assertNotServed(landAt, readiness = NOT_SERVED) {
+  const row = await runFake(fakeBrowser({ isolated: toggled, landAt }));
+  assert.deepEqual([row.result, row.reason_code, row.accept_eligible], ["unexercised", "page_not_served", false], "a reading from another document is no reading of the requested page");
+  assert.deepEqual(row.observation.readiness, readiness, "the load that did not end on the requested document reads page_not_served");
+  assert.deepEqual(row.observation.counts, { baseline: null, param_n: null }, "nothing is counted");
+  assertExactMembers(row, {});
+}
+
+test("driver: the ?reviews=n load lands on the same path without the parameter: unexercised (page_not_served), never pass", async () => {
+  await assertNotServed((url, variant) => (variant === "param_n" ? BASE : null));
+});
+
+test("driver: the ?reviews=n load lands on another path, carrying ?reviews=n: unexercised (page_not_served), never pass", async () => {
+  await assertNotServed((url, variant) => (variant === "param_n" ? `http://127.0.0.1/elsewhere/?${NAME}=n` : null));
+});
+
+test("driver: the ?reviews=n load lands on another origin with the same path and query: unexercised (page_not_served), never pass", async () => {
+  await assertNotServed((url, variant) => (variant === "param_n" ? url.replace("127.0.0.1", "127.0.0.2") : null));
+});
+
+test("driver: the ?reviews=n page replaced itself with another path before it was read: unexercised (page_not_served), never pass", async () => {
+  await assertNotServed((url, variant) => (variant === "param_n" ? "http://127.0.0.1/elsewhere/" : null));
+});
+
+test("driver: the ?reviews=n load lands on ?reviews=n&reviews=y: unexercised (page_not_served), never pass", async () => {
+  await assertNotServed((url, variant) => (variant === "param_n" ? `${url}&${NAME}=y` : null));
+});
+
+test("driver: the ?reviews=n load lands on ?reviews=y: unexercised (page_not_served), never pass", async () => {
+  await assertNotServed((url, variant) => (variant === "param_n" ? url.replace(`${NAME}=n`, `${NAME}=y`) : null));
+});
+
+test("driver: the baseline load lands on ?reviews=n: unexercised (page_not_served), never pass", async () => {
+  await assertNotServed((url, variant) => (variant === "baseline" ? `${url}?${NAME}=n` : null), { baseline: "page_not_served", param_n: "ready" });
+});
+
+test("driver: a reading that carries no document URL: unexercised (page_not_served), never pass", async () => {
+  const row = await runFake(fakeBrowser({ isolated: (variant) => ({ ...toggled(variant), url: undefined }) }));
+  assert.deepEqual([row.result, row.reason_code], ["unexercised", "page_not_served"], "a reading that cannot name its document is not the requested page");
+});
+
+test("driver: the ?reviews=n load lands on the requested path with ?reviews=n, another parameter and a fragment: pass", async () => {
+  const row = await runFake(fakeBrowser({ isolated: toggled, landAt: (url, variant) => (variant === "param_n" ? `${url}&syn=1#frag` : null) }));
+  assert.deepEqual([row.result, row.reason_code], ["pass", null], "the requested document, with more query, is the requested page");
+  assertExactMembers(row, { [`hide:${PATH_0}`]: ["pass", null] });
+});
+
+test("driver: neither load ends on the requested document and neither signals readiness: unexercised (page_not_served)", async () => {
+  const row = await runFake(fakeBrowser({ isolated: () => ({ ready: false, elements: [] }), landAt: () => "http://127.0.0.1/elsewhere/" }));
+  assert.deepEqual(row.observation.readiness, { baseline: "page_not_served", param_n: "page_not_served" }, "the document is checked before readiness");
+});
+
+// ---------------------------------------------------------------------------
+// Counts and budget
+
+test("driver: the ?reviews=n context has no matching target where the baseline has one: review (target_count_changed)", async () => {
+  const row = await runFake(fakeBrowser({ isolated: (variant) => (variant === "baseline" ? reading(true) : { ready: true, elements: [] }) }));
+  assert.deepEqual([row.result, row.reason_code, row.accept_eligible], ["review", "target_count_changed", false], "fewer targets with ?reviews=n is a count change");
+  assert.deepEqual(row.observation.counts, { baseline: 1, param_n: 0 }, "one target at baseline, none with ?reviews=n");
+  assertExactMembers(row, {});
+});
+
+test("driver: once the 60 s budget is spent no later pair opens a context: the later pair reads unexercised (budget_exhausted)", async () => {
+  const { runContentParamChecks } = await import("./qa-content-params.mjs");
+  const second = "second";
+  let clock = 1_000_000;
+  // The first pair's ?reviews=n navigation uses up the whole budget.
+  const browser = fakeBrowser({ isolated: toggled, onGoto: (url, variant) => {
+    if (variant === "param_n") clock += 60_000;
+  } });
+  const topologies = [{ funnel_id: "default", pages: [{ page_id: PAGE, url: BASE }, { page_id: second, url: "http://127.0.0.1/synthetic-second/" }] }];
+  const { rows } = await runContentParamChecks({ topologies, spec: SPEC, newContext: browser.newContext, withQueryParam, now: () => clock, measuredAt });
+  assert.deepEqual(rows.map((row) => [row.id, row.result, row.reason_code]), [
+    [ID, "pass", null],
+    [`content_param:${second}:${NAME}`, "unexercised", "budget_exhausted"],
+  ], "the first pair is measured, the second is cut");
+  assert.equal(browser.log.filter(([kind, method]) => kind === "browser" && method === "newContext").length, 2, "only the first pair's two contexts are opened");
+  assert.deepEqual(browser.log.filter(([, method]) => method === "goto").map(([, , variant, url]) => [variant, url]), [["baseline", BASE], ["param_n", `${BASE}?${NAME}=n`]], "no load of the second page starts");
 });
