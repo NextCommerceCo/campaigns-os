@@ -574,10 +574,17 @@ const mixesRedirect = (entry) => Array.isArray(entry.statuses) && entry.statuses
 //   redirected); its hops are that final entry plus every redirect entry it
 //   names. The ledger keeps no Location, so it fixes the hop set and both
 //   ends; it cannot order intermediate hops.
-// - "ambiguous": the href stands for more than one chain: its entry mixes a
-//   redirect and a non-redirect status (one request was answered, another
-//   redirected), or it only redirected and no single final hop names it. No
-//   result may be read from any one of those chains.
+// - "ambiguous": the href stands for more than one chain, or a hop of its
+//   chain also belongs to another chain. No result may be read from any one
+//   of those chains. That is the case when:
+//   - any entry of the chain, or any entry its final hop names, mixes a
+//     redirect and a non-redirect status (one request through that URL was
+//     answered, another redirected);
+//   - it only redirected and no single final hop names it;
+//   - it was answered directly and a redirect entry names it too (it is one
+//     chain's final hop and another chain's start);
+//   - a hop answered more requests than the requested href did (that hop
+//     also started a chain of its own).
 // - "absent": no ledger entry has that id.
 export function bindLedgerChain(requestedId, entries, byId = new Map(entries.map((entry) => [entry?.resource_id, entry]))) {
   const requested = byId.get(requestedId);
@@ -593,8 +600,11 @@ export function bindLedgerChain(requestedId, entries, byId = new Map(entries.map
   const hops = new Set([final.resource_id, requestedId]);
   for (const id of final.match_resource_ids) {
     const entry = byId.get(id);
+    if (entry && mixesRedirect(entry)) return { status: "ambiguous" };
     if (entry && entry !== final && isRedirectEntry(entry)) hops.add(id);
   }
+  if (final === requested && hops.size > 1) return { status: "ambiguous" };
+  if ([...hops].some((id) => byId.get(id)?.request_count !== requested.request_count)) return { status: "ambiguous" };
   return { status: "bound", final, hops };
 }
 
@@ -631,8 +641,9 @@ const IMAGE_REQUEST_TYPES = new Set(["image", "other", "prefetch", "unknown"]);
 // page_load capture for the same route and viewport. True when it re-derives.
 // Every set the reader consumes is derived from the capture and required to
 // match exactly: each resource's hop set and final hop (bindLedgerChain; a
-// requested href the ledger binds to more than one chain does not re-derive,
-// whatever the request order), the cell's resource set (the chains partition
+// requested href the ledger binds to more than one chain, or whose chain
+// shares a hop with another chain, does not re-derive, whatever the request
+// order), the cell's resource set (the chains partition
 // the capture's ledger: every entry in exactly one resource's chain), each
 // <img> identity (null, or one resource's requested href), and the cell's
 // video set (every <video> media element). A truncated chain, a dropped resource or a dropped video
@@ -737,6 +748,17 @@ function uncapturedRoutesOf(record) {
     && routes.every((route) => route.startsWith("/") && !record.subject.routes.includes(route))
     ? routes
     : null;
+}
+
+// The page ids of skipped spec pages whose public route the run could not
+// resolve, listed as uncaptured_page_ids (absent reads as none); accepted, like
+// uncaptured_routes, only under route_scope "selected". Null when malformed.
+function uncapturedPageIdsOf(record) {
+  if (!Object.hasOwn(record, "uncaptured_page_ids")) return [];
+  const pageIds = record.uncaptured_page_ids;
+  if (!Array.isArray(pageIds)) return null;
+  if (!pageIds.length) return pageIds;
+  return uniqueStrings(pageIds) && record.subject.route_scope === "selected" ? pageIds : null;
 }
 
 // The record's declared subject: exactly the page_load subject fields, each
@@ -846,7 +868,8 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
     || !Array.isArray(record.cells)
     || cells.length !== record.cells.length
     || !recordVocabularyOk(record, rules.vocabulary)
-    || uncapturedRoutesOf(record) === null) return failAll();
+    || uncapturedRoutesOf(record) === null
+    || uncapturedPageIdsOf(record) === null) return failAll();
 
   // The declared grid (routes × viewports) is the capture set and the cell
   // set: exactly one page_load capture and one cell per declared route and
@@ -871,11 +894,16 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
     && pageLoad.subject.build_fingerprint === currentBuild;
   const results = [];
   // A spec page with no source mapping: one result per 1.3 check and viewport,
-  // unexercised / page_not_captured.
-  for (const route of uncapturedRoutesOf(record)) {
+  // unexercised / page_not_captured; keyed "cell" on its public route, or
+  // "page:<page_id>" with no page when it has no resolvable route.
+  const uncaptured = [
+    ...uncapturedRoutesOf(record).map((route) => ({ page: route, key: "cell" })),
+    ...uncapturedPageIdsOf(record).map((pageId) => ({ page: null, key: `page:${pageId}` })),
+  ];
+  for (const { page, key } of uncaptured) {
     for (const viewport of record.subject.viewports) {
       for (const check of POLISH_CHECKS) {
-        const subject = { check, page: route, viewport, key: "cell" };
+        const subject = { check, page, viewport, key };
         const row = unreproducedRow({ subject, check }, PAGE_NOT_CAPTURED, { leg: "polish", measuredAt });
         results.push(recordBound ? row : staleRow(row));
       }

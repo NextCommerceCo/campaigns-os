@@ -212,13 +212,12 @@ test("mergePolishCaptureEvidence attaches page_load and its media_weight togethe
 });
 
 // A fake Chromium for one cell's image probe. Each probe step can be held
-// `delays[step]` ms: listing (the isolated-world Runtime.evaluate), enable
-// (Page.enable), evaluate (the probe's page.evaluate) and reread (the
-// Page.getFrameTree after the probe); `during[step]` runs as the step starts.
-// `worldDelay` holds Page.createIsolatedWorld, and `during.world` runs as it
-// starts, once the listing's timer is armed. `calls` lists the probe steps
-// that started, `methods` every CDP method sent and `sent` each with the time
-// it was sent.
+// `delays[step]` ms: tree (DOM.getDocument), read (the isolated-world
+// Runtime.callFunctionOn) and reread (the Page.getFrameTree after the read);
+// `during[step]` runs as the step starts. `worldDelay` holds
+// Page.createIsolatedWorld, and `during.world` runs as it starts, once the
+// probe's deadline is armed. `calls` lists the probe steps that started,
+// `methods` every CDP method sent and `sent` each with the time it was sent.
 function probeChromium({ delays = {}, during = {}, worldDelay = 0 } = {}) {
   const calls = [];
   const methods = [];
@@ -247,11 +246,14 @@ function probeChromium({ delays = {}, during = {}, worldDelay = 0 } = {}) {
         if (worldDelay) await new Promise((resolve) => setTimeout(resolve, worldDelay));
         return { executionContextId: 1 };
       }
-      if (method === "Runtime.evaluate") {
-        await hold("listing");
-        return { result: { value: listing } };
+      if (method === "DOM.getDocument") {
+        await hold("tree");
+        return { root: { nodeId: 1, backendNodeId: 1, children: [] } };
       }
-      if (method === "Page.enable") return hold("enable");
+      if (method === "Runtime.callFunctionOn") {
+        await hold("read");
+        return { result: { value: { ...listing, images: listing.images.map((image) => ({ ...image, complete: true, natural: [40, 30], rendered: [40, 30], object_fit: "fill", hidden: false })) } } };
+      }
       if (method === "Page.getFrameTree") {
         frameTrees += 1;
         // The first two are page_load's own reads; the third is the probe's.
@@ -266,10 +268,8 @@ function probeChromium({ delays = {}, during = {}, worldDelay = 0 } = {}) {
     async goto() {},
     async waitForLoadState() {},
     url: () => `${ORIGIN}${ROUTES[0]}`,
-    async evaluate(callback, argument) {
-      if (!argument?.geometry) return { observed_element_count: 0, elements: [] };
-      await hold("evaluate");
-      return { ...listing, images: listing.images.map((image) => ({ ...image, complete: true, natural: [40, 30], rendered: [40, 30], object_fit: "fill", hidden: false })) };
+    async evaluate() {
+      return { observed_element_count: 0, elements: [] };
     },
   };
   const chromium = {
@@ -292,7 +292,7 @@ async function probeCell(fake, imageProbe) {
     const observation = await adapter.captureRoute({
       url: `${ORIGIN}${ROUTES[0]}`,
       viewport: { width: 1280, height: 800 },
-      imageProbe: { remainingMs: 10_000, cellBoundMs: 100, imageCap: 512, listingBoundMs: 50, ...imageProbe },
+      imageProbe: { remainingMs: 10_000, cellBoundMs: 100, imageCap: 512, ...imageProbe },
     });
     return observation.imageProbe;
   } finally {
@@ -305,34 +305,35 @@ test("every image probe step runs inside the cell's bound and is charged to the 
   const control = await probeCell(probeChromium(), {});
   assert.equal(control.status, "complete", "control: an unheld probe completes");
 
-  // The cell bound (100 ms) ends a held Page.enable, the probe's evaluate or
-  // the Page.getFrameTree re-read: probe_timeout, charged the bound (a timer
-  // may fire a millisecond early), not the held step.
-  for (const step of ["enable", "evaluate", "reread"]) {
+  // The cell bound (100 ms) ends a held DOM.getDocument, the read or the
+  // Page.getFrameTree re-read: probe_timeout, charged the bound (a timer may
+  // fire a millisecond early), not the held step. Only a probe whose read
+  // returned names its image.
+  for (const [step, named] of [["tree", []], ["read", []], ["reread", ["body>img:nth-of-type(1)"]]]) {
     const probe = await probeCell(probeChromium({ delays: { [step]: HELD } }), {});
     assert.equal(probe.status, "probe_timeout", `${step}: the cell bound ended the probe`);
     assert.ok(probe.spent_ms >= 90 && probe.spent_ms < HELD, `${step}: spent ${probe.spent_ms} ms, about the bound and not the held step`);
-    assert.deepEqual(probe.images.map((image) => image.element_path), ["body>img:nth-of-type(1)"], `${step}: the listing names the image`);
+    assert.deepEqual(probe.images.map((image) => image.element_path), named, `${step}: the images the probe names`);
   }
 
-  // The run budget left (20 ms) is the smaller bound: it bounds the listing
-  // and every later step, and ending them reads probe_budget_exhausted.
-  for (const step of ["listing", "enable", "evaluate", "reread"]) {
+  // The run budget left (20 ms) is the smaller bound: it bounds every step,
+  // and ending them reads probe_budget_exhausted.
+  for (const step of ["tree", "read", "reread"]) {
     const probe = await probeCell(probeChromium({ delays: { [step]: HELD } }), { remainingMs: 20 });
     assert.equal(probe.status, "probe_budget_exhausted", `${step}: the run budget ended the probe`);
     assert.ok(probe.spent_ms >= 15 && probe.spent_ms < HELD, `${step}: spent ${probe.spent_ms} ms, about the budget left and not the held step`);
   }
 
-  // A step does not start once the bound has passed: Page.enable spends the
-  // whole bound on the probe clock, so neither the evaluate nor the re-read
+  // A step does not start once the bound has passed: DOM.getDocument spends
+  // the whole bound on the probe clock, so neither the read nor the re-read
   // starts.
   let time = 0;
   const clock = { now: () => time, sleep: () => new Promise(() => {}) };
-  const fake = probeChromium({ during: { enable: () => { time = 100; } } });
+  const fake = probeChromium({ during: { tree: () => { time = 100; } } });
   const cut = await probeCell(fake, { clock });
   assert.equal(cut.status, "probe_timeout");
   assert.equal(cut.spent_ms, 100);
-  assert.deepEqual(fake.calls, ["listing", "enable"], "no probe step starts after the bound passed");
+  assert.deepEqual(fake.calls, ["tree"], "no probe step starts after the bound passed");
 });
 
 test("a cell that starts once the run budget is spent starts no probe step: no CDP call, no listing, no images", async () => {
@@ -354,7 +355,7 @@ test("a cell that starts once the run budget is spent starts no probe step: no C
   }
 });
 
-test("a probe step its bound ends is cancelled: a listing whose Page.createIsolatedWorld settles late sends no Runtime.evaluate or any later command", async () => {
+test("a probe step its bound ends is cancelled: a probe whose Page.createIsolatedWorld settles late sends no DOM.getDocument or any later command", async () => {
   const WORLD_HELD = 650;
   const fake = probeChromium({ worldDelay: WORLD_HELD });
   const { createPolishBrowserAdapter } = await import("./polish-browser.mjs");
@@ -365,30 +366,30 @@ test("a probe step its bound ends is cancelled: a listing whose Page.createIsola
     const observation = await adapter.captureRoute({
       url: `${ORIGIN}${ROUTES[0]}`,
       viewport: { width: 1280, height: 800 },
-      imageProbe: { remainingMs: 20, cellBoundMs: 100, imageCap: 512, listingBoundMs: 50 },
+      imageProbe: { remainingMs: 20, cellBoundMs: 100, imageCap: 512 },
     });
     boundEndedAt = performance.now();
     probe = observation.imageProbe;
   } finally {
     await adapter.close();
   }
-  assert.equal(probe.status, "probe_budget_exhausted", "the run budget left ended the listing");
+  assert.equal(probe.status, "probe_budget_exhausted", "the run budget left ended the probe");
   assert.ok(probe.spent_ms >= 15 && probe.spent_ms < WORLD_HELD, `spent ${probe.spent_ms} ms, about the budget left and not the held step`);
-  assert.deepEqual(probe.images, [], "the cut listing names no image");
+  assert.deepEqual(probe.images, [], "the cut probe names no image");
 
   // Let the held Page.createIsolatedWorld settle, and its continuation run.
   await new Promise((resolve) => setTimeout(resolve, WORLD_HELD + 100));
   const world = fake.sent.findIndex((entry) => entry.method === "Page.createIsolatedWorld");
-  assert.ok(world >= 0, "the listing started");
+  assert.ok(world >= 0, "the probe started");
   assert.ok(fake.sent[world].at < boundEndedAt);
   assert.deepEqual(fake.sent.filter((entry) => entry.at >= boundEndedAt), [], "no CDP command is sent after the bound");
-  assert.ok(!fake.methods.includes("Runtime.evaluate"), "the listing's Runtime.evaluate is never sent");
-  assert.deepEqual(fake.methods.slice(world), ["Page.createIsolatedWorld"], "no probe command follows the cut listing");
-  assert.deepEqual(fake.calls, [], "no probe step started after the listing");
+  assert.ok(!fake.methods.includes("DOM.getDocument"), "the probe's DOM.getDocument is never sent");
+  assert.deepEqual(fake.methods.slice(world), ["Page.createIsolatedWorld"], "no probe command follows the cut world");
+  assert.deepEqual(fake.calls, [], "no probe step started after the world");
 });
 
 // Each CDP command a probe issues, with the probe step that holds it.
-const PROBE_COMMAND_STEPS = ["world", "listing", "enable", "evaluate", "reread"];
+const PROBE_COMMAND_STEPS = ["world", "tree", "read", "reread"];
 
 test("a step that settles past its bound on the probe clock, before any timer fires, issues nothing more", async () => {
   // The run budget left (20 ms) or the cell bound (100 ms) is the bound; the
@@ -845,4 +846,175 @@ test("table T: oversize_factor 2.0 and min_natural_area 250,000 are inclusive; t
   // at contain s = 0.5 both read F = 2.0; above natural size both pass.
   assert.deepEqual(await oversize({ object_fit: "scale-down", natural: [1000, 1000], rendered: [500, 500] }), WARN);
   assert.deepEqual(await oversize({ object_fit: "scale-down", natural: [1000, 1000], rendered: [501, 1000] }), PASS);
+});
+
+// ---------------------------------------------------------------------------
+// Ambiguity on every hop of a chain: an entry anywhere in a chain whose
+// statuses mix a redirect and a non-redirect, or a hop that is one chain's
+// final and another chain's start, makes the binding ambiguous, so the cell
+// is refused (contract :163) in every request order.
+
+// Every order of `records`.
+const orders = (records) => (records.length <= 1
+  ? [records]
+  : records.flatMap((record, index) => orders([...records.slice(0, index), ...records.slice(index + 1)]).map((rest) => [record, ...rest])));
+
+// Builds and reads the cell once per request order and asserts the results
+// are every subject of the cell, each unexercised / evidence_not_reproducible,
+// none accept-eligible, and the record and results do not depend on the order.
+async function assertRefusedInEveryOrder(records, images, subjects, setup) {
+  let first = null;
+  for (const responses of orders(records)) {
+    const order = responses.map((record) => record.request_id).join(" then ");
+    const evidence = await builtEvidence([{ route: ROUTES[0], responses, images }]);
+    setup(evidence.pageLoad.captures[0].resource_ledger.entries, order);
+    const results = await read(evidence);
+    sameRows(results, subjects.map(([key, check]) => [ROUTES[0], key, check, "unexercised", E, false]));
+    if (first) {
+      assert.deepEqual(evidence.record, first.record, `${order}: the record does not depend on the request order`);
+      assert.deepEqual(results, first.results, `${order}: the results do not depend on the request order`);
+    } else first = { record: evidence.record, results };
+  }
+}
+
+const ledgerEntryOf = (entries, url) => entries.find((entry) => entry.resource_id === resourceIdOf(url));
+const DOC_KEY = resourceIdOf(`${ORIGIN}${ROUTES[0]}`);
+
+test("a chain whose final hop also redirected (A 302 to B 200, B 302 to C 200, only image A) is refused in both request orders", async () => {
+  const [A, B, C] = ["a", "b", "c"].map((name) => `${ORIGIN}/img/${name}.jpg`);
+  const records = [
+    redirectChainRecord("a", [hop(A, { status: 302, bytes: 200, mime: "text/html" }), hop(B, { bytes: 300_000 })]),
+    redirectChainRecord("b", [hop(B, { status: 302, bytes: 200, mime: "text/html" }), hop(C, { bytes: 300_000 })]),
+  ];
+  await assertRefusedInEveryOrder(records, [probed(A, 1)], [
+    [DOC_KEY, "media.weight"],
+    [resourceIdOf(A), "media.weight"],
+    [resourceIdOf(B), "media.weight"],
+    [resourceIdOf(C), "media.weight"],
+    [`${resourceIdOf(A)}:body>img:nth-of-type(1)`, "media.oversize"],
+  ], (entries, order) => {
+    assert.deepEqual(ledgerEntryOf(entries, B).statuses, [200, 302], `setup (${order}): B's entry mixes the answer and the redirect`);
+  });
+});
+
+test("a three-hop chain whose final hop also redirected (A 302 to B 302 to C 200, C 302 to D 200) is refused in both request orders", async () => {
+  const [A, B, C, D] = ["a", "b", "c", "d"].map((name) => `${ORIGIN}/img/${name}.jpg`);
+  const records = [
+    redirectChainRecord("a", [hop(A, { status: 302, bytes: 200, mime: "text/html" }), hop(B, { status: 302, bytes: 200, mime: "text/html" }), hop(C, { bytes: 300_000 })]),
+    redirectChainRecord("c", [hop(C, { status: 302, bytes: 200, mime: "text/html" }), hop(D, { bytes: 300_000 })]),
+  ];
+  await assertRefusedInEveryOrder(records, [probed(A, 1)], [
+    [DOC_KEY, "media.weight"],
+    [resourceIdOf(A), "media.weight"],
+    [resourceIdOf(B), "media.weight"],
+    [resourceIdOf(C), "media.weight"],
+    [resourceIdOf(D), "media.weight"],
+    [`${resourceIdOf(A)}:body>img:nth-of-type(1)`, "media.oversize"],
+  ], (entries, order) => {
+    assert.deepEqual(ledgerEntryOf(entries, C).statuses, [200, 302], `setup (${order}): C's entry mixes the answer and the redirect`);
+  });
+});
+
+test("a hop that is also another chain's start (F answered directly too; M redirected directly too) is refused in every request order", async () => {
+  const [A, M, F] = ["a", "m", "f"].map((name) => `${ORIGIN}/img/${name}.jpg`);
+  // A 302 to F 200, and F requested directly (200).
+  await assertRefusedInEveryOrder([
+    redirectChainRecord("a", [hop(A, { status: 302, bytes: 200, mime: "text/html" }), hop(F, { bytes: 300_000 })]),
+    singleResponseRecord("f", hop(F, { bytes: 300_000 })),
+  ], [probed(A, 1)], [
+    [DOC_KEY, "media.weight"],
+    [resourceIdOf(A), "media.weight"],
+    [resourceIdOf(F), "media.weight"],
+    [`${resourceIdOf(A)}:body>img:nth-of-type(1)`, "media.oversize"],
+  ], (entries, order) => {
+    assert.deepEqual([ledgerEntryOf(entries, A).request_count, ledgerEntryOf(entries, F).request_count], [1, 2], `setup (${order}): F answered two requests`);
+  });
+  // A 302 to M 302 to F 200, and M requested directly (302 to F).
+  await assertRefusedInEveryOrder([
+    redirectChainRecord("a", [hop(A, { status: 302, bytes: 200, mime: "text/html" }), hop(M, { status: 302, bytes: 200, mime: "text/html" }), hop(F, { bytes: 300_000 })]),
+    redirectChainRecord("m", [hop(M, { status: 302, bytes: 200, mime: "text/html" }), hop(F, { bytes: 300_000 })]),
+  ], [probed(A, 1)], [
+    [DOC_KEY, "media.weight"],
+    [resourceIdOf(A), "media.weight"],
+    [resourceIdOf(M), "media.weight"],
+    [resourceIdOf(F), "media.weight"],
+    [`${resourceIdOf(A)}:body>img:nth-of-type(1)`, "media.oversize"],
+  ], (entries, order) => {
+    assert.deepEqual(ledgerEntryOf(entries, M).statuses, [302], `setup (${order}): M only redirected`);
+    assert.equal(ledgerEntryOf(entries, M).request_count, 2, `setup (${order}): M answered two requests`);
+  });
+});
+
+test("control: one redirect chain per href (A 302 to B 302 to C 200) still binds and reads", async () => {
+  const [A, B, C] = ["a", "b", "c"].map((name) => `${ORIGIN}/img/${name}.jpg`);
+  const evidence = await builtEvidence([{
+    route: ROUTES[0],
+    responses: [redirectChainRecord("a", [hop(A, { status: 302, bytes: 200, mime: "text/html" }), hop(B, { status: 302, bytes: 200, mime: "text/html" }), hop(C, { bytes: 300_000 })])],
+    images: [probed(A, 1, { rendered: [100, 100] })],
+  }]);
+  assert.deepEqual(evidence.record.cells[0].resources.find((resource) => resource.resource_id === resourceIdOf(A)).chain.map((entry) => entry.resource_id), [A, B, C].map(resourceIdOf));
+  sameRows(await read(evidence), [
+    [ROUTES[0], DOC_KEY, "media.weight", "pass", null, false],
+    [ROUTES[0], resourceIdOf(A), "media.weight", "pass", null, false],
+    [ROUTES[0], `${resourceIdOf(A)}:body>img:nth-of-type(1)`, "media.oversize", "warning", "image_oversized", true],
+  ]);
+});
+
+// ---------------------------------------------------------------------------
+// A skipped spec page with no resolvable public route (a skipped mapping
+// usually carries no page_kit) is never left out: it reads page_not_captured,
+// named by its page id.
+
+test("a skipped page whose public route cannot be resolved reads page_not_captured keyed by its page id, per viewport and check", async () => {
+  const { capturePolishPageLoad, POLISH_CAPTURE_VIEWPORTS } = await import("./polish-node.mjs");
+  const mapped = ROUTES[0];
+  const packet = {
+    campaign: { public_route_slug: SLUG },
+    source_html: {
+      pages: [
+        { page_id: "landing", path: "landing.html", page_kit: { public_route: mapped, spec_route: "" } },
+        { page_id: "checkout", skip_reason: "Template stock page." },
+        { page_id: "upsell", skip_reason: "Template stock page.", page_kit: { public_route: "not a route" } },
+      ],
+    },
+  };
+  const report = { identity: { public_route_slug: SLUG }, stages: { assembly: { status: "completed", build_fingerprint: BUILD_FP } } };
+  const output = await capturePolishPageLoad({
+    packet,
+    report,
+    baseUrl: `${ORIGIN}/`,
+    createBrowserAdapter: async () => ({
+      async captureRoute({ url }) {
+        return {
+          finalDocumentUrl: url,
+          responseCollectionStatus: "complete",
+          networkidle: { status: "settled", duration_ms: 500 },
+          mediaElements: [],
+          responses: [singleResponseRecord("doc", hop(url, { type: "Document", mime: "text/html", bytes: 4_000, is_final_main_document: true, document_context_fingerprint: `sha256:${"a".repeat(64)}` }))],
+          imageProbe: { status: "complete", dpr: 1, images: [], spent_ms: 0 },
+        };
+      },
+      async close() {},
+    }),
+  });
+  assert.deepEqual(output.media_weight.uncaptured_page_ids, ["checkout", "upsell"]);
+  const results = await read({ record: output.media_weight, pageLoad: output.page_load });
+  const viewports = POLISH_CAPTURE_VIEWPORTS.map((viewport) => viewport.key);
+  const unnamed = results.filter((row) => row.subject.page === null).map((row) => [row.subject.key, row.subject.viewport, row.check, row.result, row.reason_code, row.accept_eligible]).sort();
+  assert.deepEqual(unnamed, ["checkout", "upsell"].flatMap((pageId) => viewports.flatMap((viewport) => ["media.oversize", "media.weight"].map((check) => [`page:${pageId}`, viewport, check, "unexercised", "page_not_captured", false]))).sort());
+  // A list of page ids is accepted only where page_load records a selected route scope.
+  const all = withRecomputedIntegrity({ ...output.media_weight, subject: { ...output.media_weight.subject, route_scope: "all" } });
+  const pageLoadAll = { ...output.page_load, subject: { ...output.page_load.subject, route_scope: "all" } };
+  for (const row of await read({ record: all, pageLoad: pageLoadAll })) {
+    assert.equal(row.reason_code, E, `${row.check} ${row.subject.key}: a page id list under route_scope "all" does not re-derive`);
+  }
+});
+
+// The 1.3 rules refuse thresholds that are not positive numbers.
+test("evaluateMediaWeight refuses a zero, negative or non-finite threshold", () => {
+  const cell = { route: ROUTES[0], viewport: VIEWPORT, dpr: 1, capture_status: "complete", probe_status: "complete", resources: [], images: [], videos: [] };
+  assert.doesNotThrow(() => evaluateMediaWeight(cell));
+  for (const [field, value] of [["image_bytes", -1], ["oversize_factor", 0], ["min_natural_area", -250_000], ["oversize_factor", Infinity]]) {
+    assert.throws(() => evaluateMediaWeight(cell, { ...MEDIA_WEIGHT_QC_RULES.thresholds, [field]: value }), /thresholds are not the 1.3 thresholds/, `${field} ${value}`);
+  }
 });

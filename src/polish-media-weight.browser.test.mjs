@@ -186,24 +186,17 @@ async function oversizeRow(t, name, { natural, style, result, reasonCode, render
   }), route(name));
 }
 
-// A page script that waits for the image probe: after `load` it arms (in a
-// setTimeout 0), and the first read of an <img> property the probe takes
-// (currentSrc, complete, naturalWidth/Height, getBoundingClientRect) runs
-// `action` once. Nothing before the probe reads <img> properties.
-const probeHook = (action) => `<script>(() => {
-  let armed = false;
-  let fired = false;
-  addEventListener("load", () => setTimeout(() => { armed = true; }, 0));
-  const fire = () => { if (!armed || fired) return; fired = true; ${action} };
-  const proto = HTMLImageElement.prototype;
-  for (const name of ["currentSrc", "complete", "naturalWidth", "naturalHeight"]) {
-    const descriptor = Object.getOwnPropertyDescriptor(proto, name);
-    Object.defineProperty(proto, name, { configurable: true, enumerable: descriptor.enumerable, get() { fire(); return descriptor.get.call(this); } });
-  }
-  const rect = Element.prototype.getBoundingClientRect;
-  Object.defineProperty(proto, "getBoundingClientRect", { configurable: true, writable: true, value: function getBoundingClientRect() { fire(); return rect.call(this); } });
-})();</script>`;
 const busyLoop = (ms) => `const until = performance.now() + ${ms}; while (performance.now() < until) {}`;
+// A page script that keeps the main thread busy once loaded: after `load`
+// (in a setTimeout 0) it runs `ms` busy loops back to back, each posted as
+// the next message, so every probe step, which runs on the main thread in
+// its own world, waits behind one. The page cannot see the probe (it reads
+// in an isolated world), so it holds every main-thread task the same way.
+const busyAfterLoad = (ms) => `<script>addEventListener("load", () => setTimeout(() => {
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => { ${busyLoop(ms)} channel.port2.postMessage(null); };
+  channel.port2.postMessage(null);
+}, 0));</script>`;
 
 // The F1.3-B3 image: 2400×1800 natural in a 300×225 `fill` box (F = 8). Any
 // probe that completed would read it as image_oversized.
@@ -211,21 +204,21 @@ const OVERSIZED = { natural: [2400, 1800], style: "width:300px;height:225px;obje
 
 // A discarded probe (contract 1.3 Evaluation order step 3) on a page with one
 // OVERSIZED <img> served small and complete: the cell records the probe
-// status; the <img> keeps its subject and reads oversize unexercised with the
+// status. The probe was discarded before its one read returned (or, for a
+// cell the run budget ended before, started no step), so the cell lists no
+// <img> and its one oversize result, keyed "cell", reads unexercised with the
 // probe status. Where a probe cost cap ended the probe (contract :154-155,
 // :1670), every result of the cell carries the page_coverage member with the
 // cap code, so the document and the image read weight unexercised with it;
-// otherwise they read weight pass. A cell the run budget ended before starts
-// no probe step, so it lists no <img> and its one oversize result is keyed
-// "cell".
+// otherwise they read weight pass.
 const PROBE_COST_CAPS = ["probe_timeout", "image_cap_reached", "probe_budget_exhausted"];
 const weightUnderCap = (status) => (PROBE_COST_CAPS.includes(status) ? ["unexercised", status] : ["pass"]);
-const oversizeUnderCap = (status, key) => [status === "probe_budget_exhausted" ? "cell" : key, "unexercised", status];
+const oversizeUnderCap = (status) => ["cell", "unexercised", status];
 
 function discardedProbeCells(same, name, imagePath, status) {
   return bothCells(route(name), {
     weight: [[doc(same, name), ...weightUnderCap(status)], [rid(same.url(imagePath)), ...weightUnderCap(status)]],
-    oversize: [oversizeUnderCap(status, oversizeKey(rid(same.url(imagePath)), FIRST_IMG))],
+    oversize: [oversizeUnderCap(status)],
     capCode: PROBE_COST_CAPS.includes(status) ? status : null,
   });
 }
@@ -604,17 +597,47 @@ browserTest("F1.3-B10 accepted F1.3-B3, object-fit changes from fill to contain 
 const B5_PAD = [`X-Synthetic-Pad: ${"0".repeat("Content-Length: 1300000".length - "X-Synthetic-Pad: ".length)}`];
 const b5Stalled = () => stalled({ sendBytes: 600_000, extra: B5_PAD });
 
-// Accepted F1.3-B5, re-served by `secondHandler`.
+// Chrome reports the bytes of a transfer still in flight in coarse steps, so
+// two captures of one stalled transfer can read different lower bounds (for
+// example 589,824 and 600,000 B). A row that needs the accepted capture's
+// lower bound in a later capture re-captures it, at most
+// LOWER_BOUND_ATTEMPTS times, until its desktop entry reads that bound; the
+// setup fails only after the last attempt.
+const LOWER_BOUND_ATTEMPTS = 5;
+
+// Each capture of a page whose transfer is held open waits the 5 s
+// network-idle bound on both viewports (about 10 s per capture). The rows
+// below run several captures, so they carry an explicit timeout sized to
+// their worst case instead of relying on the runner's default (none).
+const CAPTURE_MS = 10_000;
+const B12_TIMEOUT_MS = (1 + LOWER_BOUND_ATTEMPTS + 1) * CAPTURE_MS + 50_000; // accepted, control re-captures, complete re-serve
+const B13_TIMEOUT_MS = (1 + 2 * LOWER_BOUND_ATTEMPTS) * CAPTURE_MS + 40_000; // accepted, control and re-serve re-captures
+const I16_TIMEOUT_MS = 90_000; // twelve routes on two viewports, eleven of them with a slow probe, about 40 s
+async function captureAtLowerBound({ same, other }, name, path, bound, label) {
+  const seen = [];
+  for (let attempt = 1; attempt <= LOWER_BOUND_ATTEMPTS; attempt += 1) {
+    const output = await capture(same, { routes: [name] });
+    assertRequestLog({ same, other }, { same: requests([route(name), path]) }, `setup (${label}, attempt ${attempt})`);
+    const bytes = desktopEntry(output, name, same.url(path))?.transferred_bytes;
+    if (bytes === bound) return output;
+    seen.push(bytes);
+  }
+  return assert.fail(`setup (${label}): no capture in ${LOWER_BOUND_ATTEMPTS} read the accepted lower bound ${bound} B (read ${seen.join(", ")} B)`);
+}
+
+// Accepted F1.3-B5, re-served by `secondHandler`. The control and the
+// re-serve are each captured at the accepted capture's lower bound.
 async function acceptedB5Recaptured(t, name, { secondHandler, check, changed, secondOversize, label }) {
   const path = `/img/${name}.png`;
-  const { same, first, control, second } = await threeCaptures(t, name, {
-    serveFirst: ({ same: origin }) => {
-      origin.serve(route(name), page(img(`src="${path}" width="40" height="30"`)));
-      origin.serve(path, b5Stalled());
-    },
-    serveSecond: ({ same: origin }) => origin.serve(path, secondHandler),
-    log: () => ({ same: requests([route(name), path]) }),
-  });
+  const { same, other } = await origins(t);
+  same.serve(route(name), page(img(`src="${path}" width="40" height="30"`)));
+  same.serve(path, b5Stalled());
+  const first = await capture(same, { routes: [name] });
+  assertRequestLog({ same, other }, { same: requests([route(name), path]) }, "setup (first capture)");
+  const bound = desktopEntry(first, name, same.url(path))?.transferred_bytes;
+  const control = await captureAtLowerBound({ same, other }, name, path, bound, "control re-capture");
+  same.serve(path, secondHandler);
+  const second = await captureAtLowerBound({ same, other }, name, path, bound, "changed capture");
   const url = same.url(path);
   const firstEntry = desktopEntry(first, name, url);
   assertLedgerLowerBound(firstEntry, "over", "first capture");
@@ -639,7 +662,7 @@ async function acceptedB5Recaptured(t, name, { secondHandler, check, changed, se
   });
 }
 
-browserTest("F1.3-B12 accepted F1.3-B5, image re-served complete at 600,000 B: accept lapsed (state_changed)", async (t) => {
+browserTest("F1.3-B12 accepted F1.3-B5, image re-served complete at 600,000 B: accept lapsed (state_changed)", { timeout: B12_TIMEOUT_MS }, async (t) => {
   // D2: the complete re-serve carries exactly the bytes Chrome measured as
   // the accepted lower bound (the 600,000 B figure in Chrome's coarse step),
   // so the two captures' bytes are equal and only the measurement class
@@ -694,7 +717,7 @@ async function threeCapturesB12(t, name, path) {
   return { same, other, first, control, second };
 }
 
-browserTest("F1.3-B13 accepted F1.3-B5, re-served with the same lower bound and a declared length of 1,300,000 B: accept lapsed (state_changed)", async (t) => {
+browserTest("F1.3-B13 accepted F1.3-B5, re-served with the same lower bound and a declared length of 1,300,000 B: accept lapsed (state_changed)", { timeout: B13_TIMEOUT_MS }, async (t) => {
   await acceptedB5Recaptured(t, "b13", {
     secondHandler: stalled({ sendBytes: 600_000, declared: 1_300_000 }),
     check: (first, second) => {
@@ -917,11 +940,24 @@ browserTest("F1.3-I12 <img> whose currentSrc is a data: URL (no ledger entry): w
 browserTest("F1.3-I13 page script navigates the main frame during the probe (setTimeout 0 after load): oversize results in the cell unexercised (document_context_changed)", async (t) => {
   const path = "/img/i13.png";
   const elsewhere = route("i13-elsewhere");
-  const { same, other, output } = await captureOne(t, "i13", ({ same: origin }) => {
-    origin.serve(route("i13"), page(img(`src="${path}" style="${OVERSIZED.style}"`), { head: probeHook(`location.assign(${JSON.stringify(elsewhere)}); ${busyLoop(150)}`) }));
-    origin.serve(path, pngFile(...OVERSIZED.natural));
-    origin.serve(elsewhere, page("<p>Synthetic navigation target</p>"));
-  });
+  // The probe reads in an isolated world, so no page script can see it start.
+  // The injected probe clock (see F1.3-I16) stands in: as each cell's probe
+  // starts it runs location.assign in the page's own world, and it sets no
+  // bound, so the probe waits behind the page's busy loops while the
+  // navigation commits.
+  const { same, other } = await origins(t);
+  same.serve(route("i13"), page(img(`src="${path}" style="${OVERSIZED.style}"`), { head: busyAfterLoad(400) }));
+  same.serve(path, pngFile(...OVERSIZED.natural));
+  same.serve(elsewhere, page("<p>Synthetic navigation target</p>"));
+  let browser;
+  const probeClock = {
+    now: () => 0,
+    sleep: () => {
+      browser.contexts().at(-1).pages()[0].evaluate((target) => location.assign(target), elsewhere).catch(() => {});
+      return new Promise(() => {});
+    },
+  };
+  const output = await capture(same, { routes: ["i13"], probeClock, onLaunch: (launched) => { browser = launched; } });
   const before = { same: same.takeLog(), other: other.takeLog() };
   eachCapture(output, "i13", (part, viewport) => {
     assert.equal(part.measurement_status, "complete", `setup (${viewport}): the page_load capture closed before the navigation`);
@@ -939,7 +975,7 @@ browserTest("F1.3-I13 page script navigates the main frame during the probe (set
 browserTest("F1.3-I14 probe slowed past 500 ms by an injected busy loop: oversize results in the cell unexercised (probe_timeout)", async (t) => {
   const path = "/img/i14.png";
   const { same, other, output } = await captureOne(t, "i14", ({ same: origin }) => {
-    origin.serve(route("i14"), page(img(`src="${path}" style="${OVERSIZED.style}"`), { head: probeHook(busyLoop(800)) }));
+    origin.serve(route("i14"), page(img(`src="${path}" style="${OVERSIZED.style}"`), { head: busyAfterLoad(400) }));
     origin.serve(path, pngFile(...OVERSIZED.natural));
   });
   assertRequestLog({ same, other }, { same: requests([route("i14"), path]) }, "setup");
@@ -1004,9 +1040,9 @@ function virtualProbeClock() {
   };
 }
 
-browserTest("F1.3-I16 run whose earlier cells consume the 10 s probe budget (injected slow probe): next cell's oversize results unexercised (probe_budget_exhausted)", async (t) => {
+browserTest("F1.3-I16 run whose earlier cells consume the 10 s probe budget (injected slow probe): next cell's oversize results unexercised (probe_budget_exhausted)", { timeout: I16_TIMEOUT_MS }, async (t) => {
   // Eleven slow routes (22 cells) sort before the target. Each slow probe is
-  // held 800 ms by the page (the F1.3-I14 stimulus); the injected clock ends
+  // held by the page's busy loops (the F1.3-I14 stimulus); the injected clock ends
   // its 500 ms bound one macrotask after the probe starts, so every slow cell
   // that starts while budget remains is cut at the bound and spends exactly
   // 500 ms of clock time.
@@ -1014,7 +1050,7 @@ browserTest("F1.3-I16 run whose earlier cells consume the 10 s probe budget (inj
   const target = "i16-target";
   const { same, other } = await origins(t);
   for (const name of slow) {
-    same.serve(route(name), page(img(`src="/img/i16-small.png" width="40" height="30"`), { head: probeHook(busyLoop(800)) }));
+    same.serve(route(name), page(img(`src="/img/i16-small.png" width="40" height="30"`), { head: busyAfterLoad(400) }));
   }
   same.serve("/img/i16-small.png", pngFile(40, 30));
   same.serve(route(target), page(img(`src="/img/i16.png" style="${OVERSIZED.style}"`)));
@@ -1047,10 +1083,9 @@ browserTest("F1.3-I16 run whose earlier cells consume the 10 s probe budget (inj
   order.forEach(([name, viewport], index) => {
     assert.equal(mediaWeightCell(record, route(name), viewport).probe_status, REASONS[index], `${route(name)} ${viewport} (cell ${index}): probe_status is ${REASONS[index]}`);
   });
-  const smallKey = oversizeKey(rid(same.url("/img/i16-small.png")), FIRST_IMG);
   const slowExpected = order.flatMap(([name, viewport], index) => cellResults(route(name), viewport, {
     weight: [[doc(same, name), ...weightUnderCap(REASONS[index])], [rid(same.url("/img/i16-small.png")), ...weightUnderCap(REASONS[index])]],
-    oversize: [oversizeUnderCap(REASONS[index], smallKey)],
+    oversize: [oversizeUnderCap(REASONS[index])],
     capCode: REASONS[index],
   }));
   assertResultSet(results, [...slowExpected, ...discardedProbeCells(same, target, "/img/i16.png", "probe_budget_exhausted")], "the run");
@@ -1180,4 +1215,125 @@ browserTest("S an <img> showing an SVG from a blob: URL: source type unreadable,
     weight: [[doc(same, "s-blob"), "pass"], [unledgeredImageKey(FIRST_IMG), "unexercised", "not_in_ledger"]],
     oversize: [[oversizeKey(null, FIRST_IMG), "unexercised", "not_in_ledger"]],
   }), route("s-blob"));
+});
+
+// ---------------------------------------------------------------------------
+// Every probe read comes from its isolated world: a page script that
+// overrides a DOM method, getter or window property the probe could read
+// neither changes what it reads nor is ever called by it. Each override
+// reports a call with a synchronous request to /called/<name>, which the
+// origin's request log would show. Each page shows the OVERSIZED image
+// (F = 8), so the true outcome is image_oversized; every override, if read,
+// would make it pass.
+
+const reportCall = `const called = (name) => { const xhr = new XMLHttpRequest(); xhr.open("GET", "/called/" + name, false); try { xhr.send(); } catch {} };`;
+const PAGE_OVERRIDES = Object.freeze({
+  // The <img> listing: an empty list for any query that names img.
+  "query-selector-all": `const all = Document.prototype.querySelectorAll;
+    Document.prototype.querySelectorAll = function querySelectorAll(selector) {
+      if (!/img/i.test(selector)) return all.call(this, selector);
+      called("querySelectorAll");
+      return all.call(this, "#nothing-matches");
+    };`,
+  // The rendered box: the natural size, so F = 1.
+  "bounding-client-rect": `Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      called("getBoundingClientRect");
+      return new DOMRect(0, 0, 2400, 1800);
+    };`,
+  // The device pixel ratio: 8, so F = 1.
+  "device-pixel-ratio": `Object.defineProperty(window, "devicePixelRatio", { configurable: true, get() { called("devicePixelRatio"); return 8; } });`,
+  // The natural size: the rendered box, under the area floor.
+  "natural-size": `for (const [name, value] of [["naturalWidth", 300], ["naturalHeight", 225]]) {
+      Object.defineProperty(HTMLImageElement.prototype, name, { configurable: true, get() { called(name); return value; } });
+    }`,
+  // The computed style: object-fit none, so s = 1 and F = 1.
+  "computed-style": `window.getComputedStyle = function getComputedStyle() {
+      called("getComputedStyle");
+      return { display: "inline", visibility: "visible", objectFit: "none" };
+    };`,
+});
+
+for (const [name, override] of Object.entries(PAGE_OVERRIDES)) {
+  browserTest(`a page script that overrides ${name} neither changes the image probe's read nor is called by it: the oversized image warns (image_oversized)`, async (t) => {
+    const key = `override-${name}`;
+    const path = `/img/${key}.png`;
+    const { same, other, output } = await captureOne(t, key, ({ same: origin }) => {
+      origin.serve(route(key), page(img(`src="${path}" style="${OVERSIZED.style}"`), { head: `<script>${reportCall} ${override}</script>` }));
+      origin.serve(path, pngFile(...OVERSIZED.natural));
+    });
+    assertRequestLog({ same, other }, { same: requests([route(key), path]) }, `${name}: no overridden method was called (no /called/ request)`);
+    const { record, results } = await readCells(output);
+    for (const viewport of VIEWPORTS) {
+      const cell = mediaWeightCell(record, route(key), viewport);
+      assert.equal(cell.probe_status, "complete", `${name} ${viewport}: the probe completed`);
+      assert.equal(cell.dpr, 1, `${name} ${viewport}: the observed device pixel ratio`);
+      const probed = recordImage(cell, same.url(path));
+      assert.deepEqual([probed.natural, probed.rendered, probed.object_fit], [OVERSIZED.natural, [300, 225], "fill"], `${name} ${viewport}: the true geometry and fit`);
+    }
+    assertResultSet(results, bothCells(route(key), {
+      weight: [[doc(same, key), "pass"], [rid(same.url(path)), "pass"]],
+      oversize: [[oversizeKey(rid(same.url(path)), FIRST_IMG), "warning", "image_oversized"]],
+    }), route(key));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Shadow trees and iframes. An <img> inside an open or a closed shadow root
+// is part of the page and is listed, with a "#shadow-root" step after its
+// host in the element path; a hidden host hides it. An <img> inside an iframe
+// belongs to another document: a stated coverage limit, so the cell lists no
+// <img> and its oversize result keyed "cell" reads pass.
+
+const LARGE = { natural: [2000, 2000], style: "width:200px;height:200px" };
+const SHADOW_IMG = "body>div:nth-of-type(1)>#shadow-root>img:nth-of-type(1)";
+
+async function shadowRow(t, name, body, expected) {
+  const path = `/img/${name}.png`;
+  const { same, other, output } = await captureOne(t, name, ({ same: origin }) => {
+    origin.serve(route(name), page(body(img(`src="${path}" style="${LARGE.style}"`))));
+    origin.serve(path, pngFile(...LARGE.natural));
+  });
+  assertRequestLog({ same, other }, { same: requests([route(name), path]) }, "setup");
+  const { record, results } = await readCells(output);
+  for (const viewport of VIEWPORTS) {
+    const cell = mediaWeightCell(record, route(name), viewport);
+    assert.equal(cell.probe_status, "complete", `${name} ${viewport}: the probe completed`);
+    assert.deepEqual(cell.images.map((image) => image.element_path), [SHADOW_IMG], `${name} ${viewport}: the shadow-tree <img> is listed`);
+  }
+  assertResultSet(results, bothCells(route(name), {
+    weight: [[doc(same, name), "pass"], [rid(same.url(path)), "pass"]],
+    oversize: [[oversizeKey(rid(same.url(path)), SHADOW_IMG), ...expected]],
+  }), route(name));
+}
+
+browserTest("an <img> in a declarative open shadow root, 2000×2000 shown at 200×200: oversize warning (image_oversized), not a cell pass", async (t) => {
+  await shadowRow(t, "shadow-open", (image) => `<div><template shadowrootmode="open">${image}</template></div>`, ["warning", "image_oversized"]);
+});
+
+browserTest("an <img> in a closed shadow root attached by script, 2000×2000 shown at 200×200: oversize warning (image_oversized), not a cell pass", async (t) => {
+  await shadowRow(t, "shadow-closed", (image) => `<div></div><script>document.querySelector("div").attachShadow({ mode: "closed" }).innerHTML = ${JSON.stringify(image)};</script>`, ["warning", "image_oversized"]);
+});
+
+browserTest("an <img> in an open shadow root whose host is display:none: oversize unexercised (not_rendered)", async (t) => {
+  await shadowRow(t, "shadow-hidden", (image) => `<div style="display:none"><template shadowrootmode="open">${image}</template></div>`, ["unexercised", "not_rendered"]);
+});
+
+browserTest("an <img> inside a same-origin iframe is outside the probe (a stated coverage limit): the cell lists no <img> and reads oversize pass keyed cell", async (t) => {
+  const name = "iframe-limit";
+  const frame = `/frames/${name}.html`;
+  const path = `/img/${name}.png`;
+  const { same, other, output } = await captureOne(t, name, ({ same: origin }) => {
+    origin.serve(route(name), page(`<iframe src="${frame}" style="width:400px;height:400px;border:0"></iframe>`));
+    origin.serve(frame, page(img(`src="${path}" style="${LARGE.style}"`)));
+    origin.serve(path, pngFile(...LARGE.natural));
+  });
+  assertRequestLog({ same, other }, { same: requests([route(name), frame, path]) }, "setup: the frame loaded its image");
+  const { record, results } = await readCells(output);
+  for (const viewport of VIEWPORTS) {
+    assert.deepEqual(mediaWeightCell(record, route(name), viewport).images, [], `${name} ${viewport}: the probe does not enter the iframe's document`);
+  }
+  assertResultSet(results, bothCells(route(name), {
+    weight: [[doc(same, name), "pass"], [rid(same.url(frame)), "pass"], [rid(same.url(path)), "pass"]],
+    oversize: [[NO_IMAGE_KEY, "pass"]],
+  }), route(name));
 });

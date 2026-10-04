@@ -347,17 +347,21 @@ export function captureInputs({ routes, skipped = [], build = BUILD_FP }) {
 // media_weight" (contract 1.3 Code plan): { plan, page_load, media_weight }.
 // Returns the capture output plus the packet and report it ran with. The
 // loopback guard and the Node-side guard are checked whether or not the
-// capture threw; rows assert the record themselves. `probeClock` (F1.3-I16
-// only; see the API assumption there) is passed to the producer in process,
-// and only when a row gives one.
-export async function capture(origin, { routes, skipped = [], build = BUILD_FP, probeClock } = {}) {
+// capture threw; rows assert the record themselves. `probeClock` (F1.3-I13,
+// F1.3-I14 and F1.3-I16; see the API assumption at F1.3-I16) is passed to the
+// producer in process, and only when a row gives one. `onLaunch`, when given,
+// receives the launched browser, so a row's probe clock can reach the page
+// under capture.
+export async function capture(origin, { routes, skipped = [], build = BUILD_FP, probeClock, onLaunch } = {}) {
   const { capturePolishPageLoad } = await import("./polish-node.mjs");
   const { createPolishBrowserAdapter } = await import("./polish-browser.mjs");
   const guard = loopbackGuard();
   const chromium = {
     async launch(options) {
       const { chromium: real } = await import("playwright");
-      return guard.instrument(await real.launch(options));
+      const browser = guard.instrument(await real.launch(options));
+      onLaunch?.(browser);
+      return browser;
     },
   };
   const { packet, report } = captureInputs({ routes, skipped, build });

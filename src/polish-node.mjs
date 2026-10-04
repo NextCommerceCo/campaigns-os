@@ -13,10 +13,11 @@ import {
 import {
   buildMediaWeightCell,
   buildMediaWeightRecord,
+  isProbeClock,
   MEDIA_PROBE_LIMITS,
   MEDIA_WEIGHT_PRODUCER,
-  MEDIA_WEIGHT_SCHEMA_VERSION,
 } from "./polish-media-weight.mjs";
+import { MEDIA_WEIGHT_SCHEMA } from "./qc-results.mjs";
 import {
   buildPolishPageLoadEvidence,
   evaluateHiddenEagerMediaCheckpoint,
@@ -471,7 +472,7 @@ export function mergePolishCaptureEvidence(report, { pageLoad, mediaWeight = nul
   const { media_weight: _previous, ...visualReview } = merged.stages.polish.evidence.visual_review;
   if (mediaWeight !== null && mediaWeight !== undefined) {
     if (!isPlainObject(mediaWeight)
-      || mediaWeight.schema_version !== MEDIA_WEIGHT_SCHEMA_VERSION
+      || mediaWeight.schema_version !== MEDIA_WEIGHT_SCHEMA
       || mediaWeight.performed_by !== MEDIA_WEIGHT_PRODUCER
       || canonicalJson(mediaWeight.subject) !== canonicalJson(pageLoad.subject)) {
       throw new Error("polish capture can attach only package-produced media_weight evidence for the same page_load capture.");
@@ -482,25 +483,27 @@ export function mergePolishCaptureEvidence(report, { pageLoad, mediaWeight = nul
   return merged;
 }
 
-// The public routes of spec pages the plan skips (no source mapping), for
-// media_weight's page_not_captured results. A skipped page without a
-// resolvable public route names no route and is left out.
-function uncapturedPublicRoutes(packet, plan) {
+// The spec pages the plan skips (no source mapping), for media_weight's
+// page_not_captured results: the public route of each one that has a
+// resolvable route, and the page id of each one that has none (a skipped
+// mapping usually carries no page_kit), so no skipped page is left out.
+function uncapturedPages(packet, plan) {
   const captured = new Set(plan.routes.map((route) => route.requested_route));
   const routes = [];
+  const pageIds = [];
   for (const mapping of packet.source_html.pages) {
     if (!nonemptyString(mapping?.skip_reason)) continue;
+    let route;
     try {
-      const route = mappedPublicRoute(mapping?.page_kit?.public_route, mapping?.page_id);
-      if (!captured.has(route)) routes.push(route);
+      route = mappedPublicRoute(mapping?.page_kit?.public_route, mapping?.page_id);
     } catch {
-      // No public route to name.
+      pageIds.push(mapping.page_id);
+      continue;
     }
+    if (!captured.has(route)) routes.push(route);
   }
-  return routes;
+  return { routes, pageIds };
 }
-
-const isProbeClock = (value) => typeof value?.now === "function" && typeof value?.sleep === "function";
 
 // The fingerprint of the built output the capture binds to. Every way of not
 // having one is a named refusal, parallel to the missing recorded value: no
@@ -641,7 +644,6 @@ export async function capturePolishPageLoad({
             remainingMs: MEDIA_PROBE_LIMITS.runBudgetMs - probeSpentMs,
             cellBoundMs: MEDIA_PROBE_LIMITS.cellBoundMs,
             imageCap: MEDIA_PROBE_LIMITS.imageCap,
-            listingBoundMs: MEDIA_PROBE_LIMITS.listingBoundMs,
           };
           observation = await runWithPolishProducerDeadline(
             () => adapter.captureRoute({ url: route.url, viewport, signal: abortController.signal, imageProbe }),
@@ -741,6 +743,7 @@ export async function capturePolishPageLoad({
   // The image probe's sibling record, when the adapter ran the probe. Each
   // cell is stamped with the integrity of its page_load capture.
   if (!probed) return { plan, page_load: pageLoad };
+  const uncaptured = uncapturedPages(packet, plan);
   const mediaWeight = buildMediaWeightRecord({
     pageLoad,
     cells: cellInputs.map((input) => buildMediaWeightCell({
@@ -748,7 +751,8 @@ export async function capturePolishPageLoad({
       capture: pageLoad.captures.find((capture) => capture.subject.requested_route === input.route
         && capture.subject.viewport === input.viewport),
     })),
-    uncapturedRoutes: uncapturedPublicRoutes(packet, plan),
+    uncapturedRoutes: uncaptured.routes,
+    uncapturedPageIds: uncaptured.pageIds,
   });
   return { plan, page_load: pageLoad, media_weight: mediaWeight };
 }

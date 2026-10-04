@@ -17,6 +17,7 @@ import {
   singleResponseRecord,
 } from "./polish-capture.mjs";
 import { launchPackageChromium, PLAYWRIGHT_INSTALL_HINT } from "./browser-launch.mjs";
+import { isProbeClock } from "./polish-media-weight.mjs";
 import {
   boundedPolishDeadline,
   POLISH_BROWSER_CELL_DEADLINE_MS,
@@ -511,84 +512,94 @@ async function collectMediaElements(page) {
   });
 }
 
-// The <img> reader the media-weight image probe runs in the page, after
-// network observation closed. It reads the first `limits.images` <img> in
-// document order and returns their count, each one's element path (the CSS
-// child path from <body>, every step "tag:nth-of-type(n)"), currentSrc
-// (http(s) as is; any other scheme as the scheme alone) and loading, plus
-// window.devicePixelRatio. With `limits.geometry` it also reads complete,
-// natural size, the rendered box in CSS px, computed object-fit and whether
-// the image or an ancestor is not displayed or the image is not visible. It
-// reads only; it never scrolls and starts no load.
-function readImageElements(limits) {
-  const nodes = document.querySelectorAll("img");
-  const pathOf = (element) => {
-    const steps = [];
-    for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
-      const tag = node.tagName.toLowerCase();
-      if (node === document.body || node === document.documentElement) {
-        steps.unshift(tag);
-        break;
-      }
-      let index = 1;
-      for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
-        if (sibling.tagName === node.tagName) index += 1;
-      }
-      steps.unshift(`${tag}:nth-of-type(${index})`);
-    }
-    return steps.join(">");
-  };
+// The <img> reader the media-weight image probe runs after network
+// observation closed, in an isolated world: every DOM method, getter and
+// window property it uses is that world's own, so page scripts can neither
+// change what it reads nor see that it ran. It walks the document in
+// shadow-including tree order (an element, then its shadow tree, then its
+// children), reaching open shadow roots through element.shadowRoot and
+// closed ones through `closedRoots` (resolved into this world over CDP); it
+// does not enter an iframe's document. It returns the <img> count,
+// window.devicePixelRatio and, for the first `limits.images` <img>: the
+// element path (the CSS child path from <body>, every step
+// "tag:nth-of-type(n)", with a "#shadow-root" step after a shadow host),
+// currentSrc (http(s) as is; any other scheme as the scheme alone), loading,
+// complete, natural size, the rendered box in CSS px, computed object-fit and
+// whether it is hidden (checkVisibility: it or a flat-tree ancestor is not
+// displayed, or it is not visible). It reads only; it never scrolls and
+// starts no load.
+function readImageElements(limits, ...closedRoots) {
+  const closedRootOf = new Map(closedRoots.filter((root) => root?.host).map((root) => [root.host, root]));
   const source = (value) => {
     if (typeof value !== "string" || value === "") return { url: null, svg: false };
     if (/^https?:/i.test(value)) return { url: value.length <= limits.urlLength ? value : "[url-too-long]", svg: false };
     const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value);
     return { url: scheme ? `${scheme[1].toLowerCase()}:` : null, svg: /^data:image\/svg\+xml[;,]/i.test(value) };
   };
-  const images = Array.prototype.slice.call(nodes, 0, limits.images).map((image) => {
-    const elementPath = pathOf(image);
-    const src = source(image.currentSrc);
-    const entry = { element_path: elementPath, current_src: src.url, svg_data: src.svg, loading: image.loading };
-    if (!limits.geometry) return entry;
-    const style = getComputedStyle(image);
-    let hidden = style.visibility !== "visible";
-    for (let node = image; node && !hidden; node = node.parentElement) {
-      if (getComputedStyle(node).display === "none") hidden = true;
+  const found = [];
+  let observedCount = 0;
+  // Work still to do, last first: an element to visit, or a parent (the
+  // document, an element or a shadow root) whose children are still to list.
+  const pending = [{ parent: document, path: "" }];
+  while (pending.length) {
+    const item = pending.pop();
+    if (item.element) {
+      if (item.element instanceof HTMLImageElement) {
+        observedCount += 1;
+        if (found.length < limits.images) found.push(item);
+      }
+      pending.push({ parent: item.element, path: item.path });
+      const shadowRoot = item.element.shadowRoot ?? closedRootOf.get(item.element);
+      if (shadowRoot) pending.push({ parent: shadowRoot, path: `${item.path}>#shadow-root` });
+      continue;
     }
+    const children = [];
+    const counts = new Map();
+    for (let child = item.parent.firstElementChild; child; child = child.nextElementSibling) {
+      const index = (counts.get(child.tagName) ?? 0) + 1;
+      counts.set(child.tagName, index);
+      const tag = child.tagName.toLowerCase();
+      const path = child === document.body || child === document.documentElement
+        ? tag
+        : `${item.path ? `${item.path}>` : ""}${tag}:nth-of-type(${index})`;
+      children.push({ element: child, path });
+    }
+    for (let index = children.length - 1; index >= 0; index -= 1) pending.push(children[index]);
+  }
+  const images = found.map(({ element: image, path }) => {
+    const src = source(image.currentSrc);
+    const style = getComputedStyle(image);
     const bounds = image.getBoundingClientRect();
     return {
-      ...entry,
+      element_path: path,
+      current_src: src.url,
+      svg_data: src.svg,
+      loading: image.loading,
       complete: image.complete,
       natural: [image.naturalWidth, image.naturalHeight],
       rendered: [bounds.width, bounds.height],
       object_fit: style.objectFit,
-      hidden,
+      hidden: !image.checkVisibility({ visibilityProperty: true }),
     };
   });
-  return { dpr: window.devicePixelRatio, observed_count: nodes.length, images };
+  return { dpr: window.devicePixelRatio, observed_count: observedCount, images };
 }
 
-// The image probe: one page.evaluate of readImageElements in the page's own
-// world.
-async function collectImageElements(page, limits) {
-  return page.evaluate(readImageElements, { ...limits, geometry: true });
-}
-
-// The <img> identities alone, read in an isolated world (page scripts cannot
-// observe or slow it), so a cell whose probe is cut or never runs still names
-// each image. `send` is the probe's guarded CDP send.
-async function listImageElements(send, frameId, limits) {
-  const world = await send("Page.createIsolatedWorld", {
-    frameId,
-    worldName: "campaigns-os-polish-image-listing",
-    grantUniveralAccess: false,
-  });
-  const evaluated = await send("Runtime.evaluate", {
-    expression: `(${readImageElements.toString()})(${JSON.stringify({ ...limits, geometry: false })})`,
-    contextId: world?.executionContextId,
-    returnByValue: true,
-  });
-  if (evaluated?.exceptionDetails || !evaluated?.result) throw new Error("The image listing did not evaluate.");
-  return evaluated.result.value;
+// The backend node ids of the main document's closed shadow roots, from a
+// DOM.getDocument tree read with pierce. Open roots the read reaches itself
+// and user-agent roots are not the page's; an iframe's document is not
+// entered.
+function closedShadowRoots(root) {
+  const found = [];
+  const pending = [root];
+  while (pending.length) {
+    const node = pending.pop();
+    if (!node || typeof node !== "object") continue;
+    if (node.shadowRootType === "closed" && Number.isInteger(node.backendNodeId)) found.push(node.backendNodeId);
+    if (Array.isArray(node.shadowRoots)) pending.push(...node.shadowRoots);
+    if (Array.isArray(node.children)) pending.push(...node.children);
+  }
+  return found;
 }
 
 const BOUND_ENDED = Symbol("bound ended");
@@ -600,7 +611,7 @@ const realProbeClock = Object.freeze({
   }),
 });
 
-function imageListing(value, imageCap) {
+function imageRead(value, imageCap) {
   return value && typeof value === "object" && Number.isInteger(value.observed_count) && Array.isArray(value.images)
     && value.images.length <= imageCap
     ? value
@@ -608,26 +619,26 @@ function imageListing(value, imageCap) {
 }
 
 // The media-weight image probe, run after collector.finish so it cannot
-// delay the network window or add to the ledger. Its steps, in order: the
-// <img> listing (Page.createIsolatedWorld and Runtime.evaluate), the
-// Page.enable that arms the navigation watch, the probe's page.evaluate and
-// the Page.getFrameTree re-read. The cell's bound is the smaller of the cell
-// bound and the run budget left. Every step after the listing races one
-// deadline on `clock` at that bound and none starts once it has passed; the
-// listing races a wall-clock timer of at most listingBoundMs and that bound.
-// spent_ms, on `clock` from the first step to the return, covers every step
-// and is what the run budget is charged. The probe is cancelled when a bound
-// ends it, on its timer or on `clock` whichever is first, or it returns: every
-// CDP command and page.evaluate, and every step's result, checks that first,
-// so a step that settles late (the listing's Runtime.evaluate after a late
-// Page.createIsolatedWorld) issues nothing more. A probe its bound ends
-// reads probe_timeout, or probe_budget_exhausted where the run budget left was the
-// smaller bound, never complete. A cell that starts once the run budget is
-// spent starts no step, not even the listing, and reads
-// probe_budget_exhausted with no images. After the probe it re-reads the
-// main frame: a navigation requested or committed during the probe, or a
-// probe that failed (its execution context destroyed), discards it as
-// document_context_changed.
+// delay the network window or add to the ledger. Its steps, in order: an
+// isolated world (Page.createIsolatedWorld); the node tree (DOM.getDocument,
+// piercing shadow roots) and each closed shadow root resolved into that world
+// (DOM.resolveNode); the one read (Runtime.callFunctionOn of
+// readImageElements in that world), which is the only source of the listing,
+// geometry, computed style and device pixel ratio; and the Page.getFrameTree
+// re-read. The probe's bound is the smaller of the cell bound and the run
+// budget left. Every step races one deadline on `clock` at that bound, and
+// none starts once it has passed. spent_ms, on `clock` from the first step to
+// the return, is what the run budget is charged. The probe is cancelled when
+// its bound ends it, on its timer or on `clock` whichever is first, or when it
+// returns: every CDP command, and every step's result, checks that first, so
+// a step that settles late issues nothing more. A probe its bound ends reads
+// probe_timeout, or probe_budget_exhausted where the run budget left was the
+// smaller bound, never complete; it names its images only when its read had
+// returned. A cell that starts once the run budget is spent starts no step
+// and reads probe_budget_exhausted with no images. The re-read discards the
+// probe as document_context_changed when the main frame has another id or
+// loaderId than page_load's own re-read found; so does a step that failed
+// (its execution context destroyed).
 // Returns { status, dpr, images, spent_ms }.
 async function probeImageElements(options) {
   const token = { cancelled: false };
@@ -638,114 +649,76 @@ async function probeImageElements(options) {
   }
 }
 
-async function runImageProbe({ page, session, mainFrame, documentContextChanged, probe }, token) {
-  const clock = typeof probe.clock?.now === "function" && typeof probe.clock?.sleep === "function" ? probe.clock : realProbeClock;
+async function runImageProbe({ session, mainFrame, documentContextChanged, probe }, token) {
+  const clock = isProbeClock(probe.clock) ? probe.clock : realProbeClock;
   const limits = { images: probe.imageCap, urlLength: MAX_POLISH_CAPTURE_URL_LENGTH };
   const started = clock.now();
   const spent = () => Math.max(0, clock.now() - started);
-  const exhausted = !(probe.remainingMs > 0);
+  let read = null;
+  const outcome = (status) => ({ status, dpr: read?.dpr ?? null, images: read?.images ?? [], spent_ms: spent() });
+  if (!(probe.remainingMs > 0)) return { ...outcome("probe_budget_exhausted"), spent_ms: 0 };
+  if (documentContextChanged || typeof mainFrame?.id !== "string") return outcome("document_context_changed");
   const boundMs = Math.min(probe.cellBoundMs, probe.remainingMs);
+  const boundEnd = started + boundMs;
   // The status of a probe its bound ended.
   const boundEnded = probe.remainingMs < probe.cellBoundMs ? "probe_budget_exhausted" : "probe_timeout";
-  let listing = null;
-  const outcome = (status, read = null) => ({
-    status,
-    dpr: (read ?? listing)?.dpr ?? null,
-    images: (status === "complete" ? read : listing)?.images ?? [],
-    spent_ms: spent(),
-  });
-  if (exhausted) return { ...outcome("probe_budget_exhausted"), spent_ms: 0 };
-  if (documentContextChanged || typeof mainFrame?.id !== "string") return outcome("document_context_changed");
-  const listingMs = Math.min(probe.listingBoundMs, boundMs);
-  const listingEnd = started + listingMs;
-  const boundEnd = started + boundMs;
-  // The probe's one guard, run before every command it issues
-  // (Page.createIsolatedWorld and Runtime.evaluate in the listing, Page.enable,
-  // the probe's page.evaluate, Page.getFrameTree) and before it acts on any
-  // step's result: the probe is cancelled once the token is, or once the probe
-  // clock reaches `deadline`, the bound of the step in flight. The clock is
-  // read even when no timer has fired, so a step that settles past its bound
-  // ahead of a queued timer issues nothing more; a passed deadline cancels the
-  // token too.
-  const cancelled = (deadline) => {
-    if (!token.cancelled && clock.now() >= deadline) token.cancelled = true;
+  // The probe's one guard, run before every command it issues and before it
+  // acts on any step's result: the probe is cancelled once the token is, or
+  // once the probe clock reaches the bound. The clock is read even when no
+  // timer has fired, so a step that settles past the bound ahead of a queued
+  // timer issues nothing more; a passed bound cancels the token too.
+  const cancelled = () => {
+    if (!token.cancelled && clock.now() >= boundEnd) token.cancelled = true;
     return token.cancelled;
   };
-  const guarded = (deadline, issue) => (cancelled(deadline)
+  const send = (method, params) => (cancelled()
     ? Promise.reject(new Error("The image probe was cancelled."))
-    : issue());
-  const sendBy = (deadline) => (method, params) => guarded(deadline, () => session.send(method, params));
-
-  const listingEnded = listingMs < probe.listingBoundMs ? boundEnded : "probe_timeout";
-  let listingTimer;
-  try {
-    const listed = await Promise.race([
-      listImageElements(sendBy(listingEnd), mainFrame.id, limits),
-      new Promise((resolve) => {
-        listingTimer = setTimeout(() => {
-          token.cancelled = true;
-          resolve(BOUND_ENDED);
-        }, listingMs);
-      }),
-    ]);
-    if (listed === BOUND_ENDED || cancelled(listingEnd)) return outcome(listingEnded);
-    listing = imageListing(listed, probe.imageCap);
-  } catch {
-    return outcome(cancelled(listingEnd) ? listingEnded : "document_context_changed");
-  } finally {
-    clearTimeout(listingTimer);
-  }
-  if (!listing) return outcome("document_context_changed");
-  if (listing.observed_count > probe.imageCap) return outcome("image_cap_reached");
-  if (cancelled(boundEnd)) return outcome(boundEnded);
-
-  const send = sendBy(boundEnd);
-  const deadline = clock.sleep(boundEnd - clock.now()).then(() => {
+    : session.send(method, params));
+  const deadline = clock.sleep(boundMs).then(() => {
     token.cancelled = true;
     return BOUND_ENDED;
   });
   // One probe step: started only inside the bound, and raced against it. A
   // step that settles past the bound reads BOUND_ENDED, not its result.
   const step = async (start) => {
-    if (cancelled(boundEnd)) return BOUND_ENDED;
+    if (cancelled()) return BOUND_ENDED;
     const settled = await Promise.race([Promise.resolve().then(start).then((value) => ({ value }), (error) => ({ error })), deadline]);
-    return cancelled(boundEnd) ? BOUND_ENDED : settled;
+    return cancelled() ? BOUND_ENDED : settled;
   };
-  let navigated = false;
-  const watched = [];
-  const watch = (event, frameOf) => {
-    const listener = (payload) => {
-      if (frameOf(payload) === mainFrame.id) navigated = true;
-    };
-    session.on(event, listener);
-    watched.push([event, listener]);
-  };
-  try {
-    const enabled = await step(() => send("Page.enable"));
-    if (enabled === BOUND_ENDED) return outcome(boundEnded);
-    if (enabled.error) return outcome("document_context_changed");
-    watch("Page.frameRequestedNavigation", (payload) => payload?.frameId);
-    watch("Page.frameStartedLoading", (payload) => payload?.frameId);
-    watch("Page.frameNavigated", (payload) => payload?.frame?.id);
-    const read = await step(() => guarded(boundEnd, () => collectImageElements(page, limits)));
-    if (read === BOUND_ENDED) return outcome(boundEnded);
-    if (read.error) return outcome("document_context_changed");
-    const reread = await step(() => send("Page.getFrameTree"));
-    if (reread === BOUND_ENDED) return outcome(boundEnded);
-    if (reread.error) return outcome("document_context_changed");
-    const frame = reread.value?.frameTree?.frame;
-    if (navigated || frame?.id !== mainFrame.id || frame?.loaderId !== mainFrame.loaderId) return outcome("document_context_changed");
-    const value = imageListing(read.value, probe.imageCap);
-    if (!value) return outcome("document_context_changed");
-    if (value.observed_count > probe.imageCap) return outcome("image_cap_reached");
-    return cancelled(boundEnd) ? outcome(boundEnded) : outcome("complete", value);
-  } catch {
-    return outcome(cancelled(boundEnd) ? boundEnded : "document_context_changed");
-  } finally {
-    for (const [event, listener] of watched) {
-      if (typeof session.off === "function") session.off(event, listener);
-    }
-  }
+
+  const world = await step(() => send("Page.createIsolatedWorld", {
+    frameId: mainFrame.id,
+    worldName: "campaigns-os-polish-image-probe",
+    grantUniveralAccess: false,
+  }));
+  if (world === BOUND_ENDED) return outcome(boundEnded);
+  const contextId = world.value?.executionContextId;
+  if (world.error || !Number.isInteger(contextId)) return outcome("document_context_changed");
+  const tree = await step(() => send("DOM.getDocument", { depth: -1, pierce: true }));
+  if (tree === BOUND_ENDED) return outcome(boundEnded);
+  if (tree.error) return outcome("document_context_changed");
+  const roots = await step(() => Promise.all(closedShadowRoots(tree.value?.root)
+    .map((backendNodeId) => send("DOM.resolveNode", { backendNodeId, executionContextId: contextId }))));
+  if (roots === BOUND_ENDED) return outcome(boundEnded);
+  const rootIds = roots.error ? null : roots.value.map((resolved) => resolved?.object?.objectId);
+  if (!rootIds || !rootIds.every((objectId) => typeof objectId === "string")) return outcome("document_context_changed");
+  const evaluated = await step(() => send("Runtime.callFunctionOn", {
+    functionDeclaration: readImageElements.toString(),
+    executionContextId: contextId,
+    arguments: [{ value: limits }, ...rootIds.map((objectId) => ({ objectId }))],
+    returnByValue: true,
+  }));
+  if (evaluated === BOUND_ENDED) return outcome(boundEnded);
+  if (evaluated.error || evaluated.value?.exceptionDetails) return outcome("document_context_changed");
+  read = imageRead(evaluated.value?.result?.value, probe.imageCap);
+  if (!read) return outcome("document_context_changed");
+  const reread = await step(() => send("Page.getFrameTree"));
+  if (reread === BOUND_ENDED) return outcome(boundEnded);
+  if (reread.error) return outcome("document_context_changed");
+  const frame = reread.value?.frameTree?.frame;
+  if (frame?.id !== mainFrame.id || frame?.loaderId !== mainFrame.loaderId) return outcome("document_context_changed");
+  if (read.observed_count > probe.imageCap) return outcome("image_cap_reached");
+  return cancelled() ? outcome(boundEnded) : outcome("complete");
 }
 
 function preferredResolvedValue(finalValue, initialValue) {
@@ -913,9 +886,9 @@ export async function createPolishBrowserAdapter({
   let poisonCode = null;
   let closePromise = null;
   return {
-    // `imageProbe` ({ clock, remainingMs, cellBoundMs, imageCap,
-    // listingBoundMs }) opts the cell into the media-weight image probe; the
-    // observation then carries `imageProbe` beside the page-load fields.
+    // `imageProbe` ({ clock, remainingMs, cellBoundMs, imageCap }) opts the
+    // cell into the media-weight image probe; the observation then carries
+    // `imageProbe` beside the page-load fields.
     async captureRoute({ url, viewport, signal, imageProbe: probeOptions = null } = {}) {
       if (closed) throw new Error("Campaigns OS polish capture browser adapter is already closed.");
       if (poisonCode === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw polishProducerTimeoutError();
@@ -1032,7 +1005,7 @@ export async function createPolishBrowserAdapter({
             network.responses.push(captureProblemRecord("document_context_changed"));
           }
           const imageProbe = probeOptions && typeof probeOptions === "object"
-            ? await awaitActive(probeImageElements({ page, session, mainFrame, documentContextChanged, probe: probeOptions }))
+            ? await awaitActive(probeImageElements({ session, mainFrame, documentContextChanged, probe: probeOptions }))
             : null;
           return {
             finalDocumentUrl,

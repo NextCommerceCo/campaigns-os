@@ -23,22 +23,22 @@
 // Two requested hrefs that share a redirect or final hop cannot each own the
 // shared entry: the producer lists both chains as observed, and the reader,
 // which requires every ledger entry in exactly one chain, reads that cell as
-// evidence_not_reproducible (never pass). One requested href that stands for
-// more than one chain (requested twice, answered once and redirected once)
-// is bound to none (bindLedgerChain): the producer lists its ledger entries
-// as one-hop chains, the same for either request order, and the reader
-// refuses that cell the same way.
+// evidence_not_reproducible (never pass). A requested href whose chain is
+// ambiguous on any hop (bindLedgerChain: one URL answered once and
+// redirected once anywhere in the chain, or a hop that is one chain's final
+// and another chain's start) is bound to none: the producer lists its ledger
+// entries as one-hop chains, the same for every request order, and the
+// reader refuses that cell the same way.
 import {
   captureOrigin,
   captureProblemRecordCode,
   mediaFetchedResources,
-  normalizeMediaElement,
+  resolvedResource,
   resourceLedgerSort,
   responseRecordResponses,
 } from "./polish-capture.mjs";
 import { MEDIA_WEIGHT_SCHEMA, QC_PRODUCERS, bindLedgerChain, mediaChainBinder, mediaWeightIntegrity } from "./qc-results.mjs";
 
-export const MEDIA_WEIGHT_SCHEMA_VERSION = MEDIA_WEIGHT_SCHEMA;
 export const MEDIA_WEIGHT_PRODUCER = QC_PRODUCERS.polish;
 
 export const MEDIA_WEIGHT_THRESHOLDS = Object.freeze({ image_bytes: 500_000, oversize_factor: 2.0, min_natural_area: 250_000 });
@@ -52,15 +52,18 @@ export const MEDIA_WEIGHT_VOCABULARY = Object.freeze({
 });
 
 // The image probe's cost bounds: at most 512 <img> and 500 ms per cell, and
-// at most 10 s of probe time per Polish run. Each cell's probe steps run
-// inside the smaller of the cell bound and the run budget left, and the time
-// they take is charged to the run budget. Cells that start after the run
-// budget is spent start no probe step (probe_budget_exhausted, no images,
-// so their oversize result is the one keyed "cell"). Every other cell first
-// lists its <img> identities (element path, currentSrc, loading) in an
-// isolated world, within listingBoundMs, so every image result of a cell
-// whose probe was cut still names its image.
-export const MEDIA_PROBE_LIMITS = Object.freeze({ imageCap: 512, cellBoundMs: 500, runBudgetMs: 10_000, listingBoundMs: 100 });
+// at most 10 s of probe time per Polish run. Each cell's probe runs inside
+// the smaller of the cell bound and the run budget left, and the time it
+// takes is charged to the run budget. Cells that start after the run budget
+// is spent start no probe step (probe_budget_exhausted, no images, so their
+// oversize result is the one keyed "cell"). A probe its bound cuts before
+// its one read returns names no image either: its oversize result is the
+// one keyed "cell", with the cut's probe status.
+export const MEDIA_PROBE_LIMITS = Object.freeze({ imageCap: 512, cellBoundMs: 500, runBudgetMs: 10_000 });
+
+// A probe clock ({ now(), sleep(ms) }) handed in by a caller; the adapter
+// uses performance.now() and setTimeout otherwise.
+export const isProbeClock = (value) => typeof value?.now === "function" && typeof value?.sleep === "function";
 
 const isPlainObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const isNonEmptyString = (value) => typeof value === "string" && value.trim() !== "";
@@ -69,25 +72,12 @@ const isPair = (value) => Array.isArray(value) && value.length === 2 && value.ev
 // ---------------------------------------------------------------------------
 // Producer
 
-const VISIBLE_STYLE = Object.freeze({ display: "inline", visibility: "visible" });
-
-// The page_load ledger's identity for a URL, through the capture's own source
-// normalizer so it matches the ledger exactly: resource_id (the sha256 of the
-// canonical href, query included) and the origin+path it persists. Both are
-// null for a URL the ledger cannot hold (data:, blob:, unresolvable, too long).
-function ledgerIdentity(url, documentUrl) {
-  if (!isNonEmptyString(url)) return { resource_id: null, url: null };
-  const element = normalizeMediaElement({
-    tag_name: "video",
-    current_src: url,
-    src_attribute: null,
-    source_src_attributes: [],
-    preload_attribute: null,
-    computed_style: VISIBLE_STYLE,
-    ancestor_styles: [],
-  }, { documentUrl });
-  const reference = element.source_references.find((candidate) => candidate.source_kind === "current_src");
-  return { resource_id: reference?.resource_id ?? null, url: reference?.resource_id ? reference.url : null };
+// The page_load ledger's resource_id for a URL (the sha256 of its canonical
+// href, query included), through the capture's own resolver so it matches the
+// ledger exactly. Null for a URL the ledger cannot hold (data:, blob:,
+// unresolvable, too long).
+function ledgerResourceId(url, documentUrl) {
+  return isNonEmptyString(url) ? resolvedResource(url, { baseUrl: documentUrl }).resource_id : null;
 }
 
 // The measurement class of a ledger entry, first match (contract 1.0 Polish
@@ -108,7 +98,7 @@ function observedSequences(responses, byId, documentUrl) {
   for (const record of Array.isArray(responses) ? responses : []) {
     if (!isPlainObject(record) || captureProblemRecordCode(record)) continue;
     const hops = responseRecordResponses(record).map((hop) => ({
-      resource_id: ledgerIdentity(hop?.url, documentUrl).resource_id,
+      resource_id: ledgerResourceId(hop?.url, documentUrl),
       status: Number.isInteger(hop?.status) ? hop.status : null,
       mime_type: typeof hop?.mime_type === "string" ? hop.mime_type.toLowerCase() : null,
     }));
@@ -119,14 +109,26 @@ function observedSequences(responses, byId, documentUrl) {
   return sequences;
 }
 
+// Orders two observed hop sequences hop by hop: by resource_id, then status,
+// then MIME type (a missing status or type first).
+function compareSequences(a, b) {
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    const order = a[index].resource_id.localeCompare(b[index].resource_id)
+      || (a[index].status ?? -1) - (b[index].status ?? -1)
+      || (a[index].mime_type ?? "").localeCompare(b[index].mime_type ?? "");
+    if (order) return order;
+  }
+  return a.length - b.length;
+}
+
 // The request chain of each requested href, keyed by its resource_id. The
 // ledger decides which chain an href has (bindLedgerChain, the reader's own
 // rule, so the producer and the reader cannot disagree and request order
 // does not matter); the response records only order its hops. An href keeps
 // the observed sequence with exactly the bound hop set and final hop, the
-// least one in JSON order when several do. An href the ledger binds to more
-// than one chain (ambiguous) keeps none: its entries are listed as one-hop
-// chains below, which the reader refuses.
+// least one by compareSequences when several do. An href the ledger does not
+// bind to exactly one chain (ambiguous) keeps none: its entries are listed as
+// one-hop chains below, which the reader refuses.
 function requestChains(entries, byId, responses, documentUrl) {
   const chains = new Map();
   const sequences = observedSequences(responses, byId, documentUrl);
@@ -137,9 +139,9 @@ function requestChains(entries, byId, responses, documentUrl) {
       && new Set(hops.map((hop) => hop.resource_id)).size === hops.length
       && hops.length === binding.hops.size
       && hops.every((hop) => binding.hops.has(hop.resource_id)));
-    if (matching.length) chains.set(requestedId, matching.map((hops) => JSON.stringify(hops)).sort()[0]);
+    if (matching.length) chains.set(requestedId, matching.reduce((least, hops) => (compareSequences(hops, least) < 0 ? hops : least)));
   }
-  return new Map([...chains].map(([requestedId, hops]) => [requestedId, JSON.parse(hops)]));
+  return chains;
 }
 
 function cellResources(entries, chains) {
@@ -194,8 +196,8 @@ const normalizedLoading = (value) => {
 function cellImages(probe, chains, byId, documentUrl) {
   const complete = probe.status === "complete";
   return (Array.isArray(probe.images) ? probe.images : []).map((image) => {
-    const identity = ledgerIdentity(image?.current_src, documentUrl);
-    const resourceId = byId.has(identity.resource_id) ? identity.resource_id : null;
+    const identity = ledgerResourceId(image?.current_src, documentUrl);
+    const resourceId = byId.has(identity) ? identity : null;
     const finalHop = resourceId ? chains.get(resourceId)?.at(-1) : null;
     let vector = null;
     if (image?.current_src === "data:") vector = image?.svg_data === true;
@@ -245,17 +247,19 @@ export function buildMediaWeightCell({ route, viewport, capture, observation = n
 
 // The record for one Polish run. `subject` is the page_load subject;
 // `uncapturedRoutes` are the public routes of spec pages the run skipped
-// because they have no source mapping, which readers list as
-// page_not_captured.
-export function buildMediaWeightRecord({ pageLoad, cells, uncapturedRoutes = [], measuredAt = new Date().toISOString() }) {
+// because they have no source mapping, and `uncapturedPageIds` the page ids
+// of skipped pages whose public route cannot be resolved. Readers list both
+// as page_not_captured.
+export function buildMediaWeightRecord({ pageLoad, cells, uncapturedRoutes = [], uncapturedPageIds = [], measuredAt = new Date().toISOString() }) {
   const record = {
-    schema_version: MEDIA_WEIGHT_SCHEMA_VERSION,
+    schema_version: MEDIA_WEIGHT_SCHEMA,
     performed_by: MEDIA_WEIGHT_PRODUCER,
     measured_at: measuredAt,
     subject: structuredClone(pageLoad.subject),
     thresholds: { ...MEDIA_WEIGHT_THRESHOLDS },
     cells,
     uncaptured_routes: [...new Set(uncapturedRoutes)].sort(),
+    uncaptured_page_ids: [...new Set(uncapturedPageIds)].sort(),
   };
   return { ...record, integrity: mediaWeightIntegrity(record) };
 }
@@ -336,7 +340,7 @@ const PROBE_COST_CAPS = Object.freeze(["image_cap_reached", "probe_timeout", "pr
 // is accept-eligible.
 export function evaluateMediaWeight(cell, thresholds = MEDIA_WEIGHT_THRESHOLDS) {
   if (!isPlainObject(cell)) invalid("is not an object");
-  if (!isPlainObject(thresholds) || !["image_bytes", "oversize_factor", "min_natural_area"].every((field) => Number.isFinite(thresholds[field]))) {
+  if (!isPlainObject(thresholds) || !["image_bytes", "oversize_factor", "min_natural_area"].every((field) => Number.isFinite(thresholds[field]) && thresholds[field] > 0)) {
     invalid("thresholds are not the 1.3 thresholds");
   }
   const resources = Array.isArray(cell.resources) ? cell.resources : invalid("has no resources[]");
