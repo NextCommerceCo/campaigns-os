@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.50.0+agent.20] - 2026-10-04
+
+### Changed
+
+- `scripts/refresh-certified-family-fixtures.mjs` now sets `og_image` to
+  `https://example.com/og-image.png` on each certified family's
+  `_data/campaigns.json` entry before it renders, and records that in the
+  fixture manifest as `render_inputs`. The starters leave `og:image` out until
+  a campaign sets one, so without it every certified page would report a
+  missing `og:image` to the coming built-output smoke checks. The value is on a
+  reserved domain, so it is plainly synthetic, and doctor `--built` neither
+  maps nor fetches it. The committed fixture tree is unchanged until the next
+  regeneration.
+
 ## [1.50.0+agent.19] - 2026-10-03
 
 ### Fixed
