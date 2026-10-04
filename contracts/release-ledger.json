@@ -5639,6 +5639,39 @@
         }
       ],
       "entry_sha256": "925f8d9ad8f524dc8551be91a521d1f29555ce756d2a41c90b95dec16f5bce1f"
+    },
+    {
+      "id": "RL-0232",
+      "sequence": 220,
+      "date": "2026-10-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.51.0+agent.2",
+      "changelog_sha256": "a0b1fd3db3c942f24f32534add01b37df1bb155772c2e43689e73b15821b055f",
+      "agent_impact": "Doctor (the packet path and doctor --built) now runs built_output.smoke_qc on every built page. It warns on an in-page link whose target is missing, a missing favicon or Open Graph title, description or image, an og:image that is not absolute or whose file is missing, the Tailwind CDN script in a production build, references to the cdn.29next.store asset host, and loopback URLs in a production build; next lists these in its QC handoff. Fix the page and rebuild. The Tailwind and loopback rules are decided only for a recorded production build and read unexercised otherwise; a page over a size, candidate, result or page cap, or one that cannot be read, reads unexercised, never pass. These results are never blockers and never checkpoint gates.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Describe the built-output smoke checks: what each rule warns on, which rules need a production build, and when a page reads unexercised."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor runs the smoke checks after the raw cart placeholder check on the packet path and records their results in derived.qc_results, with warning and review results in warnings[]."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor --built runs the smoke checks after the raw cart placeholder check, with the build environment and deploy base unknown, and records their results with the other QC results."
+        }
+      ],
+      "entry_sha256": "b4711357a770836f672ce471b70dc7e9a6a12788c503c458f10dba07e44dc473"
     }
   ]
 }
