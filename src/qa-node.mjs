@@ -34,6 +34,7 @@ function cmd(verb, rest = "") {
 import { isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, upsellActionCoverageWithoutOrders, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { trackingQaAssertion, trackingRunScopeRows } from "./qa-tracking-params.mjs";
+import { contentParamNotRequestedRows, contentParamQaAssertion } from "./qa-content-params.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
@@ -2330,6 +2331,7 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
       proxyBase: resolved.proxyBase,
     });
   assertions.push(...liveCampaignRefAssertions({ pages: [...livePages.values()], spec: liveSpec, liveCampaign: liveRead }));
+  const qcResults = [];
   if (args.browser === true) {
     const browserAssertions = await runBrowserChecks(resolved.topologies, args, {
       brandContract: resolved.brandContract,
@@ -2340,6 +2342,8 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
         : residueSeverityForThemeGate(gate.status),
       supportedPaymentMethods: supportedPaymentMethodsFromSpec(resolved.spec),
       bindingExpected,
+      spec: resolved.spec,
+      qcResults,
     });
     // A page-binding row from the browser is the key the SDK actually sent;
     // it takes the place of that page's static read.
@@ -2348,9 +2352,14 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
       if (at >= 0) assertions[at] = observed;
       else assertions.push(observed);
     }
+  } else {
+    // The browser checks were not requested: each declared content parameter
+    // (param, page) is listed as excluded, never left silent.
+    const rows = contentParamNotRequestedRows(resolved.spec, resolved.topologies);
+    qcResults.push(...rows);
+    assertions.push(...rows.map(contentParamQaAssertion));
   }
 
-  const qcResults = [];
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });
   const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
   let commercialResult;

@@ -14,6 +14,7 @@ import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-pari
 import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
 import { redactPersisted, redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
 import { TRACKING_ADDED_BOUND_MS, TRACKING_OBSERVATION, createTrackingRun, trackingQaAssertion } from "./qa-tracking-params.mjs";
+import { runContentParamChecks } from "./qa-content-params.mjs";
 import {
   canonicalHttpUrl,
   commonTestOrderPaths,
@@ -119,10 +120,11 @@ const CART_CREATE_RESPONSE_PATTERN = /\/api\/v1\/carts\/?(?:[?#].*)?$/i;
 
 export async function runBrowserChecks(topologies, args = {}, options = {}) {
   const browser = await launchChromium(args);
-  const context = await browser.newContext({
+  const contextOptions = {
     viewport: viewportFromArgs(args),
     extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
-  });
+  };
+  const context = await browser.newContext(contextOptions);
 
   try {
     const assertions = [];
@@ -130,6 +132,20 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
       for (const page of topology.pages) {
         assertions.push(...await runPageBrowserChecks(context, page, args, options));
       }
+    }
+    // Content parameters (options.spec analytics.params.content), after the
+    // page checks: every load in its own fresh context with the same options,
+    // closed after the load. The rows go to options.qcResults; their verdict
+    // assertions join the page checks'.
+    if (Array.isArray(options.qcResults)) {
+      const contentParams = await runContentParamChecks({
+        topologies,
+        spec: options.spec,
+        newContext: () => browser.newContext(contextOptions),
+        withQueryParam,
+      });
+      options.qcResults.push(...contentParams.rows);
+      assertions.push(...contentParams.assertions);
     }
     return assertions;
   } finally {
