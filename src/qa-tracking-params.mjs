@@ -30,7 +30,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { aggregateQcResults, buildQcResult, toQaAssertion } from "./qc-results.mjs";
-import { redactUrlQuery } from "./qa-url-privacy.mjs";
+import { redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
 
 export const TRACKING_CHECKS = Object.freeze(["tracking.url", "tracking.order", "tracking.tag"]);
 const ROW_KEY = Object.freeze({ "tracking.url": "url", "tracking.order": "order", "tracking.tag": "tag" });
@@ -89,6 +89,18 @@ export function loaderPinOf(url) {
 const isPlainObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const isNonEmptyString = (value) => typeof value === "string" && value.trim() !== "";
 const sha256 = (text) => `sha256:${createHash("sha256").update(String(text)).digest("hex")}`;
+// A rendered tag's name is page text: it is persisted cut at its first query
+// (qa-url-privacy.mjs), and a name whose projection is empty is kept as a
+// marker, never dropped.
+const REDACTED_TAG_NAME = "[redacted-tag-name]";
+const persistedTagName = (name) => {
+  const kept = redactUrlQueriesInText(name);
+  return isNonEmptyString(kept) ? kept : REDACTED_TAG_NAME;
+};
+// A hop's origin+path, with no query left in it in any encoding (a path can
+// carry an encoded "?"). Persisted exits project rows again with the same
+// projection, which leaves these unchanged.
+const persistedPath = (url) => redactUrlQueriesInText(redactUrlQuery(url));
 
 // The attempt's raw observation, kept on the runner's in-memory result under a
 // symbol key so it is never serialized.
@@ -380,8 +392,6 @@ function hopParams(url, seeds) {
   return Object.fromEntries(Object.entries(seeds).map(([name, value]) => [name, outcomeOf(params.has(name) ? params.get(name) : null, value)]));
 }
 
-const withoutFragment = (url) => String(url || "").split("#")[0];
-
 // The literal calls a page script uses to set attribution itself.
 export function hasPageScriptCall(text) {
   const source = String(text || "");
@@ -459,7 +469,6 @@ export function createTrackingObserver({ table, plan, runId, attemptId, hooks = 
   let pageHopCount = 0;
   let measuredSeedSeq = null;
   let gapPending = false;
-  let navigationRequests = [];
   let acceptedAt = null;
   let postOrderSeq = null;
   // `frozen`: no document or script read begins once the create request is
@@ -596,7 +605,9 @@ export function createTrackingObserver({ table, plan, runId, attemptId, hooks = 
     if (!Array.isArray(value.tags) || !value.tags.every((tag) => isPlainObject(tag) && typeof tag.name === "string" && typeof tag.value === "string")) {
       fail("tag_dom_read");
     } else {
-      const rendered = value.tags.filter((tag) => isNonEmptyString(tag.name) && isNonEmptyString(tag.value));
+      // The literal is kept exactly as rendered: a non-empty value is a tag
+      // even when it is only whitespace (the SDK reads it as given).
+      const rendered = value.tags.filter((tag) => isNonEmptyString(tag.name) && tag.value !== "");
       for (const tag of rendered) if (!tagLiterals.has(tag.name)) tagLiterals.set(tag.name, new Set());
       const read = extract("tag_dom_read", () => {
         for (const tag of rendered) tagLiterals.get(tag.name).add(String(tag.value));
@@ -626,16 +637,6 @@ export function createTrackingObserver({ table, plan, runId, attemptId, hooks = 
       }
     },
 
-    // The separate request listener: main-frame navigation requests, compared
-    // in memory with the next hop to tell a document hop from a history hop.
-    onNavigationRequest(url) {
-      try {
-        navigationRequests.push(withoutFragment(url));
-      } catch {
-        gapPending = true;
-      }
-    },
-
     // A listener in qa-browser.mjs could not read its event: a missed hop is
     // a gap in the sequence, a missed response an extractor failure.
     onListenerError(kind) {
@@ -643,8 +644,15 @@ export function createTrackingObserver({ table, plan, runId, attemptId, hooks = 
       else fail("response_equality");
     },
 
-    // The hop listener (main frame, framenavigated).
-    onFrameNavigated(url) {
+    // The hop listener (main frame, framenavigated). `commit` is the
+    // browser's own commit signal for this hop, when it gave one:
+    // {url, newDocument}, newDocument true for a committed document and false
+    // for a same-document navigation (pushState, replaceState, a fragment).
+    // A hop is a document hop only when that signal, for exactly this URL,
+    // says a new document committed. Every other hop (no signal, a signal
+    // for another URL, a signal the page could not give) is a history hop,
+    // so it can never be the post-order navigation.
+    onFrameNavigated(url, commit = null) {
       try {
         if (!/^https?:\/\//i.test(String(url || ""))) {
           // A main-frame document QA cannot compare (an error page) once
@@ -654,9 +662,7 @@ export function createTrackingObserver({ table, plan, runId, attemptId, hooks = 
         }
         const initiator = runnerPending ? "runner" : "page";
         runnerPending = false;
-        const matched = navigationRequests.lastIndexOf(withoutFragment(url));
-        const kind = matched >= 0 ? "document" : "history";
-        if (matched >= 0) navigationRequests = navigationRequests.slice(matched + 1);
+        const kind = isPlainObject(commit) && commit.url === String(url) && commit.newDocument === true ? "document" : "history";
         if (initiator === "page" && !pageHopSeen) {
           pageHopSeen = true;
           measuredSeedSeq = lastSeededLoad ? lastSeededLoad.hopSeq : null;
@@ -677,7 +683,7 @@ export function createTrackingObserver({ table, plan, runId, attemptId, hooks = 
         }
         const seq = nextSeq;
         nextSeq += 1;
-        hops.push({ seq, path: redactUrlQuery(url), initiator, kind, observer_attached: !gapPending, params: params.value });
+        hops.push({ seq, path: persistedPath(url), initiator, kind, observer_attached: !gapPending, params: params.value });
         gapPending = false;
         if (initiator === "runner" && !pageHopSeen && lastSeededLoad) lastSeededLoad.hopSeq = seq;
         if (acceptedAt !== null && postOrderSeq === null && initiator === "page" && kind === "document") postOrderSeq = seq;
@@ -832,13 +838,14 @@ export function createTrackingObserver({ table, plan, runId, attemptId, hooks = 
         for (const entry of parsed) names.push({ tag_or_name: name, source: "request", outcome: entry.names[name], rendered: false });
       }
       for (const [tag, literals] of tagLiterals) {
-        if (!literals.size) names.push({ tag_or_name: tag, source: "request", outcome: null, literal_sha256: null, rendered: true });
+        const tagName = persistedTagName(tag);
+        if (!literals.size) names.push({ tag_or_name: tagName, source: "request", outcome: null, literal_sha256: null, rendered: true });
         for (const literal of literals) {
           const literalSha = sha256(literal);
-          if (!parsed.length) names.push({ tag_or_name: tag, source: "request", outcome: null, literal_sha256: literalSha, rendered: true });
+          if (!parsed.length) names.push({ tag_or_name: tagName, source: "request", outcome: null, literal_sha256: literalSha, rendered: true });
           for (const entry of parsed) {
             const metadata = entry.metadata || {};
-            names.push({ tag_or_name: tag, source: "request", outcome: outcomeOf(Object.hasOwn(metadata, tag) ? metadata[tag] : null, literal), literal_sha256: literalSha, rendered: true });
+            names.push({ tag_or_name: tagName, source: "request", outcome: outcomeOf(Object.hasOwn(metadata, tag) ? metadata[tag] : null, literal), literal_sha256: literalSha, rendered: true });
           }
         }
       }

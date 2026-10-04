@@ -12,7 +12,7 @@ import {
 } from "./qa-analytics-errors.mjs";
 import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-parity.mjs";
 import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
-import { redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
+import { redactPersisted, redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
 import { TRACKING_ADDED_BOUND_MS, TRACKING_OBSERVATION, createTrackingRun, trackingQaAssertion } from "./qa-tracking-params.mjs";
 import {
   canonicalHttpUrl,
@@ -195,7 +195,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       assertions: dispatched.assertions.map(persistedAssertion),
       receiptAnalytics: dispatched.receiptAnalytics,
       journeyAnalytics: dispatched.journeyAnalytics,
-      qc_results: dispatched.qcResults || [],
+      qc_results: (dispatched.qcResults || []).map(persistedQcResult),
     };
   } finally {
     await context.close().catch(() => {});
@@ -6489,22 +6489,34 @@ function captureCheckoutEvents(page, tracking = null) {
     }
   });
   if (tracking) {
-    // Tracking hops: a second listener beside the one above, and a separate
-    // request listener for main-frame navigation requests (the filtered one
-    // above never sees campaign documents). Both compare in memory only.
+    // Tracking hops: a second listener beside the one above. Whether a hop
+    // committed a new document is read only from the browser itself:
+    // Playwright's main frame emits "navigated" with `newDocument` for a
+    // document commit and without it for a same-document one, synchronously
+    // just before "framenavigated" (pinned against the installed Playwright
+    // in qa-tracking-params-hardening.test.mjs). It is an internal emitter;
+    // where a page has none, every hop reads history. The signal is only held
+    // here and handed to the observer with its hop.
+    let commit = null;
+    try {
+      const emitter = typeof page.mainFrame === "function" ? page.mainFrame()?._eventEmitter : null;
+      if (emitter && typeof emitter.on === "function") {
+        emitter.on("navigated", (event) => {
+          commit = event && !event.error ? { url: String(event.url), newDocument: Boolean(event.newDocument) } : null;
+        });
+      }
+    } catch {
+      // No signal: every hop reads history.
+    }
     page.on("framenavigated", (frame) => {
       try {
-        if (isMainFrame(frame)) tracking.onFrameNavigated(frame.url());
+        if (!isMainFrame(frame)) return;
+        const signal = commit;
+        commit = null;
+        tracking.onFrameNavigated(frame.url(), signal);
       } catch {
         // The observer records the missed hop as a gap.
         try { tracking.onListenerError("hop"); } catch { /* never breaks the order */ }
-      }
-    });
-    page.on("request", (request) => {
-      try {
-        if (request.isNavigationRequest() && isMainFrame(request.frame())) tracking.onNavigationRequest(request.url());
-      } catch {
-        // A request without a frame (a service worker) is not a navigation.
       }
     });
     page.on("domcontentloaded", () => {
@@ -6636,9 +6648,10 @@ function lastJsonResponse(events, pattern) {
   return null;
 }
 
-// A persisted exit: every URL is origin+path; bodies are summarized.
+// A persisted exit: every URL is origin+path; bodies are summarized; then
+// every string and key goes through the persisted-value projection.
 function sanitizedEvents(events) {
-  return {
+  return redactPersisted({
     requests: events.requests.slice(-20).map((request) => ({ ...request, url: redactUrlQuery(request.url) })),
     responses: events.responses.slice(-20).map((response) => ({
       status: response.status,
@@ -6652,7 +6665,7 @@ function sanitizedEvents(events) {
     navigations: (events.navigations || []).slice(-20).map((navigation) => ({
       url: redactUrlQuery(navigation.url),
     })),
-  };
+  });
 }
 
 function summarizeRequestPostData(value) {
@@ -6685,7 +6698,7 @@ function summarizeResponseBody(body, { status = null } = {}) {
     ...(body.currency ? { currency: body.currency } : {}),
     ...(body.checkout_url ? { checkout_url: redactUrlQuery(body.checkout_url) } : {}),
     ...(Array.isArray(body.lines) ? { lines: extractReceiptLines(body) } : {}),
-    ...(body.detail ? { detail: redactPersistedText(body.detail) } : {}),
+    ...(body.detail ? { detail: redactPersisted(body.detail) } : {}),
     // A rejected request names its reason here (for example the
     // duplicate-order refusal). Kept only on an error response, so a
     // successful create never carries payment_details into evidence.
@@ -7852,20 +7865,10 @@ function withQueryParam(value, key, paramValue) {
   }
 }
 
-// A persisted exit's free text: every string, at any depth, keeps no URL
-// query (an error message or step note can quote the URL QA loaded).
-function redactPersistedText(value) {
-  if (typeof value === "string") return redactUrlQueriesInText(value);
-  if (Array.isArray(value)) return value.map(redactPersistedText);
-  if (value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactPersistedText(item)]));
-  }
-  return value;
-}
-
 // A test order as it is persisted: its URLs as origin+path, an upsell's raw
-// response body as its summary, and no URL query in any string. The order
-// events were already summarized where they were captured.
+// response body as its summary, and no URL query in any string or key (the
+// one persisted-value projection, redactPersisted). The order events were
+// already summarized where they were captured.
 function persistedTestOrder(order) {
   if (!order || typeof order !== "object") return order;
   const projected = { ...order };
@@ -7873,7 +7876,7 @@ function persistedTestOrder(order) {
   if (Object.hasOwn(order, "final_url")) projected.final_url = redactUrlQuery(order.final_url);
   if (order.upsell && typeof order.upsell === "object") projected.upsell = persistedUpsellStep(order.upsell);
   if (Array.isArray(order.upsell_steps)) projected.upsell_steps = order.upsell_steps.map(persistedUpsellStep);
-  return redactPersistedText(projected);
+  return redactPersisted(projected);
 }
 
 function persistedUpsellStep(step) {
@@ -7886,12 +7889,26 @@ function persistedUpsellStep(step) {
   return projected;
 }
 
-// A runner assertion as it is persisted: no URL query in any string of its
-// evidence or text. The qc.* rows are left as built, since their evidence is
-// already origin+path and must stay identical to the stored QC row.
+// An assertion as it is persisted: no URL query in any string or key of its
+// id, text or evidence. A qc.* assertion goes through the same projection as
+// its stored QC row (persistedQcResult), so the two stay identical; their
+// page-derived strings were already projected when the observation was
+// taken, so each is normally left exactly as built.
 function persistedAssertion(entry) {
-  if (!entry || typeof entry !== "object" || String(entry.id || "").startsWith("qc.")) return entry;
-  return redactPersistedText(entry);
+  return projectedUnlessUnchanged(entry);
+}
+
+// A QC row as it is persisted, through the same projection.
+function persistedQcResult(row) {
+  return projectedUnlessUnchanged(row);
+}
+
+// The projection of `value`, or `value` itself when its projection
+// serializes the same.
+function projectedUnlessUnchanged(value) {
+  const projected = redactPersisted(value);
+  if (!value || typeof value !== "object") return projected;
+  return JSON.stringify(projected) === JSON.stringify(value) ? value : projected;
 }
 
 function findPage(topologies, type) {
@@ -8104,6 +8121,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   recoverCreatedOrder,
   persistedTestOrder,
   persistedAssertion,
+  persistedQcResult,
   sanitizedEvents,
   summarizeResponseBody,
   attachCreateResponseTap,

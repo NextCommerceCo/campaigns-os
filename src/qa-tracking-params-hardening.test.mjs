@@ -24,6 +24,11 @@
 // Every value is synthetic and nothing leaves the process.
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Worker } from "node:worker_threads";
 import test, { after, afterEach } from "node:test";
 
 import { BUILD_FP, QA_RUN_ID, assertNoNetworkAttempts, fullVerdict } from "./qc-test-factories.mjs";
@@ -81,10 +86,8 @@ async function liveAttempt({ page = pageAnswering(TAG_READ), during = null, afte
   const { createTrackingRun } = await tracking();
   const run = createTrackingRun({ runId: "qa-tracking-hardening-run", spec, hooks, random: () => Buffer.from([1, 2, 3, 4]) });
   const observer = run.observe(PLAN);
-  const navigate = (url) => {
-    observer.onNavigationRequest(url);
-    observer.onFrameNavigated(url);
-  };
+  // A document hop: the browser's commit signal for its URL, then the hop.
+  const navigate = (url) => observer.onFrameNavigated(url, { url, newDocument: true });
   navigate(observer.runnerUrl(`${ORIGIN}/x/checkout/`, addParam));
   const entry = observer.runnerUrl(`${ORIGIN}/x/landing/`, addParam);
   navigate(entry);
@@ -429,7 +432,7 @@ test("after finalize: every event that arrives (through the actual listeners and
   observer.onCreateRequest(late);
   observer.onCreateResponseStatus(201);
   observer.onFrameNavigated(`${ORIGIN}/x/upsell/`);
-  observer.onNavigationRequest(`${ORIGIN}/x/upsell/`);
+  observer.onFrameNavigated(`${ORIGIN}/x/upsell/`, { url: `${ORIGIN}/x/upsell/`, newDocument: true });
   observer.onListenerError("hop");
   observer.onListenerError("response");
   await observer.orderResponseBody("readback", () => JSON.parse(late));
@@ -1174,7 +1177,7 @@ test("P structural: in qa-tracking-params.mjs every asynchronous step is inside 
 
 test("P structural: in the whole of qa-browser.mjs every use of the observer, or of an alias of it, is synchronous and passes no awaited value", async () => {
   const { violations, uses, aliases } = await observerViolations(await readSource("./qa-browser.mjs"));
-  assert.ok(uses >= 15, `the observer's uses are visited (${uses})`);
+  assert.ok(uses >= 14, `the observer's uses are visited (${uses})`);
   assert.deepEqual(aliases, ["tracking"]);
   assert.deepEqual(violations, []);
 });
@@ -1433,3 +1436,1024 @@ for (const [label, patch, failed] of rawDocumentCases) {
     for (const row of await readRows(fed)) assert.deepEqual(resultOf(row), ["unexercised", "extractor_failed"], `${row.id} through the 1.0 reader`);
   });
 }
+
+// ---------------------------------------------------------------------------
+// A navigation request that never committed
+
+// A fake page the actual captureCheckoutEvents listeners attach to: one main
+// frame, a document read answering `read`, and a CDP session that answers
+// every command with {}.
+function listenerPage({ read = { tags: [], inline: false, pins: [] }, url = `${ORIGIN}/x/landing/` } = {}) {
+  const page = new EventEmitter();
+  let current = url;
+  const main = { url: () => current };
+  page.mainFrame = () => main;
+  page.evaluate = async () => read;
+  const session = new EventEmitter();
+  session.send = async () => ({});
+  page.context = () => ({ newCDPSession: async () => session });
+  const request = (target, { method = "GET", body = null, navigation = false } = {}) => ({
+    url: () => target,
+    method: () => method,
+    postData: () => body,
+    isNavigationRequest: () => navigation,
+    frame: () => main,
+    resourceType: () => (navigation ? "document" : "fetch"),
+    redirectedFrom: () => null,
+    timing: () => ({ startTime: Date.now() }),
+    failure: () => ({ errorText: "net::ERR_ABORTED" }),
+  });
+  const documentHop = (target) => {
+    page.emit("request", request(target, { navigation: true }));
+    current = target;
+    page.emit("framenavigated", main);
+  };
+  const historyHop = (target) => {
+    current = target;
+    page.emit("framenavigated", main);
+  };
+  return { page, request, documentHop, historyHop, current: () => current };
+}
+
+test("live listeners: a cancelled main-frame navigation request, a history hop, the accepted create, then a history hop to the cancelled URL is not the post-order navigation (attempt_incomplete, through the 1.0 reader)", async () => {
+  const { captureCheckoutEvents } = await browserHooks();
+  const { createTrackingRun } = await tracking();
+  const run = createTrackingRun({ runId: "qa-tracking-hardening-cancelled", random: () => Buffer.from([1, 2, 3, 4]) });
+  const observer = run.observe(PLAN);
+  const fake = listenerPage();
+  captureCheckoutEvents(fake.page, observer);
+  const entry = observer.runnerUrl(`${ORIGIN}/x/landing/`, addParam);
+  fake.documentHop(entry);
+  await observer.readDocument(fake.page);
+  const query = new URL(entry).search;
+  fake.documentHop(`${ORIGIN}/x/checkout/${query}`);
+  const pending = `${ORIGIN}/x/pending-document/${query}`;
+  const cancelled = fake.request(pending, { navigation: true });
+  fake.page.emit("request", cancelled);
+  fake.page.emit("requestfailed", cancelled);
+  fake.historyHop(`${ORIGIN}/x/intervening-history/${query}`);
+  const attribution = Object.fromEntries(FIELDS.map((field) => [field, run.seeds[FIELD_PARAM[field] || field]]));
+  const create = fake.request(`${ORIGIN}/api/v1/orders/`, { method: "POST", body: JSON.stringify({ attribution }) });
+  fake.page.emit("request", create);
+  fake.page.emit("response", { url: () => create.url(), status: () => 201, request: () => create, text: async () => JSON.stringify({ ref_id: "synref1" }) });
+  await settle();
+  fake.historyHop(pending);
+  const observation = await observer.finalize({ createActivity: ACCEPTED });
+  assert.deepEqual(observation.hops.slice(-2).map((entry) => [entry.path, entry.kind]), [[`${ORIGIN}/x/intervening-history/`, "history"], [`${ORIGIN}/x/pending-document/`, "history"]]);
+  assert.equal(observation.post_order_seq, null);
+  const url = (await rowsOf(observation)).get("tracking.url:checkout:url");
+  assert.deepEqual(resultOf(url), ["unexercised", "attempt_incomplete"]);
+  assert.equal(url.coverage.last_observed, `${ORIGIN}/x/pending-document/`);
+  const [read] = await readRows([url]);
+  assert.deepEqual(resultOf(read), ["unexercised", "attempt_incomplete"], "through the 1.0 reader");
+});
+
+test("live: a commit signal for another URL never makes a hop a document hop, nor a later hop to its URL; a hop with its own document commit is one", async () => {
+  const { observation } = await liveAttempt({
+    during: (observer, seeds) => {
+      const query = `?${new URLSearchParams(seeds)}`;
+      observer.onFrameNavigated(`${ORIGIN}/x/between/${query}`, { url: `${ORIGIN}/x/stale/${query}`, newDocument: true });
+      observer.onFrameNavigated(`${ORIGIN}/x/stale/${query}`);
+      observer.onFrameNavigated(`${ORIGIN}/x/fresh/${query}`, { url: `${ORIGIN}/x/fresh/${query}`, newDocument: true });
+    },
+  });
+  assert.deepEqual(observation.hops.slice(3, 6).map((entry) => [entry.path, entry.kind]), [
+    [`${ORIGIN}/x/between/`, "history"],
+    [`${ORIGIN}/x/stale/`, "history"],
+    [`${ORIGIN}/x/fresh/`, "document"],
+  ]);
+});
+
+// ---------------------------------------------------------------------------
+// Persisted text: no query value in any form
+
+// Every way free text can quote a query: a relative URL whose query opens
+// with a bare flag, with "&" or with name=value, a bare "?flag&..." run, a
+// value-only query and a query after a fragment.
+const QUERY_FORMS = Object.freeze([
+  `load /x/?flag&syn_private=${PRIVATE}`,
+  `request ?flag&syn_private=${PRIVATE}`,
+  `load /x/?&syn_private=${PRIVATE}`,
+  `load /x/?syn_private=${PRIVATE}`,
+  `load /x/?${PRIVATE}`,
+  `load "/x/?a&syn_private=${PRIVATE}"`,
+  `load /x/#step?syn_private=${PRIVATE}`,
+]);
+
+test("persisted text: the reported error \"/x/?flag&syn_private=...\" from console and page errors leaves no query value in events, the runner assertion, the test order or the full verdict", async () => {
+  const { captureCheckoutEvents, sanitizedEvents, persistedAssertion, persistedTestOrder } = await browserHooks();
+  const fake = listenerPage();
+  const events = captureCheckoutEvents(fake.page, null);
+  const error = `load /x/?flag&syn_private=${PRIVATE}`;
+  fake.page.emit("console", { type: () => "error", text: () => error });
+  fake.page.emit("pageerror", new Error(error));
+  const persistedEvents = sanitizedEvents(events);
+  const assertion = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", actual: error, evidence: { events: persistedEvents } });
+  const order = persistedTestOrder({ checkout_url: `${ORIGIN}/x/checkout/`, final_url: `${ORIGIN}/x/checkout/`, verification: { verified: false, error }, evidence: { events: persistedEvents } });
+  const verdict = fullVerdict({ assertions: [assertion], measuredAt });
+  verdict.test_orders = [order];
+  assert.equal(JSON.stringify(verdict).includes(PRIVATE), false, "no private value anywhere");
+  assertNothingPrivatePersisted(verdict, { markers: { private: PRIVATE } });
+  assert.equal(persistedEvents.console[0].text, "load /x/<query-redacted>");
+  assert.deepEqual(persistedEvents.pageErrors, ["load /x/<query-redacted>"]);
+  assert.equal(assertion.actual, "load /x/<query-redacted>");
+  assert.equal(order.verification.error, "load /x/<query-redacted>");
+});
+
+test("persisted text, event log: every string field keeps no query value in any form", async () => {
+  const { sanitizedEvents } = await browserHooks();
+  for (const text of QUERY_FORMS) {
+    const events = {
+      requests: [{ method: "POST", url: `/api/v1/orders/?flag&syn_private=${PRIVATE}`, postData: null }],
+      responses: [
+        { status: 201, url: `/api/v1/orders/?flag&syn_private=${PRIVATE}`, body: { ref_id: "synref1", checkout_url: `/x/checkout/?flag&syn_private=${PRIVATE}`, detail: text } },
+        { status: 400, url: `${ORIGIN}/api/v1/orders/`, body: { payment_details: text } },
+      ],
+      failed: [{ url: `/x/?flag&syn_private=${PRIVATE}`, failure: text }],
+      console: [{ type: "error", text }],
+      pageErrors: [text],
+      navigations: [{ url: `/x/?flag&syn_private=${PRIVATE}` }],
+    };
+    const persisted = sanitizedEvents(events);
+    assert.equal(JSON.stringify(persisted).includes(PRIVATE), false, `${text}: no private value in the event log`);
+  }
+});
+
+test("persisted text, test order and runner assertion: error, verification, step notes, labels and every nested string keep no query value in any form", async () => {
+  const { persistedTestOrder, persistedAssertion } = await browserHooks();
+  for (const text of QUERY_FORMS) {
+    const order = {
+      path: "accept",
+      checkout_url: `${ORIGIN}/x/checkout/`,
+      final_url: `${ORIGIN}/x/receipt/`,
+      error: text,
+      verification: { verified: false, error: text, notes: [text] },
+      evidence: { steps: [{ step: "opened_checkout", status: "failed", detail: text, label: text }] },
+      upsell: { offer_url: `/x/upsell/?flag&syn_private=${PRIVATE}`, note: text },
+    };
+    assert.equal(JSON.stringify(persistedTestOrder(order)).includes(PRIVATE), false, `${text}: no private value in the test order`);
+    const assertion = { id: "browser-test-order:checkout", family: "browser-test-order", expected: text, actual: text, evidence: { label: text, steps: order.evidence.steps } };
+    assert.equal(JSON.stringify(persistedAssertion(assertion)).includes(PRIVATE), false, `${text}: no private value in the runner assertion`);
+  }
+});
+
+test("persisted text, tracking rows: a rendered tag name carrying a query keeps its row, compared on the name as rendered, and no row, assertion or observation holds the query value", async () => {
+  const name = `syn_tag?flag&syn_private=${PRIVATE}`;
+  const { observation } = await liveAttempt({
+    page: pageAnswering({ tags: [{ name, value: "syn_v" }, { name: `?syn_private=${PRIVATE}`, value: "syn_v" }], inline: false, pins: [] }),
+    request: JSON.stringify({ attribution: { ...Object.fromEntries(FIELDS.map((field) => [field, `cosqa_${FIELD_PARAM[field] || field}_01020304`])), metadata: { [name]: "syn_v" } } }),
+  });
+  const rows = await rowsOf(observation);
+  assert.deepEqual([...rows.keys()].filter((id) => id.startsWith("tracking.tag")), ["tracking.tag:checkout:tag:syn_tag<query-redacted>", "tracking.tag:checkout:tag:<query-redacted>"]);
+  assert.deepEqual(resultOf(rows.get("tracking.tag:checkout:tag:syn_tag<query-redacted>")), ["pass", null], "the request metadata is compared under the name as rendered");
+  assert.deepEqual(resultOf(rows.get("tracking.tag:checkout:tag:<query-redacted>")), ["warning", "tag_missing"]);
+  const { trackingQaAssertion } = await tracking();
+  const persisted = { rows: [...rows.values()], assertions: [...rows.values()].map(trackingQaAssertion) };
+  assert.equal(JSON.stringify(persisted).includes(PRIVATE), false, "no private value in any row or assertion");
+  assertNothingPrivatePersisted(persisted, { markers: { private: PRIVATE } });
+  const read = await readRows([...rows.values()]);
+  assert.deepEqual(read.map(resultOf), [...rows.values()].map(resultOf), "the rows re-derive through the 1.0 reader");
+});
+
+// ---------------------------------------------------------------------------
+// Tag literals are kept exactly as rendered
+
+test("a rendered tag whose literal is only whitespace keeps its row: tag_value_differs when the request metadata differs, pass when it holds the same whitespace", async () => {
+  const blank = pageAnswering({ tags: [{ name: "syn_tag", value: "   " }], inline: false, pins: [] });
+  const differs = await liveAttempt({ page: blank });
+  assert.deepEqual(differs.observation.names.map((entry) => [entry.tag_or_name, entry.outcome, entry.literal_sha256]), [["syn_tag", "differs", sha256("   ")]]);
+  const row = (await rowsOf(differs.observation)).get("tracking.tag:checkout:tag:syn_tag");
+  assert.deepEqual(resultOf(row), ["warning", "tag_value_differs"]);
+  const { rederiveQcResult } = await tracking();
+  assert.equal(rederiveQcResult({ ...differs.observation, check: "tracking.tag", tag: "syn_tag" }).state.literal_sha256, sha256("   "));
+  assert.deepEqual(resultOf((await readRows([row]))[0]), ["warning", "tag_value_differs"], "through the 1.0 reader");
+  const equal = await liveAttempt({
+    page: blank,
+    request: JSON.stringify({ attribution: { ...Object.fromEntries(FIELDS.map((field) => [field, `cosqa_${FIELD_PARAM[field] || field}_01020304`])), metadata: { syn_tag: "   " } } }),
+  });
+  assert.deepEqual(resultOf((await rowsOf(equal.observation)).get("tracking.tag:checkout:tag:syn_tag")), ["pass", null]);
+});
+
+test("a tag literal with leading and trailing whitespace is hashed as rendered, never trimmed", async () => {
+  const literal = " syn_v ";
+  const { observation } = await liveAttempt({
+    page: pageAnswering({ tags: [{ name: "syn_tag", value: literal }], inline: false, pins: [] }),
+    request: JSON.stringify({ attribution: { ...Object.fromEntries(FIELDS.map((field) => [field, `cosqa_${FIELD_PARAM[field] || field}_01020304`])), metadata: { syn_tag: literal } } }),
+  });
+  assert.notEqual(sha256(literal), sha256("syn_v"));
+  assert.deepEqual(observation.names.map((entry) => [entry.outcome, entry.literal_sha256]), [["equal", sha256(literal)]]);
+  const row = (await rowsOf(observation)).get("tracking.tag:checkout:tag:syn_tag");
+  assert.deepEqual(resultOf(row), ["pass", null]);
+  const { rederiveQcResult } = await tracking();
+  assert.equal(rederiveQcResult({ ...observation, check: "tracking.tag", tag: "syn_tag" }).state.literal_sha256, sha256(literal), "the accept state binds the literal as rendered");
+});
+
+// ---------------------------------------------------------------------------
+// Equality compares the values as read, never decoded on one side
+
+test("a value equal to its seed only after one more percent-decoding differs: URL url_param_changed, order order_attribution_differs, tag tag_value_differs", async () => {
+  const encoded = (value) => value.replace(/_/g, "%5F");
+  const { observation, seeds } = await liveAttempt({
+    during: (observer, runSeeds) => {
+      const query = new URLSearchParams(runSeeds);
+      query.set("utm_source", encoded(runSeeds.utm_source));
+      observer.onFrameNavigated(`${ORIGIN}/x/bridge/?${query}`, { url: `${ORIGIN}/x/bridge/?${query}`, newDocument: true });
+    },
+    request: JSON.stringify({ attribution: { ...Object.fromEntries(FIELDS.map((field) => [field, `cosqa_${FIELD_PARAM[field] || field}_01020304`])), utm_medium: encoded("cosqa_utm_medium_01020304"), metadata: { syn_tag: "syn%5Fv" } } }),
+  });
+  assert.equal(seeds.utm_medium, "cosqa_utm_medium_01020304", "setup: the seed the request value encodes");
+  assert.equal(decodeURIComponent(encoded(seeds.utm_source)), seeds.utm_source, "setup: one more decoding gives the seed");
+  const rows = await rowsOf(observation);
+  const url = rows.get("tracking.url:checkout:url");
+  assert.deepEqual(resultOf(url), ["warning", "url_param_changed"]);
+  assert.deepEqual(url.members.find((entry) => entry.key === "utm_source"), { key: "utm_source", result: "warning", reason_code: "url_param_changed" });
+  const order = rows.get("tracking.order:checkout:order");
+  assert.deepEqual(resultOf(order), ["warning", "order_attribution_differs"]);
+  assert.deepEqual(order.members.find((entry) => entry.key === "utm_medium"), { key: "utm_medium", result: "warning", reason_code: "order_attribution_differs" });
+  assert.deepEqual(resultOf(rows.get("tracking.tag:checkout:tag:syn_tag")), ["warning", "tag_value_differs"]);
+});
+
+// ---------------------------------------------------------------------------
+// Every create request is judged, the accepted one included
+
+test("live: a rejected create equal to the seeds, then an accepted create that differs, reads order_attribution_differs and tag_value_differs", async () => {
+  const equal = JSON.stringify({ attribution: { ...Object.fromEntries(FIELDS.map((field) => [field, `cosqa_${FIELD_PARAM[field] || field}_01020304`])), metadata: { syn_tag: "syn_v" } } });
+  const { observation } = await liveAttempt({
+    during: (observer) => {
+      observer.onCreateRequest(equal);
+      observer.onCreateResponseStatus(422);
+    },
+    request: JSON.stringify({ attribution: { ...JSON.parse(equal).attribution, utm_source: "syn_other", metadata: { syn_tag: "syn_w" } } }),
+  });
+  const rows = await rowsOf(observation);
+  const order = rows.get("tracking.order:checkout:order");
+  assert.deepEqual(resultOf(order), ["warning", "order_attribution_differs"]);
+  assert.deepEqual(order.members.find((entry) => entry.key === "utm_source"), { key: "utm_source", result: "warning", reason_code: "order_attribution_differs" });
+  assert.deepEqual(resultOf(rows.get("tracking.tag:checkout:tag:syn_tag")), ["warning", "tag_value_differs"]);
+});
+
+// ---------------------------------------------------------------------------
+// An echo alone never renders a tag
+
+test("a tag with only a create-response observation never reads pass; the reader refuses it", async () => {
+  const observation = stored({ check: "tracking.tag", tag: "syn_tag", names: [{ tag_or_name: "syn_tag", source: "create_response", outcome: "equal", literal_sha256: sha256("syn_v") }] });
+  const { derived } = await storedRow(observation);
+  assert.equal(derived, null, "no request-metadata equality: not re-derivable");
+  const forged = (await storedRow(stored({ check: "tracking.tag", tag: "syn_tag" }))).row;
+  const [read] = await readRows([{ ...forged, observation }]);
+  assert.notEqual(read.result, "pass");
+  // The complete producer observation with its tag entry replaced by an echo.
+  const { trackingQcRows } = await tracking();
+  const echoOnly = { ...structuredClone(COMPLETE), names: [{ tag_or_name: "syn_tag", source: "create_response", outcome: "equal", literal_sha256: sha256("syn_v"), rendered: true }] };
+  const rows = trackingQcRows(echoOnly, { measuredAt });
+  assert.deepEqual(rows.filter((row) => row.check === "tracking.tag").map(resultOf), [], "no tag row is built from an echo alone");
+  const [refused] = await readRows([{ ...PASS_ROWS.find((row) => row.check === "tracking.tag"), observation: { ...echoOnly, check: "tracking.tag", tag: "syn_tag" } }]);
+  assert.notEqual(refused.result, "pass", "a stored pass over it is refused");
+});
+
+// ---------------------------------------------------------------------------
+// The create hold's own bound
+
+test("the create hold continues an accepted create at the one-second bound even when the observer's read never settles, and the overrun is a failed extractor (injected clock)", async (t) => {
+  const { attachCreateResponseTap } = await browserHooks();
+  const { createTrackingRun, TRACKING_ADDED_BOUND_MS } = await tracking();
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const observer = createTrackingRun({ runId: "qa-tracking-hardening-hold" }).observe(PLAN);
+  // The observer records its read as usual; what it hands the hold never
+  // settles, so only the hold's own timer can continue the create.
+  const tap = { ...observer, tapCreateResponse: (readBody) => { observer.tapCreateResponse(readBody); return new Promise(() => {}); } };
+  const { sent, session, page } = fakeCdpPage({ "Fetch.getResponseBody": () => new Promise(() => {}) });
+  await attachCreateResponseTap(page, tap);
+  session.emit("Fetch.requestPaused", { requestId: "create-1", responseStatusCode: 201, request: { method: "POST", url: `${ORIGIN}/api/v1/orders/` } });
+  await settle();
+  const continued = () => sent.filter((entry) => entry.method === "Fetch.continueRequest" && entry.params.requestId === "create-1");
+  t.mock.timers.tick(TRACKING_ADDED_BOUND_MS - 1);
+  await settle();
+  assert.equal(continued().length, 0, "held until the bound");
+  t.mock.timers.tick(1);
+  await settle();
+  assert.equal(continued().length, 1, "continued at the bound, exactly once");
+  assert.equal(continued()[0].at, TRACKING_ADDED_BOUND_MS);
+  const observation = await observer.finalize({ createActivity: ACCEPTED });
+  assert.ok(observation.extractor_failed.includes("response_equality"), "the overrun is recorded as a failed extractor");
+  const order = (await rowsOf(observation)).get("tracking.order:checkout:order");
+  assert.notEqual(order.result, "pass");
+});
+
+// ---------------------------------------------------------------------------
+// An unknown extractor name
+
+for (const [label, value] of [["an unknown name", ["syn_unknown_extractor"]], ["a known and an unknown name", ["hop_equality", "syn_unknown_extractor"]]]) {
+  test(`M: extractor_failed holding ${label} never lets any row pass, re-derived or captured`, async () => {
+    const { trackingQcRows } = await tracking();
+    const rederived = structuredClone(COMPLETE);
+    rederived.extractor_failed = structuredClone(value);
+    const { observation: captured } = await liveAttempt({ hooks: { rawObservation: (raw) => { raw.extractor_failed = structuredClone(value); } } });
+    assert.deepEqual(captured.extractor_failed, ["hop_equality", "request_equality", "response_equality", "tag_dom_read", "page_script_scan"], "capture records every extractor failed");
+    for (const [path, observation] of [["re-derived", rederived], ["captured", captured]]) {
+      const rows = trackingQcRows(observation, { measuredAt });
+      assert.deepEqual(rows.map((row) => [row.check, ...resultOf(row)]), [["tracking.url", "unexercised", "extractor_failed"], ["tracking.order", "unexercised", "extractor_failed"], ["tracking.tag", "unexercised", "extractor_failed"]], path);
+      assert.deepEqual((await readRows(rows)).map(resultOf), rows.map(resultOf), `${path}: through the 1.0 reader`);
+    }
+    for (const row of PASS_ROWS) {
+      const [forged] = await readRows([{ ...row, observation: { ...rederived, check: row.check, ...(row.check === "tracking.tag" ? { tag: "syn_tag" } : {}) } }]);
+      assert.notEqual(forged.result, "pass", `${row.id}: a stored pass over the observation is refused`);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Document or history hop: only the browser's commit signal for the hop's own
+// URL makes it a document hop; network events never do
+
+// A fake page the actual captureCheckoutEvents listeners attach to, driven one
+// browser event at a time: navigation requests with their responses or
+// failures, and main-frame hops. With `commitSignal`, the main frame also has
+// Playwright's own emitter, which emits "navigated" (with `newDocument` for a
+// document commit) just before each hop that passes one.
+function navigationEventsPage({ commitSignal = false } = {}) {
+  const page = new EventEmitter();
+  let current = `${ORIGIN}/x/landing/`;
+  const main = { url: () => current };
+  if (commitSignal) main._eventEmitter = new EventEmitter();
+  page.mainFrame = () => main;
+  page.evaluate = async () => TAG_READ;
+  const session = new EventEmitter();
+  session.send = async () => ({});
+  page.context = () => ({ newCDPSession: async () => session });
+  const request = (target, { method = "GET", body = null, navigation = true, from = null } = {}) => ({
+    url: () => target,
+    method: () => method,
+    postData: () => body,
+    isNavigationRequest: () => navigation,
+    frame: () => main,
+    resourceType: () => (navigation ? "document" : "fetch"),
+    redirectedFrom: () => from,
+    timing: () => ({ startTime: Date.now() }),
+    failure: () => ({ errorText: "net::ERR_ABORTED" }),
+  });
+  const send = (target, options) => {
+    const sent = request(target, options);
+    page.emit("request", sent);
+    return sent;
+  };
+  const respond = (sent, status = 200, text = "", headers = {}) => page.emit("response", { url: () => sent.url(), status: () => status, request: () => sent, headers: () => headers, text: async () => text });
+  const fail = (sent) => page.emit("requestfailed", sent);
+  // newDocument: true or false is the commit signal for the hop; null gives
+  // none. `signalUrl` is the URL the signal names (the hop's own by default).
+  const hop = (target, newDocument = null, signalUrl = target) => {
+    current = target;
+    if (main._eventEmitter && newDocument !== null) main._eventEmitter.emit("navigated", { url: signalUrl, name: "", ...(newDocument ? { newDocument: {} } : {}) });
+    page.emit("framenavigated", main);
+  };
+  // A commit signal on its own (a navigation that failed to commit).
+  const signal = (event) => main._eventEmitter?.emit("navigated", event);
+  // A document navigation as the browser reports it: request, response, commit.
+  const navigate = (target) => {
+    respond(send(target), 200);
+    hop(target, true);
+  };
+  return { page, send, respond, fail, hop, navigate, signal };
+}
+
+// One attempt through the actual listeners: the seeded entry load and a page
+// document hop to checkout, then the accepted create, then `after(fake,
+// query)`.
+async function listenerAttempt({ commitSignal = false, after = null } = {}) {
+  const { captureCheckoutEvents } = await browserHooks();
+  const { createTrackingRun } = await tracking();
+  const run = createTrackingRun({ runId: "qa-tracking-hardening-listeners", random: () => Buffer.from([1, 2, 3, 4]) });
+  const observer = run.observe(PLAN);
+  const fake = navigationEventsPage({ commitSignal });
+  captureCheckoutEvents(fake.page, observer);
+  const entry = observer.runnerUrl(`${ORIGIN}/x/landing/`, addParam);
+  fake.navigate(entry);
+  await observer.readDocument(fake.page);
+  const query = new URL(entry).search;
+  fake.navigate(`${ORIGIN}/x/checkout/${query}`);
+  const attribution = Object.fromEntries(FIELDS.map((field) => [field, run.seeds[FIELD_PARAM[field] || field]]));
+  const create = fake.send(`${ORIGIN}/api/v1/orders/`, { method: "POST", navigation: false, body: JSON.stringify({ attribution: { ...attribution, metadata: { syn_tag: "syn_v" } } }) });
+  fake.respond(create, 201, JSON.stringify({ ref_id: "synref1" }));
+  await settle();
+  if (after) await after(fake, query);
+  const observation = await observer.finalize({ createActivity: ACCEPTED });
+  return { observation, query };
+}
+
+const SIGNAL_MODES = [["no commit signal: every hop reads history", false], ["with the browser's commit signal", true]];
+const kindsAfterCheckout = (observation) => observation.hops.slice(2).map((entry) => [entry.path.slice(ORIGIN.length), entry.kind]);
+
+for (const [mode, commitSignal] of SIGNAL_MODES) {
+  test(`live listeners (${mode}): accepted create, a seeded document request pending, requestfailed net::ERR_ABORTED, then pushState directly to its URL is a history hop and never the post-order navigation (attempt_incomplete, through the 1.0 reader)`, async () => {
+    const { observation } = await listenerAttempt({
+      commitSignal,
+      after: (fake, query) => {
+        const pending = `${ORIGIN}/x/pending-document/${query}`;
+        fake.fail(fake.send(pending));
+        fake.hop(pending, false);
+      },
+    });
+    assert.deepEqual(kindsAfterCheckout(observation), [["/x/pending-document/", "history"]]);
+    assert.equal(observation.post_order_seq, null);
+    const url = (await rowsOf(observation)).get("tracking.url:checkout:url");
+    assert.deepEqual(resultOf(url), ["unexercised", "attempt_incomplete"]);
+    assert.equal(url.coverage.last_observed, `${ORIGIN}/x/pending-document/`);
+    const [read] = await readRows([url]);
+    assert.deepEqual(resultOf(read), ["unexercised", "attempt_incomplete"], "through the 1.0 reader");
+  });
+}
+
+// Each sequence after the accepted create, with the kind of every later hop
+// and the URL row. Where a sequence is one that already read correctly, it
+// ends with an aborted request for its last URL and a pushState to it.
+const HOP_SEQUENCES = [
+  ["a document navigation answered 200 and committed reads document and is the post-order navigation; an aborted request for the same URL, then a pushState to it, reads history", (fake, query) => {
+    fake.navigate(`${ORIGIN}/x/receipt/${query}`);
+    fake.fail(fake.send(`${ORIGIN}/x/receipt/${query}`));
+    fake.hop(`${ORIGIN}/x/receipt/${query}`, false);
+  }, [["/x/receipt/", "document"], ["/x/receipt/", "history"]], ["pass", null]],
+  ["a redirect chain (302, then 200 at the final URL) reads document at the final URL; an aborted request for it, then a pushState to it, reads history", (fake, query) => {
+    const first = fake.send(`${ORIGIN}/x/redirect/${query}`);
+    fake.respond(first, 302);
+    fake.respond(fake.send(`${ORIGIN}/x/receipt/${query}`, { from: first }), 200);
+    fake.hop(`${ORIGIN}/x/receipt/${query}`, true);
+    fake.fail(fake.send(`${ORIGIN}/x/receipt/${query}`));
+    fake.hop(`${ORIGIN}/x/receipt/${query}`, false);
+  }, [["/x/receipt/", "document"], ["/x/receipt/", "history"]], ["pass", null]],
+  ["a navigation request never answered, then a pushState to its URL, reads history", (fake, query) => {
+    fake.send(`${ORIGIN}/x/pending-document/${query}`);
+    fake.hop(`${ORIGIN}/x/pending-document/${query}`, false);
+  }, [["/x/pending-document/", "history"]], ["unexercised", "attempt_incomplete"]],
+  ["a navigation request answered 200 and then aborted (window.stop() before commit), then a pushState to its URL, reads history", (fake, query) => {
+    const sent = fake.send(`${ORIGIN}/x/pending-document/${query}`);
+    fake.respond(sent, 200);
+    fake.fail(sent);
+    fake.hop(`${ORIGIN}/x/pending-document/${query}`, false);
+  }, [["/x/pending-document/", "history"]], ["unexercised", "attempt_incomplete"]],
+  ["a navigation request answered 204 (no document), then a pushState to its URL, reads history", (fake, query) => {
+    fake.respond(fake.send(`${ORIGIN}/x/pending-document/${query}`), 204);
+    fake.hop(`${ORIGIN}/x/pending-document/${query}`, false);
+  }, [["/x/pending-document/", "history"]], ["unexercised", "attempt_incomplete"]],
+  ["a cancelled request, an intervening pushState, a pushState to the cancelled URL, then the same URL requested and aborted again and pushed again: every hop reads history", (fake, query) => {
+    const pending = `${ORIGIN}/x/pending-document/${query}`;
+    fake.fail(fake.send(pending));
+    fake.hop(`${ORIGIN}/x/intervening-history/${query}`, false);
+    fake.hop(pending, false);
+    fake.fail(fake.send(pending));
+    fake.hop(pending, false);
+  }, [["/x/intervening-history/", "history"], ["/x/pending-document/", "history"], ["/x/pending-document/", "history"]], ["unexercised", "attempt_incomplete"]],
+];
+
+for (const [mode, commitSignal] of SIGNAL_MODES) {
+  for (const [label, after, kinds, urlResult] of HOP_SEQUENCES) {
+    test(`live listeners (${mode}): ${label}`, async () => {
+      const { observation } = await listenerAttempt({ commitSignal, after });
+      // With no commit signal, no hop is a document hop and the attempt never
+      // reaches its post-order navigation.
+      assert.deepEqual(kindsAfterCheckout(observation), commitSignal ? kinds : kinds.map(([path]) => [path, "history"]));
+      assert.deepEqual(resultOf((await rowsOf(observation)).get("tracking.url:checkout:url")), commitSignal ? urlResult : ["unexercised", "attempt_incomplete"]);
+    });
+  }
+}
+
+// Every post-create sequence a page can produce for one hop to the receipt,
+// and whether the browser's commit signal for that hop says a new document
+// committed at its URL. Network events (requests, answers of any status,
+// failures, late answers) and a signal naming another URL never decide.
+const COMMIT_TABLE = [
+  ["an aborted request, then a pushState directly to its URL", (fake, receipt) => {
+    fake.fail(fake.send(receipt));
+    fake.hop(receipt, false);
+  }, false],
+  ["an aborted request, then a retry answered 200 that commits", (fake, receipt) => {
+    fake.fail(fake.send(receipt));
+    fake.respond(fake.send(receipt), 200);
+    fake.hop(receipt, true);
+  }, true],
+  ["two requests: the first aborted, the second answered, then the commit", (fake, receipt) => {
+    const [first, second] = [fake.send(receipt), fake.send(receipt)];
+    fake.fail(first);
+    fake.respond(second, 200);
+    fake.hop(receipt, true);
+  }, true],
+  ["two requests: the second answered, the first aborted, then the commit", (fake, receipt) => {
+    const [first, second] = [fake.send(receipt), fake.send(receipt)];
+    fake.respond(second, 200);
+    fake.fail(first);
+    fake.hop(receipt, true);
+  }, true],
+  ["a request answered only by a 302, then a pushState to its URL", (fake, receipt) => {
+    fake.respond(fake.send(receipt), 302);
+    fake.hop(receipt, false);
+  }, false],
+  ["a request answered 304, then a document commit", (fake, receipt) => {
+    fake.respond(fake.send(receipt), 304);
+    fake.hop(receipt, true);
+  }, true],
+  ["a download answered 200 (Content-Disposition: attachment), then a pushState to its URL", (fake, receipt) => {
+    fake.respond(fake.send(receipt), 200, "", { "content-disposition": "attachment" });
+    fake.hop(receipt, false);
+  }, false],
+  ["a page restored from the back/forward cache, no request observed", (fake, receipt) => {
+    fake.hop(receipt, true);
+  }, true],
+  ["a document navigation: request, 200, commit", (fake, receipt) => {
+    fake.navigate(receipt);
+  }, true],
+  ["a redirect chain (302, then 200 at the final URL), then the commit at the final URL", (fake, receipt, query) => {
+    const first = fake.send(`${ORIGIN}/x/redirect/${query}`);
+    fake.respond(first, 302);
+    fake.respond(fake.send(receipt, { from: first }), 200);
+    fake.hop(receipt, true);
+  }, true],
+  ["a failed request that receives a late 200, then a pushState to its URL", (fake, receipt) => {
+    const sent = fake.send(receipt);
+    fake.fail(sent);
+    fake.respond(sent, 200);
+    fake.hop(receipt, false);
+  }, false],
+  ["a request answered 200, then a same-document hop to its URL", (fake, receipt) => {
+    fake.respond(fake.send(receipt), 200);
+    fake.hop(receipt, false);
+  }, false],
+  ["a download answered 200, then a hop whose commit signal names another URL", (fake, receipt, query) => {
+    fake.respond(fake.send(receipt), 200, "", { "content-disposition": "attachment" });
+    fake.hop(receipt, true, `${ORIGIN}/x/elsewhere/${query}`);
+  }, false],
+  ["a request answered 200, then a hop whose commit signal names the URL without its query", (fake, receipt) => {
+    fake.respond(fake.send(receipt), 200);
+    fake.hop(receipt, true, receipt.split("?")[0]);
+  }, false],
+  ["a request answered 200, a commit signal reporting an error, then the hop with no signal of its own", (fake, receipt) => {
+    fake.respond(fake.send(receipt), 200);
+    fake.signal({ url: receipt, name: "", newDocument: {}, error: "net::ERR_ABORTED" });
+    fake.hop(receipt, null);
+  }, false],
+];
+
+for (const [mode, commitSignal] of SIGNAL_MODES) {
+  test(`live listeners (${mode}): each post-create sequence reads document only where the commit signal for the hop's own URL says a new document committed; every other hop reads history and the URL row attempt_incomplete, through the 1.0 reader`, async () => {
+    for (const [label, after, committed] of COMMIT_TABLE) {
+      const { observation } = await listenerAttempt({ commitSignal, after: (fake, query) => after(fake, `${ORIGIN}/x/receipt/${query}`, query) });
+      const document = commitSignal && committed;
+      assert.deepEqual(kindsAfterCheckout(observation), [["/x/receipt/", document ? "document" : "history"]], label);
+      assert.equal(observation.post_order_seq, document ? observation.hops.at(-1).seq : null, label);
+      const url = (await rowsOf(observation)).get("tracking.url:checkout:url");
+      assert.deepEqual(resultOf(url), document ? ["pass", null] : ["unexercised", "attempt_incomplete"], label);
+      const [read] = await readRows([url]);
+      assert.deepEqual(resultOf(read), resultOf(url), `${label}: through the 1.0 reader`);
+    }
+  });
+}
+
+// The installed Playwright's own client Frame class, built from its
+// in-process connection with no browser, as the main frame of a page the
+// actual listeners attach to: the object the hop listener reads the commit
+// signal from. `navigated(event)` delivers one protocol "navigated" event to
+// the Frame, as the browser's commit would; the Frame itself then emits
+// "framenavigated" on the page.
+function installedPlaywrightPage(url) {
+  const require = createRequire(import.meta.url);
+  const core = require(createRequire(require.resolve("playwright")).resolve("playwright-core/lib/coreBundle"));
+  const connection = core.inprocess.createInProcessPlaywright()._connection;
+  const guid = "frame@syn-commit-signal";
+  connection.dispatch({ guid: "", method: "__create__", params: { type: "Frame", guid, initializer: { url, name: "", loadStates: [] } } });
+  const frame = connection._objects.get(guid);
+  const page = new EventEmitter();
+  page._eraseEvaluateCallbacks = () => {};
+  page.context = () => ({ emit: () => true, newCDPSession: async () => Object.assign(new EventEmitter(), { send: async () => ({}) }) });
+  page.mainFrame = () => frame;
+  page.evaluate = async () => TAG_READ;
+  frame._page = page;
+  return { frame, page, navigated: (event) => connection.dispatch({ guid, method: "navigated", params: { name: "", ...event } }) };
+}
+
+test("installed Playwright: its Frame emits the commit signal (\"navigated\", with newDocument for a document commit and without it for a same-document one) just before \"framenavigated\"; through the actual listeners only that signal makes a document hop, and a Frame whose signal cannot be subscribed reads history even with the request answered 200", async () => {
+  const { captureCheckoutEvents } = await browserHooks();
+  const { createTrackingRun } = await tracking();
+  const landing = `${ORIGIN}/x/landing/`;
+  const probe = installedPlaywrightPage(landing);
+  assert.equal(typeof probe.frame?._eventEmitter?.on, "function", "the installed Frame has the emitter the hop listener reads");
+  const order = [];
+  probe.frame._eventEmitter.on("navigated", (event) => order.push(["navigated", event.url, Boolean(event.newDocument)]));
+  probe.page.on("framenavigated", (navigatedFrame) => order.push(["framenavigated", navigatedFrame.url()]));
+  probe.navigated({ url: `${ORIGIN}/x/a/`, newDocument: {} });
+  probe.navigated({ url: `${ORIGIN}/x/a/#same` });
+  assert.deepEqual(order, [["navigated", `${ORIGIN}/x/a/`, true], ["framenavigated", `${ORIGIN}/x/a/`], ["navigated", `${ORIGIN}/x/a/#same`, false], ["framenavigated", `${ORIGIN}/x/a/#same`]]);
+
+  // Through the actual listeners on the installed Frame: two document
+  // commits, a same-document hop, then a navigation request answered 200 and
+  // a same-document hop to its URL.
+  const observeWith = (subscribable) => {
+    const { frame, page, navigated } = installedPlaywrightPage(landing);
+    if (!subscribable) frame._eventEmitter = { emit: () => true };
+    const observer = createTrackingRun({ runId: "qa-tracking-hardening-installed", random: () => Buffer.from([1, 2, 3, 4]) }).observe(PLAN);
+    captureCheckoutEvents(page, observer);
+    const entry = observer.runnerUrl(landing, addParam);
+    navigated({ url: entry, newDocument: {} });
+    const query = new URL(entry).search;
+    navigated({ url: `${ORIGIN}/x/checkout/${query}`, newDocument: {} });
+    navigated({ url: `${ORIGIN}/x/cart/${query}` });
+    const answered = { url: () => `${ORIGIN}/x/receipt/${query}`, method: () => "GET", postData: () => null, isNavigationRequest: () => true, frame: () => frame, resourceType: () => "document", redirectedFrom: () => null, timing: () => ({ startTime: Date.now() }) };
+    page.emit("request", answered);
+    page.emit("response", { url: () => answered.url(), status: () => 200, request: () => answered, headers: () => ({}), text: async () => "" });
+    navigated({ url: `${ORIGIN}/x/receipt/${query}` });
+    return observer.finalize({ createActivity: ACCEPTED });
+  };
+  const kinds = (observation) => observation.hops.map((entry) => [entry.path.slice(ORIGIN.length), entry.kind]);
+  assert.deepEqual(kinds(await observeWith(true)), [["/x/landing/", "document"], ["/x/checkout/", "document"], ["/x/cart/", "history"], ["/x/receipt/", "history"]]);
+  assert.deepEqual(kinds(await observeWith(false)), [["/x/landing/", "history"], ["/x/checkout/", "history"], ["/x/cart/", "history"], ["/x/receipt/", "history"]], "no signal: every hop reads history");
+});
+
+test("live listeners, the browser's commit signal decides: a same-document commit to a URL whose request was answered 200 reads history; a document commit with no request observed (a page restored from the back/forward cache) reads document", async () => {
+  const sameDocument = await listenerAttempt({
+    commitSignal: true,
+    after: (fake, query) => {
+      fake.respond(fake.send(`${ORIGIN}/x/receipt/${query}`), 200);
+      fake.hop(`${ORIGIN}/x/receipt/${query}`, false);
+    },
+  });
+  assert.deepEqual(kindsAfterCheckout(sameDocument.observation), [["/x/receipt/", "history"]]);
+  assert.equal(sameDocument.observation.post_order_seq, null);
+  const restored = await listenerAttempt({ commitSignal: true, after: (fake, query) => fake.hop(`${ORIGIN}/x/receipt/${query}`, true) });
+  assert.deepEqual(kindsAfterCheckout(restored.observation), [["/x/receipt/", "document"]]);
+  assert.deepEqual(resultOf((await rowsOf(restored.observation)).get("tracking.url:checkout:url")), ["pass", null]);
+});
+
+// ---------------------------------------------------------------------------
+// Persisted values: one projection over every key and string, decoded
+
+// Whether `value`, serialized and percent-decoded until stable, holds the
+// private value anywhere.
+function holdsPrivate(value) {
+  let text = JSON.stringify(value);
+  for (let round = 0; round < 8; round += 1) {
+    if (text.includes(PRIVATE)) return true;
+    const next = text.replace(/%([0-9a-f]{2})/gi, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
+    if (next === text) return false;
+    text = next;
+  }
+  return true;
+}
+
+// The encoded forms of "/x/?k=<private>": "%3F" with an encoded path, mixed
+// case "%3f", double-encoded "%253F", each with what the projection keeps:
+// the text before the query, in its own encoding, and the marker.
+const ENCODED_QUERY_FORMS = Object.freeze([
+  [`load %2Fx%2F%3Fk%3D${PRIVATE}`, "load %2Fx%2F<query-redacted>"],
+  [`load /x/%3fk%3d${PRIVATE}`, "load /x/<query-redacted>"],
+  [`load /x/%253Fk%253D${PRIVATE}`, "load /x/<query-redacted>"],
+  [`load %252Fx%252F%253Fk%253D${PRIVATE} then`, "load %252Fx%252F<query-redacted>"],
+]);
+
+test("persisted keys: a query inside a response-detail object key leaves no query value in the event log or the test order; colliding keys keep every value under deterministic names", async () => {
+  const { sanitizedEvents, persistedTestOrder } = await browserHooks();
+  const detail = { [`load /x/?k=${PRIVATE}`]: "invalid", [`load %2Fx%2F%3Fk%3D${PRIVATE}`]: "encoded", "load /x/": "plain", [`load /x/?k=other_${PRIVATE}`]: "second" };
+  const events = { requests: [], responses: [{ status: 400, url: `${ORIGIN}/api/v1/orders/`, body: { detail } }], failed: [], console: [], pageErrors: [], navigations: [] };
+  const persistedEvents = sanitizedEvents(events);
+  assert.deepEqual(persistedEvents.responses[0].body.detail, { "load /x/<query-redacted>": "invalid", "load %2Fx%2F<query-redacted>": "encoded", "load /x/": "plain", "load /x/<query-redacted> [2]": "second" });
+  const order = persistedTestOrder({ path: "accept", checkout_url: `${ORIGIN}/x/checkout/`, final_url: `${ORIGIN}/x/receipt/`, verification: { verified: false, [`at /x/?k=${PRIVATE}`]: { [`%3Fk%3D${PRIVATE}`]: "nested" } }, evidence: { events: persistedEvents } });
+  assert.deepEqual(order.verification, { verified: false, "at /x/<query-redacted>": { "<query-redacted>": "nested" } });
+  assert.equal(holdsPrivate(persistedEvents), false, "event log");
+  assert.equal(holdsPrivate(order), false, "test order");
+  assertNothingPrivatePersisted(order, { markers: { private: PRIVATE } });
+});
+
+test("persisted text: encoded query text (%3F, %3f, %253F) in an error leaves no query value in the event log, the test order or the runner assertion, and the text outside the query keeps its encoding", async () => {
+  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder, persistedAssertion } = await browserHooks();
+  for (const [text, kept] of ENCODED_QUERY_FORMS) {
+    const fake = navigationEventsPage();
+    const events = captureCheckoutEvents(fake.page, null);
+    fake.page.emit("console", { type: () => "error", text: () => text });
+    fake.page.emit("pageerror", new Error(text));
+    const failed = fake.send(`${ORIGIN}/api/v1/orders/`, { method: "POST", navigation: false });
+    failed.failure = () => ({ errorText: text });
+    fake.fail(failed);
+    const persistedEvents = sanitizedEvents(events);
+    assert.equal(persistedEvents.console[0].text, kept, `${text}: console`);
+    assert.deepEqual(persistedEvents.pageErrors, [kept], `${text}: page error`);
+    assert.equal(persistedEvents.failed[0].failure, kept, `${text}: request failure`);
+    const order = persistedTestOrder({ path: "accept", error: text, verification: { verified: false, error: text }, evidence: { steps: [{ step: "opened_checkout", detail: text, label: text }], events: persistedEvents } });
+    assert.equal(order.error, kept, `${text}: order error`);
+    const assertion = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", expected: text, actual: text, evidence: { label: text, events: persistedEvents } });
+    assert.equal(assertion.actual, kept, `${text}: assertion actual`);
+    assert.equal(assertion.evidence.label, kept, `${text}: assertion label`);
+    for (const [root, value] of [["event log", persistedEvents], ["test order", order], ["runner assertion", assertion]]) assert.equal(holdsPrivate(value), false, `${text}: ${root}`);
+  }
+});
+
+test("persisted tracking rows: a rendered tag name holding encoded query text (%3F, %3f, %253F) leaves no query value in the observation, row ids, assertion ids or the persisted rows, and the rows re-derive", async () => {
+  const { trackingQaAssertion } = await tracking();
+  const { persistedQcResult, persistedAssertion } = await browserHooks();
+  for (const [text, kept] of ENCODED_QUERY_FORMS) {
+    const { observation } = await liveAttempt({ page: pageAnswering({ tags: [{ name: text, value: "syn_v" }], inline: false, pins: [] }) });
+    assert.equal(holdsPrivate(observation), false, `${text}: observation`);
+    const rows = [...(await rowsOf(observation)).values()];
+    assert.ok(rows.some((row) => row.id === `tracking.tag:checkout:tag:${kept}`), `${text}: the tag keeps its row under the name without its query`);
+    const assertions = rows.map(trackingQaAssertion);
+    for (const [index, row] of rows.entries()) {
+      assert.equal(persistedQcResult(row), row, `${row.id}: already projected, persisted as built`);
+      assert.equal(persistedAssertion(assertions[index]), assertions[index], `${assertions[index].id}: already projected, persisted as built`);
+    }
+    assert.equal(holdsPrivate({ rows, assertions }), false, `${text}: rows and assertions`);
+    assert.deepEqual((await readRows(rows)).map(resultOf), rows.map(resultOf), `${text}: through the 1.0 reader`);
+  }
+});
+
+test("persisted verdict, one probe per root: event log, test order, runner assertion, QC rows (hop paths, failing hop, coverage, tag names, ids) and their qc.* assertions hold no non-seed query value in any encoding", async () => {
+  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder, persistedAssertion, persistedQcResult } = await browserHooks();
+  const { trackingQaAssertion } = await tracking();
+  const encoded = `%3Fk%3D${PRIVATE}`;
+  // Event log, through the actual listeners.
+  const fake = navigationEventsPage();
+  const events = captureCheckoutEvents(fake.page, null);
+  fake.page.emit("console", { type: () => "error", text: () => `load /x/${encoded}` });
+  fake.page.emit("pageerror", new Error(`load /x/%253Fk%253D${PRIVATE}`));
+  const create = fake.send(`${ORIGIN}/api/v1/orders/${encoded}`, { method: "POST", navigation: false, body: JSON.stringify({ [`/x/?k=${PRIVATE}`]: 1 }) });
+  fake.respond(create, 400, JSON.stringify({ detail: { [`load /x/${encoded}`]: "invalid" }, payment_details: `declined at /x/%3fk%3d${PRIVATE}` }));
+  await settle();
+  await settle();
+  const persistedEvents = sanitizedEvents(events);
+  assert.ok(persistedEvents.responses.length && persistedEvents.requests.length, "setup: the create request and response were logged");
+  // Test order and runner assertion.
+  const order = persistedTestOrder({ path: "accept", checkout_url: `${ORIGIN}/x/checkout/${encoded}`, final_url: `${ORIGIN}/x/receipt/`, error: `goto /x/${encoded}`, verification: { verified: false, [`note /x/${encoded}`]: `see %252Fx%252F%253Fk%253D${PRIVATE}` }, evidence: { steps: [{ step: "opened_checkout", label: `open /x/${encoded}` }], events: persistedEvents } });
+  const runner = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", page: "checkout", actual: `goto /x/${encoded}`, evidence: { label: `open /x/${encoded}`, labels: { [`open /x/${encoded}`]: true }, events: persistedEvents } });
+  // QC rows: a document hop from a path holding an encoded query drops
+  // utm_medium on the next document hop (failing hop and coverage name the
+  // paths), and a rendered tag name holds an encoded query.
+  const { observation } = await liveAttempt({
+    page: pageAnswering({ tags: [{ name: "syn_tag", value: "syn_v" }, { name: `syn_tag${encoded}`, value: "syn_v" }], inline: false, pins: [] }),
+    during: (observer, seeds) => {
+      const all = new URLSearchParams(seeds);
+      const dropped = new URLSearchParams(seeds);
+      dropped.delete("utm_medium");
+      for (const target of [`${ORIGIN}/x/${encoded}/?${all}`, `${ORIGIN}/x/next/?${dropped}`]) observer.onFrameNavigated(target, { url: target, newDocument: true });
+    },
+  });
+  const built = [...(await rowsOf(observation)).values()];
+  const url = built.find((row) => row.id === "tracking.url:checkout:url");
+  assert.deepEqual(resultOf(url), ["warning", "url_param_dropped"], "setup: the drop is named");
+  assert.deepEqual(url.members.find((entry) => entry.key === "utm_medium").failing_hop, { from: `${ORIGIN}/x/<query-redacted>`, to: `${ORIGIN}/x/next/` });
+  const qcResults = built.map(persistedQcResult);
+  const qcAssertions = built.map(trackingQaAssertion).map(persistedAssertion);
+  assert.deepEqual(qcResults, built, "the persisted rows equal the rows as built");
+  const verdict = fullVerdict({ assertions: [runner, ...qcAssertions], measuredAt });
+  verdict.test_orders = [order];
+  verdict.qc_results = qcResults;
+  for (const [root, value] of [["event log", persistedEvents], ["test order", order], ["runner assertion", runner], ["QC rows", qcResults], ["qc.* assertions", qcAssertions], ["verdict", verdict]]) {
+    assert.equal(holdsPrivate(value), false, `${root}: no query value in any encoding`);
+  }
+  assertNothingPrivatePersisted(withoutBodyMarkers(verdict), { markers: { private: PRIVATE } });
+  assert.deepEqual((await readRows(qcResults)).map(resultOf), built.map(resultOf), "the persisted rows re-derive through the 1.0 reader");
+});
+
+// ---------------------------------------------------------------------------
+// Persisted values: everything from the first query to the end of the string
+
+const QUERY_MARKER = "<query-redacted>";
+const privacy = () => import("./qa-url-privacy.mjs");
+
+// Text where what follows the query's "?" hides where the query ends (an
+// encoded quote or space before the value, an encoded quoted second
+// parameter, a quote inside a literal query), each with its projection.
+const CUT_FORMS = Object.freeze([
+  [`load /x/%3Fk%3D%22${PRIVATE}%22`, `load /x/${QUERY_MARKER}`],
+  [`load /x/%3Fk%3D%20${PRIVATE}`, `load /x/${QUERY_MARKER}`],
+  [`load /x/%3Fa%3D1%26b%3D%22${PRIVATE}%22 then`, `load /x/${QUERY_MARKER}`],
+  [`load /x/%253Fk%253D%2522${PRIVATE}%2522 then`, `load /x/${QUERY_MARKER}`],
+  [`see ${ORIGIN}/x/%3Fk%3D%22${PRIVATE}%22 then`, `see ${ORIGIN}/x/${QUERY_MARKER}`],
+  [`see ${ORIGIN}/x/?k="${PRIVATE} more" then`, `see ${ORIGIN}/x/${QUERY_MARKER}`],
+  [`load /x/?k=1 then /y/ "${PRIVATE}"`, `load /x/${QUERY_MARKER}`],
+]);
+
+test("persisted text: from the first query, found literally or by percent-decoding, to the end of the string is cut, whatever follows the \"?\" (encoded quote or space before the value, encoded quoted second parameter, quote inside a literal query); every URL before it keeps its origin+path", async () => {
+  const { redactUrlQueriesInText } = await privacy();
+  const { sanitizedEvents, persistedTestOrder, persistedAssertion } = await browserHooks();
+  for (const [text, kept] of CUT_FORMS) {
+    assert.equal(redactUrlQueriesInText(text), kept, text);
+    const events = { requests: [], responses: [{ status: 400, url: `${ORIGIN}/api/v1/orders/`, body: { detail: { [text]: text } } }], failed: [{ url: `${ORIGIN}/x/`, failure: text }], console: [{ type: "error", text }], pageErrors: [text], navigations: [] };
+    const persistedEvents = sanitizedEvents(events);
+    const order = persistedTestOrder({ path: "accept", error: text, verification: { verified: false, [text]: text }, evidence: { steps: [{ step: "opened_checkout", label: text }], events: persistedEvents } });
+    const assertion = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", actual: text, evidence: { labels: { [text]: true }, events: persistedEvents } });
+    for (const [root, value] of [["event log", persistedEvents], ["test order", order], ["runner assertion", assertion]]) {
+      assert.equal(holdsPrivate(value), false, `${text}: ${root}`);
+      assertNothingPrivatePersisted(withoutBodyMarkers(value), { markers: { private: PRIVATE } });
+    }
+  }
+});
+
+test("persisted text: a string still decoding after the bounded rounds is replaced whole by the marker; a string over 16 KiB is cut to 16 KiB with a marker before it is projected; the projection of its own output is that output", async () => {
+  const { redactUrlQueriesInText, redactPersisted } = await privacy();
+  const deep = (depth) => `load /x/%${"25".repeat(depth)}3Fk=${PRIVATE}`;
+  assert.equal(redactUrlQueriesInText(deep(7)), `load /x/${QUERY_MARKER}`);
+  for (const depth of [8, 9, 16]) assert.equal(redactUrlQueriesInText(deep(depth)), QUERY_MARKER, `depth ${depth}`);
+  const long = `${"a".repeat(20_000)}?k=${PRIVATE}`;
+  const cut = redactUrlQueriesInText(long);
+  assert.equal(cut.length, 16 * 1024);
+  assert.ok(cut.endsWith("[truncated]") && !cut.includes(PRIVATE));
+  assert.equal(redactUrlQueriesInText(`${"a".repeat(100)}?k=${"b".repeat(20_000)}`), `${"a".repeat(100)}${QUERY_MARKER}`);
+  const inputs = [...CUT_FORMS.map(([text]) => text), ...QUERY_FORMS, ...ENCODED_QUERY_FORMS.map(([text]) => text), deep(7), deep(9), long, QUERY_MARKER, `see ${ORIGIN}/x/#frag then ${ORIGIN}/y/?k=1`, `${ORIGIN}/x/%3F`, "plain text, no query"];
+  for (const text of inputs) {
+    const once = redactUrlQueriesInText(text);
+    assert.equal(redactUrlQueriesInText(once), once, `idempotent: ${text.slice(0, 80)}`);
+    assert.equal(holdsPrivate(once), false, `no query value: ${text.slice(0, 80)}`);
+  }
+  const keyed = { [`load /x/?k=${PRIVATE}`]: 1, [`load /x/%3Fk%3D%22${PRIVATE}%22`]: 2, [`load /x/${QUERY_MARKER}`]: 3 };
+  const projected = redactPersisted(keyed);
+  assert.deepEqual(projected, { [`load /x/${QUERY_MARKER}`]: 1, [`load /x/${QUERY_MARKER} [2]`]: 2, [`load /x/${QUERY_MARKER} [3]`]: 3 });
+  assert.deepEqual(redactPersisted(projected), projected, "idempotent over keys");
+});
+
+test("persisted text: projecting a 1,000,000-character string takes under 200 ms, whatever it holds (letters, \"://\" runs, percent runs, a query at the end)", async () => {
+  const moduleUrl = new URL("./qa-url-privacy.mjs", import.meta.url).href;
+  const worker = new Worker(`
+    const { parentPort } = require("node:worker_threads");
+    import(${JSON.stringify(moduleUrl)}).then(({ redactUrlQueriesInText }) => {
+      const size = 1_000_000;
+      const inputs = {
+        letters: "a".repeat(size),
+        schemes: "a://".repeat(size / 4),
+        percents: "%25".repeat(Math.floor(size / 3)),
+        "query at the end": \`\${"x".repeat(size - 10)}?k=secret\`,
+      };
+      const timings = {};
+      for (const [label, text] of Object.entries(inputs)) {
+        const started = performance.now();
+        const projected = redactUrlQueriesInText(text);
+        timings[label] = { ms: performance.now() - started, length: projected.length };
+      }
+      parentPort.postMessage(timings);
+    });
+  `, { eval: true });
+  let timer;
+  try {
+    const timings = await Promise.race([
+      new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("the projection did not finish within 10 s")), 10_000); }),
+    ]);
+    for (const [label, { ms, length }] of Object.entries(timings)) {
+      assert.ok(ms < 200, `${label}: ${ms.toFixed(1)} ms`);
+      assert.ok(length <= 16 * 1024, `${label}: bounded output (${length})`);
+    }
+  } finally {
+    clearTimeout(timer);
+    await worker.terminate();
+  }
+});
+
+test("persisted verdict, one probe per root, for text whose query end is hidden: event log, test order, runner assertion, QC rows (hop paths, failing hop, coverage, tag names, ids) and their qc.* assertions hold no non-seed query value in any encoding, and the rows re-derive", async () => {
+  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder, persistedAssertion, persistedQcResult } = await browserHooks();
+  const { trackingQaAssertion } = await tracking();
+  const quoted = `%3Fk%3D%22${PRIVATE}%22`;
+  const spaced = `%3Fk%3D%20${PRIVATE}`;
+  const second = `%3Fa%3D1%26b%3D%22${PRIVATE}%22`;
+  // Event log, through the actual listeners.
+  const fake = navigationEventsPage();
+  const events = captureCheckoutEvents(fake.page, null);
+  fake.page.emit("console", { type: () => "error", text: () => `load /x/${quoted}` });
+  fake.page.emit("pageerror", new Error(`load /x/${spaced}`));
+  const create = fake.send(`${ORIGIN}/api/v1/orders/${quoted}`, { method: "POST", navigation: false, body: JSON.stringify({ [`/x/${second}`]: 1 }) });
+  fake.respond(create, 400, JSON.stringify({ detail: { [`load /x/${second}`]: `see /x/${spaced}` }, payment_details: `declined at /x/${quoted}` }));
+  await settle();
+  await settle();
+  const persistedEvents = sanitizedEvents(events);
+  assert.ok(persistedEvents.responses.length && persistedEvents.requests.length, "setup: the create request and response were logged");
+  // Test order and runner assertion.
+  const order = persistedTestOrder({ path: "accept", checkout_url: `${ORIGIN}/x/checkout/${quoted}`, final_url: `${ORIGIN}/x/receipt/`, error: `goto /x/${spaced}`, verification: { verified: false, [`note /x/${second}`]: `see /x/${quoted}` }, evidence: { steps: [{ step: "opened_checkout", label: `open /x/${second}` }], events: persistedEvents } });
+  const runner = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", page: "checkout", actual: `goto /x/${quoted}`, evidence: { label: `open /x/${spaced}`, labels: { [`open /x/${second}`]: true }, events: persistedEvents } });
+  // QC rows: a document hop from a path holding a hidden-end query drops
+  // utm_medium on the next document hop, the last hop's path holds one too,
+  // and rendered tag names hold them.
+  const { observation } = await liveAttempt({
+    page: pageAnswering({ tags: [{ name: "syn_tag", value: "syn_v" }, { name: `syn_tag${quoted}`, value: "syn_v" }, { name: `syn_tag${second}`, value: "syn_v" }], inline: false, pins: [] }),
+    during: (observer, seeds) => {
+      const all = new URLSearchParams(seeds);
+      const dropped = new URLSearchParams(seeds);
+      dropped.delete("utm_medium");
+      for (const target of [`${ORIGIN}/x/${quoted}/?${all}`, `${ORIGIN}/x/next/${spaced}/?${dropped}`]) observer.onFrameNavigated(target, { url: target, newDocument: true });
+    },
+  });
+  const built = [...(await rowsOf(observation)).values()];
+  const url = built.find((row) => row.id === "tracking.url:checkout:url");
+  assert.deepEqual(resultOf(url), ["warning", "url_param_dropped"], "setup: the drop is named");
+  assert.deepEqual(url.members.find((entry) => entry.key === "utm_medium").failing_hop, { from: `${ORIGIN}/x/${QUERY_MARKER}`, to: `${ORIGIN}/x/next/${QUERY_MARKER}` });
+  const qcResults = built.map(persistedQcResult);
+  const qcAssertions = built.map(trackingQaAssertion).map(persistedAssertion);
+  assert.deepEqual(qcResults, built, "the persisted rows equal the rows as built");
+  const verdict = fullVerdict({ assertions: [runner, ...qcAssertions], measuredAt });
+  verdict.test_orders = [order];
+  verdict.qc_results = qcResults;
+  for (const [root, value] of [["event log", persistedEvents], ["test order", order], ["runner assertion", runner], ["observation", observation], ["QC rows", qcResults], ["qc.* assertions", qcAssertions], ["verdict", verdict]]) {
+    assert.equal(holdsPrivate(value), false, `${root}: no query value in any encoding`);
+  }
+  assertNothingPrivatePersisted(withoutBodyMarkers(verdict), { markers: { private: PRIVATE } });
+  assert.deepEqual((await readRows(qcResults)).map(resultOf), built.map(resultOf), "the persisted rows re-derive through the 1.0 reader");
+});
+
+// ---------------------------------------------------------------------------
+// The verdict as `qa run` writes it: one projection for every persisted value
+
+const nodeHooks = async () => (await import("./qa-node.mjs")).__qaNodeTestHooks;
+
+// What finalizeQaRun needs from a resolved run: no packet (so no sidecar),
+// no publish, the verdict written under a temporary output directory.
+function finalizeInputs(topologies, outputDir) {
+  const gate = { status: "not_applicable", reason: "synthetic run" };
+  return {
+    args: { _: ["qa", "run"], "output-dir": outputDir, "no-post-verdict": true, json: true },
+    resolved: {
+      topologies,
+      packetPath: null,
+      packet: null,
+      mapId: "syn-map",
+      localSpecId: null,
+      publicRouteSlug: null,
+      spec: { campaign: {} },
+      specVersion: "v42",
+      specHash: sha256("synthetic spec"),
+      baseUrl: `${ORIGIN}/x/`,
+      proxyBase: ORIGIN,
+      themeGate: { ...gate, code: "theme_gate.not_applicable" },
+      polishGate: { ...gate, code: "polish.not_applicable" },
+    },
+  };
+}
+
+function withOutputDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), "qa-persisted-verdict-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+test("persisted verdict: with no checkout URL, a query in the upsell page_id and funnel_id leaves no query value in the coverage assertion, its page or funnel evidence, or the verdict bytes written through maybeRunTestOrders", async (t) => {
+  const { maybeRunTestOrders, finalizeQaRun } = await nodeHooks();
+  const marker = "syn_verify_query_value_6b92";
+  const topologies = [{
+    funnel_id: `syn_funnel?key=${marker}`,
+    pages: [
+      { page_id: "checkout", page_type: "checkout" },
+      { page_id: `syn_upsell?key=${marker}`, page_type: "upsell", url: `${ORIGIN}/x/upsell/` },
+    ],
+  }];
+  const { args, resolved } = finalizeInputs(topologies, withOutputDir(t));
+  const assertions = [];
+  const orders = await maybeRunTestOrders({ args: { ...args, "test-order": "accept" }, resolved, runId: QA_RUN_ID, assertions });
+  assert.equal(assertions.find((entry) => entry.id === "browser-test-order:checkout")?.actual, "missing", "setup: the run had no checkout URL");
+  assert.ok(JSON.stringify(assertions).includes(marker), "setup: the coverage row as built names the query-bearing page and funnel");
+  const result = await finalizeQaRun({ args, resolved, runId: QA_RUN_ID, startedAt: measuredAt, assertions, testOrders: orders.orders, qcResults: orders.qc_results });
+  const bytes = readFileSync(result.local_path, "utf8");
+  const persisted = JSON.parse(bytes);
+  assert.ok(persisted.assertions.some((entry) => /upsell|coverage/.test(entry.id) && entry.id !== "browser-test-order:checkout"), "setup: the coverage assertion is persisted");
+  assert.equal(bytes.includes(marker), false, "the verdict bytes hold no query value");
+  assert.equal(holdsPrivate(persisted) || JSON.stringify(persisted).includes(marker), false);
+  assert.equal(JSON.stringify(result.verdict).includes(marker), false, "the verdict the run returns is the persisted one");
+  assert.deepEqual(JSON.parse(JSON.stringify(result.verdict)), persisted);
+  assertNothingPrivatePersisted(persisted, { markers: { private: marker } });
+});
+
+test("persisted verdict: a query-bearing value at a key no runner projects (assertion, its evidence, a test order) leaves no non-seed query value in the bytes written, and the QC rows re-derive from the persisted verdict", async (t) => {
+  const { finalizeQaRun } = await nodeHooks();
+  const { persistedQcResult } = await browserHooks();
+  const { trackingQaAssertion } = await tracking();
+  const { loadQcRederivers } = await import("./qc-check-registry.mjs");
+  const { readQaResults } = await import("./qc-results.mjs");
+  const { observation, seeds } = await liveAttempt();
+  const built = [...(await rowsOf(observation)).values()];
+  const qcResults = built.map(persistedQcResult);
+  const literal = `load ${ORIGIN}/x/?k=${PRIVATE}`;
+  const encoded = `load /x/%253Fk%253D${PRIVATE}`;
+  const assertions = [
+    ...qcResults.map(trackingQaAssertion),
+    {
+      id: "syn-unprojected:checkout",
+      family: "browser-test-order",
+      page: "checkout",
+      status: "warn",
+      severity: "warn",
+      expected: "synthetic",
+      actual: literal,
+      syn_unlisted_field: literal,
+      evidence: { syn_unlisted_evidence: { [literal]: encoded, list: [encoded] } },
+    },
+  ];
+  const testOrders = [{ path: "accept", syn_unlisted_field: encoded, [`note ${literal}`]: true }];
+  const { args, resolved } = finalizeInputs([{ funnel_id: "syn_funnel", pages: [] }], withOutputDir(t));
+  const result = await finalizeQaRun({ args, resolved, runId: QA_RUN_ID, startedAt: measuredAt, assertions, testOrders, qcResults });
+  const bytes = readFileSync(result.local_path, "utf8");
+  const persisted = JSON.parse(bytes);
+  const unprojected = persisted.assertions.find((entry) => entry.id === "syn-unprojected:checkout");
+  assert.equal(unprojected.syn_unlisted_field, `load ${ORIGIN}/x/${QUERY_MARKER}`, "the new key is persisted, cut at its query");
+  assert.equal(persisted.test_orders[0].syn_unlisted_field, `load /x/${QUERY_MARKER}`);
+  assert.equal(bytes.includes(PRIVATE), false);
+  assert.equal(holdsPrivate(persisted), false, "no query value in any encoding");
+  assertNothingPrivatePersisted(persisted, { markers: { private: PRIVATE } });
+  assert.ok(Object.values(seeds).some((seed) => bytes.includes(seed)), "setup: the seed values are persisted as observed");
+  const reread = readQaResults({
+    stageEvidence: { qc_results: result.qc_results, qc_build_fingerprint: BUILD_FP },
+    stage: { identity: { verdict_run_id: QA_RUN_ID } },
+    fullVerdict: persisted,
+    currentBuild: BUILD_FP,
+    rederivers: await loadQcRederivers(),
+  });
+  assert.deepEqual(reread.map(resultOf), built.map(resultOf), "the rows re-derive through the 1.0 reader from the persisted verdict");
+});

@@ -293,3 +293,179 @@ browserTest("F1.1-I30 values equal through a document page hop; after the accept
   // The after-create replaceState is a history hop on the same origin+path.
   assertUnexercisedUrl(rowOf(rows, URL_ID), "attempt_incomplete", `${base}/x/checkout/`);
 });
+
+// ---------------------------------------------------------------------------
+// A navigation request that never committed
+
+// A loopback front for the stub campaign: every request is passed through to
+// the stub, except the pending document, which is held open (never answered)
+// until the front closes.
+async function startPendingFront(stub) {
+  const { createServer, request: forward } = await import("node:http");
+  const target = new URL(stub.base);
+  const held = new Set();
+  const pending = [];
+  const server = createServer((incoming, outgoing) => {
+    const url = new URL(incoming.url, stub.base);
+    if (url.pathname === "/x/pending-document/") {
+      pending.push(url.search);
+      held.add(outgoing);
+      return;
+    }
+    const upstream = forward({ hostname: target.hostname, port: target.port, path: incoming.url, method: incoming.method, headers: incoming.headers }, (answer) => {
+      outgoing.writeHead(answer.statusCode, answer.headers);
+      answer.pipe(outgoing);
+    });
+    upstream.on("error", () => outgoing.destroy());
+    incoming.pipe(upstream);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    base: `http://127.0.0.1:${server.address().port}`,
+    pending,
+    close: () => new Promise((resolve) => {
+      for (const response of held) response.destroy();
+      server.closeAllConnections?.();
+      server.close(resolve);
+    }),
+  };
+}
+
+// On checkout after the landing hop, the first submit starts a main-frame
+// navigation to the pending document, cancels it with window.stop() before any
+// response (no document commits), pushes /x/intervening-history/, then lets
+// the stub submit the create. Once the create is accepted (the stub stays on
+// the page), the page pushes the cancelled request's own URL. No document
+// navigation follows.
+const CANCELLED_NAVIGATION_SCRIPT = `<script>
+(function () {
+  if (!sessionStorage.getItem("stub-sdk:entered")) return;
+  var search = location.search;
+  var form = document.querySelector("form[data-stub-checkout]");
+  var original = window.fetch;
+  window.fetch = function (input, init) {
+    var answer = original.apply(this, arguments);
+    if (init && init.method === "POST") {
+      answer.then(function (response) {
+        if (response.ok) setTimeout(function () { history.pushState({}, "", "/x/pending-document/" + search); }, 100);
+      }, function () {});
+    }
+    return answer;
+  };
+  var armed = true;
+  window.addEventListener("submit", function (event) {
+    if (!armed) return;
+    armed = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    location.href = "/x/pending-document/" + search;
+    setTimeout(function () {
+      window.stop();
+      history.pushState({}, "", "/x/intervening-history/" + search);
+      form.requestSubmit();
+    }, 400);
+  }, true);
+})();
+</script>`;
+
+browserTest("a main-frame navigation cancelled before it commits, then a history hop to its URL after the accepted create, never reads as the post-order navigation: URL row unexercised (attempt_incomplete)", T, async () => {
+  const { installBrowserGuard, startTrackingStub, stubTopologies, BASE_ARGS } = await import("./qa-tracking-params-fixtures.mjs");
+  await installBrowserGuard();
+  const { runBrowserTestOrders } = await import("./qa-browser.mjs");
+  const scenario = { direct: true, afterCreate: "stay", checkoutInline: CANCELLED_NAVIGATION_SCRIPT };
+  const stub = await startTrackingStub(scenario);
+  const front = await startPendingFront(stub);
+  let result;
+  try {
+    const topologies = stubTopologies({ ...stub, base: front.base }, scenario);
+    result = await runBrowserTestOrders(topologies, { ...BASE_ARGS, "step-timeout-ms": 12000 }, "qa-tracking-url-cancelled", {});
+  } finally {
+    await front.close();
+    await stub.close();
+  }
+  const { log } = stub;
+  const base = front.base;
+  assert.deepEqual(documentPaths(log), ["/x/checkout/", "/x/landing/", "/x/checkout/"], "setup: no document after checkout committed");
+  assert.equal(front.pending.length, 1, "setup: the pending document was requested once and never answered");
+  assert.equal(log.creates.length, 1, "setup: one create was posted");
+  assertSeeded(log, 3);
+  for (const key of DEFAULT_URL_KEYS) assert.match(new URLSearchParams(front.pending[0]).get(key) || "", SEED_VALUE, `setup: the cancelled request carried the seed for ${key}`);
+  await loadModule();
+  const rows = await trackingRows(result, IDS);
+  const url = rowOf(rows, URL_ID);
+  const { observation } = url;
+  assert.equal(observation.create, "accepted", "setup: the create was accepted");
+  const pageHops = observation.hops.filter((entry) => entry.initiator === "page").map((entry) => [entry.path, entry.kind]);
+  assert.deepEqual(pageHops, [
+    [`${base}/x/checkout/`, "document"],
+    [`${base}/x/intervening-history/`, "history"],
+    [`${base}/x/pending-document/`, "history"],
+  ], "both pushState hops are history hops; the cancelled request classifies neither");
+  assert.equal(observation.post_order_seq, null, "no post-order navigation was observed");
+  assertUnexercisedUrl(url, "attempt_incomplete", `${base}/x/pending-document/`);
+});
+
+// On checkout after the landing hop, once the create is accepted (the stub
+// stays on the page), the page starts a main-frame navigation to the pending
+// document, cancels it with window.stop() before any response (no document
+// commits, the request fails net::ERR_ABORTED), then pushes the cancelled
+// request's own URL with no hop in between. No document navigation follows.
+const CANCELLED_THEN_PUSHED_SCRIPT = `<script>
+(function () {
+  if (!sessionStorage.getItem("stub-sdk:entered")) return;
+  var search = location.search;
+  var original = window.fetch;
+  window.fetch = function (input, init) {
+    var answer = original.apply(this, arguments);
+    if (init && init.method === "POST") {
+      answer.then(function (response) {
+        if (!response.ok) return;
+        setTimeout(function () {
+          location.href = "/x/pending-document/" + search;
+          setTimeout(function () {
+            window.stop();
+            history.pushState({}, "", "/x/pending-document/" + search);
+          }, 400);
+        }, 100);
+      }, function () {});
+    }
+    return answer;
+  };
+})();
+</script>`;
+
+browserTest("after the accepted create, a seeded document request cancelled (net::ERR_ABORTED) and then a pushState directly to its URL is a history hop, never the post-order navigation: URL row unexercised (attempt_incomplete)", T, async () => {
+  const { installBrowserGuard, startTrackingStub, stubTopologies, BASE_ARGS } = await import("./qa-tracking-params-fixtures.mjs");
+  await installBrowserGuard();
+  const { runBrowserTestOrders } = await import("./qa-browser.mjs");
+  const scenario = { direct: true, afterCreate: "stay", checkoutInline: CANCELLED_THEN_PUSHED_SCRIPT };
+  const stub = await startTrackingStub(scenario);
+  const front = await startPendingFront(stub);
+  let result;
+  try {
+    const topologies = stubTopologies({ ...stub, base: front.base }, scenario);
+    result = await runBrowserTestOrders(topologies, { ...BASE_ARGS, "step-timeout-ms": 12000 }, "qa-tracking-url-cancelled-pushed", {});
+  } finally {
+    await front.close();
+    await stub.close();
+  }
+  const { log } = stub;
+  const base = front.base;
+  assert.deepEqual(documentPaths(log), ["/x/checkout/", "/x/landing/", "/x/checkout/"], "setup: no document after checkout committed");
+  assert.equal(front.pending.length, 1, "setup: the pending document was requested once and never answered");
+  assert.equal(log.creates.length, 1, "setup: one create was posted");
+  assertSeeded(log, 3);
+  for (const key of DEFAULT_URL_KEYS) assert.match(new URLSearchParams(front.pending[0]).get(key) || "", SEED_VALUE, `setup: the cancelled request carried the seed for ${key}`);
+  await loadModule();
+  const rows = await trackingRows(result, IDS);
+  const url = rowOf(rows, URL_ID);
+  const { observation } = url;
+  assert.equal(observation.create, "accepted", "setup: the create was accepted");
+  const pageHops = observation.hops.filter((entry) => entry.initiator === "page").map((entry) => [entry.path, entry.kind]);
+  assert.deepEqual(pageHops, [
+    [`${base}/x/checkout/`, "document"],
+    [`${base}/x/pending-document/`, "history"],
+  ], "the pushState to the cancelled request's URL is a history hop");
+  assert.equal(observation.post_order_seq, null, "no post-order navigation was observed");
+  assertUnexercisedUrl(url, "attempt_incomplete", `${base}/x/pending-document/`);
+});

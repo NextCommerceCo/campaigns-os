@@ -39,6 +39,7 @@ import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.m
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { publishQaVerdict, qaPortalUrl, qaVerdictPublishBlock, QA_VERDICT_PUBLISHERS, skippedQaVerdictPublish } from "./qa-verdict-publish.mjs";
+import { redactPersisted } from "./qa-url-privacy.mjs";
 import {
   isLocalServePacket,
   LOCAL_PROOF_BUILD_ENVIRONMENT,
@@ -2579,7 +2580,10 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     currentRunId: runId,
     isFinding: isFindingAssertion,
   });
-  const verdict = createVerdict({
+  // The verdict as it is persisted: the local file, the committed sidecar and
+  // the published copy all read this one projection (no URL query in any
+  // string or key), whichever runner, return path or field produced a value.
+  const verdict = redactPersisted(createVerdict({
     runId,
     mapId: resolved.mapId,
     localSpecId: resolved.localSpecId,
@@ -2600,7 +2604,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     commercial,
     causeSummary,
     browser,
-  });
+  }));
 
   const validationErrors = validateVerdict(verdict);
   if (validationErrors.length) throw new Error(`QA verdict failed local validation:\n- ${validationErrors.join("\n- ")}`);
@@ -4081,6 +4085,7 @@ export const __qaNodeTestHooks = Object.freeze({
   analyticsCorrectnessDisabledAssertion,
   runAnalyticsOrderSequence,
   maybeRunTestOrders,
+  finalizeQaRun,
   campaignOutputDir,
   polishBlockedAssertions,
   polishGateAssertion,

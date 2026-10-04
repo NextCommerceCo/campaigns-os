@@ -104,6 +104,31 @@ browserTest("F1.1-B7 tag literal syn_v; request metadata.syn_tag = \"other\"; no
   assertTagRow(rows, "warning", "tag_value_differs");
 });
 
+browserTest("tag literal of three spaces; request metadata.syn_tag = \"syn_v\": the tag keeps its row, warning (tag_value_differs), hashed as rendered", T, async () => {
+  const { sha256 } = await import("./qa-tracking-params-fixtures.mjs");
+  const { result, log } = await runTrackingScenario("tag-blank", { tags: [{ name: "syn_tag", value: "   " }], metadataOverride: { syn_tag: "syn_v" } });
+  assertAccepted(result, log);
+  assert.equal(requestMetadata(log).syn_tag, "syn_v", "setup: the request carries another value");
+  await loadModule();
+  const rows = await trackingRows(result, IDS);
+  assertTagRow(rows, "warning", "tag_value_differs");
+  const literals = rowOf(rows, TAG_ID).observation.names.filter((entry) => entry.tag_or_name === "syn_tag").map((entry) => entry.literal_sha256);
+  assert.deepEqual([...new Set(literals)], [sha256("   ")], "the literal is hashed exactly as rendered");
+});
+
+browserTest("tag literal \" syn_v \" with surrounding spaces; request metadata.syn_tag the same: tag row pass, the literal hashed untrimmed", T, async () => {
+  const { sha256 } = await import("./qa-tracking-params-fixtures.mjs");
+  const { result, log } = await runTrackingScenario("tag-spaced", { tags: [{ name: "syn_tag", value: " syn_v " }] });
+  assertAccepted(result, log);
+  assert.equal(requestMetadata(log).syn_tag, " syn_v ", "setup: the request metadata carries the markup literal");
+  await loadModule();
+  const rows = await trackingRows(result, IDS);
+  assertTagRow(rows, "pass", null);
+  const literals = rowOf(rows, TAG_ID).observation.names.filter((entry) => entry.tag_or_name === "syn_tag").map((entry) => entry.literal_sha256);
+  assert.deepEqual([...new Set(literals)], [sha256(" syn_v ")], "the literal is hashed exactly as rendered");
+  assert.notEqual(sha256(" syn_v "), sha256("syn_v"));
+});
+
 // ---------------------------------------------------------------------------
 // Incomplete
 
