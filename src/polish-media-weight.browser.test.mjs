@@ -599,45 +599,66 @@ const b5Stalled = () => stalled({ sendBytes: 600_000, extra: B5_PAD });
 
 // Chrome reports the bytes of a transfer still in flight in coarse steps, so
 // two captures of one stalled transfer can read different lower bounds (for
-// example 589,824 and 600,000 B). A row that needs the accepted capture's
-// lower bound in a later capture re-captures it, at most
-// LOWER_BOUND_ATTEMPTS times, until its desktop entry reads that bound; the
-// setup fails only after the last attempt.
-const LOWER_BOUND_ATTEMPTS = 5;
+// example 589,824 and 600,000 B, in a share that shifts with machine load).
+// The rows that compare a lower bound across captures take their captures
+// from capturesAtOneLowerBound: it captures the F1.3-B5 transfer until an
+// earlier capture and a later one read the same desktop lower bound (the
+// accepted capture and its control; with two step values this takes at most
+// three captures). With a re-serve that is itself held open, it then
+// captures the re-serve until it reads a bound such a pair shares; after a
+// re-serve capture that reads a bound no pair shares, the next capture is of
+// the F1.3-B5 transfer again, so a pair can form at the bound the re-serve
+// reads. The returned captures were taken in order (accepted, control,
+// re-serve). The setup fails after PAIR_CAPTURES captures (no
+// re-serve) or LOWER_BOUND_CAPTURES captures (with one), listing the
+// desktop and mobile bounds each capture read.
+const PAIR_CAPTURES = 5;
+const LOWER_BOUND_CAPTURES = 14;
 
 // Each capture of a page whose transfer is held open waits the 5 s
 // network-idle bound on both viewports (about 10 s per capture). The rows
 // below run several captures, so they carry an explicit timeout sized to
 // their worst case instead of relying on the runner's default (none).
 const CAPTURE_MS = 10_000;
-const B12_TIMEOUT_MS = (1 + LOWER_BOUND_ATTEMPTS + 1) * CAPTURE_MS + 50_000; // accepted, control re-captures, complete re-serve
-const B13_TIMEOUT_MS = (1 + 2 * LOWER_BOUND_ATTEMPTS) * CAPTURE_MS + 40_000; // accepted, control and re-serve re-captures
+const B12_TIMEOUT_MS = (PAIR_CAPTURES + 1) * CAPTURE_MS + 50_000; // accepted and control captures, complete re-serve
+const B13_TIMEOUT_MS = LOWER_BOUND_CAPTURES * CAPTURE_MS + 40_000; // accepted, control and re-serve captures
 const I16_TIMEOUT_MS = 90_000; // twelve routes on two viewports, eleven of them with a slow probe, about 40 s
-async function captureAtLowerBound({ same, other }, name, path, bound, label) {
+async function capturesAtOneLowerBound({ same, other }, name, path, reServe = null) {
+  const url = same.url(path);
+  const accepted = b5Stalled();
+  const budget = reServe ? LOWER_BOUND_CAPTURES : PAIR_CAPTURES;
+  const b5 = []; // { output, bytes } per capture of the F1.3-B5 transfer
+  const pairs = new Map(); // desktop bound → [accepted, control]
   const seen = [];
-  for (let attempt = 1; attempt <= LOWER_BOUND_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= budget; attempt += 1) {
+    const kind = reServe && pairs.size > 0 && seen.at(-1)?.kind !== "re-serve" ? "re-serve" : "F1.3-B5";
+    same.serve(path, kind === "re-serve" ? reServe : accepted);
     const output = await capture(same, { routes: [name] });
-    assertRequestLog({ same, other }, { same: requests([route(name), path]) }, `setup (${label}, attempt ${attempt})`);
-    const bytes = desktopEntry(output, name, same.url(path))?.transferred_bytes;
-    if (bytes === bound) return output;
-    seen.push(bytes);
+    assertRequestLog({ same, other }, { same: requests([route(name), path]) }, `setup (${kind} capture, attempt ${attempt})`);
+    const bytes = desktopEntry(output, name, url)?.transferred_bytes;
+    seen.push({ kind, desktop: bytes, mobile: ledgerEntry(pageLoadCapture(output.page_load, route(name), "mobile"), url)?.transferred_bytes });
+    if (kind === "re-serve") {
+      const pair = pairs.get(bytes);
+      if (pair) return { first: pair[0], control: pair[1], second: output };
+      continue;
+    }
+    const earlier = typeof bytes === "number" ? b5.findLast((entry) => entry.bytes === bytes) : undefined;
+    b5.push({ output, bytes });
+    if (!earlier) continue;
+    if (!reServe) return { first: earlier.output, control: output };
+    pairs.set(bytes, [earlier.output, output]);
   }
-  return assert.fail(`setup (${label}): no capture in ${LOWER_BOUND_ATTEMPTS} read the accepted lower bound ${bound} B (read ${seen.join(", ")} B)`);
+  const reads = seen.map((entry, index) => `${index + 1} ${entry.kind}: desktop ${entry.desktop} B, mobile ${entry.mobile} B`).join("; ");
+  return assert.fail(`setup: no ${reServe ? "accepted, control and re-serve captures" : "accepted and control captures"} read one desktop lower bound in ${budget} captures (${reads})`);
 }
 
-// Accepted F1.3-B5, re-served by `secondHandler`. The control and the
-// re-serve are each captured at the accepted capture's lower bound.
+// Accepted F1.3-B5, re-served by `secondHandler`. The accepted capture, its
+// control and the re-serve read one desktop lower bound.
 async function acceptedB5Recaptured(t, name, { secondHandler, check, changed, secondOversize, label }) {
   const path = `/img/${name}.png`;
   const { same, other } = await origins(t);
   same.serve(route(name), page(img(`src="${path}" width="40" height="30"`)));
-  same.serve(path, b5Stalled());
-  const first = await capture(same, { routes: [name] });
-  assertRequestLog({ same, other }, { same: requests([route(name), path]) }, "setup (first capture)");
-  const bound = desktopEntry(first, name, same.url(path))?.transferred_bytes;
-  const control = await captureAtLowerBound({ same, other }, name, path, bound, "control re-capture");
-  same.serve(path, secondHandler);
-  const second = await captureAtLowerBound({ same, other }, name, path, bound, "changed capture");
+  const { first, control, second } = await capturesAtOneLowerBound({ same, other }, name, path, secondHandler);
   const url = same.url(path);
   const firstEntry = desktopEntry(first, name, url);
   assertLedgerLowerBound(firstEntry, "over", "first capture");
@@ -704,11 +725,7 @@ browserTest("F1.3-B12 accepted F1.3-B5, image re-served complete at 600,000 B: a
 async function threeCapturesB12(t, name, path) {
   const { same, other } = await origins(t);
   same.serve(route(name), page(img(`src="${path}" width="40" height="30"`)));
-  same.serve(path, b5Stalled());
-  const first = await capture(same, { routes: [name] });
-  assertRequestLog({ same, other }, { same: requests([route(name), path]) }, "setup (first capture)");
-  const control = await capture(same, { routes: [name] });
-  assertRequestLog({ same, other }, { same: requests([route(name), path]) }, "setup (control re-capture)");
+  const { first, control } = await capturesAtOneLowerBound({ same, other }, name, path);
   const lowerBound = desktopEntry(first, name, same.url(path))?.transferred_bytes;
   assert.ok(lowerBound > 500_000, `setup: the accepted lower bound is over 500,000 B (${lowerBound})`);
   same.serve(path, pngWire(40, 30, lowerBound));
@@ -1316,6 +1333,30 @@ browserTest("an <img> in a closed shadow root attached by script, 2000×2000 sho
 
 browserTest("an <img> in an open shadow root whose host is display:none: oversize unexercised (not_rendered)", async (t) => {
   await shadowRow(t, "shadow-hidden", (image) => `<div style="display:none"><template shadowrootmode="open">${image}</template></div>`, ["unexercised", "not_rendered"]);
+});
+
+browserTest("a closed shadow root inside a same-origin iframe is not entered: the page's own <img> is still read and warns (image_oversized), probe complete", async (t) => {
+  const name = "iframe-closed-shadow";
+  const frame = `/frames/${name}.html`;
+  const path = `/img/${name}.png`;
+  const inner = `/img/${name}-inner.png`;
+  const { same, other, output } = await captureOne(t, name, ({ same: origin }) => {
+    origin.serve(route(name), page(`${img(`src="${path}" style="${LARGE.style}"`)}<iframe src="${frame}" style="width:400px;height:400px;border:0"></iframe>`));
+    origin.serve(frame, page(`<div></div><script>document.querySelector("div").attachShadow({ mode: "closed" }).innerHTML = ${JSON.stringify(img(`src="${inner}" style="${LARGE.style}"`))};</script>`));
+    origin.serve(path, pngFile(...LARGE.natural));
+    origin.serve(inner, pngFile(...LARGE.natural));
+  });
+  assertRequestLog({ same, other }, { same: requests([route(name), path, frame, inner]) }, "setup: the frame attached its closed shadow root and loaded its image");
+  const { record, results } = await readCells(output);
+  for (const viewport of VIEWPORTS) {
+    const cell = mediaWeightCell(record, route(name), viewport);
+    assert.equal(cell.probe_status, "complete", `${name} ${viewport}: the probe completed`);
+    assert.deepEqual(cell.images.map((image) => image.element_path), [FIRST_IMG], `${name} ${viewport}: only the page's own <img> is listed`);
+  }
+  assertResultSet(results, bothCells(route(name), {
+    weight: [[doc(same, name), "pass"], [rid(same.url(path)), "pass"], [rid(same.url(frame)), "pass"], [rid(same.url(inner)), "pass"]],
+    oversize: [[oversizeKey(rid(same.url(path)), FIRST_IMG), "warning", "image_oversized"]],
+  }), route(name));
 });
 
 browserTest("an <img> inside a same-origin iframe is outside the probe (a stated coverage limit): the cell lists no <img> and reads oversize pass keyed cell", async (t) => {
