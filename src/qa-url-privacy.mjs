@@ -30,7 +30,7 @@ const HEX_DIGIT = /^[0-9a-f]$/i;
 const SCHEME_CHAR = /^[a-z0-9+.-]$/i;
 const SCHEME_START = /^[a-z]$/i;
 const URL_END = /^[\s"'<>]$/;
-const SCHEME_RELATIVE_AFTER = /^[\s"'`(=]$/;
+const SCHEME_RELATIVE_AFTER = /^[\s"'`(=<>]$/;
 const AUTHORITY_END = /[/?#]/;
 
 // The index in `text` where its first "?" begins, literally or once
