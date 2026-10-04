@@ -79,7 +79,7 @@ import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./d
 import { QcAcceptRefusal, buildQcHandoff, parseQcResultRef, planQcAccepts, projectQcAccept, qcAcceptAttribution, qcHandoffTextLines } from "./qc-accept.mjs";
 import { loadQcRederivers } from "./qc-check-registry.mjs";
 import { fingerprint12, readCurrentQcResults } from "./qc-results.mjs";
-import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { writeMapSdkPin } from "./map-pin-writeback.mjs";
@@ -765,7 +765,7 @@ export function recordQaStageOutcome(args, result) {
   }
 }
 
-// QC results (contract 1.0) are written on every QA record, with the build
+// QC results are written on every QA record, with the build
 // they were measured against, whether or not a gate outcome is recorded: a
 // record without qc_results reads as captured by an earlier version. The rows
 // come from the QA run's own result; readers re-derive them from the full
@@ -1180,7 +1180,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // explicit stage (`next build`, `next polish`, etc.) is unchanged.
     const stage = args._[1] || null;
     // The QC handoff re-derives QA and Polish results through the check
-    // registry, whose unit modules load lazily, so they are loaded here.
+    // registry, whose check modules load lazily, so they are loaded here.
     const qcRederivers = await loadQcRederivers();
     const result = nextStage(stage, args, ambient, { qcStandIns, qcRederivers });
     await observeProgress(args, result, { packageVersion: packageVersion(), resolveKey: resolveCampaignsApiKeySource });
@@ -2962,7 +2962,7 @@ export function checkpointWaive(args) {
   };
 }
 
-// `checkpoint accept` (contract 1.0): records an operator's accept of a
+// `checkpoint accept`: records an operator's accept of a
 // measured QC warning in report.qc_accepts[], beside the unchanged
 // measurement. It reads only what is already on disk (doctor recomputed
 // offline, the persisted doctor sidecar, the Assembly Report and the full QA
@@ -4331,11 +4331,13 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
-    // The QC handoff (contract 1.0): read from data already loaded plus the
+    // The QC handoff: read from data already loaded plus the
     // full QA verdict the QA stage names. It adds nothing to errors[],
-    // warnings[] or ready[], and `status` above never reads it.
+    // warnings[] or ready[], and `status` above never reads it. Its accept
+    // command names the report this run read when that is not the default
+    // one (from --report or the Build Context pointer), so it records there.
     const qc = readCurrentQcResults({ report, doctor, spec, targetRepo, packetPath, reportPath, qcStandIns, rederivers: qcRederivers });
-    result.qc_handoff = buildQcHandoff({ results: qc.results, coverage: qc.coverage, accepts: report?.qc_accepts, packetPath });
+    result.qc_handoff = buildQcHandoff({ results: qc.results, coverage: qc.coverage, accepts: report?.qc_accepts, packetPath, reportPath: explicitReportPath(reportPath, targetRepo) });
     recordNextRecommendation(ambient, result);
     return result;
   };

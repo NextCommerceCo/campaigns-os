@@ -1,7 +1,7 @@
-// The one map from a QC check id to the unit module that re-derives its
+// The one map from a QC check id to the check module that re-derives its
 // results. The QC readers
-// (src/qc-results.mjs) reach every unit rule through here, so a unit lands by
-// adding its module, never by editing the readers.
+// (src/qc-results.mjs) reach every check's rules through here, so a check
+// lands by adding its module, never by editing the readers.
 //
 // Each entry names a module specifier, imported lazily and relative to this
 // file, and the export the reader calls:
@@ -10,27 +10,27 @@
 //   state}) or null when the observation cannot be re-derived.
 // - Polish checks: `MEDIA_WEIGHT_QC_RULES` is {thresholds, vocabulary,
 //   evaluate(cell, thresholds) => Derived[]}.
-// - Doctor checks recompute on every read and are called by doctor itself
-//   (contract 1.0 Inputs); their entries name the evaluator for completeness.
+// - Doctor checks recompute from the built HTML on every read and are called
+//   by doctor itself; their entries name the evaluator for completeness.
 //
-// The table holds only the units the contract names. A stand-in check never
-// comes from here: tests pass theirs in-process (qcStandIns).
+// The table holds only the shipped QC checks. A stand-in check never comes
+// from here: tests pass theirs in-process (qcStandIns).
 export const QC_CHECK_REGISTRY = Object.freeze({
-  // 1.1 tracking params reach the order
+  // Tracking params reach the order
   "tracking.url": Object.freeze({ leg: "qa", unit: "1.1", module: "./qa-tracking-params.mjs", rederive: "rederiveQcResult" }),
   "tracking.order": Object.freeze({ leg: "qa", unit: "1.1", module: "./qa-tracking-params.mjs", rederive: "rederiveQcResult" }),
   "tracking.tag": Object.freeze({ leg: "qa", unit: "1.1", module: "./qa-tracking-params.mjs", rederive: "rederiveQcResult" }),
-  // 1.2 content params
+  // Content params
   content_param: Object.freeze({ leg: "qa", unit: "1.2", module: "./qa-content-params.mjs", rederive: "rederiveQcResult" }),
-  // 1.3 media weight and oversizing
+  // Media weight and oversizing
   "media.weight": Object.freeze({ leg: "polish", unit: "1.3", module: "./polish-media-weight.mjs", rederive: "MEDIA_WEIGHT_QC_RULES" }),
   "media.oversize": Object.freeze({ leg: "polish", unit: "1.3", module: "./polish-media-weight.mjs", rederive: "MEDIA_WEIGHT_QC_RULES" }),
-  // 1.4 policy links
+  // Policy links
   "policy.presence": Object.freeze({ leg: "qa", unit: "1.4", module: "./qa-policy-links.mjs", rederive: "rederiveQcResult" }),
   "policy.availability": Object.freeze({ leg: "qa", unit: "1.4", module: "./qa-policy-links.mjs", rederive: "rederiveQcResult" }),
-  // 1.5 cart placeholders
+  // Cart placeholders
   cart_placeholders: Object.freeze({ leg: "doctor", unit: "1.5", module: "./cart-placeholders.mjs", rederive: "evaluateCartPlaceholders" }),
-  // 1.6 built-output smoke checks
+  // Built-output smoke checks
   smoke_qc: Object.freeze({ leg: "doctor", unit: "1.6", module: "./built-smoke-qc.mjs", rederive: "evaluateSmokeQc" }),
 });
 

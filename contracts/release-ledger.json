@@ -5462,7 +5462,7 @@
       "surface_version": "1.51.0",
       "changelog_section": "1.51.0",
       "changelog_sha256": "acb40fac6861f258a17cc949e30c2aec372997a69ca4d25df82b133d30c71135",
-      "agent_impact": "Surface 1.51.0. New command checkpoint accept records an operator's accept of a measured QC warning beside the unchanged measurement, and next prints a QC handoff listing open, review, lapsed, unexercised and excluded results with the ref to accept each warning by. Accepts are operator decisions: at the end of QA, run next, present the QC handoff once, and run checkpoint accept only with the refs, reason and name the operator gave you in the conversation, after the warning was shown to them. Never write qc_accepts, qc_results or QA verdict files by hand; the up-front test-order permission does not cover accepts. An accept never changes readiness, a result, the doctor or next status, or the QA disposition, and it lapses when the measured state or the build changes. The effects contract declares checkpoint accept (tier B: appends to the Assembly Report, marks the doctor sidecar stale, journals) and its --dry-run form, and declares header-only GETs to the configured store policy URLs on the qa run --browser rows ahead of the check that sends them; QA does not send them yet. Bundled skills carry revision 1.51.0+skills.1: an agent that loaded an earlier revision should start a fresh session. Install the 1.51.0 package with the documented local setup command.",
+      "agent_impact": "Surface 1.51.0. New command checkpoint accept records an operator's accept of a measured QC warning beside the unchanged measurement, and next prints a QC handoff listing open, review, lapsed, unexercised and excluded results with the ref to accept each warning by. Accepts are operator decisions: at the end of QA, run next, present the QC handoff once, and run checkpoint accept only with the refs, reason and name the operator gave you in the conversation, after the warning was shown to them. Never write qc_accepts, qc_results or QA verdict files by hand; the up-front test-order permission does not cover accepts. An accept never changes readiness, a result, the doctor or next status, or the QA disposition, and it lapses when the measured state changes or its evidence is stale or cannot be reproduced. The effects contract declares checkpoint accept (tier B: appends to the Assembly Report, marks the doctor sidecar stale, journals) and its --dry-run form, and declares header-only GETs to the configured store policy URLs on the qa run --browser rows ahead of the check that sends them; QA does not send them yet. Bundled skills carry revision 1.51.0+skills.1: an agent that loaded an earlier revision should start a fresh session. Install the 1.51.0 package with the documented local setup command.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -5605,7 +5605,7 @@
           "summary": "Doctor output carries derived.qc_results, empty until a QC check records a result; readiness is unchanged."
         }
       ],
-      "entry_sha256": "422a061d7e5847b25bbab0ea3f194d129eb0bdbed9248e40a3fb04193ab82e91"
+      "entry_sha256": "9702dae850ed7d8c2401f71939cb37eed3b63f09b3b7607f08ad94eccc8338da"
     }
   ]
 }
