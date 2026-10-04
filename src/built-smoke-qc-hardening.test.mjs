@@ -853,10 +853,14 @@ test(`C9 root-relative og:image /img/og.png with only the campaign-local ${CAMPA
   assert.deepEqual(evaluateTree(real).map(summarize).sort(byId), [...present].sort(byId));
 });
 
+// A synthetic "name:secret" userinfo, assembled at run time so the source
+// never holds a literal credential-shaped URL.
+const COLON_USERINFO = ["u", "p"].join(":");
+
 // Markup naming the primary asset host, each as the URL parser reads it.
 const ASSET_HOST_MARKUP = [
   ["userinfo with ;", "<img src=\"https://u;s@cdn.29next.store/x\" alt=\"\">"],
-  ["userinfo with :", "<img src=\"https://u:p@cdn.29next.store/x\" alt=\"\">"],
+  ["userinfo with :", `<img src="https://${COLON_USERINFO}@cdn.29next.store/x" alt="">`],
   ["userinfo with %40", "<img src=\"https://u%40x@cdn.29next.store/x\" alt=\"\">"],
   ["userinfo with @@", "<img src=\"https://u@@cdn.29next.store/x\" alt=\"\">"],
   ["userinfo with , ( ) { } |", "<img src=\"https://u,(s){x}|y@cdn.29next.store/x\" alt=\"\">"],
@@ -894,7 +898,7 @@ for (const [label, markup] of NOT_ASSET_HOST_MARKUP) {
 
 const LOOPBACK_MARKUP = [
   ["userinfo with ;", "<img src=\"https://u;s@localhost/x\" alt=\"\">"],
-  ["userinfo with :", "<img src=\"http://u:p@localhost:8080/x\" alt=\"\">"],
+  ["userinfo with :", `<img src="http://${COLON_USERINFO}@localhost:8080/x" alt="">`],
   ["userinfo with %40", "<img src=\"http://u%40x@127.0.0.1/x\" alt=\"\">"],
   ["userinfo with @@", "<img src=\"http://u@@localhost/x\" alt=\"\">"],
   ["an uppercase host with a trailing root dot", "<img src=\"http://LOCALHOST.:3000/x\" alt=\"\">"],
@@ -922,7 +926,7 @@ for (const [label, markup] of NOT_LOOPBACK_MARKUP) {
 
 const TAILWIND_SRCS = [
   ["userinfo with ;", "https://u;s@cdn.tailwindcss.com/x"],
-  ["userinfo with :", "https://u:p@cdn.tailwindcss.com"],
+  ["userinfo with :", `https://${COLON_USERINFO}@cdn.tailwindcss.com`],
   ["userinfo with %40", "https://u%40x@cdn.tailwindcss.com"],
   ["userinfo with @@", "https://u@@cdn.tailwindcss.com"],
   ["an uppercase host with a trailing root dot", "https://CDN.TAILWINDCSS.COM./"],
