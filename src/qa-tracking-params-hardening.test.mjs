@@ -1,5 +1,5 @@
 // Tracking parameters (1.1): regression rows for the observer and its rules,
-// beside the frozen fixture rows in qa-tracking-params.test.mjs. Each group
+// beside the fixture rows in qa-tracking-params.test.mjs. Each group
 // pins one class of input that must never read pass, or one persisted exit
 // that must never hold a URL query or raw body:
 //   - persisted exits (response summaries, arrays, free text, upsell bodies,

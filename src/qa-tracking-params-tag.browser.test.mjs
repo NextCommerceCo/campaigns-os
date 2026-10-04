@@ -1,6 +1,5 @@
-// Unit 1.1 frozen fixture rows, declared custom tags (contract §1.1 Result
-// rules, "Declared custom tag X with literal V", amended F1.1-W3 accepted by
-// amendments A4) and the privacy guard F1.1-P1 (contract §1.1 "Prerequisite:
+// Unit 1.1 fixture rows, declared custom tags (contract §1.1 Result
+// rules, "Declared custom tag X with literal V", F1.1-W3 as accepted) and the privacy guard F1.1-P1 (contract §1.1 "Prerequisite:
 // redact existing raw-query persistence before seeding"), leg QB: real
 // Chromium on a loopback stub campaign (src/qa-tracking-params-fixtures.mjs),
 // driven through the actual `runBrowserTestOrders` entry point.
@@ -171,7 +170,7 @@ browserTest("F1.1-I29 tag rendered; order request body unparseable: tag row unex
 });
 
 // ---------------------------------------------------------------------------
-// Privacy guard (director ruling P1: no configured-URL exception)
+// Privacy guard (no exception for configured URLs)
 
 browserTest("F1.1-P1 a QB setup with the redaction prerequisite: full verdict and qc_results hold no non-seed query value, no metadata, no landing_page, no body; final_url, checkout_url, requests[].url are origin+path", T, async () => {
   // One unique synthetic private value per private input the setup controls:

@@ -1,4 +1,4 @@
-// Unit 1.1 frozen fixture rows, order attribution and preserve-declared names
+// Unit 1.1 fixture rows, order attribution and preserve-declared names
 // (contract §1.1 Result rules, "Order attribution, per credited field" and
 // "Preserve-declared name with no credited field"), leg QB: real Chromium on a
 // loopback stub campaign (src/qa-tracking-params-fixtures.mjs), driven
@@ -74,7 +74,7 @@ function assertAccepted(result, log, paths = ENTRY_HOPS) {
   assert.equal(orderAssertion(result).status, "pass", "setup: the order was accepted and read back");
 }
 
-// After the phase: the entry load was seeded, and the create request's
+// With the check in place: the entry load was seeded, and the create request's
 // attribution carried those seeds under the credited field names.
 function assertRequestCarriesSeeds(log, { except = [] } = {}) {
   const entry = log.documents.find((document) => document.path === "/x/landing/");

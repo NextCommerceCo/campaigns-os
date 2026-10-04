@@ -1,5 +1,4 @@
-// U5 re-run duty for unit 1.1 (streams freeze addendum "U5 re-run duty"): the
-// phase-0 rows whose QA producer was a stand-in, re-run end to end with the
+// The shared QC rows whose QA producer was a stand-in, re-run end to end with the
 // real 1.1 producer. The QA rows and verdict assertions come from real
 // `runBrowserTestOrders` runs on a loopback stub campaign
 // (src/qa-tracking-params-fixtures.mjs), and every reader, `next` and
@@ -22,7 +21,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import test, { after, afterEach } from "node:test";
 
-// The phase-0 factory (no-network guard for node) before any module under test.
+// The shared test factory (no-network guard for node) before any module under test.
 import {
   BUILD_FP,
   OPERATOR,
@@ -234,7 +233,7 @@ browserTest("F1.0-B6 [real: 1.1] the real tracking.url row hand-edited from warn
   assertRead(results, TAG_ID, "pass", null);
 });
 
-// Residual row (amendments A1): the documented outcome is asserted, not detection.
+// Residual row (tamper evidence): the documented outcome is asserted, not detection.
 browserTest("F1.0-B10 [real: 1.1] the real tracking.url row and its qc.* assertion both rewritten consistently to a pass observation, run_id/schema/runtime kept: result reads pass (A1 accepted behaviour)", T, async () => {
   const parts = await realParts();
   const passing = await realParts(passRun, PASS_MEMBERS);

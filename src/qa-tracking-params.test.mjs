@@ -1,4 +1,4 @@
-// Unit 1.1 frozen fixture rows, leg QN: stored observations re-evaluated in
+// Unit 1.1 fixture rows, leg QN: stored observations re-evaluated in
 // node (contract §1.1 Accepts "State" and "Lapse"), and the run-scope row of a
 // QA run with no browser test order (contract §1.1 "Without a test order").
 //

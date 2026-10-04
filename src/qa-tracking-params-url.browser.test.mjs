@@ -1,4 +1,4 @@
-// Unit 1.1 frozen fixture rows, URL preservation (contract §1.1 Result rules,
+// Unit 1.1 fixture rows, URL preservation (contract §1.1 Result rules,
 // "URL preservation, per seeded key"), leg QB: real Chromium on a loopback
 // stub campaign (src/qa-tracking-params-fixtures.mjs), driven through the
 // actual `runBrowserTestOrders` entry point.
@@ -83,7 +83,7 @@ function assertAccepted(result, log) {
   assert.equal(orderAssertion(result).status, "pass", "setup: the order was accepted and read back");
 }
 
-// After the phase: the documents loaded up to `count` carried every default
+// With the check in place: the documents loaded up to `count` carried every default
 // seed key with a synthetic seed value.
 function assertSeeded(log, count, keys = DEFAULT_URL_KEYS) {
   for (const entry of log.documents.slice(0, count)) {

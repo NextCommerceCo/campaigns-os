@@ -663,7 +663,7 @@ export async function startTrackingStub(scenario = {}) {
   };
 }
 
-// The configured page URLs carry no query of their own (director ruling P1):
+// The configured page URLs carry no query of their own (no exception for configured URLs):
 // every query a run sees is added at runtime by the runner or the page.
 export function stubTopologies(stub, scenario = {}) {
   const checkoutUrl = `${stub.base}${stub.checkoutPath}`;
@@ -714,7 +714,7 @@ export function sharedRun(key, run) {
 }
 
 // ---------------------------------------------------------------------------
-// Seed-independent setup facts (they hold on the base and after the phase).
+// Seed-independent setup facts (they hold before and after the change).
 
 export const documentPaths = (log) => log.documents.map((entry) => entry.path);
 export function orderAssertion(result, plan = "checkout") {
@@ -889,7 +889,7 @@ export function assertFailingHops(url, expected = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Privacy (F1.1-P1, director ruling P1): walks every key and every string of
+// Privacy (F1.1-P1): walks every key and every string of
 // a persisted JSON value. Contract 1.0 persistence rules: never arbitrary
 // query values, raw request or response body text, attribution.metadata, link
 // text or expression text; URLs only as origin+path.
@@ -928,7 +928,7 @@ const snakeCase = (key) => key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[
 // A request or response body field: a key that is, or ends in, body / bodies /
 // payload / post_data / raw_body, or is request_text / response_text
 // (body_present, api_response_body_read: a flag or a read's timing, not the
-// body, do not end in one). Director ruling (A1.t correction): contract §1.1
+// body, do not end in one). Contract §1.1
 // "Prerequisite" redacts only raw query values, and "no body" means no raw
 // body text, so such a field may hold only null (no body) or one of the two
 // redacted summaries qa-browser already persists, which order and coupon
