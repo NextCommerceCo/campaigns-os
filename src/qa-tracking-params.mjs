@@ -30,7 +30,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { aggregateQcResults, buildQcResult, toQaAssertion } from "./qc-results.mjs";
-import { redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
+import { REDACTED_QUERY, TRUNCATED, redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
 
 export const TRACKING_CHECKS = Object.freeze(["tracking.url", "tracking.order", "tracking.tag"]);
 const ROW_KEY = Object.freeze({ "tracking.url": "url", "tracking.order": "order", "tracking.tag": "tag" });
@@ -90,13 +90,8 @@ const isPlainObject = (value) => Boolean(value) && typeof value === "object" && 
 const isNonEmptyString = (value) => typeof value === "string" && value.trim() !== "";
 const sha256 = (text) => `sha256:${createHash("sha256").update(String(text)).digest("hex")}`;
 // A rendered tag's name is page text: it is persisted cut at its first query
-// (qa-url-privacy.mjs), and a name whose projection is empty is kept as a
-// marker, never dropped.
-const REDACTED_TAG_NAME = "[redacted-tag-name]";
-const persistedTagName = (name) => {
-  const kept = redactUrlQueriesInText(name);
-  return isNonEmptyString(kept) ? kept : REDACTED_TAG_NAME;
-};
+// (qa-url-privacy.mjs). The projection of a non-blank name is never blank.
+const persistedTagName = (name) => redactUrlQueriesInText(name);
 // A hop's origin+path, with no query left in it in any encoding (a path can
 // carry an encoded "?"). Persisted exits project rows again with the same
 // projection, which leaves these unchanged.
@@ -333,20 +328,34 @@ export function creditedFieldFor(name) {
 }
 
 const isNeverSeeded = (name) => NEVER_SEEDED.includes(name.toLowerCase()) || name.toLowerCase().startsWith("force");
+// A name the persisted projection could change (a query or fragment
+// character, a "%", a "://", a projection marker, or any other text the
+// projection rewrites) is never seeded: no row may depend on a key whose
+// stored form differs from the one it was judged under. The projection of
+// such a name is one too, so the stored name reads the same way again.
+const UNSEEDABLE_TEXT = /[?#%]|:\/\//;
+const changedByProjection = (name) => UNSEEDABLE_TEXT.test(name)
+  || name.includes(REDACTED_QUERY)
+  || name.includes(TRUNCATED)
+  || redactUrlQueriesInText(name) !== name;
 const aliasRank = (field, name) => CREDITED_FIELD_ALIASES[field].indexOf(name);
 
 // The URL names a run seeds, by the first rule that applies to each
-// tracking.preserve name: never-seeded names are excluded; a credited field or
-// alias is seeded in the SDK's preferred form, one name per field; any other
-// name is seeded as a declared name. Seeded keys stop at MAX_SEEDED_KEYS; a
-// name past the cap is listed as overflow.
+// tracking.preserve name: never-seeded names, and names the persisted
+// projection could change (kept as their projection), are excluded; a
+// credited field or alias is seeded in the SDK's preferred form, one name per
+// field; any other name is seeded as a declared name. Seeded keys stop at
+// MAX_SEEDED_KEYS; a name past the cap is listed as overflow.
 export function trackingSeedPlan(preserve = []) {
   const seeded = DEFAULT_SEEDED_URL_NAMES.map((name) => ({ name, field: creditedFieldFor(name), declared: false }));
   const excluded = [];
   const overflow = [];
-  const declared = [...new Set((Array.isArray(preserve) ? preserve : []).filter(isNonEmptyString).map((name) => name.trim()))];
+  const declared = [...new Set((Array.isArray(preserve) ? preserve : [])
+    .filter(isNonEmptyString)
+    .map((name) => name.trim())
+    .map((name) => (changedByProjection(name) ? redactUrlQueriesInText(name) : name)))];
   for (const name of declared) {
-    if (isNeverSeeded(name)) {
+    if (isNeverSeeded(name) || changedByProjection(name)) {
       if (!excluded.includes(name)) excluded.push(name);
       continue;
     }
@@ -382,14 +391,17 @@ export function createTrackingSeedTable({ spec = null, random = randomBytes } = 
 // ---------------------------------------------------------------------------
 // Equality (in memory; only the outcome leaves)
 
+// A value equals its seed only when it is a string identical to it; any other
+// JSON value (an array, number, object or boolean) differs. A missing value,
+// null or an empty string is absent.
 function outcomeOf(value, expected) {
   if (value === undefined || value === null || value === "") return "absent";
-  return String(value) === expected ? "equal" : "differs";
+  return typeof value === "string" && value === expected ? "equal" : "differs";
 }
 
 function hopParams(url, seeds) {
   const params = new URL(url).searchParams;
-  return Object.fromEntries(Object.entries(seeds).map(([name, value]) => [name, outcomeOf(params.has(name) ? params.get(name) : null, value)]));
+  return Object.fromEntries(Object.entries(seeds).map(([name, value]) => [name, outcomeOf(params.has(name) ? params.get(name) : undefined, value)]));
 }
 
 // The literal calls a page script uses to set attribution itself.
@@ -717,7 +729,7 @@ export function createTrackingObserver({ table, plan, runId, attemptId, hooks = 
         // Only key presence is read for the SDK's test-order marker.
         next.sdk_test = Boolean(attribution) && (attribution.utm_source === SDK_TEST_UTM_SOURCE || Object.hasOwn(metadata, "test_order"));
         for (const { name, field } of seededFields) next.fields[field] = outcomeOf(attribution?.[field], seeds[name]);
-        for (const name of declaredNames) next.names[name] = outcomeOf(Object.hasOwn(metadata, name) ? metadata[name] : null, seeds[name]);
+        for (const name of declaredNames) next.names[name] = outcomeOf(Object.hasOwn(metadata, name) ? metadata[name] : undefined, seeds[name]);
         next.metadata = metadata;
       });
     },
@@ -845,7 +857,7 @@ export function createTrackingObserver({ table, plan, runId, attemptId, hooks = 
           if (!parsed.length) names.push({ tag_or_name: tagName, source: "request", outcome: null, literal_sha256: literalSha, rendered: true });
           for (const entry of parsed) {
             const metadata = entry.metadata || {};
-            names.push({ tag_or_name: tagName, source: "request", outcome: outcomeOf(Object.hasOwn(metadata, tag) ? metadata[tag] : null, literal), literal_sha256: literalSha, rendered: true });
+            names.push({ tag_or_name: tagName, source: "request", outcome: outcomeOf(Object.hasOwn(metadata, tag) ? metadata[tag] : undefined, literal), literal_sha256: literalSha, rendered: true });
           }
         }
       }

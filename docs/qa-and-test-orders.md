@@ -1874,6 +1874,8 @@ development build, the parity check, and the order they run in.
 
 Values from `<meta name="os-tracking-tag">` tags are checked against order metadata. When page script sets attribution itself, differences are review results. Only synthetic values and equality results are stored, and order URLs in QA evidence are now stored without their query. Click ids and `funnel` are not seeded, even when listed in `tracking.preserve`, and are listed as not tested.
 
+Every string QA stores in its verdict is cut at its first query (a `?`, written literally or percent-encoded), every URL in it is also cut at its fragment, and a string longer than 16 KiB is truncated.
+
 ## Content parameters
 
 **Content parameters.** For each `analytics.params.content` entry, QA loads each applicable page twice in separate fresh browser contexts: once without the parameter and once with `?<name>=n`. It waits for the SDK to finish its display pass, then checks that the same elements whose `data-next-hide` or `data-next-show` refers to `param.<name>` are visible without the parameter and hidden with it. A parameter whose only handlers cannot hide anything with `n` is a warning. Compound conditions, conditions the SDK parses unreliably, content already hidden without the parameter, elements that change between the two loads, pages that fail to load, and pages where the SDK did not finish produce review or unexercised results, never a pass. Runs without `--browser` list these checks as not requested. No orders are placed.
