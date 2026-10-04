@@ -511,6 +511,243 @@ async function collectMediaElements(page) {
   });
 }
 
+// The <img> reader the media-weight image probe runs in the page, after
+// network observation closed. It reads the first `limits.images` <img> in
+// document order and returns their count, each one's element path (the CSS
+// child path from <body>, every step "tag:nth-of-type(n)"), currentSrc
+// (http(s) as is; any other scheme as the scheme alone) and loading, plus
+// window.devicePixelRatio. With `limits.geometry` it also reads complete,
+// natural size, the rendered box in CSS px, computed object-fit and whether
+// the image or an ancestor is not displayed or the image is not visible. It
+// reads only; it never scrolls and starts no load.
+function readImageElements(limits) {
+  const nodes = document.querySelectorAll("img");
+  const pathOf = (element) => {
+    const steps = [];
+    for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
+      const tag = node.tagName.toLowerCase();
+      if (node === document.body || node === document.documentElement) {
+        steps.unshift(tag);
+        break;
+      }
+      let index = 1;
+      for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
+        if (sibling.tagName === node.tagName) index += 1;
+      }
+      steps.unshift(`${tag}:nth-of-type(${index})`);
+    }
+    return steps.join(">");
+  };
+  const source = (value) => {
+    if (typeof value !== "string" || value === "") return { url: null, svg: false };
+    if (/^https?:/i.test(value)) return { url: value.length <= limits.urlLength ? value : "[url-too-long]", svg: false };
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value);
+    return { url: scheme ? `${scheme[1].toLowerCase()}:` : null, svg: /^data:image\/svg\+xml[;,]/i.test(value) };
+  };
+  const images = Array.prototype.slice.call(nodes, 0, limits.images).map((image) => {
+    const elementPath = pathOf(image);
+    const src = source(image.currentSrc);
+    const entry = { element_path: elementPath, current_src: src.url, svg_data: src.svg, loading: image.loading };
+    if (!limits.geometry) return entry;
+    const style = getComputedStyle(image);
+    let hidden = style.visibility !== "visible";
+    for (let node = image; node && !hidden; node = node.parentElement) {
+      if (getComputedStyle(node).display === "none") hidden = true;
+    }
+    const bounds = image.getBoundingClientRect();
+    return {
+      ...entry,
+      complete: image.complete,
+      natural: [image.naturalWidth, image.naturalHeight],
+      rendered: [bounds.width, bounds.height],
+      object_fit: style.objectFit,
+      hidden,
+    };
+  });
+  return { dpr: window.devicePixelRatio, observed_count: nodes.length, images };
+}
+
+// The image probe: one page.evaluate of readImageElements in the page's own
+// world.
+async function collectImageElements(page, limits) {
+  return page.evaluate(readImageElements, { ...limits, geometry: true });
+}
+
+// The <img> identities alone, read in an isolated world (page scripts cannot
+// observe or slow it), so a cell whose probe is cut or never runs still names
+// each image. `send` is the probe's guarded CDP send.
+async function listImageElements(send, frameId, limits) {
+  const world = await send("Page.createIsolatedWorld", {
+    frameId,
+    worldName: "campaigns-os-polish-image-listing",
+    grantUniveralAccess: false,
+  });
+  const evaluated = await send("Runtime.evaluate", {
+    expression: `(${readImageElements.toString()})(${JSON.stringify({ ...limits, geometry: false })})`,
+    contextId: world?.executionContextId,
+    returnByValue: true,
+  });
+  if (evaluated?.exceptionDetails || !evaluated?.result) throw new Error("The image listing did not evaluate.");
+  return evaluated.result.value;
+}
+
+const BOUND_ENDED = Symbol("bound ended");
+const realProbeClock = Object.freeze({
+  now: () => performance.now(),
+  sleep: (ms) => new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  }),
+});
+
+function imageListing(value, imageCap) {
+  return value && typeof value === "object" && Number.isInteger(value.observed_count) && Array.isArray(value.images)
+    && value.images.length <= imageCap
+    ? value
+    : null;
+}
+
+// The media-weight image probe, run after collector.finish so it cannot
+// delay the network window or add to the ledger. Its steps, in order: the
+// <img> listing (Page.createIsolatedWorld and Runtime.evaluate), the
+// Page.enable that arms the navigation watch, the probe's page.evaluate and
+// the Page.getFrameTree re-read. The cell's bound is the smaller of the cell
+// bound and the run budget left. Every step after the listing races one
+// deadline on `clock` at that bound and none starts once it has passed; the
+// listing races a wall-clock timer of at most listingBoundMs and that bound.
+// spent_ms, on `clock` from the first step to the return, covers every step
+// and is what the run budget is charged. The probe is cancelled when a bound
+// ends it, on its timer or on `clock` whichever is first, or it returns: every
+// CDP command and page.evaluate, and every step's result, checks that first,
+// so a step that settles late (the listing's Runtime.evaluate after a late
+// Page.createIsolatedWorld) issues nothing more. A probe its bound ends
+// reads probe_timeout, or probe_budget_exhausted where the run budget left was the
+// smaller bound, never complete. A cell that starts once the run budget is
+// spent starts no step, not even the listing, and reads
+// probe_budget_exhausted with no images. After the probe it re-reads the
+// main frame: a navigation requested or committed during the probe, or a
+// probe that failed (its execution context destroyed), discards it as
+// document_context_changed.
+// Returns { status, dpr, images, spent_ms }.
+async function probeImageElements(options) {
+  const token = { cancelled: false };
+  try {
+    return await runImageProbe(options, token);
+  } finally {
+    token.cancelled = true;
+  }
+}
+
+async function runImageProbe({ page, session, mainFrame, documentContextChanged, probe }, token) {
+  const clock = typeof probe.clock?.now === "function" && typeof probe.clock?.sleep === "function" ? probe.clock : realProbeClock;
+  const limits = { images: probe.imageCap, urlLength: MAX_POLISH_CAPTURE_URL_LENGTH };
+  const started = clock.now();
+  const spent = () => Math.max(0, clock.now() - started);
+  const exhausted = !(probe.remainingMs > 0);
+  const boundMs = Math.min(probe.cellBoundMs, probe.remainingMs);
+  // The status of a probe its bound ended.
+  const boundEnded = probe.remainingMs < probe.cellBoundMs ? "probe_budget_exhausted" : "probe_timeout";
+  let listing = null;
+  const outcome = (status, read = null) => ({
+    status,
+    dpr: (read ?? listing)?.dpr ?? null,
+    images: (status === "complete" ? read : listing)?.images ?? [],
+    spent_ms: spent(),
+  });
+  if (exhausted) return { ...outcome("probe_budget_exhausted"), spent_ms: 0 };
+  if (documentContextChanged || typeof mainFrame?.id !== "string") return outcome("document_context_changed");
+  const listingMs = Math.min(probe.listingBoundMs, boundMs);
+  const listingEnd = started + listingMs;
+  const boundEnd = started + boundMs;
+  // The probe's one guard, run before every command it issues
+  // (Page.createIsolatedWorld and Runtime.evaluate in the listing, Page.enable,
+  // the probe's page.evaluate, Page.getFrameTree) and before it acts on any
+  // step's result: the probe is cancelled once the token is, or once the probe
+  // clock reaches `deadline`, the bound of the step in flight. The clock is
+  // read even when no timer has fired, so a step that settles past its bound
+  // ahead of a queued timer issues nothing more; a passed deadline cancels the
+  // token too.
+  const cancelled = (deadline) => {
+    if (!token.cancelled && clock.now() >= deadline) token.cancelled = true;
+    return token.cancelled;
+  };
+  const guarded = (deadline, issue) => (cancelled(deadline)
+    ? Promise.reject(new Error("The image probe was cancelled."))
+    : issue());
+  const sendBy = (deadline) => (method, params) => guarded(deadline, () => session.send(method, params));
+
+  const listingEnded = listingMs < probe.listingBoundMs ? boundEnded : "probe_timeout";
+  let listingTimer;
+  try {
+    const listed = await Promise.race([
+      listImageElements(sendBy(listingEnd), mainFrame.id, limits),
+      new Promise((resolve) => {
+        listingTimer = setTimeout(() => {
+          token.cancelled = true;
+          resolve(BOUND_ENDED);
+        }, listingMs);
+      }),
+    ]);
+    if (listed === BOUND_ENDED || cancelled(listingEnd)) return outcome(listingEnded);
+    listing = imageListing(listed, probe.imageCap);
+  } catch {
+    return outcome(cancelled(listingEnd) ? listingEnded : "document_context_changed");
+  } finally {
+    clearTimeout(listingTimer);
+  }
+  if (!listing) return outcome("document_context_changed");
+  if (listing.observed_count > probe.imageCap) return outcome("image_cap_reached");
+  if (cancelled(boundEnd)) return outcome(boundEnded);
+
+  const send = sendBy(boundEnd);
+  const deadline = clock.sleep(boundEnd - clock.now()).then(() => {
+    token.cancelled = true;
+    return BOUND_ENDED;
+  });
+  // One probe step: started only inside the bound, and raced against it. A
+  // step that settles past the bound reads BOUND_ENDED, not its result.
+  const step = async (start) => {
+    if (cancelled(boundEnd)) return BOUND_ENDED;
+    const settled = await Promise.race([Promise.resolve().then(start).then((value) => ({ value }), (error) => ({ error })), deadline]);
+    return cancelled(boundEnd) ? BOUND_ENDED : settled;
+  };
+  let navigated = false;
+  const watched = [];
+  const watch = (event, frameOf) => {
+    const listener = (payload) => {
+      if (frameOf(payload) === mainFrame.id) navigated = true;
+    };
+    session.on(event, listener);
+    watched.push([event, listener]);
+  };
+  try {
+    const enabled = await step(() => send("Page.enable"));
+    if (enabled === BOUND_ENDED) return outcome(boundEnded);
+    if (enabled.error) return outcome("document_context_changed");
+    watch("Page.frameRequestedNavigation", (payload) => payload?.frameId);
+    watch("Page.frameStartedLoading", (payload) => payload?.frameId);
+    watch("Page.frameNavigated", (payload) => payload?.frame?.id);
+    const read = await step(() => guarded(boundEnd, () => collectImageElements(page, limits)));
+    if (read === BOUND_ENDED) return outcome(boundEnded);
+    if (read.error) return outcome("document_context_changed");
+    const reread = await step(() => send("Page.getFrameTree"));
+    if (reread === BOUND_ENDED) return outcome(boundEnded);
+    if (reread.error) return outcome("document_context_changed");
+    const frame = reread.value?.frameTree?.frame;
+    if (navigated || frame?.id !== mainFrame.id || frame?.loaderId !== mainFrame.loaderId) return outcome("document_context_changed");
+    const value = imageListing(read.value, probe.imageCap);
+    if (!value) return outcome("document_context_changed");
+    if (value.observed_count > probe.imageCap) return outcome("image_cap_reached");
+    return cancelled(boundEnd) ? outcome(boundEnded) : outcome("complete", value);
+  } catch {
+    return outcome(cancelled(boundEnd) ? boundEnded : "document_context_changed");
+  } finally {
+    for (const [event, listener] of watched) {
+      if (typeof session.off === "function") session.off(event, listener);
+    }
+  }
+}
+
 function preferredResolvedValue(finalValue, initialValue) {
   return typeof finalValue === "string" && finalValue !== "" ? finalValue : initialValue;
 }
@@ -676,7 +913,10 @@ export async function createPolishBrowserAdapter({
   let poisonCode = null;
   let closePromise = null;
   return {
-    async captureRoute({ url, viewport, signal } = {}) {
+    // `imageProbe` ({ clock, remainingMs, cellBoundMs, imageCap,
+    // listingBoundMs }) opts the cell into the media-weight image probe; the
+    // observation then carries `imageProbe` beside the page-load fields.
+    async captureRoute({ url, viewport, signal, imageProbe: probeOptions = null } = {}) {
       if (closed) throw new Error("Campaigns OS polish capture browser adapter is already closed.");
       if (poisonCode === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw polishProducerTimeoutError();
       if (poisonCode === POLISH_PRODUCER_CLEANUP_ERROR_CODE) throw polishProducerCleanupError();
@@ -791,12 +1031,16 @@ export async function createPolishBrowserAdapter({
             network.responseCollectionStatus = "failed";
             network.responses.push(captureProblemRecord("document_context_changed"));
           }
+          const imageProbe = probeOptions && typeof probeOptions === "object"
+            ? await awaitActive(probeImageElements({ page, session, mainFrame, documentContextChanged, probe: probeOptions }))
+            : null;
           return {
             finalDocumentUrl,
             responseCollectionStatus: network.responseCollectionStatus,
             networkidle,
             mediaElements,
             responses: network.responses,
+            ...(imageProbe ? { imageProbe } : {}),
           };
         }, {
           timeoutMs: boundedCellDeadlineMs,

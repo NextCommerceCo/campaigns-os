@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.51.0+agent.1] - 2026-10-04
+
+### Added
+
+- Polish capture now records image geometry and redirect chains, and reports origin and weight warnings for video and large images served from the page's own origin, plus oversized images.
+
 ## [1.51.0] - 2026-10-04
 
 ### Added

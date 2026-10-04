@@ -413,23 +413,43 @@ const inVocabulary = (vocabulary, field, value) => Array.isArray(vocabulary?.[fi
 const isPair = (value) => Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0);
 
 // The subjects a cell lists whatever happens to it: one weight result per
-// resource, one per unfetched <video>, one oversize result per <img>.
+// resource, one per unfetched <video>, one per probed <img> whose currentSrc
+// is in no resource's chain ("img:<element_path>"), one oversize result per
+// <img>, and one oversize result keyed "cell" for a cell that lists no <img>
+// (so an image-free page is never silent).
 function cellSubjects(cell) {
   const route = cell?.route ?? null;
   const viewport = cell?.viewport ?? null;
   const subjects = [];
-  for (const resource of Array.isArray(cell?.resources) ? cell.resources : []) {
+  const resources = Array.isArray(cell?.resources) ? cell.resources : [];
+  const images = Array.isArray(cell?.images) ? cell.images : [];
+  for (const resource of resources) {
     subjects.push({ check: "media.weight", page: route, viewport, key: resource?.resource_id ?? null });
   }
   for (const video of Array.isArray(cell?.videos) ? cell.videos : []) {
     if (Array.isArray(video?.resource_ids) && video.resource_ids.length) continue;
     subjects.push({ check: "media.weight", page: route, viewport, key: `video:${video?.element_index}` });
   }
-  for (const image of Array.isArray(cell?.images) ? cell.images : []) {
+  const chained = new Set(resources.flatMap((resource) => (Array.isArray(resource?.chain) ? resource.chain.map((hop) => hop?.resource_id) : [])));
+  const unledgered = new Set();
+  for (const image of images) {
+    if (image?.resource_id && chained.has(image.resource_id)) continue;
+    const key = `img:${image?.element_path}`;
+    if (unledgered.has(key)) continue;
+    unledgered.add(key);
+    subjects.push({ check: "media.weight", page: route, viewport, key });
+  }
+  for (const image of images) {
     subjects.push({ check: "media.oversize", page: route, viewport, key: `${image?.resource_id}:${image?.element_path}` });
   }
+  if (!images.length) subjects.push({ check: "media.oversize", page: route, viewport, key: "cell" });
   return subjects;
 }
+
+// A value the image probe observed, or null where the cell's probe did not
+// complete and so observed nothing (dpr and image geometry have no raw
+// counterpart; only their vocabulary is checked).
+const observedOrNull = (cell, value, check) => check(value) || (cell.probe_status !== "complete" && value === null);
 
 function recordVocabularyOk(record, vocabulary) {
   return record.cells.every((cell) => isPlainObject(cell)
@@ -437,7 +457,7 @@ function recordVocabularyOk(record, vocabulary) {
     && isNonEmptyString(cell.viewport)
     && Array.isArray(record.subject?.routes) && record.subject.routes.includes(cell.route)
     && Array.isArray(record.subject?.viewports) && record.subject.viewports.includes(cell.viewport)
-    && typeof cell.dpr === "number" && cell.dpr > 0
+    && observedOrNull(cell, cell.dpr, (dpr) => typeof dpr === "number" && dpr > 0)
     && isNonEmptyString(cell.page_load_integrity)
     && inVocabulary(vocabulary, "capture_status", cell.capture_status)
     && inVocabulary(vocabulary, "probe_status", cell.probe_status)
@@ -452,11 +472,11 @@ function recordVocabularyOk(record, vocabulary) {
     && Array.isArray(cell.images) && cell.images.every((image) => isPlainObject(image)
       && (image.resource_id === null || isNonEmptyString(image.resource_id))
       && isNonEmptyString(image.element_path)
-      && typeof image.complete === "boolean"
-      && typeof image.hidden === "boolean"
-      && isPair(image.natural)
-      && isPair(image.rendered)
-      && inVocabulary(vocabulary, "object_fit", image.object_fit)
+      && observedOrNull(cell, image.complete, (value) => typeof value === "boolean")
+      && observedOrNull(cell, image.hidden, (value) => typeof value === "boolean")
+      && observedOrNull(cell, image.natural, isPair)
+      && observedOrNull(cell, image.rendered, isPair)
+      && observedOrNull(cell, image.object_fit, (value) => inVocabulary(vocabulary, "object_fit", value))
       && inVocabulary(vocabulary, "loading", image.loading))
     && Array.isArray(cell.videos) && cell.videos.every((video) => isPlainObject(video)
       && Number.isInteger(video.element_index)
@@ -534,7 +554,10 @@ function cellReproduces(cell, capture) {
       || !chainIds.every((id) => expected.hops.has(id))) return false;
     for (const [index, hop] of chain.entries()) {
       const entry = byId.get(hop.resource_id);
-      if (!entry || hop.url !== entry.url || !Array.isArray(entry.statuses) || !entry.statuses.includes(hop.status)) return false;
+      if (!entry || hop.url !== entry.url || !Array.isArray(entry.statuses)) return false;
+      // A final hop whose request failed with no HTTP response carries no status.
+      const noResponse = index === chain.length - 1 && entry.statuses.length === 0 && entry.failed_request_count > 0 && hop.status === null;
+      if (!noResponse && !entry.statuses.includes(hop.status)) return false;
       if (!final.match_resource_ids.includes(hop.resource_id)) return false;
       // Every hop but the last answered with a redirect; the last did not.
       if (REDIRECT_STATUSES.has(hop.status) !== (index < chain.length - 1)) return false;
@@ -574,6 +597,23 @@ const unbound = (subject) => {
   return rest;
 };
 const hasExactly = (object, fields) => isPlainObject(object) && sameJson(Object.keys(unbound(object)).sort(), [...fields].sort());
+
+// The routes of spec pages the run did not capture (no source mapping),
+// listed in the record as uncaptured_routes (absent reads as none). The
+// page_load capture records that pages were skipped only as route_scope
+// "selected", so a list is accepted only then, and only of routes it did not
+// capture. Null when the list is malformed.
+function uncapturedRoutesOf(record) {
+  if (!Object.hasOwn(record, "uncaptured_routes")) return [];
+  const routes = record.uncaptured_routes;
+  if (!Array.isArray(routes)) return null;
+  if (!routes.length) return routes;
+  return uniqueStrings(routes)
+    && record.subject.route_scope === "selected"
+    && routes.every((route) => route.startsWith("/") && !record.subject.routes.includes(route))
+    ? routes
+    : null;
+}
 
 // The record's declared subject: exactly the page_load subject fields, each
 // well formed. Its routes × viewports is the declared cell grid.
@@ -620,6 +660,8 @@ function captureBindingProblem(capture, subject, currentBuild) {
     || !subject.viewports.includes(own.viewport)) return "fail";
   return isNonEmptyString(currentBuild) && own.build_fingerprint === currentBuild ? null : "stale";
 }
+
+const PAGE_NOT_CAPTURED = "page_not_captured";
 
 export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStandIns = null, rederivers = null } = {}) {
   if (record === undefined || record === null) return [];
@@ -679,7 +721,8 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
     || !measurementSummaryOk(pageLoad.measurement, declaredGrid(record.subject), pageLoad.captures.length)
     || !Array.isArray(record.cells)
     || cells.length !== record.cells.length
-    || !recordVocabularyOk(record, rules.vocabulary)) return failAll();
+    || !recordVocabularyOk(record, rules.vocabulary)
+    || uncapturedRoutesOf(record) === null) return failAll();
 
   // The declared grid (routes × viewports) is the capture set and the cell
   // set: exactly one page_load capture and one cell per declared route and
@@ -703,6 +746,17 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
     && record.subject.build_fingerprint === currentBuild
     && pageLoad.subject.build_fingerprint === currentBuild;
   const results = [];
+  // A spec page with no source mapping: one result per 1.3 check and viewport,
+  // unexercised / page_not_captured.
+  for (const route of uncapturedRoutesOf(record)) {
+    for (const viewport of record.subject.viewports) {
+      for (const check of POLISH_CHECKS) {
+        const subject = { check, page: route, viewport, key: "cell" };
+        const row = unreproducedRow({ subject, check }, PAGE_NOT_CAPTURED, { leg: "polish", measuredAt });
+        results.push(recordBound ? row : staleRow(row));
+      }
+    }
+  }
   for (const cell of cells) {
     const capture = captureByKey.get(cellKey(cell.route, cell.viewport));
     const binding = captureBindingProblem(capture, record.subject, currentBuild);

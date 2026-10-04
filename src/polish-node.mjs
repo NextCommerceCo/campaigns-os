@@ -11,6 +11,13 @@ import {
   plainHttpDependencyFailures,
 } from "./polish-capture.mjs";
 import {
+  buildMediaWeightCell,
+  buildMediaWeightRecord,
+  MEDIA_PROBE_LIMITS,
+  MEDIA_WEIGHT_PRODUCER,
+  MEDIA_WEIGHT_SCHEMA_VERSION,
+} from "./polish-media-weight.mjs";
+import {
   buildPolishPageLoadEvidence,
   evaluateHiddenEagerMediaCheckpoint,
   HIDDEN_EAGER_MEDIA_SCOPE,
@@ -285,9 +292,17 @@ function canonicalJson(value) {
   return JSON.stringify(canonicalize(value));
 }
 
+// Covers both package-owned capture keys: a page_load or media_weight that
+// changes during the browser pass refuses the attachment.
 function conflictToken(visualReview) {
-  if (!Object.hasOwn(visualReview, "page_load")) return "absent";
-  return `sha256:${createHash("sha256").update(canonicalJson({ value: visualReview.page_load })).digest("hex")}`;
+  const hasPageLoad = Object.hasOwn(visualReview, "page_load");
+  const hasMediaWeight = Object.hasOwn(visualReview, "media_weight");
+  if (!hasPageLoad && !hasMediaWeight) return "absent";
+  const value = {
+    ...(hasPageLoad ? { value: visualReview.page_load } : {}),
+    ...(hasMediaWeight ? { media_weight: visualReview.media_weight } : {}),
+  };
+  return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
 
 function captureReportAncestors(report) {
@@ -446,6 +461,47 @@ export function mergePolishPageLoadEvidence(report, pageLoad) {
   };
 }
 
+// Attaches both records of one capture: page_load as
+// mergePolishPageLoadEvidence does, and its sibling media_weight under the
+// same producer and schema checks, bound to the same page_load subject. A
+// capture without media_weight (an adapter that ran no image probe) removes
+// any earlier media_weight, which no longer describes the attached page_load.
+export function mergePolishCaptureEvidence(report, { pageLoad, mediaWeight = null } = {}) {
+  const merged = mergePolishPageLoadEvidence(report, pageLoad);
+  const { media_weight: _previous, ...visualReview } = merged.stages.polish.evidence.visual_review;
+  if (mediaWeight !== null && mediaWeight !== undefined) {
+    if (!isPlainObject(mediaWeight)
+      || mediaWeight.schema_version !== MEDIA_WEIGHT_SCHEMA_VERSION
+      || mediaWeight.performed_by !== MEDIA_WEIGHT_PRODUCER
+      || canonicalJson(mediaWeight.subject) !== canonicalJson(pageLoad.subject)) {
+      throw new Error("polish capture can attach only package-produced media_weight evidence for the same page_load capture.");
+    }
+    visualReview.media_weight = mediaWeight;
+  }
+  merged.stages.polish.evidence.visual_review = visualReview;
+  return merged;
+}
+
+// The public routes of spec pages the plan skips (no source mapping), for
+// media_weight's page_not_captured results. A skipped page without a
+// resolvable public route names no route and is left out.
+function uncapturedPublicRoutes(packet, plan) {
+  const captured = new Set(plan.routes.map((route) => route.requested_route));
+  const routes = [];
+  for (const mapping of packet.source_html.pages) {
+    if (!nonemptyString(mapping?.skip_reason)) continue;
+    try {
+      const route = mappedPublicRoute(mapping?.page_kit?.public_route, mapping?.page_id);
+      if (!captured.has(route)) routes.push(route);
+    } catch {
+      // No public route to name.
+    }
+  }
+  return routes;
+}
+
+const isProbeClock = (value) => typeof value?.now === "function" && typeof value?.sleep === "function";
+
 // The fingerprint of the built output the capture binds to. Every way of not
 // having one is a named refusal, parallel to the missing recorded value: no
 // built route root (build has not run here), an output the walk cannot read
@@ -503,6 +559,7 @@ export async function capturePolishPageLoad({
   adapterStartupDeadlineMs,
   captureCellDeadlineMs,
   adapterCloseDeadlineMs,
+  probeClock = null,
 } = {}) {
   const plan = planPolishCapture({ packet, baseUrl });
   const slug = captureCampaignSlug(packet, report);
@@ -548,6 +605,11 @@ export async function capturePolishPageLoad({
   }
 
   const captures = [];
+  // Per cell, beside its capture: the adapter's observation and image probe,
+  // for the media_weight record.
+  const cellInputs = [];
+  let probeSpentMs = 0;
+  let probed = false;
   let adapterCloseError = null;
   let adapterPoisonProblem = null;
   let observedProducerTimeout = false;
@@ -565,6 +627,7 @@ export async function capturePolishPageLoad({
     for (const route of plan.routes) {
       for (const viewport of plan.viewports) {
         let observation;
+        let cellFailed = false;
         try {
           if (adapterStartupError) throw adapterStartupError;
           if (adapterPoisonProblem) {
@@ -573,8 +636,15 @@ export async function capturePolishPageLoad({
               : polishProducerCleanupError();
           }
           const abortController = new AbortController();
+          const imageProbe = {
+            ...(isProbeClock(probeClock) ? { clock: probeClock } : {}),
+            remainingMs: MEDIA_PROBE_LIMITS.runBudgetMs - probeSpentMs,
+            cellBoundMs: MEDIA_PROBE_LIMITS.cellBoundMs,
+            imageCap: MEDIA_PROBE_LIMITS.imageCap,
+            listingBoundMs: MEDIA_PROBE_LIMITS.listingBoundMs,
+          };
           observation = await runWithPolishProducerDeadline(
-            () => adapter.captureRoute({ url: route.url, viewport, signal: abortController.signal }),
+            () => adapter.captureRoute({ url: route.url, viewport, signal: abortController.signal, imageProbe }),
             {
               timeoutMs: cellDeadlineMs,
               onTimeout() { abortController.abort(); },
@@ -594,6 +664,7 @@ export async function capturePolishPageLoad({
               adapterCloseError = closeError;
             }
           }
+          cellFailed = true;
           observation = {
             finalDocumentUrl: route.url,
             responseCollectionStatus: "failed",
@@ -603,6 +674,10 @@ export async function capturePolishPageLoad({
               : producerTimedOut ? "producer_timeout" : "producer_failed",
           };
         }
+        const probe = !cellFailed && isPlainObject(observation.imageProbe) ? observation.imageProbe : null;
+        if (probe) probed = true;
+        if (Number.isFinite(probe?.spent_ms) && probe.spent_ms > 0) probeSpentMs += probe.spent_ms;
+        cellInputs.push({ route: route.requested_route, viewport: viewport.key, observation: cellFailed ? null : observation, probe });
         captures.push(buildPageLoadCapture({
           buildFingerprint,
           slug,
@@ -635,6 +710,7 @@ export async function capturePolishPageLoad({
       ? "producer_timeout"
       : "producer_failed";
     captures.length = 0;
+    for (const input of cellInputs) Object.assign(input, { observation: null, probe: null });
     for (const route of plan.routes) {
       for (const viewport of plan.viewports) {
         captures.push(buildPageLoadCapture({
@@ -662,5 +738,17 @@ export async function capturePolishPageLoad({
     viewports,
     captures,
   });
-  return { plan, page_load: pageLoad };
+  // The image probe's sibling record, when the adapter ran the probe. Each
+  // cell is stamped with the integrity of its page_load capture.
+  if (!probed) return { plan, page_load: pageLoad };
+  const mediaWeight = buildMediaWeightRecord({
+    pageLoad,
+    cells: cellInputs.map((input) => buildMediaWeightCell({
+      ...input,
+      capture: pageLoad.captures.find((capture) => capture.subject.requested_route === input.route
+        && capture.subject.viewport === input.viewport),
+    })),
+    uncapturedRoutes: uncapturedPublicRoutes(packet, plan),
+  });
+  return { plan, page_load: pageLoad, media_weight: mediaWeight };
 }

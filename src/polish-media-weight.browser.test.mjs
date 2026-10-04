@@ -2,7 +2,8 @@
 // in real Chromium against loopback stub origins (contract §1.3, Frozen
 // fixture table F1.3-*). The harness, the no-network guards and the
 // CAMPAIGNS_OS_REQUIRE_BROWSER gate live in
-// src/polish-media-weight-harness.browser.test.mjs.
+// src/polish-media-weight-harness.browser.test.mjs. F1.3-I1 is leg D/CLI
+// (owner decision A8) and lives in src/polish-media-weight.test.mjs.
 //
 // Each row:
 // 1. serves its synthetic setup and runs the real producer
@@ -69,7 +70,6 @@ import {
   stalled,
   svg,
   unledgeredImageKey,
-  zeroByteStall,
 } from "./polish-media-weight-harness.browser.test.mjs";
 import {
   assertAccepted,
@@ -211,12 +211,22 @@ const OVERSIZED = { natural: [2400, 1800], style: "width:300px;height:225px;obje
 
 // A discarded probe (contract 1.3 Evaluation order step 3) on a page with one
 // OVERSIZED <img> served small and complete: the cell records the probe
-// status; the document and the image read weight pass; the <img> keeps its
-// subject and reads oversize unexercised with the probe status.
+// status; the <img> keeps its subject and reads oversize unexercised with the
+// probe status. Where a probe cost cap ended the probe (contract :154-155,
+// :1670), every result of the cell carries the page_coverage member with the
+// cap code, so the document and the image read weight unexercised with it;
+// otherwise they read weight pass. A cell the run budget ended before starts
+// no probe step, so it lists no <img> and its one oversize result is keyed
+// "cell".
+const PROBE_COST_CAPS = ["probe_timeout", "image_cap_reached", "probe_budget_exhausted"];
+const weightUnderCap = (status) => (PROBE_COST_CAPS.includes(status) ? ["unexercised", status] : ["pass"]);
+const oversizeUnderCap = (status, key) => [status === "probe_budget_exhausted" ? "cell" : key, "unexercised", status];
+
 function discardedProbeCells(same, name, imagePath, status) {
   return bothCells(route(name), {
-    weight: [[doc(same, name), "pass"], [rid(same.url(imagePath)), "pass"]],
-    oversize: [[oversizeKey(rid(same.url(imagePath)), FIRST_IMG), "unexercised", status]],
+    weight: [[doc(same, name), ...weightUnderCap(status)], [rid(same.url(imagePath)), ...weightUnderCap(status)]],
+    oversize: [oversizeUnderCap(status, oversizeKey(rid(same.url(imagePath)), FIRST_IMG))],
+    capCode: PROBE_COST_CAPS.includes(status) ? status : null,
   });
 }
 
@@ -704,75 +714,6 @@ browserTest("F1.3-B14 accepted F1.3-B3, image replaced by a 2000×1500 file in t
 // ---------------------------------------------------------------------------
 // Incomplete rows
 
-// "Hidden-eager unchanged" for the F1.3-I1 setup: the outcome the existing
-// rule (src/polish-page-load.mjs, evaluateHiddenEagerMediaCheckpoint) yields
-// for the same capture. The row's capture is incomplete (the zero-byte
-// transfer has no measured and no declared length), and the existing rule
-// blocks any capture whose recomputed measurement is not complete before it
-// looks at bytes (src/polish-page-load.mjs:1043-1049, nonwaivableBlock):
-// blocked / polish.hidden_eager_media.capture_incomplete, no findings.
-// Pinned here, not read from a second call to the code under test.
-const I1_HIDDEN_EAGER = Object.freeze({
-  scope: "polish.hidden_eager_media",
-  status: "blocked",
-  checkpoint_status: "blocked",
-  code: "polish.hidden_eager_media.capture_incomplete",
-  findings: [],
-});
-const hiddenEagerOutcome = (checkpoint) => ({
-  scope: checkpoint?.scope,
-  status: checkpoint?.status,
-  checkpoint_status: checkpoint?.checkpoint_status,
-  code: checkpoint?.code,
-  findings: checkpoint?.findings,
-});
-
-browserTest("F1.3-I1 one zero-byte transfer with no measured and no declared length in the cell: all 1.3 results in the cell unexercised, hidden-eager unchanged (capture_incomplete)", async (t) => {
-  // pending owner decision: the unchanged collector (src/polish-browser.mjs:
-  // 258-265) drops a canceled response with no complete record, so this
-  // header-only stalled stimulus never reaches the ledger as an unmeasured
-  // entry; the frozen browser stimulus may not be deliverable without a
-  // collector change. Leg and stimulus are kept as frozen until decided.
-  const zero = "/img/i1-zero.png";
-  const shown = "/img/i1-shown.png";
-  const { same, other, output } = await captureOne(t, "i1", ({ same: origin }) => {
-    origin.serve(route("i1"), page(`${img(`src="${shown}" style="${OVERSIZED.style}"`)}${img(`src="${zero}" width="40" height="30"`)}`));
-    origin.serve(shown, pngFile(...OVERSIZED.natural));
-    origin.serve(zero, zeroByteStall());
-  });
-  assertRequestLog({ same, other }, { same: requests([route("i1"), shown, zero]) }, "setup: the zero-byte image was requested");
-  // The route-capture/v0 projection is unchanged: no 1.3 field rides in it.
-  const ROUTE_CAPTURE_KEYS = ["document_response", "integrity", "measurement_status", "media", "media_collection", "metrics", "networkidle", "performed_by", "problems", "producer_status", "resource_ledger", "response_collection", "schema_version", "subject"];
-  eachCapture(output, "i1", (part, viewport) => {
-    assert.deepEqual(Object.keys(part).sort(), ROUTE_CAPTURE_KEYS, `setup (${viewport}): the page_load capture keeps exactly its route-capture/v0 fields`);
-  });
-  const { evaluateRecordedHiddenEagerMediaCheckpoint } = await import("./polish-node.mjs");
-  const now = "2026-10-04T12:00:00.000Z";
-  const reportWith = (visualReview) => ({ ...output.report, waivers: [], stages: { ...output.report.stages, polish: { stage: "polish", evidence: { visual_review: visualReview } } } });
-  assert.deepEqual(
-    hiddenEagerOutcome(evaluateRecordedHiddenEagerMediaCheckpoint({ packet: output.packet, report: reportWith({ page_load: output.page_load }), now })),
-    I1_HIDDEN_EAGER,
-    "polish.hidden_eager_media reads its literal outcome for this setup from page_load alone",
-  );
-
-  const { record, results } = await readCells(output);
-  assert.equal(Object.hasOwn(output.page_load, "media_weight"), false, "media_weight is kept out of the page_load capture");
-  for (const viewport of VIEWPORTS) {
-    assert.equal(mediaWeightCell(record, route("i1"), viewport).capture_status, "incomplete", `${route("i1")} ${viewport}: the cell is incomplete`);
-  }
-  // API assumption: the zero-byte transfer is a resource of the cell (the
-  // row places it "in the cell"), keyed by its resource_id.
-  assertResultSet(results, bothCells(route("i1"), {
-    weight: [[doc(same, "i1"), "unexercised", "capture_incomplete"], [rid(same.url(shown)), "unexercised", "capture_incomplete"], [rid(same.url(zero)), "unexercised", "capture_incomplete"]],
-    oversize: [[oversizeKey(rid(same.url(shown)), imgPath(1)), "unexercised", "capture_incomplete"], [oversizeKey(rid(same.url(zero)), imgPath(2)), "unexercised", "capture_incomplete"]],
-  }), route("i1"));
-  assert.deepEqual(
-    hiddenEagerOutcome(evaluateRecordedHiddenEagerMediaCheckpoint({ packet: output.packet, report: reportWith({ page_load: output.page_load, media_weight: record }), now })),
-    I1_HIDDEN_EAGER,
-    "polish.hidden_eager_media keeps its literal outcome with media_weight beside page_load",
-  );
-});
-
 // A canceled same-origin transfer with a declared length: 100,000 B sent
 // (Chrome reports the lower bound in its coarse step, at most 100,000 B).
 async function declaredLowerBoundRow(t, name, declared, weight) {
@@ -1108,8 +1049,9 @@ browserTest("F1.3-I16 run whose earlier cells consume the 10 s probe budget (inj
   });
   const smallKey = oversizeKey(rid(same.url("/img/i16-small.png")), FIRST_IMG);
   const slowExpected = order.flatMap(([name, viewport], index) => cellResults(route(name), viewport, {
-    weight: [[doc(same, name), "pass"], [rid(same.url("/img/i16-small.png")), "pass"]],
-    oversize: [[smallKey, "unexercised", REASONS[index]]],
+    weight: [[doc(same, name), ...weightUnderCap(REASONS[index])], [rid(same.url("/img/i16-small.png")), ...weightUnderCap(REASONS[index])]],
+    oversize: [oversizeUnderCap(REASONS[index], smallKey)],
+    capCode: REASONS[index],
   }));
   assertResultSet(results, [...slowExpected, ...discardedProbeCells(same, target, "/img/i16.png", "probe_budget_exhausted")], "the run");
 });

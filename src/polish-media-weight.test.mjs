@@ -1,13 +1,15 @@
 // F1.3 frozen fixture rows, leg D/CLI: a stored media_weight record
-// re-evaluated (contract §1.3, Frozen fixture table F1.3-B11, I9, I18, I20,
-// I21, I22). The browser rows are in src/polish-media-weight.browser.test.mjs.
+// re-evaluated (contract §1.3, Frozen fixture table F1.3-B11, I1, I9, I18,
+// I20, I21, I22). The browser rows are in
+// src/polish-media-weight.browser.test.mjs.
 //
 // The stored records are synthetic, package-shaped media_weight records and
 // their page_load captures, built by src/qc-test-factories.mjs
 // (mediaWeightFixture, twoCellFixture) and edited here the way each row's
-// setup states, with every checksum recomputed. They are read with the real
-// 1.3 rules: the registry's polish-media-weight.mjs through readMediaWeight,
-// the 1.0 Polish reader site. No stand-in rules are passed.
+// setup states, with every checksum recomputed; F1.3-I1 builds its own
+// through the package's page_load and media_weight builders. They are read
+// with the real 1.3 rules: the registry's polish-media-weight.mjs through
+// readMediaWeight, the 1.0 Polish reader site. No stand-in rules are passed.
 //
 // API assumptions (all rows): readMediaWeight returns the read results;
 // media.weight subjects are keyed by the resource's resource_id and
@@ -20,6 +22,7 @@ import {
   BUILD_FP,
   ORIGIN,
   ROUTES,
+  SLUG,
   VIEWPORT,
   assertAccepted,
   assertNoNetworkAttempts,
@@ -169,6 +172,245 @@ test("F1.3-B11 accepted F1.3-B3, stored record re-evaluated with dpr 2: accept l
 
 // ---------------------------------------------------------------------------
 // Incomplete rows
+
+// F1.3-I1, leg D/CLI (owner decision A8). The evidence is built the way the
+// producer builds it (src/polish-node.mjs, capturePolishPageLoad): collector
+// response records → buildPageLoadCapture → buildPolishPageLoadEvidence, and
+// buildMediaWeightCell / buildMediaWeightRecord over the stored captures, so
+// every integrity is the builders' own. The unchanged collector drops a
+// response with no measured and no declared length before it reaches the
+// ledger, so that one response record is written here; the ledger
+// aggregation it exercises is the package's. Every assertion of the browser
+// leg is kept but its stimulus and request log; the cells cover both of the
+// capture plan's viewports, as the browser capture does, so the recorded
+// hidden-eager checkpoint reads the capture rather than a stale one.
+const I1_SHOWN = "/runtime-packet-demo/img/i1-shown.jpg";
+const I1_ZERO = "/runtime-packet-demo/img/i1-zero.png";
+const CONTROL = "/runtime-packet-demo/img/control.jpg";
+const I1_VIEWPORTS = ["desktop", "mobile"];
+
+// "Hidden-eager unchanged" for the F1.3-I1 setup: the outcome the existing
+// rule (src/polish-page-load.mjs, evaluateHiddenEagerMediaCheckpoint) yields
+// for the same capture. The row's capture is incomplete (the zero-byte
+// transfer has no measured and no declared length), and the existing rule
+// blocks any capture whose recomputed measurement is not complete before it
+// looks at bytes (nonwaivableBlock): blocked /
+// polish.hidden_eager_media.capture_incomplete, no findings. Pinned here,
+// not read from a second call to the code under test.
+const I1_HIDDEN_EAGER = Object.freeze({
+  scope: "polish.hidden_eager_media",
+  status: "blocked",
+  checkpoint_status: "blocked",
+  code: "polish.hidden_eager_media.capture_incomplete",
+  findings: [],
+});
+const hiddenEagerOutcome = (checkpoint) => ({
+  scope: checkpoint?.scope,
+  status: checkpoint?.status,
+  checkpoint_status: checkpoint?.checkpoint_status,
+  code: checkpoint?.code,
+  findings: checkpoint?.findings,
+});
+
+async function i1Evidence() {
+  const { buildPageLoadCapture, singleResponseRecord } = await import("./polish-capture.mjs");
+  const { buildPolishPageLoadEvidence } = await import("./polish-page-load.mjs");
+  const { buildMediaWeightCell, buildMediaWeightRecord } = await import("./polish-media-weight.mjs");
+  // One collector response record (the polish-browser.mjs projection); no
+  // `bytes` leaves encoded_data_length out.
+  const response = (id, path, { type = "Image", mime = "image/jpeg", bytes, ...rest } = {}) => singleResponseRecord(id, {
+    url: `${ORIGIN}${path}`,
+    resource_type: type,
+    status: 200,
+    mime_type: mime,
+    ...(bytes === undefined ? {} : { encoded_data_length: bytes }),
+    source_urls: [`${ORIGIN}${path}`],
+    from_disk_cache: false,
+    from_prefetch_cache: false,
+    from_service_worker: false,
+    request_served_from_cache: false,
+    failed: false,
+    ...rest,
+  });
+  const documentResponse = (route) => response(`${route}:doc`, route, { type: "Document", mime: "text/html", bytes: 4_000, is_final_main_document: true, document_context_fingerprint: `sha256:${"a".repeat(64)}` });
+  const image = (path, index, geometry) => ({ current_src: `${ORIGIN}${path}`, element_path: `body>img:nth-of-type(${index})`, loading: "eager", hidden: false, object_fit: "fill", ...geometry });
+  const cells = [
+    {
+      // The cell under test: the document, a 300,000 B complete image
+      // (2400×1800 in a 300×225 fill box, F = 8) and the zero-byte image
+      // whose one transfer has no measured and no declared length.
+      route: ROUTES[0],
+      responses: () => [
+        documentResponse(ROUTES[0]),
+        response("shown", I1_SHOWN, { bytes: 300_000 }),
+        response("zero", I1_ZERO, { mime: "image/png" }),
+      ],
+      images: [
+        image(I1_SHOWN, 1, { complete: true, natural: [2400, 1800], rendered: [300, 225] }),
+        image(I1_ZERO, 2, { complete: false, natural: [0, 0], rendered: [40, 30] }),
+      ],
+    },
+    {
+      // The control cell (F1.3-B2): a 600,000 B complete image, 1200×800
+      // shown at 1200×800.
+      route: ROUTES[1],
+      responses: () => [documentResponse(ROUTES[1]), response("control", CONTROL, { bytes: 600_000 })],
+      images: [image(CONTROL, 1, { complete: true, natural: [1200, 800], rendered: [1200, 800] })],
+    },
+  ];
+  const inputs = cells.flatMap(({ route, responses, images }) => I1_VIEWPORTS.map((viewport) => ({
+    route,
+    viewport,
+    observation: { finalDocumentUrl: `${ORIGIN}${route}`, responseCollectionStatus: "complete", networkidle: { status: "settled", duration_ms: 500 }, mediaElements: [], responses: responses() },
+    probe: { status: "complete", dpr: 1, images },
+  })));
+  const captures = inputs.map(({ route, viewport, observation }) => buildPageLoadCapture({
+    buildFingerprint: BUILD_FP,
+    slug: SLUG,
+    requestedRoute: route,
+    viewport,
+    requestedDocumentUrl: observation.finalDocumentUrl,
+    ...observation,
+  }));
+  const pageLoad = buildPolishPageLoadEvidence({ buildFingerprint: BUILD_FP, slug: SLUG, routeScope: "all", routes: ROUTES, viewports: I1_VIEWPORTS, captures });
+  const record = buildMediaWeightRecord({
+    pageLoad,
+    cells: inputs.map((input) => buildMediaWeightCell({
+      ...input,
+      capture: pageLoad.captures.find((capture) => capture.subject.requested_route === input.route && capture.subject.viewport === input.viewport),
+    })),
+    measuredAt: new Date(Date.now() - 60_000).toISOString(),
+  });
+  return { pageLoad, record };
+}
+
+// assertResultSet across viewports: rows are [viewport, check, route, key,
+// result, reasonCode]; the same projection, exact ids, subjects and members.
+function assertI1ResultSet(results, expected, label) {
+  const actual = results.map((item) => ({
+    id: item?.id,
+    leg: item?.leg,
+    subject: item?.subject,
+    result: item?.result,
+    reason_code: item?.reason_code,
+    accept_eligible: item?.accept_eligible,
+    members: membersOf(item),
+  })).sort(byId);
+  const wanted = expected.map(([viewport, ...rest]) => {
+    const item = row(...rest);
+    return {
+      id: `${item.check}:${item.route}:${viewport}:${item.key}`,
+      leg: "polish",
+      subject: { check: item.check, page: item.route, viewport, key: item.key },
+      result: item.result,
+      reason_code: item.reason_code,
+      accept_eligible: item.result === "warning",
+      members: [],
+    };
+  }).sort(byId);
+  assert.deepEqual(actual, wanted, `${label}: the 1.3 results are exactly the setup's`);
+}
+
+test("F1.3-I1 one zero-byte transfer with no measured and no declared length in the cell: all 1.3 results in the cell unexercised, hidden-eager unchanged (capture_incomplete)", async (t) => {
+  const evidence = await i1Evidence();
+  const { pageLoad, record } = evidence;
+  const captureOf = (route, viewport) => pageLoad.captures.find((capture) => capture.subject.requested_route === route && capture.subject.viewport === viewport);
+  const zeroKey = resourceIdOf(`${ORIGIN}${I1_ZERO}`);
+  // The route-capture/v0 projection is unchanged: no 1.3 field rides in it.
+  const ROUTE_CAPTURE_KEYS = ["document_response", "integrity", "measurement_status", "media", "media_collection", "metrics", "networkidle", "performed_by", "problems", "producer_status", "resource_ledger", "response_collection", "schema_version", "subject"];
+  assert.equal(pageLoad.captures.length, ROUTES.length * I1_VIEWPORTS.length, "setup: one capture per route and viewport");
+  for (const viewport of I1_VIEWPORTS) {
+    const [tested, control] = ROUTES.map((route) => captureOf(route, viewport));
+    for (const part of [tested, control]) {
+      assert.deepEqual(Object.keys(part).sort(), ROUTE_CAPTURE_KEYS, `setup (${part.subject.requested_route} ${viewport}): the page_load capture keeps exactly its route-capture/v0 fields`);
+    }
+    const zero = tested.resource_ledger.entries.find((entry) => entry.resource_id === zeroKey);
+    assert.deepEqual(
+      zero && { transferred_bytes: zero.transferred_bytes, request_count: zero.request_count, unmeasured_request_count: zero.unmeasured_request_count, declared_request_count: zero.declared_request_count, canceled_request_count: zero.canceled_request_count, failed_request_count: zero.failed_request_count },
+      { transferred_bytes: 0, request_count: 1, unmeasured_request_count: 1, declared_request_count: 0, canceled_request_count: 0, failed_request_count: 0 },
+      `setup (${viewport}): the ledger records the zero-byte transfer with no measured and no declared length`,
+    );
+    assert.deepEqual([tested.measurement_status, tested.problems], ["incomplete", [{ code: "transfer_size_unavailable", count: 1 }]], `setup (${viewport}): that capture is incomplete for that transfer alone`);
+    assert.deepEqual([control.measurement_status, control.problems], ["complete", []], `setup (${viewport}): the control capture is complete`);
+  }
+  assert.equal(pageLoad.measurement.status, "incomplete", "setup: the page_load measurement is incomplete");
+  assert.equal(Object.hasOwn(pageLoad, "media_weight"), false, "media_weight is kept out of the page_load capture");
+  assert.deepEqual(record.cells.map((cell) => [cell.route, cell.viewport, cell.capture_status, cell.page_load_integrity]), ROUTES.flatMap((route, index) => I1_VIEWPORTS.map((viewport) => [
+    route,
+    viewport,
+    index === 0 ? "incomplete" : "complete",
+    captureOf(route, viewport).integrity.projection_fingerprint,
+  ])), "setup: each media_weight cell is stamped with its capture's status and integrity; the cell under test is incomplete in both viewports");
+  for (const cell of record.cells.filter((item) => item.route === ROUTES[0])) {
+    assert.equal(cell.resources.find((resource) => resource.resource_id === zeroKey)?.measurement, "unmeasured", `setup (${cell.viewport}): the record carries the transfer as unmeasured`);
+  }
+
+  // Hidden-eager, unchanged by 1.3, read through the recorded checkpoint the
+  // way the CLI reads it: from page_load alone, then with media_weight beside
+  // page_load. The packet plans exactly the captured routes (the plan's
+  // viewports are both of I1_VIEWPORTS).
+  const { evaluateRecordedHiddenEagerMediaCheckpoint, planPolishCapture } = await import("./polish-node.mjs");
+  const f = campaignFixture();
+  t.after(f.cleanup);
+  const fixturePacket = readJson(f.packetPath);
+  const [mapping] = fixturePacket.source_html.pages;
+  const packet = {
+    ...fixturePacket,
+    source_html: {
+      ...fixturePacket.source_html,
+      pages: ROUTES.map((route, index) => ({ ...mapping, page_id: `i1-${index}`, page_kit: { ...mapping.page_kit, public_route: route, spec_route: route } })),
+    },
+  };
+  const plan = planPolishCapture({ packet, baseUrl: ORIGIN });
+  assert.deepEqual([plan.route_scope, plan.routes.map((item) => item.requested_route), plan.viewports.map((item) => item.key)], ["all", ROUTES, I1_VIEWPORTS], "setup: the packet plans exactly the captured cells");
+  const fixtureReport = readJson(f.reportPath);
+  const now = "2026-10-04T12:00:00.000Z";
+  const reportWith = (visualReview) => ({
+    ...fixtureReport,
+    waivers: [],
+    stages: {
+      ...fixtureReport.stages,
+      assembly: { ...fixtureReport.stages.assembly, status: "completed", build_fingerprint: BUILD_FP },
+      polish: { stage: "polish", evidence: { visual_review: visualReview } },
+    },
+  });
+  assert.deepEqual(
+    hiddenEagerOutcome(evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report: reportWith({ page_load: pageLoad }), now })),
+    I1_HIDDEN_EAGER,
+    "polish.hidden_eager_media reads its literal outcome for this setup from page_load alone",
+  );
+  // The existing rule, called directly on the same capture, yields that
+  // outcome too.
+  const { evaluateHiddenEagerMediaCheckpoint } = await import("./polish-page-load.mjs");
+  assert.deepEqual(
+    hiddenEagerOutcome(evaluateHiddenEagerMediaCheckpoint({ pageLoad, buildFingerprint: BUILD_FP, slug: SLUG, routeScope: "all", routes: ROUTES, viewports: I1_VIEWPORTS, waivers: [], now })),
+    I1_HIDDEN_EAGER,
+    "the existing rule yields the literal outcome for this capture",
+  );
+
+  // API assumption: the zero-byte transfer is a resource of the cell (the
+  // row places it "in the cell"), keyed by its resource_id; the document is
+  // a resource of its cell, and its weight reads pass where the cell is
+  // complete.
+  const docKey = (route) => resourceIdOf(`${ORIGIN}${route}`);
+  const shownKey = resourceIdOf(`${ORIGIN}${I1_SHOWN}`);
+  const controlKey = resourceIdOf(`${ORIGIN}${CONTROL}`);
+  assertI1ResultSet(await readReal(evidence), I1_VIEWPORTS.flatMap((viewport) => [
+    [viewport, "media.weight", ROUTES[0], docKey(ROUTES[0]), "unexercised", "capture_incomplete"],
+    [viewport, "media.weight", ROUTES[0], shownKey, "unexercised", "capture_incomplete"],
+    [viewport, "media.weight", ROUTES[0], zeroKey, "unexercised", "capture_incomplete"],
+    [viewport, "media.oversize", ROUTES[0], `${shownKey}:body>img:nth-of-type(1)`, "unexercised", "capture_incomplete"],
+    [viewport, "media.oversize", ROUTES[0], `${zeroKey}:body>img:nth-of-type(2)`, "unexercised", "capture_incomplete"],
+    [viewport, "media.weight", ROUTES[1], docKey(ROUTES[1]), "pass"],
+    [viewport, "media.weight", ROUTES[1], controlKey, "warning", "image_over_threshold"],
+    [viewport, "media.oversize", ROUTES[1], `${controlKey}:body>img:nth-of-type(1)`, "pass"],
+  ]), "unmeasured cell and control cell");
+  assert.deepEqual(
+    hiddenEagerOutcome(evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report: reportWith({ page_load: pageLoad, media_weight: record }), now })),
+    I1_HIDDEN_EAGER,
+    "polish.hidden_eager_media keeps its literal outcome with media_weight beside page_load",
+  );
+});
 
 test("F1.3-I9 report evidence from before this version (no media_weight), hidden-eager still evaluated: unexercised (not_captured_by_this_version)", async (t) => {
   // This version carries the 1.3 rules; the record is what predates them.
