@@ -499,6 +499,17 @@ const WAIVE = ["--reason", "Pin held for a compatibility window", "--waived-by",
 const WAIVABLE_QA_ASSERTION = "analytics-correctness:purchase-fires";
 const PARITY_SCENARIO = "root-accessory-oto50";
 const CHECKPOINT_WAIVE = [...WAIVE, "--review-condition", "Re-evaluate before launch"];
+// A well-formed result ref and a named operator. No check this version ships
+// produces an accept-eligible warning, so the fixture holds no current result
+// and the accept is refused at its eligibility check: the rows are proved at
+// that refusal, and `expect` pins it so an argv error cannot pass in its place.
+const CHECKPOINT_ACCEPT = ["--result", "qc.synthetic:entry@0123456789ab", "--reason", "Operator accepted the measured warning", "--accepted-by", "Jordan Lee"];
+function acceptRefusedUnchanged(result, seed, label) {
+  assert.equal(result.code, 1, `${label}: checkpoint accept exited ${result.code}\n${result.stderr.split("\n").slice(0, 3).join("\n")}`);
+  const out = JSON.parse(result.stdout);
+  assert.equal(out.ok, false, label);
+  assert.equal(out.refusal_code, "changed_since_handoff", label);
+}
 // An intake names its spec by `--spec`, or by `--map-id` when runCondition has
 // set `seed.fetchMapId` (see `fetchSpec` below).
 const intake = (command, seed, extra = []) => [
@@ -562,6 +573,8 @@ const INVOCATIONS = {
   "theme generate|--force": { argv: (s) => ["theme", "generate", "--packet", s.packetPath, "--force", "--json"] },
   "theme waive": { argv: (s) => ["theme", "waive", "--packet", s.packetPath, ...WAIVE, "--json"] },
   "theme waive|--dry-run": { argv: (s) => ["theme", "waive", "--packet", s.packetPath, ...WAIVE, "--dry-run", "--json"] },
+  "checkpoint accept": { expect: acceptRefusedUnchanged, argv: (s) => ["checkpoint", "accept", "--packet", s.packetPath, ...CHECKPOINT_ACCEPT, "--json"] },
+  "checkpoint accept|--dry-run": { expect: acceptRefusedUnchanged, argv: (s) => ["checkpoint", "accept", "--packet", s.packetPath, ...CHECKPOINT_ACCEPT, "--dry-run", "--json"] },
   "checkpoint waive": { argv: (s) => ["checkpoint", "waive", "--packet", s.packetPath, "--gate", "page_kit.sdk_version", ...CHECKPOINT_WAIVE, "--json"] },
   "checkpoint waive|--dry-run": { argv: (s) => ["checkpoint", "waive", "--packet", s.packetPath, "--gate", "page_kit.sdk_version", ...CHECKPOINT_WAIVE, "--dry-run", "--json"] },
   "page-kit sync": { argv: (s) => ["page-kit", "sync", "--packet", s.packetPath, "--json"] },

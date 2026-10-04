@@ -123,6 +123,10 @@ and `build` (the intake alias for prepare-build + doctor), `theme waive`,
 sidecar refresh `qa run` makes after it records the QA stage (the verdict
 itself carries QA's own read).
 
+### `checkpoint accept`
+
+**Accepting a warning.** `campaigns-os checkpoint accept` records an operator's decision about a warning that a Campaigns OS check measured. It does not change readiness, does not remove the warning, does not change the status `next` reports, and cannot be used on review, unexercised, or excluded results. The warning must already be on record (in the doctor snapshot `next` writes, the Polish capture, or the full QA verdict) before it can be accepted. The accept is bound to the exact measured state and lapses when that state changes, or when its evidence is stale or cannot be reproduced. An optional expiry or review condition adds a second bound. Run it only with the operator's explicit decision, made after the warning was shown to them. A plausible name is not authorization. The command refuses placeholder and automation identities. Results are re-derived from the package's raw captures on every read, and a result whose capture is missing or does not match is listed as unexercised. These checks are tamper evidence, not proof of authorship: a hand-written record that copies every value and recomputes the checksum, or a hand-written result written together with a matching capture, is not detected.
+
 ## How to read a row
 
 ```jsonc
@@ -316,6 +320,8 @@ in for the destination — that the **declared destination is the one contacted*
 
 | Row | What the offline fixture cannot reach |
 | --- | --- |
+| `checkpoint accept` | An accept-eligible warning: no check this version ships produces one yet. Proved: the refused accept writes nothing — no report, no stale stamp, no journal entry — and contacts nothing. |
+| `checkpoint accept --dry-run` | An accept-eligible warning, as for `checkpoint accept`. Proved: the refused dry run writes nothing and contacts nothing. |
 | `login` | A reachable login gateway and a human at a browser. Proved: the failure path writes nothing at all — no credential, no journal entry. |
 | `logout` | A credential minted by a gateway login. Proved: the no-credential path writes nothing. |
 | `page-kit parity` | A `local-serve` deploy target and a page-kit renderer to build the two renders with. Proved: the refusal writes nothing but the journal entry. |

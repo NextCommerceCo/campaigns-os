@@ -8,6 +8,7 @@ import { shellToken } from "../shell-token.mjs";
 import { commitAssemblyReport, recordProducerStageOutcome } from "../stage-ledger.mjs";
 import { annotateDoctorIssueCauses } from "../finding-cause.mjs";
 import { DOCTOR_SIDECAR_SCHEMA } from "../doctor-sidecar.mjs";
+import { recordQcResults } from "../qc-results.mjs";
 import { resolveCampaignWorkspace } from "../campaign-workspace.mjs";
 import { normalizePublicRouteSlug } from "../route-identity.mjs";
 import { DEFAULT_PROXY_BASE } from "../spec-fetch.mjs";
@@ -123,7 +124,7 @@ export async function readDoctorLiveCampaign(args, { fetchImpl = globalThis.fetc
   });
 }
 
-export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = undefined } = {}) {
+export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = undefined, qcStandIns = undefined } = {}) {
   // Non-packet mode (learnings L7): doctor a `campaign-build`'d page-kit
   // campaign that has only a built _site/ and no full Build Packet. Resolves
   // scope from the built output and runs the built-output residue/text/
@@ -141,6 +142,8 @@ export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = u
     // A live campaign read (live-campaign-refs.mjs) the caller already made;
     // absent, the live ref check is recorded not_run.
     ...(liveCampaign !== undefined ? { liveCampaign } : {}),
+    // In-process QC stand-in checks (tests only; see qc-results.mjs).
+    ...(qcStandIns !== undefined ? { qcStandIns } : {}),
   };
   const result = runDoctor(packetPath, doctorOptions);
   // Inspection and recording are separate operations. A laptop's untracked
@@ -232,6 +235,8 @@ export function doctorBuiltOutput(args) {
     built_pages: scope.pages.map((page) => ({ page_id: page.page_id, type: page.page_type, route: page.route })),
     doctor_checks: [],
     checkpoint_gates: [],
+    // QC results: every result a QC check recomputed this run.
+    qc_results: [],
   };
   ready.push(`Resolved ${scope.html_count} built page(s) from ${relFromDir(targetRepo, scope.campaign_dir)} (slug "${scope.slug || "(site root)"}")`);
 
@@ -417,7 +422,7 @@ export function doctorPacket(packetPath, options = {}) {
   return result;
 }
 
-function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null, liveCampaign = undefined } = {}) {
+function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null, liveCampaign = undefined, qcStandIns = null } = {}) {
   // The Build Context records where prepare-build wrote the report
   // (--report-out). `next` follows that pointer when no --report is given;
   // doctor reads the same report so its gates and its next block cannot
@@ -449,6 +454,8 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     spec_path: null,
     doctor_checks: [],
     checkpoint_gates: [],
+    // QC results: every result a QC check recomputed this run.
+    qc_results: [],
     polish_checkpoint_gate: null,
     // The prepare-build gate `next` acts on, stored like every other gate so
     // the ladder consumes doctor's evaluation instead of computing its own.
@@ -546,6 +553,12 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     ready.push("Hidden eager-media checkpoint passed: package-owned page-load evidence is complete and current.");
   } else {
     ready.push("Hidden eager-media checkpoint not applicable before completed assembly.");
+  }
+
+  // QC stand-in checks reach doctor only through this in-process option
+  // (tests); the shipped checks record through recordQcResults themselves.
+  for (const check of Array.isArray(qcStandIns?.doctor) ? qcStandIns.doctor : []) {
+    recordQcResults({ derived, warnings, results: check() });
   }
 
   // The same fully resolved prepare-build gate the `next` command evaluates:

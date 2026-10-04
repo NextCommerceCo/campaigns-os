@@ -1,2 +1,3 @@
 # Tests never ship; the CLI and library modules beside them do.
 *.test.mjs
+qc-test-factories.mjs

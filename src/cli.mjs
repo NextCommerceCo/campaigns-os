@@ -76,7 +76,10 @@ import {
   isWrapperPolicy,
 } from "./adapter-decision-contract.mjs";
 import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./doctor-sidecar.mjs";
-import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import { QcAcceptRefusal, buildQcHandoff, parseQcResultRef, planQcAccepts, projectQcAccept, qcAcceptAttribution, qcHandoffTextLines } from "./qc-accept.mjs";
+import { loadQcRederivers } from "./qc-check-registry.mjs";
+import { fingerprint12, readCurrentQcResults } from "./qc-results.mjs";
+import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { writeMapSdkPin } from "./map-pin-writeback.mjs";
@@ -320,6 +323,7 @@ Usage:
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--dry-run] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused. --dry-run validates the same way and prints the waiver it would write, without touching the report
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> [--page <page_id>] --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope, source_html.producer_provenance (per page: --page <page_id> is required, for a Figma-typed page whose approved source is hand-written HTML). --dry-run runs every check (named human, bounds, registered and waivable gate) and prints the waiver it would write, without touching the report
+  campaigns-os checkpoint accept --packet <campaign-runtime.build.json> --result <result_id>@<fingerprint12> [--result ...] --reason "<the operator's reason>" --accepted-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run] [--json]   # record the operator's accept of a measured QC warning, as the QC handoff of next prints it; changes no readiness and lapses when the measured state or the build changes. --dry-run runs every check and prints the accepts it would record, without touching the report
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
   campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads through campaigns-os login gateway credentials (--store-token-source env:<VAR> explicitly selects the warned break-glass Admin path; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
@@ -461,9 +465,12 @@ function closestCommand(input) {
 // invocation policy: src/invocation.mjs owns it and main() only hands over the
 // mechanisms. The raw argv rides along for the handlers that must see it
 // (authentication, and the two raw-token validators).
-export async function main(argv, { authentication } = {}) {
+// `qcStandIns` is the in-process QC stand-in override the QC tests pass
+// (src/qc-test-factories.mjs). The bin entry point never passes it, and no
+// flag, environment variable or file can supply one.
+export async function main(argv, { authentication, qcStandIns } = {}) {
   return runInvocation(parseArgs(argv), {
-    dispatch: (command, args, context) => dispatch(command, args, { ...context, argv, authentication }),
+    dispatch: (command, args, context) => dispatch(command, args, { ...context, argv, authentication, qcStandIns }),
     closeOutStaleRunSessions,
     ambientRunSession,
     lifecycleIdentity,
@@ -722,7 +729,7 @@ export function recordQaStageOutcome(args, result) {
         // Which build this verdict judged, and the gates whose browser outcome
         // the doctor's static scan defers to (qaGatePassedForCurrentBuild). A
         // gate that never ran is left out, so silence never reads as a pass.
-        evidence: qaStageGateEvidence(verdict, report),
+        evidence: qaStageGateEvidence(verdict, report, result),
         // Counts-only: never order ids, refs, emails or URLs (see
         // summarizePurchaseProof). This is what lets `next` tell a real purchase
         // path from a `--test-order off` diagnostic.
@@ -758,12 +765,21 @@ export function recordQaStageOutcome(args, result) {
   }
 }
 
-function qaStageGateEvidence(verdict, report) {
+// QC results are written on every QA record, with the build
+// they were measured against, whether or not a gate outcome is recorded: a
+// record without qc_results reads as captured by an earlier version. The rows
+// come from the QA run's own result; readers re-derive them from the full
+// verdict's qc.* assertions.
+function qaStageGateEvidence(verdict, report, result = null) {
   const gates = {};
   const placeholderText = summarizePlaceholderTextGate(verdict);
   if (placeholderText) gates[QA_GATE_PLACEHOLDER_TEXT_RESIDUE] = placeholderText;
-  if (!Object.keys(gates).length) return null;
-  return { source_build_fingerprint: currentBuildFingerprint(report), gates };
+  const qc = {
+    qc_results: Array.isArray(result?.qc_results) ? result.qc_results : [],
+    qc_build_fingerprint: currentBuildFingerprint(report),
+  };
+  if (!Object.keys(gates).length) return qc;
+  return { source_build_fingerprint: currentBuildFingerprint(report), gates, ...qc };
 }
 
 // What the auto-end says when the attempt does NOT end the session. Every
@@ -895,7 +911,7 @@ const PREPARE_MODES = Object.freeze({
 // no ambient session, and ahead of help routing, so `login --help`, `demo
 // --help` and `tooling setup --help` reach their own handlers. `argv` is the
 // unparsed argv, for the handlers that must see repeated tokens.
-async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = null, sessionHolder = null, argv, authentication } = {}) {
+async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = null, sessionHolder = null, argv, authentication, qcStandIns } = {}) {
   // Authentication never recovers/remits run sessions or records argv in a
   // lifecycle journal. Credentials belong only in the user credential store.
   if (command === "login" || command === "logout") {
@@ -1003,7 +1019,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // The live campaign ref check's one read (#533), made before the
     // synchronous inspection; see readDoctorLiveCampaign.
     const liveCampaign = await readDoctorLiveCampaign(args);
-    const result = doctorCommand(args, { liveCampaign });
+    const result = doctorCommand(args, { liveCampaign, qcStandIns });
     writeResult(result, args, result.ok ? 0 : 2);
     printDoctorTinyPrompt(result, args);
     return;
@@ -1058,6 +1074,12 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   }
 
   if (command === "checkpoint") {
+    if (args._[1] === "accept") {
+      const result = await checkpointAcceptCommand(args, { argv, qcStandIns });
+      if (!result) return;
+      writeResult(result, args, result.ok ? 0 : 2);
+      return;
+    }
     const result = waiveOrRefuse(args, () => checkpointCommand(args), {
       gate: optionalString(args.gate) || null,
       registeredGates: Object.keys(CHECKPOINT_EVALUATORS),
@@ -1157,7 +1179,10 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // stage from the current report + doctor state. Existing form with an
     // explicit stage (`next build`, `next polish`, etc.) is unchanged.
     const stage = args._[1] || null;
-    const result = nextStage(stage, args, ambient);
+    // The QC handoff re-derives QA and Polish results through the check
+    // registry, whose check modules load lazily, so they are loaded here.
+    const qcRederivers = await loadQcRederivers();
+    const result = nextStage(stage, args, ambient, { qcStandIns, qcRederivers });
     await observeProgress(args, result, { packageVersion: packageVersion(), resolveKey: resolveCampaignsApiKeySource });
     writeResult(result, args, result.ok ? 0 : 2);
     printNextTinyPrompt(result, args);
@@ -2814,7 +2839,7 @@ function waiveOrRefuse(args, run, { gate = null, registeredGates = [] } = {}) {
 function checkpointCommand(args) {
   const subcommand = args._[1] || "help";
   if (subcommand !== "waive") {
-    throw refused(`Unknown checkpoint subcommand. Use: ${cmd("checkpoint")} waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> [--page <page_id>] --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: ${Object.keys(CHECKPOINT_EVALUATORS).join(", ")}.`);
+    throw refused(`Unknown checkpoint subcommand. Use: ${cmd("checkpoint")} waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> [--page <page_id>] --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: ${Object.keys(CHECKPOINT_EVALUATORS).join(", ")}. Or: ${cmd("checkpoint")} accept --packet <campaign-runtime.build.json> --result <result_id>@<fingerprint12> [--result …] --reason "<the operator's reason>" --accepted-by "<operator's name>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run].`);
   }
   return checkpointWaive(args);
 }
@@ -2934,6 +2959,170 @@ export function checkpointWaive(args) {
     waiver,
     report_path: reportPath,
     note: "The exact checkpoint state is accepted under a bounded named-human exception and will report ready_with_waivers, never clean. Any state change makes this waiver stale and inert.",
+  };
+}
+
+// `checkpoint accept`: records an operator's accept of a
+// measured QC warning in report.qc_accepts[], beside the unchanged
+// measurement. It reads only what is already on disk (doctor recomputed
+// offline, the persisted doctor sidecar, the Assembly Report and the full QA
+// verdict the QA stage names) and sends nothing. Every listed result must be a
+// current accept-eligible warning that was on record before this command;
+// the check runs again under the report lock immediately before the one
+// write, and if any ref fails nothing is written.
+const CHECKPOINT_ACCEPT_VALUE_FLAGS = Object.freeze({
+  packet: "<campaign-runtime.build.json>",
+  result: "<result_id>@<fingerprint12>",
+  reason: "\"<the operator's reason>\"",
+  "expires-at": "<ISO>",
+  "review-condition": "\"<trigger>\"",
+  report: "<json>",
+});
+
+// Every value of a flag the operator may repeat, from the raw argv: the shared
+// parser keeps only the last.
+function repeatedFlagValues(argv, flag) {
+  const values = [];
+  const tokens = Array.isArray(argv) ? argv : [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index] !== `--${flag}`) continue;
+    const next = tokens[index + 1];
+    values.push(next === undefined || next.startsWith("--") ? null : next);
+  }
+  return values;
+}
+
+function qcAcceptRefusalEnvelope(error) {
+  return {
+    ok: false,
+    refusal_code: error.code,
+    error: error.message,
+    ...(error.refused?.length ? { refused: error.refused.map(({ result_ref, refusal_code }) => ({ result_ref, refusal_code })) } : {}),
+  };
+}
+
+export async function checkpointAcceptCommand(args, { argv = [], qcStandIns = null } = {}) {
+  try {
+    const qcRederivers = await loadQcRederivers();
+    return checkpointAccept(args, { argv, qcStandIns, qcRederivers });
+  } catch (error) {
+    // A typed refusal is an invocation refusal like every untyped one
+    // (refused() marks this invocation's refusal scope), so a refused accept
+    // journals nothing, rendered under --json or thrown without it.
+    const refusal = error instanceof QcAcceptRefusal ? refused(`${error.message} (${error.code})`) : error;
+    if (args.json !== true) throw refusal;
+    const envelope = error instanceof QcAcceptRefusal ? qcAcceptRefusalEnvelope(error) : { ok: false, error: String(error?.message ?? error) };
+    console.log(JSON.stringify(envelope, null, 2));
+    console.error(`campaigns-os: ${envelope.error}`);
+    process.exitCode = 1;
+    return null;
+  }
+}
+
+export function checkpointAccept(args, { argv = [], qcStandIns = null, qcRederivers = null } = {}) {
+  // The command clock; no flag sets accepted_at.
+  const now = new Date().toISOString();
+  const acceptedByValues = repeatedFlagValues(argv, "accepted-by");
+  const acceptedBy = acceptedByValues.length === 1 && isNonEmptyString(args["accepted-by"]) ? args["accepted-by"] : null;
+  if (acceptedByValues.length > 1) throw refused("checkpoint accept takes one --accepted-by: one operator decides one accept command.");
+  for (const [key, placeholder] of Object.entries(CHECKPOINT_ACCEPT_VALUE_FLAGS)) {
+    if (!Object.hasOwn(args, key) || args[key] == null) continue;
+    if (!isNonEmptyString(args[key])) throw refused(`--${key} needs a value: pass --${key} ${placeholder}.`);
+  }
+  if (repeatedFlagValues(argv, "reason").length > 1) throw refused("checkpoint accept takes one --reason per invocation: the operator's reason, verbatim.");
+  const packetPath = resolve(requireArg(args, "packet"));
+  const dryRun = isDryRun(args);
+  const refValues = repeatedFlagValues(argv, "result");
+  if (!refValues.length) throw refused(`checkpoint accept needs at least one --result <result_id>@<fingerprint12>, as the QC handoff of \`${cmd("next")}\` prints it.`);
+  const refs = refValues.map((value) => {
+    const parsed = parseQcResultRef(value);
+    if (!parsed) throw refused(`--result ${JSON.stringify(value)} is not <result_id>@<fingerprint12>; copy the ref the QC handoff of \`${cmd("next")}\` prints.`);
+    return parsed;
+  });
+  const duplicate = refs.find((ref, index) => refs.findIndex((other) => other.id === ref.id) !== index);
+  if (duplicate) throw refused(`--result names "${duplicate.id}" more than once; list each result once.`);
+  const attribution = qcAcceptAttribution({
+    reason: args.reason,
+    acceptedBy,
+    now,
+    expiresAt: args["expires-at"] ?? null,
+    reviewCondition: args["review-condition"] ?? null,
+  });
+
+  const packet = readJson(packetPath);
+  const workspace = resolveCampaignWorkspace(packetPath, {
+    packet,
+    reportPath: args.report == null ? undefined : resolve(args.report),
+    followContextPointer: false,
+  });
+  const { reportPath, targetRepo, doctorOutPath } = workspace;
+  if (!existsSync(reportPath)) throw refused(`checkpoint accept needs an assembly report at ${reportPath}; run prepare-build/start first.`);
+  // An accept only appends. A qc_accepts or evidence value that is not an
+  // array is refused, never replaced, so the value already there stays as it
+  // is (checked on the read before the lock and again under it).
+  const refuseUnappendable = (report) => {
+    for (const field of ["qc_accepts", "evidence"]) {
+      if (isPlainObject(report) && Object.hasOwn(report, field) && !Array.isArray(report[field])) {
+        throw refused(`checkpoint accept refused; nothing was written: report.${field} in ${reportPath} is not an array, and an accept only appends to it. It was left as it is; repair it before accepting.`);
+      }
+    }
+  };
+
+  // Doctor is recomputed offline (no live refs), the spec read the way `next`
+  // reads it, and every leg's results taken from its reader site.
+  const plan = (report) => {
+    const doctor = doctorPacket(packetPath, { reportPath, ...(qcStandIns ? { qcStandIns } : {}) });
+    let spec = null;
+    try {
+      spec = readJsonIfExists(doctor.derived?.spec_path || null);
+    } catch {
+      spec = null;
+    }
+    const { results } = readCurrentQcResults({ report, doctor, spec, targetRepo, packetPath, reportPath, qcStandIns, rederivers: qcRederivers });
+    return planQcAccepts({ refs, results, sidecarPath: doctorOutPath, now, attribution });
+  };
+  // Checked once before taking the lock, so a refusal touches nothing, and
+  // again on the report read under the lock, immediately before the write.
+  const unlocked = readJson(reportPath);
+  refuseUnappendable(unlocked);
+  plan(unlocked);
+  let records = [];
+  const recordAccepts = (report) => {
+    refuseUnappendable(report);
+    records = plan(report);
+    return {
+      ...report,
+      qc_accepts: [...(report.qc_accepts ?? []), ...records],
+      evidence: [
+        ...(report.evidence ?? []),
+        ...records.map((record) => `QC accept: ${record.result_id}@${fingerprint12(record.state_fingerprint)} (${record.leg}) accepted by ${record.accepted_by} at ${record.accepted_at}: ${record.reason}`),
+      ],
+    };
+  };
+  commitWaiverToAssemblyReport(workspace, recordAccepts, {
+    command: "checkpoint accept",
+    staleReason: `A QC accept was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+  }, { dryRun });
+  const accepts = records.map(projectQcAccept);
+  if (dryRun) {
+    return {
+      ok: true,
+      status: "dry_run",
+      dry_run: true,
+      action: "checkpoint-accept",
+      accepts,
+      report_path: reportPath,
+      would_write: reportPath,
+      note: "Dry run: nothing was written and the doctor sidecar was not marked stale. Re-run without --dry-run to record these accepts.",
+    };
+  }
+  return {
+    ok: true,
+    status: "recorded",
+    action: "checkpoint-accept",
+    accepts,
+    report_path: reportPath,
+    note: "Each accept changes only the result's disposition to operator_accepted. The warning, doctor status, next status and QA disposition are unchanged, and the accept lapses when the measured state or the build changes.",
   };
 }
 
@@ -4041,7 +4230,7 @@ function describeDeclaredDepth(purchaseProof) {
   return `The declared order path depth is "${purchaseProof?.declared_depth || "unspecified"}"`;
 }
 
-export function nextStage(stage, args, ambient = null) {
+export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRederivers = null } = {}) {
   if (stage !== null && !NEXT_STAGE_ORDER.includes(stage)) {
     throw refused(`Unknown next stage: ${stage}. Accepted stages: ${NEXT_STAGE_ORDER.join(", ")}.`);
   }
@@ -4063,6 +4252,7 @@ export function nextStage(stage, args, ambient = null) {
   const doctor = doctorPacket(packetPath, {
     contextPath: args.context ? resolve(args.context) : undefined,
     reportPath: args.report ? resolve(args.report) : undefined,
+    ...(qcStandIns ? { qcStandIns } : {}),
   });
   const prepareBuildGate = doctor.derived?.prepare_build_gate || null;
   // The CampaignSpec doctor just read (spec.local_path), for the QA stage's
@@ -4141,6 +4331,13 @@ export function nextStage(stage, args, ambient = null) {
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
+    // The QC handoff: read from data already loaded plus the
+    // full QA verdict the QA stage names. It adds nothing to errors[],
+    // warnings[] or ready[], and `status` above never reads it. Its accept
+    // command names the report this run read when that is not the default
+    // one (from --report or the Build Context pointer), so it records there.
+    const qc = readCurrentQcResults({ report, doctor, spec, targetRepo, packetPath, reportPath, qcStandIns, rederivers: qcRederivers });
+    result.qc_handoff = buildQcHandoff({ results: qc.results, coverage: qc.coverage, accepts: report?.qc_accepts, packetPath, reportPath: explicitReportPath(reportPath, targetRepo) });
     recordNextRecommendation(ambient, result);
     return result;
   };
@@ -8221,6 +8418,10 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
     if (result.dry_run) lines.push(`Would write: ${result.would_write} (nothing was written)`);
     if (result.next_stage) lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
   }
+  if (result.action === "checkpoint-accept") {
+    for (const accept of result.accepts || []) lines.push(`${result.dry_run ? "Would accept" : "Accepted"}: ${accept.result_ref} by ${accept.accepted_by}${accept.expires_at ? ` until ${accept.expires_at}` : ""}`);
+    if (result.dry_run) lines.push(`Would write: ${result.would_write} (nothing was written)`);
+  }
   if (result.action === "record") {
     lines.push(`${result.dry_run ? "Would record" : "Recorded"}: ${result.stage}`);
     for (const path of result.dry_run ? result.would_write : result.written) lines.push(`${result.dry_run ? "Would write" : "Wrote"}: ${path}${result.dry_run ? " (nothing was written)" : ""}`);
@@ -8262,6 +8463,8 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   // Directly under the findings they remediate, above the stage picker's
   // `Next:` block: the operator reads what is wrong, then what clears it.
   lines.push(...doctorRequiredActionLines(result));
+  // `next` only: the QC handoff, after the issues and before the stage picker.
+  if (result.qc_handoff) lines.push(...qcHandoffTextLines(result.qc_handoff));
   if (result.next) {
     lines.push("Next:");
     lines.push(`- ${result.next.stage || "unknown"} (${result.next.owner || result.next.default_skill || "owner unknown"})`);

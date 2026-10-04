@@ -5453,6 +5453,159 @@
         }
       ],
       "entry_sha256": "6b11a07c55a232f4a461288288807198ba62708b62f07056a4a76e0efc2e75ca"
+    },
+    {
+      "id": "RL-0226",
+      "sequence": 218,
+      "date": "2026-10-04",
+      "kind": "release",
+      "surface_version": "1.51.0",
+      "changelog_section": "1.51.0",
+      "changelog_sha256": "acb40fac6861f258a17cc949e30c2aec372997a69ca4d25df82b133d30c71135",
+      "agent_impact": "Surface 1.51.0. New command checkpoint accept records an operator's accept of a measured QC warning beside the unchanged measurement, and next prints a QC handoff listing open, review, lapsed, unexercised and excluded results with the ref to accept each warning by. Accepts are operator decisions: at the end of QA, run next, present the QC handoff once, and run checkpoint accept only with the refs, reason and name the operator gave you in the conversation, after the warning was shown to them. Never write qc_accepts, qc_results or QA verdict files by hand; the up-front test-order permission does not cover accepts. An accept never changes readiness, a result, the doctor or next status, or the QA disposition, and it lapses when the measured state changes or its evidence is stale or cannot be reproduced. The effects contract declares checkpoint accept (tier B: appends to the Assembly Report, marks the doctor sidecar stale, journals) and its --dry-run form, and declares header-only GETs to the configured store policy URLs on the qa run --browser rows ahead of the check that sends them; QA does not send them yet. Bundled skills carry revision 1.51.0+skills.1: an agent that loaded an earlier revision should start a fresh session. Install the 1.51.0 package with the documented local setup command.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Advance the declared version to 1.51.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare checkpoint accept (tier B: appends to the Assembly Report's qc_accepts and evidence, marks the doctor sidecar stale, journals; sends nothing) and its --dry-run form, and declare header-only GETs to the CampaignSpec's configured store policy URLs on the two qa run --browser rows, ahead of the check that sends them."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.51.0 and record the effects contract hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Describe what checkpoint accept records, what it never changes, and when an agent may run it."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the 1.51.0 package in the local setup install command."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate at surface 1.51.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Add the operator-accept section: what checkpoint accept records, what it never changes, and when an agent may run it."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate at surface 1.51.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.51.0+skills.1 bundle in executable examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.51.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.51.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.51.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.51.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.51.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.51.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.51.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.51.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.51.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.51.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.51.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "At the end of QA, run next and present the QC handoff once, ask the operator which open warnings to accept and why, and run checkpoint accept only with the refs, reason and name the operator gave; never write qc_accepts, qc_results or QA verdict files by hand. Publish the 1.51.0+skills.1 bundle revision."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "checkpoint",
+          "summary": "Add checkpoint accept (refuses unless every listed result is a current accept-eligible warning already on record, and appends only), a QC handoff in next, and qc_results and qc_build_fingerprint on the QA stage evidence; record ingest refuses the package-owned QC keys."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor output carries derived.qc_results, empty until a QC check records a result; readiness is unchanged."
+        }
+      ],
+      "entry_sha256": "9702dae850ed7d8c2401f71939cb37eed3b63f09b3b7607f08ad94eccc8338da"
     }
   ]
 }
