@@ -1,12 +1,12 @@
-// Operator accepts of QC warnings (Increment 1, unit 1.0). An accept is stored
+// Operator accepts of QC warnings. An accept is stored
 // apart from the measurement, in report.qc_accepts[], and changes only a
 // result's disposition (open → operator_accepted). It never changes the
 // result, doctor status, `next` status, QA disposition, or a stage status.
 //
 // Records are checked on every read (assessQcAccepts). The integrity checksum
 // is unkeyed tamper evidence, not proof of authorship: a record a process with
-// the same file access fully reconstructs reads as active (contract
-// amendment A1).
+// the same file access fully reconstructs reads as active, and that is the
+// documented outcome.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 

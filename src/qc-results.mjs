@@ -1,4 +1,4 @@
-// The shared QC result contract (Increment 1, unit 1.0): one result shape,
+// The shared QC result contract: one result shape,
 // one storage rule per leg, and the readers that re-derive every stored result
 // from its raw package capture on every read.
 //

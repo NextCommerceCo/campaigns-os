@@ -1,5 +1,5 @@
 // The one map from a QC check id to the unit module that re-derives its
-// results (Increment 1, director ruling U2). The 1.0 readers
+// results. The QC readers
 // (src/qc-results.mjs) reach every unit rule through here, so a unit lands by
 // adding its module, never by editing the readers.
 //

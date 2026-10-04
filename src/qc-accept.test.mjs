@@ -1,7 +1,7 @@
 // F1.0 frozen fixture rows for `checkpoint accept`, the accept assessment and
 // readiness (contract §1.0 Accepts, Accept assessment, Surfaces).
 //
-// Stand-in override shape (freeze addendum U5), passed in-process only:
+// Test-only stand-in checks, passed in-process only (no environment variable, flag or file can install one):
 //   main(argv, { qcStandIns }) and doctorPacket(path, { qcStandIns }) (through doctorOf), with
 //   qcStandIns = { doctor: [() => QcResult[]], qa: { "<check>": (observation) => Derived | null },
 //                  polish: { thresholds, vocabulary, evaluate(cell, thresholds) => Derived[] } }.
@@ -270,8 +270,8 @@ test("F1.0-B5 [stand-in: 1.5 live_token] --accepted-by omitted: refused; nothing
   assertNothingWritten(f, before);
 });
 
-// Residual row (amendments A1): the documented outcome is asserted, not detection.
-test("F1.0-B7 [stand-in: 1.5 live_token] fully reconstructed hand-written accept on a current warning: accept active (A1 accepted behaviour)", async (t) => {
+// These checks are tamper evidence, not authorship proof: a full reconstruction reads as valid, and this test pins that documented outcome.
+test("F1.0-B7 [stand-in: 1.5 live_token] fully reconstructed hand-written accept on a current warning: accept active (documented tamper-evidence limit)", async (t) => {
   const { assessQcAccepts, qcAcceptIntegrity } = await import("./qc-accept.mjs");
   const { f, qcStandIns } = liveTokenSetup(t);
   const id = liveTokenId(NAME);
@@ -375,7 +375,7 @@ test("F1.0-B13 [stand-in: 1.5 live_token] accept, then the live {item.name} text
   assert.equal(assessment.why, "no_current_result");
 });
 
-// May already hold on BASE_SHA (card phase 0 note): pins the existing refusal.
+// This refusal predates QC accepts; the test pins the existing behaviour.
 test("F1.0-B14 qa waive --assertion qc.policy.availability:store_terms: refused by the existing waivable-assertion list", async (t) => {
   const f = campaignFixture();
   t.after(f.cleanup);
@@ -545,8 +545,8 @@ test("F1.0-I7 [stand-in: doctor mixed row] warning + review members offered to t
   );
 });
 
-// The "waive refused with the existing message" half may already hold on
-// BASE_SHA (card phase 0 note); it is asserted before the accept half.
+// The "waive refused with the existing message" half is existing behaviour
+// that predates QC accepts; it is asserted before the accept half.
 test("F1.0-I9 [stand-in: 1.5 live_token] active accepts present; checkpoint waive on a passing gate: waive refused with the existing message; status not ready_with_waivers", async (t) => {
   const { f, qcStandIns } = liveTokenSetup(t);
   const handoff = await runNext(f, qcStandIns).then((next) => next.qc_handoff);

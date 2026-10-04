@@ -465,7 +465,7 @@ function closestCommand(input) {
 // invocation policy: src/invocation.mjs owns it and main() only hands over the
 // mechanisms. The raw argv rides along for the handlers that must see it
 // (authentication, and the two raw-token validators).
-// `qcStandIns` is the in-process QC stand-in override the F1.0 tests pass
+// `qcStandIns` is the in-process QC stand-in override the QC tests pass
 // (src/qc-test-factories.mjs). The bin entry point never passes it, and no
 // flag, environment variable or file can supply one.
 export async function main(argv, { authentication, qcStandIns } = {}) {

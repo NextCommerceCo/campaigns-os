@@ -1,8 +1,7 @@
-// Regression tests for the two mutations the phase 0.2g mutation run left
-// alive (contract §1.0; freeze addendum ruling U2). M18: a load failure other
-// than ERR_MODULE_NOT_FOUND for the exact specifier read as a missing module.
-// M20: `next` added a warnings[] entry for an open QC result. Every setup is
-// synthetic and uses the F1.0 factory unchanged.
+// Regression tests for two defects. First, a load failure other than
+// ERR_MODULE_NOT_FOUND for the exact specifier was read as a missing module.
+// Second, `next` added a warnings[] entry for an open QC result. Every setup
+// is synthetic and uses the shared QC test factory unchanged.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,12 +34,12 @@ const E = "evidence_not_reproducible";
 const NOT_CAPTURED = "not_captured_by_this_version";
 
 // ---------------------------------------------------------------------------
-// M18: only ERR_MODULE_NOT_FOUND for the registered specifier itself reads
+// Only ERR_MODULE_NOT_FOUND for the registered specifier itself reads
 // not_captured_by_this_version. A throw at load, a syntax error or a missing
 // transitive import is a failed load, which every reader turns into
 // evidence_not_reproducible, never not_captured and never pass.
 
-test("M18 registry load classification: only the exact missing specifier reads not_captured_by_this_version; a throw, a syntax error or a missing transitive import reads evidence_not_reproducible, never pass", async (t) => {
+test("registry load classification: only the exact missing specifier reads not_captured_by_this_version; a throw, a syntax error or a missing transitive import reads evidence_not_reproducible, never pass", async (t) => {
   const { QC_CHECK_REGISTRY, loadQcRederivers } = await import("./qc-check-registry.mjs");
   const { handoffCoverage, readMediaWeight, readQaResults } = await import("./qc-results.mjs");
 
@@ -119,11 +118,11 @@ test("M18 registry load classification: only the exact missing specifier reads n
 });
 
 // ---------------------------------------------------------------------------
-// M20: `next` adds nothing to warnings[], errors[] or ready[] for QC results
-// (contract §1.0 Surfaces → next). An open QA warning in qc_handoff leaves
+// `next` adds nothing to warnings[], errors[] or ready[] for QC results; they
+// appear only in qc_handoff. An open QA warning in qc_handoff leaves
 // all three equal to the same packet's with no QC results.
 
-test("M20 next surfaces: an open QA warning in qc_handoff leaves next warnings[], errors[] and ready[] equal to the same packet with no QC results", async (t) => {
+test("next surfaces: an open QA warning in qc_handoff leaves next warnings[], errors[] and ready[] equal to the same packet with no QC results", async (t) => {
   const f = campaignFixture();
   t.after(f.cleanup);
   const measuredAt = new Date(Date.now() - 60_000).toISOString();
