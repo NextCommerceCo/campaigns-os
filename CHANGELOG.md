@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.51.0] - 2026-10-04
+
+### Added
+
+- Adds `checkpoint accept`, which records an operator's accept of a measured warning next to the unchanged measurement, and a QC handoff section in `next` that lists open, review, lapsed, unexercised and excluded results. Accepts never change readiness, and `checkpoint waive` still refuses gates that are not blocked.
+- The effects contract now declares bounded header-only GET requests to the store policy URLs a CampaignSpec configures, for `qa run --browser`, ahead of the check that sends them; QA does not send them yet.
+
 ## [1.50.0+agent.20] - 2026-10-04
 
 ### Changed

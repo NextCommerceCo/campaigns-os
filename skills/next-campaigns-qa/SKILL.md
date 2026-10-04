@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.29
+version: 1.3.30
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.50.0+skills.2
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.50.0+skills.2`
+Bundle revision: 1.51.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.51.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -121,6 +121,7 @@ Rules:
 - For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, available payment methods, and market-specific copy.
 - Treat missing deploy URL, missing polish status, or unresolved doctor blockers as launch blockers.
 - Report blockers, warnings, and residual risks.
+- At the end of QA, run `next` and present the QC handoff once. Ask the operator which open warnings to accept and why. Run `checkpoint accept` only with the refs, reason, and name the operator gave you in this conversation. Never write `qc_accepts`, `qc_results`, or QA verdict files by hand. The up-front test-order permission does not cover accepts.
 - QA follows build and polish; it does not edit campaign code.
 
 Canonical test-order flow:

@@ -28,7 +28,7 @@ const COMMAND_NAMES = [
   "telemetry", "theme", "tooling", "validate-assembly-report",
 ];
 const DRY_RUN_IMPLEMENTERS = [
-  "checkpoint waive", "install-agent-context", "install-skills", "page-kit sync", "qa publish",
+  "checkpoint accept", "checkpoint waive", "install-agent-context", "install-skills", "page-kit sync", "qa publish",
   "record build", "record deploy", "record polish", "record setup", "record theme", "run end", "run-record", "spec derive", "theme waive",
 ];
 
