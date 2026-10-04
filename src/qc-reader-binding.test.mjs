@@ -1,10 +1,11 @@
-// Regression tests for the phase-0 challenge findings on the 1.0 QC readers
-// and `checkpoint accept` (contract §1.0 Inputs, Reader sites, "Polish
-// media_weight reader checks", Silence, Accepts). Each test is a negative
-// control for one defect class: it fails when that defect is seeded and passes
-// on the real implementation. Every setup is synthetic and uses the F1.0
-// factory unchanged; expected values come from the contract, never from the
-// code under test.
+// Regression tests that the QC readers and `checkpoint accept` bind every
+// input they read: the identity of each raw capture, every declared route and
+// cell, each QA row's paired assertion, the command clock, and the result
+// values an accept leaves alone. Each test is a negative control for one
+// defect class: it fails when that defect is seeded and passes on the real
+// implementation. Every setup is synthetic and uses the shared QC test factory
+// unchanged; expected values come from the documented behaviour, never from
+// the code under test.
 import assert from "node:assert/strict";
 import test, { after, afterEach } from "node:test";
 
@@ -112,10 +113,10 @@ async function rebindCapture(evidence, index, edit) {
 }
 
 // ---------------------------------------------------------------------------
-// F1: the media_weight reader binds every identity field of the raw capture.
+// The media_weight reader binds every identity field of the raw capture.
 
-test("C0-F1a media_weight relabelled to the current build over a page_load capture still bound to an older build: unexercised (stale_binding), never pass, and checkpoint accept refuses it", async (t) => {
-  // The challenger's setup: produced on the older build, then only the two
+test("media_weight relabelled to the current build over a page_load capture still bound to an older build: unexercised (stale_binding), never pass, and checkpoint accept refuses it", async (t) => {
+  // The setup: produced on the older build, then only the two
   // enclosing subjects relabelled to the current build and the media_weight
   // integrity recomputed. The raw capture still names the older build.
   const relabel = (bytes) => {
@@ -153,7 +154,7 @@ test("C0-F1a media_weight relabelled to the current build over a page_load captu
   assert.equal(readJson(f.reportPath).qc_accepts, undefined, "zero accepts written");
 });
 
-test("C0-F1b every identity field of a page_load capture is bound: build, campaign, document route, subject field set, producer and schema", async () => {
+test("every identity field of a page_load capture is bound: build, campaign, document route, subject field set, producer and schema", async () => {
   const evidence = twoCellFixture([{ path: HERO, bytes: 600_000 }]);
   const untouched = await readMw(evidence);
   assert.equal(weightRow(untouched, ROUTES[0], HERO_KEY).result, "warning", "control: the untouched first cell reads its warning");
@@ -194,7 +195,7 @@ test("C0-F1b every identity field of a page_load capture is bound: build, campai
   assertEvery(await readMw(slug), E, "declared campaign_slug differing from every capture");
 });
 
-test("C0-F1c a build binding that is absent, null or mismatched on either subject or a capture reads unexercised (stale_binding); any other subject mismatch reads evidence_not_reproducible", async (t) => {
+test("a build binding that is absent, null or mismatched on either subject or a capture reads unexercised (stale_binding); any other subject mismatch reads evidence_not_reproducible", async (t) => {
   const evidence = twoCellFixture([{ path: HERO, bytes: 600_000 }]);
   const variant = (edit) => {
     const record = clone(evidence.record);
@@ -260,7 +261,7 @@ test("C0-F1c a build binding that is absent, null or mismatched on either subjec
   assertNothingWritten(f, before);
 });
 
-test("C0-F1d a derived result whose subject is not the cell it was evaluated for (viewport, page, key or field set): that cell reads unexercised (evidence_not_reproducible)", async () => {
+test("a derived result whose subject is not the cell it was evaluated for (viewport, page, key or field set): that cell reads unexercised (evidence_not_reproducible)", async () => {
   const evidence = twoCellFixture([{ path: HERO, bytes: 100_000 }]);
   const base = polishStandIn();
   // A faulty evaluator that rewrites the subjects it derives for the first
@@ -291,10 +292,10 @@ test("C0-F1d a derived result whose subject is not the cell it was evaluated for
 });
 
 // ---------------------------------------------------------------------------
-// F2: every declared route and route × viewport cell is present.
+// Every declared route and route × viewport cell is present.
 
-test("C0-F2a a declared route with no page_load capture and no media_weight cell: every result unexercised (evidence_not_reproducible) and the route listed in handoff coverage", async (t) => {
-  // The challenger's setup: the second cell and its capture deleted, both
+test("a declared route with no page_load capture and no media_weight cell: every result unexercised (evidence_not_reproducible) and the route listed in handoff coverage", async (t) => {
+  // The setup: the second cell and its capture deleted, both
   // subjects and the capture summary still declaring two routes, only the
   // media_weight integrity recomputed.
   const evidence = twoCellFixture([{ path: HERO, bytes: 100_000 }]);
@@ -322,7 +323,7 @@ test("C0-F2a a declared route with no page_load capture and no media_weight cell
   }
 });
 
-test("C0-F2b every declared-vs-present set: declared grid vs captures, declared grid vs cells, and the capture summary's counts and lists", async () => {
+test("every declared-vs-present set: declared grid vs captures, declared grid vs cells, and the capture summary's counts and lists", async () => {
   const evidence = twoCellFixture([{ path: HERO, bytes: 100_000 }]);
   const untouched = await readMw(evidence);
   assert.equal(weightRow(untouched, ROUTES[0], HERO_KEY).result, "pass", "control: the untouched first cell reads pass");
@@ -377,7 +378,7 @@ test("C0-F2b every declared-vs-present set: declared grid vs captures, declared 
   }
 });
 
-test("C0-F2c a declared cell that lists no resource, image or video and is missing or unreproducible is never silent, on every failure path", async (t) => {
+test("a declared cell that lists no resource, image or video and is missing or unreproducible is never silent, on every failure path", async (t) => {
   // The second route's cell is listed and empty: nothing to weigh on it.
   const evidence = mediaWeightFixture({ cells: [{ route: ROUTES[0], resources: [{ path: HERO, bytes: 100_000 }] }, { route: ROUTES[1], resources: [] }] });
   assert.deepEqual(evidence.record.cells[1].resources, [], "setup: the second cell lists no resource");
@@ -392,8 +393,8 @@ test("C0-F2c a declared cell that lists no resource, image or video and is missi
     return { record: withRecomputedIntegrity(record), pageLoad };
   };
 
-  // Record-level failures: the empty cell's capture missing (the reviewer's
-  // setup), and the 1.3 rules module failing to load.
+  // Record-level failures: the empty cell's capture missing, and the 1.3
+  // rules module failing to load.
   const missing = variant(({ pageLoad }) => { pageLoad.captures.pop(); });
   const missingResults = await readMw(missing);
   assertEvery(missingResults, E, "empty cell, capture missing");
@@ -432,9 +433,9 @@ test("C0-F2c a declared cell that lists no resource, image or video and is missi
 });
 
 // ---------------------------------------------------------------------------
-// (a) QA: a row's observation equals its paired assertion's observation.
+// QA: a row's observation equals its paired assertion's observation.
 
-test("C0-a a QA row whose observation differs from its paired assertion's evidence.qc.observation, every other field re-deriving: unexercised (evidence_not_reproducible), and checkpoint accept refuses it", async (t) => {
+test("a QA row whose observation differs from its paired assertion's evidence.qc.observation, every other field re-deriving: unexercised (evidence_not_reproducible), and checkpoint accept refuses it", async (t) => {
   const { readQaResults } = await import("./qc-results.mjs");
   const measuredAt = new Date(Date.now() - 60_000).toISOString();
   const observation = qaObservation({ outcome: "unreachable" });
@@ -481,9 +482,9 @@ test("C0-a a QA row whose observation differs from its paired assertion's eviden
 });
 
 // ---------------------------------------------------------------------------
-// (d) checkpoint accept: measured_at strictly before the command clock.
+// checkpoint accept: measured_at strictly before the command clock.
 
-test("C0-d checkpoint accept refuses a measurement that is not strictly before the command clock, on every leg (no_persisted_finding)", async (t) => {
+test("checkpoint accept refuses a measurement that is not strictly before the command clock, on every leg (no_persisted_finding)", async (t) => {
   const { planQcAccepts, parseQcResultRef } = await import("./qc-accept.mjs");
   const attribution = { reason: "known synthetic", accepted_by: OPERATOR };
 
@@ -540,9 +541,9 @@ test("C0-d checkpoint accept refuses a measurement that is not strictly before t
 });
 
 // ---------------------------------------------------------------------------
-// (e) an active accept changes only the disposition.
+// An active accept changes only the disposition.
 
-test("C0-e active accepts on a doctor, a Polish and a QA warning change no result value, doctor status, next status, QA disposition or stage status", async (t) => {
+test("active accepts on a doctor, a Polish and a QA warning change no result value, doctor status, next status, QA disposition or stage status", async (t) => {
   const { assessQcAccepts } = await import("./qc-accept.mjs");
   const { readCurrentQcResults } = await import("./qc-results.mjs");
   const f = campaignFixture();

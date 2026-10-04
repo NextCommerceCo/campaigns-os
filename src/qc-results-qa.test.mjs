@@ -1,7 +1,7 @@
 // F1.0 frozen fixture rows for the QA reader site and the QA side of the QC
 // handoff (contract §1.0 Reader sites "QA qc_results", silence rule).
 //
-// Stand-in override shape (freeze addendum U5), passed in-process only:
+// Test-only stand-in checks, passed in-process only (no environment variable, flag or file can install one):
 //   readQaResults({ stageEvidence, stage, fullVerdict, currentBuild, qcStandIns })
 //   and main(argv, { qcStandIns }), with qcStandIns.qa = { "<check id>": (observation) => Derived | null }
 //   (synthetic QA re-deriver; see src/qc-test-factories.mjs).
@@ -166,8 +166,8 @@ test("F1.0-B6 [stand-in: QA policy.availability] qc_results[i].result hand-edite
   assertControlPass(results);
 });
 
-// Residual row (amendments A1): the documented outcome is asserted, not detection.
-test("F1.0-B10 [stand-in: QA policy.availability] row and matching qc.* assertion both rewritten to a pass observation, run_id/schema/runtime kept: result reads pass (A1 accepted behaviour)", async () => {
+// These checks are tamper evidence, not authorship proof: a full reconstruction reads as valid, and this test pins that documented outcome.
+test("F1.0-B10 [stand-in: QA policy.availability] row and matching qc.* assertion both rewritten to a pass observation, run_id/schema/runtime kept: result reads pass (documented tamper-evidence limit)", async () => {
   const parts = qaParts();
   const original = parts.rows[0];
   const rewritten = qaRowFor({ ...original.observation, outcome: "reachable" }, { measured_at: parts.measuredAt });

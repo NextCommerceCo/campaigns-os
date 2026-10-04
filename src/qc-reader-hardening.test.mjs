@@ -1,7 +1,9 @@
-// Regression tests for the phase 0.2 review findings on the 1.0 QC readers and
-// `checkpoint accept` (contract §1.0 Reader sites, Silence, Command
-// behaviour, Ordering). One test per finding class; every setup is synthetic
-// and uses the F1.0 factory unchanged.
+// Regression tests that harden the QC readers and `checkpoint accept`: every
+// set a reader consumes is derived from the raw capture, the full verdict never
+// resolves to the committed sidecar, no applicable check is silent, a refusal
+// writes nothing, and the QC handoff lists a shared warning once. One test per
+// defect class; every setup is synthetic and uses the shared QC test factory
+// unchanged.
 import assert from "node:assert/strict";
 import { existsSync, linkSync, rmSync, symlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -86,9 +88,9 @@ function assertNoPass(results, route, label) {
 }
 
 // ---------------------------------------------------------------------------
-// K1: every set the media_weight reader consumes is derived from page_load.
+// Every set the media_weight reader consumes is derived from page_load.
 
-test("K1 media_weight: a truncated chain, a dropped resource, a dropped cell and a dropped video read evidence_not_reproducible", async () => {
+test("media_weight: a truncated chain, a dropped resource, a dropped cell and a dropped video read evidence_not_reproducible", async () => {
   // Truncated chain: only the requested 302 hop kept, its ledger fields copied
   // in, integrity recomputed. Untampered, the final hop is a same-origin
   // 600,000 B image (F1.3-B4) and reads a warning.
@@ -139,12 +141,12 @@ test("K1 media_weight: a truncated chain, a dropped resource, a dropped cell and
 });
 
 // ---------------------------------------------------------------------------
-// K2: the full verdict never resolves to the committed sidecar or the report.
+// The full verdict never resolves to the committed sidecar or the report.
 
 const qaWarningOpen = (handoff) => (handoff.open || []).some((entry) => entry.leg === "qa");
 const qaCoverage = (handoff, check) => (handoff.coverage || []).filter((entry) => entry.leg === "qa" && entry.check === check).map((entry) => [entry.result, entry.reason_code]);
 
-test("K2 full verdict self-reference: a directory alias or a hard link onto the committed QA sidecar reads evidence_not_reproducible", async (t) => {
+test("full verdict self-reference: a directory alias or a hard link onto the committed QA sidecar reads evidence_not_reproducible", async (t) => {
   const { readQaFullVerdict } = await import("./qc-results.mjs");
   const qcStandIns = { qa: qaStandIns() };
 
@@ -190,9 +192,9 @@ test("K2 full verdict self-reference: a directory alias or a hard link onto the 
 });
 
 // ---------------------------------------------------------------------------
-// K3: an accept never discards report state.
+// An accept never discards report state.
 
-test("K3 checkpoint accept: a qc_accepts or evidence value that is not an array is refused, untyped, and left byte-for-byte", async (t) => {
+test("checkpoint accept: a qc_accepts or evidence value that is not an array is refused, untyped, and left byte-for-byte", async (t) => {
   for (const [field, value] of [["qc_accepts", { note: "synthetic malformed history" }], ["qc_accepts", null], ["evidence", "synthetic evidence text"]]) {
     const f = campaignFixture();
     t.after(f.cleanup);
@@ -216,7 +218,7 @@ test("K3 checkpoint accept: a qc_accepts or evidence value that is not an array 
 });
 
 // ---------------------------------------------------------------------------
-// K4: every refusal writes nothing, the selected lifecycle journal included.
+// Every refusal writes nothing, the selected lifecycle journal included.
 
 function acceptArgv(f, refs, { reason = "known synthetic", acceptedBy = "Jordan Lee", journal, json = true }) {
   const argv = ["checkpoint", "accept", "--packet", f.packetPath];
@@ -228,7 +230,7 @@ function acceptArgv(f, refs, { reason = "known synthetic", acceptedBy = "Jordan 
   return argv;
 }
 
-test("K4 checkpoint accept: every typed and untyped refusal creates no lifecycle journal and writes nothing", async (t) => {
+test("checkpoint accept: every typed and untyped refusal creates no lifecycle journal and writes nothing", async (t) => {
   const f = campaignFixture();
   t.after(f.cleanup);
   const specs = [
@@ -298,12 +300,12 @@ test("K4 checkpoint accept: every typed and untyped refusal creates no lifecycle
 });
 
 // ---------------------------------------------------------------------------
-// K5: a recorded leg never makes an applicable check silent.
+// A recorded leg never makes an applicable check silent.
 
 const QA_UNIT_CHECKS = ["tracking.url", "tracking.order", "tracking.tag", "content_param", "policy.presence", "policy.availability"];
 const declareContent = (spec) => { spec.analytics = { ...(spec.analytics || {}), params: { content: [{ name: "hide_promo" }] } }; };
 
-test("K5 silence: recorded QA and Polish legs list every applicable check without a row as not_captured_by_this_version, with every rederiver loaded", async (t) => {
+test("silence: recorded QA and Polish legs list every applicable check without a row as not_captured_by_this_version, with every rederiver loaded", async (t) => {
   const f = campaignFixture({ mutateSpec: declareContent });
   t.after(f.cleanup);
   assert.ok(readJson(f.specPath).campaign?.store_terms, "setup: 1.4 applies (campaign.store_terms)");
@@ -322,9 +324,9 @@ test("K5 silence: recorded QA and Polish legs list every applicable check withou
 });
 
 // ---------------------------------------------------------------------------
-// K6: the fingerprint prefix is compared before target eligibility.
+// The fingerprint prefix is compared before target eligibility.
 
-test("K6 checkpoint accept: a handed-off warning that now reads pass refuses changed_since_handoff", async (t) => {
+test("checkpoint accept: a handed-off warning that now reads pass refuses changed_since_handoff", async (t) => {
   const f = campaignFixture();
   t.after(f.cleanup);
   let result = "warning";
@@ -341,9 +343,9 @@ test("K6 checkpoint accept: a handed-off warning that now reads pass refuses cha
 });
 
 // ---------------------------------------------------------------------------
-// K7: open warnings sharing a check and key are one entry with their pages.
+// Open warnings sharing a check and key are one entry with their pages.
 
-test("K7 QC handoff: one check and key warned on two pages is listed once with both pages, every result and member kept", async () => {
+test("QC handoff: one check and key warned on two pages is listed once with both pages, every result and member kept", async () => {
   const { buildQcHandoff } = await import("./qc-accept.mjs");
   const members = [{ key: "slot", result: "warning", reason_code: "live_token" }];
   const rows = ["checkout", "index"].map((page) => qcRow({ check: "standin_doctor", leg: "doctor", page, key: "shared", result: "warning", reason_code: "live_token", state: { page }, members, producer: "campaigns-os doctor" }));
@@ -362,9 +364,9 @@ test("K7 QC handoff: one check and key warned on two pages is listed once with b
 });
 
 // ---------------------------------------------------------------------------
-// N1: every qc.* assertion takes part in pairing; none is skipped.
+// Every qc.* assertion takes part in pairing; none is skipped.
 
-test("N1 QA pairing: a qc.* assertion with malformed evidence.qc beside a healthy pair fails the full verdict, so every QA row reads evidence_not_reproducible", async (t) => {
+test("QA pairing: a qc.* assertion with malformed evidence.qc beside a healthy pair fails the full verdict, so every QA row reads evidence_not_reproducible", async (t) => {
   const { readQaResults } = await import("./qc-results.mjs");
   const qcStandIns = { qa: qaStandIns() };
   const measuredAt = new Date(Date.now() - 60_000).toISOString();
@@ -411,10 +413,10 @@ test("N1 QA pairing: a qc.* assertion with malformed evidence.qc beside a health
 });
 
 // ---------------------------------------------------------------------------
-// N2: silence in a recorded leg reads not_captured_by_this_version unless the
+// Silence in a recorded leg reads not_captured_by_this_version unless the
 // check's module failed to load; leg_not_run only without a stage record.
 
-test("N2 silence: a recorded Polish stage without page_load or media_weight lists 1.3 as not_captured_by_this_version; only a failed module reads evidence_not_reproducible", async (t) => {
+test("silence: a recorded Polish stage without page_load or media_weight lists 1.3 as not_captured_by_this_version; only a failed module reads evidence_not_reproducible", async (t) => {
   const { handoffCoverage } = await import("./qc-results.mjs");
   const polishTuples = (coverage) => [...new Set(coverage.filter((entry) => entry.leg === "polish").map((entry) => JSON.stringify([entry.check, entry.result, entry.reason_code])))].map((text) => JSON.parse(text)).sort();
   const everyPolish = (reasonCode) => [["media.oversize", "unexercised", reasonCode], ["media.weight", "unexercised", reasonCode]];

@@ -235,7 +235,7 @@ export function doctorBuiltOutput(args) {
     built_pages: scope.pages.map((page) => ({ page_id: page.page_id, type: page.page_type, route: page.route })),
     doctor_checks: [],
     checkpoint_gates: [],
-    // QC results (contract 1.0): every result a QC check recomputed this run.
+    // QC results: every result a QC check recomputed this run.
     qc_results: [],
   };
   ready.push(`Resolved ${scope.html_count} built page(s) from ${relFromDir(targetRepo, scope.campaign_dir)} (slug "${scope.slug || "(site root)"}")`);
@@ -454,7 +454,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     spec_path: null,
     doctor_checks: [],
     checkpoint_gates: [],
-    // QC results (contract 1.0): every result a QC check recomputed this run.
+    // QC results: every result a QC check recomputed this run.
     qc_results: [],
     polish_checkpoint_gate: null,
     // The prepare-build gate `next` acts on, stored like every other gate so

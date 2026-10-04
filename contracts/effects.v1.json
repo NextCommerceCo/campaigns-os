@@ -2756,12 +2756,12 @@
           "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before a served page is read, so there is no page to compare and the live campaign is not read"
         },
         {
-          "destination": "the store policy URLs the CampaignSpec configures (campaign.store_terms, campaign.store_privacy, campaign.store_returns, campaign.store_shipping, campaign.store_contact), and the redirects they answer with",
+          "destination": "the http(s) store policy URLs the CampaignSpec configures (campaign.store_terms, campaign.store_privacy, campaign.store_returns, campaign.store_shipping, and campaign.store_contact when it is an http(s) URL), and the redirects they answer with; a mailto: campaign.store_contact is checked for presence only and is never requested",
           "what": "GET requests that read headers only: at most 5 configured URLs, at most 6 requests per URL (the URL and up to 5 redirects), at most 30 per run",
-          "when": "--browser runs the page checks and the CampaignSpec configures at least one store policy URL; a mailto: contact is checked for presence only and is not requested",
+          "when": "--browser runs the page checks and the CampaignSpec configures at least one http(s) store policy URL",
           "requires_consent": false,
           "observed_in": [],
-          "not_observed_reason": "declared ahead of the 1.4 policy-links browser check, which observes it; QA does not send these requests at this version, and offline the browser run is blocked at the gate before any page is checked"
+          "not_observed_reason": "declared ahead of the policy-links browser check that a following release adds; QA does not send these requests at this version, and offline the browser run is blocked at the gate before any page is checked"
         }
       ],
       "effect_test": "effects: qa run --browser (preflight)",
@@ -3390,12 +3390,12 @@
           ]
         },
         {
-          "destination": "the store policy URLs the CampaignSpec configures (campaign.store_terms, campaign.store_privacy, campaign.store_returns, campaign.store_shipping, campaign.store_contact), and the redirects they answer with",
+          "destination": "the http(s) store policy URLs the CampaignSpec configures (campaign.store_terms, campaign.store_privacy, campaign.store_returns, campaign.store_shipping, and campaign.store_contact when it is an http(s) URL), and the redirects they answer with; a mailto: campaign.store_contact is checked for presence only and is never requested",
           "what": "GET requests that read headers only: at most 5 configured URLs, at most 6 requests per URL (the URL and up to 5 redirects), at most 30 per run",
-          "when": "--browser runs the page checks and the CampaignSpec configures at least one store policy URL; a mailto: contact is checked for presence only and is not requested",
+          "when": "--browser runs the page checks and the CampaignSpec configures at least one http(s) store policy URL",
           "requires_consent": false,
           "observed_in": [],
-          "not_observed_reason": "declared ahead of the 1.4 policy-links browser check, which observes it; QA does not send these requests at this version, and offline the browser run is blocked at the gate before any page is checked"
+          "not_observed_reason": "declared ahead of the policy-links browser check that a following release adds; QA does not send these requests at this version, and offline the browser run is blocked at the gate before any page is checked"
         }
       ],
       "effect_test": "effects: qa run --browser --no-live-refs (preflight)",

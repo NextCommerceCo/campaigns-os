@@ -1,4 +1,4 @@
-// The shared QC result contract (Increment 1, unit 1.0): one result shape,
+// The shared QC results: one result shape,
 // one storage rule per leg, and the readers that re-derive every stored result
 // from its raw package capture on every read.
 //
@@ -58,7 +58,7 @@ const E = QC_REASON.EVIDENCE_NOT_REPRODUCIBLE;
 // Result precedence when members aggregate into one row (excluded is ignored).
 const PRECEDENCE = Object.freeze(["warning", "review", "unexercised", "pass"]);
 
-// QA verdict mapping per result (contract 1.0 Result rules). unexercised is
+// QA verdict mapping per result. unexercised is
 // manual_review + warn, after src/qa-browser.mjs's unexercised-path precedent,
 // never skipped: skipped is invisible to computeDisposition and exceptions[].
 export const QC_QA_ASSERTION_STATUS = Object.freeze({
@@ -227,7 +227,7 @@ const staleRow = (row) => ({
   coverage: { ...(isPlainObject(row.coverage) ? row.coverage : {}), limits: [QC_REASON.STALE_BINDING] },
 });
 
-// A unit re-deriver's output, checked against the 1.0 vocabulary.
+// A check re-deriver's output, checked against the QC result vocabulary.
 function validDerived(derived, check) {
   return isPlainObject(derived)
     && derived.check === check
@@ -484,6 +484,71 @@ function recordVocabularyOk(record, vocabulary) {
       && typeof video.declared_origin_equal === "boolean"));
 }
 
+// The page_load fields the cell checks read, each required present with the
+// producer's type. A missing or ill-typed field never stands in for 0, false,
+// complete or an empty list: the cell does not re-derive.
+const isCount = (value) => Number.isSafeInteger(value) && value >= 0;
+const LEDGER_COUNTS = Object.freeze([
+  "transferred_bytes",
+  "declared_bytes",
+  "request_count",
+  "declared_request_count",
+  "failed_request_count",
+  "cache_request_count",
+  "unmeasured_request_count",
+  "canceled_request_count",
+  "partial_request_count",
+  "cross_origin_request_count",
+]);
+const MEDIA_TAGS = Object.freeze(["video", "audio"]);
+const SOURCE_KINDS = Object.freeze(["current_src", "src_attribute", "source_src_attribute", "observed_source"]);
+
+// A resource_ledger entry: its identity, URL and type, every byte count and
+// request counter (mediaFetchedResources copies request_count and
+// declared_bytes too), its statuses, and the identity set it matched (which
+// always holds its own resource_id).
+function ledgerEntryOk(entry) {
+  return isPlainObject(entry)
+    && isNonEmptyString(entry.resource_id)
+    && isNonEmptyString(entry.url)
+    && isNonEmptyString(entry.resource_type)
+    && LEDGER_COUNTS.every((field) => isCount(entry[field]))
+    && Array.isArray(entry.statuses) && entry.statuses.every(Number.isInteger)
+    && Array.isArray(entry.match_resource_ids) && entry.match_resource_ids.every(isNonEmptyString)
+    && entry.match_resource_ids.includes(entry.resource_id);
+}
+
+// A media[] element: its tag, its index, every source reference's kind, index,
+// URL and resolved resource_id (null when the ledger cannot identify the
+// source), and every fetched resource's identity and the source identities it
+// matched. The capture checksum covers the source and fetched-resource
+// associations, so each of those fields is read too.
+function mediaElementOk(element) {
+  return isPlainObject(element)
+    && MEDIA_TAGS.includes(element.tag_name)
+    && isCount(element.element_index)
+    && Array.isArray(element.source_references)
+    && element.source_references.every((reference) => isPlainObject(reference)
+      && SOURCE_KINDS.includes(reference.source_kind)
+      && isCount(reference.source_index)
+      && isNonEmptyString(reference.url)
+      && Object.hasOwn(reference, "resource_id")
+      && (reference.resource_id === null || isNonEmptyString(reference.resource_id)))
+    && Array.isArray(element.fetched_resources)
+    && element.fetched_resources.every((resource) => isPlainObject(resource)
+      && isNonEmptyString(resource.resource_id)
+      && Array.isArray(resource.matched_source_resource_ids)
+      && resource.matched_source_resource_ids.every(isNonEmptyString));
+}
+
+// A cell resource's own URL and type, and each chain hop's identity, URL and
+// status, which the cell checks compare with the ledger.
+function cellResourceShapeOk(resource) {
+  return isNonEmptyString(resource.url)
+    && isNonEmptyString(resource.type)
+    && resource.chain.every((hop) => isNonEmptyString(hop.resource_id) && isNonEmptyString(hop.url) && Number.isInteger(hop.status));
+}
+
 function ledgerMeasurement(entry) {
   if (entry.cache_request_count > 0) return "cached";
   if (entry.unmeasured_request_count > 0) return "unmeasured";
@@ -528,20 +593,27 @@ function ledgerChain(requestedId, entries, byId) {
 // cell's resource set (the chains partition the capture's ledger: every entry
 // in exactly one resource's chain), and the cell's video set (every <video>
 // media element). A truncated chain, a dropped resource or a dropped video
-// does not re-derive.
+// does not re-derive. Every raw field read is first required present and well
+// typed (ledgerEntryOk, mediaElementOk): a ledger, media list, counter, byte
+// count, status list, origin or identity set that is missing or ill typed
+// does not re-derive either.
 function cellReproduces(cell, capture) {
   if (!isPlainObject(capture) || !isPlainObject(capture.integrity)) return false;
   if (!sameJson(buildPolishCaptureIntegrity(capture), capture.integrity)) return false;
   if (cell.page_load_integrity !== capture.integrity.projection_fingerprint) return false;
-  if (cell.capture_status !== capture.measurement_status) return false;
-  const finalOrigin = capture.document_response?.final_origin;
-  if (!isNonEmptyString(finalOrigin) || cell.document_origin !== finalOrigin) return false;
-  if (!Array.isArray(capture.resource_ledger?.entries) || !capture.resource_ledger.entries.every((entry) => isPlainObject(entry) && isNonEmptyString(entry.resource_id))) return false;
+  if (!isNonEmptyString(capture.measurement_status) || cell.capture_status !== capture.measurement_status) return false;
+  const finalOrigin = isPlainObject(capture.document_response) ? capture.document_response.final_origin : null;
+  if (!isNonEmptyString(finalOrigin) || captureOrigin(finalOrigin) !== finalOrigin || cell.document_origin !== finalOrigin) return false;
+  if (!isPlainObject(capture.resource_ledger) || !Array.isArray(capture.resource_ledger.entries) || !capture.resource_ledger.entries.every(ledgerEntryOk)) return false;
+  if (!Array.isArray(capture.media) || !capture.media.every(mediaElementOk)) return false;
   const entries = capture.resource_ledger.entries;
   const byId = new Map(entries.map((entry) => [entry.resource_id, entry]));
   if (byId.size !== entries.length) return false;
+  const media = capture.media;
+  if (new Set(media.map((element) => element.element_index)).size !== media.length) return false;
   const covered = new Set();
   for (const resource of cell.resources) {
+    if (!cellResourceShapeOk(resource)) return false;
     const { chain } = resource;
     if (chain[0].resource_id !== resource.resource_id || chain[0].url !== resource.url) return false;
     const expected = ledgerChain(resource.resource_id, entries, byId);
@@ -572,16 +644,15 @@ function cellReproduces(cell, capture) {
       || resource.final_origin_equal !== (final.cross_origin_request_count === 0)) return false;
   }
   if (covered.size !== byId.size) return false;
-  const media = Array.isArray(capture.media) ? capture.media : [];
-  const videoIndexes = media.filter((element) => isPlainObject(element) && element.tag_name === "video").map((element) => element.element_index).sort((a, b) => a - b);
+  const videoIndexes = media.filter((element) => element.tag_name === "video").map((element) => element.element_index).sort((a, b) => a - b);
   const listedIndexes = cell.videos.map((video) => video.element_index).sort((a, b) => a - b);
   if (!sameJson(listedIndexes, videoIndexes)) return false;
   for (const video of cell.videos) {
-    const element = media.find((candidate) => candidate?.element_index === video.element_index);
-    if (!isPlainObject(element) || !Array.isArray(element.source_references)) return false;
-    const fetched = mediaFetchedResources(element, entries.filter((entry) => Array.isArray(entry?.match_resource_ids))).map((entry) => entry.resource_id).sort();
+    const element = media.find((candidate) => candidate.element_index === video.element_index);
+    if (!element) return false;
+    const fetched = mediaFetchedResources(element, entries).map((entry) => entry.resource_id).sort();
     if (!sameJson([...video.resource_ids].sort(), fetched)) return false;
-    const declaredSameOrigin = element.source_references.some((reference) => captureOrigin(reference?.url) === finalOrigin);
+    const declaredSameOrigin = element.source_references.some((reference) => captureOrigin(reference.url) === finalOrigin);
     if (video.declared_origin_equal !== declaredSameOrigin) return false;
   }
   return true;
@@ -669,8 +740,8 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
   const cells = Array.isArray(record?.cells) ? record.cells.filter(isPlainObject) : [];
   const unreproduced = (subject) => unreproducedRow({ subject, check: subject.check }, E, { leg: "polish", measuredAt });
   const cellResult = (check, route, viewport) => unreproduced({ check, page: route, viewport, key: "cell" });
-  // A failed cell: one result per subject it lists, and one per 1.3 check it
-  // lists no subject for, so a failed cell, even one listing nothing, is
+  // A failed cell: one result per subject it lists, and one per Polish check
+  // it lists no subject for, so a failed cell, even one listing nothing, is
   // never silent.
   const failCell = (cell) => {
     const subjects = cellSubjects(cell);
@@ -681,7 +752,7 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
   };
   // A record-level failure: every listed cell fails, and every route ×
   // viewport that the record or page_load declares or captured but no cell
-  // lists gets one result per 1.3 check, so a missing route is never silent.
+  // lists gets one result per Polish check, so a missing route is never silent.
   const failAll = () => {
     const listed = new Set(cells.map((cell) => cellKey(cell.route, cell.viewport)));
     const unlisted = new Map();
@@ -811,8 +882,9 @@ const QA_POLICY = Object.freeze(["policy.presence", "policy.availability"]);
 const POLISH_CHECKS = Object.freeze(qcChecksForLeg("polish"));
 const STORE_POLICY_FIELDS = Object.freeze(Object.keys(STORE_PAGE_MATCHERS));
 
-// Applicability is decided without the leg running: 1.1 always, 1.2 when
-// analytics.params.content is non-empty, 1.4 when a store policy field is.
+// Applicability is decided without the leg running: the tracking checks
+// always, the content-param check when analytics.params.content is non-empty,
+// the policy-link checks when a store policy field is.
 export function applicableQaChecks(spec) {
   const content = spec?.analytics?.params?.content;
   const hasContent = Array.isArray(content) ? content.length > 0 : isPlainObject(content) && Object.keys(content).length > 0;
