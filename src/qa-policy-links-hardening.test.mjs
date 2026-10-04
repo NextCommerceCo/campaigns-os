@@ -11,6 +11,7 @@ import vm from "node:vm";
 
 import {
   createPolicyLinkBudget,
+  policyLinkNotRequestedRows,
   policyLinkQaAssertion,
   probePolicyUrl,
   readPageAnchors,
@@ -785,3 +786,230 @@ for (const [scheme, configured] of OVERSIZED) {
     assert.deepEqual(again.map((row) => [row.observation.scheme, row.observation.configured]), rows.map(() => [scheme, stored]), "the stored value reads back as itself");
   });
 }
+
+// ---------------------------------------------------------------------------
+// A stored observation has exactly the keys the producer writes
+
+// The row the reader would accept for `valid`, storing `observation` instead:
+// it claims the result, reason code, coverage and accept eligibility `valid`
+// derives, and `state` (by default the state `valid` derives).
+function claimedFrom(valid, observation, state = undefined) {
+  const derived = rederiveQcResult(valid);
+  assert.ok(derived, "setup: the producer's observation re-derives");
+  return buildQcResult({
+    check: derived.check,
+    leg: "qa",
+    subject: derived.subject,
+    result: derived.result,
+    reason_code: derived.reason_code,
+    state: state ?? derived.state,
+    observation,
+    members: derived.members,
+    accept_eligible: derived.accept_eligible,
+    coverage: derived.coverage,
+    measured_at: measuredAt,
+  });
+}
+
+const readEntries = (read) => read.map((row) => [row.id, row.result, row.reason_code]);
+const notReproducible = (row) => [[row.id, "unexercised", "evidence_not_reproducible"]];
+
+// Each changed observation is refused by re-derivation, and its row, claiming
+// what the producer's observation derives, reads as not reproducible.
+async function assertEachRefused(cases) {
+  const actual = [];
+  const expected = [];
+  for (const { label, valid, observation, state } of cases) {
+    const row = claimedFrom(valid, observation, state);
+    actual.push([label, rederiveQcResult(observation), readEntries(await readStored([row]))]);
+    expected.push([label, null, notReproducible(row)]);
+  }
+  assert.deepEqual(actual, expected);
+}
+
+// The stored objects of an observation as [label, path]: the observation, its
+// block and, in an availability block, each chain hop, each chain_identity
+// entry and the next hop.
+function storedObjects(observation) {
+  const block = observation.check === "policy.presence" ? "presence" : "availability";
+  const objects = [["observation", []], [block, [block]]];
+  if (block === "availability") {
+    const { chain, chain_identity: ids, next_hop: nextHop } = observation.availability;
+    chain.forEach((_, index) => objects.push([`chain[${index}]`, ["availability", "chain", index]]));
+    ids.forEach((_, index) => objects.push([`chain_identity[${index}]`, ["availability", "chain_identity", index]]));
+    if (nextHop) objects.push(["next_hop", ["availability", "next_hop"]]);
+  }
+  return objects;
+}
+
+const objectAt = (value, path) => path.reduce((inner, key) => inner[key], value);
+function changedAt(observation, path, change) {
+  const copy = structuredClone(observation);
+  change(objectAt(copy, path));
+  return copy;
+}
+
+// Producer rows: a passing presence row and a passing two-hop availability
+// row; a redirect loop (its block keeps the next hop); the run-scope rows.
+async function producerRows() {
+  const configured = "http://example.invalid/terms";
+  const passing = await availabilityRun(configured, (url) => ({
+    [configured]: { status: 301, location: "https://www.example.invalid/terms/" },
+    "https://www.example.invalid/terms/": { status: 200 },
+  })[url]);
+  const loop = await availabilityRun(TERMS, (url) => ({
+    [TERMS]: { status: 302, location: "/terms/a" },
+    [`${TERMS}/a`]: { status: 302, location: "/terms" },
+  })[url]);
+  const presence = (await produced(TERMS)).find((row) => row.check === "policy.presence");
+  const notRequested = policyLinkNotRequestedRows({ campaign: { store_terms: TERMS } }, [{ pages: [{}] }], { measuredAt });
+  const rows = [presence, passing.row, loop.row, ...notRequested];
+  assert.deepEqual(
+    rows.map((row) => [row.id, row.result, row.reason_code]),
+    [
+      ["policy.presence:campaign:store_terms", "pass", null],
+      ["policy.availability:campaign:store_terms", "pass", null],
+      ["policy.availability:campaign:store_terms", "review", "redirect_loop"],
+      ["policy.presence:campaign:store_terms", "excluded", "browser_checks_not_requested"],
+      ["policy.availability:campaign:store_terms", "excluded", "browser_checks_not_requested"],
+    ],
+    "setup: the producer rows",
+  );
+  assert.ok(loop.row.observation.availability.next_hop, "setup: the loop's block keeps its next hop");
+  return rows;
+}
+
+test("policy links: producer rows round-trip through re-derivation and the reader with their stored shape", async () => {
+  for (const row of await producerRows()) {
+    const rederived = rederiveQcResult(row.observation);
+    assert.deepEqual([rederived?.result, rederived?.reason_code], [row.result, row.reason_code], `${row.id} ${row.result} re-derives`);
+    assert.deepEqual(readEntries(await readStored([row])), [[row.id, row.result, row.reason_code]], `${row.id} ${row.result} reads back`);
+    assert.deepEqual(readEntries(await readStored([claimedFrom(row.observation, structuredClone(row.observation))])), [[row.id, row.result, row.reason_code]], `setup: ${row.id} ${row.result} rebuilt from its observation reads back`);
+  }
+});
+
+test("policy links: a stored observation with an extra key at any level is refused by re-derivation and read as not reproducible", async () => {
+  const cases = [];
+  for (const row of await producerRows()) {
+    for (const [level, path] of storedObjects(row.observation)) {
+      cases.push({
+        label: `${row.id} ${row.result}: extra key on ${level}`,
+        valid: row.observation,
+        observation: changedAt(row.observation, path, (object) => { object.extra = true; }),
+      });
+    }
+  }
+  assert.ok(cases.length >= 15, "setup: every level of every producer row");
+  await assertEachRefused(cases);
+});
+
+test("policy links: run_scope stored as null or another value on a row the producer writes without it is refused", async () => {
+  const [presence, availability] = await producerRows();
+  await assertEachRefused([presence, availability].flatMap((row) => [null, "browser_checks_not_requested_extra"].map((runScope) => ({
+    label: `${row.id}: run_scope ${runScope}`,
+    valid: row.observation,
+    observation: { ...structuredClone(row.observation), run_scope: runScope },
+  }))));
+});
+
+test("policy links: a stored observation missing any key at any level is refused by re-derivation and read as not reproducible", async () => {
+  const cases = [];
+  for (const row of await producerRows()) {
+    for (const [level, path] of storedObjects(row.observation)) {
+      for (const key of Object.keys(objectAt(row.observation, path))) {
+        // Without run_scope, a run-scope presence observation is the shape the
+        // producer writes for a browser run (and reads as that).
+        if (level === "observation" && key === "run_scope") continue;
+        cases.push({
+          label: `${row.id} ${row.result}: ${level} without ${key}`,
+          valid: row.observation,
+          observation: changedAt(row.observation, path, (object) => { delete object[key]; }),
+        });
+      }
+    }
+  }
+  assert.ok(cases.length >= 60, "setup: every key of every level");
+  await assertEachRefused(cases);
+});
+
+// ---------------------------------------------------------------------------
+// Final responses
+
+test("policy links: a redirect status with no usable Location ends the chain and reads unexpected_status, never pass", async () => {
+  for (const [label, answer] of [
+    ["302 without Location", { status: 302 }],
+    ["301 with a blank Location", { status: 301, location: " " }],
+    ["307 to mailto:", { status: 307, location: "mailto:help@store.example.invalid" }],
+    ["308 to an unparseable URL", { status: 308, location: "http://" }],
+    ["303 to javascript:", { status: 303, location: "javascript:void(0)" }],
+  ]) {
+    const { rows, row, calls } = await availabilityRun(TERMS, (url) => (url === TERMS ? answer : undefined));
+    assert.deepEqual(calls.map(({ url }) => url), [TERMS], `${label}: one request`);
+    const { availability } = row.observation;
+    assert.deepEqual(
+      [availability.chain.map(({ status }) => status), availability.status, availability.content_type, availability.next_hop],
+      [[answer.status], answer.status, "text/html", null],
+      `${label}: the redirect response is the final one, with HTML headers and no next hop`,
+    );
+    assertRow(rows, row.id, "review", "unexpected_status");
+    const claimed = structuredClone(row.observation);
+    claimed.availability.outcome = "pass";
+    assert.equal(rederiveQcResult(claimed), null, `${label}: a stored pass for it does not re-derive`);
+  }
+});
+
+test("policy links: a 200 whose media type only begins like an HTML type reads non_html_response; HTML types with parameters or in upper case pass", async () => {
+  for (const type of ["text/htmlx", "text/html-sandboxed", "application/htmlx", "application/xhtml+xmlx", "text/xhtml"]) {
+    const { rows, row } = await availabilityRun(TERMS, (url) => (url === TERMS ? { status: 200, type } : undefined));
+    assert.equal(row.observation.availability.content_type, type, `${type}: stored as the media type`);
+    assertRow(rows, row.id, "review", "non_html_response");
+    const claimed = structuredClone(row.observation);
+    claimed.availability.outcome = "pass";
+    assert.equal(rederiveQcResult(claimed), null, `${type}: a stored pass for it does not re-derive`);
+  }
+  for (const [type, stored] of [
+    ["text/html; charset=utf-8", "text/html"],
+    ["TEXT/HTML", "text/html"],
+    ["text/html", "text/html"],
+    ["application/xhtml+xml", "application/xhtml+xml"],
+    ["Application/XHTML+XML; charset=utf-8", "application/xhtml+xml"],
+  ]) {
+    const { rows, row } = await availabilityRun(TERMS, (url) => (url === TERMS ? { status: 200, type } : undefined));
+    assert.equal(row.observation.availability.content_type, stored, `${type}: stored as ${stored}`);
+    assertRow(rows, row.id, "pass", null);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A stored chain never repeats a request
+
+test("policy links: a stored chain that repeats a hop is refused by re-derivation and read as not reproducible", async () => {
+  const configured = "http://example.invalid/terms";
+  const direct = (await availabilityRun(TERMS, htmlAt(TERMS))).row;
+  const redirected = (await availabilityRun(configured, (url) => ({
+    [configured]: { status: 301, location: "https://www.example.invalid/terms/" },
+    "https://www.example.invalid/terms/": { status: 200 },
+  })[url])).row;
+  assert.deepEqual([direct.result, redirected.result], ["pass", "pass"], "setup: both chains pass");
+  // `index` is repeated in place, as a redirect when it is not the last hop.
+  const repeated = (row, index, status) => {
+    const observation = structuredClone(row.observation);
+    const { chain, chain_identity: ids } = observation.availability;
+    chain.splice(index, 0, { ...chain[index], status });
+    ids.splice(index, 0, { ...ids[index] });
+    return observation;
+  };
+  const cases = [
+    ["the only hop, first as a 302", direct, repeated(direct, 0, 302)],
+    ["the first hop of two", redirected, repeated(redirected, 0, 301)],
+    ["the last hop of two, first as a 301", redirected, repeated(redirected, 1, 301)],
+  ].map(([label, row, observation]) => ({
+    label,
+    valid: row.observation,
+    observation,
+    // The state such a chain would give: the stored hops, the same final.
+    state: { ...rederiveQcResult(row.observation).state, chain: observation.availability.chain.map(({ url, query_sha256: querySha, status }) => ({ url, query_sha256: querySha, status })) },
+  }));
+  assert.ok(cases.every(({ observation }) => new Set(observation.availability.chain_identity.map(({ url_sha256: url }) => url)).size < observation.availability.chain.length), "setup: each chain repeats a request");
+  await assertEachRefused(cases);
+});

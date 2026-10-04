@@ -120,6 +120,11 @@ const sha256 = (text) => `sha256:${createHash("sha256").update(text).digest("hex
 // (redactPersisted, which the verdict applies when it is assembled) leaves it.
 const persistable = (text) => redactPersisted(text);
 const isPersistable = (text) => typeof text === "string" && persistable(text) === text;
+// Every stored object has a closed key list, defined next to the code that
+// writes it. The producer writes each object through record(), so it holds
+// exactly those keys; the reader refuses one that does not (hasExactKeys).
+const record = (keys, values) => Object.fromEntries(keys.map((key) => [key, values[key]]));
+const hasExactKeys = (value, keys) => isPlainObject(value) && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 
 // ---------------------------------------------------------------------------
 // Clock and run budget
@@ -184,8 +189,10 @@ const safeDecode = (text) => {
 // The hashes of one raw http(s) URL that the availability rules compare:
 // url_sha256 its exact origin+path (with query_sha256, a hop's identity for
 // loops), path_sha256 its path with the trailing slash ignored, host_sha256
-// its host without a leading "www." (the pass allowances).
-const urlIdentity = (protocol, host, pathname) => ({
+// its host without a leading "www." (the pass allowances). Stored as a hop's
+// chain_identity entry.
+const IDENTITY_KEYS = Object.freeze(["url_sha256", "path_sha256", "host_sha256"]);
+const urlIdentity = (protocol, host, pathname) => record(IDENTITY_KEYS, {
   url_sha256: sha256(`${protocol}//${host}${pathname}`),
   path_sha256: sha256(trimSlash(pathname)),
   host_sha256: sha256(host.replace(/^www\./, "")),
@@ -318,6 +325,9 @@ function declaredLabelsByField(spec) {
   return labels;
 }
 
+// The stored presence block: the counts presenceCounts writes.
+const PRESENCE_KEYS = Object.freeze(["pages_expected", "pages_read", "pages_with_match", "path_match_query_differs", "label_declared", "label_anchor_mismatch_pages", "hint_anchor_elsewhere"]);
+
 // The presence counts of one configured field over the visited pages
 // ({read, anchors}; each anchor {href, label_fields, hint_fields} as
 // readPageAnchors gives it). Only pages whose anchors were read are compared.
@@ -331,7 +341,7 @@ export function presenceCounts({ field, target, pages, labels = [] }) {
     label_anchor_mismatch_pages: 0,
     hint_anchor_elsewhere: 0,
   };
-  if (target.scheme === "invalid") return { ...counts, label_declared: false };
+  if (target.scheme === "invalid") return record(PRESENCE_KEYS, { ...counts, label_declared: false });
   for (const page of pages) {
     if (page.read !== true) continue;
     let matched = false;
@@ -351,7 +361,7 @@ export function presenceCounts({ field, target, pages, labels = [] }) {
     if (queryDiffers) counts.path_match_query_differs += 1;
     if (mislabelled) counts.label_anchor_mismatch_pages += 1;
   }
-  return counts;
+  return record(PRESENCE_KEYS, counts);
 }
 
 // ---------------------------------------------------------------------------
@@ -367,13 +377,12 @@ const isHttpStored = (text) => {
   }
 };
 const validQuery = (value) => value === null || SHA.test(value);
-const validHop = (hop) => isPlainObject(hop) && isHttpStored(hop.url) && validQuery(hop.query_sha256) && Number.isSafeInteger(hop.status) && hop.status >= 100 && hop.status <= 599;
-const IDENTITY_KEYS = Object.freeze(["url_sha256", "path_sha256", "host_sha256"]);
-// The raw-URL hashes kept for a stored URL. When the stored URL is the raw
-// origin+path itself (the projection redacted nothing), they must be its
-// hashes.
-function validIdentity(ids, stored) {
-  if (!isPlainObject(ids) || !IDENTITY_KEYS.every((key) => SHA.test(ids[key]))) return false;
+const validHop = (hop) => hasExactKeys(hop, HOP_KEYS) && isHttpStored(hop.url) && validQuery(hop.query_sha256) && Number.isSafeInteger(hop.status) && hop.status >= 100 && hop.status <= 599;
+// The raw-URL hashes kept for a stored URL, in an object of exactly `keys`.
+// When the stored URL is the raw origin+path itself (the projection redacted
+// nothing), they must be its hashes.
+function validIdentity(ids, stored, keys = IDENTITY_KEYS) {
+  if (!hasExactKeys(ids, keys) || !IDENTITY_KEYS.every((key) => SHA.test(ids[key]))) return false;
   if (stored.includes(REDACTED_QUERY) || stored.endsWith("[truncated]")) return true;
   const url = new URL(stored);
   const recomputed = urlIdentity(url.protocol, url.host, url.pathname);
@@ -407,10 +416,8 @@ function finalOutcome(final, contentType, configured) {
 // The outcome a stored availability block re-derives to, or null when the
 // block is not one a probe of the configured value can have written.
 function availabilityOutcome({ scheme, configured, configured_query_sha256: configuredQuery, run_scope: runScope }, block, { maxRedirects = POLICY_LINK_LIMITS.maxRedirects } = {}) {
-  if (!isPlainObject(block) || !Array.isArray(block.chain)) return null;
-  const { chain } = block;
-  const nextHop = block.next_hop ?? null;
-  const ids = block.chain_identity ?? (chain.length ? null : []);
+  if (!hasExactKeys(block, BLOCK_KEYS) || !Array.isArray(block.chain)) return null;
+  const { chain, chain_identity: ids, next_hop: nextHop } = block;
   if (!Array.isArray(ids)) return null;
   const empty = chain.length === 0 && ids.length === 0 && block.final === null && block.final_query_sha256 === null && block.status === null && block.content_type === null && nextHop === null;
   if (runScope === NOT_REQUESTED) return empty ? NOT_REQUESTED : null;
@@ -430,7 +437,7 @@ function availabilityOutcome({ scheme, configured, configured_query_sha256: conf
   if (block.final !== last.url || block.final_query_sha256 !== last.query_sha256 || block.status !== last.status) return null;
   if (block.content_type !== null && !CONTENT_TYPE.test(block.content_type)) return null;
   if (REDIRECT_STATUSES.has(last.status) && nextHop !== null) {
-    if (!isPlainObject(nextHop) || !isHttpStored(nextHop.url) || !validQuery(nextHop.query_sha256) || !validIdentity(nextHop, nextHop.url)) return null;
+    if (!isPlainObject(nextHop) || !isHttpStored(nextHop.url) || !validQuery(nextHop.query_sha256) || !validIdentity(nextHop, nextHop.url, NEXT_HOP_KEYS)) return null;
     if (keys.includes(requestKey(nextHop, nextHop.query_sha256))) return "redirect_loop";
     if (chain.length === maxRedirects + 1) return "redirect_limit";
     // The redirect was due but its request got no response in time.
@@ -443,7 +450,9 @@ function availabilityOutcome({ scheme, configured, configured_query_sha256: conf
 // ---------------------------------------------------------------------------
 // Availability probe
 
-const emptyBlock = (outcome) => ({ chain: [], chain_identity: [], final: null, final_query_sha256: null, status: null, content_type: null, outcome, next_hop: null });
+// The stored availability block, as probePolicyUrl writes it.
+const BLOCK_KEYS = Object.freeze(["chain", "chain_identity", "final", "final_query_sha256", "status", "content_type", "outcome", "next_hop"]);
+const emptyBlock = (outcome) => record(BLOCK_KEYS, { chain: [], chain_identity: [], final: null, final_query_sha256: null, status: null, content_type: null, outcome, next_hop: null });
 
 const contentTypeOf = (value) => {
   const type = String(value ?? "").split(";")[0].trim().toLowerCase();
@@ -507,7 +516,12 @@ function redirectTarget(location, from) {
   return target.scheme === "http" || target.scheme === "https" ? target : null;
 }
 
-const hopOf = (target, status) => ({ url: target.stored, query_sha256: target.querySha, status });
+// A stored chain hop, and the stored next hop of a redirect that ended the
+// chain (with its raw-URL hashes).
+const HOP_KEYS = Object.freeze(["url", "query_sha256", "status"]);
+const NEXT_HOP_KEYS = Object.freeze(["url", "query_sha256", ...IDENTITY_KEYS]);
+const hopOf = (target, status) => record(HOP_KEYS, { url: target.stored, query_sha256: target.querySha, status });
+const nextHopOf = (target) => record(NEXT_HOP_KEYS, { url: target.stored, query_sha256: target.querySha, ...target.ids });
 
 // Probes one configured value: GET with redirect "manual", following up to
 // `maxRedirects` redirects (off-origin included). Each request ends by the
@@ -537,7 +551,7 @@ export async function probePolicyUrl(url, {
   let current = configured;
   const finish = () => {
     const last = chain.at(-1) ?? null;
-    const block = {
+    const block = record(BLOCK_KEYS, {
       chain,
       chain_identity: chainIdentity,
       final: last?.url ?? null,
@@ -546,7 +560,7 @@ export async function probePolicyUrl(url, {
       content_type: last ? contentType : null,
       outcome: null,
       next_hop: nextHop,
-    };
+    });
     const observed = { scheme: configured.scheme, configured: configured.stored, configured_query_sha256: configured.querySha };
     block.outcome = availabilityOutcome(observed, block, { maxRedirects });
     // A chain the rules cannot read is kept as unanswered: never a pass.
@@ -573,7 +587,7 @@ export async function probePolicyUrl(url, {
     if (!REDIRECT_STATUSES.has(answer.status)) return finish();
     const next = redirectTarget(answer.location, current.request);
     if (!next) return finish();
-    nextHop = { url: next.stored, query_sha256: next.querySha, ...next.ids };
+    nextHop = nextHopOf(next);
     // A repeat is found in memory (exact raw URLs, query included), before
     // the repeated URL is requested again.
     if (seen.has(requestKey(next.ids, next.querySha))) return finish();
@@ -585,7 +599,7 @@ export async function probePolicyUrl(url, {
 // ---------------------------------------------------------------------------
 // Result rules
 
-const PRESENCE_COUNTS = Object.freeze(["pages_expected", "pages_read", "pages_with_match", "path_match_query_differs", "label_anchor_mismatch_pages", "hint_anchor_elsewhere"]);
+const PRESENCE_COUNTS = Object.freeze(PRESENCE_KEYS.filter((key) => key !== "label_declared"));
 
 // The identity fields shared by both checks, or null when they are not
 // consistent with the scheme: a stored configured value is one the producer
@@ -595,9 +609,11 @@ function readIdentity(observation) {
   if (!isPlainObject(observation)) return null;
   const { check, field, configured, configured_query_sha256: configuredQuery, scheme } = observation;
   if (!CHECKS.includes(check) || !POLICY_LINK_FIELDS.includes(field) || !SCHEMES.includes(scheme)) return null;
+  const scoped = Object.hasOwn(observation, "run_scope");
+  if (!hasExactKeys(observation, observationKeys(check, scoped))) return null;
   if (!validQuery(configuredQuery)) return null;
-  const runScope = observation.run_scope ?? null;
-  if (runScope !== null && runScope !== NOT_REQUESTED) return null;
+  const runScope = scoped ? observation.run_scope : null;
+  if (scoped && runScope !== NOT_REQUESTED) return null;
   if (scheme === "invalid") {
     if (configured !== null || configuredQuery !== null) return null;
   } else {
@@ -610,7 +626,7 @@ function readIdentity(observation) {
 }
 
 function readPresence(presence, scheme) {
-  if (!isPlainObject(presence) || !PRESENCE_COUNTS.every((key) => isCount(presence[key])) || typeof presence.label_declared !== "boolean") return null;
+  if (!hasExactKeys(presence, PRESENCE_KEYS) || !PRESENCE_COUNTS.every((key) => isCount(presence[key])) || typeof presence.label_declared !== "boolean") return null;
   const { pages_expected: expected, pages_read: read } = presence;
   if (read > expected) return null;
   if (["pages_with_match", "path_match_query_differs", "label_anchor_mismatch_pages"].some((key) => presence[key] > read)) return null;
@@ -736,6 +752,13 @@ export function policyLinkQaAssertion(row) {
   return { ...toQaAssertion(row, { family: FAMILY }), id: `qc.${row.check}:${row.subject.key}` };
 }
 
+// The stored observation of one row: the field's identity, the check's block
+// and, for a run-scope row only, run_scope.
+const observationKeys = (check, scoped) => [
+  "check", "field", "configured", "configured_query_sha256", "scheme",
+  check === POLICY_PRESENCE_CHECK ? "presence" : "availability",
+  ...(scoped ? ["run_scope"] : []),
+];
 const identityOf = (check, field, target) => ({
   check,
   field,
@@ -744,7 +767,7 @@ const identityOf = (check, field, target) => ({
   scheme: target.scheme,
 });
 
-const emptyPresence = (pagesExpected) => ({
+const emptyPresence = (pagesExpected) => record(PRESENCE_KEYS, {
   pages_expected: pagesExpected,
   pages_read: 0,
   pages_with_match: 0,
@@ -757,9 +780,9 @@ const emptyPresence = (pagesExpected) => ({
 // Both rows of one field. An observation the rules cannot read (which the
 // producer never writes) is kept unread: unexercised, never a pass.
 function fieldRows({ field, target, presence, availability, runScope = null }, measuredAt) {
-  const scope = runScope ? { run_scope: runScope } : {};
-  const presenceObservation = { ...identityOf(POLICY_PRESENCE_CHECK, field, target), presence, ...scope };
-  const availabilityObservation = { ...identityOf(POLICY_AVAILABILITY_CHECK, field, target), availability, ...scope };
+  const observationOf = (check, block) => record(observationKeys(check, Boolean(runScope)), { ...identityOf(check, field, target), ...block, run_scope: runScope });
+  const presenceObservation = observationOf(POLICY_PRESENCE_CHECK, { presence });
+  const availabilityObservation = observationOf(POLICY_AVAILABILITY_CHECK, { availability });
   const presenceRow = policyLinkQcRow(presenceObservation, { measuredAt })
     ?? policyLinkQcRow({ ...presenceObservation, presence: emptyPresence(presence.pages_expected) }, { measuredAt });
   const availabilityRow = policyLinkQcRow(availabilityObservation, { measuredAt })
