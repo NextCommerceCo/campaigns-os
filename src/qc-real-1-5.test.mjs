@@ -9,7 +9,10 @@
 // Every row asserts the exact set of 1.5 results its setup produces (complete
 // rows: id, check, subject, result, reason_code, members), the next status, and
 // every qc_handoff section (open, review, lapsed, coverage, accepted,
-// inert_accepts and the refs accept_command lists) exactly.
+// inert_accepts and the refs accept_command lists) exactly. Every row also pins
+// the smoke check's (non-warning) entries for its pages: the built pages carry
+// what `built_output.smoke_qc` asks for, so no smoke_qc row is a warning or
+// review, and its coverage entries are listed exactly in the handoff.
 //
 // API assumption (every row): the real 1.5 result id is
 // `cart_placeholders:<built page path relative to the target repo>:<token>`,
@@ -25,6 +28,7 @@ import test, { after, afterEach } from "node:test";
 import {
   BUILD_FP,
   OPERATOR,
+  ORIGIN,
   SLUG,
   assertAccepted,
   assertNoNetworkAttempts,
@@ -71,8 +75,13 @@ const rowId = (page, key) => `${CHECK}:${page}:${key}`;
 const idOf = (token) => rowId(LANDING, token);
 
 // A real built page per CampaignSpec route, loading campaign-cart at a
-// verified pin from a synthetic host.
-const pageHtml = (route, body) => `<!doctype html><html><head><title>Synthetic</title><meta name="next-page-type" content="${route}"><script src="https://cdn.example.invalid/campaign-cart@v0.4.38/dist/loader.js"></script></head><body>${body}</body></html>\n`;
+// verified pin from a synthetic host. Its head also carries everything the
+// smoke check decides here: a favicon, og:title, og:description and an
+// absolute og:image on the deploy base (the fixture's deploy.preview_url
+// origin) whose file is under _site/. No in-page anchor, no primary NEXT
+// asset host, no loopback URL.
+const OG_IMAGE = `${SLUG}/og-image.png`;
+const pageHtml = (route, body) => `<!doctype html><html><head><title>Synthetic</title><link rel="icon" href="data:,"><meta property="og:title" content="Synthetic"><meta property="og:description" content="Synthetic page"><meta property="og:image" content="${ORIGIN}/${OG_IMAGE}"><meta name="next-page-type" content="${route}"><script src="https://cdn.example.invalid/campaign-cart@v0.4.38/dist/loader.js"></script></head><body>${body}</body></html>\n`;
 const PLAIN = "<p class=\"cart-line\">Synthetic cart line</p>";
 const tokensBody = (...tokens) => tokens.map((token) => `<p class="cart-line">${token}</p>`).join("");
 
@@ -114,6 +123,7 @@ function builtPacket(t, landingBody = tokensBody(NAME)) {
   const f = campaignFixture();
   t.after(f.cleanup);
   for (const route of ROUTES) writePage(f, route, route === "landing" ? landingBody : PLAIN);
+  writeFileSync(join(f.targetRepo, "_site", OG_IMAGE), "synthetic og image\n");
   writeBuildSummary(f);
   stampBuild(f);
   return f;
@@ -148,6 +158,30 @@ function assertGateIssues(result, ids, label) {
   assert.deepEqual((result.errors || []).filter((issue) => String(issue?.code).startsWith(GATE)), [], `${label}: ${GATE} never raises an error`);
 }
 
+// The smoke check on these pages: no warning or review row, so the 1.5 rows
+// stay the only open results, and the exact rows it records. The fixture
+// records no build environment, so the Tailwind and loopback rules read
+// unexercised build_environment_unknown on every page; every other rule passes.
+const SMOKE_CHECK = "smoke_qc";
+const SMOKE_PAGE_ROWS = [
+  ["favicon:link", "pass", null],
+  ["og:title", "pass", null],
+  ["og:description", "pass", null],
+  ["og:image", "pass", null],
+  ["og:image_target", "pass", null],
+  ["tailwind_cdn:cdn.tailwindcss.com", "unexercised", "build_environment_unknown"],
+  ["asset_host:cdn.29next.store", "pass", null],
+  ["loopback:loopback", "unexercised", "build_environment_unknown"],
+];
+const SMOKE_ROWS = ROUTES.flatMap((route) => SMOKE_PAGE_ROWS.map(([key, result, reasonCode]) => [pageRel(route), key, result, reasonCode]));
+const smokeView = (row) => [row.subject?.page, row.subject?.key, row.result, row.reason_code];
+function assertSmokeQuiet(source, label) {
+  assert.ok(Array.isArray(source?.derived?.qc_results), `${label}: derived.qc_results[] is present`);
+  const rows = source.derived.qc_results.filter((row) => row.check === SMOKE_CHECK);
+  assert.deepEqual(rows.filter((row) => row.result === "warning" || row.result === "review").map(smokeView), [], `${label}: no smoke_qc row is a warning or review on these pages`);
+  assert.deepEqual(rows.map(smokeView).sort(), [...SMOKE_ROWS].sort(), `${label}: the exact set of smoke_qc results`);
+}
+
 const currentDoctor = (f, qcStandIns) => doctorOf(f.packetPath, qcStandIns ? { qcStandIns } : {});
 
 // ---------------------------------------------------------------------------
@@ -172,12 +206,19 @@ const lapsedEntry = (entry, why) => ({ ...entry, result_id: entry.id, accepted_b
 // phase-0 QA stand-in stage (policy.availability captured). 1.5 adds no
 // coverage entry: every page here has a verified pin and no cap.
 const legCoverage = (leg, check, reasonCode) => ({ check, leg, result: "unexercised", reason_code: reasonCode, count: 0, pages: [] });
+// The smoke check's one coverage entry: its Tailwind and loopback rows on
+// each of the four pages (no recorded build environment), grouped by reason.
+const SMOKE_COVERAGE = [
+  { check: SMOKE_CHECK, leg: "doctor", result: "unexercised", reason_code: "build_environment_unknown", count: 8, pages: ["checkout", "landing", "receipt", "upsell"].map(pageRel) },
+];
 const NO_LEGS_COVERAGE = [
+  ...SMOKE_COVERAGE,
   legCoverage("polish", "media.oversize", "leg_not_run"),
   legCoverage("polish", "media.weight", "leg_not_run"),
   ...["policy.availability", "policy.presence", "tracking.order", "tracking.tag", "tracking.url"].map((check) => legCoverage("qa", check, "leg_not_run")),
 ];
 const QA_STAGE_COVERAGE = [
+  ...SMOKE_COVERAGE,
   legCoverage("polish", "media.oversize", "leg_not_run"),
   legCoverage("polish", "media.weight", "leg_not_run"),
   ...["policy.presence", "tracking.order", "tracking.tag", "tracking.url"].map((check) => legCoverage("qa", check, "not_captured_by_this_version")),
@@ -251,6 +292,7 @@ test("F1.0-W1 [real: 1.5] built page with live {item.name}; next, then checkpoin
   assert.equal(before.status, "ready_with_warnings");
   assertGateIssues(before, [id], "next before the accept");
   assertCartRows(readJson(f.sidecarPath), [liveRow(NAME), ...OTHERS_PASS], "sidecar");
+  assertSmokeQuiet(readJson(f.sidecarPath), "sidecar");
   const ref = assertHandoff(handoffOf(before), { open: [liveEntry(NAME)] }, "handoff before the accept")[id];
   await delay(5);
   assertAccepted(await runAccept(f, [ref]));
@@ -280,6 +322,7 @@ test("F1.0-W2 [real: 1.5] doctor half: a real 1.5 doctor warning and a QA qc_res
   assert.equal(before.status, "ready_with_warnings");
   assertGateIssues(before, [idOf(NAME)], "next before the accept");
   assertCartRows(readJson(f.sidecarPath), [liveRow(NAME), ...OTHERS_PASS], "sidecar");
+  assertSmokeQuiet(readJson(f.sidecarPath), "sidecar");
   const refs = assertHandoff(handoffOf(before), { open: [liveEntry(NAME), QA_TERMS], coverage: QA_STAGE_COVERAGE }, "handoff before the accept");
   const doctorRef = refs[idOf(NAME)];
   const qaRef = refs[QA_TERMS.id];
@@ -315,6 +358,7 @@ test("F1.0-W4 [real: 1.5] accept doctor warning A (sidecar stale-stamped), then 
   const before = await runNext(f);
   assert.equal(before.status, "ready_with_warnings");
   assertCartRows(readJson(f.sidecarPath), [liveRow(NAME), liveRow(PRICE), ...OTHERS_PASS], "sidecar");
+  assertSmokeQuiet(readJson(f.sidecarPath), "sidecar");
   const refs = assertHandoff(handoffOf(before), { open: [liveEntry(NAME), liveEntry(PRICE)] }, "handoff before the accepts");
   const refA = refs[idOf(NAME)];
   const refB = refs[idOf(PRICE)];
@@ -339,6 +383,7 @@ test("F1.0-W5 [real: 1.5] a packet whose next status is ready gains one live {it
   assert.equal(before.status, "ready", `precondition: next status is ready: ${JSON.stringify((before.warnings || []).map((issue) => issue.code))}`);
   assert.deepEqual(before.warnings || [], [], "precondition: next has no warnings");
   assertCartRows(readJson(f.sidecarPath), [pagePass("landing"), ...OTHERS_PASS], "sidecar before the edit: a page pass per route");
+  assertSmokeQuiet(readJson(f.sidecarPath), "sidecar before the edit");
   assertHandoff(handoffOf(before), {}, "handoff before the edit");
   setLanding(f, tokensBody(NAME));
   const after = await runNext(f);
@@ -349,6 +394,7 @@ test("F1.0-W5 [real: 1.5] a packet whose next status is ready gains one live {it
   assert.equal(issue.detail.qc_result.result, "warning");
   assert.equal(issue.detail.qc_result.reason_code, "live_token");
   assertCartRows(readJson(f.sidecarPath), [liveRow(NAME), ...OTHERS_PASS], "sidecar after the edit");
+  assertSmokeQuiet(readJson(f.sidecarPath), "sidecar after the edit");
   assertHandoff(handoffOf(after), { open: [liveEntry(NAME)] }, "handoff after the edit");
 });
 
@@ -363,6 +409,7 @@ test("F1.0-B3 [real: 1.5] accept F1.0-W1, then add a second {item.name} element 
   setLanding(f, tokensBody(NAME, NAME));
   const doctor = currentDoctor(f);
   const rows = assertCartRows(doctor, [liveRow(NAME), ...OTHERS_PASS], "doctor after the edit");
+  assertSmokeQuiet(doctor, "doctor after the edit");
   assert.deepEqual(rows[id].observation.occurrences.map((occurrence) => occurrence.where), ["text", "text"], "two occurrences now");
   assert.deepEqual(statusesOf(assessQcAccepts(readJson(f.reportPath).qc_accepts, doctor.derived.qc_results)), [["lapsed", "state_changed"]]);
   const next = await runNext(f);
@@ -380,6 +427,7 @@ test("F1.0-B7 [real: 1.5] fully reconstructed hand-written accept on a current w
   assert.equal(before.status, "ready_with_warnings");
   assertHandoff(handoffOf(before), { open: [liveEntry(NAME)] }, "handoff before the record");
   const row = assertCartRows(readJson(f.sidecarPath), [liveRow(NAME), ...OTHERS_PASS], "sidecar")[id];
+  assertSmokeQuiet(readJson(f.sidecarPath), "sidecar");
   const unsigned = {
     schema: "campaigns-os-qc-accept/v0",
     scope: "qc_accept",
@@ -416,6 +464,7 @@ test("F1.0-B13 [real: 1.5] accept F1.0-W1, then remove the live {item.name} text
   setLanding(f, PLAIN);
   const doctor = currentDoctor(f);
   assertCartRows(doctor, [pagePass("landing"), ...OTHERS_PASS], "doctor after the edit: no current result has that id");
+  assertSmokeQuiet(doctor, "doctor after the edit");
   assert.deepEqual(statusesOf(assessQcAccepts(readJson(f.reportPath).qc_accepts, doctor.derived.qc_results)), [["orphaned", "no_current_result"]]);
   const next = await runNext(f);
   assert.equal(next.status, "ready", "no doctor warning is left");
@@ -429,6 +478,7 @@ test("F1.0-B23 [real: 1.5] doctor sidecar holding the row with generated_by \"ag
   const ref = assertHandoff(handoffOf(next), { open: [liveEntry(NAME)] })[idOf(NAME)];
   const sidecar = readJson(f.sidecarPath);
   assertCartRows(sidecar, [liveRow(NAME), ...OTHERS_PASS], "setup: the sidecar holds the row");
+  assertSmokeQuiet(sidecar, "setup: the sidecar");
   sidecar.generated_by = "agent";
   writeJson(f.sidecarPath, sidecar);
   await delay(5);
@@ -444,6 +494,7 @@ test("F1.0-B25 [real: 1.5] doctor sidecar holding the row with schema_version ca
   const ref = assertHandoff(handoffOf(next), { open: [liveEntry(NAME)] })[idOf(NAME)];
   const sidecar = readJson(f.sidecarPath);
   assertCartRows(sidecar, [liveRow(NAME), ...OTHERS_PASS], "setup: the sidecar holds the row");
+  assertSmokeQuiet(sidecar, "setup: the sidecar");
   sidecar.schema_version = "campaigns-os-doctor-output/v9";
   writeJson(f.sidecarPath, sidecar);
   await delay(5);
@@ -463,6 +514,7 @@ test("F1.0-I4 [real: 1.5] doctor warning seen only by plain doctor (no sidecar);
   assert.equal(existsSync(f.sidecarPath), false, "plain doctor persisted no sidecar");
   const row = assertCartRows(doctorRun.json, [liveRow(NAME), ...OTHERS_PASS], "plain doctor")[idOf(NAME)];
   assert.equal(doctorRun.json.status, "ready_with_warnings");
+  assertSmokeQuiet(doctorRun.json, "plain doctor");
   assertGateIssues(doctorRun.json, [idOf(NAME)], "plain doctor");
   await delay(5);
   const before = snapshot(f);

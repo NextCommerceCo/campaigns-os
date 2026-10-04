@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.51.0+agent.2] - 2026-10-04
+
+### Added
+
+- Doctor now reports built-page smoke warnings: missing in-page anchor targets, missing favicon and Open Graph tags, unresolved `og:image`, the Tailwind CDN script in production builds, `cdn.29next.store` asset references, and loopback URLs.
+
 ## [1.51.0+agent.1] - 2026-10-04
 
 ### Added

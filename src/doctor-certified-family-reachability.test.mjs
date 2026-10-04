@@ -15,6 +15,7 @@ import { test } from "node:test";
 import { CAMPAIGN_IDENTITY } from "./campaign-identity.mjs";
 import { doctorBuiltOutput } from "./doctor/inspect.mjs";
 import { SDK_MARKUP } from "./sdk-markup.mjs";
+import { SMOKE_QC, SMOKE_QC_CHECK } from "./built-smoke-qc.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs } from "./built-script-syntax.mjs";
 import { UPSELL_SELECTOR_SCOPE } from "./upsell-selector-scope.mjs";
 
@@ -32,9 +33,29 @@ const certified = Object.keys(catalog.families || {})
 // The gates this file vouches for. Every id here must come back pass or
 // not_applicable on every family; `blocked` on canonical output is the #5
 // failure mode by definition.
-const STATIC_BUILT_OUTPUT_GATES = [UPSELL_SELECTOR_SCOPE, CAMPAIGN_IDENTITY, SDK_MARKUP, SCRIPT_SYNTAX];
+const STATIC_BUILT_OUTPUT_GATES = [UPSELL_SELECTOR_SCOPE, CAMPAIGN_IDENTITY, SDK_MARKUP, SCRIPT_SYNTAX, SMOKE_QC];
 
-const gateOf = (result, id) => (result.derived?.checkpoint_gates || []).find((gate) => gate.id === id) || null;
+// A QC check is no checkpoint gate: it records derived.qc_results rows under
+// its check name. It passes here when it recorded rows and each is a pass or,
+// per rule key, an unexercised reason canonical output reads under
+// `doctor --built` (no deploy base for og:image, no recorded build
+// environment for Tailwind and loopback); any other unexercised reason,
+// warning or review fails.
+const QC_CHECKS = new Map([[SMOKE_QC, SMOKE_QC_CHECK]]);
+const QC_ALLOWED_UNEXERCISED = new Map([[SMOKE_QC, new Map([
+  ["og:image_target", new Set(["og_image_base_unknown", "og_image_remote_not_fetched"])],
+  ["tailwind_cdn:cdn.tailwindcss.com", new Set(["build_environment_unknown"])],
+  ["loopback:loopback", new Set(["build_environment_unknown"])],
+])]]);
+
+const gateOf = (result, id) => {
+  if (!QC_CHECKS.has(id)) return (result.derived?.checkpoint_gates || []).find((gate) => gate.id === id) || null;
+  const rows = (result.derived?.qc_results || []).filter((row) => row.check === QC_CHECKS.get(id));
+  if (!rows.length) return null;
+  const allowed = QC_ALLOWED_UNEXERCISED.get(id);
+  const flagged = rows.filter((row) => row.result !== "pass" && !(row.result === "unexercised" && allowed.get(row.subject?.key)?.has(row.reason_code)));
+  return { id, status: flagged.length ? "failed" : "pass", reason: flagged.map((row) => `${row.id} ${row.result}/${row.reason_code}`).join(", ") };
+};
 
 test("the rendered fixture tree covers every certified family", () => {
   assert.ok(certified.length >= 8, `expected the certified set, got ${certified.join(", ")}`);
@@ -71,8 +92,8 @@ for (const family of certified) {
     assert.deepEqual(blockingCodes, [], `${family}: static gates raised errors on canonical output`);
     // The advisory codes hold to the same bar: a warning that fires on every
     // canonical page is noise, not a signal.
-    const advisoryCodes = result.warnings.map((issue) => issue.code).filter((code) => code.startsWith(SDK_MARKUP) || code.startsWith(SCRIPT_SYNTAX));
-    assert.deepEqual(advisoryCodes, [], `${family}: SDK markup or script syntax advisories fired on canonical output`);
+    const advisoryCodes = result.warnings.map((issue) => issue.code).filter((code) => code.startsWith(SDK_MARKUP) || code.startsWith(SCRIPT_SYNTAX) || code.startsWith(SMOKE_QC));
+    assert.deepEqual(advisoryCodes, [], `${family}: SDK markup, script syntax or smoke check advisories fired on canonical output`);
   });
 
   test(`${family}: SDK markup scans every page and its only advisory is the templates' own data-next-* hooks`, () => {

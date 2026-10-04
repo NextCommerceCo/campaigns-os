@@ -1,8 +1,8 @@
 // Doctor checks: the check registries, validatePacket and the validators they run.
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "../spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanText } from "../html-scan.mjs";
-import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "../sdk-meta-tags.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthsDisagree } from "../proof-policy.mjs";
 import { QA_GATE_PLACEHOLDER_TEXT_RESIDUE, qaGatePassedForCurrentBuild } from "../stage-ledger.mjs";
@@ -85,7 +85,8 @@ import {
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "../campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
-import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders, isFileReadFailure } from "../cart-placeholders.mjs";
+import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders, isFileReadFailure, isPageReadFailure } from "../cart-placeholders.mjs";
+import { SMOKE_QC, SMOKE_QC_LIMITS, evaluateSmokeQc, pageScriptSources } from "../built-smoke-qc.mjs";
 import { recordQcResults } from "../qc-results.mjs";
 import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
@@ -448,6 +449,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: CART_PLACEHOLDERS,
     phase: "built-output",
     run: ({ packet, warnings, ready, derived }) => validateCartPlaceholders(packet, warnings, ready, derived),
+  },
+  {
+    id: SMOKE_QC,
+    phase: "built-output",
+    run: ({ packet, warnings, ready, derived, buildState }) => validateSmokeQc(packet, warnings, ready, derived, buildState),
   },
   {
     id: "built_output.sdk_meta_tags",
@@ -2041,7 +2047,26 @@ export function validateCampaignIdentity(packet, errors, ready, derived, spec = 
 // `/<slug>/config.js`), then the campaign directory (a root-served campaign
 // emits `/config.js`); relative srcs resolve against the page. Remote and
 // missing scripts contribute nothing.
-function collectBuiltPageIdentityInputs(scope, targetRepo) {
+//
+// The bounded form ({ pages, bounds }, the smoke check's anchor script hint)
+// takes pages the caller already read ({file, content?}, as
+// collectCartPlaceholderPages gives them) and lists every local script a page
+// loads, read or not, from the page's parse5 tree (pageScriptSources: any
+// attribute quoting, spacing or case; never a non-JavaScript type or a script
+// in <template> or <noscript>): the first `bounds.scripts` are read when
+// their real path lies inside the site root and they hold at most
+// `bounds.script_bytes` bytes ({src, file, content}); any other reads
+// {src, file, unread} with `missing`, `outside_site`, `too_large`,
+// `unreadable` or `script_cap`. A page with no content, or one that cannot be
+// parsed, is returned as given.
+function collectBuiltPageIdentityInputs(scope, targetRepo, { pages = null, bounds = null } = {}) {
+  if (pages && bounds) {
+    const scriptsOf = boundedPageScripts(scope, targetRepo, bounds);
+    return pages.map((page) => {
+      const scripts = typeof page?.content === "string" ? scriptsOf(page.content, join(targetRepo, page.file)) : null;
+      return scripts ? { ...page, scripts } : page;
+    });
+  }
   const scriptCache = new Map();
   const readScript = (path) => {
     if (!scriptCache.has(path)) {
@@ -2055,23 +2080,11 @@ function collectBuiltPageIdentityInputs(scope, targetRepo) {
     }
     return scriptCache.get(path);
   };
-  const resolveLocalScript = (src, builtPath) => {
-    const raw = String(src || "").trim();
-    if (!raw || raw.startsWith("//") || isAbsoluteHttpUrl(raw) || raw.startsWith("data:")) return null;
-    const clean = raw.replace(/[?#].*$/, "");
-    if (!clean) return null;
-    if (clean.startsWith("/")) {
-      const rel = clean.replace(/^\/+/, "");
-      const candidates = [join(scope.site_root, rel), join(scope.campaign_dir, rel)];
-      return candidates.find((candidate) => existsSync(candidate)) || null;
-    }
-    return resolve(dirname(builtPath), clean);
-  };
   return scope.pages.map((page) => {
     const content = readFileSync(page.built_path, "utf8");
     const scripts = [];
     for (const src of externalScriptSources(content)) {
-      const path = resolveLocalScript(src, page.built_path);
+      const path = builtLocalScriptPath(scope, src, page.built_path);
       const scriptContent = path ? readScript(path) : null;
       if (scriptContent == null) continue;
       scripts.push({ src, file: relFromDir(targetRepo, path), content: scriptContent });
@@ -2084,6 +2097,80 @@ function collectBuiltPageIdentityInputs(scope, targetRepo) {
       scripts,
     };
   });
+}
+
+// Where a page's local `<script src>` lives, or null for a remote, data: or
+// empty src. An absolute src is the first of its site-root and campaign
+// candidates that exists; with `missing`, the site-root candidate when none
+// does (so a missing script is named), otherwise null.
+function builtLocalScriptPath(scope, src, builtPath, { missing = false } = {}) {
+  const raw = String(src || "").trim();
+  if (!raw || raw.startsWith("//") || isAbsoluteHttpUrl(raw) || raw.startsWith("data:")) return null;
+  const clean = raw.replace(/[?#].*$/, "");
+  if (!clean) return null;
+  if (clean.startsWith("/")) {
+    const rel = clean.replace(/^\/+/, "");
+    const candidates = [join(scope.site_root, rel), join(scope.campaign_dir, rel)];
+    return candidates.find((candidate) => existsSync(candidate)) || (missing ? candidates[0] : null);
+  }
+  return resolve(dirname(builtPath), clean);
+}
+
+// The bounded script list of one page (see collectBuiltPageIdentityInputs),
+// each script file read at most once per run; null when the page cannot be
+// parsed.
+function boundedPageScripts(scope, targetRepo, bounds) {
+  const realSiteRoot = realPathOrNull(scope.site_root);
+  const cache = new Map();
+  const read = (path) => {
+    if (!cache.has(path)) cache.set(path, readBoundedScript(realSiteRoot, path, bounds.script_bytes));
+    return cache.get(path);
+  };
+  return (content, builtPath) => {
+    let sources;
+    try {
+      sources = pageScriptSources(content);
+    } catch (error) {
+      if (!isPageReadFailure(error)) throw error;
+      return null;
+    }
+    const scripts = [];
+    for (const src of sources) {
+      const path = builtLocalScriptPath(scope, src, builtPath, { missing: true });
+      if (!path) continue;
+      const file = relFromDir(targetRepo, path);
+      scripts.push(scripts.length < bounds.scripts ? { src, file, ...read(path) } : { src, file, unread: "script_cap" });
+    }
+    return scripts;
+  };
+}
+
+// { content } or { unread }. A file-system read failure reads unread; any
+// other error is a defect and throws.
+function readBoundedScript(realSiteRoot, path, maxBytes) {
+  try {
+    const real = realpathSync(path);
+    const rel = realSiteRoot ? relative(realSiteRoot, real) : "";
+    if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return { unread: "outside_site" };
+    const stat = statSync(real);
+    if (!stat.isFile()) return { unread: "unreadable" };
+    if (stat.size > maxBytes) return { unread: "too_large" };
+    const bytes = readFileSync(real);
+    return bytes.length > maxBytes ? { unread: "too_large" } : { content: bytes.toString("utf8") };
+  } catch (error) {
+    if (!isFileReadFailure(error)) throw error;
+    return { unread: error.code === "ENOENT" || error.code === "ENOTDIR" ? "missing" : "unreadable" };
+  }
+}
+
+function realPathOrNull(path) {
+  if (!path) return null;
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    if (!isFileReadFailure(error)) throw error;
+    return null;
+  }
 }
 
 function recordCampaignIdentityGate({ subject, pages, errors, ready, derived }) {
@@ -2263,6 +2350,54 @@ function recordCartPlaceholders({ subject, pages, warnings, ready, derived }) {
   const passed = results.filter((row) => row.result === "pass").length;
   const flagged = results.filter((row) => row.result === "warning" || row.result === "review").length;
   ready.push(`Cart placeholder check on ${pages.length} built page(s): ${passed} page(s) pass, ${flagged} warning or review result(s)`);
+  return results;
+}
+
+// Built-output smoke checks. Same placement and the same QC wiring as the
+// cart placeholder check above, over the same built pages. The build
+// environment is the one the Assembly Report records (nothing measures it),
+// and the deploy URLs give the base an absolute og:image maps from.
+function validateSmokeQc(packet, warnings, ready, derived, buildState = {}) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  recordSmokeQc({
+    subject: {
+      public_route_slug: publicRouteSlug || null,
+      site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
+    },
+    targetRepo,
+    pages: siteRoot && existsSync(siteRoot) ? collectCartPlaceholderPages(targetRepo, publicRouteSlug) : [],
+    environment: recordedBuildEnvironment(buildState?.report),
+    deployBase: [packet?.deploy?.preview_url, packet?.deploy?.production_url],
+    warnings,
+    ready,
+    derived,
+  });
+}
+
+function recordSmokeQc({ subject, targetRepo, pages, environment, deployBase, warnings, ready, derived }) {
+  // The anchor script hint reads each page's local scripts through the
+  // identity collector's bounded form. With no scope to resolve them in, the
+  // pages go as given and their local scripts read unread.
+  const scope = targetRepo && pages.length ? resolveBuiltSiteScope(targetRepo, { slug: subject?.public_route_slug || null }) : null;
+  const results = evaluateSmokeQc({
+    subject,
+    pages: scope?.site_root && scope?.campaign_dir ? collectBuiltPageIdentityInputs(scope, targetRepo, { pages, bounds: SMOKE_QC_LIMITS }) : pages,
+    environment,
+    siteRoot: targetRepo ? join(targetRepo, "_site") : null,
+    deployBase,
+    resolveAsset: (src, builtPath) => (targetRepo ? resolveBuiltAssetPath(src, builtPath, targetRepo) : null),
+  });
+  recordQcResults({ derived, warnings, results });
+  if (!pages.length) {
+    ready.push("Smoke checks not applicable: no built page to scan yet.");
+    return results;
+  }
+  // A ready line only when no result went unexercised (contract 1.0).
+  if (results.some((row) => row.result === "unexercised")) return results;
+  const count = (...values) => results.filter((row) => values.includes(row.result)).length;
+  ready.push(`Smoke checks on ${pages.length} built page(s): ${count("pass")} pass, ${count("warning", "review")} warning or review result(s)`);
   return results;
 }
 
@@ -2688,7 +2823,7 @@ function pageKitAssetPathViolation(reference, publicRouteSlug) {
   };
 }
 
-function resolveBuiltAssetPath(src, builtPath, targetRepo) {
+export function resolveBuiltAssetPath(src, builtPath, targetRepo) {
   if (!isNonEmptyString(src)) return null;
   const raw = src.trim();
   if (raw.startsWith("//") || isAbsoluteHttpUrl(raw) || raw.startsWith("data:") || raw.startsWith("mailto:") || raw.startsWith("tel:")) return null;
@@ -4762,6 +4897,7 @@ export {
   recordSdkMarkupGate,
   recordCartPlaceholders,
   collectCartPlaceholderPages,
+  recordSmokeQc,
   summarizeCopyMatches,
   resolveBrandContract,
   resolveBrandContractOnce,
