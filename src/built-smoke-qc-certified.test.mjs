@@ -6,7 +6,7 @@
 // no-network guard could be installed. Joining STATIC_BUILT_OUTPUT_GATES there
 // is the implementation phase's edit.
 //
-// Amended by contract amendments A2 and its addendum: no 1.6 `warning` (and no
+// No smoke `warning` (and no
 // `review`) on any certified page. Under `doctor --built` every rule reads
 // `pass`, except the three the contract leaves unexercised there:
 //   - og:image resolution: og_image_base_unknown. The refresh script sets
@@ -55,7 +55,7 @@ const certified = Object.keys(catalog.families || {})
   .sort();
 
 // The og:image the refresh script renders into every certified page
-// (scripts/refresh-certified-family-fixtures.mjs, amendments A2 addendum).
+// (scripts/refresh-certified-family-fixtures.mjs).
 const FIXTURE_OG_IMAGE = "https://example.com/og-image.png";
 
 const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
