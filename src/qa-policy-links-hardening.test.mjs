@@ -303,6 +303,70 @@ test("policy links: a body cancel that never settles is waited for 1 s inside it
   assert.deepEqual([late.elapsed, late.block.outcome], [9_700, "network_unavailable"], "headers at 9.4 s, cancel wait cut at 9.7 s: not accepted");
 });
 
+// A clock whose timers never fire: time moves only when the injected fetch
+// says a response took that long. Every deadline race then settles with its
+// operation, so only the probe's own reading of the clock can refuse a
+// response that completed late.
+function steppedClock() {
+  let time = 0;
+  const armed = new Set();
+  return {
+    armed,
+    now: () => time,
+    advance: (ms) => { time += ms; },
+    setTimer: (callback, ms) => {
+      const timer = { callback, ms };
+      armed.add(timer);
+      return timer;
+    },
+    clearTimer: (timer) => { armed.delete(timer); },
+  };
+}
+
+// routes: (url) => { status, location?, takesMs }. The response resolves at
+// once, with the clock moved on by takesMs.
+function steppedFetch(clock, routes, calls) {
+  return async (url) => {
+    calls.push({ url: String(url), at: clock.now() });
+    const answer = routes(String(url));
+    if (!answer) throw new TypeError(`policy link hardening tests: no route for ${url}`);
+    clock.advance(answer.takesMs);
+    const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
+    if (answer.location) headers.set("location", answer.location);
+    return { status: answer.status, headers, body: { cancel: () => Promise.resolve() } };
+  };
+}
+
+test("policy links: a final HTML 200 that completes at or after its URL's 15 s deadline reads network_unavailable, even when no timer fired; one that completes before it reads pass", async () => {
+  const configured = "http://store.example.invalid/terms";
+  // Three 4 s redirects within the pass allowances (scheme, www., trailing
+  // slash); the final request starts at 12 s, so its end is the 15 s deadline,
+  // not its own 5 s.
+  const routesFor = (finalMs) => (url) => ({
+    [configured]: { status: 301, location: "https://store.example.invalid/terms", takesMs: 4_000 },
+    "https://store.example.invalid/terms": { status: 301, location: "https://www.store.example.invalid/terms", takesMs: 4_000 },
+    "https://www.store.example.invalid/terms": { status: 301, location: "https://www.store.example.invalid/terms/", takesMs: 4_000 },
+    "https://www.store.example.invalid/terms/": { status: 200, takesMs: finalMs },
+  })[url];
+  const run = async (finalMs) => {
+    const clock = steppedClock();
+    const calls = [];
+    const spec = { campaign: { store_terms: configured } };
+    const { rows } = await runPolicyLinkChecks({ spec, pages: [], fetchImpl: steppedFetch(clock, routesFor(finalMs), calls), measuredAt, budget: createPolicyLinkBudget({ clock }) });
+    assert.equal(clock.armed.size, 0, `final ${finalMs} ms: every deadline race settled with its response, before its timer`);
+    assert.deepEqual(calls.map(({ at }) => at), [0, 4_000, 8_000, 12_000], `final ${finalMs} ms: four requests`);
+    return rows;
+  };
+  const inTime = await run(2_999);
+  const row = assertRow(inTime, "policy.availability:campaign:store_terms", "pass", null);
+  assert.deepEqual(row.observation.availability.chain.map(({ status }) => status), [301, 301, 301, 200]);
+  for (const finalMs of [3_000, 3_500]) {
+    const late = await run(finalMs);
+    const lateRow = assertRow(late, "policy.availability:campaign:store_terms", "unexercised", "network_unavailable");
+    assert.deepEqual(lateRow.observation.availability.chain.map(({ status }) => status), [301, 301, 301], `final at ${12_000 + finalMs} ms: the late response is not in the chain`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Anchor text is compared in full
 
@@ -392,6 +456,41 @@ test("policy links: /terms redirecting to https://www./terms/ still reads pass (
     "https://www.example.invalid/terms/": { status: 200 },
   })[url]);
   assertRow(rows, row.id, "pass", null);
+});
+
+test("policy links: a redirect to another host with the same path and query, ending in HTML 200, reads redirected_elsewhere", async () => {
+  const configured = "https://store.example.invalid/terms?v=1";
+  for (const elsewhere of [
+    "https://other.example.invalid/terms?v=1",
+    "https://www.other.example.invalid/terms?v=1",
+    "https://shop.store.example.invalid/terms?v=1",
+    "https://store.example.invalid:8443/terms?v=1",
+  ]) {
+    const { rows, row, calls } = await availabilityRun(configured, (url) => ({
+      [configured]: { status: 302, location: elsewhere },
+      [elsewhere]: { status: 200 },
+    })[url]);
+    assert.deepEqual(calls.map(({ url }) => url), [configured, elsewhere], `${elsewhere}: both requests are made`);
+    assert.deepEqual(row.observation.availability.chain.map(({ status }) => status), [302, 200], `${elsewhere}: the chain ends in a 200`);
+    assert.equal(row.observation.availability.content_type, "text/html", `${elsewhere}: the final response is HTML`);
+    assertRow(rows, row.id, "review", "redirected_elsewhere");
+  }
+});
+
+test("policy links: a redirect that changes only the scheme or a leading www. of the host, query kept, still reads pass", async () => {
+  for (const [configured, final] of [
+    ["https://store.example.invalid/terms?v=1", "http://store.example.invalid/terms?v=1"],
+    ["https://store.example.invalid/terms?v=1", "https://www.store.example.invalid/terms?v=1"],
+    ["https://www.store.example.invalid/terms?v=1", "https://store.example.invalid/terms?v=1"],
+    ["https://www.store.example.invalid/terms?v=1", "http://store.example.invalid/terms/?v=1"],
+  ]) {
+    const { rows, row } = await availabilityRun(configured, (url) => ({
+      [configured]: { status: 301, location: final },
+      [final]: { status: 200 },
+    })[url]);
+    assert.deepEqual(row.observation.availability.chain.map(({ status }) => status), [301, 200], `${configured} → ${final}: the redirect is followed`);
+    assertRow(rows, row.id, "pass", null);
+  }
 });
 
 test("policy links: /a%3Fone redirecting to /a%3Ftwo is not a loop; back to /a%3Fone is", async () => {
@@ -513,6 +612,36 @@ test("policy links: relative and scheme-less configured values stored as scheme 
 
 test("policy links: http(s) and mailto configured values stored as scheme other are refused", async () => {
   await assertRefused(["https://example.test/terms", "mailto:a@b.test"], "other");
+});
+
+// A stored presence row whose observation counts more matching pages than
+// pages read, claiming the result those counts would decide (pass) with the
+// state they would give.
+test("policy links: a stored presence observation with pages_with_match above pages_read neither re-derives nor reads as anything but not reproducible", async () => {
+  for (const [read, withMatch] of [[1, 2], [2, 3]]) {
+    const counts = { ...COMPLETE_PRESENCE, pages_expected: read, pages_read: read };
+    const consistent = { check: "policy.presence", field: "store_terms", configured: TERMS, configured_query_sha256: null, scheme: "https", presence: { ...counts, pages_with_match: read } };
+    const derived = rederiveQcResult(consistent);
+    assert.deepEqual([derived?.result, derived?.reason_code], ["pass", null], "setup: the consistent counts derive pass");
+    const observation = { ...consistent, presence: { ...counts, pages_with_match: withMatch } };
+    const row = buildQcResult({
+      check: derived.check,
+      leg: "qa",
+      subject: derived.subject,
+      result: derived.result,
+      reason_code: derived.reason_code,
+      state: { ...derived.state, pages_with_match: withMatch },
+      observation,
+      members: derived.members,
+      accept_eligible: derived.accept_eligible,
+      coverage: derived.coverage,
+      measured_at: measuredAt,
+    });
+    const label = `pages_read ${read}, pages_with_match ${withMatch}`;
+    assert.equal(rederiveQcResult(observation), null, `${label}: does not re-derive`);
+    const stored = await readStored([row]);
+    assert.deepEqual(stored.map((entry) => [entry.id, entry.result, entry.reason_code]), [[row.id, "unexercised", "evidence_not_reproducible"]], `${label}: the reader reads it as not reproducible`);
+  }
 });
 
 // One field configured as `configured`, its anchor on the only page and every
