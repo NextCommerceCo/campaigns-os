@@ -141,7 +141,7 @@ test("F1.3-B11 accepted F1.3-B3, stored record re-evaluated with dpr 2: accept l
   assert.deepEqual(records.map((record) => record.result_id), [accepted.id], "one accept recorded");
   const { assessQcAccepts } = await import("./qc-accept.mjs");
 
-  // Director ruling K5. Control: the same cell re-stamped with a later
+  // Control: the same cell re-stamped with a later
   // measured_at (no measured state changes) keeps the accept active, so a
   // fingerprint over the timestamp cannot produce the lapse below.
   const control = { pageLoad: evidence.pageLoad, record: withRecomputedIntegrity({ ...structuredClone(evidence.record), measured_at: new Date(Date.parse(evidence.record.measured_at) + 30_000).toISOString() }) };
@@ -173,7 +173,7 @@ test("F1.3-B11 accepted F1.3-B3, stored record re-evaluated with dpr 2: accept l
 // ---------------------------------------------------------------------------
 // Incomplete rows
 
-// F1.3-I1, leg D/CLI (owner decision A8). The evidence is built the way the
+// F1.3-I1, leg D/CLI. The evidence is built the way the
 // producer builds it (src/polish-node.mjs, capturePolishPageLoad): collector
 // response records → buildPageLoadCapture → buildPolishPageLoadEvidence, and
 // buildMediaWeightCell / buildMediaWeightRecord over the stored captures, so
@@ -439,7 +439,7 @@ test("F1.3-I9 report evidence from before this version (no media_weight), hidden
   );
 
   // Hidden-eager is still evaluated from the old page_load evidence. Literal
-  // outcome for this setup (K6): the factory evidence covers one route and
+  // outcome for this setup: the factory evidence covers one route and
   // the desktop viewport while the fixture packet plans four routes and two
   // viewports, so the existing rule judges it a stale capture.
   const { evaluateRecordedHiddenEagerMediaCheckpoint } = await import("./polish-node.mjs");
@@ -475,8 +475,8 @@ test("F1.3-I18 cell whose page_load capture records one response served from cac
 });
 
 // Rows I20 to I22: one cell's field set outside the 1.3 record vocabulary,
-// integrity recomputed. The tampered cell reads as the row states. Director
-// ruling D3: the vocabulary check is a record-level reader check (contract
+// integrity recomputed. The tampered cell reads as the row states.
+// The vocabulary check is a record-level reader check (contract
 // :163, :169-174), so every result of the record, the untouched control
 // cell's included, reads unexercised / evidence_not_reproducible.
 async function vocabularyRow(edit, label) {

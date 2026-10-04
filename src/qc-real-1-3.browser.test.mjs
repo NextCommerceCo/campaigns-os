@@ -1,25 +1,24 @@
-// U5 re-run (freeze addendum "U5 re-run duty"): the F1.0 rows that name 1.3
-// as producer (0-1.0 card, right-hand column: F1.0-B9, B20 to B22, B26 to
-// B35, B40, I8), end to end with the real producer. The phase-0 versions in
+// The F1.0 rows that name 1.3 as producer (F1.0-B9, B20 to B22, B26 to
+// B35, B40, I8), end to end with the real producer. The earlier versions in
 // src/qc-results-polish.test.mjs and src/qc-accept.test.mjs read stand-in
 // records with stand-in rules; here the media_weight record and its page_load
 // capture come from a real Polish page-load capture in Chromium against
 // loopback stub origins, and the reader uses the registry's real 1.3 rules.
-// Director ruling D1: F1.0-B23, B24 and B25 lie inside the B20 to B35 range
+// F1.0-B23, B24 and B25 lie inside the B20 to B35 range
 // but are not 1.3-producer rows (their setups are doctor sidecar and QA
 // verdict evidence), so they are not re-run here.
 //
 // One shared capture covers the setups the rows name, one route each (two
 // viewports, so two cells per route):
-//   u5-hero      same-origin 600,000 B complete image (F1.3-B2)
-//   u5-lower     same-origin image canceled at a 300,000 B lower bound
+//   pl-hero      same-origin 600,000 B complete image (F1.3-B2)
+//   pl-lower     same-origin image canceled at a 300,000 B lower bound
 //                (F1.0-B27; Chrome reports it in its coarse step, D2)
-//   u5-reset     same-origin image whose connection is reset (failed request;
+//   pl-reset     same-origin image whose connection is reset (failed request;
 //                the page_load capture is incomplete)
-//   u5-900k      same-origin 900,000 B complete image
-//   u5-redirect  other-origin URL 302s via /hop?v=1 to a same-origin
+//   pl-900k      same-origin 900,000 B complete image
+//   pl-redirect  other-origin URL 302s via /hop?v=1 to a same-origin
 //                600,000 B image (F1.3-B4)
-//   u5-video     same-origin <video preload="none">, never fetched
+//   pl-video     same-origin <video preload="none">, never fetched
 // Each row edits a deep copy. "That cell" is the route's desktop cell. Every
 // other cell must read exactly its literal expectation (UNTOUCHED, derived
 // from the setup, never from a first read).
@@ -89,7 +88,7 @@ if (browserUnavailableNote) test.skip(browserUnavailableNote, () => {});
 
 const E = "evidence_not_reproducible";
 const NEWER_BUILD_FP = `sha256:${createHash("sha256").update("synthetic build two").digest("hex")}`;
-const ROUTES = Object.freeze(["u5-900k", "u5-hero", "u5-lower", "u5-redirect", "u5-reset", "u5-video"]);
+const ROUTES = Object.freeze(["pl-900k", "pl-hero", "pl-lower", "pl-redirect", "pl-reset", "pl-video"]);
 const FIRST_IMG = imgPath(1);
 
 // The handoff coverage entries the campaign fixture always carries besides
@@ -112,14 +111,14 @@ after(async () => {
 // Every URL a row reads, by route.
 function urlsOf(same, other) {
   return {
-    hero: same.url("/img/u5-hero.png"),
-    lower: same.url("/img/u5-lower.png"),
-    reset: same.url("/img/u5-reset.png"),
-    big: same.url("/img/u5-900k.png"),
-    requested: other.url("/img/u5-b4.png"),
+    hero: same.url("/img/pl-hero.png"),
+    lower: same.url("/img/pl-lower.png"),
+    reset: same.url("/img/pl-reset.png"),
+    big: same.url("/img/pl-900k.png"),
+    requested: other.url("/img/pl-b4.png"),
     hop: other.url("/hop?v=1"),
-    final: same.url("/img/u5-b4.png"),
-    video: same.url("/media/u5.mp4"),
+    final: same.url("/img/pl-b4.png"),
+    video: same.url("/media/pl.mp4"),
     documentOf: (name) => same.url(route(name)),
     otherOrigin: other.origin,
   };
@@ -128,8 +127,8 @@ function urlsOf(same, other) {
 // The complete request log of the shared capture: each document and each
 // fetched image once per cell; the preload="none" video never.
 const SHARED_LOG = Object.freeze({
-  same: requests([...ROUTES.map(route), "/img/u5-hero.png", "/img/u5-lower.png", "/img/u5-reset.png", "/img/u5-900k.png", "/img/u5-b4.png"]),
-  other: requests(["/img/u5-b4.png", "/hop?v=1"]),
+  same: requests([...ROUTES.map(route), "/img/pl-hero.png", "/img/pl-lower.png", "/img/pl-reset.png", "/img/pl-900k.png", "/img/pl-b4.png"]),
+  other: requests(["/img/pl-b4.png", "/hop?v=1"]),
 });
 
 // Per route: the cell's weight subjects (every resource, the document
@@ -139,31 +138,31 @@ function subjectsOf(urls) {
   const doc = (name) => rid(urls.documentOf(name));
   const image = (url) => [oversizeKey(rid(url), FIRST_IMG)];
   return {
-    "u5-900k": { weight: [doc("u5-900k"), rid(urls.big)], oversize: image(urls.big) },
-    "u5-hero": { weight: [doc("u5-hero"), rid(urls.hero)], oversize: image(urls.hero) },
-    "u5-lower": { weight: [doc("u5-lower"), rid(urls.lower)], oversize: image(urls.lower) },
-    "u5-redirect": { weight: [doc("u5-redirect"), rid(urls.requested)], oversize: image(urls.requested) },
-    "u5-reset": { weight: [doc("u5-reset"), rid(urls.reset)], oversize: image(urls.reset) },
-    "u5-video": { weight: [doc("u5-video"), "video:0"], oversize: [NO_IMAGE_KEY] },
+    "pl-900k": { weight: [doc("pl-900k"), rid(urls.big)], oversize: image(urls.big) },
+    "pl-hero": { weight: [doc("pl-hero"), rid(urls.hero)], oversize: image(urls.hero) },
+    "pl-lower": { weight: [doc("pl-lower"), rid(urls.lower)], oversize: image(urls.lower) },
+    "pl-redirect": { weight: [doc("pl-redirect"), rid(urls.requested)], oversize: image(urls.requested) },
+    "pl-reset": { weight: [doc("pl-reset"), rid(urls.reset)], oversize: image(urls.reset) },
+    "pl-video": { weight: [doc("pl-video"), "video:0"], oversize: [NO_IMAGE_KEY] },
   };
 }
 
-// Director ruling K6: what every untampered cell reads, from its setup.
+// What every untampered cell reads, from its setup.
 // [weight results], [oversize results], each [result, reasonCode] in the
 // order of subjectsOf. The 40×30 images are under the 250,000 px area floor
 // (oversize pass once loaded); the document is a small complete same-origin
-// resource (pass). u5-lower: a lower bound under 500,000 B with no declared
-// length (transfer_partial), never loaded (not_loaded). u5-reset: every
+// resource (pass). pl-lower: a lower bound under 500,000 B with no declared
+// length (transfer_partial), never loaded (not_loaded). pl-reset: every
 // result of its incomplete cell, the failed image's included, reads
-// capture_incomplete (F1.3-I17 as amended by owner decision A6;
+// capture_incomplete (F1.3-I17;
 // src/polish-media-weight.browser.test.mjs carries the same literals).
 const UNTOUCHED = Object.freeze({
-  "u5-900k": [[["pass"], ["warning", "image_over_threshold"]], [["pass"]]],
-  "u5-hero": [[["pass"], ["warning", "image_over_threshold"]], [["pass"]]],
-  "u5-lower": [[["pass"], ["unexercised", "transfer_partial"]], [["unexercised", "not_loaded"]]],
-  "u5-redirect": [[["pass"], ["warning", "image_over_threshold"]], [["pass"]]],
-  "u5-reset": [[["unexercised", "capture_incomplete"], ["unexercised", "capture_incomplete"]], [["unexercised", "capture_incomplete"]]],
-  "u5-video": [[["pass"], ["unexercised", "not_loaded"]], [["pass"]]],
+  "pl-900k": [[["pass"], ["warning", "image_over_threshold"]], [["pass"]]],
+  "pl-hero": [[["pass"], ["warning", "image_over_threshold"]], [["pass"]]],
+  "pl-lower": [[["pass"], ["unexercised", "transfer_partial"]], [["unexercised", "not_loaded"]]],
+  "pl-redirect": [[["pass"], ["warning", "image_over_threshold"]], [["pass"]]],
+  "pl-reset": [[["unexercised", "capture_incomplete"], ["unexercised", "capture_incomplete"]], [["unexercised", "capture_incomplete"]]],
+  "pl-video": [[["pass"], ["unexercised", "not_loaded"]], [["pass"]]],
 });
 
 // One cell's expected results: `values(check, index)` gives [result,
@@ -184,20 +183,20 @@ async function sharedCapture() {
     const { same, other } = servers;
     const urls = urlsOf(same, other);
     const image = (src) => page(`<img alt="" src="${src}" width="40" height="30">`);
-    same.serve(route("u5-hero"), image("/img/u5-hero.png"));
-    same.serve("/img/u5-hero.png", pngWire(40, 30, 600_000));
-    same.serve(route("u5-lower"), image("/img/u5-lower.png"));
-    same.serve("/img/u5-lower.png", stalled({ sendBytes: 300_000 }));
-    same.serve(route("u5-reset"), image("/img/u5-reset.png"));
-    same.serve("/img/u5-reset.png", connectionReset());
-    same.serve(route("u5-900k"), image("/img/u5-900k.png"));
-    same.serve("/img/u5-900k.png", pngWire(40, 30, 900_000));
-    same.serve(route("u5-redirect"), image(urls.requested));
-    other.serve("/img/u5-b4.png", redirect(urls.hop));
+    same.serve(route("pl-hero"), image("/img/pl-hero.png"));
+    same.serve("/img/pl-hero.png", pngWire(40, 30, 600_000));
+    same.serve(route("pl-lower"), image("/img/pl-lower.png"));
+    same.serve("/img/pl-lower.png", stalled({ sendBytes: 300_000 }));
+    same.serve(route("pl-reset"), image("/img/pl-reset.png"));
+    same.serve("/img/pl-reset.png", connectionReset());
+    same.serve(route("pl-900k"), image("/img/pl-900k.png"));
+    same.serve("/img/pl-900k.png", pngWire(40, 30, 900_000));
+    same.serve(route("pl-redirect"), image(urls.requested));
+    other.serve("/img/pl-b4.png", redirect(urls.hop));
     other.serve("/hop?v=1", redirect(urls.final));
-    same.serve("/img/u5-b4.png", pngWire(40, 30, 600_000));
-    same.serve(route("u5-video"), page(`<video src="/media/u5.mp4" preload="none" width="320" height="180"></video>`));
-    same.serve("/media/u5.mp4", respond("200 OK", "video/mp4", Buffer.alloc(4_096, 7)));
+    same.serve("/img/pl-b4.png", pngWire(40, 30, 600_000));
+    same.serve(route("pl-video"), page(`<video src="/media/pl.mp4" preload="none" width="320" height="180"></video>`));
+    same.serve("/media/pl.mp4", respond("200 OK", "video/mp4", Buffer.alloc(4_096, 7)));
     const output = await capture(same, { routes: ROUTES });
     const log = { same: same.takeLog(), other: other.takeLog() };
     return { output, urls, log, subjects: subjectsOf(urls) };
@@ -213,22 +212,22 @@ function assertSharedSetup({ output, urls, log }) {
   for (const viewport of VIEWPORTS) {
     const label = (name) => `setup (${name} ${viewport})`;
     const ledger = (name, list) => assert.deepEqual(part(name, viewport).resource_ledger.entries.map((entry) => entry.resource_id).sort(), [urls.documentOf(name), ...list].map(rid).sort(), `${label(name)}: the ledger lists exactly the document and the setup's transfers`);
-    ledger("u5-hero", [urls.hero]);
-    ledger("u5-lower", [urls.lower]);
-    ledger("u5-reset", [urls.reset]);
-    ledger("u5-900k", [urls.big]);
-    ledger("u5-redirect", [urls.requested, urls.hop, urls.final]);
-    ledger("u5-video", []);
-    assert.equal(ledgerEntry(part("u5-hero", viewport), urls.hero)?.transferred_bytes, 600_000, `${label("u5-hero")}: 600,000 B complete`);
-    const lower = ledgerEntry(part("u5-lower", viewport), urls.lower);
-    assert.equal(lower?.declared_request_count, 0, `${label("u5-lower")}: no declared length`);
-    assertLedgerLowerBound(lower, "under", label("u5-lower"));
-    assert.equal(ledgerEntry(part("u5-reset", viewport), urls.reset)?.failed_request_count, 1, `${label("u5-reset")}: failed_request_count 1`);
-    assert.equal(part("u5-reset", viewport).measurement_status, "incomplete", `${label("u5-reset")}: the capture is incomplete`);
-    assert.equal(ledgerEntry(part("u5-900k", viewport), urls.big)?.transferred_bytes, 900_000, `${label("u5-900k")}: 900,000 B complete`);
-    assert.deepEqual(ledgerEntry(part("u5-redirect", viewport), urls.requested)?.statuses, [302], `${label("u5-redirect")}: the first hop 302s`);
-    assert.equal(ledgerEntry(part("u5-redirect", viewport), urls.final)?.transferred_bytes, 600_000, `${label("u5-redirect")}: the final image is 600,000 B`);
-    for (const name of ["u5-hero", "u5-lower", "u5-900k", "u5-redirect", "u5-video"]) {
+    ledger("pl-hero", [urls.hero]);
+    ledger("pl-lower", [urls.lower]);
+    ledger("pl-reset", [urls.reset]);
+    ledger("pl-900k", [urls.big]);
+    ledger("pl-redirect", [urls.requested, urls.hop, urls.final]);
+    ledger("pl-video", []);
+    assert.equal(ledgerEntry(part("pl-hero", viewport), urls.hero)?.transferred_bytes, 600_000, `${label("pl-hero")}: 600,000 B complete`);
+    const lower = ledgerEntry(part("pl-lower", viewport), urls.lower);
+    assert.equal(lower?.declared_request_count, 0, `${label("pl-lower")}: no declared length`);
+    assertLedgerLowerBound(lower, "under", label("pl-lower"));
+    assert.equal(ledgerEntry(part("pl-reset", viewport), urls.reset)?.failed_request_count, 1, `${label("pl-reset")}: failed_request_count 1`);
+    assert.equal(part("pl-reset", viewport).measurement_status, "incomplete", `${label("pl-reset")}: the capture is incomplete`);
+    assert.equal(ledgerEntry(part("pl-900k", viewport), urls.big)?.transferred_bytes, 900_000, `${label("pl-900k")}: 900,000 B complete`);
+    assert.deepEqual(ledgerEntry(part("pl-redirect", viewport), urls.requested)?.statuses, [302], `${label("pl-redirect")}: the first hop 302s`);
+    assert.equal(ledgerEntry(part("pl-redirect", viewport), urls.final)?.transferred_bytes, 600_000, `${label("pl-redirect")}: the final image is 600,000 B`);
+    for (const name of ["pl-hero", "pl-lower", "pl-900k", "pl-redirect", "pl-video"]) {
       assert.equal(part(name, viewport).measurement_status, "complete", `${label(name)}: the capture is complete`);
     }
   }
@@ -291,21 +290,21 @@ browserTest("F1.0-B9 [real: 1.3] accepted F1.3-B2, then record build records a n
 
   const same = await stubOrigin();
   t.after(() => same.close());
-  same.serve(route("u5-b9"), page(`<img alt="" src="/img/u5-b9.png" width="40" height="30">`));
-  same.serve("/img/u5-b9.png", pngWire(40, 30, 600_000));
-  const output = await capture(same, { routes: ["u5-b9"], build: buildOne });
-  assertRequestLog({ same }, { same: requests([route("u5-b9"), "/img/u5-b9.png"]) }, "setup");
-  const url = same.url("/img/u5-b9.png");
-  assert.equal(ledgerEntry(pageLoadCapture(output.page_load, route("u5-b9"), "desktop"), url)?.transferred_bytes, 600_000, "setup: F1.3-B2, 600,000 B complete");
+  same.serve(route("pl-b9"), page(`<img alt="" src="/img/pl-b9.png" width="40" height="30">`));
+  same.serve("/img/pl-b9.png", pngWire(40, 30, 600_000));
+  const output = await capture(same, { routes: ["pl-b9"], build: buildOne });
+  assertRequestLog({ same }, { same: requests([route("pl-b9"), "/img/pl-b9.png"]) }, "setup");
+  const url = same.url("/img/pl-b9.png");
+  assert.equal(ledgerEntry(pageLoadCapture(output.page_load, route("pl-b9"), "desktop"), url)?.transferred_bytes, 600_000, "setup: F1.3-B2, 600,000 B complete");
   recordOf(output);
   installPolishEvidence(f, { pageLoad: output.page_load, record: output.media_weight });
-  const keys = { weight: [rid(same.url(route("u5-b9"))), rid(url)], oversize: [oversizeKey(rid(url), FIRST_IMG)] };
+  const keys = { weight: [rid(same.url(route("pl-b9"))), rid(url)], oversize: [oversizeKey(rid(url), FIRST_IMG)] };
   const firstRead = await readResults(output, { currentBuild: buildOne });
-  assertResultSet(firstRead, bothCells(route("u5-b9"), {
+  assertResultSet(firstRead, bothCells(route("pl-b9"), {
     weight: [[keys.weight[0], "pass"], [keys.weight[1], "warning", "image_over_threshold"]],
     oversize: [[keys.oversize[0], "pass"]],
   }), "first build");
-  const warning = resultRow(firstRead, "media.weight", route("u5-b9"), "desktop", rid(url));
+  const warning = resultRow(firstRead, "media.weight", route("pl-b9"), "desktop", rid(url));
   await delay(5);
   assertAccepted(await runAccept(f, [refOf(warning)]));
 
@@ -317,7 +316,7 @@ browserTest("F1.0-B9 [real: 1.3] accepted F1.3-B2, then record build records a n
   assert.notEqual(buildTwo, buildOne, "record build recorded a new build fingerprint");
   const visual = report.stages.polish.evidence.visual_review;
   const current = await readResults({ media_weight: visual.media_weight, page_load: visual.page_load }, { currentBuild: buildTwo });
-  assertResultSet(current, bothCells(route("u5-b9"), {
+  assertResultSet(current, bothCells(route("pl-b9"), {
     weight: keys.weight.map((key) => [key, "unexercised", "stale_binding"]),
     oversize: keys.oversize.map((key) => [key, "unexercised", "stale_binding"]),
   }), "after the new build");
@@ -332,12 +331,12 @@ browserTest("F1.0-B9 [real: 1.3] accepted F1.3-B2, then record build records a n
 
 browserTest("F1.0-B20 [real: 1.3] media_weight transferred_bytes lowered with the integrity left unchanged: every 1.3 result of the record unexercised (evidence_not_reproducible)", async () => {
   await tamperRecord((record, { urls }) => {
-    recordResource(mediaWeightCell(record, route("u5-hero"), "desktop"), urls.hero).transferred_bytes = 400_000;
+    recordResource(mediaWeightCell(record, route("pl-hero"), "desktop"), urls.hero).transferred_bytes = 400_000;
   }, { recompute: false });
 });
 
 browserTest("F1.0-B21 [real: 1.3] media_weight transferred_bytes edited and integrity recomputed, now differing from the page_load ledger entry: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-hero", (cell, { urls }) => {
+  await tamperCell("pl-hero", (cell, { urls }) => {
     recordResource(cell, urls.hero).transferred_bytes = 400_000;
   });
 });
@@ -355,24 +354,24 @@ browserTest("F1.0-B26 [real: 1.3] media_weight with schema_version campaigns-os-
 });
 
 browserTest("F1.0-B27 [real: 1.3] same-origin image canceled at a lower bound relabelled measurement complete, integrity recomputed: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-lower", (cell, { urls }, tampered) => {
+  await tamperCell("pl-lower", (cell, { urls }, tampered) => {
     const resource = recordResource(cell, urls.lower);
     // D2: the record's lower bound equals the page_load ledger entry's
     // exactly, under 500,000 B.
-    assertRecordLowerBound(resource, ledgerEntry(pageLoadCapture(tampered.page_load, route("u5-lower"), "desktop"), urls.lower), "under", "precondition (u5-lower desktop)");
+    assertRecordLowerBound(resource, ledgerEntry(pageLoadCapture(tampered.page_load, route("pl-lower"), "desktop"), urls.lower), "under", "precondition (pl-lower desktop)");
     resource.measurement = "complete";
   });
 });
 
 browserTest("F1.0-B28 [real: 1.3] page_load capture incomplete but media_weight capture_status complete, integrity recomputed: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-reset", (cell) => {
+  await tamperCell("pl-reset", (cell) => {
     assert.equal(cell.capture_status, "incomplete", "precondition: the record holds the incomplete capture");
     cell.capture_status = "complete";
   });
 });
 
 browserTest("F1.0-B29 [real: 1.3] same-origin 900,000 B complete image with final_origin_equal set false, integrity recomputed: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-900k", (cell, { urls }) => {
+  await tamperCell("pl-900k", (cell, { urls }) => {
     const resource = recordResource(cell, urls.big);
     assert.equal(resource.final_origin_equal, true, "precondition: the image is same-origin");
     resource.final_origin_equal = false;
@@ -380,14 +379,14 @@ browserTest("F1.0-B29 [real: 1.3] same-origin 900,000 B complete image with fina
 });
 
 browserTest("F1.0-B30 [real: 1.3] cell document_origin changed to another origin, integrity recomputed: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-hero", (cell, { urls }) => {
+  await tamperCell("pl-hero", (cell, { urls }) => {
     assert.notEqual(cell.document_origin, urls.otherOrigin, "precondition: the cell names its own origin");
     cell.document_origin = urls.otherOrigin;
   });
 });
 
 browserTest("F1.0-B31 [real: 1.3] image resource type changed from image to fetch, integrity recomputed: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-hero", (cell, { urls }) => {
+  await tamperCell("pl-hero", (cell, { urls }) => {
     const resource = recordResource(cell, urls.hero);
     assert.equal(resource.type, "image", "precondition: the resource is an image");
     resource.type = "fetch";
@@ -395,7 +394,7 @@ browserTest("F1.0-B31 [real: 1.3] image resource type changed from image to fetc
 });
 
 browserTest("F1.0-B32 [real: 1.3] F1.3-B4 record with the first hop's status changed from 302 to 200, integrity recomputed: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-redirect", (cell, { urls }) => {
+  await tamperCell("pl-redirect", (cell, { urls }) => {
     const resource = recordResource(cell, urls.requested);
     assert.equal(resource.chain[0].status, 302, "precondition: the first hop is the 302");
     resource.chain[0].status = 200;
@@ -403,7 +402,7 @@ browserTest("F1.0-B32 [real: 1.3] F1.3-B4 record with the first hop's status cha
 });
 
 browserTest("F1.0-B33 [real: 1.3] same-origin image with failed_request_count 1 relabelled failed false, integrity recomputed: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-reset", (cell, { urls }) => {
+  await tamperCell("pl-reset", (cell, { urls }) => {
     const resource = recordResource(cell, urls.reset);
     assert.equal(resource.failed, true, "precondition: the record holds the failed request");
     resource.failed = false;
@@ -411,8 +410,8 @@ browserTest("F1.0-B33 [real: 1.3] same-origin image with failed_request_count 1 
 });
 
 browserTest("F1.0-B34 [real: 1.3] F1.3-B4 record with the resource's transferred_bytes set to the 302 hop's ledger bytes, integrity recomputed: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-redirect", (cell, { urls }, tampered) => {
-    const hopBytes = ledgerEntry(pageLoadCapture(tampered.page_load, route("u5-redirect"), "desktop"), urls.requested).transferred_bytes;
+  await tamperCell("pl-redirect", (cell, { urls }, tampered) => {
+    const hopBytes = ledgerEntry(pageLoadCapture(tampered.page_load, route("pl-redirect"), "desktop"), urls.requested).transferred_bytes;
     const resource = recordResource(cell, urls.requested);
     assert.notEqual(resource.transferred_bytes, hopBytes, "precondition: the record holds the final hop's bytes");
     resource.transferred_bytes = hopBytes;
@@ -420,7 +419,7 @@ browserTest("F1.0-B34 [real: 1.3] F1.3-B4 record with the resource's transferred
 });
 
 browserTest("F1.0-B35 [real: 1.3] same-origin <video preload=\"none\"> never fetched, declared_origin_equal set false, integrity recomputed: that cell's 1.3 results unexercised (evidence_not_reproducible)", async () => {
-  await tamperCell("u5-video", (cell) => {
+  await tamperCell("pl-video", (cell) => {
     assert.deepEqual(cell.videos.map((video) => [video.element_index, video.resource_ids, video.declared_origin_equal]), [[0, [], true]], "precondition: one unfetched video declared on the document origin");
     cell.videos[0].declared_origin_equal = false;
   });

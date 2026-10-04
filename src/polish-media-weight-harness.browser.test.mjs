@@ -1,6 +1,6 @@
 // Loopback harness for the unit 1.3 (media weight) browser rows. Imported by
 // src/polish-media-weight.browser.test.mjs (F1.3 P rows) and
-// src/qc-real-1-3.browser.test.mjs (the U5 re-run of the F1.0 rows that name
+// src/qc-real-1-3.browser.test.mjs (the F1.0 rows that name
 // 1.3 as producer). It registers no tests of its own.
 //
 // Everything here is synthetic: pages and images are generated in memory and
@@ -474,7 +474,7 @@ export function resultRow(results, check, page, viewport, key) {
 // these forms):
 // - weight subjects are keyed by the resource's resource_id (its first hop's,
 //   contract 1.3 Accepts); resources[] covers every ledger entry of the
-//   capture (freeze addendum B1), so the HTML document is a resource too;
+//   capture, so the HTML document is a resource too;
 // - an unfetched <video> is keyed "video:<element_index>" and an <img> with
 //   no ledger entry (an empty or data: currentSrc) "img:<element_path>", both
 //   by the pattern of the 1.0 reader's cellSubjects;
@@ -484,11 +484,11 @@ export function resultRow(results, check, page, viewport, key) {
 //   src/polish-capture.mjs:230-236), so its key starts "null:";
 // - element_path is the CSS child path from <body>, every step
 //   "tag:nth-of-type(n)" (the factory form "body>img:nth-of-type(1)");
-// - a cell with no <img> lists one oversize result keyed "cell" (the K5
-//   silence ruling: a pass row for media.oversize on a page with no images;
+// - a cell with no <img> lists one oversize result keyed "cell" (the
+//   silence rule: a pass row for media.oversize on a page with no images;
 //   "cell" is the 1.0 reader's key for a check with no subject);
 // - a resource no 1.3 weight rule flags (the same-origin HTML document)
-//   reads pass: the K5 ruling allows only a pass or a contract-listed
+//   reads pass: the silence rule allows only a pass or a contract-listed
 //   exclusion, and none is listed for documents.
 
 export const THRESHOLD = 500_000;

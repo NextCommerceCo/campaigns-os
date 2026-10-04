@@ -3,7 +3,7 @@
 // fixture table F1.3-*). The harness, the no-network guards and the
 // CAMPAIGNS_OS_REQUIRE_BROWSER gate live in
 // src/polish-media-weight-harness.browser.test.mjs. F1.3-I1 is leg D/CLI
-// (owner decision A8) and lives in src/polish-media-weight.test.mjs.
+// and lives in src/polish-media-weight.test.mjs.
 //
 // Each row:
 // 1. serves its synthetic setup and runs the real producer
@@ -20,7 +20,7 @@
 // Byte figures: a complete transfer is served so that its measured wire bytes
 // (status line + headers + body, contract 1.3 Inputs) equal the row's figure
 // exactly. A canceled transfer's lower bound is what Chrome reported before
-// the window closed, in coarse steps (director ruling D2): those rows assert
+// the window closed, in coarse steps: those rows assert
 // that the record's bytes equal the page_load ledger entry's exactly, the
 // measurement class, the side of 500,000 B the row requires, and a measured
 // (> 0 B) bound.
@@ -238,7 +238,7 @@ function assertProbeStatus(record, routePath, status) {
 
 // --- accept rows -----------------------------------------------------------
 //
-// Director ruling K5: each lapse row changes exactly one measured state field
+// Each lapse row changes exactly one measured state field
 // (contract 1.3 Accepts, State) and holds the others equal, and a control
 // re-capture of the unchanged setup keeps the accept active. A fingerprint
 // over anything a re-capture changes besides the measured state (measured_at,
@@ -827,7 +827,7 @@ browserTest("F1.3-I8 spec page with no source mapping: unexercised (page_not_cap
   assert.deepEqual(output.page_load.subject.routes, [route("i8-mapped")], "setup: only the mapped page is captured");
   assert.equal(output.page_load.subject.route_scope, "selected", "setup: the capture covers a selected route scope");
   recordOf(output);
-  // Director ruling D4: read through the reader site. API assumption: the
+  // Read through the reader site. API assumption: the
   // uncaptured page lists, per viewport, one result per 1.3 check keyed
   // "cell" (the 1.0 reader's key for a route × viewport no cell covers),
   // unexercised / page_not_captured; the mapped page reads as captured.
@@ -905,7 +905,7 @@ browserTest("F1.3-I12 <img> whose currentSrc is a data: URL (no ledger entry): w
     assertLedgerUrls(part, [same.url(route("i12"))], viewport);
   });
   const { results } = await readCells(output);
-  // Director ruling D4: asserted through the reader site. The data: <img>
+  // Asserted through the reader site. The data: <img>
   // loads (40×30, under the area floor: oversize pass); its resource_id is
   // null (non-http currentSrc).
   assertResultSet(results, bothCells(route("i12"), {
@@ -1056,7 +1056,7 @@ browserTest("F1.3-I16 run whose earlier cells consume the 10 s probe budget (inj
   assertResultSet(results, [...slowExpected, ...discardedProbeCells(same, target, "/img/i16.png", "probe_budget_exhausted")], "the run");
 });
 
-browserTest("F1.3-I17 same-origin image request fails (connection reset): weight unexercised (capture_incomplete, amendment A6)", async (t) => {
+browserTest("F1.3-I17 same-origin image request fails (connection reset): weight unexercised (capture_incomplete)", async (t) => {
   const path = "/img/i17.png";
   const { same, other, output } = await captureOne(t, "i17", ({ same: origin }) => {
     origin.serve(route("i17"), page(img(`src="${path}" width="40" height="30"`)));
@@ -1072,9 +1072,9 @@ browserTest("F1.3-I17 same-origin image request fails (connection reset): weight
     assert.equal(part.measurement_status, "incomplete", `setup (${viewport}): the failed request leaves the capture incomplete`);
   });
   const { results } = await readCells(output);
-  // Owner decision A6 (amendments.md): the failed image's weight reads
+  // The failed image's weight reads
   // unexercised / capture_incomplete, as do the other results of the
-  // incomplete cell (Evaluation order step 2). The u5-reset cells in
+  // incomplete cell (Evaluation order step 2). The pl-reset cells in
   // src/qc-real-1-3.browser.test.mjs carry the same literals.
   assertResultSet(results, bothCells(route("i17"), {
     weight: [[doc(same, "i17"), "unexercised", "capture_incomplete"], [rid(url), "unexercised", "capture_incomplete"]],
