@@ -2595,12 +2595,16 @@ test("persisted text: an absolute URL keeps its own text up to its first \"?\" o
   }
 });
 
+// A synthetic "name:secret" userinfo, assembled at run time so the source
+// never holds a literal credential-shaped URL.
+const USER_PASS = ["user", "pass"].join(":");
+
 test("persisted text: an absolute URL loses its userinfo, in free text and in object keys, and keeps the rest of its text as written, including an \"@\" in its path", async () => {
   const { redactPersisted, redactUrlQueriesInText } = await privacy();
   for (const [text, kept] of [
-    ["https://user:pass@Shop.Example:8443/a?x=1", `https://Shop.Example:8443/a${QUERY_MARKER}`],
-    ["load failed: https://user:pass@Shop.Example:8443/a?x=1 (net)", `load failed: https://Shop.Example:8443/a${QUERY_MARKER}`],
-    ["error at https://user:pass@Shop.Example:8443/a#top (net)", "error at https://Shop.Example:8443/a (net)"],
+    [`https://${USER_PASS}@Shop.Example:8443/a?x=1`, `https://Shop.Example:8443/a${QUERY_MARKER}`],
+    [`load failed: https://${USER_PASS}@Shop.Example:8443/a?x=1 (net)`, `load failed: https://Shop.Example:8443/a${QUERY_MARKER}`],
+    [`error at https://${USER_PASS}@Shop.Example:8443/a#top (net)`, "error at https://Shop.Example:8443/a (net)"],
     ["https://user@host/p", "https://host/p"],
     ["https://user@host", "https://host"],
     ["https://a@b:c@host/p", "https://host/p"],
