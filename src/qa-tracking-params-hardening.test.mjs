@@ -203,7 +203,8 @@ test("persisted events: response summaries keep checkout_url as origin+path, raw
 });
 
 test("persisted orders and runner assertions: error text, step notes and an upsell's raw response body keep no query and no body", async () => {
-  const { persistedTestOrder, persistedAssertion } = await browserHooks();
+  const { persistedTestOrder } = await browserHooks();
+  const { redactPersisted } = await privacy();
   const raw = `${ORIGIN}/x/upsell/?syn_private=${PRIVATE}`;
   const order = {
     path: "accept",
@@ -221,9 +222,9 @@ test("persisted orders and runner assertions: error text, step notes and an upse
   assertNothingPrivatePersisted(withoutBodyMarkers(persisted), { markers: { private: PRIVATE } });
   assert.equal(order.final_url.includes(PRIVATE), true, "the in-memory order stays raw for recovery");
   const assertion = { id: "browser-test-order:checkout", family: "browser-test-order", actual: `page.goto: Timeout navigating to "${raw}"`, evidence: { steps: order.evidence.steps } };
-  assertNothingPrivatePersisted(persistedAssertion(assertion), { markers: { private: PRIVATE } });
+  assertNothingPrivatePersisted(redactPersisted(assertion), { markers: { private: PRIVATE } });
   const qc = { id: "qc.tracking.url:checkout:url", evidence: { qc: { observation: { hops: [] } } } };
-  assert.equal(persistedAssertion(qc), qc, "a qc.* assertion is left exactly as built");
+  assert.deepEqual(redactPersisted(qc), qc, "a qc.* assertion is persisted as built");
 });
 
 // ---------------------------------------------------------------------------
@@ -1541,14 +1542,15 @@ const QUERY_FORMS = Object.freeze([
 ]);
 
 test("persisted text: the reported error \"/x/?flag&syn_private=...\" from console and page errors leaves no query value in events, the runner assertion, the test order or the full verdict", async () => {
-  const { captureCheckoutEvents, sanitizedEvents, persistedAssertion, persistedTestOrder } = await browserHooks();
+  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder } = await browserHooks();
+  const { redactPersisted } = await privacy();
   const fake = listenerPage();
   const events = captureCheckoutEvents(fake.page, null);
   const error = `load /x/?flag&syn_private=${PRIVATE}`;
   fake.page.emit("console", { type: () => "error", text: () => error });
   fake.page.emit("pageerror", new Error(error));
   const persistedEvents = sanitizedEvents(events);
-  const assertion = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", actual: error, evidence: { events: persistedEvents } });
+  const assertion = redactPersisted({ id: "browser-test-order:checkout", family: "browser-test-order", actual: error, evidence: { events: persistedEvents } });
   const order = persistedTestOrder({ checkout_url: `${ORIGIN}/x/checkout/`, final_url: `${ORIGIN}/x/checkout/`, verification: { verified: false, error }, evidence: { events: persistedEvents } });
   const verdict = fullVerdict({ assertions: [assertion], measuredAt });
   verdict.test_orders = [order];
@@ -1580,7 +1582,8 @@ test("persisted text, event log: every string field keeps no query value in any 
 });
 
 test("persisted text, test order and runner assertion: error, verification, step notes, labels and every nested string keep no query value in any form", async () => {
-  const { persistedTestOrder, persistedAssertion } = await browserHooks();
+  const { persistedTestOrder } = await browserHooks();
+  const { redactPersisted } = await privacy();
   for (const text of QUERY_FORMS) {
     const order = {
       path: "accept",
@@ -1593,7 +1596,7 @@ test("persisted text, test order and runner assertion: error, verification, step
     };
     assert.equal(JSON.stringify(persistedTestOrder(order)).includes(PRIVATE), false, `${text}: no private value in the test order`);
     const assertion = { id: "browser-test-order:checkout", family: "browser-test-order", expected: text, actual: text, evidence: { label: text, steps: order.evidence.steps } };
-    assert.equal(JSON.stringify(persistedAssertion(assertion)).includes(PRIVATE), false, `${text}: no private value in the runner assertion`);
+    assert.equal(JSON.stringify(redactPersisted(assertion)).includes(PRIVATE), false, `${text}: no private value in the runner assertion`);
   }
 });
 
@@ -2120,7 +2123,8 @@ test("persisted keys: a query inside a response-detail object key leaves no quer
 });
 
 test("persisted text: encoded query text (%3F, %3f, %253F) in an error leaves no query value in the event log, the test order or the runner assertion, and the text outside the query keeps its encoding", async () => {
-  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder, persistedAssertion } = await browserHooks();
+  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder } = await browserHooks();
+  const { redactPersisted } = await privacy();
   for (const [text, kept] of ENCODED_QUERY_FORMS) {
     const fake = navigationEventsPage();
     const events = captureCheckoutEvents(fake.page, null);
@@ -2135,7 +2139,7 @@ test("persisted text: encoded query text (%3F, %3f, %253F) in an error leaves no
     assert.equal(persistedEvents.failed[0].failure, kept, `${text}: request failure`);
     const order = persistedTestOrder({ path: "accept", error: text, verification: { verified: false, error: text }, evidence: { steps: [{ step: "opened_checkout", detail: text, label: text }], events: persistedEvents } });
     assert.equal(order.error, kept, `${text}: order error`);
-    const assertion = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", expected: text, actual: text, evidence: { label: text, events: persistedEvents } });
+    const assertion = redactPersisted({ id: "browser-test-order:checkout", family: "browser-test-order", expected: text, actual: text, evidence: { label: text, events: persistedEvents } });
     assert.equal(assertion.actual, kept, `${text}: assertion actual`);
     assert.equal(assertion.evidence.label, kept, `${text}: assertion label`);
     for (const [root, value] of [["event log", persistedEvents], ["test order", order], ["runner assertion", assertion]]) assert.equal(holdsPrivate(value), false, `${text}: ${root}`);
@@ -2144,7 +2148,7 @@ test("persisted text: encoded query text (%3F, %3f, %253F) in an error leaves no
 
 test("persisted tracking rows: a rendered tag name holding encoded query text (%3F, %3f, %253F) leaves no query value in the observation, row ids, assertion ids or the persisted rows, and the rows re-derive", async () => {
   const { trackingQaAssertion } = await tracking();
-  const { persistedQcResult, persistedAssertion } = await browserHooks();
+  const { redactPersisted } = await privacy();
   for (const [text, kept] of ENCODED_QUERY_FORMS) {
     const { observation } = await liveAttempt({ page: pageAnswering({ tags: [{ name: text, value: "syn_v" }], inline: false, pins: [] }) });
     assert.equal(holdsPrivate(observation), false, `${text}: observation`);
@@ -2152,8 +2156,8 @@ test("persisted tracking rows: a rendered tag name holding encoded query text (%
     assert.ok(rows.some((row) => row.id === `tracking.tag:checkout:tag:${kept}`), `${text}: the tag keeps its row under the name without its query`);
     const assertions = rows.map(trackingQaAssertion);
     for (const [index, row] of rows.entries()) {
-      assert.equal(persistedQcResult(row), row, `${row.id}: already projected, persisted as built`);
-      assert.equal(persistedAssertion(assertions[index]), assertions[index], `${assertions[index].id}: already projected, persisted as built`);
+      assert.deepEqual(redactPersisted(row), row, `${row.id}: already projected, persisted as built`);
+      assert.deepEqual(redactPersisted(assertions[index]), assertions[index], `${assertions[index].id}: already projected, persisted as built`);
     }
     assert.equal(holdsPrivate({ rows, assertions }), false, `${text}: rows and assertions`);
     assert.deepEqual((await readRows(rows)).map(resultOf), rows.map(resultOf), `${text}: through the 1.0 reader`);
@@ -2161,7 +2165,8 @@ test("persisted tracking rows: a rendered tag name holding encoded query text (%
 });
 
 test("persisted verdict, one probe per root: event log, test order, runner assertion, QC rows (hop paths, failing hop, coverage, tag names, ids) and their qc.* assertions hold no non-seed query value in any encoding", async () => {
-  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder, persistedAssertion, persistedQcResult } = await browserHooks();
+  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder } = await browserHooks();
+  const { redactPersisted } = await privacy();
   const { trackingQaAssertion } = await tracking();
   const encoded = `%3Fk%3D${PRIVATE}`;
   // Event log, through the actual listeners.
@@ -2177,7 +2182,7 @@ test("persisted verdict, one probe per root: event log, test order, runner asser
   assert.ok(persistedEvents.responses.length && persistedEvents.requests.length, "setup: the create request and response were logged");
   // Test order and runner assertion.
   const order = persistedTestOrder({ path: "accept", checkout_url: `${ORIGIN}/x/checkout/${encoded}`, final_url: `${ORIGIN}/x/receipt/`, error: `goto /x/${encoded}`, verification: { verified: false, [`note /x/${encoded}`]: `see %252Fx%252F%253Fk%253D${PRIVATE}` }, evidence: { steps: [{ step: "opened_checkout", label: `open /x/${encoded}` }], events: persistedEvents } });
-  const runner = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", page: "checkout", actual: `goto /x/${encoded}`, evidence: { label: `open /x/${encoded}`, labels: { [`open /x/${encoded}`]: true }, events: persistedEvents } });
+  const runner = redactPersisted({ id: "browser-test-order:checkout", family: "browser-test-order", page: "checkout", actual: `goto /x/${encoded}`, evidence: { label: `open /x/${encoded}`, labels: { [`open /x/${encoded}`]: true }, events: persistedEvents } });
   // QC rows: a document hop from a path holding an encoded query drops
   // utm_medium on the next document hop (failing hop and coverage name the
   // paths), and a rendered tag name holds an encoded query.
@@ -2194,8 +2199,8 @@ test("persisted verdict, one probe per root: event log, test order, runner asser
   const url = built.find((row) => row.id === "tracking.url:checkout:url");
   assert.deepEqual(resultOf(url), ["warning", "url_param_dropped"], "setup: the drop is named");
   assert.deepEqual(url.members.find((entry) => entry.key === "utm_medium").failing_hop, { from: `${ORIGIN}/x/<query-redacted>`, to: `${ORIGIN}/x/next/` });
-  const qcResults = built.map(persistedQcResult);
-  const qcAssertions = built.map(trackingQaAssertion).map(persistedAssertion);
+  const qcResults = built.map(redactPersisted);
+  const qcAssertions = built.map(trackingQaAssertion).map(redactPersisted);
   assert.deepEqual(qcResults, built, "the persisted rows equal the rows as built");
   const verdict = fullVerdict({ assertions: [runner, ...qcAssertions], measuredAt });
   verdict.test_orders = [order];
@@ -2228,13 +2233,14 @@ const CUT_FORMS = Object.freeze([
 
 test("persisted text: from the first query, found literally or by percent-decoding, to the end of the string is cut, whatever follows the \"?\" (encoded quote or space before the value, encoded quoted second parameter, quote inside a literal query); every URL before it keeps its origin+path", async () => {
   const { redactUrlQueriesInText } = await privacy();
-  const { sanitizedEvents, persistedTestOrder, persistedAssertion } = await browserHooks();
+  const { sanitizedEvents, persistedTestOrder } = await browserHooks();
+  const { redactPersisted } = await privacy();
   for (const [text, kept] of CUT_FORMS) {
     assert.equal(redactUrlQueriesInText(text), kept, text);
     const events = { requests: [], responses: [{ status: 400, url: `${ORIGIN}/api/v1/orders/`, body: { detail: { [text]: text } } }], failed: [{ url: `${ORIGIN}/x/`, failure: text }], console: [{ type: "error", text }], pageErrors: [text], navigations: [] };
     const persistedEvents = sanitizedEvents(events);
     const order = persistedTestOrder({ path: "accept", error: text, verification: { verified: false, [text]: text }, evidence: { steps: [{ step: "opened_checkout", label: text }], events: persistedEvents } });
-    const assertion = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", actual: text, evidence: { labels: { [text]: true }, events: persistedEvents } });
+    const assertion = redactPersisted({ id: "browser-test-order:checkout", family: "browser-test-order", actual: text, evidence: { labels: { [text]: true }, events: persistedEvents } });
     for (const [root, value] of [["event log", persistedEvents], ["test order", order], ["runner assertion", assertion]]) {
       assert.equal(holdsPrivate(value), false, `${text}: ${root}`);
       assertNothingPrivatePersisted(withoutBodyMarkers(value), { markers: { private: PRIVATE } });
@@ -2302,7 +2308,8 @@ test("persisted text: projecting a 1,000,000-character string takes under 200 ms
 });
 
 test("persisted verdict, one probe per root, for text whose query end is hidden: event log, test order, runner assertion, QC rows (hop paths, failing hop, coverage, tag names, ids) and their qc.* assertions hold no non-seed query value in any encoding, and the rows re-derive", async () => {
-  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder, persistedAssertion, persistedQcResult } = await browserHooks();
+  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder } = await browserHooks();
+  const { redactPersisted } = await privacy();
   const { trackingQaAssertion } = await tracking();
   const quoted = `%3Fk%3D%22${PRIVATE}%22`;
   const spaced = `%3Fk%3D%20${PRIVATE}`;
@@ -2320,7 +2327,7 @@ test("persisted verdict, one probe per root, for text whose query end is hidden:
   assert.ok(persistedEvents.responses.length && persistedEvents.requests.length, "setup: the create request and response were logged");
   // Test order and runner assertion.
   const order = persistedTestOrder({ path: "accept", checkout_url: `${ORIGIN}/x/checkout/${quoted}`, final_url: `${ORIGIN}/x/receipt/`, error: `goto /x/${spaced}`, verification: { verified: false, [`note /x/${second}`]: `see /x/${quoted}` }, evidence: { steps: [{ step: "opened_checkout", label: `open /x/${second}` }], events: persistedEvents } });
-  const runner = persistedAssertion({ id: "browser-test-order:checkout", family: "browser-test-order", page: "checkout", actual: `goto /x/${quoted}`, evidence: { label: `open /x/${spaced}`, labels: { [`open /x/${second}`]: true }, events: persistedEvents } });
+  const runner = redactPersisted({ id: "browser-test-order:checkout", family: "browser-test-order", page: "checkout", actual: `goto /x/${quoted}`, evidence: { label: `open /x/${spaced}`, labels: { [`open /x/${second}`]: true }, events: persistedEvents } });
   // QC rows: a document hop from a path holding a hidden-end query drops
   // utm_medium on the next document hop, the last hop's path holds one too,
   // and rendered tag names hold them.
@@ -2337,8 +2344,8 @@ test("persisted verdict, one probe per root, for text whose query end is hidden:
   const url = built.find((row) => row.id === "tracking.url:checkout:url");
   assert.deepEqual(resultOf(url), ["warning", "url_param_dropped"], "setup: the drop is named");
   assert.deepEqual(url.members.find((entry) => entry.key === "utm_medium").failing_hop, { from: `${ORIGIN}/x/${QUERY_MARKER}`, to: `${ORIGIN}/x/next/${QUERY_MARKER}` });
-  const qcResults = built.map(persistedQcResult);
-  const qcAssertions = built.map(trackingQaAssertion).map(persistedAssertion);
+  const qcResults = built.map(redactPersisted);
+  const qcAssertions = built.map(trackingQaAssertion).map(redactPersisted);
   assert.deepEqual(qcResults, built, "the persisted rows equal the rows as built");
   const verdict = fullVerdict({ assertions: [runner, ...qcAssertions], measuredAt });
   verdict.test_orders = [order];
@@ -2413,13 +2420,13 @@ test("persisted verdict: with no checkout URL, a query in the upsell page_id and
 
 test("persisted verdict: a query-bearing value at a key no runner projects (assertion, its evidence, a test order) leaves no non-seed query value in the bytes written, and the QC rows re-derive from the persisted verdict", async (t) => {
   const { finalizeQaRun } = await nodeHooks();
-  const { persistedQcResult } = await browserHooks();
+  const { redactPersisted } = await privacy();
   const { trackingQaAssertion } = await tracking();
   const { loadQcRederivers } = await import("./qc-check-registry.mjs");
   const { readQaResults } = await import("./qc-results.mjs");
   const { observation, seeds } = await liveAttempt();
   const built = [...(await rowsOf(observation)).values()];
-  const qcResults = built.map(persistedQcResult);
+  const qcResults = built.map(redactPersisted);
   const literal = `load ${ORIGIN}/x/?k=${PRIVATE}`;
   const encoded = `load /x/%253Fk%253D${PRIVATE}`;
   const assertions = [
@@ -2456,4 +2463,262 @@ test("persisted verdict: a query-bearing value at a key no runner projects (asse
     rederivers: await loadQcRederivers(),
   });
   assert.deepEqual(reread.map(resultOf), built.map(resultOf), "the rows re-derive through the 1.0 reader from the persisted verdict");
+});
+
+// ---------------------------------------------------------------------------
+// Equality is between strings: a JSON value of any other type never equals
+// its seed or literal
+
+// The seeds liveAttempt's run generates (its random token is fixed).
+async function liveSeeds(spec = null) {
+  const { createTrackingSeedTable } = await tracking();
+  return createTrackingSeedTable({ spec, random: () => Buffer.from([1, 2, 3, 4]) }).seeds;
+}
+const requestWith = (attribution) => JSON.stringify({ lines: [], attribution: { metadata: { syn_tag: "syn_v" }, ...attribution } });
+const seededAttribution = (seeds) => Object.fromEntries(FIELDS.map((field) => [field, seeds[FIELD_PARAM[field] || field]]));
+
+test("order attribution: a request field holding its seed inside an array, an object, or as a number or boolean differs from the seed, through capture and re-derivation", async () => {
+  const seeds = await liveSeeds();
+  const seed = seeds.utm_source;
+  for (const value of [[seed], { 0: seed }, 12345, true]) {
+    const label = JSON.stringify(value);
+    const { observation } = await liveAttempt({ request: requestWith({ ...seededAttribution(seeds), utm_source: value }) });
+    assert.deepEqual(observation.fields.filter((entry) => entry.field === "utm_source").map((entry) => [entry.source, entry.outcome]), [["request", "differs"]], `${label}: captured as differs`);
+    const rows = await rowsOf(observation);
+    const order = rows.get("tracking.order:checkout:order");
+    assert.deepEqual(resultOf(order), ["warning", "order_attribution_differs"], `${label}: the order row`);
+    assert.deepEqual(resultOf(order.members.find((entry) => entry.key === "utm_source")), ["warning", "order_attribution_differs"], `${label}: the utm_source member`);
+    assert.deepEqual((await readRows([...rows.values()])).map(resultOf), [...rows.values()].map(resultOf), `${label}: the rows re-derive`);
+  }
+});
+
+test("order attribution: a create response echoing its seed inside an array differs from the seed and is never a pass, through capture and re-derivation", async () => {
+  const seeds = await liveSeeds();
+  for (const value of [[seeds.utm_source], { 0: seeds.utm_source }, 12345]) {
+    const label = JSON.stringify(value);
+    const { observation } = await liveAttempt({ createBody: { ref_id: "synref1", attribution: { ...seededAttribution(seeds), utm_source: value } } });
+    assert.deepEqual(observation.fields.filter((entry) => entry.field === "utm_source").map((entry) => [entry.source, entry.outcome]), [["request", "equal"], ["create_response", "differs"]], `${label}: captured as differs`);
+    const rows = await rowsOf(observation);
+    assert.deepEqual(resultOf(rows.get("tracking.order:checkout:order")), ["warning", "order_attribution_differs"], `${label}: the order row`);
+    assert.deepEqual((await readRows([...rows.values()])).map(resultOf), [...rows.values()].map(resultOf), `${label}: the rows re-derive`);
+  }
+});
+
+test("declared tags: request metadata holding the tag literal inside an array, an object or as a number differs from the literal (a warning, or a review with page-script involvement), never a pass, through capture and re-derivation", async () => {
+  const seeds = await liveSeeds();
+  for (const [value, inline, expected] of [
+    [["syn_v"], false, ["warning", "tag_value_differs"]],
+    [["syn_v"], true, ["review", "page_script_mapping"]],
+    [{ 0: "syn_v" }, false, ["warning", "tag_value_differs"]],
+    [7, false, ["warning", "tag_value_differs"]],
+  ]) {
+    const label = `${JSON.stringify(value)}, page script ${inline}`;
+    const { observation } = await liveAttempt({
+      page: pageAnswering({ ...TAG_READ, inline }),
+      request: requestWith({ ...seededAttribution(seeds), metadata: { syn_tag: value } }),
+    });
+    assert.deepEqual(observation.names.filter((entry) => entry.tag_or_name === "syn_tag").map((entry) => entry.outcome), ["differs"], `${label}: captured as differs`);
+    const rows = await rowsOf(observation);
+    assert.deepEqual(resultOf(rows.get("tracking.tag:checkout:tag:syn_tag")), expected, `${label}: the tag row`);
+    assert.deepEqual((await readRows([...rows.values()])).map(resultOf), [...rows.values()].map(resultOf), `${label}: the rows re-derive`);
+  }
+});
+
+test("order attribution and declared tags: a request field or tag metadata value of null reads as missing, through capture and re-derivation", async () => {
+  const seeds = await liveSeeds();
+  const { observation } = await liveAttempt({ request: requestWith({ ...seededAttribution(seeds), utm_source: null }) });
+  assert.deepEqual(observation.fields.filter((entry) => entry.field === "utm_source").map((entry) => [entry.source, entry.outcome]), [["request", "absent"]], "the field is captured as absent");
+  const rows = await rowsOf(observation);
+  const order = rows.get("tracking.order:checkout:order");
+  assert.deepEqual(resultOf(order), ["warning", "order_attribution_missing"], "the order row");
+  assert.deepEqual(resultOf(order.members.find((entry) => entry.key === "utm_source")), ["warning", "order_attribution_missing"], "the utm_source member");
+  assert.deepEqual((await readRows([...rows.values()])).map(resultOf), [...rows.values()].map(resultOf), "the order rows re-derive");
+
+  const tagged = await liveAttempt({
+    page: pageAnswering({ ...TAG_READ, inline: false }),
+    request: requestWith({ ...seededAttribution(seeds), metadata: { syn_tag: null } }),
+  });
+  assert.deepEqual(tagged.observation.names.filter((entry) => entry.tag_or_name === "syn_tag").map((entry) => entry.outcome), ["absent"], "the tag is captured as absent");
+  const tagRows = await rowsOf(tagged.observation);
+  assert.deepEqual(resultOf(tagRows.get("tracking.tag:checkout:tag:syn_tag")), ["warning", "tag_missing"], "the tag row");
+  assert.deepEqual((await readRows([...tagRows.values()])).map(resultOf), [...tagRows.values()].map(resultOf), "the tag rows re-derive");
+});
+
+// ---------------------------------------------------------------------------
+// A preserve name the persisted projection would change is not seeded
+
+test("tracking.preserve: a name holding a query, encoded query, fragment, \"%\" or \"://\" is not seeded and is listed as not tested under its persisted form; the other rows pass and re-derive from their persisted form", async () => {
+  const { redactPersisted } = await privacy();
+  const { trackingQaAssertion, trackingSeedPlan } = await tracking();
+  for (const [name, listed] of [
+    ["oid?x", `oid${QUERY_MARKER}`],
+    ["oid%3Fx", `oid${QUERY_MARKER}`],
+    ["oid#x", "oid#x"],
+    ["oid%41", "oid%41"],
+    ["https://syn.example/oid", "https://syn.example/oid"],
+  ]) {
+    const spec = { analytics: { params: { tracking: { preserve: [name, "syn_name"] } } } };
+    const { observation, seeds } = await liveAttempt({ spec });
+    assert.deepEqual(Object.keys(seeds).sort(), [...URL_KEYS, "syn_name"].sort(), `${name}: only the other names are seeded`);
+    assert.deepEqual(observation.preserve, [listed, "syn_name"], `${name}: the observation keeps the name's persisted form`);
+    assert.deepEqual(trackingSeedPlan(observation.preserve).excluded, [listed], `${name}: the persisted form is excluded the same way`);
+    const built = [...(await rowsOf(observation)).values()];
+    assert.deepEqual(built.map(resultOf), [["pass", null], ["pass", null], ["pass", null]], `${name}: the rows read as before`);
+    const url = built.find((row) => row.id === "tracking.url:checkout:url");
+    const order = built.find((row) => row.id === "tracking.order:checkout:order");
+    assert.deepEqual(resultOf(url.members.find((entry) => entry.key === listed)), ["excluded", "not_seeded_by_policy"], `${name}: listed as not tested on the URL row`);
+    assert.deepEqual(resultOf(order.members.find((entry) => entry.key === listed)), ["excluded", "not_seeded_by_policy"], `${name}: listed as not tested on the order row`);
+    const persisted = built.map(redactPersisted);
+    assert.deepEqual(persisted, built, `${name}: the persisted rows equal the rows as built`);
+    assert.deepEqual(built.map(trackingQaAssertion).map(redactPersisted), built.map(trackingQaAssertion), `${name}: and so do their qc.* assertions`);
+    assert.deepEqual((await readRows(persisted)).map(resultOf), built.map(resultOf), `${name}: the persisted rows re-derive`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The persisted projection keeps a URL's own text before its query
+
+test("persisted text: an absolute URL keeps its own text up to its first \"?\" or \"#\" (host case, port and scheme as written), and a non-http URL is never turned into \"null\"", async () => {
+  const { redactPersisted, redactUrlQueriesInText } = await privacy();
+  for (const [text, kept] of [
+    ["https://Shop.Example:443/a/b?x=1", `https://Shop.Example:443/a/b${QUERY_MARKER}`],
+    ["https://Shop.Example:443/a/b#top", "https://Shop.Example:443/a/b"],
+    ["https://Shop.Example:443/a/b", "https://Shop.Example:443/a/b"],
+    ["see HTTPS://Shop.Example/A/B#top then", "see HTTPS://Shop.Example/A/B then"],
+    ["x://#", "x://"],
+    ["file:///p?q", `file:///p${QUERY_MARKER}`],
+    ["file:///p#q", "file:///p"],
+    ["blob://Syn.Example/A", "blob://Syn.Example/A"],
+  ]) {
+    assert.equal(redactUrlQueriesInText(text), kept, text);
+    assert.deepEqual(redactPersisted({ [text]: [text] }), { [kept]: [kept] }, `${text}: as a key and a value`);
+  }
+});
+
+test("persisted text: an absolute URL loses its userinfo, in free text and in object keys, and keeps the rest of its text as written, including an \"@\" in its path", async () => {
+  const { redactPersisted, redactUrlQueriesInText } = await privacy();
+  for (const [text, kept] of [
+    ["https://user:pass@Shop.Example:8443/a?x=1", `https://Shop.Example:8443/a${QUERY_MARKER}`],
+    ["load failed: https://user:pass@Shop.Example:8443/a?x=1 (net)", `load failed: https://Shop.Example:8443/a${QUERY_MARKER}`],
+    ["error at https://user:pass@Shop.Example:8443/a#top (net)", "error at https://Shop.Example:8443/a (net)"],
+    ["https://user@host/p", "https://host/p"],
+    ["https://user@host", "https://host"],
+    ["https://a@b:c@host/p", "https://host/p"],
+    ["https://host/p@q/r", "https://host/p@q/r"],
+    ["https://user@host/p@q", "https://host/p@q"],
+  ]) {
+    assert.equal(redactUrlQueriesInText(text), kept, text);
+    assert.deepEqual(redactPersisted({ [text]: [text], error: text }), { [kept]: [kept], error: kept }, `${text}: as a key and a value`);
+  }
+});
+
+test("persisted text: a scheme-relative URL loses its userinfo in an assertion, an evidence key, a console entry and a test-order error, and keeps the rest of its text as written; a \"//\" inside a path is not a URL", async () => {
+  const { redactPersisted, redactUrlQueriesInText } = await privacy();
+  const { captureCheckoutEvents, sanitizedEvents, persistedTestOrder } = await browserHooks();
+  for (const [text, kept] of [
+    ["load //syn_user:syn_pass@Shop.Example:443/P#frag", "load //Shop.Example:443/P#frag"],
+    ["//syn_user:syn_pass@Shop.Example:443/P#frag", "//Shop.Example:443/P#frag"],
+    ["src=\"//syn_user:syn_pass@Shop.Example/P\" then", "src=\"//Shop.Example/P\" then"],
+    ["url(//syn_user:syn_pass@Shop.Example/P) and src=//syn_user@Shop.Example", "url(//Shop.Example/P) and src=//Shop.Example"],
+    ["load //syn_user:syn_pass@Shop.Example/P?k=1", `load //Shop.Example/P${QUERY_MARKER}`],
+    ["load //Shop.Example/P#a@b", "load //Shop.Example/P#a@b"],
+    ["see https://syn_user@Shop.Example/a then //syn_user:syn_pass@Shop.Example/b", "see https://Shop.Example/a then //Shop.Example/b"],
+    ["/a//b@c", "/a//b@c"],
+    ["load /a//b@c/d", "load /a//b@c/d"],
+    ["https://Shop.Example/a//b@c", "https://Shop.Example/a//b@c"],
+  ]) {
+    assert.equal(redactUrlQueriesInText(text), kept, text);
+    assert.equal(redactUrlQueriesInText(kept), kept, `${text}: its projection projects to itself`);
+    const fake = navigationEventsPage();
+    const events = captureCheckoutEvents(fake.page, null);
+    fake.page.emit("console", { type: () => "error", text: () => text });
+    await settle();
+    const persistedEvents = sanitizedEvents(events);
+    assert.equal(persistedEvents.console.at(-1).text, kept, `${text}: console entry`);
+    const order = persistedTestOrder({ path: "accept", error: text, evidence: { steps: [{ step: "opened_checkout", label: text }], events: persistedEvents } });
+    assert.equal(order.error, kept, `${text}: test-order error`);
+    const assertion = redactPersisted({ id: "browser-test-order:checkout", family: "browser-test-order", actual: text, evidence: { labels: { [text]: true }, events: persistedEvents } });
+    assert.equal(assertion.actual, kept, `${text}: assertion text`);
+    assert.deepEqual(Object.keys(assertion.evidence.labels), [kept], `${text}: evidence key`);
+    for (const value of [persistedEvents, order, assertion]) assert.equal(JSON.stringify(value).includes("syn_pass"), false, `${text}: no credential persisted`);
+  }
+});
+
+test("verdict discovery: a persisted verdict whose assertion URLs carry the deploy URL with uppercase letters still scores the deploy match", async () => {
+  const { redactPersisted } = await privacy();
+  const { qaVerdictCandidateScore } = await import("./qa-verdict-discovery.mjs");
+  const packet = { deploy: { preview_url: "https://Preview.Syn-Example.test:8443/Campaign" } };
+  for (const url of ["https://Preview.Syn-Example.test:8443/Campaign/checkout/", "https://Preview.Syn-Example.test:8443/Campaign/checkout/?k=1#top"]) {
+    const verdict = redactPersisted({ schema_version: "1.0", assertions: [{ id: "syn:checkout", url }] });
+    assert.ok(verdict.assertions[0].url.startsWith(packet.deploy.preview_url), `${url}: kept as written before its query`);
+    assert.equal(qaVerdictCandidateScore({ verdict }, packet) - qaVerdictCandidateScore({ verdict }, {}), 25, `${url}: the deploy match scores`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The persisted projection ends on any input
+
+test("persisted values: a toJSON returning its own input, a toJSON returning a value holding its input, a self-referencing object or array, and a 10,000-deep object all project without throwing; toJSON is called once per value", async () => {
+  const { redactPersisted, CIRCULAR, TOO_DEEP } = await privacy();
+  let calls = 0;
+  const own = { note: `load /x/?k=${PRIVATE}` };
+  own.toJSON = function toJSON() {
+    calls += 1;
+    return this;
+  };
+  const projected = redactPersisted({ own });
+  assert.equal(calls, 1, "toJSON returning its input is called once");
+  assert.equal(projected.own.note, `load /x/${QUERY_MARKER}`);
+
+  calls = 0;
+  const wrapping = {
+    toJSON() {
+      calls += 1;
+      return { inner: this, note: `load /x/?k=${PRIVATE}` };
+    },
+  };
+  assert.deepEqual(redactPersisted(wrapping), { inner: CIRCULAR, note: `load /x/${QUERY_MARKER}` });
+  assert.equal(calls, 1, "toJSON returning a value that holds its input is called once");
+
+  const self = { name: "syn" };
+  self.self = self;
+  self.list = [self];
+  assert.deepEqual(redactPersisted(self), { name: "syn", self: CIRCULAR, list: [CIRCULAR] });
+  const shared = { name: "syn" };
+  assert.deepEqual(redactPersisted({ a: shared, b: shared }), { a: { name: "syn" }, b: { name: "syn" } }, "a value held twice, not inside itself, is projected both times");
+
+  let deep = { leaf: `load /x/?k=${PRIVATE}` };
+  for (let level = 0; level < 10_000; level += 1) deep = { next: deep };
+  const bounded = redactPersisted(deep);
+  const text = JSON.stringify(bounded);
+  assert.ok(text.includes(JSON.stringify(TOO_DEEP)), "the nesting past the bound is the marker");
+  assert.equal(text.includes(PRIVATE), false);
+  assert.equal(typeof TOO_DEEP, "string");
+  assert.equal(typeof CIRCULAR, "string");
+});
+
+// ---------------------------------------------------------------------------
+// One persisted projection for assertions and QC rows
+
+test("persisted QC rows: the browser runner has one projection for assertions and QC rows, and the QC rows a run returns stay identical to the qc.* assertions of the verdict it writes", async (t) => {
+  const hooks = await browserHooks();
+  assert.equal(Object.hasOwn(hooks, "persistedAssertion") || Object.hasOwn(hooks, "persistedQcResult"), false, "no second projection helper");
+  const { redactPersisted } = await privacy();
+  const { finalizeQaRun } = await nodeHooks();
+  const { trackingQaAssertion } = await tracking();
+  const spec = { analytics: { params: { tracking: { preserve: ["oid?x", "syn_name"] } } } };
+  const { observation } = await liveAttempt({ spec, page: pageAnswering({ tags: [{ name: "syn_tag", value: "syn_v" }, { name: "syn_tag%3Fk%3D1", value: "syn_v" }], inline: false, pins: [] }) });
+  const built = [...(await rowsOf(observation)).values()];
+  const qcResults = built.map(redactPersisted);
+  const { args, resolved } = finalizeInputs([{ funnel_id: "syn_funnel", pages: [] }], withOutputDir(t));
+  const result = await finalizeQaRun({ args, resolved, runId: QA_RUN_ID, startedAt: measuredAt, assertions: qcResults.map(trackingQaAssertion), testOrders: [], qcResults });
+  const persisted = JSON.parse(readFileSync(result.local_path, "utf8"));
+  const byResult = new Map(persisted.assertions.filter((entry) => entry.id.startsWith("qc.")).map((entry) => [entry.evidence.qc.result_id, entry]));
+  assert.equal(byResult.size, result.qc_results.length, "one qc.* assertion per row");
+  for (const row of result.qc_results) {
+    const assertion = byResult.get(row.id);
+    assert.ok(assertion, `${row.id}: has its qc.* assertion`);
+    assert.deepEqual(assertion.evidence.qc, trackingQaAssertion(row).evidence.qc, `${row.id}: its qc.* evidence is the row's`);
+    assert.deepEqual(assertion.evidence.qc.observation, row.observation, `${row.id}: the same observation`);
+  }
 });

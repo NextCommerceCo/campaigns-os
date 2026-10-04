@@ -191,11 +191,13 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
     return {
       // The persisted exit: order URLs leave as origin+path. The in-memory
       // orders stay raw, because recovery reloads the recorded receipt URL.
+      // Assertions and QC rows leave through the one persisted projection,
+      // so each qc.* assertion and its QC row stay identical.
       orders: dispatched.orders.map(persistedTestOrder),
-      assertions: dispatched.assertions.map(persistedAssertion),
+      assertions: dispatched.assertions.map(redactPersisted),
       receiptAnalytics: dispatched.receiptAnalytics,
       journeyAnalytics: dispatched.journeyAnalytics,
-      qc_results: (dispatched.qcResults || []).map(persistedQcResult),
+      qc_results: (dispatched.qcResults || []).map(redactPersisted),
     };
   } finally {
     await context.close().catch(() => {});
@@ -7889,28 +7891,6 @@ function persistedUpsellStep(step) {
   return projected;
 }
 
-// An assertion as it is persisted: no URL query in any string or key of its
-// id, text or evidence. A qc.* assertion goes through the same projection as
-// its stored QC row (persistedQcResult), so the two stay identical; their
-// page-derived strings were already projected when the observation was
-// taken, so each is normally left exactly as built.
-function persistedAssertion(entry) {
-  return projectedUnlessUnchanged(entry);
-}
-
-// A QC row as it is persisted, through the same projection.
-function persistedQcResult(row) {
-  return projectedUnlessUnchanged(row);
-}
-
-// The projection of `value`, or `value` itself when its projection
-// serializes the same.
-function projectedUnlessUnchanged(value) {
-  const projected = redactPersisted(value);
-  if (!value || typeof value !== "object") return projected;
-  return JSON.stringify(projected) === JSON.stringify(value) ? value : projected;
-}
-
 function findPage(topologies, type) {
   for (const topology of topologies || []) {
     const page = (topology.pages || []).find((candidate) => candidate.page_type === type);
@@ -8120,8 +8100,6 @@ export const __qaBrowserTestHooks = Object.freeze({
   dispatchTestOrderPlans,
   recoverCreatedOrder,
   persistedTestOrder,
-  persistedAssertion,
-  persistedQcResult,
   sanitizedEvents,
   summarizeResponseBody,
   attachCreateResponseTap,
