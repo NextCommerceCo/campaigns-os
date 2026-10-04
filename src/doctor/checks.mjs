@@ -86,7 +86,7 @@ import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } fr
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
 import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders, isFileReadFailure, isPageReadFailure } from "../cart-placeholders.mjs";
-import { SMOKE_QC, SMOKE_QC_LIMITS, evaluateSmokeQc, pageScriptSources } from "../built-smoke-qc.mjs";
+import { SMOKE_QC, SMOKE_QC_LIMITS, builtFileOf, evaluateSmokeQc, pageScriptSources } from "../built-smoke-qc.mjs";
 import { recordQcResults } from "../qc-results.mjs";
 import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
@@ -2057,8 +2057,10 @@ export function validateCampaignIdentity(packet, errors, ready, derived, spec = 
 // their real path lies inside the site root and they hold at most
 // `bounds.script_bytes` bytes ({src, file, content}); any other reads
 // {src, file, unread} with `missing`, `outside_site`, `too_large`,
-// `unreadable` or `script_cap`. A page with no content, or one that cannot be
-// parsed, is returned as given.
+// `unreadable` or `script_cap`, or {src, unread: "unmappable"} when its src
+// names no file. Each src maps to its file through builtFileOf (query and
+// fragment dropped, path segments percent-decoded). A page with no content,
+// or one that cannot be parsed, is returned as given.
 function collectBuiltPageIdentityInputs(scope, targetRepo, { pages = null, bounds = null } = {}) {
   if (pages && bounds) {
     const scriptsOf = boundedPageScripts(scope, targetRepo, bounds);
@@ -2135,9 +2137,15 @@ function boundedPageScripts(scope, targetRepo, bounds) {
       return null;
     }
     const scripts = [];
+    const pathOf = (src, from) => builtLocalScriptPath(scope, src, from, { missing: true });
     for (const src of sources) {
-      const path = builtLocalScriptPath(scope, src, builtPath, { missing: true });
-      if (!path) continue;
+      const mapped = builtFileOf(src, builtPath, pathOf);
+      if (!mapped) continue;
+      if (mapped.unmappable) {
+        scripts.push({ src, unread: "unmappable" });
+        continue;
+      }
+      const path = mapped.path;
       const file = relFromDir(targetRepo, path);
       scripts.push(scripts.length < bounds.scripts ? { src, file, ...read(path) } : { src, file, unread: "script_cap" });
     }

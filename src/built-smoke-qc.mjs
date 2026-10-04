@@ -70,13 +70,16 @@
 // (`page.scripts`, from collectBuiltPageIdentityInputs in its bounded form,
 // which lists them through pageScriptSources: {src, file, content} when read,
 // {src, file, unread} when not); a page with no such list reads every local
-// script it loads unread. The og:image file is
-// resolved through `resolveAsset` and stat-ed here, once per og:image, and
-// counts only when its real path (symlinks followed) lies inside `siteRoot`.
+// script it loads unread. Every URL reference that names a file under _site/
+// (the og:image file, each local script) maps through builtFileOf: query and
+// fragment dropped, each path segment percent-decoded, then `resolveAsset`;
+// a path that names no file (`%ZZ`, bytes that are not UTF-8) is never a
+// file. The og:image file is stat-ed here, once per og:image, and counts only
+// when its real path (symlinks followed) lies inside `siteRoot`.
 // No network request.
 
 import { realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { parse } from "parse5";
 
@@ -176,16 +179,28 @@ const attrName = (attr) => (attr.prefix ? `${attr.prefix}:${attr.name}` : attr.n
 const childrenOf = (node) => (node.tagName === "template" && node.content ? node.content.childNodes : node.childNodes) || [];
 const textOf = (node) => (node.childNodes || []).filter((child) => child.nodeName === "#text").map((child) => child.value || "").join("");
 
-function safeDecode(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
 const isHexByte = (byte) => (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x46) || (byte >= 0x61 && byte <= 0x66);
 const UTF8 = new TextDecoder("utf-8", { ignoreBOM: true });
+const UTF8_STRICT = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
+
+// The bytes `raw` percent-decodes to over its UTF-8 bytes. A `%` not followed
+// by two hex digits is kept as is, or, with `strict`, makes the whole value
+// undecodable (null).
+function percentBytes(raw, { strict = false } = {}) {
+  const input = Buffer.from(raw, "utf8");
+  const bytes = [];
+  for (let i = 0; i < input.length; i += 1) {
+    if (input[i] === 0x25 && i + 2 < input.length && isHexByte(input[i + 1]) && isHexByte(input[i + 2])) {
+      bytes.push(Number.parseInt(String.fromCharCode(input[i + 1], input[i + 2]), 16));
+      i += 2;
+    } else if (input[i] === 0x25 && strict) {
+      return null;
+    } else {
+      bytes.push(input[i]);
+    }
+  }
+  return Uint8Array.from(bytes);
+}
 
 // A fragment as the target it names (contract 1.6 "Fragments are
 // percent-decoded"): WHATWG percent-decode over its UTF-8 bytes, a `%` not
@@ -193,17 +208,54 @@ const UTF8 = new TextDecoder("utf-8", { ignoreBOM: true });
 // sequence reads U+FFFD). `#caf%C3%A9` names `café`, never `caf%C3%A9`.
 function decodeFragment(raw) {
   if (!raw.includes("%")) return raw;
-  const input = Buffer.from(raw, "utf8");
-  const bytes = [];
-  for (let i = 0; i < input.length; i += 1) {
-    if (input[i] === 0x25 && i + 2 < input.length && isHexByte(input[i + 1]) && isHexByte(input[i + 2])) {
-      bytes.push(Number.parseInt(String.fromCharCode(input[i + 1], input[i + 2]), 16));
-      i += 2;
-    } else {
-      bytes.push(input[i]);
-    }
+  return UTF8.decode(percentBytes(raw));
+}
+
+// One URL path segment as the file name it names, or null when it names none:
+// a `%` without two hex digits, bytes that are not UTF-8, or a decoded `/` or
+// NUL (no file name holds either).
+function decodePathSegment(segment) {
+  if (!segment.includes("%")) return segment;
+  const bytes = percentBytes(segment, { strict: true });
+  if (!bytes) return null;
+  let decoded;
+  try {
+    decoded = UTF8_STRICT.decode(bytes);
+  } catch {
+    return null;
   }
-  return UTF8.decode(Uint8Array.from(bytes));
+  return /[/\u0000]/.test(decoded) ? null : decoded;
+}
+
+/**
+ * The one mapping from a URL reference on a built page to a file under
+ * `_site/`, used for the og:image file and every local script. The query and
+ * fragment are dropped, each path segment is percent-decoded, and the decoded
+ * path goes to `resolveAsset` (which reads `?` and `#` as delimiters, so a
+ * decoded name holding one is joined onto the resolved directory here).
+ * `a%23b.png` names `a#b.png`, never a file literally called `a%23b.png`.
+ * Whether the file is inside the site root is the reader's check (its real
+ * path), as before.
+ *
+ * @param {string} reference  the attribute value or URL path
+ * @param {string} builtPath  the page's file
+ * @param {(src: string, builtPath: string) => string|null} resolveAsset
+ * @returns {null|{ path: string }|{ unmappable: true }}  null when the
+ *   reference is not local (remote, data:, empty path); unmappable when its
+ *   path names no file (see decodePathSegment).
+ */
+export function builtFileOf(reference, builtPath, resolveAsset) {
+  const pathPart = String(reference ?? "").trim().split(/[?#]/)[0];
+  if (!pathPart || resolveAsset(pathPart, builtPath) == null) return null;
+  const segments = pathPart.split("/").map(decodePathSegment);
+  if (segments.includes(null)) return { unmappable: true };
+  const at = segments.findIndex((segment) => /[?#]/.test(segment));
+  if (at === -1) {
+    const path = resolveAsset(segments.join("/"), builtPath);
+    return path == null ? { unmappable: true } : { path };
+  }
+  const dir = resolveAsset([...segments.slice(0, at), "."].join("/"), builtPath);
+  return dir == null ? { unmappable: true } : { path: resolve(dir, ...segments.slice(at)) };
 }
 
 // Every element in document order with its path (`html[1]/body[1]/a[2]`) and
@@ -382,7 +434,7 @@ const insideRoot = (root, path) => {
 function pageScripts(page, observed, builtPath, ctx) {
   const listed = Array.isArray(page.scripts)
     ? page.scripts
-    : observed.scripts.filter((script) => ctx.resolveAsset(script.src, builtPath) != null).map((script) => ({ src: script.src, unread: "not_listed" }));
+    : observed.scripts.filter((script) => builtFileOf(script.src, builtPath, ctx.resolveAsset) != null).map((script) => ({ src: script.src, unread: "not_listed" }));
   const contents = listed.filter((script) => typeof script?.content === "string").map((script) => script.content);
   return { contents, loaded: listed.length, read: contents.length, complete: contents.length === listed.length };
 }
@@ -401,6 +453,10 @@ function fileExists(realSiteRoot, path) {
   }
 }
 
+// The file an og:image reference names (builtFileOf), or null: a reference
+// whose path names no file is never a file in _site/, so it reads missing.
+const ogImageFile = (reference, builtPath, ctx) => builtFileOf(reference, builtPath, ctx.resolveAsset)?.path ?? null;
+
 function realPathOf(path) {
   if (!path) return null;
   try {
@@ -409,13 +465,6 @@ function realPathOf(path) {
     if (!isFileReadFailure(error)) throw error;
     return null;
   }
-}
-
-// A URL path as a file path: percent-decoded unless decoding would introduce
-// a query or fragment delimiter.
-function decodedPath(path) {
-  const decoded = safeDecode(path);
-  return /[?#]/.test(decoded) ? path : decoded;
 }
 
 // Where the page's og:image points: { image, image_target }. Absolute means
@@ -434,11 +483,11 @@ function resolveOgImage(content, builtPath, ctx) {
     const target = `${url.protocol}//${url.host}${url.pathname}`;
     if (!ctx.origins.size) return { image: "absolute_same_base_unmapped", image_target: target };
     if (!ctx.origins.has(url.origin)) return { image: "absolute_remote", image_target: target };
-    const path = ctx.resolveAsset(decodedPath(url.pathname), builtPath);
+    const path = ogImageFile(url.pathname, builtPath, ctx);
     return { image: fileExists(ctx.realSiteRoot, path) ? "absolute_same_base_present" : "absolute_same_base_missing", image_target: target };
   }
   const pathPart = value.split(/[?#]/)[0];
-  const path = pathPart ? ctx.resolveAsset(decodedPath(pathPart), builtPath) : null;
+  const path = ogImageFile(value, builtPath, ctx);
   const target = path != null && ctx.siteRoot && insideRoot(ctx.siteRoot, path)
     ? `/${relative(ctx.siteRoot, path).split(sep).join("/")}`
     : pathPart || null;
@@ -459,7 +508,7 @@ function resolveSchemeRelativeOgImage(value, builtPath, ctx) {
   if (!url || !url.host) return { image: "relative_missing", image_target: value.split(/[?#]/)[0] || null };
   const target = `//${url.host}${url.pathname}`;
   if (!ctx.origins.has(`https://${url.host}`) && !ctx.origins.has(`http://${url.host}`)) return { image: "relative_present", image_target: target };
-  const path = ctx.resolveAsset(decodedPath(url.pathname), builtPath);
+  const path = ogImageFile(url.pathname, builtPath, ctx);
   return { image: fileExists(ctx.realSiteRoot, path) ? "relative_present" : "relative_missing", image_target: target };
 }
 
@@ -592,8 +641,9 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  *   directory: page files resolve against its parent, and a local asset whose
  *   real path lies outside it reads as missing. `deployBase` lists the deploy URLs whose
  *   origins map an absolute og:image into `_site/`; none means the base is
- *   unknown. `resolveAsset` maps a URL reference on a built page to a file
- *   path, or null when it is not local. `subject` names the scanned site for
+ *   unknown. `resolveAsset` maps a URL path on a built page to a file path,
+ *   or null when it is not local; it gets the reference through builtFileOf,
+ *   so already decoded. `subject` names the scanned site for
  *   the caller; every result carries its own {check, page, key} subject.
  * @returns {object[]} QC results (src/qc-results.mjs buildQcResult).
  */

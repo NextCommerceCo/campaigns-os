@@ -16,7 +16,12 @@
 //   C5 the candidate cap counts every URL-bearing attribute value, relative
 //      or absolute;
 //   C6 the URL-bearing attributes are a closed list, each one counted with a
-//      relative value.
+//      relative value;
+//   C7 a URL names a file under _site/ only through its decoded path: a file
+//      literally named with the escape (`a%23b.png`) never satisfies
+//      `a%23b.png`, and a path that names no file (`%ZZ`) never passes;
+//   C8 rule edges: the asset host matched whatever its case, the IPv6
+//      loopback, and <meta>/<link> in <template> counted toward the cap.
 // Row shapes follow src/built-smoke-qc.test.mjs (its API assumptions).
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -43,7 +48,7 @@ afterEach(() => assertNoNetworkAttempts());
 after(() => assertNoNetworkAttempts());
 
 const { doctorBuiltOutput } = await import("./doctor/inspect.mjs");
-const { collectBuiltPageIdentityInputs, collectCartPlaceholderPages } = await import("./doctor/checks.mjs");
+const { collectBuiltPageIdentityInputs, collectCartPlaceholderPages, resolveBuiltAssetPath } = await import("./doctor/checks.mjs");
 const { computeBuildFingerprint, resolveBuiltSiteScope } = await import("./built-site-scope.mjs");
 const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, evaluateSmokeQc } = await import("./built-smoke-qc.mjs");
 
@@ -644,5 +649,129 @@ for (const [label, body] of [
     assertCandidateCapped(evaluateProduction(page({ body })), label);
     const rows = assertSmoke(await builtDoctor(tempTree(t, { "index.html": page({ body }) })), pageLevelRows(PAGE, CANDIDATE_CAP));
     assert.deepEqual(Object.values(rows).filter((row) => row.result === "pass"), [], `${label} under doctor --built: no pass`);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// C7: URL to built-file mapping
+
+const DEPLOY = "https://preview.example.invalid/";
+const pageFile = (dir) => join(dir, PAGE);
+const builtResolver = (dir) => (src, builtPath) => resolveBuiltAssetPath(src, builtPath, dir);
+
+// The smoke results evaluateSmokeQc gives a doctor --built tree, with the
+// pages and scripts doctor reads (the bounded collector) and, optionally, a
+// deploy base.
+function evaluateTree(dir, { deployBase = null, environment = null } = {}) {
+  const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
+  assert.ok(scope.ok, "setup: the built scope resolves");
+  const pages = collectBuiltPageIdentityInputs(scope, dir, { pages: collectCartPlaceholderPages(dir, CAMPAIGN), bounds: SMOKE_QC_LIMITS });
+  return evaluateSmokeQc({ pages, environment, siteRoot: join(dir, "_site"), deployBase, resolveAsset: builtResolver(dir) });
+}
+const boundedScriptsOf = (dir) => {
+  const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
+  return collectBuiltPageIdentityInputs(scope, dir, { pages: collectCartPlaceholderPages(dir, CAMPAIGN), bounds: SMOKE_QC_LIMITS }).find((item) => item.file === PAGE).scripts;
+};
+const deployRows = (set = {}) => pageRows(PAGE, { env: "production", set });
+
+for (const [label, escape] of [["#", "%23"], ["?", "%3F"]]) {
+  const decoyName = `a${escape}b.png`;
+  const realName = `a${label}b.png`;
+
+  test(`C7 reviewer probe: absolute same-base og:image img/${decoyName} with only a file literally named ${decoyName}: og_image_missing_file through the packet doctor; the decoded ${realName} passes`, async (t) => {
+    const decoy = builtPacket(t, { landing: packetPage("landing", { ogImage: `${ORIGIN}/${SLUG}/img/${decoyName}` }), files: { [`_site/${SLUG}/img/${decoyName}`]: "synthetic decoy bytes\n" } });
+    assertSmoke(doctorOf(decoy.packetPath, {}), packetRows({ landing: { set: { [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] } } }));
+
+    const real = builtPacket(t, { landing: packetPage("landing", { ogImage: `${ORIGIN}/${SLUG}/img/${decoyName}` }), files: { [`_site/${SLUG}/img/${realName}`]: "synthetic image bytes\n" } });
+    assertSmoke(doctorOf(real.packetPath, {}), packetRows());
+  });
+
+  test(`C7 reviewer probe: absolute same-base og:image img/${decoyName} through evaluateSmokeQc: the ${decoyName} decoy reads og_image_missing_file; the decoded ${realName} passes`, (t) => {
+    const ogImage = `${DEPLOY}${CAMPAIGN}/img/${decoyName}`;
+    const decoy = tempTree(t, { "index.html": page({ ogImage }), [`img/${decoyName}`]: "synthetic decoy bytes\n" });
+    assert.deepEqual(evaluateTree(decoy, { deployBase: DEPLOY, environment: "production" }).map(summarize).sort(byId), deployRows({ [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] }).sort(byId));
+    const real = tempTree(t, { "index.html": page({ ogImage }), [`img/${realName}`]: "synthetic image bytes\n" });
+    assert.deepEqual(evaluateTree(real, { deployBase: DEPLOY, environment: "production" }).map(summarize).sort(byId), deployRows().sort(byId));
+  });
+}
+
+test("C7 reviewer probe: <script src=\"real%20script.js\"> with only a file literally named real%20script.js: unexercised (script_unreadable) under doctor --built and evaluateSmokeQc, never anchor_target_missing", async (t) => {
+  const content = page({ head: "<script src=\"real%20script.js\"></script>", body: "<a href=\"#x\">x</a>" });
+  const decoy = tempTree(t, { "index.html": content, "real%20script.js": "const unrelated=1;\n" });
+  const expected = pageRows(PAGE, { anchors: { x: ["unexercised", "script_unreadable"] } });
+  assertSmoke(await builtDoctor(decoy), expected);
+  assert.deepEqual(evaluateTree(decoy).map(summarize).sort(byId), [...expected].sort(byId));
+  assert.deepEqual(boundedScriptsOf(decoy), [{ src: "real%20script.js", file: `./_site/${CAMPAIGN}/real script.js`, unread: "missing" }]);
+
+  const real = tempTree(t, { "index.html": content, "real script.js": "window.x=1;\n" });
+  assertSmoke(await builtDoctor(real), pageRows(PAGE, { anchors: { x: ["review", "anchor_target_possibly_script_created"] } }));
+});
+
+// Each escape names the decoded file; the decoy is a file literally named
+// with the escape. `%ZZ` names no file, so no real counterpart exists.
+const ESCAPES = [
+  ["an encoded space", "a%20b", "a b"],
+  ["an encoded #", "a%23b", "a#b"],
+  ["an encoded ?", "a%3Fb", "a?b"],
+  ["an encoded non-ASCII character", "caf%C3%A9", "café"],
+  ["a malformed %ZZ", "a%ZZb", null],
+];
+
+for (const [label, encoded, decoded] of ESCAPES) {
+  test(`C7 og:image with ${label} (img/${encoded}.png): the literal ${encoded}.png decoy never satisfies it${decoded ? `; ${decoded}.png does` : ""}`, async (t) => {
+    const decoyFiles = { [`img/${encoded}.png`]: "synthetic decoy bytes\n" };
+    const absolute = `${DEPLOY}${CAMPAIGN}/img/${encoded}.png`;
+    const decoyAbsolute = tempTree(t, { "index.html": page({ ogImage: absolute }), ...decoyFiles });
+    assert.deepEqual(evaluateTree(decoyAbsolute, { deployBase: DEPLOY, environment: "production" }).map(summarize).sort(byId), deployRows({ [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] }).sort(byId), "absolute same-base, decoy only");
+    const decoyRelative = tempTree(t, { "index.html": page({ ogImage: `img/${encoded}.png` }), ...decoyFiles });
+    assertSmoke(await builtDoctor(decoyRelative), pageRows(PAGE, { set: { [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] } }));
+    if (!decoded) return;
+
+    const realFiles = { [`img/${decoded}.png`]: "synthetic image bytes\n" };
+    const realAbsolute = tempTree(t, { "index.html": page({ ogImage: absolute }), ...realFiles });
+    assert.deepEqual(evaluateTree(realAbsolute, { deployBase: DEPLOY, environment: "production" }).map(summarize).sort(byId), deployRows().sort(byId), "absolute same-base, decoded file present");
+    const realRelative = tempTree(t, { "index.html": page({ ogImage: `img/${encoded}.png` }), ...realFiles });
+    assertSmoke(await builtDoctor(realRelative), pageRows(PAGE, { set: { [KEY.ogImageTarget]: ["warning", "og_image_not_absolute"] } }));
+  });
+
+  test(`C7 local script with ${label} (js/${encoded}.js): the literal ${encoded}.js decoy is never read, so the target it names is unexercised (script_unreadable)${decoded ? `; ${decoded}.js is read` : ""}`, async (t) => {
+    const content = page({ head: `<script src="js/${encoded}.js"></script>`, body: DANGLING });
+    const script = "document.body.insertAdjacentHTML(\"beforeend\", '<section id=\"features\"></section>');\n";
+    const decoy = tempTree(t, { "index.html": content, [`js/${encoded}.js`]: script });
+    const expected = pageRows(PAGE, { anchors: { features: ["unexercised", "script_unreadable"] } });
+    assertSmoke(await builtDoctor(decoy), expected);
+    assert.deepEqual(evaluateTree(decoy).map(summarize).sort(byId), [...expected].sort(byId));
+    assert.deepEqual(boundedScriptsOf(decoy), [decoded
+      ? { src: `js/${encoded}.js`, file: `./_site/${CAMPAIGN}/js/${decoded}.js`, unread: "missing" }
+      : { src: `js/${encoded}.js`, unread: "unmappable" }]);
+    if (!decoded) return;
+
+    const real = tempTree(t, { "index.html": content, [`js/${decoded}.js`]: script });
+    assertSmoke(await builtDoctor(real), pageRows(PAGE, { anchors: { features: ["review", "anchor_target_possibly_script_created"] } }));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// C8: rule edges
+
+const productionRows = (set) => pageRows(PAGE, { env: "production", set: { [KEY.ogImageTarget]: ["unexercised", "og_image_base_unknown"], ...set } });
+
+test("C8 the asset host is matched whatever its case: <img src=\"https://CDN.29NEXT.STORE/x.png\"> warns primary_asset_host", () => {
+  const results = evaluateProduction(page({ body: "<img src=\"https://CDN.29NEXT.STORE/x.png\" alt=\"\">" }));
+  assert.deepEqual(results.map(summarize).sort(byId), productionRows({ [KEY.assetHost]: ["warning", "primary_asset_host"] }).sort(byId));
+});
+
+test("C8 the IPv6 loopback in a production build: <img src=\"http://[::1]:8080/x.png\"> warns loopback_url", () => {
+  const results = evaluateProduction(page({ body: "<img src=\"http://[::1]:8080/x.png\" alt=\"\">" }));
+  assert.deepEqual(results.map(summarize).sort(byId), productionRows({ [KEY.loopback]: ["warning", "loopback_url"] }).sort(byId));
+});
+
+for (const [label, markup] of [
+  ["<meta>", "<template><meta name=\"synthetic\" content=\"synthetic\"></template>"],
+  ["<link>", "<template><link rel=\"preload\" as=\"image\"></template>"],
+]) {
+  test(`C8 a ${label} inside <template> counts toward the candidate cap: as the 2,001st candidate it caps the page; as the 2,000th it does not`, () => {
+    assertCandidateCapped(evaluateProduction(page({ body: `${images(2000 - PAGE_CANDIDATES)}\n${markup}` })), `${label} in <template> as candidate 2,001`);
+    assertNotCandidateCapped(evaluateProduction(page({ body: `${images(2000 - PAGE_CANDIDATES - 1)}\n${markup}` })), `${label} in <template> as candidate 2,000`);
   });
 }
