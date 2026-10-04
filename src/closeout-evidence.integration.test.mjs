@@ -528,6 +528,8 @@ test("a recorded browser residue pass on the current build retires the doctor's 
   assert.deepEqual(qa.evidence, {
     source_build_fingerprint: BUILD_FINGERPRINT,
     gates: { placeholder_text_residue: { status: "pass", pages_checked: 2, pages_failed: 0 } },
+    qc_results: [],
+    qc_build_fingerprint: BUILD_FINGERPRINT,
   });
 
   const after = doctorPacket(fixture.packetPath);
@@ -552,7 +554,10 @@ test("a browser residue failure, or a run that never reached the gate, leaves th
   writeFileSync(join(pageDir, "checkout.html"), "<html><body><p>Lorem ipsum dolor.</p></body></html>\n");
 
   runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z" });
-  assert.equal(readReport(fixture.reportPath).stages.qa.evidence, undefined, "no gate ran, so nothing is recorded as passed");
+  const ungated = readReport(fixture.reportPath).stages.qa.evidence;
+  assert.equal(ungated.gates, undefined, "no gate ran, so nothing is recorded as passed");
+  assert.deepEqual(Object.keys(ungated).sort(), ["qc_build_fingerprint", "qc_results"]);
+  assert.deepEqual(ungated.qc_results, []);
   assert.ok(residueWarning(doctorPacket(fixture.packetPath)));
 
   runProducer(fixture, {

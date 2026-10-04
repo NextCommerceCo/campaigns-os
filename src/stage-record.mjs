@@ -114,6 +114,11 @@ function typeName(value) {
   return Array.isArray(value) ? "array" : typeof value;
 }
 
+// visual_review keys only `polish capture` writes. `record polish --evidence`
+// refuses them by name and carries the captured values forward.
+export const PACKAGE_OWNED_VISUAL_REVIEW_KEYS = Object.freeze(["page_load", "media_weight"]);
+export const PACKAGE_OWNED_KEY_REFUSAL = "package_owned_key";
+
 function refuseRecord(stage, problems) {
   return new Error(`record ${stage} refused; nothing was written:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
 }
@@ -204,8 +209,13 @@ export function readPolishEvidenceFile(path) {
     }
     if (evidence.visual_review !== undefined && !isObject(evidence.visual_review)) {
       problems.push(`evidence.visual_review must be an object with a screenshots array (got ${typeName(evidence.visual_review)}).`);
-    } else if (isObject(evidence.visual_review) && Object.hasOwn(evidence.visual_review, "page_load")) {
-      problems.push(`evidence.visual_review.page_load is written only by ${cmd("polish")} capture; remove it from the file (the captured value on the report is kept).`);
+    } else if (isObject(evidence.visual_review)) {
+      // Package-owned keys are refused by name and listed first, so the
+      // refusal leads with its code.
+      const owned = PACKAGE_OWNED_VISUAL_REVIEW_KEYS.filter((key) => Object.hasOwn(evidence.visual_review, key));
+      if (owned.length) {
+        problems.unshift(`${PACKAGE_OWNED_KEY_REFUSAL}: ${owned.map((key) => `evidence.visual_review.${key}`).join(" and ")} ${owned.length === 1 ? "is" : "are"} written only by ${cmd("polish")} capture; remove ${owned.length === 1 ? "it" : "them"} from the file (the captured value on the report is kept).`);
+      }
     }
   }
   if (Object.hasOwn(input, "repair_loop_defect") && input.repair_loop_defect !== null && !isObject(input.repair_loop_defect)) {
@@ -300,7 +310,7 @@ function composePolish(report, { now, recordedBy, fingerprint, input }) {
         ...input.evidence,
         visual_review: {
           ...input.evidence.visual_review,
-          ...(Object.hasOwn(previousVisual, "page_load") ? { page_load: previousVisual.page_load } : {}),
+          ...Object.fromEntries(PACKAGE_OWNED_VISUAL_REVIEW_KEYS.filter((key) => Object.hasOwn(previousVisual, key)).map((key) => [key, previousVisual[key]])),
         },
       }
     : previous.evidence;
