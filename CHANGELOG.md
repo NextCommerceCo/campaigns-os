@@ -8,6 +8,10 @@ Notable supported-surface changes are recorded here.
 
 - Polish capture now records image geometry and redirect chains, and reports origin and weight warnings for video and large images served from the page's own origin, plus oversized images.
 
+### Changed
+
+- `polish capture` now records media weight beside page load evidence in the Assembly Report, so `next` reads the image weight and oversize results of a fresh capture.
+
 ## [1.51.0] - 2026-10-04
 
 ### Added

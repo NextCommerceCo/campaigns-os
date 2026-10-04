@@ -200,7 +200,7 @@ import {
   capturePolishPageLoad,
   createPolishCaptureBinding,
   evaluateRecordedHiddenEagerMediaCheckpoint,
-  mergePolishPageLoadEvidence,
+  mergePolishCaptureEvidence,
   planPolishCapture,
 } from "./polish-node.mjs";
 import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
@@ -2744,7 +2744,7 @@ export async function polishCaptureCommand(args, options = {}) {
     });
     assertPolishCaptureBindingUnchanged(initialBinding, currentBinding);
 
-    const merged = mergePolishPageLoadEvidence(currentReport, capture.page_load);
+    const merged = mergePolishCaptureEvidence(currentReport, { pageLoad: capture.page_load, mediaWeight: capture.media_weight });
     checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({
       packet: currentPacket,
       report: merged,
