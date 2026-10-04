@@ -3,8 +3,8 @@
 // edited). It is the 1.6 reachability assertion the fixtures README asks for;
 // it lives here rather than in src/doctor-certified-family-reachability
 // .test.mjs because that file imports the doctor statically, before any
-// no-network guard could be installed. Joining STATIC_BUILT_OUTPUT_GATES there
-// is the implementation phase's edit.
+// no-network guard could be installed. The gate itself joins
+// STATIC_BUILT_OUTPUT_GATES there.
 //
 // No smoke `warning` (and no
 // `review`) on any certified page. Under `doctor --built` every rule reads

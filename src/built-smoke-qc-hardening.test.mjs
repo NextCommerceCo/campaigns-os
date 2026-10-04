@@ -575,7 +575,7 @@ test("C5 every URL-bearing attribute counts with a relative value; an in-page an
 // ---------------------------------------------------------------------------
 // C6: the closed list of URL-bearing attributes
 
-// The list as the build's frozen rules name it, in their order.
+// The closed list of URL-bearing attributes, in its documented order.
 const CLOSED_URL_ATTRIBUTES = Object.freeze([
   "href", "src", "srcset", "imagesrcset", "poster", "action", "formaction", "data", "cite", "ping", "itemid", "itemtype",
   "usemap", "background", "longdesc", "manifest", "codebase", "classid", "archive", "profile", "lowsrc", "dynsrc", "xlink:href",
