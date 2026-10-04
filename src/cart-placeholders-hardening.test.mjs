@@ -249,30 +249,37 @@ test("ready line: written only when the check has no unexercised result on any p
   ]).length, 1);
 });
 
-test("ownership before scanning: an owned element's own text attributes are owned; quantity-control and remove-item own only their innerHTML", async (t) => {
+test("ownership before scanning: a <template> and a row template own their own text attributes; item lists, quantity text, quantity-control and remove-item own only what is inside them", async (t) => {
   const ownedPages = [
     ["selector-target.html", "<div data-next-cart-items data-item-template-selector=\"#row\"></div>\n<div id=\"row\" hidden title=\"{item.name}\"><span>{item.price}</span></div>"],
     ["template.html", "<template title=\"{item.name}\" aria-label=\"{subtotal}\"><p>{item.price}</p></template>"],
-    ["cart-items.html", "<div data-next-cart-items title=\"{item.name}\"><p>{item.price}</p></div>"],
-    ["order-items.html", "<ul data-next-order-items aria-label=\"{line.total}\"><li>{line.name}</li></ul>"],
-    ["quantity-text.html", "<span data-next-quantity-text=\"{qty} items\" title=\"{qty}\" aria-label=\"{qty+1}\">1 item</span>"],
+    ["cart-items.html", "<div data-next-cart-items><p title=\"{item.name}\">{item.price}</p></div>"],
+    ["order-items.html", "<ul data-next-order-items><li aria-label=\"{line.total}\">{line.name}</li></ul>"],
+    ["quantity-text.html", "<span data-next-quantity-text=\"{qty} items\">{qty} {qty+1}</span>"],
     ["button-input-in-list.html", "<div data-next-cart-items><input type=\"button\" value=\"{item.name}\"></div>"],
   ];
   const byPage = evaluate(ownedPages.map(([file, body]) => [file, html({ body })]));
   for (const [file] of ownedPages) assert.deepEqual(summary(byPage.get(file)), ["pass/null page"], `${file}: owned`);
 
-  // The SDK rewrites only these elements' innerHTML, so their own
-  // attributes print as written.
+  // The SDK rewrites only these elements' innerHTML or textContent, so their
+  // own attributes print as written.
   const live = evaluate([
     ["quantity-control.html", html({ body: "<button type=\"button\" data-next-quantity=\"increase\" title=\"{step}\">+{step}</button>" })],
     ["remove-item.html", html({ body: "<button type=\"button\" data-next-remove-item aria-label=\"{quantity}\">Remove {quantity}</button>" })],
     ["quantity-text-other.html", html({ body: "<span data-next-quantity-text=\"{qty} items\" title=\"{item.name}\">1 item</span>" })],
+    ["cart-items.html", html({ body: "<div data-next-cart-items title=\"{item.name}\"><p>{item.price}</p></div>" })],
+    ["order-items.html", html({ body: "<ul data-next-order-items aria-label=\"{line.total}\"><li>{line.name}</li></ul>" })],
+    ["quantity-text.html", html({ body: "<span data-next-quantity-text=\"{qty} items\" title=\"{qty}\">1 item</span>" })],
   ]);
   assert.deepEqual(summary(live.get("quantity-control.html")), ["warning/live_token {step}"]);
   assert.deepEqual(live.get("quantity-control.html")[0].observation.occurrences.map((o) => o.where), ["attr:title"]);
   assert.deepEqual(summary(live.get("remove-item.html")), ["warning/live_token {quantity}"]);
   assert.deepEqual(live.get("remove-item.html")[0].observation.occurrences.map((o) => o.where), ["attr:aria-label"]);
   assert.deepEqual(summary(live.get("quantity-text-other.html")), ["warning/live_token {item.name}"]);
+  for (const [file, token, where] of [["cart-items.html", "{item.name}", "attr:title"], ["order-items.html", "{line.total}", "attr:aria-label"], ["quantity-text.html", "{qty}", "attr:title"]]) {
+    assert.deepEqual(summary(live.get(file)), [`warning/live_token ${token}`], `${file}: own attribute is live`);
+    assert.deepEqual(live.get(file)[0].observation.occurrences.map((o) => o.where), [where], file);
+  }
 
   // End to end, the selector-owned row through doctor --built.
   assert.deepEqual(summary(await builtDoctor(t, html({ body: ownedPages[0][1] }))), ["pass/null page"]);
@@ -299,7 +306,7 @@ test("depth: a deeply nested page within the byte cap never throws; nesting past
   assert.deepEqual(summary(byPage.get("deep-500.html")), ["warning/live_token {item.name}"]);
 });
 
-test("tokenizer: every single-brace pair is a candidate whatever surrounds it; only the inner pair of a balanced {{...}} is not", async (t) => {
+test("tokenizer: every single-brace pair is a candidate whatever surrounds it; only the inner pair of an exactly balanced {{...}} is not", async (t) => {
   // Before the opening and after the closing brace: nothing, a letter, space,
   // punctuation, a stray brace of either kind (literal or as an entity), and
   // doubled braces. Entities reach the scan decoded.
@@ -310,7 +317,9 @@ test("tokenizer: every single-brace pair is a candidate whatever surrounds it; o
   for (const [token, expected] of [["{item.name}", "warning/live_token {item.name}"], ["{subtotal}", "warning/live_token {subtotal}"], ["{tax}", "review/unknown_brace"]]) {
     for (const b of before) {
       for (const a of after) {
-        const balanced = decode(b).endsWith("{") && decode(a).startsWith("}");
+        // Exactly balanced: one `{` before, one `}` after, no further brace.
+        const isBrace = (char) => char === "{" || char === "}";
+        const balanced = decode(b).endsWith("{") && !isBrace(decode(b).at(-2)) && decode(a).startsWith("}") && !isBrace(decode(a)[1]);
         cases.push({ text: `${b}${token}${a}`, expected: balanced ? "pass/null page" : expected });
       }
     }
@@ -325,7 +334,7 @@ test("tokenizer: every single-brace pair is a candidate whatever surrounds it; o
     assert.deepEqual(seen(byPage.get("text.html")), [expected], `${text} in text`);
     assert.deepEqual(seen(byPage.get("attr.html")), [expected], `${text} in alt`);
   }
-  assert.equal(cases.filter(({ expected }) => expected === "pass/null page").length, 3 * 3 * 3, "setup: balanced only where both neighbours are braces");
+  assert.equal(cases.filter(({ expected }) => expected === "pass/null page").length, 3 * 2 * 2, "setup: balanced only where both neighbours are single braces");
 
   // The challenged forms by name, and adjacent pairs, all read in one pass.
   const named = evaluate([
@@ -335,7 +344,8 @@ test("tokenizer: every single-brace pair is a candidate whatever surrounds it; o
     ["bare-extra-close.html", html({ body: "<p>x{subtotal}}y</p>" })],
     ["unknown-extra-close.html", html({ body: "<p>{tax}}</p>" })],
     ["adjacent.html", html({ body: "<p>{item.name}}{subtotal}</p>" })],
-    ["balanced.html", html({ body: "<p>{{item.name}} {{{subtotal}}} {{tax}}</p>" })],
+    ["tripled.html", html({ body: "<p>{{{subtotal}}}</p>" })],
+    ["balanced.html", html({ body: "<p>{{item.name}} {{tax}}</p>" })],
   ]);
   assert.deepEqual(summary(named.get("known-extra-close.html")), ["warning/live_token {item.name}"]);
   assert.deepEqual(summary(named.get("known-stray-open.html")), ["warning/live_token {item.name}"]);
@@ -343,6 +353,7 @@ test("tokenizer: every single-brace pair is a candidate whatever surrounds it; o
   assert.deepEqual(summary(named.get("bare-extra-close.html")), ["warning/live_token {subtotal}"]);
   assert.deepEqual(seen(named.get("unknown-extra-close.html")), ["review/unknown_brace"]);
   assert.deepEqual(summary(named.get("adjacent.html")), ["warning/live_token {item.name}", "warning/live_token {subtotal}"]);
+  assert.deepEqual(summary(named.get("tripled.html")), ["warning/live_token {subtotal}"]);
   assert.deepEqual(summary(named.get("balanced.html")), ["pass/null page"]);
 
   // End to end through doctor --built, text and a rendered attribute.
@@ -351,7 +362,7 @@ test("tokenizer: every single-brace pair is a candidate whatever surrounds it; o
   assert.deepEqual(seen(await builtDoctor(t, html({ body: "<p>{tax}}</p>" }))), ["review/unknown_brace"]);
 });
 
-test("token grammar: a field is any run of non-space, non-brace, non-dot characters, so {<namespace>.first-name} reads warning (live_token) in all seven namespaces", async (t) => {
+test("token grammar: a field is any run of non-brace, non-dot characters, so {<namespace>.first-name} reads warning (live_token) in all seven namespaces", async (t) => {
   const fields = ["first-name", "a-b.c-d.e-f", "x_y-z.0", "9lives", "Prénom", "a:b"];
   const tokens = SDK_TEMPLATE_PLACEHOLDERS.namespaces.flatMap((namespace) => fields.map((field) => `{${namespace}.${field}}`));
   assert.equal(tokens.length, 7 * fields.length, "setup: every namespace");
@@ -375,10 +386,13 @@ test("token grammar: a field is any run of non-space, non-brace, non-dot charact
   ]);
   for (const [file, rows] of owned) assert.deepEqual(summary(rows), ["pass/null page"], `${file}: owned`);
 
-  // Outside the grammar: whitespace or an empty field, and a hyphenated
-  // field in no SDK namespace, are not candidates.
+  // A field may hold whitespace (src/cart-placeholders-panel.test.mjs, F2).
+  const spaced = evaluate([["space.html", html({ body: "<p>{item.first name} {item. name}</p>" })]]);
+  assert.deepEqual(summary(spaced.get("space.html")), ["warning/live_token {item.first name}", "warning/live_token {item. name}"]);
+
+  // Outside the grammar: an empty field, and a hyphenated field in no SDK
+  // namespace, are not candidates.
   const outside = evaluate([
-    ["space.html", html({ body: "<p>{item.first name} {item. name}</p>" })],
     ["empty.html", html({ body: "<p>{item.} {item..name} {item.name.}</p>" })],
     ["no-namespace.html", html({ body: "<p>{foo.first-name}</p>" })],
   ]);

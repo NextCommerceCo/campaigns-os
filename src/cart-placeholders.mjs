@@ -78,14 +78,17 @@ const R = CART_PLACEHOLDERS_REASONS;
 //            seven namespaces (every namespaced renderer takes any key path)
 //   unknown  {name} or {name.field} that is not known
 // Any other brace string is not a candidate. A field is any run of
-// characters other than whitespace, a brace or the `.` separator: the
-// renderers read every key as /\{([^}]+)\}/ and the package, bundle and
-// toggle keys come from arbitrary JSON keys ({toggle.first-name}).
+// characters other than a brace or the `.` separator, whitespace included:
+// the renderers read every key as /\{([^}]+)\}/ and the package, bundle and
+// toggle keys come from arbitrary JSON keys ({toggle.first-name},
+// {package.product title}).
 // Every single-brace pair is a candidate whatever surrounds it ({item.name}},
-// }{item.name}, {{item.name}); only the inner pair of a balanced
-// `{{...}}` is not, being left to sdk_markup's double-brace check.
+// }{item.name}, {{item.name}, {{{item.name}}, {{{item.name}}}); only the
+// inner pair of an exactly balanced `{{...}}` (one `{` before, one `}` after,
+// and no further brace next to either) is not, being left to sdk_markup's
+// double-brace check.
 const QTY_FORMS = SDK_TEMPLATE_PLACEHOLDERS.quantity_text.qty_forms;
-const FIELD = "[^\\s{}.]+";
+const FIELD = "[^{}.]+";
 const CANDIDATE = new RegExp(`\\{([A-Za-z_][A-Za-z0-9_]*(?:\\.${FIELD})*|${QTY_FORMS})\\}`, "g");
 const NAMESPACED = new RegExp(`^([A-Za-z_][A-Za-z0-9_]*)(?:\\.${FIELD})+$`);
 const UNKNOWN_SHAPE = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)?$/;
@@ -105,9 +108,10 @@ const UNSCANNED_ELEMENTS = new Set(["script", "style"]);
 // The ownership attributes. An element owns only when its attribute value is
 // exactly one of `values` (case and whitespace included: INCREASE or
 // " increase " owns nothing); with no `values` the SDK selects the attribute
-// by presence ([data-next-remove-item]), so any value owns. The item template
-// selector is resolved separately, as an exact #id.
+// by presence ([data-next-remove-item]), so any value owns. The row template
+// an item list reads is resolved separately (indexLiveDocument).
 const P = SDK_TEMPLATE_PLACEHOLDERS;
+const ITEM_TEMPLATE_ID = "data-item-template-id";
 const ITEM_LISTS = P.item_list_containers.map((attribute) => ({ attribute }));
 const owns = (attrs, { attribute, values }) => attrs.has(attribute) && (values == null || values.includes(attrs.get(attribute)));
 const ownsItemList = (attrs) => ITEM_LISTS.some((ownership) => owns(attrs, ownership));
@@ -117,7 +121,9 @@ const ownsItemList = (attrs) => ITEM_LISTS.some((ownership) => owns(attrs, owner
 // <script> outside <template>, <noscript>, SVG and MathML whose type, ASCII
 // whitespace stripped, is absent or empty, a JavaScript MIME type essence or
 // `module` (ASCII case-insensitive). A classic script with `nomodule` does
-// not run. Anything else (application/json, text/plain, importmap,
+// not run, nor does one with both `for` and `event` unless `for` is `window`
+// and `event` is `onload` or `onload()` (whitespace stripped, ASCII
+// case-insensitive). Anything else (application/json, text/plain, importmap,
 // speculationrules, an SVG <script> ...) is no loader.
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const SCRIPT_BARRIERS = new Set(["template", "noscript"]);
@@ -166,8 +172,12 @@ export function isKnownCartPlaceholder(name) {
 
 const isCandidate = (name) => isKnownCartPlaceholder(name) || UNKNOWN_SHAPE.test(name);
 
-// Whether the brace pair at `index` is the inner pair of a balanced `{{...}}`.
-const isDoubleBraced = (text, index, length) => text[index - 1] === "{" && text[index + length] === "}";
+// Whether the brace pair at `index` is the inner pair of an exactly balanced
+// `{{...}}`: one `{` right before it, one `}` right after it, and no other
+// brace of either kind beyond those.
+const isBrace = (char) => char === "{" || char === "}";
+const isDoubleBraced = (text, index, length) =>
+  text[index - 1] === "{" && text[index + length] === "}" && !isBrace(text[index - 2]) && !isBrace(text[index + length + 1]);
 
 // Whether a <script src> is the Campaign Cart loader: `{ version }` (the
 // exact version, or null when it names none) or null when it is not. The URL
@@ -281,8 +291,16 @@ export function scriptKind(attrs) {
   else if (type != null) kind = type.replace(ASCII_WHITESPACE_EDGES, "");
   else kind = `text/${language}`;
   kind = asciiLowercase(kind);
-  if (JAVASCRIPT_MIME_TYPES.has(kind)) return attrs.has("nomodule") ? null : "classic";
+  if (JAVASCRIPT_MIME_TYPES.has(kind)) return attrs.has("nomodule") || !classicForEventRuns(attrs) ? null : "classic";
   return kind === "module" ? "module" : null;
+}
+
+// HTML "prepare the script element": a classic script with both `for` and
+// `event` runs only as the window's onload handler.
+function classicForEventRuns(attrs) {
+  if (!attrs.has("for") || !attrs.has("event")) return true;
+  const stripped = (name) => asciiLowercase(attrs.get(name).replace(ASCII_WHITESPACE_EDGES, ""));
+  return stripped("for") === "window" && (stripped("event") === "onload" || stripped("event") === "onload()");
 }
 
 // The <script> elements a browser runs, in document order, without
@@ -320,12 +338,64 @@ export function readLoaderPin(document) {
   return [...versions][0];
 }
 
+// A selector resolved statically: `#` and a CSS identifier (CSS Syntax 3
+// §4.3: non-ASCII code points and escapes included, so `#résumé` and
+// `#\31 row` name the ids `résumé` and `1row`), exact. Returns the id, or
+// null for anything else: a padded selector, `#1row` (no valid selector; the
+// SDK's querySelector throws), or any other selector form.
+const CSS_HEX_DIGIT = /^[0-9A-Fa-f]$/;
+const CSS_WHITESPACE = new Set([" ", "\t", "\n"]);
+const isIdentStart = (char) => char != null && (/^[A-Za-z_]$/.test(char) || char.codePointAt(0) >= 0x80);
+const isIdentChar = (char) => isIdentStart(char) || (char != null && /^[0-9-]$/.test(char));
+const isValidEscape = (first, second) => first === "\\" && second !== "\n";
+
+function idOfSelector(selector) {
+  // CSS input preprocessing: CR, FF and CR LF are newlines, NUL is U+FFFD.
+  const chars = [...String(selector).replace(/\r\n?|\f/g, "\n").replaceAll("\0", "�")];
+  if (chars[0] !== "#") return null;
+  const [a, b, c] = chars.slice(1, 4);
+  const startsIdent = a === "-" ? isIdentStart(b) || b === "-" || isValidEscape(b, c) : isIdentStart(a) || isValidEscape(a, b);
+  if (!startsIdent) return null;
+  let id = "";
+  let at = 1;
+  while (at < chars.length) {
+    const char = chars[at];
+    if (isIdentChar(char)) {
+      id += char;
+      at += 1;
+    } else if (isValidEscape(char, chars[at + 1])) {
+      at += 1;
+      if (at === chars.length) {
+        id += "�";
+        break;
+      }
+      if (!CSS_HEX_DIGIT.test(chars[at])) {
+        id += chars[at];
+        at += 1;
+        continue;
+      }
+      let hex = "";
+      while (hex.length < 6 && at < chars.length && CSS_HEX_DIGIT.test(chars[at])) hex += chars[at++];
+      if (CSS_WHITESPACE.has(chars[at])) at += 1;
+      const code = Number.parseInt(hex, 16);
+      id += code === 0 || (code >= 0xd800 && code <= 0xdfff) || code > 0x10ffff ? "�" : String.fromCodePoint(code);
+    } else {
+      return null;
+    }
+  }
+  return id;
+}
+
 // The live element ids, first in document order wins (getElementById), and
-// the item lists' template selectors. Template content is not live DOM.
+// the row template each item list reads, as the SDK picks it
+// (cart-item-list.enhancer.ts:21-35, order-item-list.enhancer.ts:26-36): a
+// non-empty data-item-template-id names it by id and the selector is never
+// read; otherwise a non-empty data-item-template-selector names it.
+// Template content is not live DOM.
 function indexLiveDocument(document) {
   const ids = new Map();
   const templateIds = new Map();
-  const selectors = [];
+  const rowTemplates = [];
   for (const element of liveElements(document)) {
     const attrs = attrsOf(element);
     const id = attrs.get("id");
@@ -333,18 +403,19 @@ function indexLiveDocument(document) {
     for (const [name, value] of attrs) {
       if (TEMPLATE_ID_ATTRIBUTES.test(name) && value && !templateIds.has(value)) templateIds.set(value, name);
     }
-    if (ownsItemList(attrs) && attrs.has(P.item_template_selector)) selectors.push(attrs.get(P.item_template_selector));
+    if (!ownsItemList(attrs)) continue;
+    if (attrs.get(ITEM_TEMPLATE_ID)) rowTemplates.push({ id: attrs.get(ITEM_TEMPLATE_ID) });
+    else if (attrs.get(P.item_template_selector)) rowTemplates.push({ selector: attrs.get(P.item_template_selector) });
   }
   const owned = new Set();
   let unresolved = false;
-  for (const selector of selectors) {
-    // Exact, like every ownership value: a padded selector is unresolved.
-    const match = String(selector ?? "").match(/^#([A-Za-z0-9_-]+)$/);
-    if (!match) {
+  for (const { id, selector } of rowTemplates) {
+    const selectorId = selector == null ? null : idOfSelector(selector);
+    if (selector != null && selectorId == null) {
       unresolved = true;
       continue;
     }
-    const target = ids.get(match[1]);
+    const target = ids.get(id ?? selectorId);
     if (target) owned.add(target);
   }
   const idTemplates = new Map();
@@ -352,7 +423,7 @@ function indexLiveDocument(document) {
     const target = ids.get(id);
     if (target) idTemplates.set(target, attribute);
   }
-  return { selectorTargets: owned, selectorUnresolved: unresolved, idTemplates };
+  return { rowTemplates: owned, selectorUnresolved: unresolved, idTemplates };
 }
 
 // The SDK template owner nearest an unowned occurrence, for the detail: a
@@ -369,7 +440,7 @@ class CandidateCapReached extends Error {}
 // Scans one parsed page, handing every candidate in a rendered location to
 // `onCandidate` in document order, marked owned or not. Iterative, so page
 // depth never reaches the call stack.
-function scanPage(document, { selectorTargets, idTemplates }, onCandidate) {
+function scanPage(document, { rowTemplates, idTemplates }, onCandidate) {
   const emit = (text, where, line, ctx, elementPath) => {
     for (const match of text.matchAll(CANDIDATE)) {
       const name = match[1];
@@ -382,17 +453,18 @@ function scanPage(document, { selectorTargets, idTemplates }, onCandidate) {
   };
 
   // The scope an element sets up. `self` is the part that covers the
-  // element's own attributes too: a <template>, an item list or the row
-  // template its selector names, and quantity text. A quantity control or
-  // remove-item button rewrites only its innerHTML, so its tokens are owned
-  // inside it, not in its own attributes.
+  // element's own attributes too: only a <template> and the row template an
+  // item list reads. An item list (innerHTML), quantity text (textContent), a
+  // quantity control and a remove-item button (innerHTML) rewrite only what
+  // is inside them, so their tokens are owned inside them, never in their own
+  // attributes.
   const scopes = (ctx, node, tag, attrs) => {
     const self = { ...ctx };
     if (tag === "template") self.template = true;
-    if (ownsItemList(attrs)) self.itemList = true;
-    if (selectorTargets.has(node)) self.itemList = true;
-    if (owns(attrs, P.quantity_text)) self.quantityText = true;
+    if (rowTemplates.has(node)) self.itemList = true;
     const inner = { ...self };
+    if (ownsItemList(attrs)) inner.itemList = true;
+    if (owns(attrs, P.quantity_text)) inner.quantityText = true;
     const allowed = [];
     if (owns(attrs, P.quantity_control)) allowed.push(...P.quantity_control.tokens);
     if (owns(attrs, P.remove_item)) allowed.push(...P.remove_item.tokens);
@@ -441,14 +513,40 @@ function scanPage(document, { selectorTargets, idTemplates }, onCandidate) {
   }
 }
 
+// The file-system error codes that mean a page cannot be read.
+const READ_ERROR_CODES = new Set([
+  "EACCES", "EAGAIN", "EBADF", "EBUSY", "EIO", "EISDIR", "ELOOP", "EMFILE", "ENAMETOOLONG",
+  "ENFILE", "ENODEV", "ENOENT", "ENOTDIR", "ENXIO", "EOVERFLOW", "EPERM", "ESTALE", "ETIMEDOUT",
+  "ERR_FS_FILE_TOO_LARGE", "ERR_STRING_TOO_LONG",
+]);
+// The engine's own size and depth bounds (V8 messages).
+const BOUND_RANGE_ERRORS = /^(?:Maximum call stack size exceeded|Invalid string length)$/;
+
+// Whether an error is a file-system read failure: one of READ_ERROR_CODES.
+// What probes the file system for the page collection catches only these.
+export function isFileReadFailure(error) {
+  return typeof error?.code === "string" && READ_ERROR_CODES.has(error.code);
+}
+
+// Whether an error means the page cannot be read or parsed: a file-system
+// error, nesting past MAX_ELEMENT_DEPTH, or the engine's size or depth bound.
+// Anything else (a TypeError, a ReferenceError, an assertion) is a defect and
+// is not one of these.
+export function isPageReadFailure(error) {
+  if (error instanceof TooDeep) return true;
+  if (error instanceof RangeError) return BOUND_RANGE_ERRORS.test(error.message);
+  return isFileReadFailure(error);
+}
+
 // One page's raw observation: the pin, and either a page-level outcome or the
-// unowned candidates grouped per token or shape, in first-seen order. Any
-// error reading or parsing the page reads it unreadable; none throws out of
-// the check.
+// unowned candidates grouped per token or shape, in first-seen order. A read
+// or parse failure reads the page unreadable; any other error is a defect and
+// throws.
 function observePage(page) {
   try {
     return observeReadablePage(page);
-  } catch {
+  } catch (error) {
+    if (!isPageReadFailure(error)) throw error;
     return { pin: null, outcome: R.PAGE_UNREADABLE };
   }
 }
@@ -463,7 +561,8 @@ function observeReadablePage(page) {
   let document;
   try {
     document = parseBounded(page.content);
-  } catch {
+  } catch (error) {
+    if (!isPageReadFailure(error)) throw error;
     return { pin: null, outcome: R.PAGE_UNREADABLE, bytes };
   }
   // A backstop for nesting the parser reached by moving nodes.
@@ -475,7 +574,7 @@ function observeReadablePage(page) {
   const unowned = [];
   let candidates = 0;
   // Past the candidate cap the walk stops; what it examined is kept. A page
-  // the walk cannot hold (a RangeError) is not read.
+  // the walk cannot hold (an engine bound) is not read.
   try {
     scanPage(document, index, (candidate) => {
       if (candidates === CART_PLACEHOLDERS_LIMITS.candidates) throw new CandidateCapReached();
@@ -483,7 +582,7 @@ function observeReadablePage(page) {
       if (!candidate.owned) unowned.push(candidate);
     });
   } catch (error) {
-    if (error instanceof RangeError) return { pin: null, outcome: R.PAGE_UNREADABLE, bytes };
+    if (isPageReadFailure(error)) return { pin: null, outcome: R.PAGE_UNREADABLE, bytes };
     if (!(error instanceof CandidateCapReached)) throw error;
     caps.push(R.CANDIDATE_CAP_REACHED);
   }

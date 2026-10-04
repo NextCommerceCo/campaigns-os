@@ -85,7 +85,7 @@ import {
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "../campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
-import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders } from "../cart-placeholders.mjs";
+import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders, isFileReadFailure } from "../cart-placeholders.mjs";
 import { recordQcResults } from "../qc-results.mjs";
 import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
@@ -2196,11 +2196,12 @@ function validateCartPlaceholders(packet, warnings, ready, derived) {
   });
 }
 
-// Every built page under the campaign directory, in path order, including the
-// symlinked *.html entries the page scope skips (read as unreadable, never
-// followed). Pages within the page cap carry their HTML, read one page at a
-// time, unless they are over the size cap or cannot be read; pages past it
-// carry only their path.
+// Every built page under the campaign directory, in path order, including
+// every symbolic link that may hold a page (an .html link, a directory link,
+// or a link whose target cannot be inspected; each one entry, read as
+// unreadable, never followed). Pages within the page cap carry their HTML,
+// read one page at a time, unless they are over the size cap or cannot be
+// read; pages past it carry only their path.
 function collectCartPlaceholderPages(targetRepo, slug) {
   const scope = resolveBuiltSiteScope(targetRepo, { slug, includeLinkedPages: true });
   const linked = new Set((scope.linked_pages || []).map((page) => page.built_path));
@@ -2214,8 +2215,9 @@ function collectCartPlaceholderPages(targetRepo, slug) {
 }
 
 // One page within the page cap: its HTML, its size when over the size cap, or
-// unreadable. Any error reading it, before or after the readability precheck
-// (EIO, EACCES, EISDIR ...), reads it unreadable; none throws out of the check.
+// unreadable. A file-system read failure, before or after the readability
+// precheck (EIO, EACCES, EISDIR ...), reads it unreadable; any other error is
+// a defect and throws.
 function readCartPlaceholderPage(path, file, linked) {
   if (linked) return { file, unreadable: true };
   try {
@@ -2223,7 +2225,8 @@ function readCartPlaceholderPage(path, file, linked) {
     if (!isReadableFile(path)) return { file, unreadable: true };
     if (bytes > CART_PLACEHOLDERS_LIMITS.page_bytes) return { file, bytes };
     return { file, content: readFileSync(path, "utf8") };
-  } catch {
+  } catch (error) {
+    if (!isFileReadFailure(error)) throw error;
     return { file, unreadable: true };
   }
 }
@@ -2236,11 +2239,14 @@ function builtPageFile(targetRepo, path) {
   return [...(dir ? dir.split(sep) : []), basename(path)].join("/");
 }
 
+// Whether the page can be opened for reading. Only a file-system read failure
+// says it cannot; any other error is a defect and throws.
 function isReadableFile(path) {
   try {
     accessSync(path, fsConstants.R_OK);
     return true;
-  } catch {
+  } catch (error) {
+    if (!isFileReadFailure(error)) throw error;
     return false;
   }
 }

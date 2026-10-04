@@ -16,6 +16,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 
+import { isFileReadFailure } from "./cart-placeholders.mjs";
+
 const HTML_EXT = ".html";
 
 // The route tokens inferPageType reads for the funnel roles, exported so a
@@ -56,9 +58,25 @@ export function inferPageType(routeOrName) {
   return "page";
 }
 
-// `links`, when given, collects the *.html entries that are symbolic links.
-// They are never pages (build output holds no links, and a link is not
-// followed), but a caller that must account for every built page can name them.
+// Whether a symbolic link may stand for a built page: its name ends in .html,
+// or its target is a directory, or its target cannot be inspected (missing,
+// EACCES, ELOOP, any file-system error). A link to a regular file (or any
+// other non-directory) not named .html is no page. Only file-system errors
+// are caught; anything else throws.
+function linkMayBePage(full, name) {
+  if (name.toLowerCase().endsWith(HTML_EXT)) return true;
+  try {
+    return statSync(full).isDirectory();
+  } catch (error) {
+    if (!isFileReadFailure(error)) throw error;
+    return true;
+  }
+}
+
+// `links`, when given, collects every symbolic link that may stand for a page
+// (see linkMayBePage). They are never pages themselves (build output holds no
+// links, and a link is not followed), but a caller that must account for every
+// built page can name them.
 function listHtmlFiles(root, links = null) {
   const files = [];
   if (!existsSync(root) || !statSync(root).isDirectory()) return files;
@@ -70,7 +88,7 @@ function listHtmlFiles(root, links = null) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile() && entry.name.toLowerCase().endsWith(HTML_EXT)) files.push(full);
-      else if (links && entry.isSymbolicLink() && entry.name.toLowerCase().endsWith(HTML_EXT)) links.push(full);
+      else if (links && entry.isSymbolicLink() && linkMayBePage(full, entry.name)) links.push(full);
     }
   };
   walk(root);
@@ -107,10 +125,12 @@ function resolveSiteRoot(targetRepo) {
  * @param {string} targetRepo Absolute path to the page-kit target repo (or a
  *   `_site/` directory, or a campaign directory).
  * @param {{ slug?: string|null, includeLinkedPages?: boolean }} [options]
- *   `includeLinkedPages` adds `linked_pages`: the *.html entries under the
- *   campaign directory that are symbolic links (skipped as pages, not
- *   followed), in the same shape as `pages`. Off by default; without it the
- *   result is unchanged.
+ *   `includeLinkedPages` adds `linked_pages`: every symbolic link under the
+ *   campaign directory that may stand for a page (named .html, or its target
+ *   a directory, or its target not inspectable; each one entry, its
+ *   `built_path` the link itself; skipped as pages, not followed), in the
+ *   same shape as `pages`. A link to a regular file not named .html is
+ *   dropped. Off by default; without it the result is unchanged.
  * @returns {{
  *   ok: boolean,
  *   error?: string,
