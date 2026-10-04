@@ -2058,9 +2058,11 @@ export function validateCampaignIdentity(packet, errors, ready, derived, spec = 
 // `bounds.script_bytes` bytes ({src, file, content}); any other reads
 // {src, file, unread} with `missing`, `outside_site`, `too_large`,
 // `unreadable` or `script_cap`, or {src, unread: "unmappable"} when its src
-// names no file. Each src maps to its file through builtFileOf (query and
-// fragment dropped, path segments percent-decoded). A page with no content,
-// or one that cannot be parsed, is returned as given.
+// names no file. Each src maps to its file through builtFileOf: the URL
+// parser resolves it against the page's URL under the site root (a
+// root-relative src starts at the site root, never the campaign directory),
+// and its path segments are percent-decoded. A page with no content, or one
+// that cannot be parsed, is returned as given.
 function collectBuiltPageIdentityInputs(scope, targetRepo, { pages = null, bounds = null } = {}) {
   if (pages && bounds) {
     const scriptsOf = boundedPageScripts(scope, targetRepo, bounds);
@@ -2103,9 +2105,8 @@ function collectBuiltPageIdentityInputs(scope, targetRepo, { pages = null, bound
 
 // Where a page's local `<script src>` lives, or null for a remote, data: or
 // empty src. An absolute src is the first of its site-root and campaign
-// candidates that exists; with `missing`, the site-root candidate when none
-// does (so a missing script is named), otherwise null.
-function builtLocalScriptPath(scope, src, builtPath, { missing = false } = {}) {
+// candidates that exists, otherwise null.
+function builtLocalScriptPath(scope, src, builtPath) {
   const raw = String(src || "").trim();
   if (!raw || raw.startsWith("//") || isAbsoluteHttpUrl(raw) || raw.startsWith("data:")) return null;
   const clean = raw.replace(/[?#].*$/, "");
@@ -2113,7 +2114,7 @@ function builtLocalScriptPath(scope, src, builtPath, { missing = false } = {}) {
   if (clean.startsWith("/")) {
     const rel = clean.replace(/^\/+/, "");
     const candidates = [join(scope.site_root, rel), join(scope.campaign_dir, rel)];
-    return candidates.find((candidate) => existsSync(candidate)) || (missing ? candidates[0] : null);
+    return candidates.find((candidate) => existsSync(candidate)) || null;
   }
   return resolve(dirname(builtPath), clean);
 }
@@ -2137,9 +2138,8 @@ function boundedPageScripts(scope, targetRepo, bounds) {
       return null;
     }
     const scripts = [];
-    const pathOf = (src, from) => builtLocalScriptPath(scope, src, from, { missing: true });
     for (const src of sources) {
-      const mapped = builtFileOf(src, builtPath, pathOf);
+      const mapped = builtFileOf(src, builtPath, scope.site_root);
       if (!mapped) continue;
       if (mapped.unmappable) {
         scripts.push({ src, unread: "unmappable" });
@@ -2395,7 +2395,6 @@ function recordSmokeQc({ subject, targetRepo, pages, environment, deployBase, wa
     environment,
     siteRoot: targetRepo ? join(targetRepo, "_site") : null,
     deployBase,
-    resolveAsset: (src, builtPath) => (targetRepo ? resolveBuiltAssetPath(src, builtPath, targetRepo) : null),
   });
   recordQcResults({ derived, warnings, results });
   if (!pages.length) {

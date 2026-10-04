@@ -45,7 +45,13 @@
 //                     environment: warning primary_asset_host
 // The asset-host and loopback rules read every attribute value (data-* and
 // <meta content> included) and <style> text, matching absolute URLs by host.
-// Text nodes and script bodies are not scanned. The per-page candidate cap
+// A host is read only from a whole value, never a substring: a URL_ATTRIBUTES
+// value (srcset and imagesrcset split per HTML, ping per whitespace), any
+// other attribute whose whole value is a URL, and the url() and string tokens
+// of a style attribute or <style> text (cssUrlValues), so a URL inside
+// another URL's query names no host. Every host, the Tailwind script's
+// included, is the URL parser's hostname (hostOf). Text nodes and script
+// bodies are not scanned. The per-page candidate cap
 // counts each in-page anchor, each <meta> and <link> (in <template> content
 // too), each URL_ATTRIBUTES value whether relative or absolute, any other
 // attribute value holding an absolute URL, and each <style> holding one.
@@ -71,15 +77,15 @@
 // which lists them through pageScriptSources: {src, file, content} when read,
 // {src, file, unread} when not); a page with no such list reads every local
 // script it loads unread. Every URL reference that names a file under _site/
-// (the og:image file, each local script) maps through builtFileOf: query and
-// fragment dropped, each path segment percent-decoded, then `resolveAsset`;
-// a path that names no file (`%ZZ`, bytes that are not UTF-8) is never a
-// file. The og:image file is stat-ed here, once per og:image, and counts only
+// (the og:image file, each local script) maps through builtFileOf: the URL
+// parser resolves it against the page's own URL under the site root, and each
+// segment of the resulting path is percent-decoded onto `siteRoot`; a path
+// that names no file (`%ZZ`, bytes that are not UTF-8) is never a file. The og:image file is stat-ed here, once per og:image, and counts only
 // when its real path (symlinks followed) lies inside `siteRoot`.
 // No network request.
 
 import { realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 import { parse } from "parse5";
 
@@ -152,22 +158,263 @@ const WEB_PROTOCOLS = new Set(["http:", "https:"]);
 const OG_FIELDS = new Map([["og:title", "title"], ["og:description", "description"], ["og:image", "image"]]);
 const ASCII_WHITESPACE = /[\t\n\f\r ]+/;
 
-// An absolute URL (http:, https: or protocol-relative) inside an attribute
-// value or <style> text. Not the `//` of another scheme or of a path.
-const ABSOLUTE_URL = /(?<![\w+.:/-])(?:https?:)?\/\/[^\s"'`<>()\\,;{}|^]+/gi;
+// The origin built pages are read from: the site root (_site/) is its path
+// `/`, so a page's URL is its path under _site/ and every reference on it
+// resolves as a browser resolves it there.
+const SITE_ORIGIN = "https://built.invalid";
+const SITE_BASE = `${SITE_ORIGIN}/`;
 
-function hostsIn(text) {
-  const hosts = [];
-  for (const [match] of String(text).matchAll(ABSOLUTE_URL)) {
-    let url;
-    try {
-      url = new URL(match, "https://base.invalid/");
-    } catch {
+const parseUrl = (value, base) => {
+  try {
+    return new URL(value, base);
+  } catch {
+    return null;
+  }
+};
+
+// The host a candidate names, read by the URL parser (userinfo, port, IPv6
+// brackets, IDN, case and IPv4 forms are its own): an http(s) URL that is
+// absolute or protocol-relative, its hostname without a trailing root dot.
+// Anything else, a relative path included, names no host.
+function hostOf(candidate) {
+  const url = parseUrl(candidate, SITE_BASE);
+  if (!url || !WEB_PROTOCOLS.has(url.protocol) || url.origin === SITE_ORIGIN) return null;
+  return url.hostname.replace(/\.$/, "") || null;
+}
+
+const isAsciiWhitespace = (c) => c === "\t" || c === "\n" || c === "\f" || c === "\r" || c === " ";
+const trimAsciiWhitespace = (value) => value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+
+// The URLs of a srcset or imagesrcset value, split as the HTML "parse a srcset
+// attribute" algorithm splits it: skip ASCII whitespace and commas, take the
+// run up to the next ASCII whitespace as the URL (a comma inside it stays;
+// trailing commas end the entry), then skip its descriptors up to a comma
+// outside parentheses. Descriptors are not validated.
+function srcsetUrls(value) {
+  const urls = [];
+  let i = 0;
+  for (;;) {
+    while (i < value.length && (isAsciiWhitespace(value[i]) || value[i] === ",")) i += 1;
+    if (i >= value.length) return urls;
+    const start = i;
+    while (i < value.length && !isAsciiWhitespace(value[i])) i += 1;
+    const url = value.slice(start, i);
+    if (url.endsWith(",")) {
+      urls.push(url.replace(/,+$/, ""));
       continue;
     }
-    if (WEB_PROTOCOLS.has(url.protocol) && url.hostname) hosts.push(url.hostname);
+    urls.push(url);
+    let inParens = false;
+    while (i < value.length) {
+      const c = value[i];
+      i += 1;
+      if (c === "(") inParens = true;
+      else if (c === ")") inParens = false;
+      else if (c === "," && !inParens) break;
+    }
   }
-  return hosts;
+}
+
+// CSS Syntax 3 code point classes (§4.2), on preprocessed input (§3.3).
+const isCssWhitespace = (c) => c === "\n" || c === "\t" || c === " ";
+const isDigit = (c) => c !== undefined && c >= "0" && c <= "9";
+const isHexDigit = (c) => c !== undefined && /[0-9A-Fa-f]/.test(c);
+const isIdentStart = (c) => c !== undefined && (/[A-Za-z_]/.test(c) || c.charCodeAt(0) >= 0x80);
+const isIdentCodePoint = (c) => isIdentStart(c) || isDigit(c) || c === "-";
+const isNonPrintable = (c) => c !== undefined && /[\u0000-\u0008\u000B\u000E-\u001F\u007F]/.test(c);
+const isValidEscape = (a, b) => a === "\\" && b !== "\n";
+const startsIdentSequence = (a, b, c) => {
+  if (a === "-") return isIdentStart(b) || b === "-" || isValidEscape(b, c);
+  return isIdentStart(a) || isValidEscape(a, b);
+};
+const startsNumber = (a, b, c) => {
+  if (a === "+" || a === "-") return isDigit(b) || (b === "." && isDigit(c));
+  if (a === ".") return isDigit(b);
+  return isDigit(a);
+};
+
+/**
+ * The value of every <url-token> and <string-token> in CSS text (a <style>
+ * element's text or a style attribute), tokenized per CSS Syntax 3 §4.3:
+ * escapes decoded (consume an escaped code point), `url(` recognized only as
+ * an ident-like token (so `u\72l(` is one, a `1url(` dimension is not), and
+ * `url( "…" )` read as a function whose string token follows. Comments,
+ * <bad-url-token>s and <bad-string-token>s give no value. Every other token is
+ * consumed only to find where the next one starts.
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function cssUrlValues(text) {
+  const s = String(text).replace(/\r\n?|\f/g, "\n").replace(/\u0000/g, "�");
+  const values = [];
+  let i = 0;
+
+  // §4.3.7, the backslash already consumed.
+  const escapedCodePoint = () => {
+    if (i >= s.length) return "�";
+    if (isHexDigit(s[i])) {
+      let hex = "";
+      while (hex.length < 6 && isHexDigit(s[i])) hex += s[i++];
+      if (isCssWhitespace(s[i])) i += 1;
+      const value = Number.parseInt(hex, 16);
+      return value === 0 || (value >= 0xd800 && value <= 0xdfff) || value > 0x10ffff ? "�" : String.fromCodePoint(value);
+    }
+    const char = String.fromCodePoint(s.codePointAt(i));
+    i += char.length;
+    return char;
+  };
+  // §4.3.12.
+  const identSequence = () => {
+    let out = "";
+    for (;;) {
+      if (isIdentCodePoint(s[i])) {
+        out += s[i];
+        i += 1;
+      } else if (isValidEscape(s[i], s[i + 1])) {
+        i += 1;
+        out += escapedCodePoint();
+      } else {
+        return out;
+      }
+    }
+  };
+  // §4.3.5, the opening quote already consumed; null for a <bad-string-token>.
+  const stringToken = (ending) => {
+    let out = "";
+    while (i < s.length) {
+      const c = s[i];
+      if (c === "\n") return null;
+      i += 1;
+      if (c === ending) return out;
+      if (c !== "\\") out += c;
+      else if (s[i] === "\n") i += 1;
+      else if (i < s.length) out += escapedCodePoint();
+    }
+    return out;
+  };
+  // §4.3.14.
+  const badUrlRemnants = () => {
+    while (i < s.length) {
+      const c = s[i];
+      i += 1;
+      if (c === ")") return;
+      if (isValidEscape(c, s[i])) escapedCodePoint();
+    }
+  };
+  // §4.3.6, `url(` already consumed; null for a <bad-url-token>.
+  const urlToken = () => {
+    while (isCssWhitespace(s[i])) i += 1;
+    let out = "";
+    while (i < s.length) {
+      const c = s[i];
+      i += 1;
+      if (c === ")") return out;
+      if (isCssWhitespace(c)) {
+        while (isCssWhitespace(s[i])) i += 1;
+        if (i >= s.length) return out;
+        if (s[i] === ")") {
+          i += 1;
+          return out;
+        }
+        badUrlRemnants();
+        return null;
+      }
+      if (c === "\"" || c === "'" || c === "(" || isNonPrintable(c) || (c === "\\" && !isValidEscape(c, s[i]))) {
+        badUrlRemnants();
+        return null;
+      }
+      out += c === "\\" ? escapedCodePoint() : c;
+    }
+    return out;
+  };
+  // §4.3.4.
+  const identLikeToken = () => {
+    const name = identSequence();
+    if (s[i] !== "(") return;
+    i += 1;
+    if (!/^url$/i.test(name)) return;
+    while (isCssWhitespace(s[i]) && isCssWhitespace(s[i + 1])) i += 1;
+    const next = isCssWhitespace(s[i]) ? s[i + 1] : s[i];
+    if (next === "\"" || next === "'") return;
+    const value = urlToken();
+    if (value != null) values.push(value);
+  };
+  // §4.3.3.
+  const numericToken = () => {
+    if (s[i] === "+" || s[i] === "-") i += 1;
+    while (isDigit(s[i])) i += 1;
+    if (s[i] === "." && isDigit(s[i + 1])) {
+      i += 1;
+      while (isDigit(s[i])) i += 1;
+    }
+    if ((s[i] === "e" || s[i] === "E") && (isDigit(s[i + 1]) || ((s[i + 1] === "+" || s[i + 1] === "-") && isDigit(s[i + 2])))) {
+      i += 2;
+      while (isDigit(s[i])) i += 1;
+    }
+    if (startsIdentSequence(s[i], s[i + 1], s[i + 2])) identSequence();
+    else if (s[i] === "%") i += 1;
+  };
+
+  // §4.3.1 (whitespace and single-code-point tokens advance by one).
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "/" && s[i + 1] === "*") {
+      const end = s.indexOf("*/", i + 2);
+      i = end === -1 ? s.length : end + 2;
+    } else if (c === "\"" || c === "'") {
+      i += 1;
+      const value = stringToken(c);
+      if (value != null) values.push(value);
+    } else if (c === "#") {
+      i += 1;
+      if (isIdentCodePoint(s[i]) || isValidEscape(s[i], s[i + 1])) identSequence();
+    } else if (c === "+" || c === ".") {
+      if (startsNumber(c, s[i + 1], s[i + 2])) numericToken();
+      else i += 1;
+    } else if (c === "-") {
+      if (startsNumber(c, s[i + 1], s[i + 2])) numericToken();
+      else if (s[i + 1] === "-" && s[i + 2] === ">") i += 3;
+      else if (startsIdentSequence(c, s[i + 1], s[i + 2])) identLikeToken();
+      else i += 1;
+    } else if (c === "<") {
+      i += s.startsWith("<!--", i) ? 4 : 1;
+    } else if (c === "@") {
+      i += 1;
+      if (startsIdentSequence(s[i], s[i + 1], s[i + 2])) identSequence();
+    } else if (c === "\\") {
+      if (isValidEscape(c, s[i + 1])) identLikeToken();
+      else i += 1;
+    } else if (isDigit(c)) {
+      numericToken();
+    } else if (isIdentStart(c)) {
+      identLikeToken();
+    } else {
+      i += 1;
+    }
+  }
+  return values;
+}
+
+// The host candidates of one attribute value, each a whole value: a srcset or
+// imagesrcset URL, a ping URL (split on ASCII whitespace), a url() or string
+// token of a style attribute, or else the whole trimmed value. hostOf reads
+// each one; a value that is not an absolute or protocol-relative URL names no
+// host, so outside URL_ATTRIBUTES only a whole URL counts.
+function attributeCandidates(name, value) {
+  if (name === "srcset" || name === "imagesrcset") return srcsetUrls(value);
+  if (name === "ping") return value.split(ASCII_WHITESPACE).filter(Boolean);
+  if (name === "style") return cssUrlValues(value);
+  return [trimAsciiWhitespace(value)];
+}
+
+function hostsOf(candidates) {
+  const hosts = new Set();
+  for (const candidate of candidates) {
+    const host = hostOf(candidate);
+    if (host) hosts.add(host);
+  }
+  return [...hosts];
 }
 
 const attrsOf = (node) => {
@@ -227,35 +474,46 @@ function decodePathSegment(segment) {
   return /[/\u0000]/.test(decoded) ? null : decoded;
 }
 
+// A page's own URL: its path under the site root, each segment
+// percent-encoded; null when the page is not under the site root.
+function pageUrlOf(builtPath, siteRoot) {
+  if (!siteRoot || !insideRoot(siteRoot, builtPath)) return null;
+  return `${SITE_ORIGIN}/${relative(siteRoot, builtPath).split(sep).map(encodeURIComponent).join("/")}`;
+}
+
 /**
  * The one mapping from a URL reference on a built page to a file under
- * `_site/`, used for the og:image file and every local script. The query and
- * fragment are dropped, each path segment is percent-decoded, and the decoded
- * path goes to `resolveAsset` (which reads `?` and `#` as delimiters, so a
- * decoded name holding one is joined onto the resolved directory here).
- * `a%23b.png` names `a#b.png`, never a file literally called `a%23b.png`.
- * Whether the file is inside the site root is the reader's check (its real
- * path), as before.
+ * `_site/`, used for the og:image file and every local script. The URL parser
+ * resolves the reference against the page's own URL (pageUrlOf), as a browser
+ * does: backslashes read as `/`, dot segments are removed, a root-relative
+ * reference starts at the site root, and the query and fragment are not part
+ * of the path. Only a URL on the site's own origin, or on one of `origins`
+ * (the deploy base, for an absolute og:image), is local. Each segment of its
+ * path is then percent-decoded and joined onto `siteRoot`: `a%23b.png` names
+ * `a#b.png`, never a file literally called `a%23b.png`. Whether the file is
+ * inside the site root is the reader's check (its real path).
  *
- * @param {string} reference  the attribute value or URL path
+ * @param {string} reference  the attribute value
  * @param {string} builtPath  the page's file
- * @param {(src: string, builtPath: string) => string|null} resolveAsset
- * @returns {null|{ path: string }|{ unmappable: true }}  null when the
- *   reference is not local (remote, data:, empty path); unmappable when its
- *   path names no file (see decodePathSegment).
+ * @param {string|null} siteRoot  the built `_site/` directory
+ * @param {{ origins?: Set<string>|null }} [options]
+ * @returns {null|{ path: string, site_path: string }|{ unmappable: true, site_path?: string }}
+ *   null when the reference is not local (another origin, data:, or no path
+ *   at all); unmappable when its path names no file (see decodePathSegment),
+ *   or when there is no site root or page URL to resolve it from.
  */
-export function builtFileOf(reference, builtPath, resolveAsset) {
-  const pathPart = String(reference ?? "").trim().split(/[?#]/)[0];
-  if (!pathPart || resolveAsset(pathPart, builtPath) == null) return null;
-  const segments = pathPart.split("/").map(decodePathSegment);
-  if (segments.includes(null)) return { unmappable: true };
-  const at = segments.findIndex((segment) => /[?#]/.test(segment));
-  if (at === -1) {
-    const path = resolveAsset(segments.join("/"), builtPath);
-    return path == null ? { unmappable: true } : { path };
-  }
-  const dir = resolveAsset([...segments.slice(0, at), "."].join("/"), builtPath);
-  return dir == null ? { unmappable: true } : { path: resolve(dir, ...segments.slice(at)) };
+export function builtFileOf(reference, builtPath, siteRoot, { origins = null } = {}) {
+  const value = String(reference ?? "").trim();
+  // An empty reference, or one with only a query or fragment, names the page
+  // itself, not a file it loads.
+  if (!value || value.startsWith("?") || value.startsWith("#")) return null;
+  const pageUrl = pageUrlOf(builtPath, siteRoot);
+  const url = parseUrl(value, pageUrl ?? SITE_BASE);
+  if (!url || (url.origin !== SITE_ORIGIN && !origins?.has(url.origin))) return null;
+  if (!siteRoot || (url.origin === SITE_ORIGIN && !pageUrl)) return { unmappable: true };
+  const segments = url.pathname.split("/").slice(1).map(decodePathSegment);
+  if (segments.some((segment) => segment == null || segment === "." || segment === "..")) return { unmappable: true, site_path: url.pathname };
+  return { path: join(siteRoot, ...segments), site_path: url.pathname };
 }
 
 // Every element in document order with its path (`html[1]/body[1]/a[2]`) and
@@ -408,14 +666,14 @@ function observeDocument(document) {
     for (const attr of node.attrs || []) {
       const name = attrName(attr);
       if (anchorHref && name === "href") continue;
-      const hosts = hostsIn(attr.value);
+      const hosts = hostsOf(attributeCandidates(name, attr.value));
       if (!hosts.length && !(URL_ATTRIBUTES.has(name) && attr.value.trim())) continue;
       if (!cap.take() || !hosts.length) continue;
       recordHosts(hosts, { element_path: path, attr: name });
-      if (!inTemplate && html && tag === "script" && name === "src" && hosts.includes(TAILWIND_CDN_HOST)) observed.tailwind.push(path);
+      if (!inTemplate && html && tag === "script" && name === "src" && hostOf(attr.value) === TAILWIND_CDN_HOST) observed.tailwind.push(path);
     }
     if (tag === "style") {
-      const hosts = hostsIn(textOf(node));
+      const hosts = hostsOf(cssUrlValues(textOf(node)));
       if (hosts.length && cap.take()) recordHosts(hosts, { element_path: path, attr: "style" });
     }
   });
@@ -434,7 +692,7 @@ const insideRoot = (root, path) => {
 function pageScripts(page, observed, builtPath, ctx) {
   const listed = Array.isArray(page.scripts)
     ? page.scripts
-    : observed.scripts.filter((script) => builtFileOf(script.src, builtPath, ctx.resolveAsset) != null).map((script) => ({ src: script.src, unread: "not_listed" }));
+    : observed.scripts.filter((script) => builtFileOf(script.src, builtPath, ctx.siteRoot) != null).map((script) => ({ src: script.src, unread: "not_listed" }));
   const contents = listed.filter((script) => typeof script?.content === "string").map((script) => script.content);
   return { contents, loaded: listed.length, read: contents.length, complete: contents.length === listed.length };
 }
@@ -453,10 +711,6 @@ function fileExists(realSiteRoot, path) {
   }
 }
 
-// The file an og:image reference names (builtFileOf), or null: a reference
-// whose path names no file is never a file in _site/, so it reads missing.
-const ogImageFile = (reference, builtPath, ctx) => builtFileOf(reference, builtPath, ctx.resolveAsset)?.path ?? null;
-
 function realPathOf(path) {
   if (!path) return null;
   try {
@@ -468,47 +722,37 @@ function realPathOf(path) {
 }
 
 // Where the page's og:image points: { image, image_target }. Absolute means
-// a scheme and a host; a scheme-relative `//host/x` is not absolute.
+// a scheme and a host; a scheme-relative one (`//host/x`, or `\\host/x`,
+// which the URL parser reads the same way) is not absolute. Every file it
+// names comes from builtFileOf; a reference whose path names no file is never
+// a file in _site/, so it reads missing.
 function resolveOgImage(content, builtPath, ctx) {
   const value = content.trim();
-  if (value.startsWith("//")) return resolveSchemeRelativeOgImage(value, builtPath, ctx);
-  let url = null;
-  try {
-    url = new URL(value);
-  } catch {
-    url = null;
-  }
+  const url = parseUrl(value);
   if (url && !WEB_PROTOCOLS.has(url.protocol)) return { image: "absolute_remote", image_target: url.protocol };
   if (url) {
     const target = `${url.protocol}//${url.host}${url.pathname}`;
     if (!ctx.origins.size) return { image: "absolute_same_base_unmapped", image_target: target };
     if (!ctx.origins.has(url.origin)) return { image: "absolute_remote", image_target: target };
-    const path = ogImageFile(url.pathname, builtPath, ctx);
+    const path = builtFileOf(value, builtPath, ctx.siteRoot, { origins: ctx.origins })?.path ?? null;
     return { image: fileExists(ctx.realSiteRoot, path) ? "absolute_same_base_present" : "absolute_same_base_missing", image_target: target };
   }
-  const pathPart = value.split(/[?#]/)[0];
-  const path = ogImageFile(value, builtPath, ctx);
-  const target = path != null && ctx.siteRoot && insideRoot(ctx.siteRoot, path)
-    ? `/${relative(ctx.siteRoot, path).split(sep).join("/")}`
-    : pathPart || null;
+  const hosted = parseUrl(value, SITE_BASE);
+  if (hosted && hosted.origin !== SITE_ORIGIN) return resolveSchemeRelativeOgImage(value, hosted, builtPath, ctx);
+  const mapped = builtFileOf(value, builtPath, ctx.siteRoot);
+  const path = mapped?.path ?? null;
+  const target = path != null ? `/${relative(ctx.siteRoot, path).split(sep).join("/")}` : mapped?.site_path ?? null;
   return { image: fileExists(ctx.realSiteRoot, path) ? "relative_present" : "relative_missing", image_target: target };
 }
 
-// A scheme-relative og:image (`//host/path`): relative, so never a pass. On a
-// deploy base host its path maps into _site/ like an absolute same-base URL;
-// on any other host, or with no known base, its file is not looked for and it
-// reads relative_present (the observation enum is closed).
-function resolveSchemeRelativeOgImage(value, builtPath, ctx) {
-  let url = null;
-  try {
-    url = new URL(`https:${value}`);
-  } catch {
-    url = null;
-  }
-  if (!url || !url.host) return { image: "relative_missing", image_target: value.split(/[?#]/)[0] || null };
+// A scheme-relative og:image, `url` as the parser reads it: relative, so never
+// a pass. On a deploy base host its path maps into _site/ like an absolute
+// same-base URL; on any other host, or with no known base, its file is not
+// looked for and it reads relative_present (the observation enum is closed).
+function resolveSchemeRelativeOgImage(value, url, builtPath, ctx) {
   const target = `//${url.host}${url.pathname}`;
   if (!ctx.origins.has(`https://${url.host}`) && !ctx.origins.has(`http://${url.host}`)) return { image: "relative_present", image_target: target };
-  const path = ogImageFile(url.pathname, builtPath, ctx);
+  const path = builtFileOf(value, builtPath, ctx.siteRoot, { origins: new Set([url.origin]) })?.path ?? null;
   return { image: fileExists(ctx.realSiteRoot, path) ? "relative_present" : "relative_missing", image_target: target };
 }
 
@@ -630,7 +874,6 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  *   environment?: string|null,
  *   siteRoot: string|null,
  *   deployBase?: string|string[]|null,
- *   resolveAsset: (src: string, builtPath: string) => string|null,
  *   measuredAt?: string,
  * }} input  `pages` in a stable order, `file` relative to the doctor target
  *   ("_site/<slug>/index.html"); pages past the page cap may omit `content`.
@@ -638,23 +881,21 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  *   header); a page without it reads its local scripts unread.
  *   `environment` is the recorded build environment ("production" or
  *   "development"; anything else is unknown). `siteRoot` is the built `_site/`
- *   directory: page files resolve against its parent, and a local asset whose
- *   real path lies outside it reads as missing. `deployBase` lists the deploy URLs whose
- *   origins map an absolute og:image into `_site/`; none means the base is
- *   unknown. `resolveAsset` maps a URL path on a built page to a file path,
- *   or null when it is not local; it gets the reference through builtFileOf,
- *   so already decoded. `subject` names the scanned site for
- *   the caller; every result carries its own {check, page, key} subject.
+ *   directory: page files resolve against its parent, every local reference
+ *   maps onto it through builtFileOf (none does without it), and a local
+ *   asset whose real path lies outside it reads as missing. `deployBase`
+ *   lists the deploy URLs whose origins map an absolute og:image into
+ *   `_site/`; none means the base is unknown. `subject` names the scanned
+ *   site for the caller; every result carries its own {check, page, key}
+ *   subject.
  * @returns {object[]} QC results (src/qc-results.mjs buildQcResult).
  */
-export function evaluateSmokeQc({ subject = null, pages = [], environment = null, siteRoot = null, deployBase = null, resolveAsset = null, measuredAt = new Date().toISOString() } = {}) {
-  if (typeof resolveAsset !== "function") throw new TypeError("evaluateSmokeQc needs resolveAsset to map a page's local references to files.");
+export function evaluateSmokeQc({ subject = null, pages = [], environment = null, siteRoot = null, deployBase = null, measuredAt = new Date().toISOString() } = {}) {
   const check = SMOKE_QC_CHECK;
   const ctx = {
     environment: environmentOf(environment),
     siteRoot,
     origins: deployOrigins(deployBase),
-    resolveAsset,
     realSiteRoot: realPathOf(siteRoot),
   };
   const results = [];

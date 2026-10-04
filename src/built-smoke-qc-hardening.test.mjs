@@ -21,7 +21,17 @@
 //      literally named with the escape (`a%23b.png`) never satisfies
 //      `a%23b.png`, and a path that names no file (`%ZZ`) never passes;
 //   C8 rule edges: the asset host matched whatever its case, the IPv6
-//      loopback, and <meta>/<link> in <template> counted toward the cap.
+//      loopback, and <meta>/<link> in <template> counted toward the cap;
+//   C9 every URL is read as the URL parser reads it: a reference resolves
+//      against the page's own URL under _site/ (a root-relative one from the
+//      site root, never the campaign directory; a backslash is a `/`), and
+//      every host the asset-host, loopback and Tailwind rules match is the
+//      parser's hostname (userinfo, case, a trailing root dot, IPv6, TAB);
+//   C10 a host is read only from a whole value: a URL attribute (srcset split
+//      per HTML, ping per whitespace), any other attribute whose whole value
+//      is a URL, and the url() and string tokens of CSS (CSS Syntax 3, escapes
+//      decoded; comments, bad-url and bad-string tokens give none), so a URL
+//      inside another URL's query is never matched.
 // Row shapes follow src/built-smoke-qc.test.mjs (its API assumptions).
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -48,9 +58,9 @@ afterEach(() => assertNoNetworkAttempts());
 after(() => assertNoNetworkAttempts());
 
 const { doctorBuiltOutput } = await import("./doctor/inspect.mjs");
-const { collectBuiltPageIdentityInputs, collectCartPlaceholderPages, resolveBuiltAssetPath } = await import("./doctor/checks.mjs");
+const { collectBuiltPageIdentityInputs, collectCartPlaceholderPages } = await import("./doctor/checks.mjs");
 const { computeBuildFingerprint, resolveBuiltSiteScope } = await import("./built-site-scope.mjs");
-const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, evaluateSmokeQc } = await import("./built-smoke-qc.mjs");
+const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, cssUrlValues, evaluateSmokeQc } = await import("./built-smoke-qc.mjs");
 
 const CHECK = "smoke_qc";
 const GATE = "built_output.smoke_qc";
@@ -197,14 +207,14 @@ const smokeReadyLines = (result) => (result.ready || []).filter((line) => /^Smok
 const RESOLVED = Array.from({ length: 51 }, (_, index) => `r${index + 1}`);
 const resolvedBody = RESOLVED.map((target) => `<a href="#${target}">Synthetic ${target}</a>\n<section id="${target}"><p>Synthetic ${target}.</p></section>`).join("\n");
 
-test("C1 reviewer probe: 51 resolved in-page targets under doctor --built: the result cap counts pass results, so finding_cap_reached on every rule key and no pass row", async (t) => {
+test("C1 51 resolved in-page targets under doctor --built: the result cap counts pass results, so finding_cap_reached on every rule key and no pass row", async (t) => {
   const dir = tempTree(t, { "index.html": page({ body: resolvedBody }) });
   const rows = assertSmoke(await builtDoctor(dir), pageLevelRows(PAGE, "finding_cap_reached"));
   assert.deepEqual(Object.values(rows).filter((row) => row.result === "pass"), [], "no pass once the cap is hit");
 });
 
-test("C1 reviewer probe: 51 resolved in-page targets through evaluateSmokeQc, production environment: finding_cap_reached, no pass row", () => {
-  const results = evaluateSmokeQc({ pages: [{ file: PAGE, content: page({ body: resolvedBody }) }], environment: "production", siteRoot: null, resolveAsset: () => null });
+test("C1 51 resolved in-page targets through evaluateSmokeQc, production environment: finding_cap_reached, no pass row", () => {
+  const results = evaluateSmokeQc({ pages: [{ file: PAGE, content: page({ body: resolvedBody }) }], environment: "production", siteRoot: null });
   assert.deepEqual(results.map(summarize).sort(byId), pageLevelRows(PAGE, "finding_cap_reached").sort(byId));
 });
 
@@ -221,7 +231,7 @@ test("C1 the result cap keeps only the first 50 results' findings: 30 resolved t
   }));
 });
 
-test("C1 reviewer probe: favicon and og tags after the candidate cap: no favicon_missing or og_*_missing, those keys unexercised (candidate_cap_reached)", async (t) => {
+test("C1 favicon and og tags after the candidate cap: no favicon_missing or og_*_missing, those keys unexercised (candidate_cap_reached)", async (t) => {
   const anchors = Array.from({ length: 2001 }, (_, index) => `<a href="#benefits">Benefits ${index + 1}</a>`).join("\n");
   const late = [
     "<link rel=\"icon\" href=\"/favicon.ico\">",
@@ -242,7 +252,7 @@ test("C1 a page with no favicon and no og:title at all over the finding cap: abs
   }));
 });
 
-test("C1 reviewer probe: the target is named in one readable local script and another local script is missing: unexercised (script_unreadable), not review", async (t) => {
+test("C1 the target is named in one readable local script and another local script is missing: unexercised (script_unreadable), not review", async (t) => {
   const dir = tempTree(t, {
     "index.html": page({ head: "<script src=\"js/tabs.js\"></script>\n<script src=\"js/missing.js\"></script>", body: "<a href=\"#features\">Features</a>\n<main><p>Synthetic page.</p></main>" }),
     "js/tabs.js": "document.querySelector(\"main\").insertAdjacentHTML(\"beforeend\", '<section id=\"features\"></section>');\n",
@@ -280,7 +290,7 @@ test("C1 ready[]: a packet recorded development (unexercised rows) adds no smoke
 // ---------------------------------------------------------------------------
 // C2: URL and fragment readings
 
-test("C2 reviewer probe: href=\"#caf%C3%A9\" with only id=\"caf%C3%A9\": the decoded target café is missing (warning), never a pass on the raw fragment", async (t) => {
+test("C2 href=\"#caf%C3%A9\" with only id=\"caf%C3%A9\": the decoded target café is missing (warning), never a pass on the raw fragment", async (t) => {
   const dir = tempTree(t, { "index.html": page({ body: "<a href=\"#caf%C3%A9\">Café</a>\n<h2 id=\"caf%C3%A9\">Café</h2>" }) });
   assertSmoke(await builtDoctor(dir), pageRows(PAGE, { anchors: { "café": ["warning", "anchor_target_missing"] } }));
 });
@@ -290,7 +300,7 @@ test("C2 percent-decoding keeps a % without two hex digits: href=\"#a%ZZ%C3%A9\"
   assertSmoke(await builtDoctor(dir), pageRows(PAGE, { anchors: { "a%ZZé": ["pass"] } }));
 });
 
-test("C2 reviewer probe: scheme-relative og:image on the deploy base host, file present in _site: warning (og_image_not_absolute), not pass", async (t) => {
+test("C2 scheme-relative og:image on the deploy base host, file present in _site: warning (og_image_not_absolute), not pass", async (t) => {
   const landing = packetPage("landing", { ogImage: `//preview.example.invalid/${SLUG}/img/og.png` });
   const f = builtPacket(t, { env: "production", landing });
   const rows = assertSmoke(doctorOf(f.packetPath, {}), packetRows({ landing: { set: { [KEY.ogImageTarget]: ["warning", "og_image_not_absolute"] } } }));
@@ -402,7 +412,7 @@ function reachabilityGateOf() {
 }
 const harnessPasses = (gate) => Boolean(gate) && (gate.status === "pass" || gate.status === "not_applicable");
 
-test("C4 reviewer probes: the reachability harness fails page_unreadable, candidate_cap_reached, an unknown reason, a reason on the wrong key, warning and review; it passes only pass rows plus each key's allowed unexercised reasons", async (t) => {
+test("C4 the reachability harness fails page_unreadable, candidate_cap_reached, an unknown reason, a reason on the wrong key, warning and review; it passes only pass rows plus each key's allowed unexercised reasons", async (t) => {
   const gateOf = reachabilityGateOf();
   const clean = await builtDoctor(tempTree(t, { "index.html": page() }));
   assertSmoke(clean, pageRows(PAGE));
@@ -447,8 +457,8 @@ test("C4 reviewer probes: the reachability harness fails page_unreadable, candid
 const DANGLING = "<a href=\"#features\">Features</a>\n<main><p>Synthetic page.</p></main>";
 
 for (const [label, tag] of [
-  ["reviewer probe: unquoted src", "<script src=missing.js></script>"],
-  ["reviewer probe: spaces around =", "<script src = \"missing.js\"></script>"],
+  ["case: unquoted src", "<script src=missing.js></script>"],
+  ["case: spaces around =", "<script src = \"missing.js\"></script>"],
   ["single-quoted src", "<script src='missing.js'></script>"],
   ["upper-case tag and attribute", "<SCRIPT SRC=\"missing.js\"></SCRIPT>"],
   ["type=module", "<script type=\"module\" src=\"missing.js\"></script>"],
@@ -504,16 +514,16 @@ test("C3 the bounded form lists scripts from the parse5 tree whatever the attrib
 // og:title, og:description, og:image and its absolute content.
 const PAGE_CANDIDATES = 7;
 const images = (count) => Array.from({ length: count }, () => "<img src=\"/synthetic.png\" alt=\"\">").join("\n");
-const evaluateProduction = (content) => evaluateSmokeQc({ pages: [{ file: PAGE, content }], environment: "production", siteRoot: null, resolveAsset: () => null });
+const evaluateProduction = (content) => evaluateSmokeQc({ pages: [{ file: PAGE, content }], environment: "production", siteRoot: null });
 const PRODUCTION_ROWS = pageRows(PAGE, { env: "production", set: { [KEY.ogImageTarget]: ["unexercised", "og_image_base_unknown"] } });
 
-test("C5 reviewer probe: 2,001 <img src=\"/synthetic.png\"> through evaluateSmokeQc: candidate_cap_reached on every rule key, no pass", () => {
+test("C5 2,001 <img src=\"/synthetic.png\"> through evaluateSmokeQc: candidate_cap_reached on every rule key, no pass", () => {
   const results = evaluateProduction(page({ body: images(2001) }));
   assert.deepEqual(results.map(summarize).sort(byId), pageLevelRows(PAGE, "candidate_cap_reached").sort(byId));
   assert.deepEqual(results.filter((row) => row.result === "pass"), [], "no pass on a capped page");
 });
 
-test("C5 reviewer probe: 2,001 <img src=\"/synthetic.png\"> under the real doctor --built: candidate_cap_reached on every rule key, no pass", async (t) => {
+test("C5 2,001 <img src=\"/synthetic.png\"> under the real doctor --built: candidate_cap_reached on every rule key, no pass", async (t) => {
   const dir = tempTree(t, { "index.html": page({ body: images(2001) }) });
   const rows = assertSmoke(await builtDoctor(dir), pageLevelRows(PAGE, "candidate_cap_reached"));
   assert.deepEqual(Object.values(rows).filter((row) => row.result === "pass"), [], "no pass on a capped page");
@@ -645,7 +655,7 @@ for (const [label, body] of [
   ["1,001 <img> with src and usemap", Array.from({ length: 1001 }, () => "<img src=\"/synthetic.png\" usemap=\"#map\" alt=\"\">").join("\n")],
   ["1,001 itemscope <div>s with itemtype and itemid", Array.from({ length: 1001 }, (_, index) => `<div itemscope itemtype="types/product" itemid="items/${index + 1}"></div>`).join("\n")],
 ]) {
-  test(`C6 reviewer probe: ${label}: candidate_cap_reached on every rule key, no pass, through evaluateSmokeQc and doctor --built`, async (t) => {
+  test(`C6 ${label}: candidate_cap_reached on every rule key, no pass, through evaluateSmokeQc and doctor --built`, async (t) => {
     assertCandidateCapped(evaluateProduction(page({ body })), label);
     const rows = assertSmoke(await builtDoctor(tempTree(t, { "index.html": page({ body }) })), pageLevelRows(PAGE, CANDIDATE_CAP));
     assert.deepEqual(Object.values(rows).filter((row) => row.result === "pass"), [], `${label} under doctor --built: no pass`);
@@ -657,7 +667,6 @@ for (const [label, body] of [
 
 const DEPLOY = "https://preview.example.invalid/";
 const pageFile = (dir) => join(dir, PAGE);
-const builtResolver = (dir) => (src, builtPath) => resolveBuiltAssetPath(src, builtPath, dir);
 
 // The smoke results evaluateSmokeQc gives a doctor --built tree, with the
 // pages and scripts doctor reads (the bounded collector) and, optionally, a
@@ -666,7 +675,7 @@ function evaluateTree(dir, { deployBase = null, environment = null } = {}) {
   const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
   assert.ok(scope.ok, "setup: the built scope resolves");
   const pages = collectBuiltPageIdentityInputs(scope, dir, { pages: collectCartPlaceholderPages(dir, CAMPAIGN), bounds: SMOKE_QC_LIMITS });
-  return evaluateSmokeQc({ pages, environment, siteRoot: join(dir, "_site"), deployBase, resolveAsset: builtResolver(dir) });
+  return evaluateSmokeQc({ pages, environment, siteRoot: join(dir, "_site"), deployBase });
 }
 const boundedScriptsOf = (dir) => {
   const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
@@ -678,7 +687,7 @@ for (const [label, escape] of [["#", "%23"], ["?", "%3F"]]) {
   const decoyName = `a${escape}b.png`;
   const realName = `a${label}b.png`;
 
-  test(`C7 reviewer probe: absolute same-base og:image img/${decoyName} with only a file literally named ${decoyName}: og_image_missing_file through the packet doctor; the decoded ${realName} passes`, async (t) => {
+  test(`C7 absolute same-base og:image img/${decoyName} with only a file literally named ${decoyName}: og_image_missing_file through the packet doctor; the decoded ${realName} passes`, async (t) => {
     const decoy = builtPacket(t, { landing: packetPage("landing", { ogImage: `${ORIGIN}/${SLUG}/img/${decoyName}` }), files: { [`_site/${SLUG}/img/${decoyName}`]: "synthetic decoy bytes\n" } });
     assertSmoke(doctorOf(decoy.packetPath, {}), packetRows({ landing: { set: { [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] } } }));
 
@@ -686,7 +695,7 @@ for (const [label, escape] of [["#", "%23"], ["?", "%3F"]]) {
     assertSmoke(doctorOf(real.packetPath, {}), packetRows());
   });
 
-  test(`C7 reviewer probe: absolute same-base og:image img/${decoyName} through evaluateSmokeQc: the ${decoyName} decoy reads og_image_missing_file; the decoded ${realName} passes`, (t) => {
+  test(`C7 absolute same-base og:image img/${decoyName} through evaluateSmokeQc: the ${decoyName} decoy reads og_image_missing_file; the decoded ${realName} passes`, (t) => {
     const ogImage = `${DEPLOY}${CAMPAIGN}/img/${decoyName}`;
     const decoy = tempTree(t, { "index.html": page({ ogImage }), [`img/${decoyName}`]: "synthetic decoy bytes\n" });
     assert.deepEqual(evaluateTree(decoy, { deployBase: DEPLOY, environment: "production" }).map(summarize).sort(byId), deployRows({ [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] }).sort(byId));
@@ -695,7 +704,7 @@ for (const [label, escape] of [["#", "%23"], ["?", "%3F"]]) {
   });
 }
 
-test("C7 reviewer probe: <script src=\"real%20script.js\"> with only a file literally named real%20script.js: unexercised (script_unreadable) under doctor --built and evaluateSmokeQc, never anchor_target_missing", async (t) => {
+test("C7 <script src=\"real%20script.js\"> with only a file literally named real%20script.js: unexercised (script_unreadable) under doctor --built and evaluateSmokeQc, never anchor_target_missing", async (t) => {
   const content = page({ head: "<script src=\"real%20script.js\"></script>", body: "<a href=\"#x\">x</a>" });
   const decoy = tempTree(t, { "index.html": content, "real%20script.js": "const unrelated=1;\n" });
   const expected = pageRows(PAGE, { anchors: { x: ["unexercised", "script_unreadable"] } });
@@ -775,3 +784,301 @@ for (const [label, markup] of [
     assertNotCandidateCapped(evaluateProduction(page({ body: `${images(2000 - PAGE_CANDIDATES - 1)}\n${markup}` })), `${label} in <template> as candidate 2,000`);
   });
 }
+
+// ---------------------------------------------------------------------------
+// C9: URLs read by the URL parser
+
+const unique = "unique_target_42";
+const uniqueAnchor = `<a href="#${unique}">target</a>`;
+const namesUnique = `window.syntheticTarget = "${unique}";\n`;
+
+for (const src of ["/a%20b.js", "/a b.js"]) {
+  test(`C9 root-relative <script src="${src}"> with only the campaign-local ${CAMPAIGN}/a b.js: unexercised (script_unreadable) under doctor --built and evaluateSmokeQc; _site/a b.js is the file read`, async (t) => {
+    const content = page({ head: `<script src="${src}"></script>`, body: uniqueAnchor });
+    const decoy = tempTree(t, { "index.html": content, "a b.js": "const unrelated=1;\n" });
+    const expected = pageRows(PAGE, { anchors: { [unique]: ["unexercised", "script_unreadable"] } });
+    assertSmoke(await builtDoctor(decoy), expected);
+    assert.deepEqual(evaluateTree(decoy).map(summarize).sort(byId), [...expected].sort(byId));
+    assert.deepEqual(boundedScriptsOf(decoy), [{ src, file: "./_site/a b.js", unread: "missing" }]);
+
+    const real = tempTree(t, { "index.html": content });
+    writeFile(join(real, "_site", "a b.js"), namesUnique);
+    const found = pageRows(PAGE, { anchors: { [unique]: ["review", "anchor_target_possibly_script_created"] } });
+    assertSmoke(await builtDoctor(real), found);
+    assert.deepEqual(evaluateTree(real).map(summarize).sort(byId), [...found].sort(byId));
+  });
+}
+
+test(`C9 <script src="../${CAMPAIGN}/a\\b.js"> with only a file literally named a\\b.js: unexercised (script_unreadable) under doctor --built and evaluateSmokeQc; a/b.js is the file read`, async (t) => {
+  const src = `../${CAMPAIGN}/a\\b.js`;
+  const content = page({ head: `<script src="${src}"></script>`, body: uniqueAnchor });
+  const decoy = tempTree(t, { "index.html": content, "a\\b.js": "const unrelated=1;\n" });
+  const expected = pageRows(PAGE, { anchors: { [unique]: ["unexercised", "script_unreadable"] } });
+  assertSmoke(await builtDoctor(decoy), expected);
+  assert.deepEqual(evaluateTree(decoy).map(summarize).sort(byId), [...expected].sort(byId));
+  assert.deepEqual(boundedScriptsOf(decoy), [{ src, file: `./_site/${CAMPAIGN}/a/b.js`, unread: "missing" }]);
+
+  const real = tempTree(t, { "index.html": content, "a/b.js": namesUnique });
+  const found = pageRows(PAGE, { anchors: { [unique]: ["review", "anchor_target_possibly_script_created"] } });
+  assertSmoke(await builtDoctor(real), found);
+  assert.deepEqual(evaluateTree(real).map(summarize).sort(byId), [...found].sort(byId));
+});
+
+test("C9 og:image img\\og.png with only a file literally named img\\og.png: og_image_missing_file under doctor --built and evaluateSmokeQc; img/og.png reads og_image_not_absolute", async (t) => {
+  const content = page({ ogImage: "img\\og.png" });
+  const decoy = tempTree(t, { "index.html": content, "img\\og.png": "synthetic decoy bytes\n" });
+  const missing = pageRows(PAGE, { set: { [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] } });
+  assertSmoke(await builtDoctor(decoy), missing);
+  assert.deepEqual(evaluateTree(decoy).map(summarize).sort(byId), [...missing].sort(byId));
+
+  const real = tempTree(t, { "index.html": content, "img/og.png": "synthetic image bytes\n" });
+  const present = pageRows(PAGE, { set: { [KEY.ogImageTarget]: ["warning", "og_image_not_absolute"] } });
+  const result = await builtDoctor(real);
+  const rows = assertSmoke(result, present);
+  assert.deepEqual(evaluateTree(real).map(summarize).sort(byId), [...present].sort(byId));
+  assert.equal(rows[idOf(PAGE, KEY.ogImageTarget)].observation.og.image_target, `/${CAMPAIGN}/img/og.png`);
+});
+
+test(`C9 root-relative og:image /img/og.png with only the campaign-local ${CAMPAIGN}/img/og.png: og_image_missing_file under doctor --built and evaluateSmokeQc; _site/img/og.png reads og_image_not_absolute`, async (t) => {
+  const content = page({ ogImage: "/img/og.png" });
+  const decoy = tempTree(t, { "index.html": content, "img/og.png": "synthetic decoy bytes\n" });
+  const missing = pageRows(PAGE, { set: { [KEY.ogImageTarget]: ["warning", "og_image_missing_file"] } });
+  assertSmoke(await builtDoctor(decoy), missing);
+  assert.deepEqual(evaluateTree(decoy).map(summarize).sort(byId), [...missing].sort(byId));
+
+  const real = tempTree(t, { "index.html": content });
+  writeFile(join(real, "_site", "img", "og.png"), "synthetic image bytes\n");
+  const present = pageRows(PAGE, { set: { [KEY.ogImageTarget]: ["warning", "og_image_not_absolute"] } });
+  assertSmoke(await builtDoctor(real), present);
+  assert.deepEqual(evaluateTree(real).map(summarize).sort(byId), [...present].sort(byId));
+});
+
+// Markup naming the primary asset host, each as the URL parser reads it.
+const ASSET_HOST_MARKUP = [
+  ["userinfo with ;", "<img src=\"https://u;s@cdn.29next.store/x\" alt=\"\">"],
+  ["userinfo with :", "<img src=\"https://u:p@cdn.29next.store/x\" alt=\"\">"],
+  ["userinfo with %40", "<img src=\"https://u%40x@cdn.29next.store/x\" alt=\"\">"],
+  ["userinfo with @@", "<img src=\"https://u@@cdn.29next.store/x\" alt=\"\">"],
+  ["userinfo with , ( ) { } |", "<img src=\"https://u,(s){x}|y@cdn.29next.store/x\" alt=\"\">"],
+  ["protocol-relative with userinfo", "<img src=\"//u;s@cdn.29next.store/x\" alt=\"\">"],
+  ["an uppercase host with a trailing root dot", "<img src=\"https://CDN.29NEXT.STORE./x\" alt=\"\">"],
+  ["a TAB character reference inside the host", "<img src=\"https://cdn.29&#9;next.store/x\" alt=\"\">"],
+  ["a <style> url() with userinfo", "<style>.hero{background:url(https://u;s@cdn.29next.store/x)}</style>"],
+];
+
+// Markup whose URL host is not the primary asset host, though the host
+// string appears in it.
+const NOT_ASSET_HOST_MARKUP = [
+  ["the asset host as userinfo", "<img src=\"https://cdn.29next.store@example.invalid/x\" alt=\"\">"],
+  ["the asset host before ; in userinfo", "<img src=\"https://cdn.29next.store;x@example.invalid/x\" alt=\"\">"],
+  ["a data-* JSON value naming the asset host (the whole value is not a URL)", "<div data-config='{\"image\":\"https://u;s@cdn.29next.store/x\"}'></div>"],
+];
+
+for (const [label, markup] of ASSET_HOST_MARKUP) {
+  test(`C9 ${label}: warning (primary_asset_host) under doctor --built and evaluateSmokeQc`, async (t) => {
+    const content = page({ body: markup });
+    const dir = tempTree(t, { "index.html": content });
+    assertSmoke(await builtDoctor(dir), pageRows(PAGE, { set: { [KEY.assetHost]: ["warning", "primary_asset_host"] } }));
+    assert.deepEqual(evaluateProduction(content).map(summarize).sort(byId), productionRows({ [KEY.assetHost]: ["warning", "primary_asset_host"] }).sort(byId));
+  });
+}
+
+for (const [label, markup] of NOT_ASSET_HOST_MARKUP) {
+  test(`C9 ${label}: the asset host rule passes under doctor --built and evaluateSmokeQc`, async (t) => {
+    const content = page({ body: markup });
+    const dir = tempTree(t, { "index.html": content });
+    assertSmoke(await builtDoctor(dir), pageRows(PAGE));
+    assert.deepEqual(evaluateProduction(content).map(summarize).sort(byId), productionRows({}).sort(byId));
+  });
+}
+
+const LOOPBACK_MARKUP = [
+  ["userinfo with ;", "<img src=\"https://u;s@localhost/x\" alt=\"\">"],
+  ["userinfo with :", "<img src=\"http://u:p@localhost:8080/x\" alt=\"\">"],
+  ["userinfo with %40", "<img src=\"http://u%40x@127.0.0.1/x\" alt=\"\">"],
+  ["userinfo with @@", "<img src=\"http://u@@localhost/x\" alt=\"\">"],
+  ["an uppercase host with a trailing root dot", "<img src=\"http://LOCALHOST.:3000/x\" alt=\"\">"],
+  ["the IPv6 loopback with userinfo and a port", "<img src=\"http://u;s@[::1]:8080/x\" alt=\"\">"],
+  ["the IPv6 loopback written in full, with a port", "<img src=\"http://[0:0:0:0:0:0:0:1]:8080/x\" alt=\"\">"],
+  ["a TAB character reference inside the host", "<img src=\"http://local&#9;host:8080/x\" alt=\"\">"],
+];
+
+const NOT_LOOPBACK_MARKUP = [
+  ["localhost before ; in userinfo", "<img src=\"http://localhost;x@example.invalid/x\" alt=\"\">"],
+  ["localhost as a subdomain label", "<img src=\"http://localhost.example.invalid/x\" alt=\"\">"],
+];
+
+for (const [label, markup] of LOOPBACK_MARKUP) {
+  test(`C9 ${label}: warning (loopback_url) in a production build through evaluateSmokeQc`, () => {
+    assert.deepEqual(evaluateProduction(page({ body: markup })).map(summarize).sort(byId), productionRows({ [KEY.loopback]: ["warning", "loopback_url"] }).sort(byId));
+  });
+}
+
+for (const [label, markup] of NOT_LOOPBACK_MARKUP) {
+  test(`C9 ${label}: the loopback rule passes in a production build through evaluateSmokeQc`, () => {
+    assert.deepEqual(evaluateProduction(page({ body: markup })).map(summarize).sort(byId), productionRows({}).sort(byId));
+  });
+}
+
+const TAILWIND_SRCS = [
+  ["userinfo with ;", "https://u;s@cdn.tailwindcss.com/x"],
+  ["userinfo with :", "https://u:p@cdn.tailwindcss.com"],
+  ["userinfo with %40", "https://u%40x@cdn.tailwindcss.com"],
+  ["userinfo with @@", "https://u@@cdn.tailwindcss.com"],
+  ["an uppercase host with a trailing root dot", "https://CDN.TAILWINDCSS.COM./"],
+];
+
+const NOT_TAILWIND_SRCS = [
+  ["the Tailwind host before ; in userinfo", "https://cdn.tailwindcss.com;x@example.invalid/x.js"],
+  ["the Tailwind URL only in the query", "https://example.invalid/x.js?from=https://cdn.tailwindcss.com"],
+];
+
+for (const [label, src] of TAILWIND_SRCS) {
+  test(`C9 Tailwind <script src> with ${label}: warning (tailwind_cdn_in_production) through evaluateSmokeQc`, () => {
+    assert.deepEqual(evaluateProduction(page({ head: `<script src="${src}"></script>` })).map(summarize).sort(byId), productionRows({ [KEY.tailwind]: ["warning", "tailwind_cdn_in_production"] }).sort(byId));
+  });
+}
+
+for (const [label, src] of NOT_TAILWIND_SRCS) {
+  test(`C9 <script src> with ${label}: the Tailwind rule passes through evaluateSmokeQc`, () => {
+    assert.deepEqual(evaluateProduction(page({ head: `<script src="${src}"></script>` })).map(summarize).sort(byId), productionRows({}).sort(byId));
+  });
+}
+
+test("C9 through the packet doctor, recorded production: userinfo with ; before the asset host, localhost and the Tailwind host each warns; before another host each passes", async (t) => {
+  for (const [key, reason, markup, inverse] of [
+    [KEY.assetHost, "primary_asset_host", { body: "<img src=\"https://u;s@cdn.29next.store/x\" alt=\"\">" }, { body: "<img src=\"https://cdn.29next.store;x@example.invalid/x\" alt=\"\">" }],
+    [KEY.loopback, "loopback_url", { body: "<img src=\"https://u;s@localhost/x\" alt=\"\">" }, { body: "<img src=\"https://localhost;x@example.invalid/x\" alt=\"\">" }],
+    [KEY.tailwind, "tailwind_cdn_in_production", { head: "<script src=\"https://u;s@cdn.tailwindcss.com/x\"></script>" }, { head: "<script src=\"https://cdn.tailwindcss.com;x@example.invalid/x.js\"></script>" }],
+  ]) {
+    const f = builtPacket(t, { env: "production", landing: packetPage("landing", markup) });
+    assertSmoke(doctorOf(f.packetPath, {}), packetRows({ landing: { set: { [key]: ["warning", reason] } } }));
+    const g = builtPacket(t, { env: "production", landing: packetPage("landing", inverse) });
+    assertSmoke(doctorOf(g.packetPath, {}), packetRows());
+  }
+});
+
+// ---------------------------------------------------------------------------
+// C10: host candidates are whole values or CSS tokens
+
+for (const [css, expected] of [
+  ["url(a\\)b)", ["a)b"]],
+  ["URL(x)", ["x"]],
+  ["u\\72l(x)", ["x"]],
+  ["\\75 rl(x)", ["x"]],
+  ["url(\\31 23)", ["123"]],
+  ["url(a\\0 b)", ["a�b"]],
+  ["url(  x  )", ["x"]],
+  ["url( \"s\" )", ["s"]],
+  ["url(x", ["x"]],
+  ["\"a\\\"b\" 'c\\'d'", ["a\"b", "c'd"]],
+  ["'a\\\nb'", ["ab"]],
+  ["\"unterminated", ["unterminated"]],
+  ["\"a\nb", []],
+  ["url(x y) url(z)", ["z"]],
+  ["url(x\"y) url(z)", ["z"]],
+  ["url(x(y) url(z)", ["z"]],
+  ["url(x\\\ny) url(z)", ["z"]],
+  ["url(x y\\) url(w)) url(z)", ["z"]],
+  ["/* url(x) \"y\" */", []],
+  ["1url(x)", []],
+  ["#url(x)", []],
+  ["@url(x)", []],
+  ["-url(x)", []],
+  ["<!--url(x)-->", ["x"]],
+]) {
+  test(`C10 cssUrlValues(${JSON.stringify(css)}) reads ${JSON.stringify(expected)}`, () => {
+    assert.deepEqual(cssUrlValues(css), expected);
+  });
+}
+
+// Markup whose host candidate is the primary asset host.
+const ASSET_HOST_TOKEN_MARKUP = [
+  ["an unquoted <style> url() with an escaped ) in the userinfo", "<style>.hero{background:url(https://u\\)@cdn.29next.store/x)}</style>"],
+  ["a style attribute url() with an escaped ) in the userinfo", "<div class=\"hero\" style=\"background:url(https://u\\)@cdn.29next.store/x)\"></div>"],
+  ["a <style> double-quoted string with an escaped quote in the userinfo", "<style>.hero{background:url(\"https://u\\\"@cdn.29next.store/x\")}</style>"],
+  ["a <style> single-quoted string with an escaped quote in the userinfo", "<style>.hero{background:url('https://u\\'@cdn.29next.store/x')}</style>"],
+  ["url( \"…\" ) with whitespace", "<style>.hero{background:url( \"https://cdn.29next.store/x\" )}</style>"],
+  ["url( '…' ) with whitespace and an escaped quote", "<style>.hero{background:url( 'https://u\\'@cdn.29next.store/x' )}</style>"],
+  ["an escaped url( name", "<style>.hero{background:u\\72l(https://cdn.29next.store/x)}</style>"],
+  ["a hex escape inside the host", "<style>.hero{background:url(https://cdn\\2e 29next.store/x)}</style>"],
+  ["a url() running to the end of the <style> text", "<style>.hero{background:url(https://cdn.29next.store/x</style>"],
+  ["a srcset entry after a descriptor and a comma", "<img srcset=\"/a.png 1x, https://cdn.29next.store/b.png 2x\" alt=\"\">"],
+  ["a srcset entry after a comma with no space", "<img srcset=\"/a.png 100w,https://cdn.29next.store/b.png 200w\" alt=\"\">"],
+  ["a srcset URL holding a comma", "<img srcset=\"https://cdn.29next.store/a,b.png 1x\" alt=\"\">"],
+  ["a srcset entry after trailing commas", "<img srcset=\"/a.png,,, https://cdn.29next.store/b.png\" alt=\"\">"],
+  ["the second URL of a ping list", "<a href=\"/x\" ping=\"/p https://cdn.29next.store/p\">x</a>"],
+];
+
+// Markup holding the asset host string where no host candidate names it.
+const NOT_ASSET_HOST_TOKEN_MARKUP = [
+  ["a script src naming the asset host in its query", "<script src=\"https://safe.example/x?from=https://cdn.29next.store/x\"></script>"],
+  ["a quoted <style> url() naming the asset host in its query", "<style>.hero{background:url(\"https://safe.example/x?from=https://cdn.29next.store/x\")}</style>"],
+  ["an unquoted <style> url() naming the asset host in its query", "<style>.hero{background:url(https://safe.example/x?from=https://cdn.29next.store/x)}</style>"],
+  ["a style attribute url() naming the asset host in its query", "<div style=\"background:url(https://safe.example/x?from=https://cdn.29next.store/x)\"></div>"],
+  ["url( \"…\" ) with whitespace naming the asset host in its query", "<style>.hero{background:url( \"https://safe.example/x?from=https://cdn.29next.store/x\" )}</style>"],
+  ["a <style> string with an escaped quote before the asset host URL", "<style>.hero{background:url(\"https://safe.example/x?q=\\\"https://cdn.29next.store/x\")}</style>"],
+  ["a srcset URL naming the asset host in its query", "<img srcset=\"https://safe.example/x?from=https://cdn.29next.store/x 1x\" alt=\"\">"],
+  ["a srcset URL holding a comma before the asset host URL", "<img srcset=\"https://safe.example/a,https://cdn.29next.store/b 1x\" alt=\"\">"],
+  ["a data-* URL naming the asset host in its query", "<div data-src=\"https://safe.example/x?from=https://cdn.29next.store/x\"></div>"],
+  ["a <meta content> URL naming the asset host in its query", "<meta name=\"synthetic\" content=\"https://safe.example/x?from=https://cdn.29next.store/x\">"],
+  ["alt text naming the asset host URL", "<img src=\"/a.png\" alt=\"see https://cdn.29next.store/x\">"],
+  ["a bad-url token (whitespace inside)", "<style>.hero{background:url(https://cdn.29next.store/x y)}</style>"],
+  ["a bad-url token (a quote inside)", "<style>.hero{background:url(https://cdn.29next.store/x\"y)}</style>"],
+  ["a bad-string token (a newline inside)", "<style>.hero{content:\"https://cdn.29next.store/x\n}</style>"],
+  ["a CSS comment holding a url()", "<style>/* url(https://cdn.29next.store/x) */ .hero{}</style>"],
+  ["a CSS comment holding a quoted URL", "<style>/* \"https://cdn.29next.store/x\" */ .hero{}</style>"],
+  ["a dimension 1url( (not a url( token)", "<style>.hero{margin:1url(https://cdn.29next.store/x)}</style>"],
+];
+
+for (const [label, markup] of ASSET_HOST_TOKEN_MARKUP) {
+  test(`C10 ${label}: warning (primary_asset_host) under doctor --built and evaluateSmokeQc`, async (t) => {
+    const content = page({ body: markup });
+    assertSmoke(await builtDoctor(tempTree(t, { "index.html": content })), pageRows(PAGE, { set: { [KEY.assetHost]: ["warning", "primary_asset_host"] } }));
+    assert.deepEqual(evaluateProduction(content).map(summarize).sort(byId), productionRows({ [KEY.assetHost]: ["warning", "primary_asset_host"] }).sort(byId));
+  });
+}
+
+for (const [label, markup] of NOT_ASSET_HOST_TOKEN_MARKUP) {
+  test(`C10 ${label}: the asset host rule passes under doctor --built and evaluateSmokeQc`, async (t) => {
+    const content = page({ body: markup });
+    assertSmoke(await builtDoctor(tempTree(t, { "index.html": content })), pageRows(PAGE));
+    assert.deepEqual(evaluateProduction(content).map(summarize).sort(byId), productionRows({}).sort(byId));
+  });
+}
+
+const LOOPBACK_TOKEN_MARKUP = [
+  ["an unquoted <style> url() with an escaped ) in the userinfo", "<style>.hero{background:url(http://u\\)@localhost/x)}</style>"],
+  ["a style attribute url() with an escaped ) in the userinfo", "<div style=\"background:url(http://u\\)@127.0.0.1/x)\"></div>"],
+];
+
+const NOT_LOOPBACK_TOKEN_MARKUP = [
+  ["a script src naming localhost in its query", "<script src=\"https://safe.example/x?from=http://localhost:8080/x\"></script>"],
+  ["a quoted <style> url() naming localhost in its query", "<style>.hero{background:url(\"https://safe.example/x?from=http://localhost/x\")}</style>"],
+  ["a srcset URL naming localhost in its query", "<img srcset=\"https://safe.example/x?from=http://localhost/x 1x\" alt=\"\">"],
+  ["a data-* URL naming localhost in its query", "<div data-src=\"https://safe.example/x?from=http://localhost/x\"></div>"],
+];
+
+for (const [label, markup] of LOOPBACK_TOKEN_MARKUP) {
+  test(`C10 ${label}: warning (loopback_url) in a production build through evaluateSmokeQc`, () => {
+    assert.deepEqual(evaluateProduction(page({ body: markup })).map(summarize).sort(byId), productionRows({ [KEY.loopback]: ["warning", "loopback_url"] }).sort(byId));
+  });
+}
+
+for (const [label, markup] of NOT_LOOPBACK_TOKEN_MARKUP) {
+  test(`C10 ${label}: the loopback rule passes in a production build through evaluateSmokeQc`, () => {
+    assert.deepEqual(evaluateProduction(page({ body: markup })).map(summarize).sort(byId), productionRows({}).sort(byId));
+  });
+}
+
+test("C10 through the packet doctor, recorded production: url(https://u\\)@cdn.29next.store/x) and its localhost variant each warn; a script src naming either in its query passes", async (t) => {
+  for (const [key, reason, markup, inverse] of [
+    [KEY.assetHost, "primary_asset_host", "<style>.hero{background:url(https://u\\)@cdn.29next.store/x)}</style>", "<script src=\"https://safe.example/x?from=https://cdn.29next.store/x\"></script>"],
+    [KEY.loopback, "loopback_url", "<style>.hero{background:url(http://u\\)@localhost/x)}</style>", "<script src=\"https://safe.example/x?from=http://localhost/x\"></script>"],
+  ]) {
+    const f = builtPacket(t, { env: "production", landing: packetPage("landing", { body: markup }) });
+    assertSmoke(doctorOf(f.packetPath, {}), packetRows({ landing: { set: { [key]: ["warning", reason] } } }));
+    const g = builtPacket(t, { env: "production", landing: packetPage("landing", { body: inverse }) });
+    assertSmoke(doctorOf(g.packetPath, {}), packetRows());
+  }
+});
