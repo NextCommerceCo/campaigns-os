@@ -2,7 +2,7 @@
 // package-owned visual_review keys and the Polish side of the QC handoff
 // (contract §1.0 Reader sites "Polish media_weight", Agent-written evidence).
 //
-// Stand-in override shape (freeze addendum U5), passed in-process only:
+// Test-only stand-in checks, passed in-process only (no environment variable, flag or file can install one):
 //   readMediaWeight({ record, pageLoad, currentBuild, qcStandIns }) and
 //   main(argv, { qcStandIns }), with qcStandIns.polish =
 //   { thresholds, vocabulary, evaluate(cell, thresholds) => Derived[] }

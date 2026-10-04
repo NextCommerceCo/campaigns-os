@@ -4,7 +4,7 @@
 // synthetic operator "Jordan Lee", and stand-in records shaped like the
 // package records the contract names.
 //
-// Stand-in override (freeze addendum U5). Later-stream checks reach the code
+// Stand-in override. Test-only stand-in checks reach the code
 // only through one in-process object the test passes, never an environment
 // variable, argv flag, file on disk or default registry entry:
 //
@@ -202,7 +202,7 @@ export function campaignFixture({ setupCompleted = false, site = false, mutateSp
     sidecarPath: join(targetRepo, ".campaign-runtime/doctor-output.json"),
     qaSidecarPath: join(dir, ".campaign-runtime/qa-verdict.json"),
     // The stand-in 1.5 check reads this synthetic built page. The real check
-    // (stream C1) reads _site/; the producing phase re-runs the row there.
+    // reads the built site under _site/ instead.
     builtPagePath: join(dir, "qc-built", SLUG, "index.html"),
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
