@@ -102,6 +102,47 @@ const BUTTON_INPUT_TYPES = new Set(["button", "submit", "reset"]);
 // Never painted, never scanned.
 const UNSCANNED_ELEMENTS = new Set(["script", "style"]);
 
+// The ownership attributes. An element owns only when its attribute value is
+// exactly one of `values` (case and whitespace included: INCREASE or
+// " increase " owns nothing); with no `values` the SDK selects the attribute
+// by presence ([data-next-remove-item]), so any value owns. The item template
+// selector is resolved separately, as an exact #id.
+const P = SDK_TEMPLATE_PLACEHOLDERS;
+const ITEM_LISTS = P.item_list_containers.map((attribute) => ({ attribute }));
+const owns = (attrs, { attribute, values }) => attrs.has(attribute) && (values == null || values.includes(attrs.get(attribute)));
+const ownsItemList = (attrs) => ITEM_LISTS.some((ownership) => owns(attrs, ownership));
+
+// The loader is read only from a <script> a browser runs as a classic or
+// module script (HTML "prepare the script element"): an HTML-namespace
+// <script> outside <template>, <noscript>, SVG and MathML whose type, ASCII
+// whitespace stripped, is absent or empty, a JavaScript MIME type essence or
+// `module` (ASCII case-insensitive). A classic script with `nomodule` does
+// not run. Anything else (application/json, text/plain, importmap,
+// speculationrules, an SVG <script> ...) is no loader.
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+const SCRIPT_BARRIERS = new Set(["template", "noscript"]);
+// MIME Sniffing, "JavaScript MIME type".
+const JAVASCRIPT_MIME_TYPES = new Set([
+  "application/ecmascript",
+  "application/javascript",
+  "application/x-ecmascript",
+  "application/x-javascript",
+  "text/ecmascript",
+  "text/javascript",
+  "text/javascript1.0",
+  "text/javascript1.1",
+  "text/javascript1.2",
+  "text/javascript1.3",
+  "text/javascript1.4",
+  "text/javascript1.5",
+  "text/jscript",
+  "text/livescript",
+  "text/x-ecmascript",
+  "text/x-javascript",
+]);
+const ASCII_WHITESPACE_EDGES = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
+const asciiLowercase = (value) => value.replace(/[A-Z]/g, (c) => c.toLowerCase());
+
 // The loader is a script fetched over http(s) whose URL path ends in
 // `campaign-cart[@<spec>]/dist/loader.js`: the package segment is the whole
 // path segment (`not-campaign-cart@...` is another package), and an npm scope
@@ -230,14 +271,45 @@ const attrsOf = (node) => {
 
 const childrenOf = (node) => (node.tagName === "template" && node.content ? node.content.childNodes : node.childNodes) || [];
 
-// The page's SDK pin, read from its own loader <script src> only. No loader,
-// any loader with no exact version (none, @latest, a range), or two loaders
-// that disagree give no pin.
+// "classic", "module" or null: how a browser runs a <script> with these
+// attributes, from its type (or, with no type, its language).
+export function scriptKind(attrs) {
+  const type = attrs.get("type");
+  const language = attrs.get("language");
+  let kind;
+  if (type === "" || (type == null && (language == null || language === ""))) kind = "text/javascript";
+  else if (type != null) kind = type.replace(ASCII_WHITESPACE_EDGES, "");
+  else kind = `text/${language}`;
+  kind = asciiLowercase(kind);
+  if (JAVASCRIPT_MIME_TYPES.has(kind)) return attrs.has("nomodule") ? null : "classic";
+  return kind === "module" ? "module" : null;
+}
+
+// The <script> elements a browser runs, in document order, without
+// recursion: never below a <template>, a <noscript> or a non-HTML element.
+function executableScripts(document) {
+  const out = [];
+  const stack = [...(document.childNodes || [])].reverse();
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node.tagName || node.namespaceURI !== HTML_NAMESPACE) continue;
+    if (node.tagName === "script") {
+      if (scriptKind(attrsOf(node))) out.push(node);
+      continue;
+    }
+    if (SCRIPT_BARRIERS.has(node.tagName)) continue;
+    for (let i = (node.childNodes || []).length - 1; i >= 0; i -= 1) stack.push(node.childNodes[i]);
+  }
+  return out;
+}
+
+// The page's SDK pin, read from its own loader <script src> only, among the
+// scripts a browser runs. No loader, any loader with no exact version (none,
+// @latest, a range), or two loaders that disagree give no pin.
 export function readLoaderPin(document) {
   const versions = new Set();
   let unpinned = false;
-  for (const element of liveElements(document)) {
-    if (element.tagName !== "script") continue;
+  for (const element of executableScripts(document)) {
     const src = attrsOf(element).get("src");
     const loader = typeof src === "string" ? campaignCartLoader(src) : null;
     if (!loader) continue;
@@ -261,14 +333,13 @@ function indexLiveDocument(document) {
     for (const [name, value] of attrs) {
       if (TEMPLATE_ID_ATTRIBUTES.test(name) && value && !templateIds.has(value)) templateIds.set(value, name);
     }
-    if (SDK_TEMPLATE_PLACEHOLDERS.item_list_containers.some((name) => attrs.has(name)) && attrs.has(SDK_TEMPLATE_PLACEHOLDERS.item_template_selector)) {
-      selectors.push(attrs.get(SDK_TEMPLATE_PLACEHOLDERS.item_template_selector));
-    }
+    if (ownsItemList(attrs) && attrs.has(P.item_template_selector)) selectors.push(attrs.get(P.item_template_selector));
   }
   const owned = new Set();
   let unresolved = false;
   for (const selector of selectors) {
-    const match = String(selector ?? "").trim().match(/^#([A-Za-z0-9_-]+)$/);
+    // Exact, like every ownership value: a padded selector is unresolved.
+    const match = String(selector ?? "").match(/^#([A-Za-z0-9_-]+)$/);
     if (!match) {
       unresolved = true;
       continue;
@@ -318,14 +389,13 @@ function scanPage(document, { selectorTargets, idTemplates }, onCandidate) {
   const scopes = (ctx, node, tag, attrs) => {
     const self = { ...ctx };
     if (tag === "template") self.template = true;
-    if (SDK_TEMPLATE_PLACEHOLDERS.item_list_containers.some((name) => attrs.has(name))) self.itemList = true;
+    if (ownsItemList(attrs)) self.itemList = true;
     if (selectorTargets.has(node)) self.itemList = true;
-    if (attrs.has(SDK_TEMPLATE_PLACEHOLDERS.quantity_text.attribute)) self.quantityText = true;
+    if (owns(attrs, P.quantity_text)) self.quantityText = true;
     const inner = { ...self };
     const allowed = [];
-    const qc = SDK_TEMPLATE_PLACEHOLDERS.quantity_control;
-    if (qc.values.includes(String(attrs.get(qc.attribute) ?? "").trim().toLowerCase())) allowed.push(...qc.tokens);
-    if (attrs.has(SDK_TEMPLATE_PLACEHOLDERS.remove_item.attribute)) allowed.push(...SDK_TEMPLATE_PLACEHOLDERS.remove_item.tokens);
+    if (owns(attrs, P.quantity_control)) allowed.push(...P.quantity_control.tokens);
+    if (owns(attrs, P.remove_item)) allowed.push(...P.remove_item.tokens);
     if (allowed.length) inner.allowed = new Set([...ctx.allowed, ...allowed]);
     inner.owner = sdkOwnerOf(attrs, node, idTemplates) || ctx.owner;
     return { self, inner };
@@ -372,8 +442,18 @@ function scanPage(document, { selectorTargets, idTemplates }, onCandidate) {
 }
 
 // One page's raw observation: the pin, and either a page-level outcome or the
-// unowned candidates grouped per token or shape, in first-seen order.
+// unowned candidates grouped per token or shape, in first-seen order. Any
+// error reading or parsing the page reads it unreadable; none throws out of
+// the check.
 function observePage(page) {
+  try {
+    return observeReadablePage(page);
+  } catch {
+    return { pin: null, outcome: R.PAGE_UNREADABLE };
+  }
+}
+
+function observeReadablePage(page) {
   if (page.unreadable) return { pin: null, outcome: R.PAGE_UNREADABLE };
   // A page over the size cap may come without its HTML.
   const bytes = Number.isFinite(page.bytes) ? page.bytes : typeof page.content === "string" ? Buffer.byteLength(page.content, "utf8") : null;

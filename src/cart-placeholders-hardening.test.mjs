@@ -1,9 +1,10 @@
 // Raw cart placeholders (`built_output.cart_placeholders`): regression rows
-// for the token grammar, loader identity, the ready line, element ownership
-// and page depth.
+// for the token grammar, loader identity, the ready line, element ownership,
+// page depth, ownership values, the loader element and read failures.
 // Every page here is synthetic; hosts are example.invalid.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import fs, { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after, afterEach } from "node:test";
@@ -18,7 +19,7 @@ after(() => assertNoNetworkAttempts());
 const { evaluateCartPlaceholders } = await import("./cart-placeholders.mjs");
 const { SDK_TEMPLATE_PLACEHOLDERS } = await import("./sdk-attribute-index.mjs");
 const { doctorBuiltOutput } = await import("./doctor/inspect.mjs");
-const { recordCartPlaceholders } = await import("./doctor/checks.mjs");
+const { collectCartPlaceholderPages, recordCartPlaceholders } = await import("./doctor/checks.mjs");
 
 const CAMPAIGN = "example-campaign";
 const PAGE = `_site/${CAMPAIGN}/index.html`;
@@ -385,4 +386,156 @@ test("token grammar: a field is any run of non-space, non-brace, non-dot charact
 
   // End to end through doctor --built.
   assert.deepEqual(summary(await builtDoctor(t, html({ body: "<p>{item.first-name}</p>" }))), ["warning/live_token {item.first-name}"]);
+});
+
+test("ownership values: an element owns only when its ownership attribute value is exactly a vendored owning value; a case variant, padding or an unknown value owns nothing", async (t) => {
+  // data-next-quantity owns {quantity} and {step} only at exactly increase,
+  // decrease or set.
+  const exact = SDK_TEMPLATE_PLACEHOLDERS.quantity_control.values;
+  assert.deepEqual([...exact], ["increase", "decrease", "set"], "setup: the vendored owning values");
+  const variants = ["INCREASE", "Increase", "DeCrease", "SET", " increase ", "increase\t", "\tset", "decrease\n", "decrease ", " set", "increase-all", "inc", ""];
+  const quantity = (value, token) => html({ body: `<button type="button" data-next-quantity="${value}">${token}</button>` });
+  const pages = [];
+  for (const token of ["{quantity}", "{step}"]) {
+    exact.forEach((value, i) => pages.push([`exact-${token}-${i}.html`, quantity(value, token), "pass/null page"]));
+    variants.forEach((value, i) => pages.push([`variant-${token}-${i}.html`, quantity(value, token), `warning/live_token ${token}`]));
+  }
+  // Presence-selected attributes own at any value; the item template
+  // selector resolves only as an exact #id, so a padded one is unresolved.
+  const presence = [
+    ["remove-item-bare.html", "<button data-next-remove-item>Remove {quantity}</button>"],
+    ["remove-item-any.html", "<button data-next-remove-item=\" ANY \">Remove {quantity}</button>"],
+    ["quantity-text-any.html", "<span data-next-quantity-text=\"X\">{qty+1}</span>"],
+    ["cart-items-any.html", "<div data-next-cart-items=\" Yes \"><p>{item.name}</p></div>"],
+    ["order-items-any.html", "<ul data-next-order-items=\"false\"><li>{line.name}</li></ul>"],
+    ["selector-exact.html", "<div data-next-cart-items data-item-template-selector=\"#row\"></div>\n<div id=\"row\" hidden><p>{item.name}</p></div>"],
+  ];
+  for (const [file, body] of presence) pages.push([file, html({ body }), "pass/null page"]);
+  for (const [file, selector] of [["selector-padded.html", " #row "], ["selector-tab.html", "#row\t"]]) {
+    pages.push([file, html({ body: `<div data-next-cart-items data-item-template-selector="${selector}"></div>\n<div id="row" hidden><p>{item.name}</p></div>` }), "review/template_selector_unresolved {item.name}"]);
+  }
+  const byPage = evaluate(pages.map(([file, content]) => [file, content]));
+  for (const [file, , expected] of pages) assert.deepEqual(summary(byPage.get(file)), [expected], file);
+
+  // End to end through doctor --built.
+  assert.deepEqual(summary(await builtDoctor(t, quantity("INCREASE", "{quantity}"))), ["warning/live_token {quantity}"]);
+  assert.deepEqual(summary(await builtDoctor(t, quantity(" increase ", "{step}"))), ["warning/live_token {step}"]);
+  assert.deepEqual(summary(await builtDoctor(t, quantity("increase", "{step}"))), ["pass/null page"]);
+});
+
+test("loader element: only a <script> a browser runs as a classic or module script supplies the pin; any other script gives none", async (t) => {
+  const SRC = "https://cdn.example.invalid/campaign-cart@v0.4.40/dist/loader.js";
+  const script = (attrs) => `<script ${attrs} src="${SRC}"></script>`;
+  const javascriptTypes = [
+    "application/ecmascript", "application/javascript", "application/x-ecmascript", "application/x-javascript",
+    "text/ecmascript", "text/javascript", "text/javascript1.0", "text/javascript1.1", "text/javascript1.2",
+    "text/javascript1.3", "text/javascript1.4", "text/javascript1.5", "text/jscript", "text/livescript",
+    "text/x-ecmascript", "text/x-javascript",
+  ];
+  const accepted = [
+    `<script src="${SRC}"></script>`,
+    script("type=\"\""),
+    ...javascriptTypes.map((type) => script(`type="${type}"`)),
+    script("type=\"TEXT/JavaScript\""),
+    script("type=\" text/javascript\n\""),
+    script("type=\"module\""),
+    script("type=\"MODULE\""),
+    script("type=\"\tmodule \""),
+    script("type=\"module\" nomodule"),
+    script("language=\"javascript\""),
+    script("language=\"\""),
+    script("type=\"\" language=\"vbscript\""),
+  ];
+  const refused = [
+    script("type=\"application/json\""),
+    script("type=\"application/ld+json\""),
+    script("type=\"text/plain\""),
+    script("type=\"importmap\""),
+    script("type=\"speculationrules\""),
+    script("type=\"text/template\""),
+    script("type=\"text/babel\""),
+    script("type=\"javascript\""),
+    script("type=\"text/javascript; charset=utf-8\""),
+    script("type=\"text/javascript \""),
+    script("language=\"vbscript\""),
+    script("nomodule"),
+    script("type=\"text/javascript\" nomodule"),
+    `<template>${script("type=\"module\"")}</template>`,
+    `<noscript>${script("")}</noscript>`,
+    `<svg>${script("")}</svg>`,
+    `<svg><script href="${SRC}"></script></svg>`,
+    `<svg><foreignObject>${script("")}</foreignObject></svg>`,
+    `<math>${script("")}</math>`,
+  ];
+  const page = (markup) => html({ loaders: [], body: `${markup}\n${TEMPLATE_ONLY}` });
+  const byPage = evaluate([
+    ...accepted.map((markup, i) => [`accepted-${i}.html`, page(markup)]),
+    ...refused.map((markup, i) => [`refused-${i}.html`, page(markup)]),
+  ]);
+  accepted.forEach((markup, i) => {
+    const rows = byPage.get(`accepted-${i}.html`);
+    assert.deepEqual(summary(rows), ["pass/null page"], markup);
+    assert.equal(rows[0].observation.sdk_pin, "0.4.40", `${markup}: pin`);
+  });
+  refused.forEach((markup, i) => {
+    const rows = byPage.get(`refused-${i}.html`);
+    assert.deepEqual(summary(rows), ["unexercised/sdk_pin_unknown page"], markup);
+    assert.equal(rows[0].observation.sdk_pin, null, `${markup}: no pin`);
+  });
+
+  // A non-running look-alike beside the real loader adds no second version.
+  const mixed = evaluate([["mixed.html", page(`${script("type=\"application/json\"").replace("v0.4.40", "v0.4.39")}\n<script src="${SRC}"></script>`)]]);
+  assert.deepEqual(summary(mixed.get("mixed.html")), ["pass/null page"]);
+  assert.equal(mixed.get("mixed.html")[0].observation.sdk_pin, "0.4.40");
+
+  // End to end through doctor --built.
+  for (const markup of [script("type=\"application/json\""), script("type=\"text/plain\""), `<svg>${script("")}</svg>`]) {
+    const rows = await builtDoctor(t, page(markup));
+    assert.deepEqual(summary(rows), ["unexercised/sdk_pin_unknown page"], `doctor --built: ${markup}`);
+    assert.equal(rows[0].observation.sdk_pin, null);
+  }
+  assert.deepEqual(summary(await builtDoctor(t, page(script("type=\"module\"")))), ["pass/null page"]);
+});
+
+test("read failures: an error reading a built page after the readability precheck, or reading its HTML at all, reads it unexercised (page_unreadable); nothing throws out of the check", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cart-placeholders-hardening-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "_site", CAMPAIGN), { recursive: true });
+  for (const name of ["a.html", "eio.html", "eacces.html", "z.html"]) writeFileSync(join(dir, "_site", CAMPAIGN, name), html({ body: TEMPLATE_ONLY }));
+  // The files exist and pass the precheck; the 1.5 page collection's reads
+  // of them fail (other doctor checks read them as usual).
+  const failing = new Map([["eio.html", "EIO"], ["eacces.html", "EACCES"]]);
+  const realRead = fs.readFileSync;
+  t.mock.method(fs, "readFileSync", function readFileSync(path, ...rest) {
+    const inCollection = (new Error().stack || "").includes("collectCartPlaceholderPages");
+    const code = inCollection ? failing.get(String(path).split(/[\\/]/).pop()) : null;
+    if (code) throw Object.assign(new Error(`${code}: injected read failure`), { code });
+    return realRead.call(this, path, ...rest);
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+
+  const expected = [
+    `pass/null _site/${CAMPAIGN}/a.html`,
+    `unexercised/page_unreadable _site/${CAMPAIGN}/eacces.html`,
+    `unexercised/page_unreadable _site/${CAMPAIGN}/eio.html`,
+    `pass/null _site/${CAMPAIGN}/z.html`,
+  ];
+  const byFile = (rows) => rows.map((row) => `${row.result}/${row.reason_code} ${row.subject.page}`);
+  let pages;
+  assert.doesNotThrow(() => { pages = collectCartPlaceholderPages(dir, CAMPAIGN); });
+  assert.deepEqual(byFile(evaluateCartPlaceholders({ pages, measuredAt: "2026-01-01T00:00:00.000Z" })), expected);
+  const built = (await withNoNetwork(() => doctorBuiltOutput({ built: dir, slug: CAMPAIGN }))).derived.qc_results.filter((row) => row.check === "cart_placeholders");
+  assert.deepEqual(byFile(built), expected);
+
+  // A page whose HTML cannot be read at all inside the evaluator is
+  // unreadable too.
+  const throwing = { file: "throws.html", get content() { throw Object.assign(new Error("EIO: injected"), { code: "EIO" }); } };
+  let rows;
+  assert.doesNotThrow(() => { rows = evaluateCartPlaceholders({ pages: [throwing, { file: "ok.html", content: html({ body: TEMPLATE_ONLY }) }] }); });
+  assert.deepEqual(byFile(rows), ["unexercised/page_unreadable throws.html", "pass/null ok.html"]);
+  assert.equal(rows[0].accept_eligible, false);
 });

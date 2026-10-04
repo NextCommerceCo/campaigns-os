@@ -2198,36 +2198,34 @@ function validateCartPlaceholders(packet, warnings, ready, derived) {
 
 // Every built page under the campaign directory, in path order, including the
 // symlinked *.html entries the page scope skips (read as unreadable, never
-// followed). Pages within the page cap carry their HTML through
-// collectBuiltPageIdentityInputs, unless they are over the size cap or cannot
-// be read; pages past it carry only their path.
+// followed). Pages within the page cap carry their HTML, read one page at a
+// time, unless they are over the size cap or cannot be read; pages past it
+// carry only their path.
 function collectCartPlaceholderPages(targetRepo, slug) {
   const scope = resolveBuiltSiteScope(targetRepo, { slug, includeLinkedPages: true });
   const linked = new Set((scope.linked_pages || []).map((page) => page.built_path));
   const all = [...(scope.ok ? scope.pages : []), ...(scope.linked_pages || [])]
     .sort((a, b) => (a.built_path < b.built_path ? -1 : a.built_path > b.built_path ? 1 : 0));
   const fileOf = (page) => builtPageFile(targetRepo, page.built_path);
-  const examined = all.slice(0, CART_PLACEHOLDERS_LIMITS.pages);
-  const entries = new Map();
-  const readable = [];
-  for (const page of examined) {
-    let bytes = null;
-    try {
-      if (!linked.has(page.built_path)) bytes = statSync(page.built_path).size;
-    } catch {
-      bytes = null;
-    }
-    if (bytes == null || !isReadableFile(page.built_path)) entries.set(page, { file: fileOf(page), unreadable: true });
-    else if (bytes > CART_PLACEHOLDERS_LIMITS.page_bytes) entries.set(page, { file: fileOf(page), bytes });
-    else readable.push(page);
-  }
-  // collectBuiltPageIdentityInputs keeps the order of the pages it is given.
-  collectBuiltPageIdentityInputs({ ...scope, pages: readable }, targetRepo)
-    .forEach((input, index) => entries.set(readable[index], { file: fileOf(readable[index]), content: input.content }));
   return [
-    ...examined.map((page) => entries.get(page)),
+    ...all.slice(0, CART_PLACEHOLDERS_LIMITS.pages).map((page) => readCartPlaceholderPage(page.built_path, fileOf(page), linked.has(page.built_path))),
     ...all.slice(CART_PLACEHOLDERS_LIMITS.pages).map((page) => ({ file: fileOf(page) })),
   ];
+}
+
+// One page within the page cap: its HTML, its size when over the size cap, or
+// unreadable. Any error reading it, before or after the readability precheck
+// (EIO, EACCES, EISDIR ...), reads it unreadable; none throws out of the check.
+function readCartPlaceholderPage(path, file, linked) {
+  if (linked) return { file, unreadable: true };
+  try {
+    const bytes = statSync(path).size;
+    if (!isReadableFile(path)) return { file, unreadable: true };
+    if (bytes > CART_PLACEHOLDERS_LIMITS.page_bytes) return { file, bytes };
+    return { file, content: readFileSync(path, "utf8") };
+  } catch {
+    return { file, unreadable: true };
+  }
 }
 
 // A built page's path relative to the doctor target, "/"-separated and with no
