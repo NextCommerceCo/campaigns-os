@@ -1865,6 +1865,15 @@ table in [build-packet.md](./build-packet.md#deploy-target) and
 [Local proof mode](#local-proof-mode-deploytarget-local-serve) above for the
 development build, the parity check, and the order they run in.
 
+### Tracking parameters
+
+**Tracking parameters.** During a browser test order, QA adds synthetic tracking values (`utm_*`, `affid`, `sub1`, `subaffiliate2`, and up to eight names from `analytics.params.tracking.preserve`) to the pages it loads before the campaign's own navigation starts. It reports two results:
+
+- **URL preservation:** whether each value is still in the address after each page navigation it observed, through to the navigation after the order. A failing step is named only when QA observed both sides of it. A reload by QA itself, an unobserved step, or an attempt that ended early ends the measurement without a pass.
+- **Order attribution:** whether the matching attribution field reached the request of an order the store accepted.
+
+Values from `<meta name="os-tracking-tag">` tags are checked against order metadata. When page script sets attribution itself, differences are review results. Only synthetic values and equality results are stored, and order URLs in QA evidence are now stored without their query. Click ids and `funnel` are not seeded, even when listed in `tracking.preserve`, and are listed as not tested.
+
 ## Operator accepts (`checkpoint accept`)
 
 **Accepting a warning.** `campaigns-os checkpoint accept` records an operator's decision about a warning that a Campaigns OS check measured. It does not change readiness, does not remove the warning, does not change the status `next` reports, and cannot be used on review, unexercised, or excluded results. The warning must already be on record (in the doctor snapshot `next` writes, the Polish capture, or the full QA verdict) before it can be accepted. The accept is bound to the exact measured state and lapses when that state changes or the build changes. An optional expiry or review condition adds a second bound. Run it only with the operator's explicit decision, made after the warning was shown to them. A plausible name is not authorization. The command refuses placeholder and automation identities. Results are re-derived from the package's raw captures on every read, and a result whose capture is missing or does not match is listed as unexercised. These checks are tamper evidence, not proof of authorship: a hand-written record that copies every value and recomputes the checksum, or a hand-written result written together with a matching capture, is not detected.

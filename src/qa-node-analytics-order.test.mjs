@@ -6,8 +6,34 @@ import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { normalizeCapture } from "./qa-analytics-parity.mjs";
 import { STATUS } from "./qa-verdict.mjs";
 import { applyQaBuildScope } from "./qa-build-scope.mjs";
+import { qcStateFingerprint } from "./qc-results.mjs";
 
 const { maybeRunTestOrders, runAnalyticsOrderSequence } = __qaNodeTestHooks;
+
+// A run with no browser test order requested records one run-scope excluded
+// row per tracking check (1.1, test_order_not_requested).
+function notRequestedQcResults(runId, measuredAt) {
+  return [["tracking.url", "url"], ["tracking.order", "order"], ["tracking.tag", "tag"]].map(([check, key]) => {
+    const subject = { check, page: "run", key };
+    const reasonCode = "test_order_not_requested";
+    return {
+      schema: "campaigns-os-qc-result/v0",
+      id: `${check}:run:${key}`,
+      check,
+      leg: "qa",
+      result: "excluded",
+      reason_code: reasonCode,
+      subject,
+      state_fingerprint: qcStateFingerprint({ subject, state: { scope: "run", run_id: runId, reason_code: reasonCode } }),
+      observation: { scope: "run", check, run_id: runId, reason_code: reasonCode },
+      members: [],
+      accept_eligible: false,
+      coverage: { observed: 0, expected: null, limits: [], loader_pins: null },
+      measured_at: measuredAt,
+      producer: "campaigns-os qa run",
+    };
+  });
+}
 
 const target = { url: "https://shop.example/campaign/", source: "resolved_identity:public_route_slug" };
 const contract = { providers: { gtm: { enabled: true, containerId: "GTM-1" } } };
@@ -109,11 +135,13 @@ test("disabled and not-applicable analytics legs never emit a Purchase assertion
   }
 });
 
-test("maybeRunTestOrders returns the private envelope for browser mode and empty receipt evidence for off/legacy", async () => {
+test("maybeRunTestOrders returns the private envelope for browser mode and empty receipt evidence for off/legacy", async (t) => {
+  const measuredAt = "2026-10-04T12:00:00.000Z";
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(measuredAt) });
   const base = { resolved: { topologies: [] }, runId: "run-4", assertions: [] };
   assert.deepEqual(
     await maybeRunTestOrders({ ...base, args: {} }),
-    { orders: [], receiptAnalytics: { plannedPlanIds: [], attempts: [] } },
+    { orders: [], receiptAnalytics: { plannedPlanIds: [], attempts: [] }, qc_results: notRequestedQcResults("run-4", measuredAt) },
   );
 
   let browserCalls = 0;
@@ -151,6 +179,8 @@ test("maybeRunTestOrders returns the private envelope for browser mode and empty
   assert.deepEqual(legacyResult, {
     orders: [{ path: "accept", next_order_id: "private" }],
     receiptAnalytics: { plannedPlanIds: [], attempts: [] },
+    // A legacy API order is not a browser test order.
+    qc_results: notRequestedQcResults("run-4", measuredAt),
   });
 });
 

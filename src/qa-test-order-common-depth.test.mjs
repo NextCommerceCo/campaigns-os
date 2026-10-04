@@ -304,7 +304,13 @@ test("a --test-order off run records the coverage row as manual review naming ev
   ] }];
   const quiet = [];
   await maybeRunTestOrders({ args: {}, resolved: { topologies: noOffer }, runId: "run-off", assertions: quiet });
-  assert.deepEqual(quiet, []);
+  // No test-order assertion: the only rows pushed are the three run-scope 1.1
+  // tracking exclusions (test_order_not_requested), skipped at info.
+  assert.deepEqual(quiet.map((entry) => entry.id).sort(), ["qc.tracking.order:run:order", "qc.tracking.tag:run:tag", "qc.tracking.url:run:url"]);
+  for (const entry of quiet) {
+    assert.equal(entry.status, "skipped", `${entry.id} status`);
+    assert.equal(entry.severity, "info", `${entry.id} severity`);
+  }
 });
 
 // A checkout-only primary funnel beside a secondary funnel that carries an

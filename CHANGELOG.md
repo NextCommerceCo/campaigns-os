@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.51.0+agent.1] - 2026-10-04
+
+### Added
+
+- QA browser test orders now report URL preservation and order attribution for synthetic tracking parameters as separate results. QA order evidence no longer stores query strings in `checkout_url`, `final_url` or request URLs.
+
 ## [1.51.0] - 2026-10-04
 
 ### Added
