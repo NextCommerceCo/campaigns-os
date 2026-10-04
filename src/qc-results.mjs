@@ -542,11 +542,13 @@ function mediaElementOk(element) {
 }
 
 // A cell resource's own URL and type, and each chain hop's identity, URL and
-// status, which the cell checks compare with the ledger.
+// status, which the cell checks compare with the ledger. A null status is
+// left to the chain check, which allows it only on a final hop that failed
+// with no HTTP response.
 function cellResourceShapeOk(resource) {
   return isNonEmptyString(resource.url)
     && isNonEmptyString(resource.type)
-    && resource.chain.every((hop) => isNonEmptyString(hop.resource_id) && isNonEmptyString(hop.url) && Number.isInteger(hop.status));
+    && resource.chain.every((hop) => isNonEmptyString(hop.resource_id) && isNonEmptyString(hop.url) && (Number.isInteger(hop.status) || hop.status === null));
 }
 
 function ledgerMeasurement(entry) {
