@@ -398,20 +398,54 @@ test("driver: the ?reviews=n context has no matching target where the baseline h
   assertExactMembers(row, {});
 });
 
-test("driver: once the 60 s budget is spent no later pair opens a context: the later pair reads unexercised (budget_exhausted)", async () => {
+test("driver: once the 60 s budget is spent no later pair opens a context: both pairs read unexercised (budget_exhausted)", async () => {
   const { runContentParamChecks } = await import("./qa-content-params.mjs");
   const second = "second";
   let clock = 1_000_000;
-  // The first pair's ?reviews=n navigation uses up the whole budget.
+  // The first pair's ?reviews=n navigation uses up the whole budget, so that
+  // pair completes exactly at the deadline, which is not before it.
   const browser = fakeBrowser({ isolated: toggled, onGoto: (url, variant) => {
     if (variant === "param_n") clock += 60_000;
   } });
   const topologies = [{ funnel_id: "default", pages: [{ page_id: PAGE, url: BASE }, { page_id: second, url: "http://127.0.0.1/synthetic-second/" }] }];
   const { rows } = await runContentParamChecks({ topologies, spec: SPEC, newContext: browser.newContext, withQueryParam, now: () => clock, measuredAt });
   assert.deepEqual(rows.map((row) => [row.id, row.result, row.reason_code]), [
-    [ID, "pass", null],
+    [ID, "unexercised", "budget_exhausted"],
     [`content_param:${second}:${NAME}`, "unexercised", "budget_exhausted"],
-  ], "the first pair is measured, the second is cut");
+  ], "the first pair completes at the deadline and is not measured, the second is cut");
   assert.equal(browser.log.filter(([kind, method]) => kind === "browser" && method === "newContext").length, 2, "only the first pair's two contexts are opened");
   assert.deepEqual(browser.log.filter(([, method]) => method === "goto").map(([, , variant, url]) => [variant, url]), [["baseline", BASE], ["param_n", `${BASE}?${NAME}=n`]], "no load of the second page starts");
+});
+
+// The ?reviews=n read resolves `offset` ms from the deadline on the injected
+// clock, on a microtask, so no budget timer has fired by then.
+async function lastReadAt(offset) {
+  const { runContentParamChecks } = await import("./qa-content-params.mjs");
+  const start = 1_000_000;
+  let clock = start;
+  const browser = fakeBrowser({ isolated: (variant) => {
+    if (variant === "param_n") clock = start + 60_000 + offset;
+    return toggled(variant);
+  } });
+  const { rows } = await runContentParamChecks({ topologies: TOPOLOGIES, spec: SPEC, newContext: browser.newContext, withQueryParam, now: () => clock, measuredAt });
+  const opened = browser.log.filter(([kind, method]) => kind === "browser" && method === "newContext").length;
+  assert.equal(browser.log.filter(([kind, method]) => kind === "context" && method === "close").length, opened, "every context opened is closed");
+  assert.deepEqual(rows.map((row) => row.id), [ID], "one content_param row");
+  return rows[0];
+}
+
+test("driver: the ?reviews=n read resolves 1 ms past the 60 s deadline, before any timer fires: unexercised (budget_exhausted), never pass", async () => {
+  const row = await lastReadAt(1);
+  assert.deepEqual([row.result, row.reason_code, row.accept_eligible], ["unexercised", "budget_exhausted", false], "a pair completed past the budget is not measured");
+});
+
+test("driver: the ?reviews=n read resolves exactly at the 60 s deadline, before any timer fires: unexercised (budget_exhausted), never pass", async () => {
+  const row = await lastReadAt(0);
+  assert.deepEqual([row.result, row.reason_code, row.accept_eligible], ["unexercised", "budget_exhausted", false], "a pair completed at the deadline did not complete before it");
+});
+
+test("driver: the ?reviews=n read resolves 1 ms before the 60 s deadline: pass", async () => {
+  const row = await lastReadAt(-1);
+  assert.deepEqual([row.result, row.reason_code], ["pass", null], "a pair completed inside the budget is measured");
+  assertExactMembers(row, { [`hide:${PATH_0}`]: ["pass", null] });
 });

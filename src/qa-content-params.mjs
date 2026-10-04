@@ -588,25 +588,36 @@ function servesRequested(documentUrl, requestedUrl, name, variant) {
 
 const withinDeadline = (operation, timeoutMs) => runWithDeadline(operation, { timeoutMs });
 
+// Whether the budget has ended for this pair: cut by the budget timer, or the
+// clock already at or past the deadline (a late timer is no evidence of time
+// left). There is time left only while the clock reads before the deadline.
+function lapsed(run) {
+  if (!run.cancelled && run.now() >= run.deadline) run.cancelled = true;
+  return run.cancelled;
+}
+
 // One load in a fresh context. Never throws: every failure is a readiness
 // outcome. `run.cancelled` is set when the budget ends; no new context opens
-// after that, and the contexts still open are closed by the budget cut.
+// after that, and the contexts still open are closed by the budget cut. The
+// clock is checked after each awaited step, so no step starts past the budget.
 async function loadVariant(url, name, variant, run) {
   if (!url) return { readiness: "navigation_failed" };
-  if (run.cancelled) return { readiness: null };
+  if (lapsed(run)) return { readiness: null };
   let context = null;
   try {
     context = await run.newContext();
     run.open.add(context);
-    if (run.cancelled) return { readiness: null };
+    if (lapsed(run)) return { readiness: null };
     const page = await context.newPage();
     const session = await openReader(context, page);
+    if (lapsed(run)) return { readiness: null };
     let response = null;
     try {
       response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: CONTENT_PARAM_LIMITS.navigationMs });
     } catch {
-      return { readiness: "navigation_failed" };
+      return { readiness: lapsed(run) ? null : "navigation_failed" };
     }
+    if (lapsed(run)) return { readiness: null };
     const status = response?.status?.() ?? null;
     if (!response || !Number.isFinite(status) || status >= 400) return { readiness: "page_not_served" };
     // A reading from a document other than the one requested is no reading
@@ -619,6 +630,7 @@ async function loadVariant(url, name, variant, run) {
     } catch {
       reading = null;
     }
+    if (lapsed(run)) return { readiness: null };
     if (isPlainObject(reading) && !servesRequested(reading.url, url, name, variant)) return { readiness: "page_not_served" };
     const elements = readElements(reading);
     if (!elements) return { readiness: "readiness_timeout" };
@@ -630,7 +642,7 @@ async function loadVariant(url, name, variant, run) {
       reads: new Map(targets.map((target) => [identityOf(target), { present: true, visible: elements[target.index].visible, stable: elements[target.index].stable }])),
     };
   } catch {
-    return { readiness: run.cancelled ? null : "navigation_failed" };
+    return { readiness: lapsed(run) ? null : "navigation_failed" };
   } finally {
     if (context) {
       run.open.delete(context);
@@ -686,11 +698,13 @@ function pairObservation(pair, baseline, paramN) {
 }
 
 // Both loads of one pair inside what is left of the leg's budget. A pair the
-// budget cuts (whether or not a load had started) reads budget_exhausted.
+// budget cuts (whether or not a load had started) reads budget_exhausted, and
+// so does a pair that completes at or past the deadline, whatever its readings
+// say. A pair starts only while the clock reads before the deadline.
 async function runPair(pair, { newContext, withQueryParam, deadline, now }) {
   const remaining = deadline - now();
   if (!(remaining > 0)) return null;
-  const run = { newContext, open: new Set(), cancelled: false };
+  const run = { newContext, open: new Set(), cancelled: false, deadline, now };
   const closeOpen = () => Promise.all([...run.open].map((context) => context.close().catch(() => {})));
   const work = (async () => {
     const baseline = await loadVariant(pair.url ? baselineUrl(pair.url, pair.param) : null, pair.param, "baseline", run);
@@ -705,7 +719,7 @@ async function runPair(pair, { newContext, withQueryParam, deadline, now }) {
         return closeOpen();
       },
     });
-    if (run.cancelled || baseline.readiness === null || paramN.readiness === null) return null;
+    if (lapsed(run) || baseline.readiness === null || paramN.readiness === null) return null;
     // An observation the rules cannot read (its counts, targets and
     // references do not reconcile) is no reading of a ready state, so it is
     // kept as readiness_timeout in both contexts rather than dropped.
