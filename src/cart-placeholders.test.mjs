@@ -1,5 +1,5 @@
-// F1.5 frozen fixture rows: raw cart placeholders (contract §1.5,
-// `built_output.cart_placeholders`), through the real doctor entry points:
+// Fixture rows for raw cart placeholders
+// (`built_output.cart_placeholders`), through the real doctor entry points:
 // `doctor --built` (doctorBuiltOutput) over the committed
 // fixtures/cart-placeholders/<case>/{bad,good} trees or a temp tree built from
 // them, and the packet registry (doctorPacket, `next`, `checkpoint accept`)
@@ -19,8 +19,7 @@
 // `candidate_cap_reached`, `finding_cap_reached` and `page_cap_reached` are one
 // row per page with subject.key "page". A page holding token or shape results
 // has no page-level row unless a cap or a read failure adds one.
-// API assumption (every row): subject is exactly {check, page, key} (contract
-// §1.5 Accepts) and every row carries members[] (buildQcResult's default []).
+// API assumption (every row): subject is exactly {check, page, key} and every row carries members[] (buildQcResult's default []).
 // A token or shape result kept on a page over the candidate or finding cap
 // carries exactly the 1.0 capped-page member; every other row, page-level and
 // cap rows included, carries members [].

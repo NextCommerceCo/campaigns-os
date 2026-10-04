@@ -1,5 +1,5 @@
-// U5 re-run (streams freeze addendum): the phase-0 F1.0 rows whose setup names
-// 1.5 as the producer, end to end with the real `built_output.cart_placeholders`
+// The shared QC accept and handoff rows whose setup needs a doctor check, run
+// end to end with the real `built_output.cart_placeholders`
 // check in place of the stand-in. No doctor stand-in is passed: the warning
 // comes from a real built page under the packet's _site/, through doctor,
 // `next`, the doctor sidecar and `checkpoint accept`. F1.0-W2 re-runs its
@@ -371,7 +371,7 @@ test("F1.0-B3 [real: 1.5] accept F1.0-W1, then add a second {item.name} element 
   assert.notEqual(refs[id], ref, "the current result has a new state");
 });
 
-// Residual row (amendments A1): the documented outcome is asserted, not detection.
+// These checks are tamper evidence, not authorship proof: a full reconstruction reads as valid, and this test pins that documented outcome.
 test("F1.0-B7 [real: 1.5] fully reconstructed hand-written accept on a current warning: copied id@fp, the sidecar's measured_at, a later accepted_at, named human, recomputed checksum: accept active (A1 accepted behaviour)", async (t) => {
   const { assessQcAccepts, qcAcceptIntegrity } = await import("./qc-accept.mjs");
   const f = builtPacket(t);
