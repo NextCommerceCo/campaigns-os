@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.51.0+agent.3] - 2026-10-05
+
+### Added
+
+- QA now checks that configured store policy links are rendered and reachable, recording link presence and availability separately. QA now sends bounded header-only requests to the configured policy URLs; the effects contract declares them.
+
 ## [1.51.0+agent.2] - 2026-10-05
 
 ### Added
