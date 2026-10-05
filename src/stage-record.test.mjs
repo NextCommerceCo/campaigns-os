@@ -35,11 +35,6 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 const POLISH_EVIDENCE = join(ROOT, "fixtures/stage-record/polish-evidence.json");
-// Rows that record Polish after an input change and then need Polish current
-// read the capture time on page_load (captured_at), which polish capture does
-// not write yet. Until it does they carry the node:test `todo` option.
-const CLOSES_AFTER_D = { todo: "needs page_load.captured_at from polish capture" };
-
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -1193,14 +1188,14 @@ async function presentationChangeAfterQa(f, beforeSave = () => {}) {
   saveBrief(f, brief);
 }
 
-test("F2.1-W5: a material presentation change saved with record brief makes build, Polish and QA owed and keeps setup and deploy", CLOSES_AFTER_D, async () => {
+test("F2.1-W5: a material presentation change saved with record brief makes build, Polish and QA owed and keeps setup and deploy", async () => {
   await guardedLifecycle(async (f) => {
     await presentationChangeAfterQa(f);
     assert.deepEqual(stageStatuses(f, ["setup", "assembly", "polish", "deploy", "qa"]), { setup: "completed", assembly: "required", polish: "required", deploy: "completed", qa: "required" });
   });
 });
 
-test("F2.1-W9: after the W5 save, stages.assembly.history[-1].reason_code is brief_presentation_changed", CLOSES_AFTER_D, async () => {
+test("F2.1-W9: after the W5 save, stages.assembly.history[-1].reason_code is brief_presentation_changed", async () => {
   await guardedLifecycle(async (f) => {
     await presentationChangeAfterQa(f);
     const history = readJson(f.reportPath).stages.assembly.history;
@@ -1209,7 +1204,7 @@ test("F2.1-W9: after the W5 save, stages.assembly.history[-1].reason_code is bri
   });
 });
 
-test("F2.1-W17: the superseded QA record in history keeps the pre-save purchase_proof", CLOSES_AFTER_D, async () => {
+test("F2.1-W17: the superseded QA record in history keeps the pre-save purchase_proof", async () => {
   await guardedLifecycle(async (f) => {
     let before = null;
     await presentationChangeAfterQa(f, (report) => {
@@ -1222,7 +1217,7 @@ test("F2.1-W17: the superseded QA record in history keeps the pre-save purchase_
   });
 });
 
-test("F2.1-W18: the superseded Polish record in history keeps the pre-save package page_load capture", CLOSES_AFTER_D, async () => {
+test("F2.1-W18: the superseded Polish record in history keeps the pre-save package page_load capture", async () => {
   await guardedLifecycle(async (f) => {
     let before = null;
     await presentationChangeAfterQa(f, (report) => {
@@ -1235,7 +1230,7 @@ test("F2.1-W18: the superseded Polish record in history keeps the pre-save packa
   });
 });
 
-test("F2.1-B3: after the W5 save, record polish with a valid evidence file exits 1", CLOSES_AFTER_D, async () => {
+test("F2.1-B3: after the W5 save, record polish with a valid evidence file exits 1", async () => {
   await guardedLifecycle(async (f) => {
     await presentationChangeAfterQa(f);
     const before = treeDigest(f.dir);
@@ -1245,7 +1240,7 @@ test("F2.1-B3: after the W5 save, record polish with a valid evidence file exits
   });
 });
 
-test("F2.1-B10: after the W5 save, record build over the unchanged _site leaves assembly owed", CLOSES_AFTER_D, async () => {
+test("F2.1-B10: after the W5 save, record build over the unchanged _site leaves assembly owed", async () => {
   await guardedLifecycle(async (f) => {
     await presentationChangeAfterQa(f);
     recordOk(f, "build");
@@ -1260,7 +1255,7 @@ async function operatorKeepsOutput(f) {
   recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
 }
 
-test("F2.1-W24: after W5, record build --deviation-reason over the unchanged _site makes assembly current", CLOSES_AFTER_D, async () => {
+test("F2.1-W24: after W5, record build --deviation-reason over the unchanged _site makes assembly current", async () => {
   await guardedLifecycle(async (f) => {
     await operatorKeepsOutput(f);
     assert.equal(inputCurrency(f).stages.assembly, "current");
@@ -1278,7 +1273,7 @@ test("F2.1-W25: on a legacy packet without build_brief, record build makes assem
   });
 });
 
-test("F2.1-W29: after W24, record polish skipped with a skip_reason reads polish not_applicable", CLOSES_AFTER_D, async () => {
+test("F2.1-W29: after W24, record polish skipped with a skip_reason reads polish not_applicable", async () => {
   await guardedLifecycle(async (f) => {
     await operatorKeepsOutput(f);
     recordOk(f, "polish", ["--evidence", writeEvidence(f, "polish-skipped.json", SKIPPED_POLISH)]);
@@ -2280,7 +2275,7 @@ test("F2.2-B10: on a gateway-fetched packet whose cached spec qty is edited, doc
   });
 });
 
-test("F2.2-B11: after F2.1-W24, record polish with the pre-change evidence file, the old page_load still binding the same build, leaves polish owed", CLOSES_AFTER_D, async () => {
+test("F2.2-B11: after F2.1-W24, record polish with the pre-change evidence file, the old page_load still binding the same build, leaves polish owed", async () => {
   await guardedLifecycle(async (f) => {
     let before = null;
     await presentationChangeAfterQa(f, (report) => {
