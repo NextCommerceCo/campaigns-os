@@ -20,9 +20,11 @@ const NO_BRIEF_TEXT = "No Campaign Build Brief is recorded for this campaign. As
 const COMMERCE_TEXT = "products, prices and offers come from CampaignSpec/API values; cart, checkout and post-purchase behaviour stay with the SDK.";
 
 // The provenance-stamped fields, in the order build-brief exports them. The
-// page-keyed field names a concrete page id in place of "<page>".
+// page-keyed field names a concrete page id in place of "<page>", joined by
+// plain concatenation so no character of the id is interpreted.
 const [AUDIENCE, CONVERSION_GOAL, TONE, PALETTE_SOURCE, PRIMARY_ACCENT, CTA_STYLE, AVOID, PAGE_SOURCE, BLOCK_PLACEHOLDERS] = SUMMARY_FIELDS;
-const pageSourceField = (pageId) => PAGE_SOURCE.replace("<page>", pageId);
+const [PAGE_SOURCE_PREFIX, PAGE_SOURCE_SUFFIX] = PAGE_SOURCE.split("<page>");
+const pageSourceField = (pageId) => PAGE_SOURCE_PREFIX + pageId + PAGE_SOURCE_SUFFIX;
 
 const NOT_RECORDED = "not_recorded";
 const MARKERS = Object.freeze({ stated: "[stated]", source: "[from source]", default: "[default]", [NOT_RECORDED]: "[source not recorded]" });
@@ -74,7 +76,8 @@ function listItems(items, k, render, cut, weight = () => 1) {
   const more = items.slice(k).reduce((sum, item) => sum + weight(item), 0);
   return [...items.slice(0, k).map(render), `+${more} more`];
 }
-const asIs = (item) => item;
+// A page id as displayed: unquoted, with line breaks collapsed to spaces.
+const pageIdText = (id) => singleLine(id);
 
 function marked(value, provenance, maxWords, cut) {
   return `${quoted(value, maxWords, cut)} ${MARKERS[provenance]}`;
@@ -92,7 +95,8 @@ function statedOnly({ value, provenance }) {
 }
 
 // Line 4: each active page in exactly one group, in the fixed group order;
-// each group carries the weakest marker among its pages.
+// each group carries the weakest marker among its pages. Authority and stamp
+// are read with the page id exactly as recorded.
 function authorityGroups(brief, pageIds) {
   const authority = own(brief, "design_authority");
   const supplied = { kind: "supplied", source: SUPPLIED_DESIGN, pages: [], provenances: [] };
@@ -119,7 +123,8 @@ function authorityGroups(brief, pageIds) {
 }
 
 function readModel(brief, activePageIds) {
-  const pageIds = (Array.isArray(activePageIds) ? activePageIds : []).filter((id) => typeof id === "string" && id).map(singleLine);
+  // Page ids stay as recorded; line breaks collapse only when rendered.
+  const pageIds = (Array.isArray(activePageIds) ? activePageIds : []).filter((id) => typeof id === "string" && id);
   const avoid = field(brief, AVOID);
   const questions = Array.isArray(own(brief, "questions")) ? own(brief, "questions") : [];
   return {
@@ -144,7 +149,7 @@ function renderLines(model, cuts, valueWords) {
   const cut = { happened: false };
   const value = (item, notStated) => (item.value == null ? notStated : marked(item.value, item.provenance, valueWords, cut));
   const group = (entry) => {
-    const ids = listItems(entry.pages, cuts[4], asIs, cut).join(", ");
+    const ids = listItems(entry.pages, cuts[4], pageIdText, cut).join(", ");
     if (entry.kind === "supplied") return `${ids} follow the supplied design ${MARKERS[entry.provenance]}`;
     if (entry.kind === "template") return `${ids} follow the template ${MARKERS[entry.provenance]}`;
     if (entry.kind === "other") return `${ids} use ${marked(entry.source, entry.provenance, VALUE_WORDS, cut)}`;
@@ -161,7 +166,7 @@ function renderLines(model, cuts, valueWords) {
   const lines = [
     `Purpose: ${value(model.purpose, "not stated")}.`,
     `Audience: ${value(model.audience, "not stated")}.`,
-    model.journey.length ? `Journey: ${listItems(model.journey, cuts[3], asIs, cut).join(" → ")} (CampaignSpec).` : "Journey: not stated.",
+    model.journey.length ? `Journey: ${listItems(model.journey, cuts[3], pageIdText, cut).join(" → ")} (CampaignSpec).` : "Journey: not stated.",
     model.authority.length ? `Visual authority: ${listItems(model.authority, cuts[4], group, cut, (entry) => entry.pages.length).join("; ")}.` : "Visual authority: not stated.",
     `Palette and buttons: ${model.palette.value == null ? "palette source not stated" : `palette from ${marked(model.palette.value, "stated", valueWords, cut)}`}; button style ${value(model.buttons, "not stated")}; accent ${value(model.accent, "not stated")}.`,
     `Tone: ${value(model.tone, "not stated")}.`,
@@ -202,10 +207,20 @@ function isPartial(model, cut) {
   return notStated || unrecorded || ungrouped || model.questions.length > 0 || cut;
 }
 
+const unavailable = () => ({ status: "unavailable", text: NO_BRIEF_TEXT, lines: [], word_count: wordCount(NO_BRIEF_TEXT), open_questions: [] });
+
+// Never throws: a brief the summary cannot be computed from (for example a
+// value nested too deeply to fingerprint) reads unavailable, like no brief.
 export function summarizeCampaignBrief({ brief, activePageIds = [] } = {}) {
-  if (!isPlainObject(brief)) {
-    return { status: "unavailable", text: NO_BRIEF_TEXT, lines: [], word_count: wordCount(NO_BRIEF_TEXT), open_questions: [] };
+  if (!isPlainObject(brief)) return unavailable();
+  try {
+    return summarize(brief, activePageIds);
+  } catch {
+    return unavailable();
   }
+}
+
+function summarize(brief, activePageIds) {
   const model = readModel(brief, activePageIds);
   const rendered = renderWithinBound(model);
   const line = (label, value, provenance) => ({ label, value, provenance });

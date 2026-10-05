@@ -532,3 +532,130 @@ test("word bound: lists are cut line 7, then line 4, then line 3, then values, e
   assert.equal(summaryLine({ text: final.text }, 8), `Commerce: products, prices and offers come from CampaignSpec/API values; cart, checkout and post-purchase behaviour stay with the SDK.`, "line 8 is never cut");
   assert.equal(summaryLine({ text: final.text }, 9), "Open brief questions: none.", "line 9 is never cut");
 });
+
+// ---------------------------------------------------------------------------
+// Brief-controlled keys, cut status and failure (not frozen rows). Page ids
+// are looked up exactly as recorded: never substituted, normalized or
+// collapsed before the authority and stamp lookups; line breaks collapse only
+// in the rendered text. A summary that cannot be computed reads unavailable.
+
+// statedBrief() plus one extra active page `id` with design_authority
+// `source`, stamped under its own key only when `ownStamp` is set.
+function briefWithExtraPage(id, { source = "provided_design_export", ownStamp = false } = {}) {
+  const brief = statedBrief();
+  brief.design_authority[id] = { source, reference: "extra.html" };
+  if (ownStamp) brief._meta.field_sources[`design_authority.${id}.source`] = { kind: "stated", value_fingerprint: fingerprint(source) };
+  return brief;
+}
+
+// The key String.prototype.replace would build for `id` from the
+// SUMMARY_FIELDS placeholder path, when that differs from the page's own key.
+const REPLACEMENT_PATTERN_IDS = ["$&", "$$", "$`", "$'", "a$&b"];
+const substitutedKey = (id) => "design_authority.<page>.source".replace("<page>", id);
+
+test("brief keys: a page id containing a replacement pattern never borrows another key's stamp", async () => {
+  await assertStatedBriefAvailable();
+  for (const id of REPLACEMENT_PATTERN_IDS) {
+    const brief = briefWithExtraPage(id);
+    const borrowed = substitutedKey(id);
+    assert.notEqual(borrowed, `design_authority.${id}.source`, `setup: replace() would rewrite ${JSON.stringify(id)}`);
+    brief._meta.field_sources[borrowed] = { kind: "stated", value_fingerprint: fingerprint("provided_design_export") };
+    const summary = await summarize(brief, [...EXAMPLE_PAGE_IDS, id]);
+    assert.match(summaryLine(summary, 4), /\[source not recorded\]\.$/, `page ${JSON.stringify(id)} without its own stamp reads [source not recorded]:\n${summary.text}`);
+    assert.equal(summary.lines[3].provenance, "not_recorded", `page ${JSON.stringify(id)}: line 4 provenance`);
+    assert.equal(summary.status, "partial", `page ${JSON.stringify(id)}: an unrecorded authority reads partial`);
+  }
+});
+
+test("brief keys: a page id containing a replacement pattern reads its own stamp", async () => {
+  for (const id of REPLACEMENT_PATTERN_IDS) {
+    const summary = await summarize(briefWithExtraPage(id, { ownStamp: true }), [...EXAMPLE_PAGE_IDS, id]);
+    assert.match(summaryLine(summary, 4), /follow the supplied design \[stated\]\.$/, `page ${JSON.stringify(id)} with its own stamp reads [stated]:\n${summary.text}`);
+    assert.equal(summary.status, "available", `page ${JSON.stringify(id)}: its own stamp keeps the brief available`);
+  }
+});
+
+const LINE_BREAKS = ["\n", "\r\n", "\r", " ", " "];
+
+test("brief keys: a page id with a line break never borrows the authority or stamp of the page it collapses to", async () => {
+  for (const lineBreak of LINE_BREAKS) {
+    const id = `actual${lineBreak}page`;
+    const brief = statedBrief();
+    // The page it would collapse to: a different authority, stamped.
+    brief.design_authority["actual page"] = { source: "template", reference: "actual.html" };
+    brief._meta.field_sources["design_authority.actual page.source"] = { kind: "stated", value_fingerprint: fingerprint("template") };
+
+    const missing = await summarize(brief, [...EXAMPLE_PAGE_IDS, id]);
+    assert.equal(missing.text.split("\n").length, 9, `the text keeps nine lines (${JSON.stringify(lineBreak)})`);
+    assert.match(summaryLine(missing, 4), /; actual page not stated\.$/, `an id with no authority entry reads not stated (${JSON.stringify(lineBreak)}):\n${missing.text}`);
+    assert.equal(missing.status, "partial", `an id with no authority entry reads partial (${JSON.stringify(lineBreak)})`);
+
+    brief.design_authority[id] = { source: "provided_design_export", reference: "own.html" };
+    const unstamped = await summarize(brief, [...EXAMPLE_PAGE_IDS, id]);
+    assert.match(summaryLine(unstamped, 4), /, actual page follow the supplied design \[source not recorded\]\.$/, `its own authority, unstamped (${JSON.stringify(lineBreak)}):\n${unstamped.text}`);
+    assert.equal(unstamped.status, "partial", `an unstamped id reads partial (${JSON.stringify(lineBreak)})`);
+
+    brief._meta.field_sources[`design_authority.${id}.source`] = { kind: "stated", value_fingerprint: fingerprint("provided_design_export") };
+    delete brief._meta.field_sources["design_authority.actual page.source"];
+    const own = await summarize(brief, [...EXAMPLE_PAGE_IDS, id]);
+    assert.match(summaryLine(own, 4), /, actual page follow the supplied design \[stated\]\.$/, `its own stamp reads [stated] (${JSON.stringify(lineBreak)}):\n${own.text}`);
+    assert.equal(own.status, "available", `its own stamp keeps the brief available (${JSON.stringify(lineBreak)})`);
+  }
+});
+
+test("cut status: a stamped 13-word audience is cut with … and reads partial, never available", async () => {
+  await assertStatedBriefAvailable();
+  const brief = statedBrief();
+  brief.campaign_intent.audience = nWords("audience-", 13);
+  stamp(brief, "campaign_intent.audience");
+  const summary = await summarize(brief, EXAMPLE_PAGE_IDS);
+  assert.equal(summaryLine(summary, 2), `Audience: "${nWords("audience-", 12)}…" [stated].`, "setup: the audience is cut to 12 words");
+  assert.equal(summary.status, "partial");
+});
+
+// A value nested `depth` objects deep.
+function deeplyNested(depth) {
+  let value = "leaf";
+  for (let i = 0; i < depth; i += 1) value = { next: value };
+  return value;
+}
+const DEEP_VALUE_SITES = [
+  ["campaign_intent.audience", (brief, value) => { brief.campaign_intent.audience = value; }],
+  ["design_authority.<page>.source", (brief, value) => { brief.design_authority[EXAMPLE_PAGE_IDS[0]].source = value; }],
+  ["brand.avoid item", (brief, value) => { brief.brand.avoid = [value]; }],
+  ["template_residue_policy.block_placeholders", (brief, value) => { brief.template_residue_policy.block_placeholders = value; }],
+];
+
+test("failure: a summary that cannot be computed (10,000-deep values) reads unavailable and never throws", async () => {
+  for (const [site, place] of DEEP_VALUE_SITES) {
+    const brief = statedBrief();
+    place(brief, deeplyNested(10_000));
+    let summary;
+    await assert.doesNotReject(async () => { summary = await summarize(brief, EXAMPLE_PAGE_IDS); }, `a 10,000-deep ${site} does not throw`);
+    assert.equal(summary.status, "unavailable", `a 10,000-deep ${site} reads unavailable`);
+    assert.equal(summary.text, NO_BRIEF_TEXT, `a 10,000-deep ${site} reads the fixed text`);
+  }
+});
+
+test("failure: next on a normalized brief with a 10,000-deep audience returns its JSON with an unavailable summary", async (t) => {
+  await summaryModule();
+  const fixture = campaignFixture({ setupCompleted: true });
+  t.after(fixture.cleanup);
+  const packet = readJson(fixture.packetPath);
+  const briefPath = resolve(dirname(fixture.packetPath), packet.build_brief.normalized_path);
+  // JSON.stringify cannot write a value this deep, so its text is spliced in.
+  const brief = readJson(briefPath);
+  brief.campaign_intent = { ...(brief.campaign_intent ?? {}), audience: "DEEP_AUDIENCE" };
+  writeFileSync(briefPath, JSON.stringify(brief).replace('"DEEP_AUDIENCE"', () => `${'{"next":'.repeat(10_000)}"leaf"${"}".repeat(10_000)}`));
+  assert.equal(typeof JSON.parse(readFileSync(briefPath, "utf8")).campaign_intent.audience.next, "object", "setup: the normalized brief parses with a deep audience");
+  const next = await nextJson(fixture);
+  const summary = intentSummaryOf(next);
+  assert.equal(summary.status, "unavailable");
+  assert.equal(summary.text, NO_BRIEF_TEXT);
+  if (["setup", "build", "polish", "qa"].includes(next.stage)) {
+    assert.ok(next.prompt.startsWith(`Campaign intent (from the Campaign Build Brief at ${briefPath}; orientation only, never a source of prices or commerce behaviour):\n${NO_BRIEF_TEXT}\n`), `the ${next.stage} prompt carries the unavailable summary:\n${next.prompt.slice(0, 400)}`);
+  }
+  const text = await runCli(["next", "--packet", fixture.packetPath, "--no-write", "--no-remit"]);
+  assert.equal(text.error, null, `next (text) did not throw: ${text.error?.message}`);
+  assert.ok(text.stdout.includes(`Campaign intent:\n${NO_BRIEF_TEXT}`), `next (text) prints the unavailable summary:\n${text.stdout.slice(0, 600)}`);
+});
