@@ -625,3 +625,28 @@ test("the probe cache keys on the canonical checkout URL, so a trailing-slash or
   assert.deepEqual(selectorProbeCache.get(`${BASE}/checkout/?utm=x`), SELECTOR_SURFACE);
   assert.equal(selectorProbeCache.get(`${BASE}/other/`), null);
 });
+
+// F2.4-B17 (contract 2.4 Surfaces "QA verdict"): the primary-CTA script in
+// a fresh vm page, beside the self-containment test above. The page is the
+// in-memory DOM of src/readability-harness.test.mjs (only browser globals;
+// computed styles as given). The label is white on #0080aa, 16px/400:
+// 4.4986:1 unrounded, below 4.5.
+//
+// API assumptions: the runner sends primaryCtaInspectionScript's text (its
+// value may be a promise); the assertion keeps its status, and the outcome's
+// reason code is evidence.reason, the field that carries it at BASE_SHA.
+test("F2.4-B17 QA CTA vm: white on #0080aa: browser-primary-cta status fail (low_contrast)", async () => {
+  const { hexToSrgb, ratioOf, vmPage } = await import("./readability-harness.test.mjs");
+  const ratio = ratioOf(hexToSrgb("#ffffff"), hexToSrgb("#0080aa"));
+  assert.ok(ratio > 4.498 && ratio < 4.5, `setup: white on #0080aa is 4.4986:1 unrounded (${ratio})`);
+  const page = vmPage({
+    url: "https://campaign.example/lp/",
+    body: [{ tag: "a", key: "cta", attrs: { href: "/checkout/" }, text: "Buy now", rect: { x: 16, y: 16, width: 200, height: 48 }, style: { display: "inline-block", color: "rgb(255, 255, 255)", backgroundColor: "rgb(0, 128, 170)", fontSize: "16px", fontWeight: "400" } }],
+  });
+  const style = page.window.getComputedStyle(page.byKey.cta);
+  assert.deepEqual([style.color, style.backgroundColor], ["rgb(255, 255, 255)", "rgb(0, 128, 170)"], "setup: the page reports the label's colours");
+  const evidence = JSON.parse(JSON.stringify(await page.run(primaryCtaInspectionScript("https://campaign.example/checkout/"))));
+  const entry = primaryCtaAssertionFromEvidence({ page_id: "landing", page_type: "product", url: "https://campaign.example/lp/", expected_next_url: "https://campaign.example/checkout/" }, evidence);
+  assert.equal(entry.id, "browser-primary-cta:landing", "setup: the browser-primary-cta assertion");
+  assert.deepEqual({ status: entry.status, reason: entry.evidence?.reason }, { status: "fail", reason: "low_contrast" }, `browser-primary-cta status fail (low_contrast) (${entry.actual})`);
+});
