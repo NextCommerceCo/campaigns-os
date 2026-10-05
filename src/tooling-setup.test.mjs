@@ -207,6 +207,19 @@ test("setup refuses conflicting pins, missing page-kit and edited context before
   }
 });
 
+test("a dry run over a hand-edited installed CLAUDE.md refuses and names the context refresh command", (t) => {
+  const f = fixture(t);
+  const path = join(f.target, ".campaign-runtime/agent-context/CLAUDE.md");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${readFileSync(join(f.packageRoot, "agents/claude/CLAUDE.md"), "utf8")}\nA local edit.\n`);
+  assert.throws(() => setupTooling({ ...f.args, "dry-run": true }, f.deps), (error) => {
+    assert.match(error.message, /differs from this toolkit's context/);
+    assert.ok(error.message.includes("install-agent-context --target ."), error.message);
+    return true;
+  });
+  assert.deepEqual(f.calls, []);
+});
+
 test("missing project files give recovery guidance without prescribing a replacement page-kit version", (t) => {
   for (const name of ["package.json", "package-lock.json"]) {
     const f = fixture(t);

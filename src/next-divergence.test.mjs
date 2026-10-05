@@ -279,7 +279,7 @@ test("clean repo keeps the divergence shape while surfacing missing-spec checkpo
   // packet's `../contracts/commerce-surface-catalog.json` is dead in this
   // unstaged copy; doctor resolves that to the running toolkit's catalog, so
   // assembly.commerce_catalog.path no longer appears among the blockers.
-  assert.deepEqual(Object.keys(result), ["ok", "status", "stage", "reason", "errors", "warnings", "ready", "prompt", "gates", "input_currency", "next_actions", "qc_handoff"]);
+  assert.deepEqual(Object.keys(result), ["ok", "status", "stage", "reason", "errors", "warnings", "ready", "prompt", "gates", "input_currency", "next_actions", "qc_handoff", "intent_summary"]);
   assert.equal(result.ok, false);
   assert.equal(result.status, "blocked");
   assert.equal(result.stage, "doctor-blocked");

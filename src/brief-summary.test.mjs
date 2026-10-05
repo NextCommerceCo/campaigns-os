@@ -419,3 +419,121 @@ test("F2.3-I10 a normalized brief file that is not valid JSON reads intent_summa
   assert.throws(() => JSON.parse(readFileSync(briefPath, "utf8")), SyntaxError, "setup: the normalized brief file is present and not valid JSON");
   assert.equal(intentSummaryOf(await nextJson(fixture)).status, "unavailable");
 });
+
+// ---------------------------------------------------------------------------
+// Word-bound cut order (not frozen rows). The lists are cut one line at a
+// time, each to k = 5 … 1 before the next starts: line 7, then line 4, then
+// line 3; only then are the line-1/2/5/6 values cut to 8 words.
+
+const BOUND_PAGE_IDS = Array.from({ length: 12 }, (_, i) => `page-${String(i + 1).padStart(2, "0")}`);
+const nWords = (tag, n) => Array.from({ length: n }, (_, i) => `${tag}${i + 1}`).join(" ");
+const QUOTED = /"(?:[^"\\]|\\.)*"/g;
+const MORE = /\+\d+ more/g;
+
+// statedBrief() over BOUND_PAGE_IDS, every value restamped `stated`.
+// `authority(i)` is page i's design_authority source; `valueWords` > 0 sets
+// the six scalar values of lines 1, 2, 5 and 6 to that many words.
+function boundBrief({ avoid = [], authority = () => "template", valueWords = 0 } = {}) {
+  const brief = statedBrief();
+  brief.design_authority = Object.fromEntries(BOUND_PAGE_IDS.map((id, i) => [id, { source: authority(i), reference: `${id}.html` }]));
+  brief.brand.avoid = avoid;
+  if (valueWords) {
+    for (const path of ["campaign_intent.audience", "campaign_intent.conversion_goal", "campaign_intent.tone", "brand.commerce_palette_source", "brand.primary_accent", "brand.cta_style"]) {
+      const [head, key] = path.split(".");
+      brief[head][key] = nWords(`${key}-`, valueWords);
+    }
+  }
+  brief._meta.field_sources = {};
+  for (const path of summaryFieldPaths(brief)) stamp(brief, path);
+  return brief;
+}
+const twelveWordAvoid = () => Array.from({ length: 20 }, (_, i) => nWords(`avoid${i + 1}-`, 12));
+const twelveWordAuthority = (i) => nWords(`source${i + 1}-`, 12);
+
+function assertWithinBound(summary) {
+  assert.equal(summary.word_count, summary.text.split(/\s+/).filter(Boolean).length, "word_count counts the text's whitespace tokens");
+  assert.ok(summary.word_count <= 150, `word_count ${summary.word_count} <= 150:\n${summary.text}`);
+}
+
+// What each cut step left visible: avoid items on line 7, groups and page ids
+// on line 4, page ids on line 3, "+N more" per list line, and whether each of
+// lines 1, 2, 5 and 6 carries a value cut with "…".
+function cutState(summary) {
+  const line = (n) => summaryLine(summary, n);
+  const pageIds = (text) => text.match(/page-\d\d/g) ?? [];
+  const avoidPart = line(7).split("; template placeholders removed: ")[0];
+  return {
+    avoidShown: (avoidPart.match(QUOTED) ?? []).length,
+    avoidMore: avoidPart.match(MORE) ?? [],
+    authorityGroupsShown: line(4).slice("Visual authority: ".length).replace(/\.$/, "").split("; ").filter((part) => !/^\+\d+ more$/.test(part)).length,
+    authorityPagesShown: pageIds(line(4)),
+    authorityMore: line(4).match(MORE) ?? [],
+    journeyShown: pageIds(line(3)),
+    journeyMore: line(3).match(MORE) ?? [],
+    valuesCut: [1, 2, 5, 6].filter((n) => line(n).includes("…")),
+  };
+}
+
+test("word bound: twelve distinct twelve-word authority groups end within 150 words", async () => {
+  const brief = boundBrief({ authority: twelveWordAuthority });
+  assert.equal(new Set(BOUND_PAGE_IDS.map((id) => brief.design_authority[id].source)).size, 12, "setup: twelve distinct authority values");
+  assert.ok(BOUND_PAGE_IDS.every((id) => brief.design_authority[id].source.split(" ").length === 12), "setup: each authority value is 12 words");
+  const summary = await summarize(brief, BOUND_PAGE_IDS);
+  assertWithinBound(summary);
+  assert.equal(summary.status, "partial", "a cut summary with other groups reads partial");
+});
+
+test("word bound: an avoid list that alone carries the excess is the only list cut", async () => {
+  const brief = boundBrief({ avoid: twelveWordAvoid() });
+  const uncut = await summarize(boundBrief({ avoid: twelveWordAvoid().slice(0, 1) }), BOUND_PAGE_IDS);
+  assert.ok(uncut.word_count + 2 * 12 + 2 <= 150, `setup: three avoid items plus "+N more" fit (one item reads ${uncut.word_count} words)`);
+  const summary = await summarize(brief, BOUND_PAGE_IDS);
+  assertWithinBound(summary);
+  const state = cutState(summary);
+  assert.equal(state.avoidMore.length, 1, `line 7 is cut:\n${summary.text}`);
+  assert.ok(state.avoidShown >= 1 && state.avoidShown <= 5, "line 7 keeps 1 to 5 avoid items");
+  assert.deepEqual(state.journeyShown, BOUND_PAGE_IDS, "line 3 keeps every journey page");
+  assert.deepEqual(state.journeyMore, [], "line 3 is not cut");
+  assert.deepEqual(state.authorityPagesShown, BOUND_PAGE_IDS, "line 4 keeps every authority page");
+  assert.deepEqual(state.authorityMore, [], "line 4 is not cut");
+  assert.deepEqual(state.valuesCut, [], "no value is cut to 8 words");
+});
+
+test("word bound: lists are cut line 7, then line 4, then line 3, then values, each exhausted before the next", async () => {
+  // Each stage adds length that the previous stage's cuts no longer absorb.
+  const stages = [
+    { name: "line 7 only", brief: boundBrief({ avoid: twelveWordAvoid() }) },
+    { name: "line 7, then line 4", brief: boundBrief({ avoid: twelveWordAvoid(), authority: twelveWordAuthority }) },
+    { name: "lines 7 and 4, then line 3", brief: boundBrief({ avoid: twelveWordAvoid(), authority: twelveWordAuthority, valueWords: 10 }) },
+    { name: "lines 7, 4 and 3, then the final cut", brief: boundBrief({ avoid: twelveWordAvoid(), authority: twelveWordAuthority, valueWords: 12 }) },
+  ];
+  const states = [];
+  for (const stage of stages) {
+    const summary = await summarize(stage.brief, BOUND_PAGE_IDS);
+    assertWithinBound(summary);
+    states.push({ ...cutState(summary), text: summary.text });
+  }
+  const [only7, then4, then3, final] = states;
+
+  assert.equal(only7.avoidMore.length, 1, `line 7 only: line 7 is cut:\n${only7.text}`);
+  assert.deepEqual([only7.authorityMore, only7.journeyMore, only7.valuesCut], [[], [], []], `line 7 only: nothing else is cut:\n${only7.text}`);
+
+  assert.equal(then4.avoidShown, 1, `line 7, then line 4: line 7 is at k = 1 before line 4 is cut:\n${then4.text}`);
+  assert.equal(then4.authorityMore.length, 1, `line 7, then line 4: line 4 is cut:\n${then4.text}`);
+  assert.deepEqual(then4.journeyShown, BOUND_PAGE_IDS, "line 7, then line 4: line 3 keeps every page");
+  assert.deepEqual(then4.valuesCut, [], "line 7, then line 4: no value is cut");
+
+  assert.equal(then3.avoidShown, 1, `lines 7 and 4, then line 3: line 7 is at k = 1:\n${then3.text}`);
+  assert.equal(then3.authorityGroupsShown, 1, "lines 7 and 4, then line 3: line 4 is at k = 1 (one group)");
+  assert.deepEqual(then3.authorityPagesShown, ["page-01"], "lines 7 and 4, then line 3: line 4 is at k = 1 (one page id)");
+  assert.equal(then3.journeyMore.length, 1, `lines 7 and 4, then line 3: line 3 is cut:\n${then3.text}`);
+  assert.deepEqual(then3.valuesCut, [], "lines 7 and 4, then line 3: no value is cut");
+
+  assert.deepEqual([final.avoidShown, final.authorityGroupsShown, final.journeyShown], [1, 1, ["page-01"]], `the final cut: every list is at k = 1 first:\n${final.text}`);
+  assert.deepEqual(final.valuesCut, [1, 2, 5, 6], `the final cut: lines 1, 2, 5 and 6 are cut:\n${final.text}`);
+  const finalValues = [1, 2, 5, 6].flatMap((n) => summaryLine({ text: final.text }, n).match(QUOTED));
+  assert.equal(finalValues.length, 6, "the final cut: six values on lines 1, 2, 5 and 6");
+  assert.ok(finalValues.every((value) => value.slice(1, -1).split(" ").length === 8 && value.endsWith("…\"")), `the final cut: each value is 8 words with "…": ${finalValues.join(" | ")}`);
+  assert.equal(summaryLine({ text: final.text }, 8), `Commerce: products, prices and offers come from CampaignSpec/API values; cart, checkout and post-purchase behaviour stay with the SDK.`, "line 8 is never cut");
+  assert.equal(summaryLine({ text: final.text }, 9), "Open brief questions: none.", "line 9 is never cut");
+});
