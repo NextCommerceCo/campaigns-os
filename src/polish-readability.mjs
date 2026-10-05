@@ -449,30 +449,9 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
   // The flat tree, as the shared helper walks it: an element slotted into an
   // open shadow root sits in its slot, and the top element of a shadow tree
   // sits in the root's host. A frame's document is its own tree.
-  const shadowRootOf = (el) => (el.parentNode && el.parentNode.nodeType === 11 && el.parentNode.host ? el.parentNode : null);
-  const flatParent = (el) => el.assignedSlot || el.parentElement || (shadowRootOf(el) ? shadowRootOf(el).host : null);
-  const flatClosest = (el, selector) => {
-    for (let at = el; at && at.nodeType === 1; at = flatParent(at)) if (at.matches(selector)) return at;
-    return null;
-  };
-  const flatContains = (ancestor, el) => {
-    for (let at = el; at; at = flatParent(at)) if (at === ancestor) return true;
-    return false;
-  };
-  // An element and everything under it, open shadow roots included.
-  const flatSubtree = (el) => {
-    const found = [el, ...el.querySelectorAll("*")];
-    for (let at = 0; at < found.length; at += 1) {
-      if (found[at].shadowRoot) found.push(...found[at].shadowRoot.querySelectorAll("*"));
-    }
-    return found;
-  };
+  const { flatParent, flatClosest, flatContains, flatSubtree, isVisible } = toolkit;
   const flatText = (el) => [el.textContent, ...flatSubtree(el).filter((node) => node.shadowRoot).map((node) => node.shadowRoot.textContent)].join("");
 
-  const shown = (el) => {
-    const box = el.getBoundingClientRect();
-    return el.checkVisibility({ visibilityProperty: true }) && box.width > 0 && box.height > 0;
-  };
   const frameDocument = (frame) => {
     try {
       return frame.contentDocument;
@@ -517,7 +496,7 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
       const inner = frameDocument(el);
       const readable = Boolean(inner) && frameLoaded(el, inner);
       frames.push([el, scope, readable]);
-      if (!readable || !inner.body || !inner.defaultView || !shown(el)) continue;
+      if (!readable || !inner.body || !inner.defaultView || !isVisible(el)) continue;
       const box = el.getBoundingClientRect();
       const style = scopeWin.getComputedStyle(el);
       const padding = (side) => Number.parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
@@ -556,7 +535,6 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
   };
   const windowOf = (el) => (el.ownerDocument && el.ownerDocument.defaultView) || win;
   const showsText = (el) => flatSubtree(el).some((node) => toolkit.isTextBearing(node, windowOf(node)));
-  const pathOf = (el) => toolkit.measureTextElement(el, windowOf(el)).selector_path;
   const recordOf = (measured, role, rect) => ({
     role,
     selector_path: measured.selector_path,
@@ -581,7 +559,7 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
   });
 
   const gaps = [];
-  const gap = (reason, role, el) => gaps.push({ reason, role, selector_path: pathOf(el) });
+  const gap = (reason, role, el) => gaps.push({ reason, role, selector_path: toolkit.selectorPath(el) });
   const elements = [];
   let measured = 0;
   let capped = false;
@@ -625,38 +603,16 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
     else elements.push(recordOf(read, role, rectOf(el, scope)));
   }
 
-  // Placeholder hints of checkout fields, against the field's background.
+  // Placeholder hints of checkout fields: the ::placeholder text, against the
+  // field's background.
   for (const scope of scopes) {
     for (const field of scope.root.querySelectorAll(`input${CHECKOUT_FIELD}[placeholder], textarea${CHECKOUT_FIELD}[placeholder]`)) {
       if (capped) break;
-      if (!/\S/.test(field.getAttribute("placeholder")) || field.value !== "" || !shown(field)) continue;
+      if (!/\S/.test(field.getAttribute("placeholder")) || field.value !== "" || !isVisible(field)) continue;
       if (!admit()) break;
-      const read = toolkit.measureTextElement(field, scope.win);
-      if (read.control_loading) {
-        gaps.push({ reason: "control_loading", role: "checkout_hint", selector_path: read.selector_path });
-        continue;
-      }
-      if (read.disabled) {
-        elements.push(recordOf({ ...read, rendered: true }, "checkout_hint", rectOf(field, scope)));
-        continue;
-      }
-      const placeholder = scope.win.getComputedStyle(field, "::placeholder");
-      const fg_raw = placeholder.getPropertyValue("color");
-      const fill_raw = placeholder.getPropertyValue("-webkit-text-fill-color");
-      const derived = toolkit.deriveElementMeasurement({ fg_raw, fill_raw, bg_layers_raw: read.bg_layers_raw, font_size_px: read.font_size_px, font_weight: read.font_weight });
-      elements.push(recordOf({
-        ...read,
-        rendered: true,
-        fg_raw,
-        fill_raw,
-        fg_srgb: derived.fg_srgb,
-        bg_srgb: derived.bg_srgb,
-        gamut_clipped: derived.gamut_clipped,
-        ratio: derived.ratio,
-        required: derived.required,
-        size_class: derived.size_class,
-        review_reason: read.review_reason ?? derived.review_reason,
-      }, "checkout_hint", rectOf(field, scope)));
+      const read = toolkit.measurePlaceholder(field, scope.win);
+      if (read.control_loading) gaps.push({ reason: "control_loading", role: "checkout_hint", selector_path: read.selector_path });
+      else elements.push(recordOf(read, "checkout_hint", rectOf(field, scope)));
     }
   }
 
@@ -725,7 +681,7 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
     if (holder) gap("closed_shadow_root", null, holder);
   }
   for (const [frame, , readable] of frames) {
-    if (shown(frame) && !readable) gap("cross_origin_text", null, frame);
+    if (isVisible(frame) && !readable) gap("cross_origin_text", null, frame);
   }
 
   return { status: "measured", capped, coverage_gaps: gaps, elements, viewport };

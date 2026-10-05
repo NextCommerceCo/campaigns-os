@@ -226,6 +226,10 @@ export function contrastToolkit() {
     "data-next-display", "data-next-bundle-display", "data-next-checkout-field",
   ];
   const REPLACED_ELEMENTS = new Set(["img", "video", "canvas", "svg", "picture", "iframe", "object", "embed"]);
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  // What an SVG drawing paints as layers of its own: shapes, images, <use>,
+  // foreign objects and nested drawings.
+  const SVG_LAYERS = new Set(["rect", "circle", "ellipse", "line", "polyline", "polygon", "path", "image", "use", "foreignObject", "svg"]);
   const SDK_LOADER_SRC = /campaign-cart(?:@[^"']*)?\/dist\/loader\.js/i;
   const DEFAULT_CANVAS = "rgb(255, 255, 255)";
   const COLOUR_FIELDS = { fg_raw: null, fill_raw: null, bg_layers_raw: null, fg_srgb: null, bg_srgb: null, gamut_clipped: null, ratio: null };
@@ -252,6 +256,29 @@ export function contrastToolkit() {
   const flatContains = (ancestor, el) => {
     for (let at = el; at; at = flatParent(at)) if (at === ancestor) return true;
     return false;
+  };
+  // Every element at or under `node` (an element, a document or a shadow
+  // root), each open shadow root inside it included: the node's own tree in
+  // document order, then each shadow tree in the order its host was reached.
+  const flatSubtree = (node) => {
+    const found = node.nodeType === 1 ? [node, ...node.querySelectorAll("*")] : Array.from(node.querySelectorAll("*"));
+    for (let at = 0; at < found.length; at += 1) {
+      if (found[at].shadowRoot) found.push(...found[at].shadowRoot.querySelectorAll("*"));
+    }
+    return found;
+  };
+  // Inside an SVG drawing, CSS backgrounds are painted only by the outermost
+  // <svg> and by a foreignObject; its other elements paint with fill and
+  // stroke.
+  const isSvg = (el) => el.namespaceURI === SVG_NS;
+  const paintsCssBackground = (el) => !isSvg(el) || el.localName === "foreignObject" || (el.localName === "svg" && !(flatParent(el) && isSvg(flatParent(el))));
+  // The outermost <svg> of the drawing an element sits in, or null.
+  const drawingOf = (el) => {
+    let at = el;
+    while (at && !isSvg(at)) at = flatParent(at);
+    let drawing = null;
+    for (; at && isSvg(at); at = flatParent(at)) if (at.localName === "svg") drawing = at;
+    return drawing;
   };
   // The frame element a window is shown in, when the document around it is
   // readable (same-origin); otherwise null.
@@ -289,18 +316,6 @@ export function contrastToolkit() {
     });
     return [...new Set(shown.map((node) => node.assignedSlot))];
   };
-  // Every element under `scope`, and under each open shadow root inside it.
-  const deepElements = (scope) => {
-    const found = [];
-    const pending = [scope];
-    while (pending.length) {
-      for (const node of pending.shift().querySelectorAll("*")) {
-        found.push(node);
-        if (node.shadowRoot) pending.push(node.shadowRoot);
-      }
-    }
-    return found;
-  };
 
   // Overlap candidates are read once per document, open shadow roots
   // included.
@@ -308,7 +323,7 @@ export function contrastToolkit() {
   function overlapCandidatesOf(doc, win) {
     if (!overlapCandidates.has(doc)) {
       const body = doc.body;
-      const elements = body ? [...(body.shadowRoot ? deepElements(body.shadowRoot) : []), ...deepElements(body)] : [];
+      const elements = body ? flatSubtree(body).slice(1) : [];
       const candidates = elements.filter((node) => {
         if (!isVisible(node)) return false;
         if (REPLACED_ELEMENTS.has(node.localName)) return true;
@@ -363,6 +378,33 @@ export function contrastToolkit() {
     return textParents(el, win).length > 0;
   }
 
+  // Whether an element's ::first-line or ::first-letter changes the colour,
+  // text fill or opacity of its text, or paints a background of its own.
+  // Read once per element.
+  const firstParts = new WeakMap();
+  const restylesFirstPart = (at, view, own) => {
+    if (!firstParts.has(at)) {
+      firstParts.set(at, ["::first-line", "::first-letter"].some((pseudo) => {
+        const part = view.getComputedStyle(at, pseudo);
+        const differs = (name) => part.getPropertyValue(name) !== own.getPropertyValue(name);
+        return differs("color") || differs("-webkit-text-fill-color")
+          || (paintsBackground(part) && (differs("background-color") || differs("background-image")))
+          || (Number.parseFloat(part.getPropertyValue("opacity")) < 1 && differs("opacity"));
+      }));
+    }
+    return firstParts.get(at);
+  };
+
+  // A drawing's visible layers (SVG_LAYERS), read once per drawing.
+  const drawingLayers = new WeakMap();
+  const drawingLayersOf = (drawing) => {
+    if (!drawingLayers.has(drawing)) {
+      const layers = flatSubtree(drawing).slice(1).filter((node) => isSvg(node) && SVG_LAYERS.has(node.localName) && isVisible(node));
+      drawingLayers.set(drawing, layers.map((node) => ({ node, rect: node.getBoundingClientRect() })));
+    }
+    return drawingLayers.get(drawing);
+  };
+
   // The text's style, its control and state, and the paint walk start where
   // its text renders (textParents). The element's identity, its rendered
   // flag and its box are its own. A shadow host's text can render through
@@ -381,10 +423,29 @@ export function contrastToolkit() {
   // document the text box is shown in. A frame document whose root
   // color-scheme differs from its frame element's paints its own canvas,
   // which is not read: trigger 10.
-  function measureTextElement(el, win) {
-    const origins = textParents(el, win);
+  //
+  // SVG text is painted with its fill, not with CSS color: a fill that is a
+  // plain colour is the text fill (fill_raw); a fill that is not (a gradient
+  // or pattern, none, a context paint), a stroke or a paint order is trigger
+  // 9, and a fill opacity below 1 is trigger 5. A shape, image, foreign
+  // object or nested drawing of the same drawing whose box meets the text's
+  // is trigger 4.
+  //
+  // ::first-line and ::first-letter paint the first line or letter with
+  // their own style, inherited by the text of descendants on that line: on
+  // the text or on any element around it in its document, one whose colour,
+  // text fill or opacity differs from its element's, or that paints a
+  // background of its own, is trigger 3.
+  //
+  // A placeholder (measurePlaceholder) is read with its ::placeholder
+  // colour, text fill, font size and weight, over the field's backgrounds.
+  // A ::placeholder that paints a background of its own is trigger 3, and
+  // its opacity, filter, blend mode and mask count like the field's.
+  function measureText(el, win, placeholder) {
+    const origins = placeholder ? [el] : textParents(el, win);
     const [origin = el] = origins;
-    const style = win.getComputedStyle(origin);
+    const textStyleOf = (at) => (placeholder ? win.getComputedStyle(at, "::placeholder") : win.getComputedStyle(at));
+    const style = textStyleOf(origin);
     const font_size_px = Number.parseFloat(style.getPropertyValue("font-size"));
     const font_weight = Number(style.getPropertyValue("font-weight"));
     const large = isLargeText({ fontSizePx: font_size_px, fontWeight: font_weight });
@@ -393,7 +454,8 @@ export function contrastToolkit() {
     const mixed = origins.slice(1).some((other) => flatClosest(other, CONTROL_SELECTOR) !== control || stateOf(other) !== state);
     const disabled = el.matches(DISABLED_SELECTOR) || (!mixed && Boolean(control && control.matches(DISABLED_SELECTOR)));
     const control_loading = !mixed && Boolean(control) && LOADING_ATTRIBUTES.some((name) => control.hasAttribute(name) && control.getAttribute(name) !== "false");
-    const head = { selector_path: selectorPath(el), state, disabled, rendered: isTextBearing(el, win), font_size_px, font_weight, size_class: large ? "large" : "normal" };
+    const rendered = placeholder ? isVisible(el) && el.value === "" && /\S/.test(el.placeholder || "") : isTextBearing(el, win);
+    const head = { selector_path: selectorPath(el), state, disabled, rendered, font_size_px, font_weight, size_class: large ? "large" : "normal" };
     if (disabled || control_loading) return { ...head, ...COLOUR_FIELDS, required: requiredRatio(large), review_reason: null, control_loading };
 
     const triggers = new Set();
@@ -409,9 +471,20 @@ export function contrastToolkit() {
     // One slot's (or the element's own) reading, adding the triggers on its
     // way out.
     const readThrough = (start) => {
-      const startStyle = start === origin ? style : win.getComputedStyle(start);
-      const fg_raw = startStyle.getPropertyValue("color");
-      const fill_raw = startStyle.getPropertyValue("-webkit-text-fill-color");
+      const text = start === origin ? style : textStyleOf(start);
+      const fg_raw = text.getPropertyValue("color");
+      let fill_raw = text.getPropertyValue("-webkit-text-fill-color");
+      if (isSvg(start)) {
+        const fill = text.getPropertyValue("fill");
+        if ("unparseable" in parseComputedColor(fill)) triggers.add(9);
+        else fill_raw = fill;
+        if (isSet(text.getPropertyValue("stroke")) || isSet(text.getPropertyValue("paint-order"), "normal")) triggers.add(9);
+        if (Number.parseFloat(text.getPropertyValue("fill-opacity")) < 1) triggers.add(5);
+      }
+      if (placeholder) {
+        paintEffects(text);
+        if (paintsBackground(text)) triggers.add(3);
+      }
       const fillTransparent = transparent(fill_raw);
       const bg_layers_raw = [];
       let opaque = false;
@@ -419,9 +492,10 @@ export function contrastToolkit() {
       let view = win;
       let root = el.ownerDocument.documentElement;
       for (let at = start; at && at.nodeType === 1;) {
-        const layer = at === start ? startStyle : view.getComputedStyle(at);
+        const layer = at === start && !placeholder ? text : view.getComputedStyle(at);
         paintEffects(layer);
-        if (!opaque && !unread) {
+        if (view === win && !isSvg(at) && restylesFirstPart(at, view, layer)) triggers.add(3);
+        if (!opaque && !unread && paintsCssBackground(at)) {
           const image = layer.getPropertyValue("background-image");
           if (image.includes("-gradient(")) triggers.add(1);
           else if (isSet(image)) triggers.add(2);
@@ -449,7 +523,7 @@ export function contrastToolkit() {
         if (light(schemeOf(view, root))) bg_layers_raw.push(DEFAULT_CANVAS);
         else triggers.add(10);
       }
-      return { fg_raw, fill_raw, bg_layers_raw, font_size_px: Number.parseFloat(startStyle.getPropertyValue("font-size")), font_weight: Number(startStyle.getPropertyValue("font-weight")) };
+      return { fg_raw, fill_raw, bg_layers_raw, font_size_px: Number.parseFloat(text.getPropertyValue("font-size")), font_weight: Number(text.getPropertyValue("font-weight")) };
     };
     const { fg_raw, fill_raw, bg_layers_raw } = readThrough(origin);
     const reading = JSON.stringify({ fg_raw, fill_raw, bg_layers_raw, font_size_px, font_weight });
@@ -462,7 +536,7 @@ export function contrastToolkit() {
     let inner = origin;
     let view = win;
     for (let doc = el.ownerDocument; doc;) {
-      if (overlapCandidatesOf(doc, view).some(({ node, rect }) => !flatContains(node, inner) && !flatContains(inner, node) && intersects(rect, box))) triggers.add(4);
+      if (overlapCandidatesOf(doc, view).some(({ node, rect }) => intersects(rect, box) && !flatContains(node, inner) && !flatContains(inner, node))) triggers.add(4);
       const frame = frameOf(view);
       if (!frame) break;
       const outer = frame.ownerDocument.defaultView;
@@ -474,6 +548,11 @@ export function contrastToolkit() {
       inner = frame;
       view = outer;
       doc = frame.ownerDocument;
+    }
+    const drawing = drawingOf(origin);
+    if (drawing) {
+      const textBox = el.getBoundingClientRect();
+      if (drawingLayersOf(drawing).some(({ node, rect }) => intersects(rect, textBox) && !flatContains(node, origin) && !flatContains(origin, node))) triggers.add(4);
     }
     if (el.matches(".next-disabled") || Boolean(control && control.matches(".next-disabled"))) triggers.add(11);
 
@@ -494,6 +573,15 @@ export function contrastToolkit() {
     };
   }
 
+  function measureTextElement(el, win) {
+    return measureText(el, win, false);
+  }
+
+  // The placeholder of a text field, measured like its text would be.
+  function measurePlaceholder(field, win) {
+    return measureText(field, win, true);
+  }
+
   // First match: SDK readiness, then stylesheets, then fonts. The SDK and
   // stylesheet checks read every tree of the document: its own elements and
   // each open shadow root inside it. Chromium gives a stylesheet that failed
@@ -504,7 +592,7 @@ export function contrastToolkit() {
   // loaded, and its imports are not seen.
   function documentMeasurability(doc) {
     const body = doc.body;
-    const trees = [doc, ...deepElements(doc).filter((node) => node.shadowRoot).map((node) => node.shadowRoot)];
+    const trees = [doc, ...flatSubtree(doc).filter((node) => node.shadowRoot).map((node) => node.shadowRoot)];
     const everywhere = (selector) => trees.flatMap((tree) => Array.from(tree.querySelectorAll(selector)));
     const declared = Boolean(body && body.hasAttribute("data-next-sdk-loading"))
       || everywhere("script[src]").some((script) => SDK_LOADER_SRC.test(script.getAttribute("src")));
@@ -544,6 +632,16 @@ export function contrastToolkit() {
     deriveElementMeasurement,
     isTextBearing,
     measureTextElement,
+    measurePlaceholder,
     documentMeasurability,
+    // The flat-tree walk the measurement uses, for page scripts that read
+    // the same trees.
+    shadowRootOf,
+    flatParent,
+    flatClosest,
+    flatContains,
+    flatSubtree,
+    isVisible,
+    selectorPath,
   };
 }

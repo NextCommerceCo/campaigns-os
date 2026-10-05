@@ -1407,15 +1407,6 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
   // per-element detail for the listed candidates only.
   const ignoredAttributes = Array.from(new Set(visibleElements.flatMap(ignoredAttributesOn))).sort();
 
-  // Every element the page renders inside a candidate: its own subtree, open
-  // shadow roots included.
-  const flatSubtree = (element) => {
-    const found = [element, ...element.querySelectorAll("*")];
-    for (let at = 0; at < found.length; at += 1) {
-      if (found[at].shadowRoot) found.push(...found[at].shadowRoot.querySelectorAll("*"));
-    }
-    return found;
-  };
   // A route candidate's text, read through the shared contrast helper: each
   // text-bearing element inside it is compared, unrounded, with the
   // requirement for its own size. An element with a review trigger (or with
@@ -1430,7 +1421,9 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
     if (element.matches(":disabled, [aria-disabled=\"true\"]")) {
       return { disabled: true, text_rendered: null, control_loading: null, contrast_ratio: null, elements: [], below: false, review: false, measured: false, inactive: false };
     }
-    const subtree = flatSubtree(element);
+    // Every element the page renders inside the candidate: its own subtree,
+    // open shadow roots included.
+    const subtree = toolkit.flatSubtree(element);
     const reads = subtree
       .filter((node) => toolkit.isTextBearing(node, window))
       .map((node) => toolkit.measureTextElement(node, window));

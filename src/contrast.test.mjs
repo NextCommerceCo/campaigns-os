@@ -487,3 +487,22 @@ test("an SDK loader script inside an open shadow root declares the SDK: sdk_not_
   assert.deepEqual(reading({}), { measurable: false, reason: "sdk_not_ready" });
   assert.deepEqual(reading({ "data-next-sdk-loading": "false" }), { measurable: true }, "control: a page that signals ready is measurable");
 });
+
+// The page scripts that read the same trees as the helper walk them with the
+// helper's own functions, so the two walks cannot drift apart.
+const FLAT_TREE_COPIES = /\b(?:const|let|var|function)\s+(?:shadowRootOf|flatParent|flatClosest|flatContains|flatSubtree|shown|pathOf)\b/g;
+
+test("the readability probe and QA's primary-CTA script define no flat-tree walk of their own", async () => {
+  const { readabilityProbe } = await import("./polish-readability.mjs");
+  const { __qaBrowserTestHooks } = await import("./qa-browser.mjs");
+  const script = __qaBrowserTestHooks.primaryCtaInspectionScript("https://campaign.example/checkout/");
+  // The script's own text: everything before the helper's source it carries.
+  const own = script.slice(0, script.indexOf("function contrastToolkit("));
+  assert.ok(own.startsWith("(function inspectPrimaryCtaScript("), "setup: the script's own text");
+  assert.deepEqual(readabilityProbe.toString().match(FLAT_TREE_COPIES) ?? [], [], "the probe");
+  assert.deepEqual(own.match(FLAT_TREE_COPIES) ?? [], [], "the primary-CTA script");
+  const kit = await toolkit();
+  for (const name of ["shadowRootOf", "flatParent", "flatClosest", "flatContains", "flatSubtree", "isVisible", "selectorPath"]) {
+    assert.equal(typeof kit[name], "function", `the helper exports ${name}`);
+  }
+});

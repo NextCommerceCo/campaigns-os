@@ -271,3 +271,13 @@ other.assign(texts[1]);
   const elements = entry.evidence.candidates.flatMap((candidate) => candidate.elements || []);
   assert.deepEqual(elements.map((element) => element.review_reason), ["overlapping_layer"], JSON.stringify(elements));
 });
+
+// SVG text inside a route CTA is painted with its fill, not its CSS colour.
+browserTest("QA CTA: a route CTA whose label is #eee-filled SVG text on #fff (CSS color #111) reads fail / low_contrast", async () => {
+  const label = "<svg width=\"120\" height=\"30\" style=\"vertical-align:middle\"><text x=\"0\" y=\"20\" font-size=\"16\" fill=\"#eeeeee\">Buy now</text></svg>";
+  const entry = one(await primaryCta(htmlPage(cta("color:#111111;background:#ffffff", label))));
+  assert.deepEqual(outcome(entry), { status: "fail", reason: "low_contrast" }, entry.actual);
+  const elements = entry.evidence.candidates.flatMap((candidate) => candidate.elements || []);
+  assert.equal(elements.length, 1, JSON.stringify(elements));
+  assert.match(elements[0].selector_path, />svg:nth-of-type\(1\)>text:nth-of-type\(1\)$/);
+});

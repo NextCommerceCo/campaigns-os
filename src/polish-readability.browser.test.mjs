@@ -971,3 +971,61 @@ browserTest("the record persists no slotted, framed or generated text", async ()
   const serialized = JSON.stringify(record);
   assert.deepEqual(["First text", "Second text", "Frame text", "Body text", "\"now\"", "\"more\""].filter((text) => serialized.includes(text)), []);
 });
+
+// ---------------------------------------------------------------------------
+// Text the page paints with something other than its element's CSS colour
+// and font: SVG text is painted with its fill; a placeholder with its
+// ::placeholder colour, size and weight; the first line or letter with its
+// ::first-line or ::first-letter style.
+
+const DRAWING = (inner) => `<svg width="240" height="60" style="display:block">${inner}</svg>`;
+const PAINTED_PAGES = {
+  "svg-white-fill": htmlPage(DRAWING("<text x=\"8\" y=\"40\" font-size=\"16\" fill=\"#ffffff\">Drawn text</text>")),
+  "svg-gradient-fill": htmlPage(`<button data-next-action="add-to-cart" type="button" style="${BTN};color:#111111;background:#ffffff">${DRAWING("<defs><linearGradient id=\"g\"><stop offset=\"0\" stop-color=\"#ffffff\"/><stop offset=\"1\" stop-color=\"#eeeeee\"/></linearGradient></defs><text x=\"8\" y=\"40\" font-size=\"16\" fill=\"url(#g)\">Drawn label</text>")}</button>`),
+  "placeholder-size": htmlPage("<input data-next-checkout-field=\"email\" placeholder=\"Email address\" style=\"font-size:24px;font-weight:400;color:#ffffff;background:#e0662b;border:0;width:320px;height:48px\">", { head: "<style>input::placeholder{font-size:16px;font-weight:400;color:#ffffff}</style>" }),
+  "first-line": htmlPage(`<p class="first-line" data-next-action="add-to-cart" style="${P};color:#111111;background:#ffffff">First line text</p>`, { head: "<style>.first-line::first-line{color:#fafafa}</style>" }),
+};
+
+const paintedCapture = (() => {
+  let pending = null;
+  let site = null;
+  after(async () => {
+    await site?.close();
+  });
+  return () => {
+    pending ||= (async () => {
+      site = await readabilitySite({ pages: PAINTED_PAGES });
+      const capture = await capturePolish(site);
+      assertCaptureCompleted(capture);
+      const record = readabilityRecord(capture.report);
+      const rows = await readabilityRows(site);
+      assert.ok(rows.length > 0, "readCurrentQcResults lists readability.contrast rows");
+      return { record, rows };
+    })();
+    return pending;
+  };
+})();
+
+browserTest("white-filled SVG text on a white page reads warning, never a pass on its CSS colour", async () => {
+  const { rows } = await paintedCapture();
+  assert.deepEqual(warningRows(pageRows(rows, "svg-white-fill", measuredRow)), warningRows(both({ key: "pair:ffffffff/ffffffff:normal", result: "warning" })));
+});
+
+browserTest("SVG text with a gradient fill in an add-to-cart control reads review, never pass", async () => {
+  const { rows } = await paintedCapture();
+  assert.deepEqual(pageRows(rows, "svg-gradient-fill", measuredRow), both({ key: "review:add_to_cart:unparseable_color", result: "review", reason_code: "unparseable_color" }));
+});
+
+browserTest("16px placeholder text in a 24px checkout field is normal text: #fff on #e0662b (3.44) reads warning", async () => {
+  const { record, rows } = await paintedCapture();
+  const cells = cellsOf(record, "placeholder-size");
+  for (const viewport of VIEWPORTS) {
+    assert.deepEqual(cells[viewport].elements.map((element) => [element.role, element.font_size_px, element.size_class]), [["checkout_hint", 16, "normal"]], `${viewport}: the placeholder's own size`);
+  }
+  assert.deepEqual(warningRows(pageRows(rows, "placeholder-size", measuredRow)), warningRows(both({ key: "pair:ffffffff/e0662bff:normal", result: "warning" })));
+});
+
+browserTest("text whose ::first-line colour differs from its own reads review / pseudo_element_background, never pass", async () => {
+  const { rows } = await paintedCapture();
+  assert.deepEqual(pageRows(rows, "first-line", measuredRow), both({ key: "review:add_to_cart:pseudo_element_background", result: "review", reason_code: "pseudo_element_background" }));
+});

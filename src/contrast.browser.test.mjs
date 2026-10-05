@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { after, afterEach } from "node:test";
 
 import { contrastToolkit } from "./contrast.mjs";
+import { generatedTextRenders, readabilityProbe } from "./polish-readability.mjs";
 import { loopbackGuard, stubOrigin } from "./polish-media-weight-harness.browser.test.mjs";
 import { assertNoNetworkAttempts } from "./qc-test-factories.mjs";
 import { browserTest, connectionReset, htmlPage, respond, stall } from "./readability-harness.browser.test.mjs";
@@ -40,6 +41,11 @@ other.assign(texts[1]);
 const FRAME = (style, doc = FRAME_DOC) => `<iframe srcdoc="${doc}" style="width:320px;height:120px;border:0;${style}"></iframe>`;
 const BARE_FRAME_DOC = "<!doctype html><body style='margin:0'><p style='margin:0;padding:8px;color:#222222'>Frame text</p></body>";
 const NESTED = (outer) => `<div style="${outer}"><div style="background:#111"><span data-next-action="add-to-cart" style="color:#fff">x</span></div></div>`;
+// An inline SVG drawing on the page's white background; its CSS color is
+// black, so only its text's fill can make the text light.
+const SVG = (inner, style = "") => `<svg width="240" height="60" style="display:block;color:#000000;${style}">${inner}</svg>`;
+// A 24px field, large text by its own font, #fff on #e0662b (3.44:1).
+const FIELD = "font-size:24px;font-weight:400;color:#ffffff;background:#e0662b;border:0;width:320px;height:48px";
 
 const PAGES = ({ other }) => ({
   b1: htmlPage(`<p style="${P};color:#ffffff;background:#0080aa">Normal text</p>`),
@@ -105,6 +111,24 @@ const PAGES = ({ other }) => ({
   "import-missing": htmlPage(STRIP, { head: "<style>@import url(/import-missing/missing.css);</style>" }),
   "shadow-import-missing": htmlPage(`<div>${OPEN(`<style>@import url(/shadow-import-missing/missing.css);</style><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
   "shadow-import-loaded": htmlPage(`<div>${OPEN(`<style>@import url(/loaded.css);</style><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
+  "svg-fill": htmlPage(SVG(`<text x="8" y="40" font-size="16" fill="#eeeeee">SVG text</text>`)),
+  "svg-paint": htmlPage([
+    SVG(`<defs><linearGradient id="g"><stop offset="0" stop-color="#111111"/><stop offset="1" stop-color="#333333"/></linearGradient></defs><text x="8" y="40" font-size="16" fill="url(#g)">Gradient text</text>`),
+    SVG("<text x=\"8\" y=\"40\" font-size=\"16\" fill=\"#111111\" stroke=\"#ffffff\">Stroked text</text>"),
+    SVG("<text x=\"8\" y=\"40\" font-size=\"16\" fill=\"#111111\" paint-order=\"stroke\">Ordered text</text>"),
+    SVG("<text x=\"8\" y=\"40\" font-size=\"16\" fill=\"#111111\" fill-opacity=\"0.3\">Faint text</text>"),
+    SVG("<text x=\"8\" y=\"40\" font-size=\"16\" fill=\"none\">Unfilled text</text>"),
+  ].join("")),
+  "svg-text-background": htmlPage(SVG("<text x=\"8\" y=\"40\" font-size=\"16\" fill=\"#ffffff\" style=\"background:#000000\">SVG text</text>", "background:#ffffff")),
+  "svg-shape": htmlPage(SVG("<rect x=\"0\" y=\"0\" width=\"240\" height=\"60\" fill=\"#000000\"/><text x=\"8\" y=\"40\" font-size=\"16\" fill=\"#000000\">SVG text</text>")),
+  "svg-foreign": htmlPage(SVG(`<rect x="0" y="0" width="240" height="60" fill="#000000"/><foreignObject x="0" y="0" width="240" height="60"><p xmlns="http://www.w3.org/1999/xhtml" style="${P};color:#000000">Foreign text</p></foreignObject>`)),
+  "svg-control": htmlPage(`<div style="padding:8px;background:#111111">${SVG("<text x=\"8\" y=\"40\" font-size=\"16\" fill=\"#ffffff\">SVG text</text>")}</div>`),
+  "first-line": htmlPage(`<p class="first-line" style="${P};color:#111111;background:#ffffff">First line text</p>`, { head: "<style>.first-line::first-line{color:#fafafa}</style>" }),
+  "first-letter": htmlPage(`<p class="first-letter" style="${P};color:#111111;background:#ffffff">First letter text</p>`, { head: "<style>.first-letter::first-letter{background:#111111}</style>" }),
+  "first-line-ancestor": htmlPage(`<div class="first-line" style="padding:8px;background:#ffffff"><span>Inner text</span></div>`, { head: "<style>.first-line::first-line{color:#fafafa}</style>" }),
+  placeholder: htmlPage(`<input data-next-checkout-field="email" placeholder="Email address" style="${FIELD}">`, { head: "<style>input::placeholder{font-size:16px;font-weight:400;color:#ffffff}</style>" }),
+  "placeholder-translucent": htmlPage(`<input data-next-checkout-field="email" placeholder="Email address" style="${FIELD}">`, { head: "<style>input::placeholder{font-size:24px;color:#ffffff;opacity:0.5}</style>" }),
+  gaps: htmlPage(`<details style="${P}"><summary>More</summary><p>Panel text</p></details><button type="button" aria-expanded="false" aria-controls="panel" style="${BTN};color:#ffffff;background:#111111">Show</button><div id="panel" hidden><p>Panel text</p></div>`),
 });
 
 // Measures every text-bearing element in <body>, in whichever world runs it.
@@ -518,4 +542,90 @@ browserTest("a stylesheet in an open shadow root that is still loading or answer
   assert.deepEqual((await measure("shadow-import-missing")).measurability, incomplete, "a shadow-root @import that answered 404");
   assert.deepEqual((await measure("shadow-link-loaded")).measurability, { measurable: true }, "control: a loaded shadow-root link");
   assert.deepEqual((await measure("shadow-import-loaded")).measurability, { measurable: true }, "control: a loaded shadow-root @import");
+});
+
+// SVG text is painted with its fill, not with CSS color: a plain fill colour
+// is the foreground; a fill that is not one plain colour, a stroke, a paint
+// order or a fill opacity is a review member. Inside the drawing only the
+// outermost <svg> (and a foreignObject) paints a CSS background, and its
+// shapes are layers that can sit under the text.
+browserTest("SVG text is measured with its fill colour, not its CSS color", async () => {
+  const element = await only("svg-fill");
+  assert.deepEqual([element.fg_raw, element.fill_raw], ["rgb(0, 0, 0)", "rgb(238, 238, 238)"]);
+  assert.ok(Math.abs(element.ratio - ratioOf(hexToSrgb("#eeeeee"), hexToSrgb("#ffffff"))) < 1e-12, `ratio ${element.ratio}`);
+  assert.equal(kit.meetsRequirement(element.ratio, element.required), false);
+  assert.equal(element.review_reason, null);
+});
+
+browserTest("SVG text with a gradient fill, a stroke, a paint order, a fill opacity or no fill is a review member", async () => {
+  const { elements } = await measure("svg-paint");
+  assert.deepEqual(elements.map((element) => element.review_reason), ["unparseable_color", "unparseable_color", "unparseable_color", "opacity", "unparseable_color"]);
+});
+
+browserTest("a CSS background on SVG text is not painted: the text is measured over the drawing's background", async () => {
+  const element = await only("svg-text-background");
+  assert.equal(element.bg_layers_raw.at(-1), "rgb(255, 255, 255)", JSON.stringify(element.bg_layers_raw));
+  assert.ok(!element.bg_layers_raw.includes("rgb(0, 0, 0)"), JSON.stringify(element.bg_layers_raw));
+  assert.equal(kit.meetsRequirement(element.ratio, element.required), false, `ratio ${element.ratio}`);
+});
+
+browserTest("a shape in the same drawing under SVG text, or under HTML text in a foreignObject, reads review / overlapping_layer", async () => {
+  assert.equal((await only("svg-shape")).review_reason, "overlapping_layer");
+  assert.equal((await only("svg-foreign")).review_reason, "overlapping_layer");
+});
+
+browserTest("control: plain-filled SVG text over an opaque page background is measured", async () => {
+  const element = await only("svg-control");
+  assert.deepEqual([element.review_reason, element.fill_raw, element.bg_layers_raw.at(-1)], [null, "rgb(255, 255, 255)", "rgb(17, 17, 17)"]);
+  assert.equal(kit.meetsRequirement(element.ratio, element.required), true, `ratio ${element.ratio}`);
+});
+
+// ::first-line and ::first-letter paint part of an element's text with their
+// own colour and background.
+browserTest("text whose ::first-line colour or ::first-letter background differs from its own reads review / pseudo_element_background", async () => {
+  assert.equal((await only("first-line")).review_reason, "pseudo_element_background");
+  assert.equal((await only("first-letter")).review_reason, "pseudo_element_background");
+  assert.equal((await only("first-line-ancestor")).review_reason, "pseudo_element_background", "an ancestor's ::first-line reaches the text on its first line");
+});
+
+// A placeholder is measured with the ::placeholder colour, font size and
+// weight, over the field's background.
+const PLACEHOLDER_PROBE = `(() => {
+  const kit = (${contrastToolkit.toString()})();
+  return { version: kit.version, measurability: kit.documentMeasurability(document), elements: [kit.measurePlaceholder(document.querySelector("input"), window)] };
+})()`;
+
+browserTest("a placeholder is measured with its own font size and weight: 16px placeholder text in a 24px field requires 4.5", async () => {
+  const element = await only("placeholder", { probe: PLACEHOLDER_PROBE });
+  assert.deepEqual([element.font_size_px, element.font_weight, element.size_class, element.required], [16, 400, "normal", 4.5]);
+  assert.deepEqual([element.fg_raw, element.bg_layers_raw[0], element.rendered, element.review_reason], ["rgb(255, 255, 255)", "rgb(224, 102, 43)", true, null]);
+  assert.equal(kit.meetsRequirement(element.ratio, element.required), false, `ratio ${element.ratio}`);
+});
+
+browserTest("a translucent placeholder reads review / opacity", async () => {
+  const element = await only("placeholder-translucent", { probe: PLACEHOLDER_PROBE });
+  assert.deepEqual([element.font_size_px, element.size_class, element.review_reason], [24, "large", "opacity"]);
+});
+
+// The readability probe names a coverage gap by its selector path alone; it
+// measures only the elements it records.
+browserTest("the readability probe runs measureTextElement only for the elements it records, not for coverage gaps", async () => {
+  const { same, browser } = await serve();
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  try {
+    const page = await context.newPage();
+    await page.goto(`${same.origin}/gaps/`);
+    const read = await page.evaluate(`(() => {
+      const kit = (${contrastToolkit.toString()})();
+      let measured = 0;
+      const counting = { ...kit, measureTextElement: (el, win) => { measured += 1; return kit.measureTextElement(el, win); } };
+      const read = (${readabilityProbe.toString()})(counting, { elements: 2000 }, [], ${generatedTextRenders.toString()});
+      return { measured, elements: read.elements.length, gaps: read.coverage_gaps };
+    })()`);
+    assert.deepEqual(read.gaps.map((gap) => [gap.reason, gap.selector_path]), [["state_not_observed", "html>body>button[type=\"button\"]:nth-of-type(1)"], ["state_not_observed", "html>body>details:nth-of-type(1)"]], "setup: the page has two coverage gaps");
+    assert.equal(read.elements, 2, "setup: the summary and the button are measured");
+    assert.equal(read.measured, read.elements, "one measurement per recorded element");
+  } finally {
+    await context.close();
+  }
 });
