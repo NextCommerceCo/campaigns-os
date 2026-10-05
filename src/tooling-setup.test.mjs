@@ -411,3 +411,32 @@ test("F2.3-B14 with an installed AGENTS.md from the previous release, tooling se
   assert.equal(run.stderr.includes("install-agent-context"), true, `stderr names install-agent-context: ${run.stderr.slice(0, 500)}`);
   assert.equal(run.status, 1, "the mention is the refusal's");
 });
+
+// An installed context file is current only when its bytes equal the
+// toolkit's: a whitespace-only difference is still a different file.
+const WHITESPACE_ONLY_EDITS = [
+  ["an extra trailing newline", (text) => `${text}\n`],
+  ["trailing spaces after the last line", (text) => `${text}   `],
+  ["a missing final newline", (text) => text.replace(/\n$/, "")],
+  ["leading blank line", (text) => `\n${text}`],
+  ["CRLF line endings", (text) => text.replaceAll("\n", "\r\n")],
+];
+
+test("an installed AGENTS.md that differs from the toolkit's only in whitespace makes tooling setup --dry-run refuse and name install-agent-context", (t) => {
+  const f = freshAgentContext(t);
+  const control = setupDryRun(f);
+  assert.equal(control.status, 0, `setup: over the fresh context the dry run exits 0: ${control.stderr}`);
+  const installed = join(f.target, ".campaign-runtime/agent-context/AGENTS.md");
+  const current = readFileSync(join(f.packageRoot, "agents/codex/AGENTS.md"), "utf8");
+  assert.ok(current.endsWith("\n") && !current.includes("\r"), "setup: the toolkit's AGENTS.md ends in one LF newline and has no CR");
+  for (const [label, edit] of WHITESPACE_ONLY_EDITS) {
+    const edited = edit(current);
+    assert.notEqual(edited, current, `setup: ${label} changes the bytes`);
+    assert.equal(edited.replace(/\s+/g, " ").trim(), current.replace(/\s+/g, " ").trim(), `setup: ${label} is a whitespace-only difference`);
+    writeFileSync(installed, edited);
+    const run = setupDryRun(f);
+    assert.equal(run.status, 1, `${label}: tooling setup --dry-run exit code: ${run.stdout.slice(0, 300)} ${run.stderr.slice(0, 300)}`);
+    assert.ok(run.stderr.includes("differs from this toolkit's context"), `${label}: the refusal is the context comparison's: ${run.stderr.slice(0, 500)}`);
+    assert.ok(run.stderr.includes("install-agent-context"), `${label}: stderr names install-agent-context: ${run.stderr.slice(0, 500)}`);
+  }
+});

@@ -659,3 +659,46 @@ test("failure: next on a normalized brief with a 10,000-deep audience returns it
   assert.equal(text.error, null, `next (text) did not throw: ${text.error?.message}`);
   assert.ok(text.stdout.includes(`Campaign intent:\n${NO_BRIEF_TEXT}`), `next (text) prints the unavailable summary:\n${text.stdout.slice(0, 600)}`);
 });
+
+test("open questions: a complete, fully stated brief with one open question reads partial, and available once it is answered", async () => {
+  await assertStatedBriefAvailable();
+  const brief = statedBrief();
+  brief.questions = [{ id: "regulated_claims", priority: 1, field: "regulated_claims", question: "Which claims are approved?", reason: "Claims need approval.", options: [], blocking: true }];
+  const open = await summarize(brief, EXAMPLE_PAGE_IDS);
+  assert.equal(summaryLine(open, 9), "Open brief questions: regulated_claims.", "setup: the question is the only thing that changed");
+  assert.equal(open.text.includes("…") || open.text.match(MORE) !== null, false, `setup: nothing was cut:\n${open.text}`);
+  assert.equal(open.status, "partial");
+  brief.questions = [];
+  const answered = await summarize(brief, EXAMPLE_PAGE_IDS);
+  assert.equal(summaryLine(answered, 9), "Open brief questions: none.");
+  assert.equal(answered.status, "available");
+});
+
+// Every provenance short of `stated` for the two page-keyed values (line 1 and
+// the line-5 palette clause): a valid `source` stamp, a valid `default` stamp,
+// an unknown kind, and no stamp.
+const NOT_STATED_STAMPS = [
+  ["a valid source stamp", (brief, path) => stamp(brief, path, "source")],
+  ["a valid default stamp", (brief, path) => stamp(brief, path, "default")],
+  ["an unknown kind", (brief, path) => stamp(brief, path, "operator")],
+  ["no stamp", (brief, path) => { delete brief._meta.field_sources[path]; }],
+];
+
+test("page-keyed values: a purpose or palette source not stamped stated is never printed and reads not stated", async () => {
+  await assertStatedBriefAvailable();
+  for (const [label, restamp] of NOT_STATED_STAMPS) {
+    const purpose = statedBrief();
+    restamp(purpose, "campaign_intent.conversion_goal");
+    const purposeSummary = await summarize(purpose, EXAMPLE_PAGE_IDS);
+    assert.equal(summaryLine(purposeSummary, 1), "Purpose: not stated.", `purpose with ${label}`);
+    assert.equal(purposeSummary.text.includes(purpose.campaign_intent.conversion_goal), false, `the purpose value with ${label} is never printed:\n${purposeSummary.text}`);
+    assert.equal(purposeSummary.status, "partial", `purpose with ${label} reads partial`);
+
+    const palette = statedBrief();
+    restamp(palette, "brand.commerce_palette_source");
+    const paletteSummary = await summarize(palette, EXAMPLE_PAGE_IDS);
+    assert.equal(paletteClauses(paletteSummary)[0], "palette source not stated", `palette source with ${label}`);
+    assert.equal(paletteSummary.text.includes(`"${palette.brand.commerce_palette_source}"`), false, `the palette source with ${label} is never printed:\n${paletteSummary.text}`);
+    assert.equal(paletteSummary.status, "partial", `palette source with ${label} reads partial`);
+  }
+});
