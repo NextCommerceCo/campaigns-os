@@ -1334,7 +1334,6 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
       qaCurrency: doctor?.derived?.input_currency?.stages?.qa,
       qcStandIns,
       rederivers,
-      qaCurrency: doctor?.derived?.input_currency?.stages?.qa,
     })
     : [];
   const results = [...doctorResults, ...polishResults, ...qaResults];
