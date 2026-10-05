@@ -23,6 +23,9 @@ const BTN = "border:0;padding:8px 12px;font-size:16px;font-weight:400;font-famil
 const P = "margin:0;padding:8px;font-size:16px;font-weight:400";
 const ATC = (style, text = "Add to cart", extra = "") => `<button data-next-action="add-to-cart" type="button"${extra} style="${BTN};${style}">${text}</button>`;
 const STRIP = "<p style=\"margin:0;padding:8px;color:#ffffff;background:#111111\">Synthetic text</p>";
+// An open shadow root, declared in the markup.
+const OPEN = (inner) => `<template shadowrootmode="open">${inner}</template>`;
+const FRAME_DOC = "<!doctype html><body style='margin:0'><p style='margin:0;padding:8px;color:#ffffff;background:#111111'>Frame text</p></body>";
 const NESTED = (outer) => `<div style="${outer}"><div style="background:#111"><span data-next-action="add-to-cart" style="color:#fff">x</span></div></div>`;
 
 const PAGES = ({ other }) => ({
@@ -63,6 +66,21 @@ const PAGES = ({ other }) => ({
   i53: htmlPage(`<div class="layer" style="padding:8px;background:#333333"><span data-next-action="add-to-cart" style="color:#ffffff">Add to cart</span></div>`, { head: "<style>.layer::before{content:\"\";display:block;height:4px;background:#000}</style>" }),
   i54: htmlPage(ATC("font-size:24px;color:#ffffff;background-color:#e0662b;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent")),
   i55: htmlPage(`<a href="" aria-disabled="true" style="display:inline-block;${P};color:#bbbbbb;background:#eeeeee">Unavailable link</a>`),
+  "shadow-opacity": htmlPage(`<div style="background:#111111;color:#222222;opacity:0.3">${OPEN(`<p style="${P}">Shadow text</p>`)}</div>`),
+  "shadow-background": htmlPage(`<div style="background:#0080aa">${OPEN(`<p style="${P};color:#ffffff">Shadow text</p>`)}</div>`),
+  "shadow-disabled": htmlPage(`<button disabled style="${BTN};color:#bbbbbb;background:#eeeeee"><span>${OPEN("<span>Unavailable</span>")}</span></button>`),
+  "shadow-nested": htmlPage(`<section style="background:#0080aa">${OPEN(`<div>${OPEN(`<p style="${P};color:#ffffff">Nested text</p>`)}</div>`)}</section>`),
+  "shadow-selected": htmlPage(`<div data-next-bundle-card="b1" data-next-selected="true" style="background:#333333">${OPEN(`<p style="${P};color:#ffffff">Selected bundle</p>`)}</div>`),
+  "shadow-positioned-host": htmlPage(`<div style="position:sticky;top:0;background:#111111">${OPEN(`<p style="${P};color:#ffffff">Shadow text</p>`)}</div>`),
+  "shadow-overlay": htmlPage(`<div style="position:relative"><div>${OPEN("<div style=\"position:absolute;left:0;top:0;width:240px;height:60px;background:#000000\"></div>")}</div><p style="${P};color:#ffffff;background:#111111">Light text</p></div>`),
+  "shadow-slot": htmlPage(`<div style="background:#ffffff">${OPEN("<div style=\"opacity:0.3;background:#000000\"><slot></slot></div>")}<p style="${P};color:#eeeeee">Slotted text</p></div>`),
+  "frame-path": htmlPage(`<p style="${P};color:#ffffff;background:#111111">Light text</p><iframe srcdoc="${FRAME_DOC}" style="width:320px;height:120px;border:0"></iframe>`),
+  "shadow-link-pending": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="/shadow-link-pending/stalled.css"><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
+  "shadow-link-missing": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="/shadow-link-missing/missing.css"><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
+  "shadow-link-loaded": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="/loaded.css"><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
+  "import-missing": htmlPage(STRIP, { head: "<style>@import url(/import-missing/missing.css);</style>" }),
+  "shadow-import-missing": htmlPage(`<div>${OPEN(`<style>@import url(/shadow-import-missing/missing.css);</style><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
+  "shadow-import-loaded": htmlPage(`<div>${OPEN(`<style>@import url(/loaded.css);</style><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
 });
 
 // Measures every text-bearing element in <body>, in whichever world runs it.
@@ -80,6 +98,8 @@ async function serve() {
     const other = await stubOrigin();
     for (const [name, html] of Object.entries(PAGES({ other }))) same.serve(`/${name}/`, respond("200 OK", "text/html; charset=utf-8", html));
     same.serve("/i50/stalled.woff2", stall());
+    same.serve("/shadow-link-pending/stalled.css", stall());
+    same.serve("/loaded.css", respond("200 OK", "text/css; charset=utf-8", "p{letter-spacing:0}"));
     other.serve("/vendor/analytics.js", connectionReset());
     const { chromium } = await import("playwright");
     const browser = guard.instrument(await chromium.launch());
@@ -97,6 +117,23 @@ after(async () => {
   assertNoNetworkAttempts();
 });
 
+// Measures every text-bearing element in <body>, in each open shadow root
+// (recursively) and in each same-origin frame's <body>, with that frame's
+// window.
+const FLAT_PROBE = `(() => {
+  const kit = (${contrastToolkit.toString()})();
+  const elements = [];
+  const visit = (scope, win) => {
+    for (const el of scope.querySelectorAll("*")) {
+      if (kit.isTextBearing(el, win)) elements.push(kit.measureTextElement(el, win));
+      if (el.shadowRoot) visit(el.shadowRoot, win);
+      if (el.localName === "iframe" && el.contentDocument && el.contentDocument.body) visit(el.contentDocument.body, el.contentWindow);
+    }
+  };
+  visit(document.body, window);
+  return { version: kit.version, measurability: kit.documentMeasurability(document), elements };
+})()`;
+
 async function isolatedWorld(page, expression) {
   const session = await page.context().newCDPSession(page);
   try {
@@ -112,15 +149,15 @@ async function isolatedWorld(page, expression) {
 
 // One page's reading in both worlds, at a viewport width. `settled` waits for
 // a setup condition before the probe runs.
-async function measure(name, { width = 1440, waitUntil = "load", settled } = {}) {
+async function measure(name, { width = 1440, waitUntil = "load", settled, probe = PROBE } = {}) {
   const { same, browser } = await serve();
   const context = await browser.newContext({ viewport: { width, height: 900 } });
   try {
     const page = await context.newPage();
     await page.goto(`${same.origin}/${name}/`, { waitUntil });
     await settled?.(same);
-    const main = await page.evaluate(PROBE);
-    const isolated = await isolatedWorld(page, PROBE);
+    const main = await page.evaluate(probe);
+    const isolated = await isolatedWorld(page, probe);
     assert.deepEqual(isolated, main, `/${name}/: the main world and an isolated world read the same`);
     assert.equal(main.version, "contrast/v1");
     for (const element of main.elements.filter((measured) => measured.fg_raw !== null)) {
@@ -318,4 +355,74 @@ browserTest("toSrgb agrees with Chromium's conversion of each colour() space and
   } finally {
     await page.close();
   }
+});
+
+// Open shadow roots: every walk follows the flat tree, through each host.
+const flat = (name) => only(name, { probe: FLAT_PROBE });
+
+browserTest("shadow text inside a host with opacity 0.3 reads review / opacity, over the host's background", async () => {
+  const element = await flat("shadow-opacity");
+  assert.equal(element.review_reason, "opacity");
+  assert.deepEqual(element.bg_layers_raw, ["rgba(0, 0, 0, 0)", "rgb(17, 17, 17)"]);
+  assert.match(element.selector_path, /^html>body>div:nth-of-type\(1\)>>>p:nth-of-type\(1\)$/);
+});
+
+browserTest("shadow text over an opaque host background composites the host's background", async () => {
+  const element = await flat("shadow-background");
+  assert.deepEqual(element.bg_layers_raw, ["rgba(0, 0, 0, 0)", "rgb(0, 128, 170)"]);
+  assert.ok(Math.abs(element.ratio - ratioOf(hexToSrgb("#ffffff"), hexToSrgb("#0080aa"))) < 1e-12, `ratio ${element.ratio}`);
+  assert.equal(element.review_reason, null);
+});
+
+browserTest("shadow text in a host inside a disabled button is disabled and no colour is read", async () => {
+  const element = await flat("shadow-disabled");
+  assert.equal(element.disabled, true);
+  assert.deepEqual(COLOUR_FIELDS.map((field) => element[field]), COLOUR_FIELDS.map(() => null));
+});
+
+browserTest("text in a nested open shadow root walks both hosts and names both in its path", async () => {
+  const element = await flat("shadow-nested");
+  assert.deepEqual(element.bg_layers_raw, ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)", "rgb(0, 128, 170)"]);
+  assert.equal(element.review_reason, null);
+  assert.equal(element.selector_path, "html>body>section:nth-of-type(1)>>>div:nth-of-type(1)>>>p:nth-of-type(1)");
+});
+
+browserTest("an ancestor state above the host labels shadow text", async () => {
+  assert.equal((await flat("shadow-selected")).state, "selected");
+});
+
+browserTest("a positioned host with a background never overlaps its own shadow text; a positioned layer inside a shadow root overlaps light text", async () => {
+  const own = await flat("shadow-positioned-host");
+  assert.deepEqual([own.review_reason, own.bg_layers_raw], [null, ["rgba(0, 0, 0, 0)", "rgb(17, 17, 17)"]]);
+  assert.equal((await flat("shadow-overlay")).review_reason, "overlapping_layer");
+});
+
+browserTest("light text slotted into an open shadow root walks through its slot: a translucent shadow wrapper reads review / opacity", async () => {
+  const element = await flat("shadow-slot");
+  assert.equal(element.review_reason, "opacity");
+  assert.equal(element.selector_path, "html>body>div:nth-of-type(1)>>>div:nth-of-type(1)>slot:nth-of-type(1)>>>p:nth-of-type(1)", "the path follows the flat tree through the slot");
+});
+
+browserTest("text in a same-origin frame stops at the frame's root, and its path names the frame", async () => {
+  const { elements } = await measure("frame-path", { probe: FLAT_PROBE });
+  assert.deepEqual(elements.map((element) => element.selector_path), ["html>body>p:nth-of-type(1)", "html>body>iframe:nth-of-type(1)>>>html>body>p:nth-of-type(1)"]);
+  assert.deepEqual(elements.map((element) => element.bg_layers_raw), [["rgb(17, 17, 17)"], ["rgb(17, 17, 17)"]]);
+});
+
+// Cell measurability reads every tree of the document.
+browserTest("a stylesheet in an open shadow root that is still loading or answered 404, or an @import that answered 404 in the document or a shadow root, reads styles_incomplete; loaded ones are measurable", async () => {
+  const requested = (path) => async (same) => {
+    const deadline = Date.now() + 5000;
+    while (!same.requested(path)) {
+      assert.ok(Date.now() < deadline, `setup: the page requested ${path}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  const incomplete = { measurable: false, reason: "styles_incomplete" };
+  assert.deepEqual((await measure("shadow-link-pending", { waitUntil: "commit", settled: requested("/shadow-link-pending/stalled.css") })).measurability, incomplete, "a shadow-root link whose sheet is null");
+  assert.deepEqual((await measure("shadow-link-missing")).measurability, incomplete, "a shadow-root link that answered 404");
+  assert.deepEqual((await measure("import-missing")).measurability, incomplete, "a document @import that answered 404");
+  assert.deepEqual((await measure("shadow-import-missing")).measurability, incomplete, "a shadow-root @import that answered 404");
+  assert.deepEqual((await measure("shadow-link-loaded")).measurability, { measurable: true }, "control: a loaded shadow-root link");
+  assert.deepEqual((await measure("shadow-import-loaded")).measurability, { measurable: true }, "control: a loaded shadow-root @import");
 });

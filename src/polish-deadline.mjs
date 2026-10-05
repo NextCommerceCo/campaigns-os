@@ -12,6 +12,13 @@ export const POLISH_BROWSER_STARTUP_DEADLINE_MS = 45_000;
 export const POLISH_CAPTURE_CELL_DEADLINE_MS = 55_000;
 export const POLISH_CAPTURE_CLOSE_DEADLINE_MS = 10_000;
 export const POLISH_CAPTURE_STARTUP_DEADLINE_MS = 55_000;
+// Readability bounds, beside the capture deadlines above: one cell's probe,
+// every probe of a run, every crop of a run, and all readability work a run
+// adds (readability-only navigation, probes and crops).
+export const READABILITY_PROBE_CELL_MS = 1_500;
+export const READABILITY_PROBE_RUN_MS = 120_000;
+export const READABILITY_CROP_RUN_MS = 30_000;
+export const READABILITY_ADDED_RUN_MS = 300_000;
 
 export function boundedPolishDeadline(value, fallback) {
   return Number.isSafeInteger(value) && value > 0 && value <= fallback ? value : fallback;

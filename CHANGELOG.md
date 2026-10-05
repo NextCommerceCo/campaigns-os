@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.52.0+agent.2] - 2026-10-05
+
+### Added
+
+- Polish now measures text readability on every built page at desktop and mobile widths and reports warnings, review and coverage results in the QC handoff. `polish capture` on a campaign with no mapped pages now measures readability and exits successfully, printing the page-load message as a warning. Polish media weight and readability results now read as stale when the built output changed without a new `record build`.
+
 ## [1.52.0+agent.1] - 2026-10-05
 
 ### Added

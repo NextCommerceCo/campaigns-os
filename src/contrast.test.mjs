@@ -279,3 +279,211 @@ test("the parser accepts the number spellings Chromium 153 writes: exponents, ne
   assert.deepEqual(kit.parseComputedColor("color(srgb none none none / none)"), { space: "srgb", coords: [0, 0, 0], alpha: 0 });
   assert.deepEqual(kit.parseComputedColor("rgba(0, 0, 0, 0.004)"), { space: "rgb", coords: [0, 0, 0], alpha: 0.004 });
 });
+
+// ---------------------------------------------------------------------------
+// Shadow trees: the element and context walks follow the flat tree
+
+// An open shadow root on `host` holding `nodes` (buildDocument node specs),
+// linked as Chromium links it: a top-level shadow element has no
+// parentElement, its parentNode is the root, and the root's host is `host`.
+// Each element in it belongs to the host's document and has the root as its
+// root node. `slots` assigns light-DOM elements to a <slot> in the root.
+function attachOpenShadow(page, host, nodes, slots = []) {
+  const inner = buildDocument({ body: nodes });
+  const top = [...inner.document.body.children];
+  const members = inner.document.body.querySelectorAll("*");
+  const root = { nodeType: 11, mode: "open", host, children: top, childNodes: top };
+  root.querySelectorAll = (selector) => members.filter((el) => el.matches(selector));
+  root.querySelector = (selector) => root.querySelectorAll(selector)[0] ?? null;
+  root.getElementById = (id) => members.find((el) => el.id === id) ?? null;
+  for (const el of top) {
+    el.parentElement = null;
+    el.parentNode = root;
+  }
+  for (const el of members) {
+    el.ownerDocument = page.document;
+    el.getRootNode = () => root;
+  }
+  for (const [light, slotKey] of slots) light.assignedSlot = inner.byKey[slotKey];
+  host.shadowRoot = root;
+  return { root, byKey: inner.byKey };
+}
+
+const WHITE_TEXT = { color: "rgb(255, 255, 255)" };
+
+test("shadow text inside a translucent host reads review / opacity, with the host's background composited", async () => {
+  const kit = await toolkit();
+  const page = buildDocument({ body: [{ tag: "div", key: "host", style: { backgroundColor: "rgb(17, 17, 17)", color: "rgb(34, 34, 34)", opacity: "0.3" } }] });
+  const shadow = attachOpenShadow(page, page.byKey.host, [{ tag: "p", key: "text", text: "Shadow", style: { color: "rgb(34, 34, 34)" } }]);
+  const measured = kit.measureTextElement(shadow.byKey.text, page.window);
+  assert.deepEqual([measured.review_reason, measured.bg_layers_raw], ["opacity", ["rgba(0, 0, 0, 0)", "rgb(17, 17, 17)"]]);
+});
+
+test("shadow text over an opaque host background composites that background, not the default canvas", async () => {
+  const kit = await toolkit();
+  const page = buildDocument({ body: [{ tag: "div", key: "host", style: { backgroundColor: "rgb(0, 128, 170)" } }] });
+  const shadow = attachOpenShadow(page, page.byKey.host, [{ tag: "p", key: "text", text: "Shadow", style: WHITE_TEXT }]);
+  const measured = kit.measureTextElement(shadow.byKey.text, page.window);
+  assert.deepEqual(measured.bg_layers_raw, ["rgba(0, 0, 0, 0)", "rgb(0, 128, 170)"]);
+  assert.ok(Math.abs(measured.ratio - ratioOf(hexToSrgb("#ffffff"), hexToSrgb("#0080aa"))) < 1e-12, `ratio ${measured.ratio}`);
+  assert.equal(measured.review_reason, null);
+});
+
+test("shadow text in a host inside a disabled button is an inactive control; a loading control or a next-disabled control around the host applies too", async () => {
+  const kit = await toolkit();
+  const page = buildDocument({ body: [
+    { tag: "button", attrs: { disabled: "" }, children: [{ tag: "span", key: "disabled" }] },
+    { tag: "button", attrs: { "data-next-action": "add-to-cart", "data-next-loading": "true" }, children: [{ tag: "span", key: "loading" }] },
+    { tag: "button", attrs: { class: "next-disabled" }, style: { backgroundColor: "rgb(17, 17, 17)" }, children: [{ tag: "span", key: "uncertain" }] },
+  ] });
+  const read = (key) => kit.measureTextElement(attachOpenShadow(page, page.byKey[key], [{ tag: "span", key: "text", text: "Shadow", style: WHITE_TEXT }]).byKey.text, page.window);
+  const disabled = read("disabled");
+  assert.deepEqual([disabled.disabled, disabled.ratio], [true, null]);
+  assert.equal(read("loading").control_loading, true);
+  assert.equal(read("uncertain").review_reason, "disabled_state_uncertain");
+});
+
+test("text in a nested open shadow root walks both hosts, and its path names the host chain", async () => {
+  const kit = await toolkit();
+  const page = buildDocument({ body: [{ tag: "section", key: "outer", style: { backgroundColor: "rgb(0, 128, 170)" } }] });
+  const first = attachOpenShadow(page, page.byKey.outer, [{ tag: "div", key: "inner" }]);
+  const second = attachOpenShadow(page, first.byKey.inner, [{ tag: "p", key: "text", text: "Nested", style: WHITE_TEXT }]);
+  const measured = kit.measureTextElement(second.byKey.text, page.window);
+  assert.deepEqual(measured.bg_layers_raw, ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)", "rgb(0, 128, 170)"]);
+  assert.equal(measured.selector_path, "html>body>section:nth-of-type(1)>>>div:nth-of-type(1)>>>p:nth-of-type(1)");
+});
+
+test("a shadow element's path differs from a light-DOM child's in the same place, and stays at most 8 steps", async () => {
+  const kit = await toolkit();
+  const page = buildDocument({ body: [{ tag: "div", key: "host", children: [{ tag: "p", key: "light", text: "Light", style: WHITE_TEXT }] }] });
+  const shadow = attachOpenShadow(page, page.byKey.host, [{ tag: "div", children: [{ tag: "div", children: [{ tag: "div", children: [{ tag: "div", children: [{ tag: "div", children: [{ tag: "div", children: [{ tag: "p", key: "deep", text: "Deep" }] }] }] }] }] }] }, { tag: "p", key: "text", text: "Shadow" }]);
+  const light = kit.measureTextElement(page.byKey.light, page.window).selector_path;
+  const inShadow = kit.measureTextElement(shadow.byKey.text, page.window).selector_path;
+  assert.deepEqual([light, inShadow], ["html>body>div:nth-of-type(1)>p:nth-of-type(1)", "html>body>div:nth-of-type(1)>>>p:nth-of-type(1)"]);
+  const deep = kit.measureTextElement(shadow.byKey.deep, page.window).selector_path;
+  assert.equal(deep.split(/>>>|>/).length, 8, deep);
+  assert.equal(deep, "div:nth-of-type(1)>>>div:nth-of-type(1)>div:nth-of-type(1)>div:nth-of-type(1)>div:nth-of-type(1)>div:nth-of-type(1)>div:nth-of-type(1)>p:nth-of-type(1)");
+});
+
+test("an ancestor state above the host labels shadow text: selected, active, open details and an expanded aria-controls panel", async () => {
+  const kit = await toolkit();
+  const page = buildDocument({ body: [
+    { tag: "div", attrs: { "data-next-selected": "true" }, children: [{ tag: "span", key: "selected" }] },
+    { tag: "div", attrs: { class: "next-active" }, children: [{ tag: "span", key: "active" }] },
+    { tag: "details", attrs: { open: "" }, children: [{ tag: "span", key: "details" }] },
+    { tag: "button", attrs: { "aria-expanded": "true", "aria-controls": "panel" } },
+    { tag: "div", attrs: { id: "panel" }, children: [{ tag: "span", key: "panel" }] },
+    { tag: "div", children: [{ tag: "span", key: "plain" }] },
+  ] });
+  const state = (key) => kit.measureTextElement(attachOpenShadow(page, page.byKey[key], [{ tag: "span", key: "text", text: "Shadow", style: WHITE_TEXT }]).byKey.text, page.window).state;
+  assert.deepEqual(["selected", "active", "details", "panel", "plain"].map(state), ["selected", "active", "expanded", "expanded", "default"]);
+});
+
+test("an aria-controls panel inside a shadow root is named by a control in the same root", async () => {
+  const kit = await toolkit();
+  const page = buildDocument({ body: [{ tag: "div", key: "host" }] });
+  const shadow = attachOpenShadow(page, page.byKey.host, [
+    { tag: "button", attrs: { "aria-expanded": "true", "aria-controls": "inner-panel" } },
+    { tag: "div", attrs: { id: "inner-panel" }, children: [{ tag: "p", key: "text", text: "Panel", style: WHITE_TEXT }] },
+  ]);
+  assert.equal(kit.measureTextElement(shadow.byKey.text, page.window).state, "expanded");
+});
+
+test("overlap candidates include positioned layers inside open shadow roots, and a positioned host never overlaps its own shadow text", async () => {
+  const kit = await toolkit();
+  const layer = { position: "absolute", backgroundColor: "rgb(0, 0, 0)" };
+  const covered = buildDocument({ body: [{ tag: "div", key: "host" }, { tag: "p", key: "text", text: "Light", style: { ...WHITE_TEXT, backgroundColor: "rgb(17, 17, 17)" } }] });
+  attachOpenShadow(covered, covered.byKey.host, [{ tag: "div", style: layer }]);
+  assert.equal(kit.measureTextElement(covered.byKey.text, covered.window).review_reason, "overlapping_layer");
+
+  const own = buildDocument({ body: [{ tag: "div", key: "host", style: layer }] });
+  const shadow = attachOpenShadow(own, own.byKey.host, [{ tag: "p", key: "text", text: "Shadow", style: WHITE_TEXT }]);
+  const measured = kit.measureTextElement(shadow.byKey.text, own.window);
+  assert.deepEqual([measured.review_reason, measured.bg_layers_raw], [null, ["rgba(0, 0, 0, 0)", "rgb(0, 0, 0)"]]);
+});
+
+test("a light-DOM element slotted into an open shadow root walks through its slot: a translucent shadow wrapper reads review / opacity", async () => {
+  const kit = await toolkit();
+  const page = buildDocument({ body: [{ tag: "div", key: "host", style: { backgroundColor: "rgb(255, 255, 255)" }, children: [{ tag: "p", key: "light", text: "Slotted", style: { color: "rgb(17, 17, 17)" } }] }] });
+  attachOpenShadow(page, page.byKey.host, [{ tag: "div", style: { opacity: "0.3", backgroundColor: "rgb(0, 0, 0)" }, children: [{ tag: "slot", key: "slot" }] }], [[page.byKey.light, "slot"]]);
+  const measured = kit.measureTextElement(page.byKey.light, page.window);
+  assert.deepEqual([measured.review_reason, measured.bg_layers_raw], ["opacity", ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)", "rgb(0, 0, 0)"]]);
+  assert.equal(measured.selector_path, "html>body>div:nth-of-type(1)>>>div:nth-of-type(1)>slot:nth-of-type(1)>>>p:nth-of-type(1)", "the path follows the flat tree through the slot");
+});
+
+test("a slotted element's path names its slot: the same light-DOM place in two different slots reads two paths", async () => {
+  const kit = await toolkit();
+  const slotted = (slotKey) => {
+    const page = buildDocument({ body: [{ tag: "div", key: "host", children: [{ tag: "p", key: "light", text: "Slotted", style: WHITE_TEXT }] }] });
+    attachOpenShadow(page, page.byKey.host, [{ tag: "header", children: [{ tag: "slot", key: "first" }] }, { tag: "footer", children: [{ tag: "slot", key: "second" }] }], [[page.byKey.light, slotKey]]);
+    return kit.measureTextElement(page.byKey.light, page.window).selector_path;
+  };
+  assert.deepEqual([slotted("first"), slotted("second")], [
+    "html>body>div:nth-of-type(1)>>>header:nth-of-type(1)>slot:nth-of-type(1)>>>p:nth-of-type(1)",
+    "html>body>div:nth-of-type(1)>>>footer:nth-of-type(1)>slot:nth-of-type(1)>>>p:nth-of-type(1)",
+  ]);
+});
+
+// Cell measurability reads every tree of the document: the document's own
+// elements and each open shadow root inside it (recursively).
+
+const LOADED_SHEET = { cssRules: [] };
+// A sheet whose only rule is an @import; `imported` is that rule's sheet
+// (null while it loads).
+const importing = (imported) => ({ cssRules: [{ type: 3, href: "/imported.css", styleSheet: imported }] });
+
+test("a stylesheet link without a sheet inside an open shadow root, or a nested one, reads styles_incomplete", async () => {
+  const kit = await toolkit();
+  const reading = (sheet, { nested = false } = {}) => {
+    const page = buildDocument({ body: [{ tag: "div", key: "host" }, { tag: "p", text: "Light", style: WHITE_TEXT }] });
+    const link = { tag: "link", attrs: { rel: "stylesheet", href: "/shadow.css" }, sheet };
+    if (!nested) attachOpenShadow(page, page.byKey.host, [link, { tag: "p", text: "Shadow" }]);
+    else attachOpenShadow(page, attachOpenShadow(page, page.byKey.host, [{ tag: "div", key: "inner" }]).byKey.inner, [link, { tag: "p", text: "Shadow" }]);
+    return kit.documentMeasurability(page.document);
+  };
+  assert.deepEqual(reading(null), { measurable: false, reason: "styles_incomplete" });
+  assert.deepEqual(reading(null, { nested: true }), { measurable: false, reason: "styles_incomplete" });
+  assert.deepEqual(reading(LOADED_SHEET), { measurable: true }, "control: a loaded shadow stylesheet is measurable");
+  assert.deepEqual(reading(LOADED_SHEET, { nested: true }), { measurable: true }, "control: a loaded nested shadow stylesheet is measurable");
+});
+
+test("an @import that has not loaded, in a style element of the document or of an open shadow root or inside a linked sheet, reads styles_incomplete", async () => {
+  const kit = await toolkit();
+  const style = (sheet) => ({ tag: "style", sheet });
+  const inDocument = (node) => kit.documentMeasurability(buildDocument({ head: [node], body: [{ tag: "p", text: "Light", style: WHITE_TEXT }] }).document);
+  const inShadow = (node) => {
+    const page = buildDocument({ body: [{ tag: "div", key: "host" }] });
+    attachOpenShadow(page, page.byKey.host, [node, { tag: "p", text: "Shadow" }]);
+    return kit.documentMeasurability(page.document);
+  };
+  const incomplete = { measurable: false, reason: "styles_incomplete" };
+  assert.deepEqual(inDocument(style(importing(null))), incomplete);
+  assert.deepEqual(inShadow(style(importing(null))), incomplete);
+  assert.deepEqual(inDocument({ tag: "link", attrs: { rel: "stylesheet", href: "/site.css" }, sheet: importing(null) }), incomplete);
+  assert.deepEqual(inDocument(style(importing(importing(null)))), incomplete, "an @import inside an imported sheet");
+  assert.deepEqual(inDocument(style(importing(LOADED_SHEET))), { measurable: true }, "control: a loaded @import is measurable");
+  assert.deepEqual(inShadow(style(importing(LOADED_SHEET))), { measurable: true }, "control: a loaded shadow @import is measurable");
+  const unreadable = { get cssRules() { throw new Error("SecurityError: cross-origin sheet"); } };
+  assert.deepEqual(inDocument({ tag: "link", attrs: { rel: "stylesheet", href: "https://cdn.example.invalid/site.css" }, sheet: unreadable }), { measurable: true }, "control: a loaded cross-origin sheet whose rules are unreadable is measurable");
+});
+
+test("a stylesheet inside an open shadow root that answered with an HTTP error reads styles_incomplete", async () => {
+  const kit = await toolkit();
+  const page = buildDocument({ body: [{ tag: "div", key: "host" }] });
+  attachOpenShadow(page, page.byKey.host, [{ tag: "link", attrs: { rel: "stylesheet", href: "/missing.css" }, sheet: LOADED_SHEET }, { tag: "p", text: "Shadow" }]);
+  const shadowLink = page.byKey.host.shadowRoot.querySelector("link");
+  shadowLink.href = "https://campaign.example/missing.css";
+  page.window.performance = { getEntriesByName: (name) => (name === "https://campaign.example/missing.css" ? [{ responseStatus: 404 }] : []) };
+  assert.deepEqual(kit.documentMeasurability(page.document), { measurable: false, reason: "styles_incomplete" });
+});
+
+test("an SDK loader script inside an open shadow root declares the SDK: sdk_not_ready until the page signals ready", async () => {
+  const kit = await toolkit();
+  const reading = (bodyAttrs) => {
+    const page = buildDocument({ bodyAttrs, body: [{ tag: "div", key: "host" }] });
+    attachOpenShadow(page, page.byKey.host, [{ tag: "script", attrs: { src: "https://cdn.example.invalid/npm/@next-commerce/campaign-cart@0.4.38/dist/loader.js" } }, { tag: "p", text: "Shadow" }]);
+    return kit.documentMeasurability(page.document);
+  };
+  assert.deepEqual(reading({}), { measurable: false, reason: "sdk_not_ready" });
+  assert.deepEqual(reading({ "data-next-sdk-loading": "false" }), { measurable: true }, "control: a page that signals ready is measurable");
+});

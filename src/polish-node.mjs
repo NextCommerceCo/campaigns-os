@@ -35,8 +35,22 @@ import {
   POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
   polishProducerCleanupError,
   polishProducerTimeoutError,
+  READABILITY_ADDED_RUN_MS,
+  READABILITY_CROP_RUN_MS,
+  READABILITY_PROBE_CELL_MS,
+  READABILITY_PROBE_RUN_MS,
   runWithPolishProducerDeadline,
 } from "./polish-deadline.mjs";
+import {
+  buildReadabilityCell,
+  buildReadabilityRecord,
+  readabilityLimits,
+  readabilityObservationOk,
+  readabilityRoutes,
+  READABILITY_PRODUCER,
+  READABILITY_SCHEMA,
+  writeReadabilityCrop,
+} from "./polish-readability.mjs";
 import {
   assemblySourcePackageMaterialFingerprint,
   currentSourcePackageMaterialFingerprint,
@@ -103,6 +117,9 @@ function mappedSpecRoute(value, pageId) {
 }
 
 const NO_CAPTURABLE_ROUTES_ERROR = "no_capturable_routes";
+
+// Whether planPolishCapture refused because every mapping is template stock.
+export const isNoCapturableRoutesError = (error) => error?.code === NO_CAPTURABLE_ROUTES_ERROR;
 
 export function planPolishCapture({ packet, baseUrl } = {}) {
   if (!isPlainObject(packet) || !Array.isArray(packet?.source_html?.pages) || packet.source_html.pages.length === 0) {
@@ -293,15 +310,18 @@ function canonicalJson(value) {
   return JSON.stringify(canonicalize(value));
 }
 
-// Covers both package-owned capture keys: a page_load or media_weight that
-// changes during the browser pass refuses the attachment.
+// Covers every package-owned capture key: a page_load, media_weight or
+// readability record that changes during the browser pass refuses the
+// attachment.
 function conflictToken(visualReview) {
   const hasPageLoad = Object.hasOwn(visualReview, "page_load");
   const hasMediaWeight = Object.hasOwn(visualReview, "media_weight");
-  if (!hasPageLoad && !hasMediaWeight) return "absent";
+  const hasReadability = Object.hasOwn(visualReview, "readability");
+  if (!hasPageLoad && !hasMediaWeight && !hasReadability) return "absent";
   const value = {
     ...(hasPageLoad ? { value: visualReview.page_load } : {}),
     ...(hasMediaWeight ? { media_weight: visualReview.media_weight } : {}),
+    ...(hasReadability ? { readability: visualReview.readability } : {}),
   };
   return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
@@ -355,6 +375,8 @@ function bindingPlanProjection(plan) {
   };
 }
 
+// `plan` is null for a campaign with no capturable page_load routes (every
+// mapping is template stock), where the capture measures readability only.
 export function createPolishCaptureBinding({ packet, report, plan, packetPath, targetRepo } = {}) {
   if (!isPlainObject(packet) || packet.schema_version !== "campaign-runtime-build-packet/v0") {
     throw new Error("polish capture requires a current campaign-runtime-build-packet/v0 packet.");
@@ -424,8 +446,21 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
       current_source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report),
       page_load_conflict_token: conflictToken(visualReview),
     },
-    plan: bindingPlanProjection(plan),
+    plan: plan === null ? null : bindingPlanProjection(plan),
+    readability_routes: readabilityRouteProjection(resolvedTargetRepo, slug),
   });
+}
+
+// The built routes readability captures, enumerated again for each binding,
+// so a route set that changes during the browser pass refuses the attachment.
+function readabilityRouteProjection(targetRepo, slug) {
+  const built = readabilityRoutes(targetRepo, slug);
+  return {
+    ok: built.ok === true,
+    routes: built.routes,
+    uncaptured_routes: built.uncaptured_routes,
+    route_enumeration_capped: built.route_enumeration_capped,
+  };
 }
 
 export function assertPolishCaptureBindingUnchanged(initial, current) {
@@ -462,25 +497,64 @@ export function mergePolishPageLoadEvidence(report, pageLoad) {
   };
 }
 
-// Attaches both records of one capture: page_load as
-// mergePolishPageLoadEvidence does, and its sibling media_weight under the
-// same producer and schema checks, bound to the same page_load subject. A
-// capture without media_weight (an adapter that ran no image probe) removes
-// any earlier media_weight, which no longer describes the attached page_load.
-export function mergePolishCaptureEvidence(report, { pageLoad, mediaWeight = null } = {}) {
-  const merged = mergePolishPageLoadEvidence(report, pageLoad);
-  const { media_weight: _previous, ...visualReview } = merged.stages.polish.evidence.visual_review;
-  if (mediaWeight !== null && mediaWeight !== undefined) {
-    if (!isPlainObject(mediaWeight)
-      || mediaWeight.schema_version !== MEDIA_WEIGHT_SCHEMA
-      || mediaWeight.performed_by !== MEDIA_WEIGHT_PRODUCER
-      || canonicalJson(mediaWeight.subject) !== canonicalJson(pageLoad.subject)) {
-      throw new Error("polish capture can attach only package-produced media_weight evidence for the same page_load capture.");
+// Attaches the records of one capture. page_load attaches as
+// mergePolishPageLoadEvidence does, stamped with `captured_at` when the
+// command passes its clock `now` (the time of the merge, outside every
+// capture's integrity). Its sibling media_weight attaches under the same
+// producer and schema checks, bound to the same page_load subject; a capture
+// without media_weight (an adapter that ran no image probe) removes any
+// earlier media_weight. With no pageLoad (a campaign with no capturable
+// page_load routes), page_load and media_weight stay exactly as they are.
+// readability attaches on its own: only a package-produced record bound to
+// the current build, whose every shared cell carries the integrity of the
+// matching page_load capture; any other value, or none, removes an earlier
+// one.
+export function mergePolishCaptureEvidence(report, { pageLoad = null, mediaWeight = null, readability = null, now = null } = {}) {
+  let merged;
+  if (pageLoad === null || pageLoad === undefined) {
+    const { visualReview } = captureReportAncestors(report);
+    merged = {
+      ...report,
+      stages: {
+        ...report.stages,
+        polish: {
+          ...report.stages.polish,
+          evidence: { ...report.stages.polish.evidence, visual_review: { ...visualReview } },
+        },
+      },
+    };
+  } else {
+    merged = mergePolishPageLoadEvidence(report, now === null || now === undefined ? pageLoad : { ...pageLoad, captured_at: new Date(now).toISOString() });
+    delete merged.stages.polish.evidence.visual_review.media_weight;
+    if (mediaWeight !== null && mediaWeight !== undefined) {
+      if (!isPlainObject(mediaWeight)
+        || mediaWeight.schema_version !== MEDIA_WEIGHT_SCHEMA
+        || mediaWeight.performed_by !== MEDIA_WEIGHT_PRODUCER
+        || canonicalJson(mediaWeight.subject) !== canonicalJson(pageLoad.subject)) {
+        throw new Error("polish capture can attach only package-produced media_weight evidence for the same page_load capture.");
+      }
+      merged.stages.polish.evidence.visual_review.media_weight = mediaWeight;
     }
-    visualReview.media_weight = mediaWeight;
   }
-  merged.stages.polish.evidence.visual_review = visualReview;
+  const visualReview = merged.stages.polish.evidence.visual_review;
+  delete visualReview.readability;
+  if (readabilityAttaches(readability, { buildFingerprint: currentBuildFingerprint(report), pageLoad: visualReview.page_load })) {
+    visualReview.readability = readability;
+  }
   return merged;
+}
+
+function readabilityAttaches(record, { buildFingerprint, pageLoad }) {
+  if (!isPlainObject(record)
+    || record.schema_version !== READABILITY_SCHEMA
+    || record.performed_by !== READABILITY_PRODUCER
+    || !buildFingerprint
+    || record.subject?.build_fingerprint !== buildFingerprint
+    || !Array.isArray(record.cells)) return false;
+  const captures = Array.isArray(pageLoad?.captures) ? pageLoad.captures : [];
+  return record.cells.every((cell) => cell?.page_load_integrity === null || captures.some((capture) => capture?.subject?.requested_route === cell.route
+    && capture?.subject?.viewport === cell.viewport
+    && capture?.integrity?.projection_fingerprint === cell.page_load_integrity));
 }
 
 // The spec pages the plan skips (no source mapping), for media_weight's
@@ -552,9 +626,41 @@ function captureCampaignSlug(packet, report) {
   return packetSlug;
 }
 
-export async function capturePolishPageLoad({
+export async function capturePolishPageLoad(options = {}) {
+  const plan = planPolishCapture({ packet: options.packet, baseUrl: options.baseUrl });
+  return runPolishCapture({ ...options, plan });
+}
+
+// The readability-only capture of a campaign with no capturable page_load
+// routes (every mapping is template stock): every built route is a
+// readability-only cell; page_load and media_weight are not produced. A
+// browser that cannot start is recorded on every cell.
+export async function capturePolishReadability(options = {}) {
+  captureBaseUrl(options.baseUrl);
+  return runPolishCapture({ ...options, plan: null });
+}
+
+// Readability for one run: the built routes (readabilityRoutes) when the
+// adapter has a readability probe or did not start, else null (no record is
+// produced).
+function readabilityScope({ adapter, startupFailed, targetRepo, slug, plan, baseUrl }) {
+  if (!startupFailed && typeof adapter?.probeReadabilityRoute !== "function") return null;
+  if (!nonemptyString(targetRepo)) return null;
+  const built = readabilityRoutes(resolve(targetRepo), slug);
+  if (!built.ok) return null;
+  const base = captureBaseUrl(baseUrl);
+  const shared = new Set((plan?.routes || []).map((route) => route.requested_route));
+  return {
+    ...built,
+    shared,
+    only: built.routes.filter((route) => !shared.has(route)).map((route) => ({ route, url: new URL(route, base).href })),
+  };
+}
+
+async function runPolishCapture({
   packet,
   report,
+  plan,
   baseUrl,
   headed = false,
   authCookie = null,
@@ -563,8 +669,9 @@ export async function capturePolishPageLoad({
   captureCellDeadlineMs,
   adapterCloseDeadlineMs,
   probeClock = null,
+  targetRepo = null,
+  now = new Date(),
 } = {}) {
-  const plan = planPolishCapture({ packet, baseUrl });
   const slug = captureCampaignSlug(packet, report);
   const buildFingerprint = currentBuildFingerprint(report);
   if (!buildFingerprint) throw new Error("polish capture requires a current Assembly Report build fingerprint.");
@@ -582,6 +689,9 @@ export async function capturePolishPageLoad({
   );
 
   let adapter = null;
+  // Failure is tracked apart from its reason: a rejection may carry any value,
+  // including null or undefined.
+  let adapterStartupFailed = false;
   let adapterStartupError = null;
   let startupTimedOut = false;
   const adapterPromise = Promise.resolve().then(() => createBrowserAdapter({
@@ -604,19 +714,54 @@ export async function capturePolishPageLoad({
       throw new Error("polish capture browser adapter must provide captureRoute() and close().");
     }
   } catch (error) {
-    adapterStartupError = error;
+    adapterStartupFailed = true;
+    adapterStartupError = error ?? new Error("polish capture browser adapter failed to start.");
   }
+  // A browser that did not start leaves every readability-only cell
+  // unmeasured: producer_timeout for a startup timeout, else navigation_failed
+  // (the status a shared cell reads for the same page_load failure).
+  const startupStatus = !adapterStartupFailed ? null
+    : adapterStartupError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE ? "producer_timeout" : "navigation_failed";
+
+  const scope = readabilityScope({ adapter, startupFailed: adapterStartupFailed, targetRepo, slug, plan, baseUrl });
+  const clock = isProbeClock(probeClock) ? probeClock : { now: () => performance.now() };
+  // The readability budgets, charged on `clock`: probe time, crop time, and
+  // all readability work (shared-cell probes and crops, and readability-only
+  // cells end to end).
+  const spentMs = { probe: 0, crop: 0, added: 0 };
+  const readabilityProbe = () => ({
+    ...(isProbeClock(probeClock) ? { clock: probeClock } : {}),
+    cellBoundMs: READABILITY_PROBE_CELL_MS,
+    probeRemainingMs: READABILITY_PROBE_RUN_MS - spentMs.probe,
+    cropRemainingMs: READABILITY_CROP_RUN_MS - spentMs.crop,
+    addedRemainingMs: READABILITY_ADDED_RUN_MS - spentMs.added,
+    elementCap: readabilityLimits().elements_per_cell,
+    cropsPerCell: readabilityLimits().crops_per_cell,
+  });
+  const chargeReadability = (observation, addedMs) => {
+    if (Number.isFinite(observation?.probe_ms) && observation.probe_ms > 0) spentMs.probe += observation.probe_ms;
+    if (Number.isFinite(observation?.crop_ms) && observation.crop_ms > 0) spentMs.crop += observation.crop_ms;
+    if (Number.isFinite(addedMs) && addedMs > 0) spentMs.added += addedMs;
+  };
 
   const captures = [];
   // Per cell, beside its capture: the adapter's observation and image probe,
   // for the media_weight record.
   const cellInputs = [];
+  // Readability-only cells, each { route, viewport, status, observation }.
+  const readabilityOnly = [];
   let probeSpentMs = 0;
   let probed = false;
+  // As for startup, a close failure is tracked apart from its reason.
+  let adapterCloseFailed = false;
   let adapterCloseError = null;
   let adapterPoisonProblem = null;
   let observedProducerTimeout = false;
   let adapterClosePromise = null;
+  // Whether page_load's cells were all run when the adapter failed to close:
+  // a close failure after readability-only cells never changes page_load.
+  let closeFailedAfterGrid = false;
+  let gridDone = false;
   const closeAdapter = async () => {
     if (!adapter || typeof adapter.close !== "function") return;
     if (!adapterClosePromise) {
@@ -626,13 +771,31 @@ export async function capturePolishPageLoad({
     }
     return adapterClosePromise;
   };
+  // A producer timeout or cleanup failure poisons the adapter for every later
+  // cell, and closes it.
+  const poison = async (error) => {
+    const producerTimedOut = error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+    const producerCleanupFailed = error?.code === POLISH_PRODUCER_CLEANUP_ERROR_CODE;
+    if (producerTimedOut) observedProducerTimeout = true;
+    if ((producerTimedOut || producerCleanupFailed) && adapter && !adapterPoisonProblem) {
+      adapterPoisonProblem = producerTimedOut ? "producer_timeout" : "producer_failed";
+      try {
+        await closeAdapter();
+      } catch (closeError) {
+        adapterCloseFailed = true;
+        adapterCloseError = closeError;
+        closeFailedAfterGrid = gridDone;
+      }
+    }
+  };
   try {
-    for (const route of plan.routes) {
+    for (const route of plan?.routes || []) {
       for (const viewport of plan.viewports) {
         let observation;
         let cellFailed = false;
+        const readabilityShared = scope?.shared.has(route.requested_route) && scope.routes.includes(route.requested_route);
         try {
-          if (adapterStartupError) throw adapterStartupError;
+          if (adapterStartupFailed) throw adapterStartupError;
           if (adapterPoisonProblem) {
             throw adapterPoisonProblem === "producer_timeout"
               ? polishProducerTimeoutError()
@@ -646,7 +809,13 @@ export async function capturePolishPageLoad({
             imageCap: MEDIA_PROBE_LIMITS.imageCap,
           };
           observation = await runWithPolishProducerDeadline(
-            () => adapter.captureRoute({ url: route.url, viewport, signal: abortController.signal, imageProbe }),
+            () => adapter.captureRoute({
+              url: route.url,
+              viewport,
+              signal: abortController.signal,
+              imageProbe,
+              ...(readabilityShared ? { readabilityProbe: readabilityProbe() } : {}),
+            }),
             {
               timeoutMs: cellDeadlineMs,
               onTimeout() { abortController.abort(); },
@@ -656,16 +825,7 @@ export async function capturePolishPageLoad({
         } catch (error) {
           const browserUnavailable = error?.code === POLISH_BROWSER_UNAVAILABLE_ERROR_CODE;
           const producerTimedOut = error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
-          const producerCleanupFailed = error?.code === POLISH_PRODUCER_CLEANUP_ERROR_CODE;
-          if (producerTimedOut) observedProducerTimeout = true;
-          if ((producerTimedOut || producerCleanupFailed) && adapter && !adapterPoisonProblem) {
-            adapterPoisonProblem = producerTimedOut ? "producer_timeout" : "producer_failed";
-            try {
-              await closeAdapter();
-            } catch (closeError) {
-              adapterCloseError = closeError;
-            }
-          }
+          await poison(error);
           cellFailed = true;
           observation = {
             finalDocumentUrl: route.url,
@@ -679,6 +839,7 @@ export async function capturePolishPageLoad({
         const probe = !cellFailed && isPlainObject(observation.imageProbe) ? observation.imageProbe : null;
         if (probe) probed = true;
         if (Number.isFinite(probe?.spent_ms) && probe.spent_ms > 0) probeSpentMs += probe.spent_ms;
+        if (readabilityShared && !cellFailed) chargeReadability(observation.readability, (observation.readability?.probe_ms || 0) + (observation.readability?.crop_ms || 0));
         cellInputs.push({ route: route.requested_route, viewport: viewport.key, observation: cellFailed ? null : observation, probe });
         captures.push(buildPageLoadCapture({
           buildFingerprint,
@@ -696,24 +857,77 @@ export async function capturePolishPageLoad({
         }));
       }
     }
+    gridDone = true;
+
+    // Readability-only cells, after every page_load cell, each in a fresh
+    // context, under the producer cell deadline and the run budgets. A cell
+    // that starts once the added budget is spent reads run_budget_exhausted;
+    // after a producer timeout, every later cell reads producer_timeout and
+    // none is tried again.
+    for (const { route, url } of scope?.only || []) {
+      for (const viewport of POLISH_CAPTURE_VIEWPORTS) {
+        const cell = { route, viewport: viewport.key, status: null, observation: null };
+        readabilityOnly.push(cell);
+        if (startupStatus) {
+          cell.status = startupStatus;
+          continue;
+        }
+        if (adapterPoisonProblem) {
+          cell.status = adapterPoisonProblem === "producer_timeout" ? "producer_timeout" : "navigation_failed";
+          continue;
+        }
+        if (!(READABILITY_ADDED_RUN_MS - spentMs.added > 0)) {
+          cell.status = "run_budget_exhausted";
+          continue;
+        }
+        const started = clock.now();
+        let observation = null;
+        try {
+          const abortController = new AbortController();
+          observation = await runWithPolishProducerDeadline(
+            () => adapter.probeReadabilityRoute({ route, url }, viewport, { signal: abortController.signal, probe: readabilityProbe() }),
+            {
+              timeoutMs: cellDeadlineMs,
+              onTimeout() { abortController.abort(); },
+            },
+          );
+        } catch (error) {
+          await poison(error);
+          cell.status = error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE ? "producer_timeout" : "navigation_failed";
+        }
+        const elapsedMs = Math.max(0, clock.now() - started);
+        chargeReadability(observation, elapsedMs);
+        if (cell.status) continue;
+        // An observation outside the record vocabulary is no measurement: its
+        // probe ran out its bound on the clock, or returned nothing.
+        if (readabilityObservationOk(observation)) {
+          cell.status = observation.status;
+          cell.observation = observation;
+        } else {
+          cell.status = elapsedMs >= READABILITY_PROBE_CELL_MS ? "probe_timeout" : "document_changed";
+        }
+      }
+    }
   } finally {
-    if (adapter && !adapterCloseError) {
+    if (adapter && !adapterCloseFailed) {
       try {
         await closeAdapter();
       } catch (error) {
+        adapterCloseFailed = true;
         adapterCloseError = error;
+        closeFailedAfterGrid = gridDone && readabilityOnly.length > 0;
       }
     }
   }
 
-  if (adapterCloseError) {
-    const producerProblem = observedProducerTimeout
-      || adapterCloseError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE
-      ? "producer_timeout"
-      : "producer_failed";
+  const closeProblem = observedProducerTimeout
+    || adapterCloseError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE
+    ? "producer_timeout"
+    : "producer_failed";
+  if (adapterCloseFailed && !closeFailedAfterGrid) {
     captures.length = 0;
     for (const input of cellInputs) Object.assign(input, { observation: null, probe: null });
-    for (const route of plan.routes) {
+    for (const route of plan?.routes || []) {
       for (const viewport of plan.viewports) {
         captures.push(buildPageLoadCapture({
           buildFingerprint,
@@ -724,11 +938,28 @@ export async function capturePolishPageLoad({
           finalDocumentUrl: route.url,
           responseCollectionStatus: "failed",
           networkidle: { status: "invalid", duration_ms: null },
-          producerProblem,
+          producerProblem: closeProblem,
         }));
       }
     }
   }
+
+  const readability = scope ? buildRunReadability({
+    scope,
+    cellInputs,
+    readabilityOnly,
+    captures,
+    // A browser that did not close cleanly leaves every readability cell
+    // unmeasured.
+    closeStatus: adapterCloseFailed ? (closeProblem === "producer_timeout" ? "producer_timeout" : "navigation_failed") : null,
+    report,
+    buildFingerprint,
+    slug,
+    targetRepo,
+    now,
+  }) : null;
+  const withReadability = (result) => (readability ? { ...result, readability } : result);
+  if (plan === null) return withReadability({ plan: null });
 
   const routes = plan.routes.map((route) => route.requested_route);
   const viewports = plan.viewports.map((viewport) => viewport.key);
@@ -742,7 +973,7 @@ export async function capturePolishPageLoad({
   });
   // The image probe's sibling record, when the adapter ran the probe. Each
   // cell is stamped with the integrity of its page_load capture.
-  if (!probed) return { plan, page_load: pageLoad };
+  if (!probed) return withReadability({ plan, page_load: pageLoad });
   const uncaptured = uncapturedPages(packet, plan);
   const mediaWeight = buildMediaWeightRecord({
     pageLoad,
@@ -754,5 +985,52 @@ export async function capturePolishPageLoad({
     uncapturedRoutes: uncaptured.routes,
     uncapturedPageIds: uncaptured.pageIds,
   });
-  return { plan, page_load: pageLoad, media_weight: mediaWeight };
+  return withReadability({ plan, page_load: pageLoad, media_weight: mediaWeight });
+}
+
+// The readability record of one run: one cell per captured built route ×
+// viewport. A shared cell (a route in page_load's grid) carries its probe from
+// the page_load cell and that capture's integrity; it reads producer_timeout
+// or navigation_failed when its page_load cell failed, and document_changed
+// when the cell returned no readability read. Readability-only cells carry
+// their own status.
+function buildRunReadability({ scope, cellInputs, readabilityOnly, captures, closeStatus, report, buildFingerprint, slug, targetRepo, now }) {
+  const writeCrop = (bytes) => writeReadabilityCrop(resolve(targetRepo), bytes);
+  const cells = [];
+  for (const route of scope.routes) {
+    for (const viewport of POLISH_CAPTURE_VIEWPORTS) {
+      const key = viewport.key;
+      if (scope.shared.has(route)) {
+        const input = cellInputs.find((entry) => entry.route === route && entry.viewport === key);
+        const capture = captures.find((entry) => entry.subject.requested_route === route && entry.subject.viewport === key);
+        const failed = (Array.isArray(capture?.problems) ? capture.problems : []).find((problem) => ["producer_timeout", "producer_failed", "browser_unavailable"].includes(problem?.code));
+        const observation = input?.observation?.readability;
+        const status = closeStatus
+          ?? (failed ? (failed.code === "producer_timeout" ? "producer_timeout" : "navigation_failed")
+            : readabilityObservationOk(observation) ? observation.status : "document_changed");
+        cells.push(buildReadabilityCell({
+          route,
+          viewport: key,
+          pageLoadIntegrity: capture?.integrity?.projection_fingerprint ?? null,
+          status,
+          observation: status === "measured" ? observation : null,
+          writeCrop,
+        }));
+        continue;
+      }
+      const only = readabilityOnly.find((entry) => entry.route === route && entry.viewport === key);
+      const status = closeStatus ?? only?.status ?? "navigation_failed";
+      cells.push(buildReadabilityCell({ route, viewport: key, status, observation: status === "measured" ? only.observation : null, writeCrop }));
+    }
+  }
+  return buildReadabilityRecord({
+    buildFingerprint,
+    sourceFingerprint: currentSourcePackageMaterialFingerprint(report),
+    slug,
+    routes: scope.routes,
+    uncapturedRoutes: scope.uncaptured_routes,
+    routeEnumerationCapped: scope.route_enumeration_capped,
+    cells,
+    measuredAt: now,
+  });
 }

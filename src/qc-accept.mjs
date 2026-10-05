@@ -304,7 +304,28 @@ export function planQcAccepts({ refs, results, sidecarPath, now, attribution }) 
 const LEG_ORDER = Object.freeze({ doctor: 0, polish: 1, qa: 2 });
 const compareText = (a, b) => String(a ?? "").localeCompare(String(b ?? ""));
 
+// A readability colour pair reads as its roles, colours, ratio and
+// requirement: `<roles>: <fg8> on <bg8>, <ratio>:1, needs <required>:1
+// (<size_class> text)`, from the row's observation (the lowest ratio of the
+// rows given). Null for any other row.
+function readabilityPairSummary(rows) {
+  const pairs = rows.map((row) => (row?.check === "readability.contrast" && String(row.subject?.key ?? "").startsWith("pair:") && isPlainObject(row.observation) ? row.observation : null));
+  if (!pairs.length || pairs.some((observation) => observation === null)) return null;
+  const roles = [...new Set(pairs.flatMap((observation) => (Array.isArray(observation.roles) ? observation.roles : [])))].sort(compareText);
+  const lowest = pairs.reduce((low, observation) => (observation.ratio < low.ratio ? observation : low));
+  return `${roles.join(", ")}: ${lowest.fg8} on ${lowest.bg8}, ${lowest.display_ratio}:1, needs ${lowest.required}:1 (${lowest.size_class} text)`;
+}
+
+// The crop path of a readability review row: its first member's crop.
+function readabilityReviewCrop(row) {
+  if (row?.check !== "readability.contrast" || row.result !== "review") return undefined;
+  const members = Array.isArray(row.observation?.members) ? row.observation.members : [];
+  const ref = members.find((member) => isPlainObject(member?.crop_ref))?.crop_ref;
+  return typeof ref?.path === "string" ? ref.path : null;
+}
+
 function handoffEntry(row) {
+  const crop = readabilityReviewCrop(row);
   return {
     result_ref: qcResultRef(row),
     check: row.check,
@@ -316,7 +337,8 @@ function handoffEntry(row) {
     reason_code: row.reason_code,
     accept_eligible: row.accept_eligible === true,
     members: Array.isArray(row.members) ? row.members : [],
-    summary: `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
+    summary: readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
+    ...(crop === undefined ? {} : { crop }),
   };
 }
 
@@ -328,7 +350,7 @@ const byCheckKeyPage = (a, b) => compareText(a.check, b.check) || compareText(a.
 // first page's fields, `pages`, and `results`, which keeps every page's result
 // with its own ref, accept eligibility and members, so every member stays
 // visible. The entry is accept-eligible only when every result in it is.
-function groupOpenWarnings(entries) {
+function groupOpenWarnings(entries, rows = []) {
   const groups = new Map();
   for (const entry of [...entries].sort(byCheckKeyPage)) {
     const key = JSON.stringify([entry.check, entry.key]);
@@ -343,7 +365,7 @@ function groupOpenWarnings(entries) {
       pages,
       accept_eligible: results.every((entry) => entry.accept_eligible),
       summary: results.length > 1
-        ? `${lead.check} ${lead.result}${lead.reason_code ? ` (${lead.reason_code})` : ""} on ${pages.join(", ")}${lead.key == null ? "" : `: ${lead.key}`}`
+        ? readabilityPairSummary(results.map((entry) => rows.find((row) => qcResultRef(row) === entry.result_ref))) ?? `${lead.check} ${lead.result}${lead.reason_code ? ` (${lead.reason_code})` : ""} on ${pages.join(", ")}${lead.key == null ? "" : `: ${lead.key}`}`
         : lead.summary,
       results,
     };
@@ -414,7 +436,7 @@ export function buildQcHandoff({ results, coverage = [], accepts, now = new Date
   const coverageEntries = [...grouped.values(), ...coverage]
     .map((entry) => ({ ...entry, pages: [...entry.pages].sort(compareText) }))
     .sort((a, b) => (LEG_ORDER[a.leg] ?? 9) - (LEG_ORDER[b.leg] ?? 9) || compareText(a.check, b.check) || compareText(a.reason_code, b.reason_code) || compareText(a.result, b.result));
-  const openGroups = groupOpenWarnings(open);
+  const openGroups = groupOpenWarnings(open, results);
   review.sort(byCheckKeyPage);
   lapsed.sort(byCheckKeyPage);
   accepted.sort(byCheckKeyPage);
@@ -448,7 +470,7 @@ export function qcHandoffTextLines(handoff) {
   section("Open warnings", handoff.open, (entry) => (entry.results?.length > 1
     ? [entry.summary, ...entry.results.map((result) => `      ${openLine(result)}`)]
     : openLine(entry)));
-  section("Review", handoff.review, (entry) => `${entry.result_ref} ${entry.summary}${members(entry)}`);
+  section("Review", handoff.review, (entry) => `${entry.result_ref} ${entry.summary}${entry.crop ? ` crop: ${entry.crop}` : ""}${members(entry)}`);
   section("Lapsed accepts", handoff.lapsed, (entry) => `${entry.result_ref} ${entry.summary}; accepted by ${entry.accepted_by} at ${entry.accepted_at}; lapsed: ${entry.why}`);
   section("Coverage", handoff.coverage, (entry) => `${entry.leg} ${entry.check}: ${entry.result} (${entry.reason_code})${entry.count ? ` x${entry.count}` : ""}${entry.pages.length ? ` on ${entry.pages.join(", ")}` : ""}`);
   section("Accepted", handoff.accepted, (entry) => `${entry.result_ref} accepted by ${entry.accepted_by} at ${entry.accepted_at}: ${entry.reason}${members(entry)}`);

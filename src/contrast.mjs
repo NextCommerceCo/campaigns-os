@@ -239,11 +239,41 @@ export function contrastToolkit() {
     return el.checkVisibility({ visibilityProperty: true }) && rect.width > 0 && rect.height > 0;
   };
 
-  // Overlap candidates are read once per document.
+  // The flat tree, as the page renders it: an element slotted into an open
+  // shadow root sits in its slot, and the top element of a shadow tree sits
+  // in the root's host. Closed roots hide their slots, so an element slotted
+  // into one steps to its light-DOM parent.
+  const shadowRootOf = (el) => (el.parentNode && el.parentNode.nodeType === 11 && el.parentNode.host ? el.parentNode : null);
+  const flatParent = (el) => el.assignedSlot || el.parentElement || (shadowRootOf(el) ? shadowRootOf(el).host : null);
+  const flatClosest = (el, selector) => {
+    for (let at = el; at && at.nodeType === 1; at = flatParent(at)) if (at.matches(selector)) return at;
+    return null;
+  };
+  const flatContains = (ancestor, el) => {
+    for (let at = el; at; at = flatParent(at)) if (at === ancestor) return true;
+    return false;
+  };
+  // Every element under `scope`, and under each open shadow root inside it.
+  const deepElements = (scope) => {
+    const found = [];
+    const pending = [scope];
+    while (pending.length) {
+      for (const node of pending.shift().querySelectorAll("*")) {
+        found.push(node);
+        if (node.shadowRoot) pending.push(node.shadowRoot);
+      }
+    }
+    return found;
+  };
+
+  // Overlap candidates are read once per document, open shadow roots
+  // included.
   const overlapCandidates = new WeakMap();
   function overlapCandidatesOf(doc, win) {
     if (!overlapCandidates.has(doc)) {
-      const candidates = Array.from(doc.querySelectorAll("body *")).filter((node) => {
+      const body = doc.body;
+      const elements = body ? [...(body.shadowRoot ? deepElements(body.shadowRoot) : []), ...deepElements(body)] : [];
+      const candidates = elements.filter((node) => {
         if (!isVisible(node)) return false;
         if (REPLACED_ELEMENTS.has(node.localName)) return true;
         const style = win.getComputedStyle(node);
@@ -254,26 +284,41 @@ export function contrastToolkit() {
     return overlapCandidates.get(doc);
   }
 
+  // The element's place in the page: up to 8 flat-tree steps, outwards
+  // through each slot, each shadow host and each same-origin frame. ">>>"
+  // marks a step into another tree: a slot to the element slotted into it, a
+  // host to the top of its shadow tree, a frame to its document. The
+  // :nth-of-type index counts the element's siblings in its own tree.
   function selectorPath(el) {
-    const steps = [];
-    for (let at = el; at && at.nodeType === 1 && steps.length < 8; at = at.parentElement) {
+    let path = "";
+    let joiner = ">";
+    let steps = 0;
+    for (let at = el; at && at.nodeType === 1 && steps < 8; steps += 1) {
       const tag = at.localName;
       const attributes = ROLE_SELECTOR_ATTRIBUTES.filter((name) => at.hasAttribute(name)).map((name) => `[${name}=${JSON.stringify(at.getAttribute(name))}]`).join("");
-      const nth = at.parentElement && tag !== "body" ? `:nth-of-type(${Array.from(at.parentElement.children).filter((sibling) => sibling.localName === tag).indexOf(at) + 1})` : "";
-      steps.unshift(`${tag}${attributes}${nth}`);
+      const siblings = at.parentElement || shadowRootOf(at);
+      const nth = siblings && tag !== "body" ? `:nth-of-type(${Array.from(siblings.children).filter((sibling) => sibling.localName === tag).indexOf(at) + 1})` : "";
+      path = `${tag}${attributes}${nth}${path ? `${joiner}${path}` : ""}`;
+      const up = flatParent(at);
+      const view = at.ownerDocument && at === at.ownerDocument.documentElement ? at.ownerDocument.defaultView : null;
+      joiner = up && up === at.parentElement ? ">" : ">>>";
+      at = up || (view && view.frameElement) || null;
     }
-    return steps.join(">");
+    return path;
   }
 
+  // Expanded: inside the content an aria-expanded="true" control names
+  // through aria-controls, resolved in the control's own document or shadow
+  // root.
   function stateOf(el) {
-    for (const [state, selector] of STATE_SELECTORS) if (el.closest(selector)) return state;
-    if (el.closest("details[open]")) return "expanded";
-    const doc = el.ownerDocument;
-    const controlled = Array.from(doc.querySelectorAll("[aria-expanded=\"true\"][aria-controls]")).some((control) => control.getAttribute("aria-controls").split(/\s+/).some((id) => {
-      const target = id ? doc.getElementById(id) : null;
-      return Boolean(target) && target.contains(el);
-    }));
-    return controlled ? "expanded" : "default";
+    for (const [state, selector] of STATE_SELECTORS) if (flatClosest(el, selector)) return state;
+    if (flatClosest(el, "details[open]")) return "expanded";
+    for (let at = el; at; at = flatParent(at)) {
+      const root = at.id ? at.getRootNode() : null;
+      if (!root || root.getElementById(at.id) !== at) continue;
+      if (Array.from(root.querySelectorAll("[aria-expanded=\"true\"][aria-controls]")).some((control) => control.getAttribute("aria-controls").split(/\s+/).includes(at.id))) return "expanded";
+    }
+    return "default";
   }
 
   function isTextBearing(el, win) {
@@ -287,7 +332,7 @@ export function contrastToolkit() {
     const font_size_px = Number.parseFloat(style.getPropertyValue("font-size"));
     const font_weight = Number(style.getPropertyValue("font-weight"));
     const large = isLargeText({ fontSizePx: font_size_px, fontWeight: font_weight });
-    const control = el.closest(CONTROL_SELECTOR);
+    const control = flatClosest(el, CONTROL_SELECTOR);
     const disabled = el.matches(DISABLED_SELECTOR) || Boolean(control && control.matches(DISABLED_SELECTOR));
     const control_loading = Boolean(control) && LOADING_ATTRIBUTES.some((name) => control.hasAttribute(name) && control.getAttribute(name) !== "false");
     const head = { selector_path: selectorPath(el), state: stateOf(el), disabled, rendered: isTextBearing(el, win), font_size_px, font_weight, size_class: large ? "large" : "normal" };
@@ -299,7 +344,7 @@ export function contrastToolkit() {
     const fillTransparent = transparent(fill_raw);
     const bg_layers_raw = [];
     let opaque = false;
-    for (let at = el; at && at.nodeType === 1; at = at.parentElement) {
+    for (let at = el; at && at.nodeType === 1; at = flatParent(at)) {
       const layer = at === el ? style : win.getComputedStyle(at);
       if (Number.parseFloat(layer.getPropertyValue("opacity")) < 1) triggers.add(5);
       if (isSet(layer.getPropertyValue("filter")) || isSet(layer.getPropertyValue("backdrop-filter"))) triggers.add(6);
@@ -324,7 +369,7 @@ export function contrastToolkit() {
       else triggers.add(10);
     }
     const box = el.getBoundingClientRect();
-    if (overlapCandidatesOf(el.ownerDocument, win).some(({ node, rect }) => !node.contains(el) && !el.contains(node) && intersects(rect, box))) triggers.add(4);
+    if (overlapCandidatesOf(el.ownerDocument, win).some(({ node, rect }) => !flatContains(node, el) && !flatContains(el, node) && intersects(rect, box))) triggers.add(4);
     if (el.matches(".next-disabled") || Boolean(control && control.matches(".next-disabled"))) triggers.add(11);
 
     const derived = deriveElementMeasurement({ fg_raw, fill_raw, bg_layers_raw, font_size_px, font_weight });
@@ -344,18 +389,38 @@ export function contrastToolkit() {
     };
   }
 
-  // First match: SDK readiness, then stylesheets, then fonts. Chromium gives
-  // a stylesheet that failed to load an empty sheet, so a sheet is also
-  // incomplete when its resource entry reports an HTTP error status.
+  // First match: SDK readiness, then stylesheets, then fonts. The SDK and
+  // stylesheet checks read every tree of the document: its own elements and
+  // each open shadow root inside it. Chromium gives a stylesheet that failed
+  // to load an empty sheet, so a sheet is also incomplete when its resource
+  // entry reports an HTTP error status. Each @import, in a <style> or in a
+  // linked or imported sheet, is a stylesheet too: incomplete while its rule
+  // has no sheet. A sheet whose rules cannot be read (cross-origin) has
+  // loaded, and its imports are not seen.
   function documentMeasurability(doc) {
     const body = doc.body;
+    const trees = [doc, ...deepElements(doc).filter((node) => node.shadowRoot).map((node) => node.shadowRoot)];
+    const everywhere = (selector) => trees.flatMap((tree) => Array.from(tree.querySelectorAll(selector)));
     const declared = Boolean(body && body.hasAttribute("data-next-sdk-loading"))
-      || Array.from(doc.querySelectorAll("script[src]")).some((script) => SDK_LOADER_SRC.test(script.getAttribute("src")));
+      || everywhere("script[src]").some((script) => SDK_LOADER_SRC.test(script.getAttribute("src")));
     const ready = Boolean(body && body.getAttribute("data-next-sdk-loading") === "false") || doc.documentElement.classList.contains("next-display-ready");
     if (declared && !ready) return { measurable: false, reason: "sdk_not_ready" };
     const timing = doc.defaultView ? doc.defaultView.performance : null;
-    const failed = (link) => Boolean(timing) && timing.getEntriesByName(link.href).some((entry) => entry.responseStatus >= 400);
-    if (Array.from(doc.querySelectorAll("link[rel=stylesheet]")).some((link) => !link.sheet || failed(link))) return { measurable: false, reason: "styles_incomplete" };
+    const failed = (url) => Boolean(timing) && Boolean(url) && timing.getEntriesByName(url).some((entry) => entry.responseStatus >= 400);
+    const seen = new Set();
+    const importsIncomplete = (sheet) => {
+      if (!sheet || seen.has(sheet)) return false;
+      seen.add(sheet);
+      let rules;
+      try {
+        rules = Array.from(sheet.cssRules || []);
+      } catch {
+        return false;
+      }
+      return rules.some((rule) => rule.type === 3 && (!rule.styleSheet || failed(rule.styleSheet.href) || importsIncomplete(rule.styleSheet)));
+    };
+    const linkIncomplete = (link) => !link.sheet || failed(link.href) || importsIncomplete(link.sheet);
+    if (everywhere("link[rel=stylesheet]").some(linkIncomplete) || everywhere("style").some((style) => importsIncomplete(style.sheet))) return { measurable: false, reason: "styles_incomplete" };
     if (doc.fonts.status !== "loaded") return { measurable: false, reason: "fonts_pending" };
     return { measurable: true };
   }

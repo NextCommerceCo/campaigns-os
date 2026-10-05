@@ -5870,6 +5870,33 @@
         }
       ],
       "entry_sha256": "e9063da2788630cb0017eedc0b2e77b717b290bae0e7cb5d6bcdbbb6e6b7368e"
+    },
+    {
+      "id": "RL-0233",
+      "sequence": 225,
+      "date": "2026-10-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.52.0+agent.2",
+      "changelog_sha256": "898e4a05520b74ec338b66035916e0c9cb069774e742e4af5f88fad76e5938c4",
+      "agent_impact": "polish capture now measures text readability on every built page at desktop and mobile widths and attaches it as stages.polish.evidence.visual_review.readability; next lists readability.contrast warnings, review and coverage results in its QC handoff, grouping each warning colour pair across pages and widths for one checkpoint accept. On a campaign whose every mapped page is template stock, polish capture measures readability, prints the page-load no_capturable_routes message as a warning, and exits 0 with status captured_with_warnings; record polish still refuses a completed Polish record there. Polish media weight and readability results read as stale when doctor reports the built output changed since record build. Readability results never block Polish or change readiness.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "polish",
+          "summary": "polish capture attaches the readability record beside page_load (which now carries captured_at), and on a campaign with no mapped pages measures readability only, reports the held page-load message as a warning and exits 0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe accepting a readability warning: one colour pair and size class per page and width, what orphans or lapses the accept, and that it never hides review, unexercised or excluded results."
+        }
+      ],
+      "entry_sha256": "dd5cf542c3e633592b28097762a2e6b35f7afe8dfa994df4e603778c62835362"
     }
   ]
 }

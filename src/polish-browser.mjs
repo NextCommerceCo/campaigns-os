@@ -19,6 +19,11 @@ import {
 import { launchPackageChromium, PLAYWRIGHT_INSTALL_HINT } from "./browser-launch.mjs";
 import { isProbeClock } from "./polish-media-weight.mjs";
 import {
+  readabilityCropTargets,
+  readabilityObservationOk,
+  readabilityProbeSource,
+} from "./polish-readability.mjs";
+import {
   boundedPolishDeadline,
   POLISH_BROWSER_CELL_DEADLINE_MS,
   POLISH_BROWSER_UNAVAILABLE_ERROR_CODE,
@@ -587,22 +592,28 @@ function readImageElements(limits, ...closedRoots) {
 
 // The backend node ids of the main document's closed shadow roots, from a
 // DOM.getDocument tree read with pierce. Open roots the read reaches itself
-// and user-agent roots are not the page's; an iframe's document is not
-// entered.
-function closedShadowRoots(root) {
+// and user-agent roots are not the page's. An iframe's document is entered
+// only with `frameOwners`: a closed root inside it, which the main frame's
+// world cannot resolve, is named by the main document's iframe that holds
+// it (once per iframe).
+function closedShadowRoots(root, { frameOwners = false } = {}) {
   const found = [];
-  const pending = [root];
+  const pending = [[root, null]];
   while (pending.length) {
-    const node = pending.pop();
+    const [node, owner] = pending.pop();
     if (!node || typeof node !== "object") continue;
-    if (node.shadowRootType === "closed" && Number.isInteger(node.backendNodeId)) found.push(node.backendNodeId);
-    if (Array.isArray(node.shadowRoots)) pending.push(...node.shadowRoots);
-    if (Array.isArray(node.children)) pending.push(...node.children);
+    if (node.shadowRootType === "closed" && Number.isInteger(owner ?? node.backendNodeId)) found.push(owner ?? node.backendNodeId);
+    if (Array.isArray(node.shadowRoots)) pending.push(...node.shadowRoots.map((child) => [child, owner]));
+    if (Array.isArray(node.children)) pending.push(...node.children.map((child) => [child, owner]));
+    if (frameOwners && node.contentDocument) pending.push([node.contentDocument, owner ?? node.backendNodeId]);
   }
-  return found;
+  return [...new Set(found)];
 }
 
 const BOUND_ENDED = Symbol("bound ended");
+// Readability work in a cell ends this long before the adapter cell deadline,
+// so a readability bound, not that deadline, is what stops it.
+const READABILITY_CELL_HEADROOM_MS = 1_000;
 const realProbeClock = Object.freeze({
   now: () => performance.now(),
   sleep: (ms) => new Promise((resolve) => {
@@ -649,6 +660,91 @@ async function probeImageElements(options) {
   }
 }
 
+// One probe's bound on `clock`, from `started`: the guard run before every
+// command the probe issues and before it acts on any step's result (the probe
+// is cancelled once the token is, or once the clock reaches the bound; the
+// clock is read even when no timer has fired, so a step that settles past the
+// bound ahead of a queued timer issues nothing more, and a passed bound
+// cancels the token too), the guarded CDP send, and one step: started only
+// inside the bound and raced against it. A step that settles past the bound
+// reads BOUND_ENDED, not its result. `hardMs`, when given, is a second bound
+// in real time from now (the adapter cell deadline's headroom), whatever
+// `clock` is; `hardEnded()` tells whether it is the one that ended.
+function boundedProbeSteps({ clock, session, token, started, boundMs, hardMs = Infinity }) {
+  const boundEnd = started + boundMs;
+  const hardEnd = performance.now() + hardMs;
+  const hardEnded = () => performance.now() >= hardEnd;
+  const cancelled = () => {
+    if (!token.cancelled && (clock.now() >= boundEnd || hardEnded())) token.cancelled = true;
+    return token.cancelled;
+  };
+  const send = (method, params) => (cancelled()
+    ? Promise.reject(new Error("The probe was cancelled."))
+    : session.send(method, params));
+  const deadline = Promise.race([
+    clock.sleep(boundMs),
+    ...(Number.isFinite(hardMs) ? [realProbeClock.sleep(Math.max(0, hardMs))] : []),
+  ]).then(() => {
+    token.cancelled = true;
+    return BOUND_ENDED;
+  });
+  const step = async (start) => {
+    if (cancelled()) return BOUND_ENDED;
+    const settled = await Promise.race([Promise.resolve().then(start).then((value) => ({ value }), (error) => ({ error })), deadline]);
+    return cancelled() ? BOUND_ENDED : settled;
+  };
+  return { cancelled, hardEnded, send, step };
+}
+
+// The isolated-world read a probe makes, each step inside its bound: an
+// isolated world on the main frame (Page.createIsolatedWorld); the node tree
+// (DOM.getDocument, piercing shadow roots) and each closed shadow root
+// resolved into that world (DOM.resolveNode); and the one read
+// (Runtime.callFunctionOn of `functionDeclaration` in that world, with
+// `leadingArgs` and then the closed roots; with `frameOwners`, also the
+// iframes holding closed roots, see closedShadowRoots). Returns BOUND_ENDED
+// when the bound ended a step, null when a step failed (its execution
+// context destroyed), or { value } of the read.
+async function isolatedWorldRead({ steps, mainFrame, worldName, functionDeclaration, leadingArgs, frameOwners = false }) {
+  const { send, step } = steps;
+  const world = await step(() => send("Page.createIsolatedWorld", {
+    frameId: mainFrame.id,
+    worldName,
+    grantUniveralAccess: false,
+  }));
+  if (world === BOUND_ENDED) return BOUND_ENDED;
+  const contextId = world.value?.executionContextId;
+  if (world.error || !Number.isInteger(contextId)) return null;
+  const tree = await step(() => send("DOM.getDocument", { depth: -1, pierce: true }));
+  if (tree === BOUND_ENDED) return BOUND_ENDED;
+  if (tree.error) return null;
+  const roots = await step(() => Promise.all(closedShadowRoots(tree.value?.root, { frameOwners })
+    .map((backendNodeId) => send("DOM.resolveNode", { backendNodeId, executionContextId: contextId }))));
+  if (roots === BOUND_ENDED) return BOUND_ENDED;
+  const rootIds = roots.error ? null : roots.value.map((resolved) => resolved?.object?.objectId);
+  if (!rootIds || !rootIds.every((objectId) => typeof objectId === "string")) return null;
+  const evaluated = await step(() => send("Runtime.callFunctionOn", {
+    functionDeclaration,
+    executionContextId: contextId,
+    arguments: [...leadingArgs, ...rootIds.map((objectId) => ({ objectId }))],
+    returnByValue: true,
+  }));
+  if (evaluated === BOUND_ENDED) return BOUND_ENDED;
+  if (evaluated.error || evaluated.value?.exceptionDetails) return null;
+  return { value: evaluated.value?.result?.value };
+}
+
+// The Page.getFrameTree re-read inside the bound: BOUND_ENDED, or whether the
+// main frame still has `mainFrame`'s id and loaderId (false when it does not,
+// or the re-read failed).
+async function sameMainDocument({ steps, mainFrame }) {
+  const reread = await steps.step(() => steps.send("Page.getFrameTree"));
+  if (reread === BOUND_ENDED) return BOUND_ENDED;
+  if (reread.error) return false;
+  const frame = reread.value?.frameTree?.frame;
+  return frame?.id === mainFrame.id && frame?.loaderId === mainFrame.loaderId;
+}
+
 async function runImageProbe({ session, mainFrame, documentContextChanged, probe }, token) {
   const clock = isProbeClock(probe.clock) ? probe.clock : realProbeClock;
   const limits = { images: probe.imageCap, urlLength: MAX_POLISH_CAPTURE_URL_LENGTH };
@@ -659,66 +755,145 @@ async function runImageProbe({ session, mainFrame, documentContextChanged, probe
   if (!(probe.remainingMs > 0)) return { ...outcome("probe_budget_exhausted"), spent_ms: 0 };
   if (documentContextChanged || typeof mainFrame?.id !== "string") return outcome("document_context_changed");
   const boundMs = Math.min(probe.cellBoundMs, probe.remainingMs);
-  const boundEnd = started + boundMs;
   // The status of a probe its bound ended.
   const boundEnded = probe.remainingMs < probe.cellBoundMs ? "probe_budget_exhausted" : "probe_timeout";
-  // The probe's one guard, run before every command it issues and before it
-  // acts on any step's result: the probe is cancelled once the token is, or
-  // once the probe clock reaches the bound. The clock is read even when no
-  // timer has fired, so a step that settles past the bound ahead of a queued
-  // timer issues nothing more; a passed bound cancels the token too.
-  const cancelled = () => {
-    if (!token.cancelled && clock.now() >= boundEnd) token.cancelled = true;
-    return token.cancelled;
-  };
-  const send = (method, params) => (cancelled()
-    ? Promise.reject(new Error("The image probe was cancelled."))
-    : session.send(method, params));
-  const deadline = clock.sleep(boundMs).then(() => {
-    token.cancelled = true;
-    return BOUND_ENDED;
-  });
-  // One probe step: started only inside the bound, and raced against it. A
-  // step that settles past the bound reads BOUND_ENDED, not its result.
-  const step = async (start) => {
-    if (cancelled()) return BOUND_ENDED;
-    const settled = await Promise.race([Promise.resolve().then(start).then((value) => ({ value }), (error) => ({ error })), deadline]);
-    return cancelled() ? BOUND_ENDED : settled;
-  };
+  const steps = boundedProbeSteps({ clock, session, token, started, boundMs });
 
-  const world = await step(() => send("Page.createIsolatedWorld", {
-    frameId: mainFrame.id,
+  const called = await isolatedWorldRead({
+    steps,
+    mainFrame,
     worldName: "campaigns-os-polish-image-probe",
-    grantUniveralAccess: false,
-  }));
-  if (world === BOUND_ENDED) return outcome(boundEnded);
-  const contextId = world.value?.executionContextId;
-  if (world.error || !Number.isInteger(contextId)) return outcome("document_context_changed");
-  const tree = await step(() => send("DOM.getDocument", { depth: -1, pierce: true }));
-  if (tree === BOUND_ENDED) return outcome(boundEnded);
-  if (tree.error) return outcome("document_context_changed");
-  const roots = await step(() => Promise.all(closedShadowRoots(tree.value?.root)
-    .map((backendNodeId) => send("DOM.resolveNode", { backendNodeId, executionContextId: contextId }))));
-  if (roots === BOUND_ENDED) return outcome(boundEnded);
-  const rootIds = roots.error ? null : roots.value.map((resolved) => resolved?.object?.objectId);
-  if (!rootIds || !rootIds.every((objectId) => typeof objectId === "string")) return outcome("document_context_changed");
-  const evaluated = await step(() => send("Runtime.callFunctionOn", {
     functionDeclaration: readImageElements.toString(),
-    executionContextId: contextId,
-    arguments: [{ value: limits }, ...rootIds.map((objectId) => ({ objectId }))],
-    returnByValue: true,
-  }));
-  if (evaluated === BOUND_ENDED) return outcome(boundEnded);
-  if (evaluated.error || evaluated.value?.exceptionDetails) return outcome("document_context_changed");
-  read = imageRead(evaluated.value?.result?.value, probe.imageCap);
+    leadingArgs: [{ value: limits }],
+  });
+  if (called === BOUND_ENDED) return outcome(boundEnded);
+  if (called === null) return outcome("document_context_changed");
+  read = imageRead(called.value, probe.imageCap);
   if (!read) return outcome("document_context_changed");
-  const reread = await step(() => send("Page.getFrameTree"));
-  if (reread === BOUND_ENDED) return outcome(boundEnded);
-  if (reread.error) return outcome("document_context_changed");
-  const frame = reread.value?.frameTree?.frame;
-  if (frame?.id !== mainFrame.id || frame?.loaderId !== mainFrame.loaderId) return outcome("document_context_changed");
+  const same = await sameMainDocument({ steps, mainFrame });
+  if (same === BOUND_ENDED) return outcome(boundEnded);
+  if (!same) return outcome("document_context_changed");
   if (read.observed_count > probe.imageCap) return outcome("image_cap_reached");
-  return cancelled() ? outcome(boundEnded) : outcome("complete");
+  return steps.cancelled() ? outcome(boundEnded) : outcome("complete");
+}
+
+// The readability probe of one cell (src/polish-readability.mjs), after the
+// page has loaded, and the cell's crops after it. The probe is the image
+// probe's isolated-world read of readabilityProbeSource and its main-frame
+// re-read: a main frame with another id or loaderId than `mainFrame`, or a
+// failed step, reads document_changed. Its bound is the smaller of the cell
+// bound (READABILITY_PROBE_CELL_MS) and what is left of the run's probe and
+// added budgets, on `clock`, and it also ends at `cellLeftMs` (the adapter
+// cell deadline's headroom, in real time); a probe its bound ends reads
+// probe_timeout, or run_budget_exhausted where a run budget was the smaller
+// bound. A measured cell then takes its crops (readabilityCropTargets) as
+// viewport-clip screenshots, at most `cropsPerCell`, and reads the main frame
+// once more, every one of those steps inside one crop bound: what is left of
+// the run's crop and added budgets on `clock`, and of the cell headroom. A crop target outside the
+// viewport reads outside_viewport; one past the count or the bound, or whose
+// screenshot failed, crop_unavailable; so does every crop taken when the
+// bound ends before the re-read. crop_ms runs from the first crop step to the
+// end of the re-read.
+// Returns { status, capped, coverage_gaps, elements, crops, probe_ms, crop_ms }.
+async function probeReadabilityDocument(options) {
+  const token = { cancelled: false };
+  const cropToken = { cancelled: false };
+  try {
+    return await runReadabilityProbe(options, token, cropToken);
+  } finally {
+    token.cancelled = true;
+    cropToken.cancelled = true;
+  }
+}
+
+async function runReadabilityProbe({ session, mainFrame, documentContextChanged, probe }, token, cropToken) {
+  const clock = isProbeClock(probe.clock) ? probe.clock : realProbeClock;
+  const started = clock.now();
+  const spent = () => Math.max(0, clock.now() - started);
+  const unmeasured = (status) => ({ status, capped: false, coverage_gaps: [], elements: [], crops: [], probe_ms: spent(), crop_ms: 0 });
+  const runLeft = Math.min(probe.probeRemainingMs, probe.addedRemainingMs);
+  // The cell deadline's headroom, in real time.
+  const cellEndsAt = performance.now() + (Number.isFinite(probe.cellLeftMs) ? probe.cellLeftMs : Infinity);
+  const cellLeft = () => cellEndsAt - performance.now();
+  if (!(runLeft > 0)) return { ...unmeasured("run_budget_exhausted"), probe_ms: 0 };
+  if (!(cellLeft() > 0)) return { ...unmeasured("probe_timeout"), probe_ms: 0 };
+  if (documentContextChanged || typeof mainFrame?.id !== "string") return unmeasured("document_changed");
+  const boundMs = Math.min(probe.cellBoundMs, runLeft);
+  const steps = boundedProbeSteps({ clock, session, token, started, boundMs, hardMs: cellLeft() });
+  // The status of a probe its bound ended.
+  const bound = () => (!steps.hardEnded() && runLeft < probe.cellBoundMs ? "run_budget_exhausted" : "probe_timeout");
+
+  const called = await isolatedWorldRead({
+    steps,
+    mainFrame,
+    worldName: "campaigns-os-polish-readability-probe",
+    functionDeclaration: readabilityProbeSource(),
+    leadingArgs: [{ value: { elements: probe.elementCap } }],
+    frameOwners: true,
+  });
+  if (called === BOUND_ENDED) return unmeasured(bound());
+  if (called === null || !readabilityObservationOk(called.value)) return unmeasured("document_changed");
+  const same = await sameMainDocument({ steps, mainFrame });
+  if (same === BOUND_ENDED) return unmeasured(bound());
+  if (!same) return unmeasured("document_changed");
+  if (steps.cancelled()) return unmeasured(bound());
+  const read = called.value;
+  const probeMs = spent();
+  if (read.status !== "measured") return { ...unmeasured(read.status), probe_ms: probeMs };
+
+  // Crops, after every measurement in the cell.
+  const cropStarted = clock.now();
+  const cropSpent = () => Math.max(0, clock.now() - cropStarted);
+  const cropLeft = Math.min(probe.cropRemainingMs, probe.addedRemainingMs - probeMs);
+  const crops = [];
+  const elements = read.elements;
+  const viewport = read.viewport || {};
+  const targets = readabilityCropTargets(elements);
+  const cropSteps = cropLeft > 0 && cellLeft() > 0 ? boundedProbeSteps({ clock, session, token: cropToken, started: cropStarted, boundMs: cropLeft, hardMs: cellLeft() }) : null;
+  for (const [taken, index] of targets.entries()) {
+    const element = elements[index];
+    const rect = element.rect || {};
+    const x = Math.max(0, rect.x);
+    const y = Math.max(0, rect.y);
+    const width = Math.min(viewport.width, rect.x + rect.width) - x;
+    const height = Math.min(viewport.height, rect.y + rect.height) - y;
+    if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+      element.crop_reason = "outside_viewport";
+      continue;
+    }
+    if (taken >= probe.cropsPerCell || !cropSteps || cropSteps.cancelled()) {
+      element.crop_reason = "crop_unavailable";
+      continue;
+    }
+    const shot = await cropSteps.step(() => cropSteps.send("Page.captureScreenshot", {
+      format: "png",
+      clip: { x, y, width, height, scale: 1 },
+      captureBeyondViewport: false,
+    }));
+    if (shot === BOUND_ENDED || shot.error || typeof shot.value?.data !== "string" || shot.value.data === "") {
+      element.crop_reason = "crop_unavailable";
+      continue;
+    }
+    crops.push({ element: index, data: shot.value.data });
+  }
+  // The crops are of the measured document only: the re-read is a crop step.
+  // When the bound ends first, no crop taken can be shown to be of it.
+  const cropped = crops.length ? await sameMainDocument({ steps: cropSteps, mainFrame }) : true;
+  const cropMs = targets.length ? cropSpent() : 0;
+  if (cropped === BOUND_ENDED) {
+    for (const crop of crops.splice(0)) elements[crop.element].crop_reason = "crop_unavailable";
+  } else if (!cropped) {
+    return { ...unmeasured("document_changed"), probe_ms: probeMs, crop_ms: cropMs };
+  }
+  return {
+    status: "measured",
+    capped: read.capped,
+    coverage_gaps: read.coverage_gaps,
+    elements,
+    crops,
+    probe_ms: probeMs,
+    crop_ms: cropMs,
+  };
 }
 
 function preferredResolvedValue(finalValue, initialValue) {
@@ -885,171 +1060,287 @@ export async function createPolishBrowserAdapter({
   let closed = false;
   let poisonCode = null;
   let closePromise = null;
+  // One cell in a fresh browser context: the context (viewport, service
+  // workers blocked, the auth cookies), its page and CDP session, `work`
+  // under the adapter cell deadline, and the context closed under the cleanup
+  // bound. A timeout or a failed cleanup poisons the adapter for every later
+  // cell. `work` also gets `cellLeftMs()`, the time left before the cell
+  // deadline less the readability headroom. With `setup` ({ step, ended }),
+  // each setup call is a `step` of the caller's bound (boundedProbeSteps); a
+  // bound that ends during setup makes the cell return `ended()` instead of
+  // running `work`, and a context created after that is closed.
+  const inCaptureContext = async ({ url, viewport, signal, setup = null }, work) => {
+    if (closed) throw new Error("Campaigns OS polish capture browser adapter is already closed.");
+    if (poisonCode === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw polishProducerTimeoutError();
+    if (poisonCode === POLISH_PRODUCER_CLEANUP_ERROR_CODE) throw polishProducerCleanupError();
+    if (typeof url !== "string" || url.length > MAX_POLISH_CAPTURE_URL_LENGTH) {
+      throw new Error("Campaigns OS polish capture requires a bounded HTTP(S) capture URL.");
+    }
+    if (!Number.isInteger(viewport?.width) || viewport.width <= 0
+      || !Number.isInteger(viewport?.height) || viewport.height <= 0) {
+      throw new Error("Campaigns OS polish capture requires a positive integer viewport.");
+    }
+    let context;
+    let session;
+    let timedOut = false;
+    let detachPromise = null;
+    let contextClosePromise = null;
+    const cleanupResources = () => {
+      if (typeof session?.detach === "function" && !detachPromise) {
+        detachPromise = Promise.resolve().then(() => session.detach());
+        // Context closure is authoritative. CDP detach commonly rejects when
+        // that same close wins the race, so observe but never await or expose it.
+        void detachPromise.catch(() => {});
+      }
+      if (typeof context?.close === "function" && !contextClosePromise) {
+        contextClosePromise = Promise.resolve().then(() => context.close());
+      }
+      if (!context) return Promise.resolve();
+      if (!contextClosePromise) return Promise.reject(polishProducerCleanupError());
+      return contextClosePromise.catch(() => { throw polishProducerCleanupError(); });
+    };
+    const assertActive = () => {
+      if (!timedOut) return;
+      poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+      void cleanupResources().catch(() => {});
+      throw polishProducerTimeoutError();
+    };
+    const awaitActive = async (promise) => {
+      try {
+        const value = await promise;
+        assertActive();
+        return value;
+      } catch (error) {
+        assertActive();
+        throw error;
+      }
+    };
+    const triggerTimeout = () => {
+      timedOut = true;
+      poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+      void cleanupResources().catch(() => {});
+    };
+    if (signal?.aborted) triggerTimeout();
+    else if (typeof signal?.addEventListener === "function") {
+      signal.addEventListener("abort", triggerTimeout, { once: true });
+    }
+    let setupEnded = false;
+    // One setup call: under the caller's bound when there is one.
+    const settle = async (start) => {
+      if (!setup) return awaitActive(start());
+      const settled = await setup.step(start);
+      assertActive();
+      if (settled === BOUND_ENDED) {
+        setupEnded = true;
+        throw BOUND_ENDED;
+      }
+      if (settled.error) throw settled.error;
+      return settled.value;
+    };
+    const cellStartedAt = performance.now();
+    const cellLeftMs = () => boundedCellDeadlineMs - (performance.now() - cellStartedAt) - READABILITY_CELL_HEADROOM_MS;
+    let observation;
+    let operationError = null;
+    try {
+      observation = await runWithPolishProducerDeadline(async () => {
+        assertActive();
+        // The context is kept as soon as it exists, so cleanup closes it; one
+        // that arrives after the setup bound ended is closed at once.
+        const newContext = () => Promise.resolve(browser.newContext({
+          viewport: { width: viewport.width, height: viewport.height },
+          serviceWorkers: "block",
+        })).then((created) => {
+          if (setupEnded) void Promise.resolve().then(() => created?.close()).catch(() => {});
+          else context = created;
+          return created;
+        });
+        if (setup) await settle(newContext);
+        else await newContext();
+        assertActive();
+        if (authCookies.length > 0) {
+          const origin = captureOrigin(url);
+          // Fixed message: a URL containing credentials or query data is never echoed.
+          if (origin === null) throw new Error("Campaigns OS polish capture requires an HTTP(S) capture URL before applying --auth-cookie.");
+          await settle(() => context.addCookies(authCookies.map((cookie) => ({ ...cookie, url: origin }))));
+        }
+        const page = await settle(() => context.newPage());
+        session = setup ? await settle(() => context.newCDPSession(page)) : await context.newCDPSession(page);
+        assertActive();
+        return work({ page, session, awaitActive, cellLeftMs });
+      }, {
+        timeoutMs: boundedCellDeadlineMs,
+        onTimeout: triggerTimeout,
+        signal,
+      });
+    } catch (error) {
+      if (error === BOUND_ENDED && setup) observation = setup.ended();
+      else operationError = error;
+      if (error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) {
+        poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+      }
+    } finally {
+      if (typeof signal?.removeEventListener === "function") {
+        signal.removeEventListener("abort", triggerTimeout);
+      }
+    }
+    let cleanupError = null;
+    try {
+      await runWithPolishProducerDeadline(cleanupResources, { timeoutMs: boundedCleanupDeadlineMs });
+    } catch (error) {
+      cleanupError = error;
+    }
+    if (cleanupError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) {
+      poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+      throw cleanupError;
+    }
+    if (operationError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) {
+      poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+      throw operationError;
+    }
+    if (cleanupError) {
+      poisonCode = POLISH_PRODUCER_CLEANUP_ERROR_CODE;
+      throw polishProducerCleanupError();
+    }
+    if (operationError) throw operationError;
+    return observation;
+  };
   return {
     // `imageProbe` ({ clock, remainingMs, cellBoundMs, imageCap }) opts the
     // cell into the media-weight image probe; the observation then carries
-    // `imageProbe` beside the page-load fields.
-    async captureRoute({ url, viewport, signal, imageProbe: probeOptions = null } = {}) {
-      if (closed) throw new Error("Campaigns OS polish capture browser adapter is already closed.");
-      if (poisonCode === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw polishProducerTimeoutError();
-      if (poisonCode === POLISH_PRODUCER_CLEANUP_ERROR_CODE) throw polishProducerCleanupError();
-      if (typeof url !== "string" || url.length > MAX_POLISH_CAPTURE_URL_LENGTH) {
-        throw new Error("Campaigns OS polish capture requires a bounded HTTP(S) capture URL.");
-      }
-      if (!Number.isInteger(viewport?.width) || viewport.width <= 0
-        || !Number.isInteger(viewport?.height) || viewport.height <= 0) {
-        throw new Error("Campaigns OS polish capture requires a positive integer viewport.");
-      }
-      let context;
-      let session;
-      let timedOut = false;
-      let detachPromise = null;
-      let contextClosePromise = null;
-      const cleanupResources = () => {
-        if (typeof session?.detach === "function" && !detachPromise) {
-          detachPromise = Promise.resolve().then(() => session.detach());
-          // Context closure is authoritative. CDP detach commonly rejects when
-          // that same close wins the race, so observe but never await or expose it.
-          void detachPromise.catch(() => {});
-        }
-        if (typeof context?.close === "function" && !contextClosePromise) {
-          contextClosePromise = Promise.resolve().then(() => context.close());
-        }
-        if (!context) return Promise.resolve();
-        if (!contextClosePromise) return Promise.reject(polishProducerCleanupError());
-        return contextClosePromise.catch(() => { throw polishProducerCleanupError(); });
-      };
-      const assertActive = () => {
-        if (!timedOut) return;
-        poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
-        void cleanupResources().catch(() => {});
-        throw polishProducerTimeoutError();
-      };
-      const awaitActive = async (promise) => {
-        try {
-          const value = await promise;
-          assertActive();
-          return value;
-        } catch (error) {
-          assertActive();
-          throw error;
-        }
-      };
-      const triggerTimeout = () => {
-        timedOut = true;
-        poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
-        void cleanupResources().catch(() => {});
-      };
-      if (signal?.aborted) triggerTimeout();
-      else if (typeof signal?.addEventListener === "function") {
-        signal.addEventListener("abort", triggerTimeout, { once: true });
-      }
-      let observation;
-      let operationError = null;
-      try {
-        observation = await runWithPolishProducerDeadline(async () => {
-          assertActive();
-          context = await browser.newContext({
-            viewport: { width: viewport.width, height: viewport.height },
-            serviceWorkers: "block",
-          });
-          assertActive();
-          if (authCookies.length > 0) {
-            const origin = captureOrigin(url);
-            // Fixed message: a URL containing credentials or query data is never echoed.
-            if (origin === null) throw new Error("Campaigns OS polish capture requires an HTTP(S) capture URL before applying --auth-cookie.");
-            await awaitActive(context.addCookies(authCookies.map((cookie) => ({ ...cookie, url: origin }))));
-          }
-          const page = await awaitActive(context.newPage());
-          session = await context.newCDPSession(page);
-          assertActive();
-          const collector = createNetworkCollector();
-          await awaitActive(session.send("Network.enable"));
-          await awaitActive(session.send("Network.setCacheDisabled", { cacheDisabled: true }));
-          await awaitActive(session.send("Network.setBypassServiceWorker", { bypass: true }));
-          collector.listen(session);
+    // `imageProbe` beside the page-load fields. `readabilityProbe` ({ clock,
+    // cellBoundMs, probeRemainingMs, cropRemainingMs, addedRemainingMs,
+    // elementCap, cropsPerCell }) opts it into the readability probe, run
+    // after the image probe; the observation then carries `readability`.
+    async captureRoute({ url, viewport, signal, imageProbe: probeOptions = null, readabilityProbe: readabilityOptions = null } = {}) {
+      return inCaptureContext({ url, viewport, signal }, async ({ page, session, awaitActive, cellLeftMs }) => {
+        const collector = createNetworkCollector();
+        await awaitActive(session.send("Network.enable"));
+        await awaitActive(session.send("Network.setCacheDisabled", { cacheDisabled: true }));
+        await awaitActive(session.send("Network.setBypassServiceWorker", { bypass: true }));
+        collector.listen(session);
 
+        const navigationStartedAt = performance.now();
+        await awaitActive(page.goto(url, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS }));
+        const initialFrameTree = await awaitActive(session.send("Page.getFrameTree"));
+        const initialMainFrame = initialFrameTree?.frameTree?.frame;
+        const initialMediaElements = await awaitActive(collectMediaElements(page));
+        let networkidle;
+        try {
+          await awaitActive(page.waitForLoadState("networkidle", { timeout: NETWORKIDLE_TIMEOUT_MS }));
+          networkidle = { status: "settled", duration_ms: durationSince(navigationStartedAt) };
+        } catch (error) {
+          if (!timeoutError(error)) throw error;
+          networkidle = { status: "timeout", duration_ms: durationSince(navigationStartedAt) };
+        }
+        const finalMediaElements = await awaitActive(collectMediaElements(page));
+        await awaitActive(drainProtocolEvents());
+        const frameTree = await awaitActive(session.send("Page.getFrameTree"));
+        const mainFrame = frameTree?.frameTree?.frame;
+        const finalDocumentUrl = page.url();
+        const documentContextChanged = typeof initialMainFrame?.id !== "string"
+          || typeof initialMainFrame?.loaderId !== "string"
+          || initialMainFrame.id !== mainFrame?.id
+          || initialMainFrame.loaderId !== mainFrame?.loaderId;
+        const mediaElements = mergeMediaElementSnapshots(
+          documentContextChanged ? { observed_element_count: 0, elements: [] } : initialMediaElements,
+          finalMediaElements,
+        );
+        const network = collector.finish({
+          mainFrameId: mainFrame?.id,
+          mainLoaderId: mainFrame?.loaderId,
+          finalDocumentUrl,
+        });
+        if (documentContextChanged) {
+          network.responseCollectionStatus = "failed";
+          network.responses.push(captureProblemRecord("document_context_changed"));
+        }
+        const imageProbe = probeOptions && typeof probeOptions === "object"
+          ? await awaitActive(probeImageElements({ session, mainFrame, documentContextChanged, probe: probeOptions }))
+          : null;
+        const readability = readabilityOptions && typeof readabilityOptions === "object"
+          ? await awaitActive(probeReadabilityDocument({ session, mainFrame, documentContextChanged, probe: { ...readabilityOptions, cellLeftMs: cellLeftMs() } }))
+          : null;
+        return {
+          finalDocumentUrl,
+          responseCollectionStatus: network.responseCollectionStatus,
+          networkidle,
+          mediaElements,
+          responses: network.responses,
+          ...(imageProbe ? { imageProbe } : {}),
+          ...(readability ? { readability } : {}),
+        };
+      });
+    },
+
+    // A readability-only cell: a fresh context like captureRoute's, `goto`
+    // until domcontentloaded, the network-idle wait (a timeout is recorded,
+    // not a failure), then the readability probe (`probe` as captureRoute's
+    // readabilityProbe). Navigation is bounded by the added run budget left
+    // as well; a navigation that fails, or answers with an HTTP error, reads
+    // navigation_failed, and one the budget cut, run_budget_exhausted.
+    // Returns the probe's result and `networkidle`.
+    async probeReadabilityRoute(route, viewport, { signal, probe = {} } = {}) {
+      const clock = isProbeClock(probe.clock) ? probe.clock : realProbeClock;
+      const cellStarted = clock.now();
+      const addedLeft = () => probe.addedRemainingMs - Math.max(0, clock.now() - cellStarted);
+      const unmeasured = (status, networkidle = null) => ({ status, capped: false, coverage_gaps: [], elements: [], crops: [], probe_ms: 0, crop_ms: 0, networkidle });
+      // Every browser call of the cell is a step of a bound: the added budget
+      // left on `clock` (a cell that starts with none makes no call), and once
+      // the page exists, the cell deadline's headroom in real time too. A
+      // bound the added budget ends reads run_budget_exhausted; one the cell
+      // deadline's headroom ends, probe_timeout.
+      const token = { cancelled: false };
+      let cdp = null;
+      const bounded = (boundMs, hardMs) => boundedProbeSteps({ clock, session: { send: (method, params) => cdp.send(method, params) }, token, started: clock.now(), boundMs, hardMs });
+      try {
+        const setupSteps = bounded(probe.addedRemainingMs);
+        const setup = { step: setupSteps.step, ended: () => unmeasured("run_budget_exhausted") };
+        return await inCaptureContext({ url: route?.url, viewport, signal, setup }, async ({ page, session, awaitActive, cellLeftMs }) => {
+          cdp = session;
+          const addedAtStart = addedLeft();
+          const cellAtStart = cellLeftMs();
+          if (!(addedAtStart > 0)) return unmeasured("run_budget_exhausted");
+          if (!(cellAtStart > 0)) return unmeasured("probe_timeout");
+          const steps = bounded(addedAtStart, cellAtStart);
+          const boundEnded = () => (steps.hardEnded() ? "probe_timeout" : "run_budget_exhausted");
+          const navigationTimeout = Math.max(1, Math.min(NAVIGATION_TIMEOUT_MS, Math.floor(addedAtStart), Math.floor(cellAtStart)));
           const navigationStartedAt = performance.now();
-          await awaitActive(page.goto(url, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS }));
-          const initialFrameTree = await awaitActive(session.send("Page.getFrameTree"));
-          const initialMainFrame = initialFrameTree?.frameTree?.frame;
-          const initialMediaElements = await awaitActive(collectMediaElements(page));
-          let networkidle;
-          try {
-            await awaitActive(page.waitForLoadState("networkidle", { timeout: NETWORKIDLE_TIMEOUT_MS }));
-            networkidle = { status: "settled", duration_ms: durationSince(navigationStartedAt) };
-          } catch (error) {
-            if (!timeoutError(error)) throw error;
-            networkidle = { status: "timeout", duration_ms: durationSince(navigationStartedAt) };
+          const navigated = await awaitActive(steps.step(() => page.goto(route.url, { waitUntil: "domcontentloaded", timeout: navigationTimeout })));
+          if (navigated === BOUND_ENDED) return unmeasured(boundEnded());
+          if (navigated.error) {
+            if (navigated.error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw navigated.error;
+            const cutByAdded = navigationTimeout < NAVIGATION_TIMEOUT_MS && navigationTimeout === Math.max(1, Math.floor(addedAtStart));
+            return unmeasured(timeoutError(navigated.error) && cutByAdded ? "run_budget_exhausted" : "navigation_failed");
           }
-          const finalMediaElements = await awaitActive(collectMediaElements(page));
-          await awaitActive(drainProtocolEvents());
-          const frameTree = await awaitActive(session.send("Page.getFrameTree"));
-          const mainFrame = frameTree?.frameTree?.frame;
-          const finalDocumentUrl = page.url();
+          if (!navigated.value || navigated.value.status() >= 400) return unmeasured("navigation_failed");
+          const initialTree = await awaitActive(steps.step(() => steps.send("Page.getFrameTree")));
+          if (initialTree === BOUND_ENDED) return unmeasured(boundEnded());
+          if (initialTree.error) return unmeasured("document_changed");
+          const initialMainFrame = initialTree.value?.frameTree?.frame;
+          const idleTimeout = Math.max(1, Math.min(NETWORKIDLE_TIMEOUT_MS, Math.floor(addedLeft()), Math.floor(cellLeftMs())));
+          const idle = await awaitActive(steps.step(() => page.waitForLoadState("networkidle", { timeout: idleTimeout })));
+          if (idle === BOUND_ENDED) return unmeasured(boundEnded());
+          if (idle.error && !timeoutError(idle.error)) throw idle.error;
+          const networkidle = { status: idle.error ? "timeout" : "settled", duration_ms: durationSince(navigationStartedAt) };
+          const finalTree = await awaitActive(steps.step(() => steps.send("Page.getFrameTree")));
+          if (finalTree === BOUND_ENDED) return unmeasured(boundEnded(), networkidle);
+          if (finalTree.error) return unmeasured("document_changed", networkidle);
+          const mainFrame = finalTree.value?.frameTree?.frame;
           const documentContextChanged = typeof initialMainFrame?.id !== "string"
             || typeof initialMainFrame?.loaderId !== "string"
             || initialMainFrame.id !== mainFrame?.id
             || initialMainFrame.loaderId !== mainFrame?.loaderId;
-          const mediaElements = mergeMediaElementSnapshots(
-            documentContextChanged ? { observed_element_count: 0, elements: [] } : initialMediaElements,
-            finalMediaElements,
-          );
-          const network = collector.finish({
-            mainFrameId: mainFrame?.id,
-            mainLoaderId: mainFrame?.loaderId,
-            finalDocumentUrl,
-          });
-          if (documentContextChanged) {
-            network.responseCollectionStatus = "failed";
-            network.responses.push(captureProblemRecord("document_context_changed"));
-          }
-          const imageProbe = probeOptions && typeof probeOptions === "object"
-            ? await awaitActive(probeImageElements({ session, mainFrame, documentContextChanged, probe: probeOptions }))
-            : null;
-          return {
-            finalDocumentUrl,
-            responseCollectionStatus: network.responseCollectionStatus,
-            networkidle,
-            mediaElements,
-            responses: network.responses,
-            ...(imageProbe ? { imageProbe } : {}),
-          };
-        }, {
-          timeoutMs: boundedCellDeadlineMs,
-          onTimeout: triggerTimeout,
-          signal,
+          const readability = await awaitActive(probeReadabilityDocument({
+            session,
+            mainFrame,
+            documentContextChanged,
+            probe: { ...probe, addedRemainingMs: addedLeft(), cellLeftMs: cellLeftMs() },
+          }));
+          return { ...readability, networkidle };
         });
-      } catch (error) {
-        operationError = error;
-        if (error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) {
-          poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
-        }
       } finally {
-        if (typeof signal?.removeEventListener === "function") {
-          signal.removeEventListener("abort", triggerTimeout);
-        }
+        token.cancelled = true;
       }
-      let cleanupError = null;
-      try {
-        await runWithPolishProducerDeadline(cleanupResources, { timeoutMs: boundedCleanupDeadlineMs });
-      } catch (error) {
-        cleanupError = error;
-      }
-      if (cleanupError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) {
-        poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
-        throw cleanupError;
-      }
-      if (operationError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) {
-        poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
-        throw operationError;
-      }
-      if (cleanupError) {
-        poisonCode = POLISH_PRODUCER_CLEANUP_ERROR_CODE;
-        throw polishProducerCleanupError();
-      }
-      if (operationError) throw operationError;
-      return observation;
     },
 
     async close() {

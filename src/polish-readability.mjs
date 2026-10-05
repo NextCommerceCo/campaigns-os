@@ -18,13 +18,21 @@
 // - coverage_gaps[]: what the probe could not measure: closed shadow roots,
 //   cross-origin frames, loading, hidden or generated-text role elements, and
 //   selected, active or expanded states not present at load.
-import { relative, sep } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 
 import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { CART_PLACEHOLDERS_LIMITS } from "./cart-placeholders.mjs";
 import { contrastToolkit } from "./contrast.mjs";
+import {
+  READABILITY_ADDED_RUN_MS,
+  READABILITY_CROP_RUN_MS,
+  READABILITY_PROBE_CELL_MS,
+  READABILITY_PROBE_RUN_MS,
+} from "./polish-deadline.mjs";
 import { MAX_POLISH_CAPTURE_ROUTES, POLISH_CAPTURE_VIEWPORTS } from "./polish-node.mjs";
-import { QC_PRODUCERS, aggregateQcResults } from "./qc-results.mjs";
+import { QC_PRODUCERS, aggregateQcResults, polishRecordIntegrity } from "./qc-results.mjs";
 
 export const READABILITY_CHECK = "readability.contrast";
 export const READABILITY_SCHEMA = "campaigns-os-polish-readability/v0";
@@ -80,10 +88,10 @@ export function readabilityLimits() {
   return Object.freeze({
     elements_per_cell: 2000,
     crops_per_cell: 40,
-    probe_ms_per_cell: 1500,
-    probe_ms_per_run: 120_000,
-    crop_ms_per_run: 30_000,
-    added_ms_per_run: 300_000,
+    probe_ms_per_cell: READABILITY_PROBE_CELL_MS,
+    probe_ms_per_run: READABILITY_PROBE_RUN_MS,
+    crop_ms_per_run: READABILITY_CROP_RUN_MS,
+    added_ms_per_run: READABILITY_ADDED_RUN_MS,
     routes: MAX_POLISH_CAPTURE_ROUTES,
     route_enumeration: CART_PLACEHOLDERS_LIMITS.pages,
   });
@@ -393,3 +401,422 @@ export const READABILITY_QC_RULES = Object.freeze({
     return readabilityLimits();
   },
 });
+
+// ---------------------------------------------------------------------------
+// Probe
+
+// The page-side read of one cell. It runs in the Polish isolated world with
+// the shared contrast helper (readabilityProbeSource), and only reads the
+// page: it never clicks, focuses, hovers, scrolls, types or writes a style,
+// and returns no text content. It reads the document, every open shadow root
+// (recursively) and every visible same-origin frame's document, each
+// measured with its own window. The cell measurability checks run on the
+// document and on each frame document it measures, each with the open shadow
+// roots inside it; the first that fails makes the cell read that reason.
+// `limits.elements`
+// bounds the text-bearing elements it measures; `closedRoots` are the closed
+// shadow roots the adapter resolved (or, for one inside a frame, that
+// frame's element). Every element carries its rectangle in the main frame's
+// viewport (`rect`, clipped to its frames) for crops, which the record does
+// not keep.
+export function readabilityProbe(toolkit, limits, closedRoots) {
+  const win = window;
+  const doc = document;
+  const viewport = { width: win.innerWidth, height: win.innerHeight };
+  const unmeasured = (status) => ({ status, capped: false, coverage_gaps: [], elements: [], viewport });
+  const measurability = toolkit.documentMeasurability(doc);
+  if (!measurability.measurable) return unmeasured(measurability.reason);
+  if (!doc.body) return unmeasured("measured");
+
+  // Text-bearing roles, first match; an element matches when it or an
+  // ancestor matches. checkout_label and checkout_hint are read separately.
+  const ROLES = [
+    ["add_to_cart", "[data-next-action=\"add-to-cart\"]"],
+    ["upsell_accept", "[data-next-upsell-action=\"add\"]"],
+    ["upsell_decline", "[data-next-upsell-action=\"skip\"]"],
+    ["submit_control", "button.submit-button[os-checkout-payment=\"combo\"], button[os-checkout-payment=\"combo\"], button[type=\"submit\"], input[type=\"submit\"], input[type=\"button\"]"],
+    ["sdk_action", "[data-next-action]"],
+    ["bundle_card", "[data-next-bundle-card], [data-next-selector-card], [data-next-package-id], [data-next-bundle-id]"],
+    ["order_bump", "[data-next-toggle-card], [data-next-bump], [data-next-package-toggle]"],
+    ["price", "[data-next-display*=\"price\"], [data-next-bundle-display*=\"price\"], [data-next-display=\"cart.total\"]"],
+  ];
+  const STATE_GROUPS = ROLES.filter(([role]) => role === "bundle_card" || role === "order_bump");
+  const CHECKOUT_FIELD = "[data-next-checkout-field]";
+  // Elements that hold no text of their own: never a text_not_rendered role element.
+  const TEXTLESS = new Set(["select", "textarea", "img", "svg", "video", "canvas", "iframe", "object", "embed", "picture", "hr", "br"]);
+
+  // The flat tree, as the shared helper walks it: an element slotted into an
+  // open shadow root sits in its slot, and the top element of a shadow tree
+  // sits in the root's host. A frame's document is its own tree.
+  const shadowRootOf = (el) => (el.parentNode && el.parentNode.nodeType === 11 && el.parentNode.host ? el.parentNode : null);
+  const flatParent = (el) => el.assignedSlot || el.parentElement || (shadowRootOf(el) ? shadowRootOf(el).host : null);
+  const flatClosest = (el, selector) => {
+    for (let at = el; at && at.nodeType === 1; at = flatParent(at)) if (at.matches(selector)) return at;
+    return null;
+  };
+  const flatContains = (ancestor, el) => {
+    for (let at = el; at; at = flatParent(at)) if (at === ancestor) return true;
+    return false;
+  };
+  // An element and everything under it, open shadow roots included.
+  const flatSubtree = (el) => {
+    const found = [el, ...el.querySelectorAll("*")];
+    for (let at = 0; at < found.length; at += 1) {
+      if (found[at].shadowRoot) found.push(...found[at].shadowRoot.querySelectorAll("*"));
+    }
+    return found;
+  };
+  const flatText = (el) => [el.textContent, ...flatSubtree(el).filter((node) => node.shadowRoot).map((node) => node.shadowRoot.textContent)].join("");
+
+  const shown = (el) => {
+    const box = el.getBoundingClientRect();
+    return el.checkVisibility({ visibilityProperty: true }) && box.width > 0 && box.height > 0;
+  };
+  const frameDocument = (frame) => {
+    try {
+      return frame.contentDocument;
+    } catch {
+      return null;
+    }
+  };
+  const meet = (a, b) => {
+    if (!a) return b;
+    const x = Math.max(a.x, b.x);
+    const y = Math.max(a.y, b.y);
+    return { x, y, width: Math.max(0, Math.min(a.x + a.width, b.x + b.width) - x), height: Math.max(0, Math.min(a.y + a.height, b.y + b.height) - y) };
+  };
+
+  // Every tree the probe reads: the document, each open shadow root and each
+  // visible same-origin frame's document, with the window that measures it,
+  // its offset in the main frame's viewport and the frame boxes clipping it.
+  // `elements` lists every element in tree order, a host's shadow tree and
+  // a frame's document right after the host or frame.
+  const scopes = [];
+  const inOrder = [];
+  const frames = [];
+  const enter = (root, scopeWin, offset, clip, top) => {
+    const scope = { root, win: scopeWin, offset, clip };
+    scopes.push(scope);
+    for (const el of top) {
+      inOrder.push([el, scope]);
+      if (el.shadowRoot) enter(el.shadowRoot, scopeWin, offset, clip, el.shadowRoot.querySelectorAll("*"));
+      if (el.localName !== "iframe") continue;
+      const inner = frameDocument(el);
+      frames.push([el, scope, Boolean(inner)]);
+      if (!inner || !inner.body || !inner.defaultView || !shown(el)) continue;
+      const box = el.getBoundingClientRect();
+      const style = scopeWin.getComputedStyle(el);
+      const padding = (side) => Number.parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+      const content = {
+        x: offset.x + box.left + el.clientLeft + padding("left"),
+        y: offset.y + box.top + el.clientTop + padding("top"),
+        width: el.clientWidth - padding("left") - padding("right"),
+        height: el.clientHeight - padding("top") - padding("bottom"),
+      };
+      enter(inner, inner.defaultView, { x: content.x, y: content.y }, meet(clip, content), [inner.body, ...inner.body.querySelectorAll("*")]);
+    }
+  };
+  enter(doc, win, { x: 0, y: 0 }, null, [doc.body, ...doc.body.querySelectorAll("*")]);
+  // The document's own check above covers its open shadow roots; each frame
+  // document's covers that frame's.
+  for (const scope of scopes) {
+    if (scope.root.nodeType !== 9 || scope.root === doc) continue;
+    const framed = toolkit.documentMeasurability(scope.root);
+    if (!framed.measurable) return unmeasured(framed.reason);
+  }
+
+  const checkoutLabel = (el) => {
+    const label = flatClosest(el, "label");
+    if (!label) return false;
+    const named = label.htmlFor ? label.getRootNode().getElementById(label.htmlFor) : null;
+    return Boolean(named && named.matches(CHECKOUT_FIELD)) || Boolean(label.querySelector(CHECKOUT_FIELD));
+  };
+  const roleOf = (el) => {
+    for (const [role, selector] of ROLES) if (flatClosest(el, selector)) return role;
+    return checkoutLabel(el) ? "checkout_label" : "body_text";
+  };
+  const rectOf = (el, scope) => {
+    const box = el.getBoundingClientRect();
+    const rect = { x: scope.offset.x + box.left, y: scope.offset.y + box.top, width: box.width, height: box.height };
+    return scope.clip ? meet(scope.clip, rect) : rect;
+  };
+  const windowOf = (el) => (el.ownerDocument && el.ownerDocument.defaultView) || win;
+  const showsText = (el) => flatSubtree(el).some((node) => toolkit.isTextBearing(node, windowOf(node)));
+  const pathOf = (el) => toolkit.measureTextElement(el, windowOf(el)).selector_path;
+  const recordOf = (measured, role, rect) => ({
+    role,
+    selector_path: measured.selector_path,
+    state: measured.state,
+    disabled: measured.disabled,
+    rendered: measured.rendered,
+    font_size_px: measured.font_size_px,
+    font_weight: measured.font_weight,
+    size_class: measured.size_class,
+    fg_raw: measured.fg_raw,
+    fill_raw: measured.fill_raw,
+    bg_layers_raw: measured.bg_layers_raw,
+    fg_srgb: measured.fg_srgb,
+    bg_srgb: measured.bg_srgb,
+    gamut_clipped: measured.gamut_clipped,
+    ratio: measured.ratio,
+    required: measured.required,
+    review_reason: measured.review_reason,
+    crop_ref: null,
+    crop_reason: null,
+    rect,
+  });
+
+  const gaps = [];
+  const gap = (reason, role, el) => gaps.push({ reason, role, selector_path: pathOf(el) });
+  const elements = [];
+  let measured = 0;
+  let capped = false;
+  // One more element to measure, inside the cap.
+  const admit = () => {
+    if (measured >= limits.elements) {
+      capped = true;
+      return false;
+    }
+    measured += 1;
+    return true;
+  };
+
+  // Selected, active and expanded states not present at load: content an
+  // aria-expanded="false" control names (in the control's own tree), and
+  // every closed <details>.
+  const collapsed = [];
+  for (const { root } of scopes) {
+    for (const control of root.querySelectorAll("[aria-expanded=\"false\"]")) {
+      for (const id of (control.getAttribute("aria-controls") || "").split(/\s+/)) {
+        const target = id ? root.getElementById(id) : null;
+        if (target) collapsed.push(target);
+      }
+      gap("state_not_observed", null, control);
+    }
+  }
+  for (const { root } of scopes) {
+    for (const details of root.querySelectorAll("details:not([open])")) {
+      collapsed.push(details);
+      gap("state_not_observed", null, details);
+    }
+  }
+
+  // Every text-bearing element, in tree order.
+  for (const [el, scope] of inOrder) {
+    if (!toolkit.isTextBearing(el, scope.win)) continue;
+    if (!admit()) break;
+    const role = roleOf(el);
+    const read = toolkit.measureTextElement(el, scope.win);
+    if (read.control_loading) gaps.push({ reason: "control_loading", role, selector_path: read.selector_path });
+    else elements.push(recordOf(read, role, rectOf(el, scope)));
+  }
+
+  // Placeholder hints of checkout fields, against the field's background.
+  for (const scope of scopes) {
+    for (const field of scope.root.querySelectorAll(`input${CHECKOUT_FIELD}[placeholder], textarea${CHECKOUT_FIELD}[placeholder]`)) {
+      if (capped) break;
+      if (!/\S/.test(field.getAttribute("placeholder")) || field.value !== "" || !shown(field)) continue;
+      if (!admit()) break;
+      const read = toolkit.measureTextElement(field, scope.win);
+      if (read.control_loading) {
+        gaps.push({ reason: "control_loading", role: "checkout_hint", selector_path: read.selector_path });
+        continue;
+      }
+      if (read.disabled) {
+        elements.push(recordOf({ ...read, rendered: true }, "checkout_hint", rectOf(field, scope)));
+        continue;
+      }
+      const placeholder = scope.win.getComputedStyle(field, "::placeholder");
+      const fg_raw = placeholder.getPropertyValue("color");
+      const fill_raw = placeholder.getPropertyValue("-webkit-text-fill-color");
+      const derived = toolkit.deriveElementMeasurement({ fg_raw, fill_raw, bg_layers_raw: read.bg_layers_raw, font_size_px: read.font_size_px, font_weight: read.font_weight });
+      elements.push(recordOf({
+        ...read,
+        rendered: true,
+        fg_raw,
+        fill_raw,
+        fg_srgb: derived.fg_srgb,
+        bg_srgb: derived.bg_srgb,
+        gamut_clipped: derived.gamut_clipped,
+        ratio: derived.ratio,
+        required: derived.required,
+        size_class: derived.size_class,
+        review_reason: read.review_reason ?? derived.review_reason,
+      }, "checkout_hint", rectOf(field, scope)));
+    }
+  }
+
+  // Role elements whose text is not measured, first match: text supplied by
+  // CSS content, no rendered text (an element with rendered: false), or text
+  // not visible at load (unless it sits in content already listed as a
+  // state not observed). A role element's text includes its shadow trees'.
+  const roleSelector = ROLES.map(([, selector]) => selector).join(", ");
+  const roleElements = [
+    ...scopes.flatMap((scope) => Array.from(scope.root.querySelectorAll(roleSelector), (el) => [el, scope])),
+    ...scopes.flatMap((scope) => Array.from(scope.root.querySelectorAll("label")).filter(checkoutLabel).map((el) => [el, scope])),
+  ];
+  let checked = 0;
+  for (const [el, scope] of roleElements) {
+    if (checked >= limits.elements) {
+      capped = true;
+      break;
+    }
+    checked += 1;
+    const tag = el.localName;
+    const button = tag === "input" && (el.type === "submit" || el.type === "button");
+    if (TEXTLESS.has(tag) || (tag === "input" && !button)) continue;
+    const role = roleOf(el);
+    const generated = ["::before", "::after"].some((pseudo) => /^(["']).+\1$/s.test(scope.win.getComputedStyle(el, pseudo).getPropertyValue("content")));
+    if (generated) {
+      gap("generated_text", role, el);
+      continue;
+    }
+    if (!/\S/.test(button ? el.value : flatText(el))) {
+      elements.push(recordOf(toolkit.measureTextElement(el, scope.win), role, rectOf(el, scope)));
+      continue;
+    }
+    if (!showsText(el) && !collapsed.some((scope) => flatContains(scope, el))) gap("not_visible_at_load", role, el);
+  }
+
+  // Bundle cards and order bumps with no member selected or active at load.
+  for (const [role, selector] of STATE_GROUPS) {
+    const members = elements.filter((element) => element.role === role && element.rendered && !element.disabled);
+    if (!members.length || members.some((element) => element.state === "selected" || element.state === "active")) continue;
+    for (const { root } of scopes) {
+      for (const card of root.querySelectorAll(selector)) {
+        if (flatParent(card) && flatClosest(flatParent(card), selector)) continue;
+        if (showsText(card)) gap("state_not_observed", role, card);
+      }
+    }
+  }
+
+  // Text the probe cannot reach: closed shadow roots, and visible frames
+  // whose document it cannot read.
+  for (const root of closedRoots) {
+    const holder = root && (root.host || (root.nodeType === 1 ? root : null));
+    if (holder) gap("closed_shadow_root", null, holder);
+  }
+  for (const [frame, , readable] of frames) {
+    if (shown(frame) && !readable) gap("cross_origin_text", null, frame);
+  }
+
+  return { status: "measured", capped, coverage_gaps: gaps, elements, viewport };
+}
+
+// The function declaration the adapter calls in the isolated world: the
+// probe, composed with the shared contrast helper by source text.
+export function readabilityProbeSource() {
+  return `function (limits, ...closedRoots) { return (${readabilityProbe.toString()})((${contrastToolkit.toString()})(), limits, closedRoots); }`;
+}
+
+// ---------------------------------------------------------------------------
+// Producer
+
+// The elements a crop is due for, by index: the first member of every row
+// that reads warning or review, in element order (the row keys of
+// evaluateReadability).
+export function readabilityCropTargets(elements) {
+  const rows = new Map();
+  (Array.isArray(elements) ? elements : []).forEach((element, index) => {
+    if (!isPlainObject(element) || element.disabled || !element.rendered) return;
+    let key;
+    let due;
+    if (element.review_reason !== null) {
+      key = element.role === "body_text" ? "review:body_text:non_solid" : `review:${element.role}:${element.review_reason}`;
+      due = true;
+    } else if (isSrgb(element.fg_srgb) && isSrgb(element.bg_srgb) && Number.isFinite(element.ratio)) {
+      key = readabilityPairKey(element);
+      due = !toolkit.meetsRequirement(element.ratio, element.required);
+    } else return;
+    const row = rows.get(key) || { first: index, due: false };
+    row.due ||= due;
+    rows.set(key, row);
+  });
+  return [...rows.values()].filter((row) => row.due).map((row) => row.first).sort((a, b) => a - b);
+}
+
+// A crop's bytes, written under the target repo by their sha256.
+export function writeReadabilityCrop(targetRepo, bytes) {
+  const hex = createHash("sha256").update(bytes).digest("hex");
+  const path = `${READABILITY_CROP_DIR}/${hex}.png`;
+  const dir = join(targetRepo, ...READABILITY_CROP_DIR.split("/"));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${hex}.png`), bytes);
+  return { path, sha256: `sha256:${hex}` };
+}
+
+const ELEMENT_FIELDS = Object.freeze(["role", "selector_path", "state", "disabled", "rendered", "font_size_px", "font_weight", "size_class", "fg_raw", "fill_raw", "bg_layers_raw", "fg_srgb", "bg_srgb", "gamut_clipped", "ratio", "required", "review_reason", "crop_ref", "crop_reason"]);
+const GAP_FIELDS = Object.freeze(["reason", "role", "selector_path"]);
+const pick = (value, fields) => Object.fromEntries(fields.map((field) => [field, value[field] ?? null]));
+
+// Whether an adapter's readability observation is one the record can hold:
+// a cell status, and for a measured cell its elements and coverage gaps.
+export function readabilityObservationOk(observation) {
+  return isPlainObject(observation)
+    && inVocabulary("cell_status", observation.status)
+    && (observation.status !== "measured"
+      || (Array.isArray(observation.elements) && observation.elements.every(isPlainObject)
+        && Array.isArray(observation.coverage_gaps) && observation.coverage_gaps.every(isPlainObject)
+        && typeof observation.capped === "boolean"));
+}
+
+// One cell of the record. `status` is the cell status; a measured cell's
+// `observation` is the adapter's probe read ({capped, coverage_gaps,
+// elements, crops}). Only the record's fields are kept. Each crop the adapter
+// took (crops[] of {element, data}, base64 PNG) is written by `writeCrop`
+// and referenced by path and sha256; one that cannot be written reads
+// crop_unavailable. A measured cell outside the record vocabulary reads
+// document_changed: what the probe returned is not a measurement.
+export function buildReadabilityCell({ route, viewport, pageLoadIntegrity = null, status, observation = null, writeCrop = null }) {
+  const unmeasured = (cellStatus) => ({ route, viewport, page_load_integrity: pageLoadIntegrity, cell_status: cellStatus, capped: false, coverage_gaps: [], elements: [] });
+  if (status !== "measured") return unmeasured(status);
+  const elements = observation.elements.map((element) => pick(element, ELEMENT_FIELDS));
+  for (const crop of Array.isArray(observation.crops) ? observation.crops : []) {
+    const element = elements[crop?.element];
+    if (!element) continue;
+    try {
+      if (typeof writeCrop !== "function" || typeof crop.data !== "string" || crop.data === "") throw new Error("no crop");
+      element.crop_ref = writeCrop(Buffer.from(crop.data, "base64"));
+      element.crop_reason = null;
+    } catch {
+      element.crop_ref = null;
+      element.crop_reason = "crop_unavailable";
+    }
+  }
+  const cell = {
+    route,
+    viewport,
+    page_load_integrity: pageLoadIntegrity,
+    cell_status: "measured",
+    capped: observation.capped,
+    coverage_gaps: observation.coverage_gaps.map((entry) => pick(entry, GAP_FIELDS)),
+    elements,
+  };
+  return readabilityCellShapeOk(cell) ? cell : unmeasured("document_changed");
+}
+
+// The record for one Polish run: its cells (one per captured route ×
+// viewport), bound to the current build and source package; the built routes
+// over the route cap; whether the enumeration ceiling was reached.
+export function buildReadabilityRecord({ buildFingerprint, sourceFingerprint = null, slug, routes, uncapturedRoutes = [], routeEnumerationCapped = false, cells, measuredAt = new Date().toISOString() }) {
+  const record = {
+    schema_version: READABILITY_SCHEMA,
+    performed_by: READABILITY_PRODUCER,
+    helper_version: READABILITY_HELPER_VERSION,
+    subject: {
+      build_fingerprint: buildFingerprint,
+      source_package_material_fingerprint: isNonEmptyString(sourceFingerprint) ? sourceFingerprint : null,
+      campaign_slug: slug,
+      route_source: READABILITY_ROUTE_SOURCE,
+      routes: [...routes],
+      viewports: readabilityViewports(),
+    },
+    thresholds: { ...READABILITY_THRESHOLDS },
+    limits: { ...readabilityLimits() },
+    cells,
+    uncaptured_routes: [...uncapturedRoutes],
+    route_enumeration_capped: routeEnumerationCapped === true,
+    measured_at: new Date(measuredAt).toISOString(),
+  };
+  return { ...record, integrity: polishRecordIntegrity(record) };
+}

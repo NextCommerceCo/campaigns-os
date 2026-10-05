@@ -613,3 +613,165 @@ browserTest("F2.4-I67 as I1: the review / background_gradient row's crop_ref is 
   }
   assert.deepEqual(VIEWPORTS.map((viewport) => { const ref = cells[viewport].elements[0].crop_ref; return ref !== null && typeof ref === "object"; }), [true, true], "the review row's crop_ref is non-null");
 });
+
+// Card test (not a frozen row): the record never holds the text it measured.
+// Every page of the shared capture carries known text (element text, a submit
+// input's value, a readonly textarea, CSS generated text, closed shadow root
+// and cross-origin frame text); none of it appears anywhere in the record.
+browserTest("the readability record persists no text content of the pages it measured", async () => {
+  const { record } = await sharedRecord();
+  assert.ok(record.cells.some((cell) => cell.elements.length > 0), "setup: the record holds measured elements");
+  const serialized = JSON.stringify(record);
+  const texts = ["Synthetic text", "Large text", "Bundle of three", "Checkout", "Bold heading", "More", "Panel text", "Readonly note", "Buy", "Add the bump", "Normal text", "Semibold text", "Selected bundle", "Translucent panel", "Faint text", "Unavailable", "Line 1", "Bundle A", "Show details", "Shadow text", "Card number", "Add", "Webfont text"];
+  assert.deepEqual(texts.filter((text) => serialized.includes(text)), [], "no page text appears in the record");
+});
+
+// ---------------------------------------------------------------------------
+// Text in open shadow roots and same-origin frames is measured: each page
+// is a readability-only cell of one capture of its own.
+
+const OPEN = (inner) => `<template shadowrootmode="open">${inner}</template>`;
+const FRAME = (inner) => `<iframe title="Synthetic frame" srcdoc="<!doctype html><body style='margin:0'>${inner}</body>" style="width:320px;height:120px;border:0"></iframe>`;
+const NESTED_PAGES = {
+  "shadow-warning": htmlPage(`<div>${OPEN(`<p style="${P};color:#ffffff;background:#949494">Shadow warning text</p>`)}</div>`),
+  "frame-warning": htmlPage(FRAME("<p style='margin:0;padding:8px;font-size:16px;font-weight:400;color:#ffffff;background:#949494'>Frame warning text</p>")),
+  "shadow-pass": htmlPage(`<div>${OPEN(`<p style="${P};color:#ffffff;background:#111111">Shadow passing text</p>`)}</div>`),
+  "frame-pass": htmlPage(FRAME("<p style='margin:0;padding:8px;font-size:16px;font-weight:400;color:#ffffff;background:#111111'>Frame passing text</p>")),
+  "shadow-nested": htmlPage(`<section style="background:#0080aa">${OPEN(`<div>${OPEN(`<p style="${P};color:#ffffff">Nested shadow text</p>`)}</div>`)}</section>`),
+  "shadow-translucent": htmlPage(`<div data-next-action="add-to-cart" style="background:#111111;color:#ffffff;opacity:0.3">${OPEN(`<span style="${BTN}">Translucent host text</span>`)}</div>`),
+  "frame-closed": htmlPage(`${FRAME("<div><template shadowrootmode='closed'><p>Closed frame text</p></template></div>")}${STRIP}`),
+};
+
+const nestedCapture = (() => {
+  let pending = null;
+  let site = null;
+  after(async () => {
+    await site?.close();
+  });
+  return () => {
+    pending ||= (async () => {
+      site = await readabilitySite({ pages: NESTED_PAGES });
+      const capture = await capturePolish(site);
+      assertCaptureCompleted(capture);
+      const record = readabilityRecord(capture.report);
+      const rows = await readabilityRows(site);
+      assert.ok(rows.length > 0, "readCurrentQcResults lists readability.contrast rows");
+      return { site, record, rows };
+    })();
+    return pending;
+  };
+})();
+
+async function assertNestedPair(name, key, result) {
+  const { rows } = await nestedCapture();
+  const found = pageRows(rows, name, isPair);
+  if (result === "warning") assert.deepEqual(warningRows(found), warningRows(both({ key, result })), `${routeOf(name)}: ${key} reads warning in both viewports`);
+  else assert.deepEqual(found, both({ key, result, reason_code: null }), `${routeOf(name)}: ${key} reads ${result} in both viewports`);
+}
+
+browserTest("low-contrast text in an open shadow root reads warning", async () => {
+  await assertNestedPair("shadow-warning", "pair:ffffffff/949494ff:normal", "warning");
+});
+
+browserTest("low-contrast text in a same-origin iframe reads warning, measured with the frame's window, and its crop is taken", async () => {
+  await assertNestedPair("frame-warning", "pair:ffffffff/949494ff:normal", "warning");
+  const { record } = await nestedCapture();
+  const cells = cellsOf(record, "frame-warning");
+  for (const viewport of VIEWPORTS) {
+    assert.deepEqual(cells[viewport].elements.map((element) => element.selector_path), ["html>body>iframe:nth-of-type(1)>>>html>body>p:nth-of-type(1)"], `${viewport}: the frame's text, named through its frame`);
+    assert.equal(cells[viewport].elements[0].crop_ref !== null, true, `${viewport}: the warning's crop is taken`);
+  }
+});
+
+browserTest("passing text in an open shadow root and in a same-origin iframe reads pass", async () => {
+  await assertNestedPair("shadow-pass", "pair:ffffffff/111111ff:normal", "pass");
+  await assertNestedPair("frame-pass", "pair:ffffffff/111111ff:normal", "pass");
+});
+
+browserTest("text in a nested open shadow root is measured over the outer host's background", async () => {
+  await assertNestedPair("shadow-nested", "pair:ffffffff/0080aaff:normal", "warning");
+});
+
+browserTest("text in an open shadow root under a translucent add-to-cart host reads review / opacity, and the host's role text is not listed as unrendered", async () => {
+  const { rows } = await nestedCapture();
+  assert.deepEqual(pageRows(rows, "shadow-translucent", (key) => key.startsWith("review:") || key.startsWith("role:")), both({ key: "review:add_to_cart:opacity", result: "review", reason_code: "opacity" }));
+});
+
+browserTest("a closed shadow root inside a same-origin iframe: gap row unexercised / closed_shadow_root", async () => {
+  const { rows } = await nestedCapture();
+  assert.deepEqual(pageRows(rows, "frame-closed", keyed("gap:closed_shadow_root")), both({ key: "gap:closed_shadow_root", result: "unexercised", reason_code: "closed_shadow_root" }));
+});
+
+browserTest("the record persists no text from open shadow roots or same-origin frames", async () => {
+  const { record } = await nestedCapture();
+  for (const name of Object.keys(NESTED_PAGES)) {
+    const cells = cellsOf(record, name);
+    for (const viewport of VIEWPORTS) assert.ok(cells[viewport].elements.length > 0, `setup (${routeOf(name)}, ${viewport}): the cell measured the page's text`);
+  }
+  const serialized = JSON.stringify(record);
+  const texts = ["Shadow warning text", "Frame warning text", "Shadow passing text", "Frame passing text", "Nested shadow text", "Translucent host text", "Closed frame text"];
+  assert.deepEqual(texts.filter((text) => serialized.includes(text)), []);
+});
+
+// ---------------------------------------------------------------------------
+// Cell measurability covers every tree the probe measures: a stylesheet that
+// has not loaded inside an open shadow root, or inside an open shadow root of
+// a same-origin frame, makes the cell read styles_incomplete, never measured.
+
+const READINESS_PAGES = {
+  // A script attaches the root after parsing starts, so its stalled
+  // stylesheet never holds back DOMContentLoaded: the link's sheet stays null.
+  "shadow-styles-pending": htmlPage(`<div id="host"></div><script>document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = '<link rel="stylesheet" href="${routeOf("shadow-styles-pending")}stalled.css"><p style="${P};color:#ffffff;background:#111111">Pending shadow text</p>';</script>`),
+  "shadow-import-missing": htmlPage(`<div>${OPEN(`<style>@import url(${routeOf("shadow-import-missing")}missing.css);</style><p style="${P};color:#ffffff;background:#111111">Import shadow text</p>`)}</div>`),
+  "frame-shadow-styles-missing": htmlPage(FRAME(`<div><template shadowrootmode='open'><link rel='stylesheet' href='${routeOf("frame-shadow-styles-missing")}missing.css'><p style='margin:0;padding:8px;color:#ffffff;background:#111111'>Frame shadow text</p></template></div>`)),
+  "shadow-styles-loaded": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="${routeOf("shadow-styles-loaded")}loaded.css"><p style="${P};color:#ffffff;background:#111111">Loaded shadow text</p>`)}</div>`),
+};
+
+const readinessCapture = (() => {
+  let pending = null;
+  let site = null;
+  after(async () => {
+    await site?.close();
+  });
+  return () => {
+    pending ||= (async () => {
+      site = await readabilitySite({
+        pages: READINESS_PAGES,
+        assets: {
+          [`${routeOf("shadow-styles-pending")}stalled.css`]: stall(),
+          [`${routeOf("shadow-styles-loaded")}loaded.css`]: respond("200 OK", "text/css; charset=utf-8", "p{letter-spacing:0}"),
+        },
+      });
+      const capture = await capturePolish(site);
+      assertCaptureCompleted(capture);
+      const record = readabilityRecord(capture.report);
+      const rows = await readabilityRows(site);
+      assert.ok(rows.length > 0, "readCurrentQcResults lists readability.contrast rows");
+      return { site, record, rows };
+    })();
+    return pending;
+  };
+})();
+
+browserTest("a stylesheet still loading inside an open shadow root: cell row unexercised / styles_incomplete, and no pair row", async () => {
+  const { site, rows } = await readinessCapture();
+  assert.ok(site.same.requested(`${routeOf("shadow-styles-pending")}stalled.css`), "setup: the shadow root's stylesheet was requested");
+  assert.deepEqual(pageRows(rows, "shadow-styles-pending", keyed("cell")), both({ key: "cell", result: "unexercised", reason_code: "styles_incomplete" }));
+  assert.deepEqual(pageRows(rows, "shadow-styles-pending", isPair), [], "no pair row reads pass before the shadow stylesheet loaded");
+});
+
+browserTest("an @import that answered 404 inside an open shadow root: cell row unexercised / styles_incomplete", async () => {
+  const { rows } = await readinessCapture();
+  assert.deepEqual(pageRows(rows, "shadow-import-missing", keyed("cell")), both({ key: "cell", result: "unexercised", reason_code: "styles_incomplete" }));
+});
+
+browserTest("a stylesheet that answered 404 inside an open shadow root of a same-origin iframe: cell row unexercised / styles_incomplete", async () => {
+  const { rows } = await readinessCapture();
+  assert.deepEqual(pageRows(rows, "frame-shadow-styles-missing", keyed("cell")), both({ key: "cell", result: "unexercised", reason_code: "styles_incomplete" }));
+});
+
+browserTest("control: a loaded stylesheet inside an open shadow root leaves the cell measured, and its text reads pass", async () => {
+  const { rows } = await readinessCapture();
+  assert.deepEqual(pageRows(rows, "shadow-styles-loaded", keyed("cell")), [], "no cell row for a measured cell");
+  assert.deepEqual(pageRows(rows, "shadow-styles-loaded", isPair), both({ key: "pair:ffffffff/111111ff:normal", result: "pass", reason_code: null }));
+});
