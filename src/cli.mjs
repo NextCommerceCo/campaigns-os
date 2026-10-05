@@ -5017,23 +5017,27 @@ function localProofPromptLines(packet, packetPath = "<packet>") {
 // Read the normalized brief the packet records, resolved against the packet
 // file as doctor resolves it, and summarize it over the Build Context's active
 // pages in recorded order. A missing, unreadable or invalid brief reads
-// unavailable; this never fails `next`.
+// unavailable; this never fails `next`. A read or summarising failure is
+// named in one stderr line, never on stdout.
 function readIntentSummary(packetPath, packet, contextPath) {
+  const reportFailure = (error) => process.stderr.write(`campaigns-os: intent summary unavailable: ${singleLineFragment(error?.message ?? error, "unknown error")}\n`);
   const normalizedPath = resolveFromFile(packetPath, packet?.build_brief?.normalized_path);
   let brief = null;
   try {
     brief = readJsonIfExists(normalizedPath);
-  } catch {
+  } catch (error) {
+    reportFailure(error);
     brief = null;
   }
   let activePageIds = [];
   try {
     const activePages = readJsonIfExists(contextPath)?.spec?.active_pages;
     activePageIds = Array.isArray(activePages) ? activePages.map((page) => page?.id) : [];
-  } catch {
+  } catch (error) {
+    reportFailure(error);
     activePageIds = [];
   }
-  return { ...summarizeCampaignBrief({ brief, activePageIds }), normalized_path: normalizedPath };
+  return { ...summarizeCampaignBrief({ brief, activePageIds, onError: reportFailure }), normalized_path: normalizedPath };
 }
 
 // The setup, build, Polish and QA prompts start with the campaign intent
