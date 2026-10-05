@@ -5648,6 +5648,27 @@
         }
       ],
       "entry_sha256": "f857faf25bebc2851b2b9224f807407582ae6a5285d506dafa1010fafbacbe12"
+    },
+    {
+      "id": "RL-0230",
+      "sequence": 221,
+      "date": "2026-10-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.51.0+agent.3",
+      "changelog_sha256": "901aabd04c3801073db8483d508924c5a80c6ddadb66a533f74b1aed1e50a94f",
+      "agent_impact": "qa run --browser now checks each configured store_terms, store_privacy, store_returns, store_shipping and store_contact URL and reports policy.presence and policy.availability QC results in the verdict and the next QC handoff. Presence passes only when QA read the links on every page it visits and one resolves to the configured destination (trailing slash and default port normalized, query kept); a declared footer label that points elsewhere is a warning. Availability passes only when bounded header-only GETs reach a 2xx text/html or application/xhtml+xml page within 5 redirects that differs from the configured URL only in scheme, www. or trailing slash. 404s, server errors and redirects to the store home page are warnings; authentication, rate limits, loops, non-HTML responses, unexpected statuses, non-absolute configured values and redirects elsewhere are review; network failures and anything not finished within the shared 20 s budget or the 15 s per-URL deadline are unexercised. mailto contacts are checked for presence only. Results are never blockers; runs without --browser list them as not requested. Stored destinations carry no query, and a stored record reads back only with exactly the keys QA writes.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe the policy link results: what presence and availability check, which outcomes are warnings or review results, and what is not requested without --browser."
+        }
+      ],
+      "entry_sha256": "6af57edbd1aa9e829360e81e95658f2bf3cc5cf8bddf5122a8665b139c06e7dd"
     }
   ]
 }
