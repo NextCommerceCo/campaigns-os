@@ -5639,6 +5639,27 @@
         }
       ],
       "entry_sha256": "925f8d9ad8f524dc8551be91a521d1f29555ce756d2a41c90b95dec16f5bce1f"
+    },
+    {
+      "id": "RL-0231",
+      "sequence": 220,
+      "date": "2026-10-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.51.0+agent.2",
+      "changelog_sha256": "2dbc67b81e660db15be54ec9939a05cab736eed325f84611252272955b525b31",
+      "agent_impact": "After polish capture, the Assembly Report carries media_weight beside page_load from the same capture, and next reads its image weight and oversize results instead of reporting them as not captured by this version. Run polish capture again to replace page_load evidence captured before this change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "polish",
+          "summary": "polish capture attaches the media_weight record its capture produced beside page_load in the same report write, and refuses one that is not package-produced or not bound to that page_load."
+        }
+      ],
+      "entry_sha256": "6c7e9fea48195b6c141beec753d619710e4d5c91eb6f1c027bcb814e30366bf4"
     }
   ]
 }
