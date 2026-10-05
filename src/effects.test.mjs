@@ -499,10 +499,11 @@ const WAIVE = ["--reason", "Pin held for a compatibility window", "--waived-by",
 const WAIVABLE_QA_ASSERTION = "analytics-correctness:purchase-fires";
 const PARITY_SCENARIO = "root-accessory-oto50";
 const CHECKPOINT_WAIVE = [...WAIVE, "--review-condition", "Re-evaluate before launch"];
-// A well-formed result ref and a named operator. No check this version ships
-// produces an accept-eligible warning, so the fixture holds no current result
-// and the accept is refused at its eligibility check: the rows are proved at
-// that refusal, and `expect` pins it so an argv error cannot pass in its place.
+// A well-formed result ref and a named operator. The ref is synthetic: doctor,
+// Polish and QA checks produce accept-eligible warnings, but the offline
+// fixture holds no current result for this one, so the accept is refused
+// (changed_since_handoff): the rows are proved at that refusal, and `expect`
+// pins it so an argv error cannot pass in its place.
 const CHECKPOINT_ACCEPT = ["--result", "qc.synthetic:entry@0123456789ab", "--reason", "Operator accepted the measured warning", "--accepted-by", "Jordan Lee"];
 function acceptRefusedUnchanged(result, seed, label) {
   assert.equal(result.code, 1, `${label}: checkpoint accept exited ${result.code}\n${result.stderr.split("\n").slice(0, 3).join("\n")}`);
