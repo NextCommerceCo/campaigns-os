@@ -228,7 +228,7 @@ export function buildPolishCaptureIntegrity(captureProjection) {
   };
 }
 
-function resolvedResource(value, { baseUrl } = {}) {
+export function resolvedResource(value, { baseUrl } = {}) {
   const resolved = resolvedCaptureUrl(value, { baseUrl });
   return {
     ...resolved,

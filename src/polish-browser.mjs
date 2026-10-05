@@ -17,6 +17,7 @@ import {
   singleResponseRecord,
 } from "./polish-capture.mjs";
 import { launchPackageChromium, PLAYWRIGHT_INSTALL_HINT } from "./browser-launch.mjs";
+import { isProbeClock } from "./polish-media-weight.mjs";
 import {
   boundedPolishDeadline,
   POLISH_BROWSER_CELL_DEADLINE_MS,
@@ -511,6 +512,215 @@ async function collectMediaElements(page) {
   });
 }
 
+// The <img> reader the media-weight image probe runs after network
+// observation closed, in an isolated world: every DOM method, getter and
+// window property it uses is that world's own, so page scripts can neither
+// change what it reads nor see that it ran. It walks the document in
+// shadow-including tree order (an element, then its shadow tree, then its
+// children), reaching open shadow roots through element.shadowRoot and
+// closed ones through `closedRoots` (resolved into this world over CDP); it
+// does not enter an iframe's document. It returns the <img> count,
+// window.devicePixelRatio and, for the first `limits.images` <img>: the
+// element path (the CSS child path from <body>, every step
+// "tag:nth-of-type(n)", with a "#shadow-root" step after a shadow host),
+// currentSrc (http(s) as is; any other scheme as the scheme alone), loading,
+// complete, natural size, the rendered box in CSS px, computed object-fit and
+// whether it is hidden (checkVisibility: it or a flat-tree ancestor is not
+// displayed, or it is not visible). It reads only; it never scrolls and
+// starts no load.
+function readImageElements(limits, ...closedRoots) {
+  const closedRootOf = new Map(closedRoots.filter((root) => root?.host).map((root) => [root.host, root]));
+  const source = (value) => {
+    if (typeof value !== "string" || value === "") return { url: null, svg: false };
+    if (/^https?:/i.test(value)) return { url: value.length <= limits.urlLength ? value : "[url-too-long]", svg: false };
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value);
+    return { url: scheme ? `${scheme[1].toLowerCase()}:` : null, svg: /^data:image\/svg\+xml[;,]/i.test(value) };
+  };
+  const found = [];
+  let observedCount = 0;
+  // Work still to do, last first: an element to visit, or a parent (the
+  // document, an element or a shadow root) whose children are still to list.
+  const pending = [{ parent: document, path: "" }];
+  while (pending.length) {
+    const item = pending.pop();
+    if (item.element) {
+      if (item.element instanceof HTMLImageElement) {
+        observedCount += 1;
+        if (found.length < limits.images) found.push(item);
+      }
+      pending.push({ parent: item.element, path: item.path });
+      const shadowRoot = item.element.shadowRoot ?? closedRootOf.get(item.element);
+      if (shadowRoot) pending.push({ parent: shadowRoot, path: `${item.path}>#shadow-root` });
+      continue;
+    }
+    const children = [];
+    const counts = new Map();
+    for (let child = item.parent.firstElementChild; child; child = child.nextElementSibling) {
+      const index = (counts.get(child.tagName) ?? 0) + 1;
+      counts.set(child.tagName, index);
+      const tag = child.tagName.toLowerCase();
+      const path = child === document.body || child === document.documentElement
+        ? tag
+        : `${item.path ? `${item.path}>` : ""}${tag}:nth-of-type(${index})`;
+      children.push({ element: child, path });
+    }
+    for (let index = children.length - 1; index >= 0; index -= 1) pending.push(children[index]);
+  }
+  const images = found.map(({ element: image, path }) => {
+    const src = source(image.currentSrc);
+    const style = getComputedStyle(image);
+    const bounds = image.getBoundingClientRect();
+    return {
+      element_path: path,
+      current_src: src.url,
+      svg_data: src.svg,
+      loading: image.loading,
+      complete: image.complete,
+      natural: [image.naturalWidth, image.naturalHeight],
+      rendered: [bounds.width, bounds.height],
+      object_fit: style.objectFit,
+      hidden: !image.checkVisibility({ visibilityProperty: true }),
+    };
+  });
+  return { dpr: window.devicePixelRatio, observed_count: observedCount, images };
+}
+
+// The backend node ids of the main document's closed shadow roots, from a
+// DOM.getDocument tree read with pierce. Open roots the read reaches itself
+// and user-agent roots are not the page's; an iframe's document is not
+// entered.
+function closedShadowRoots(root) {
+  const found = [];
+  const pending = [root];
+  while (pending.length) {
+    const node = pending.pop();
+    if (!node || typeof node !== "object") continue;
+    if (node.shadowRootType === "closed" && Number.isInteger(node.backendNodeId)) found.push(node.backendNodeId);
+    if (Array.isArray(node.shadowRoots)) pending.push(...node.shadowRoots);
+    if (Array.isArray(node.children)) pending.push(...node.children);
+  }
+  return found;
+}
+
+const BOUND_ENDED = Symbol("bound ended");
+const realProbeClock = Object.freeze({
+  now: () => performance.now(),
+  sleep: (ms) => new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  }),
+});
+
+function imageRead(value, imageCap) {
+  return value && typeof value === "object" && Number.isInteger(value.observed_count) && Array.isArray(value.images)
+    && value.images.length <= imageCap
+    ? value
+    : null;
+}
+
+// The media-weight image probe, run after collector.finish so it cannot
+// delay the network window or add to the ledger. Its steps, in order: an
+// isolated world (Page.createIsolatedWorld); the node tree (DOM.getDocument,
+// piercing shadow roots) and each closed shadow root resolved into that world
+// (DOM.resolveNode); the one read (Runtime.callFunctionOn of
+// readImageElements in that world), which is the only source of the listing,
+// geometry, computed style and device pixel ratio; and the Page.getFrameTree
+// re-read. The probe's bound is the smaller of the cell bound and the run
+// budget left. Every step races one deadline on `clock` at that bound, and
+// none starts once it has passed. spent_ms, on `clock` from the first step to
+// the return, is what the run budget is charged. The probe is cancelled when
+// its bound ends it, on its timer or on `clock` whichever is first, or when it
+// returns: every CDP command, and every step's result, checks that first, so
+// a step that settles late issues nothing more. A probe its bound ends reads
+// probe_timeout, or probe_budget_exhausted where the run budget left was the
+// smaller bound, never complete; it names its images only when its read had
+// returned. A cell that starts once the run budget is spent starts no step
+// and reads probe_budget_exhausted with no images. The re-read discards the
+// probe as document_context_changed when the main frame has another id or
+// loaderId than page_load's own re-read found; so does a step that failed
+// (its execution context destroyed).
+// Returns { status, dpr, images, spent_ms }.
+async function probeImageElements(options) {
+  const token = { cancelled: false };
+  try {
+    return await runImageProbe(options, token);
+  } finally {
+    token.cancelled = true;
+  }
+}
+
+async function runImageProbe({ session, mainFrame, documentContextChanged, probe }, token) {
+  const clock = isProbeClock(probe.clock) ? probe.clock : realProbeClock;
+  const limits = { images: probe.imageCap, urlLength: MAX_POLISH_CAPTURE_URL_LENGTH };
+  const started = clock.now();
+  const spent = () => Math.max(0, clock.now() - started);
+  let read = null;
+  const outcome = (status) => ({ status, dpr: read?.dpr ?? null, images: read?.images ?? [], spent_ms: spent() });
+  if (!(probe.remainingMs > 0)) return { ...outcome("probe_budget_exhausted"), spent_ms: 0 };
+  if (documentContextChanged || typeof mainFrame?.id !== "string") return outcome("document_context_changed");
+  const boundMs = Math.min(probe.cellBoundMs, probe.remainingMs);
+  const boundEnd = started + boundMs;
+  // The status of a probe its bound ended.
+  const boundEnded = probe.remainingMs < probe.cellBoundMs ? "probe_budget_exhausted" : "probe_timeout";
+  // The probe's one guard, run before every command it issues and before it
+  // acts on any step's result: the probe is cancelled once the token is, or
+  // once the probe clock reaches the bound. The clock is read even when no
+  // timer has fired, so a step that settles past the bound ahead of a queued
+  // timer issues nothing more; a passed bound cancels the token too.
+  const cancelled = () => {
+    if (!token.cancelled && clock.now() >= boundEnd) token.cancelled = true;
+    return token.cancelled;
+  };
+  const send = (method, params) => (cancelled()
+    ? Promise.reject(new Error("The image probe was cancelled."))
+    : session.send(method, params));
+  const deadline = clock.sleep(boundMs).then(() => {
+    token.cancelled = true;
+    return BOUND_ENDED;
+  });
+  // One probe step: started only inside the bound, and raced against it. A
+  // step that settles past the bound reads BOUND_ENDED, not its result.
+  const step = async (start) => {
+    if (cancelled()) return BOUND_ENDED;
+    const settled = await Promise.race([Promise.resolve().then(start).then((value) => ({ value }), (error) => ({ error })), deadline]);
+    return cancelled() ? BOUND_ENDED : settled;
+  };
+
+  const world = await step(() => send("Page.createIsolatedWorld", {
+    frameId: mainFrame.id,
+    worldName: "campaigns-os-polish-image-probe",
+    grantUniveralAccess: false,
+  }));
+  if (world === BOUND_ENDED) return outcome(boundEnded);
+  const contextId = world.value?.executionContextId;
+  if (world.error || !Number.isInteger(contextId)) return outcome("document_context_changed");
+  const tree = await step(() => send("DOM.getDocument", { depth: -1, pierce: true }));
+  if (tree === BOUND_ENDED) return outcome(boundEnded);
+  if (tree.error) return outcome("document_context_changed");
+  const roots = await step(() => Promise.all(closedShadowRoots(tree.value?.root)
+    .map((backendNodeId) => send("DOM.resolveNode", { backendNodeId, executionContextId: contextId }))));
+  if (roots === BOUND_ENDED) return outcome(boundEnded);
+  const rootIds = roots.error ? null : roots.value.map((resolved) => resolved?.object?.objectId);
+  if (!rootIds || !rootIds.every((objectId) => typeof objectId === "string")) return outcome("document_context_changed");
+  const evaluated = await step(() => send("Runtime.callFunctionOn", {
+    functionDeclaration: readImageElements.toString(),
+    executionContextId: contextId,
+    arguments: [{ value: limits }, ...rootIds.map((objectId) => ({ objectId }))],
+    returnByValue: true,
+  }));
+  if (evaluated === BOUND_ENDED) return outcome(boundEnded);
+  if (evaluated.error || evaluated.value?.exceptionDetails) return outcome("document_context_changed");
+  read = imageRead(evaluated.value?.result?.value, probe.imageCap);
+  if (!read) return outcome("document_context_changed");
+  const reread = await step(() => send("Page.getFrameTree"));
+  if (reread === BOUND_ENDED) return outcome(boundEnded);
+  if (reread.error) return outcome("document_context_changed");
+  const frame = reread.value?.frameTree?.frame;
+  if (frame?.id !== mainFrame.id || frame?.loaderId !== mainFrame.loaderId) return outcome("document_context_changed");
+  if (read.observed_count > probe.imageCap) return outcome("image_cap_reached");
+  return cancelled() ? outcome(boundEnded) : outcome("complete");
+}
+
 function preferredResolvedValue(finalValue, initialValue) {
   return typeof finalValue === "string" && finalValue !== "" ? finalValue : initialValue;
 }
@@ -676,7 +886,10 @@ export async function createPolishBrowserAdapter({
   let poisonCode = null;
   let closePromise = null;
   return {
-    async captureRoute({ url, viewport, signal } = {}) {
+    // `imageProbe` ({ clock, remainingMs, cellBoundMs, imageCap }) opts the
+    // cell into the media-weight image probe; the observation then carries
+    // `imageProbe` beside the page-load fields.
+    async captureRoute({ url, viewport, signal, imageProbe: probeOptions = null } = {}) {
       if (closed) throw new Error("Campaigns OS polish capture browser adapter is already closed.");
       if (poisonCode === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw polishProducerTimeoutError();
       if (poisonCode === POLISH_PRODUCER_CLEANUP_ERROR_CODE) throw polishProducerCleanupError();
@@ -791,12 +1004,16 @@ export async function createPolishBrowserAdapter({
             network.responseCollectionStatus = "failed";
             network.responses.push(captureProblemRecord("document_context_changed"));
           }
+          const imageProbe = probeOptions && typeof probeOptions === "object"
+            ? await awaitActive(probeImageElements({ session, mainFrame, documentContextChanged, probe: probeOptions }))
+            : null;
           return {
             finalDocumentUrl,
             responseCollectionStatus: network.responseCollectionStatus,
             networkidle,
             mediaElements,
             responses: network.responses,
+            ...(imageProbe ? { imageProbe } : {}),
           };
         }, {
           timeoutMs: boundedCellDeadlineMs,
