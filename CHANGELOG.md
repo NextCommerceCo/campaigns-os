@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.53.0+agent.1] - 2026-10-05
+
+### Changed
+
+`next` now prints a short campaign intent summary, generated from the normalized Campaign Build Brief, in every result (`intent_summary` in JSON) and at the top of the setup, build, Polish and QA prompts. Each value is marked as set in the saved brief file, taken from the source, a generated default, or not stated; a value whose origin was not recorded, or that changed since it was recorded, says so. These marks are tamper evidence, not proof of who wrote a value. Values are shown as quoted data. The summary never shows a purpose or palette source that Campaigns OS inferred from page types or page names: unless the brief file states them, they read "not stated". The summary is output only: nothing reads it, and it cannot change prices or commerce behaviour. Bundled skills and the agent context files now tell agents to read the brief and the recorded assembly decisions.
+
+Bundled skills are at revision `1.53.0+skills.2`. The lifecycle skill saves brief answers with `record brief` and returns the single compact brief defined in `references/session-intake.md`, whose work-type field is now `Work:` beside a new `Campaign:` field. The build skill passes `--deviation-reason` to `record build` only on the operator's explicit decision, the Polish skill records a skipped Polish only on the operator's decision, and the Polish and QA skills say how to report a readability warning and offer repairs inside the brand palette.
+
+### Migration
+
+**Migration.** The agent context files changed, so `tooling setup` refuses until each existing campaign refreshes its installed copy. From the campaign folder:
+
+1. `npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.53.0`
+2. `npx --no-install campaigns-os install-agent-context --target .` (overwrites all four files under `.campaign-runtime/agent-context/`; local edits there are lost)
+3. Review and commit `git diff .campaign-runtime/agent-context/`
+4. `npx --no-install campaigns-os tooling setup --target . --platform claude`
+5. Restart the agent session so it loads the new skills and context.
+
+Codex, Cursor and Copilot users run step 2 and reinstall skills with `install-skills --platform codex` (or `agents`).
+
 ## [1.53.0] - 2026-10-05
 
 ### Added

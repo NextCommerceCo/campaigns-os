@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-os
-version: 1.0.48
+version: 1.0.49
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
-Bundle revision: 1.53.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.53.0+skills.1`
+Bundle revision: 1.53.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.53.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -103,30 +103,21 @@ Map and run endpoints) with a local CampaignSpec, prepared HTML/assets source, t
 When a Campaigns OS session starts, classify the starting path before handing
 off to setup, build, polish, QA, or promotion. The operator should separate:
 
-- Intent: build, partial page update, existing campaign update, QA only, repair from verdict, design/source assembly, or promotion.
+- Work: build, partial page update, existing campaign update, QA only, repair from verdict, design/source assembly, or promotion.
 - Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign repo, deployed URL, or target deployment system.
 - Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, tested URL, API key source, and SDK origin allowlist state (localhost is already a Development domain; non-localhost origins still need confirmation).
 - Change policy: what may change and what must be preserved, especially checkout, offer logic, routes, legal copy, and live campaign behavior.
-- Proof depth: visual preview, doctor, browser QA, QA portal/local verdict policy, typed-card test-order depth, market coverage, and repair routing.
+- Proof policy: visual preview, doctor, browser QA, QA portal/local verdict policy, typed-card test-order depth, market coverage, and repair routing.
 
-Return a compact brief before acting:
-
-```text
-Mode:
-Intent:
-Source truth:
-Runtime truth:
-Change policy:
-Proof depth:
-Next skill/command:
-Missing inputs:
-```
+Return the compact brief defined in `references/session-intake.md` before acting.
 
 Use `references/session-intake.md` when the mode, allowed changes, or proof
-depth is unclear. Ask only for fields needed by the selected starting path; a
+policy is unclear. Ask only for fields needed by the selected starting path; a
 QA-only session should not require design files, and a partial landing update
 should not force full checkout/test-order depth unless commerce or routing can be
 affected.
+
+Save the operator's brief answers with `campaigns-os record brief --packet <packet>` (tier `C`: when the brief changes it rewrites the Build Packet's brief binding, the normalized brief, the Build Context and the assembly report and stamps the doctor output stale, and a material change makes build, Polish and QA owed again; `--dry-run` is tier `none`). Ask the operator before saving brief answers. Put the answers in the brief file as `docs/campaign-build-brief.md` describes, then run `record brief`; do not re-run `start` or `prepare-build` to save them.
 
 Rules:
 
@@ -140,7 +131,7 @@ Rules:
 - Promoted starter-template families must also have `contracts/template-brand-contract.<family>.v0.json` with family inventory, brand/residue, pricing, and exit-pop rules. Missing family contracts are gates, not advisory gaps.
 - Designed source owns visual composition and page-level content.
 - Brand-theme evidence is workflow-order neutral. Do not assume a Figma export came first; consume `context.theme` and `.campaign-runtime/theme/theme-report.json` when present. A truly missing/ungeneratable theme stays a warning, but a generatable-and-unapplied theme on a commerce-page campaign is a gate: apply it or waive it explicitly before polish/deploy/QA.
-- Follow `campaigns-os next` literally. Every `next` response carries its applicable Store Profile, SDK, hidden eager-media, theme, and broad Polish gates plus `next_actions` with exact commands — execute those instead of improvising. With an active run session, pipeline-advancing commands that don't match the last `next` recommendation are recorded to `.campaign-runtime/agent-deviations.jsonl`; declare an intentional detour with `--deviation-reason "<why>"`.
+- Follow `campaigns-os next` literally. Every `next` response carries its applicable Store Profile, SDK, hidden eager-media, theme, and broad Polish gates plus `next_actions` with exact commands — execute those instead of improvising. With an active run session, pipeline-advancing commands that don't match the last `next` recommendation are recorded to `.campaign-runtime/agent-deviations.jsonl`; declare a detour with `--deviation-reason "<the operator's reason>"` only when the operator has decided on that detour in this conversation, and quote their reason; never pass the flag on your own judgement. On `record build` after a brief or CampaignSpec change the flag records that the change needs no change to the built pages, so pass it there only on the operator's explicit decision, as `next-campaigns-build` says.
 - Close the loop: when `next` reports `done` (or QA has published its verdict and the PR is up), finish with `campaigns-os run end` (tier `C`; `--no-write` still clears the session file) so the Run Record is assembled and the run session clears. `campaigns-os run status` (tier `none`: read-only) shows incomplete stages and the exact next command at any point.
 - Do not copy demo refs or unsupported optional surfaces into the target campaign.
 - Use SDK conditionals such as `cart.hasCoupon("CODE")` for code-specific presentation; do not mutate visible prices from campaign-specific JavaScript.

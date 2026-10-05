@@ -2,7 +2,7 @@
 
 Use this reference when a Campaigns OS session begins without an already-clear
 Build Packet, QA verdict, or promotion task. The goal is to make the operator
-separate intent, source truth, runtime truth, change policy, and proof policy.
+separate the work, source truth, runtime truth, change policy, and proof policy.
 
 ## Intake Envelope
 
@@ -10,26 +10,30 @@ Return this compact brief before running a specialist skill or command:
 
 ```text
 Mode:
-Intent:
+Work:                 (build, update, QA, repair, promote — the session's task; formerly "Intent")
+Campaign:             (paste the "Campaign intent" lines from the latest `next` output; do not write your own)
 Source truth:
 Runtime truth:
 Change policy:
 Proof policy:
 Next skill/command:
-Missing inputs:
+Missing inputs:       (only choices that affect this revision)
 ```
 
 Definitions:
 
-- Intent: what the user wants done, such as build, update, QA, repair, or promote.
+- Work: what the user wants done, such as build, update, QA, repair, or promote.
+- Campaign: the "Campaign intent" lines from the latest `next` output, pasted as printed. They come from the normalized Campaign Build Brief; do not write your own.
 - Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign, target repo, or deployed URL.
 - Runtime truth: Build Packet, Build Context, Assembly Report, optional `context.theme` / `.campaign-runtime/theme/theme-report.json`, doctor JSON, repo state, tested URL, Campaigns API key source, SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation), and test-order depth choice.
 - Change policy: what may change and what must be preserved, especially checkout, offer logic, live campaign routes, and legal/merchant copy.
-- Proof depth: visual preview, doctor, browser QA, QA portal/local verdict policy, typed-card test-order depth, market coverage, and repair routing.
+- Proof policy: visual preview, doctor, browser QA, QA portal/local verdict policy, typed-card test-order depth, market coverage, and repair routing.
 
 Ask only for the fields needed by the selected mode. Do not force a full-funnel
 build prompt when the user only needs QA, a partial page update, or repair from
 an existing verdict.
+
+Save the operator's brief answers with `npx --no-install campaigns-os record brief --packet <packet>` (tier `C`: when the brief changes it rewrites the Build Packet's brief binding, the normalized brief, the Build Context and the assembly report and stamps the doctor output stale, and a material change makes build, Polish and QA owed again; `--dry-run` is tier `none`). Ask the operator before saving brief answers. Put the answers in the brief file as `docs/campaign-build-brief.md` describes, then run `record brief`; do not re-run `start` or `prepare-build` to save them.
 
 ## Starting Paths
 
@@ -45,7 +49,7 @@ Required before build:
 - Source type and source files: Figma, exported HTML, prepared HTML, existing campaign, or other.
 - Pages in scope and any pages to preserve.
 - Template family if known; otherwise infer and ask before locking commerce surfaces.
-- Proof depth, including browser QA and the typed-card test-order depth to run.
+- Proof policy, including browser QA and the typed-card test-order depth to run.
 
 Route to Build Packet preparation, doctor, setup when scaffold is missing,
 build, polish, then QA.

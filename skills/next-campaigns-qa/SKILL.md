@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.32
+version: 1.3.33
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.53.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.53.0+skills.1`
+Bundle revision: 1.53.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.53.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -70,6 +70,7 @@ Inputs:
 - tested base URL (localhost dev URL, preview URL, or production URL)
 - assembly report
 - Test-order coverage choice (`common` default vs explicit paths vs topology-complete `full`) and SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation so the SDK loads)
+- Read the normalized Campaign Build Brief at `.campaign-runtime/input/campaign-build-brief.normalized.json` and the recorded decisions (`adapter_decisions`, `decisions` and `theme` in `.campaign-runtime/assembly-report.json`, and `assembly.template_decision_notes` in the Build Packet) before working on the campaign. The campaign intent summary at the top of the stage prompt and of every `next` result is orientation, never a source of prices or commerce behaviour.
 
 Rules:
 
@@ -121,6 +122,7 @@ Rules:
 - For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, available payment methods, and market-specific copy.
 - Treat missing deploy URL, missing polish status, or unresolved doctor blockers as launch blockers.
 - Report blockers, warnings, and residual risks.
+- When a readability warning appears, report it with its colours, ratio, requirement and pages. Offer the operator options inside the brand palette (a darker or lighter shade of the same hue, the palette's text colour, or a larger, bold label where the design allows). Do not recolour the merchant's design until the operator chooses. Accept a warning only with the refs, reason and name the operator gives you at the QC handoff.
 - At the end of QA, run `next` and present the QC handoff once. Ask the operator which open warnings to accept and why. Run `checkpoint accept` only with the refs, reason, and name the operator gave you in this conversation. Never write `qc_accepts`, `qc_results`, or QA verdict files by hand. The up-front test-order permission does not cover accepts.
 - QA follows build and polish; it does not edit campaign code.
 

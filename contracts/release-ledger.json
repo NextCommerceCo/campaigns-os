@@ -6047,6 +6047,123 @@
         }
       ],
       "entry_sha256": "85e37bd6392dcfa8415a654897eb8dbe8ab417fc9c92ec21732d2fff5a5f5f5b"
+    },
+    {
+      "id": "RL-0234",
+      "sequence": 226,
+      "date": "2026-10-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.1",
+      "changelog_sha256": "e836c5c4f238c79fd733d8d7627771561225dc388a79c9b2bc9c0959844767c6",
+      "agent_impact": "next prints a campaign intent summary, generated from the normalized Campaign Build Brief, on every result (intent_summary in JSON, a Campaign intent section in text) and at the top of the setup, build, Polish and QA prompts. Each value carries its origin (stated, from the source, default, not stated, or source not recorded); values are quoted data, purpose and palette source inferred from page types or names read not stated, and nothing reads the summary, so it never sets prices or commerce behaviour. The four agent context files and the setup, build, Polish and QA skills tell agents to read .campaign-runtime/input/campaign-build-brief.normalized.json and the recorded assembly decisions. Bundled skills carry revision 1.53.0+skills.2: an agent that loaded an earlier revision should start a fresh session. The lifecycle skill returns the single compact brief in references/session-intake.md (Intent: is now Work:, with a new Campaign: field and Proof policy:) and saves brief answers with record brief after asking the operator; the build skill passes --deviation-reason only on the operator's explicit decision, the Polish skill records a skipped Polish only on the operator's decision, and the Polish and QA skills report readability warnings and offer repairs inside the brand palette. tooling setup refuses an installed agent context from an earlier release and names install-agent-context --target . in its refusal.",
+      "compatibility": "breaking",
+      "migration": "From each existing campaign folder: install the exact 1.53.0 package, run npx --no-install campaigns-os install-agent-context --target . (it overwrites all four files under .campaign-runtime/agent-context/; local edits there are lost), review and commit the diff, rerun npx --no-install campaigns-os tooling setup --target . --platform claude, and restart the agent session. Codex, Cursor and Copilot users run install-agent-context and reinstall skills with install-skills --platform codex (or agents).",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Add the generic campaign paragraph: what a NEXT campaign is, who owns creative intent and commerce behaviour, read the normalized brief and the recorded decisions before changing a campaign, treat the intent summary as orientation only, and ask the operator before saving brief answers."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "Add the generic campaign paragraph: what a NEXT campaign is, who owns creative intent and commerce behaviour, read the normalized brief and the recorded decisions before changing a campaign, treat the intent summary as orientation only, and ask the operator before saving brief answers."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "Add the generic campaign paragraph: what a NEXT campaign is, who owns creative intent and commerce behaviour, read the normalized brief and the recorded decisions before changing a campaign, treat the intent summary as orientation only, and ask the operator before saving brief answers."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "Add the generic campaign paragraph: what a NEXT campaign is, who owns creative intent and commerce behaviour, read the normalized brief and the recorded decisions before changing a campaign, treat the intent summary as orientation only, and ask the operator before saving brief answers."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.53.0+skills.2 bundle in executable examples."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.53.0+skills.2 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.2 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.2 bundle revision; read the normalized brief and the recorded decisions; rebuild after an input change and pass --deviation-reason to record build only on the operator's explicit decision, quoting their reason."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.2 bundle revision; read the normalized brief and the recorded decisions."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.2 bundle revision; return the compact brief defined in references/session-intake.md instead of a second copy, rename the Intent and Proof depth fields to Work and Proof policy, save brief answers with record brief after asking the operator, and declare a detour with --deviation-reason only when the operator has decided on it in the conversation, quoting their reason, including on record build after an input change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/references/session-intake.md",
+          "surface_entry": null,
+          "summary": "The single compact brief: Intent becomes Work, a Campaign field takes the Campaign intent lines from next, Missing inputs covers only choices that affect this revision, and brief answers are saved with record brief after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.2 bundle revision; read the normalized brief and the recorded decisions; record a skipped Polish only on the operator's decision, quoting their reason as skip_reason; report readability warnings and offer repairs inside the brand palette, accepting one only with the operator's refs, reason and name."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.2 bundle revision; read the normalized brief and the recorded decisions; report readability warnings and offer repairs inside the brand palette, accepting one only with the operator's refs, reason and name."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "next carries intent_summary on every result and prints a Campaign intent section under the status; the setup, build, Polish and QA prompts start with the summary and the absolute normalized brief path, and the build prompt names record brief and record spec for refreshing a changed brief or CampaignSpec."
+        }
+      ],
+      "entry_sha256": "dfe923a079717e6cf3b2c038b1ab0aea6f52158208f3b92671999d8509e9eebb"
     }
   ]
 }
