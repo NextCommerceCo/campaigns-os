@@ -570,19 +570,23 @@ test("policy links: a stored chain whose URL hashes disagree with its unredacted
   assert.equal(rederiveQcResult(observation), null);
 });
 
+// The path and host hashes of a stored identity, as a row's accept state
+// carries them.
+const stateIdentityOf = (ids) => ids && { path_sha256: ids.path_sha256, host_sha256: ids.host_sha256 };
+
 // The state an availability observation derives with `reasonCode`.
 const availabilityState = (observation, reasonCode) => ({
   reason_code: reasonCode,
   configured: observation.configured,
   configured_query_sha256: observation.configured_query_sha256,
-  configured_identity: observation.configured_identity,
+  configured_identity: stateIdentityOf(observation.configured_identity),
   chain: observation.availability.chain.map(({ url, query_sha256: querySha, status }) => ({ url, query_sha256: querySha, status })),
-  chain_identity: observation.availability.chain_identity,
+  chain_identity: observation.availability.chain_identity.map(stateIdentityOf),
   final: observation.availability.final,
   final_query_sha256: observation.availability.final_query_sha256,
   status: observation.availability.status,
   content_type: observation.availability.content_type,
-  next_hop_identity: observation.availability.next_hop && { url_sha256: observation.availability.next_hop.url_sha256, path_sha256: observation.availability.next_hop.path_sha256, host_sha256: observation.availability.next_hop.host_sha256 },
+  next_hop_identity: stateIdentityOf(observation.availability.next_hop),
 });
 
 // A path the persisted-verdict projection truncates.
@@ -1365,3 +1369,83 @@ test("policy links: a stored configured identity edited away from its stored URL
 });
 
 const isIdentity = (value) => Boolean(value) && typeof value === "object" && ["url_sha256", "path_sha256", "host_sha256"].every((key) => /^sha256:[a-f0-9]{64}$/.test(value[key]));
+
+// Runs `configured[0]` then each later value with `routesFor(value)`; asserts
+// both rows of every run read as warnings and store the same text as the first
+// run's, then returns [first run, later runs].
+async function sameTextRuns(configured, routesFor) {
+  const runs = [];
+  for (const value of configured) {
+    const run = await warningRun(value, routesFor(value));
+    assert.deepEqual(
+      [...run.read.values()].map((row) => [row.id, row.result, row.reason_code]).sort(),
+      [[AVAILABILITY_ID, "warning", "not_found"], [PRESENCE_ID, "warning", "policy_link_absent"]],
+      `setup: ${value.slice(0, 80)}: both rows read as warnings`,
+    );
+    runs.push(run);
+  }
+  const storedText = (run) => {
+    const { configured: presenceConfigured } = run.rows.get(PRESENCE_ID).observation;
+    const { configured: availabilityConfigured, availability } = run.rows.get(AVAILABILITY_ID).observation;
+    return [presenceConfigured, availabilityConfigured, availability.chain.map(({ url, query_sha256: query, status }) => [url, query, status]), availability.final];
+  };
+  for (const run of runs.slice(1)) assert.deepEqual(storedText(run), storedText(runs[0]), "setup: every run stores the same text");
+  return [runs[0], runs.slice(1)];
+}
+
+test("policy links: configured /terms%3Fone then /terms%3Fone/ (a trailing slash the pass rule ignores) keeps both accepts active", async () => {
+  const [one, [two]] = await sameTextRuns([`${SHOP}/terms%3Fone`, `${SHOP}/terms%3Fone/`], (configured) => (url) => (url === configured ? { status: 404 } : undefined));
+  assert.equal(one.rows.get(AVAILABILITY_ID).observation.configured, `${SHOP}/terms<query-redacted>`, "setup: the configured value is stored redacted");
+  assert.notEqual(two.rows.get(AVAILABILITY_ID).observation.configured_identity.url_sha256, one.rows.get(AVAILABILITY_ID).observation.configured_identity.url_sha256, "setup: the stored raw URL hashes differ");
+  for (const id of [PRESENCE_ID, AVAILABILITY_ID]) {
+    assert.deepEqual(stateOf(two, id), stateOf(one, id), `${id}: the same state`);
+    assert.equal(two.read.get(id).state_fingerprint, one.read.get(id).state_fingerprint, `${id}: the same read state fingerprint`);
+  }
+  const records = acceptsOn(one.read);
+  assert.deepEqual(assessedOn(records, two.read), [[PRESENCE_ID, "active", null, true], [AVAILABILITY_ID, "active", null, true]]);
+});
+
+test("policy links: an intermediate hop /hop%3Fone then /hop%3Fone/ (a trailing slash the pass rule ignores) keeps both accepts active", async () => {
+  const configured = `${SHOP}/start`;
+  const routesFor = (path) => (url) => ({
+    [configured]: { status: 302, location: path },
+    [`${SHOP}${path}`]: { status: 302, location: "/end" },
+    [`${SHOP}/end`]: { status: 404 },
+  })[url];
+  const one = await warningRun(configured, routesFor("/hop%3Fone"));
+  const two = await warningRun(configured, routesFor("/hop%3Fone/"));
+  for (const run of [one, two]) {
+    const availability = run.rows.get(AVAILABILITY_ID);
+    assert.deepEqual([availability.result, availability.reason_code, availability.observation.availability.chain.map(({ status }) => status)], ["warning", "not_found", [302, 302, 404]], "setup: a not_found warning after the redirects");
+  }
+  const chainOf = (run) => run.rows.get(AVAILABILITY_ID).observation.availability;
+  assert.deepEqual(chainOf(two).chain, chainOf(one).chain, "setup: both runs store the same chain text");
+  assert.notEqual(chainOf(two).chain_identity[1].url_sha256, chainOf(one).chain_identity[1].url_sha256, "setup: the stored raw hop hashes differ");
+  for (const id of [PRESENCE_ID, AVAILABILITY_ID]) {
+    assert.deepEqual(stateOf(two, id), stateOf(one, id), `${id}: the same state`);
+    assert.equal(two.read.get(id).state_fingerprint, one.read.get(id).state_fingerprint, `${id}: the same read state fingerprint`);
+  }
+  const records = acceptsOn(one.read);
+  assert.deepEqual(assessedOn(records, two.read), [[PRESENCE_ID, "active", null, true], [AVAILABILITY_ID, "active", null, true]]);
+});
+
+test("policy links: a bounded-placeholder host configured as https://H/terms then https://www.H/terms keeps both accepts active; a path case or port change still lapses them", async () => {
+  const host = `${"a".repeat(17_000)}.example`;
+  const routesFor = (configured) => (url) => (url === configured ? { status: 404 } : undefined);
+  const [one, [www, pathCase, port]] = await sameTextRuns(
+    [`https://${host}/terms`, `https://www.${host}/terms`, `https://${host}/Terms`, `https://${host}:8443/terms`],
+    routesFor,
+  );
+  assert.equal(one.rows.get(AVAILABILITY_ID).observation.configured, "https://host-redacted.invalid/<query-redacted>", "setup: the configured value is stored as the bounded placeholder");
+  for (const id of [PRESENCE_ID, AVAILABILITY_ID]) {
+    assert.deepEqual(stateOf(www, id), stateOf(one, id), `${id}: a leading www. leaves the state as it was`);
+    for (const [label, run] of [["path case", pathCase], ["port", port]]) {
+      assert.notDeepEqual(stateOf(run, id), stateOf(one, id), `${id}: a ${label} change gives a different state`);
+    }
+  }
+  const records = acceptsOn(one.read);
+  assert.deepEqual(assessedOn(records, www.read), [[PRESENCE_ID, "active", null, true], [AVAILABILITY_ID, "active", null, true]], "a leading www. keeps both accepts active");
+  for (const [label, run] of [["path case", pathCase], ["port", port]]) {
+    assert.deepEqual(assessedOn(records, run.read), [[PRESENCE_ID, "lapsed", "state_changed", false], [AVAILABILITY_ID, "lapsed", "state_changed", false]], `a ${label} change lapses both accepts`);
+  }
+});

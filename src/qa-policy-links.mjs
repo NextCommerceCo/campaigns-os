@@ -22,8 +22,9 @@
 // "?" in a path is redacted), so no rule compares stored URLs: the configured
 // value (configured_identity) and each hop (chain_identity) also keep sha256
 // hashes of the raw URL, path and host, and the rules compare those. A row's
-// accept state carries them too, so an accept lapses when a raw URL changes
-// behind the same stored text.
+// accept state carries the path and host hashes (the forms the pass rule
+// compares), so an accept lapses when a raw URL changes behind the same stored
+// text, but not for a change the pass rule treats as the same destination.
 //
 // Time: one run budget (createPolicyLinkBudget) bounds the time the policy
 // link checks add to a QA run. Every anchor read and the probes take their
@@ -195,6 +196,10 @@ const safeDecode = (text) => {
 // configured value's configured_identity and as a hop's chain_identity entry.
 const IDENTITY_KEYS = Object.freeze(["url_sha256", "path_sha256", "host_sha256"]);
 const sameIdentity = (a, b) => IDENTITY_KEYS.every((key) => a[key] === b[key]);
+// The hashes an accept state carries: path and host only, so a trailing slash
+// or a leading "www." leaves the state as it was.
+const STATE_IDENTITY_KEYS = Object.freeze(["path_sha256", "host_sha256"]);
+const stateIdentity = (ids) => (ids === null ? null : record(STATE_IDENTITY_KEYS, ids));
 const urlIdentity = (protocol, host, pathname) => record(IDENTITY_KEYS, {
   url_sha256: sha256(`${protocol}//${host}${pathname}`),
   path_sha256: sha256(trimSlash(pathname)),
@@ -742,7 +747,7 @@ function derivePresence(identity, observation) {
       reason_code: decided.reason_code,
       configured: identity.configured,
       configured_query_sha256: identity.configured_query_sha256,
-      configured_identity: identity.configured_identity,
+      configured_identity: stateIdentity(identity.configured_identity),
       pages_expected: presence.pages_expected,
       pages_read: presence.pages_read,
       pages_with_match: presence.pages_with_match,
@@ -772,14 +777,14 @@ function deriveAvailability(identity, observation) {
       reason_code: reasonCode,
       configured: identity.configured,
       configured_query_sha256: identity.configured_query_sha256,
-      configured_identity: identity.configured_identity,
+      configured_identity: stateIdentity(identity.configured_identity),
       chain: block.chain.map(({ url, query_sha256: querySha, status }) => ({ url, query_sha256: querySha, status })),
-      chain_identity: block.chain_identity.map((ids) => record(IDENTITY_KEYS, ids)),
+      chain_identity: block.chain_identity.map(stateIdentity),
       final: block.final,
       final_query_sha256: block.final_query_sha256,
       status: block.status,
       content_type: block.content_type,
-      next_hop_identity: block.next_hop === null ? null : record(IDENTITY_KEYS, block.next_hop),
+      next_hop_identity: stateIdentity(block.next_hop),
     },
   };
 }

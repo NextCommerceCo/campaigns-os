@@ -300,7 +300,7 @@ const counts = (pagesExpected, pagesRead, withMatch, queryDiffers, labelDeclared
 const identityOf = (url) => {
   if (url == null || !/^https?:/.test(url)) return null;
   const { protocol, host, pathname } = new URL(url);
-  return { url_sha256: sha256(`${protocol}//${host}${pathname}`), path_sha256: sha256(pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname), host_sha256: sha256(host.replace(/^www\./, "")) };
+  return { path_sha256: sha256(pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname), host_sha256: sha256(host.replace(/^www\./, "")) };
 };
 
 // The contract's presence accept state.
