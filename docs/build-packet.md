@@ -1058,8 +1058,13 @@ full.
 and auto-discover `campaign-build-brief.yaml`, `.yml`, or `.json` from the
 source root or target repo. When none is present, Campaigns OS creates a guided
 draft at `.campaign-runtime/input/campaign-build-brief.normalized.json`.
-See [Campaign Build Brief](./campaign-build-brief.md) for the schema and
-prepared/guided behavior.
+A brief file is guided unless it sets `"brief_mode": "prepared"` (a campaign
+whose Assembly Report already records a prepared brief stays prepared). Save
+answers later with `record brief`, which keeps stage evidence unless the brief's
+material content changes; a presentation change makes build, Polish and QA
+owed again, and a `qa_policy` change makes QA alone owed again. See
+[Campaign Build Brief](./campaign-build-brief.md) for the schema, the mode
+rule and the stage map.
 
 `start` / `prepare-build` also prepares the normalized Design Source Package at
 `.campaign-runtime/input/design-source-package.json`. When that path is absent,

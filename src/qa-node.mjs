@@ -2,6 +2,7 @@ import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch 
 import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, carriedForwardMessage, CARRIED_FORWARD, starterResidueIsExpected } from "./local-preview-policy.mjs";
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion, scriptParseAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
+import { currentBriefMaterial } from "./input-currency.mjs";
 import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
 import { parseOrderPathDepthFlag } from "./proof-policy.mjs";
@@ -468,6 +469,9 @@ async function resolveQaInputs(args, {
     routeRootNote: routeRootNotes[0] || null,
   });
   const specHash = computeSpecHash(rawSpec);
+  // The brief material this run is judged against, bound at run start beside
+  // the spec hash: the QA stage write stamps it, not the material at write time.
+  const sourceBriefMaterial = packet ? currentBriefMaterial({ packet, packetPath }) : null;
   const templateFamily = stringArg(packet?.assembly?.template_family)
     || stringArg(normalized?.spec_identity?.preferred_template_family)
     || stringArg(normalized?.campaign?.preferred_template_family)
@@ -524,6 +528,7 @@ async function resolveQaInputs(args, {
     spec: normalized,
     specVersion: String(rawSpec.schema_version || rawSpec.schemaVersion || "unknown"),
     specHash,
+    sourceBriefMaterial,
     templateFamily,
     commerceStructureContract,
     topologies: qaScope.topologies,
@@ -1585,6 +1590,12 @@ function reportPathField(resolved) {
   return reportPath ? { report_path: reportPath } : {};
 }
 
+// The verdict with the brief material qa run bound at run start, when the
+// run had a packet to bind it from.
+function withSourceBriefMaterial(verdict, sourceBriefMaterial) {
+  return sourceBriefMaterial ? { ...verdict, source_brief_material: sourceBriefMaterial } : verdict;
+}
+
 function resolvePayload(resolved, { routeProbe = null } = {}) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
@@ -2598,7 +2609,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   // The verdict as it is persisted: the local file, the committed sidecar and
   // the published copy all read this one projection (no URL query in any
   // string or key), whichever runner, return path or field produced a value.
-  const verdict = redactPersisted(createVerdict({
+  const verdict = redactPersisted(withSourceBriefMaterial(createVerdict({
     runId,
     mapId: resolved.mapId,
     localSpecId: resolved.localSpecId,
@@ -2619,7 +2630,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     commercial,
     causeSummary,
     browser,
-  }));
+  }), resolved.sourceBriefMaterial));
 
   const validationErrors = validateVerdict(verdict);
   if (validationErrors.length) throw new Error(`QA verdict failed local validation:\n- ${validationErrors.join("\n- ")}`);

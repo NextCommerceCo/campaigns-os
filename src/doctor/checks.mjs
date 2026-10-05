@@ -1,6 +1,7 @@
 // Doctor checks: the check registries, validatePacket and the validators they run.
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "../spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanText } from "../html-scan.mjs";
+import { createHash } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "../sdk-meta-tags.mjs";
@@ -90,6 +91,7 @@ import { SMOKE_QC, SMOKE_QC_LIMITS, builtFileOf, evaluateSmokeQc, insideRoot, is
 import { recordQcResults } from "../qc-results.mjs";
 import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
+import { deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
@@ -511,7 +513,10 @@ const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "build_brief.artifact",
     phase: "brief",
-    run: ({ packet, packetPath, spec, context, errors, warnings, ready }) => validateBuildBrief(packet, packetPath, spec, context, errors, warnings, ready),
+    run: ({ packet, packetPath, spec, context, report, errors, warnings, ready, derived }) => {
+      validateBuildBrief(packet, packetPath, spec, context, errors, warnings, ready);
+      validateInputCurrency({ packet, packetPath, spec, report, warnings, derived });
+    },
   },
 ], { registryId: "packet.always" });
 
@@ -876,7 +881,13 @@ function validateBuildBrief(packet, packetPath, spec, context, errors, warnings,
     return;
   }
 
-  const brief = readJson(resolvedPath);
+  let brief;
+  try {
+    brief = readJson(resolvedPath);
+  } catch {
+    addIssue(errors, "build_brief.normalized_path", `Campaign Build Brief normalized artifact is not valid JSON: ${normalizedPath}. Restore it, or save the brief again with ${cmd("record")} brief --packet <packet>.`);
+    return;
+  }
   const result = validateCampaignBuildBriefArtifact(brief, { spec, normalizedPath });
   for (const issue of result.errors) errors.push(issue);
   for (const issue of result.warnings) warnings.push(issue);
@@ -884,6 +895,46 @@ function validateBuildBrief(packet, packetPath, spec, context, errors, warnings,
 
   if (context?.build_brief?.status && brief.status && context.build_brief.status !== brief.status) {
     addIssue(warnings, "build_brief.context_status", `Build context says brief status is "${context.build_brief.status}" but normalized artifact says "${brief.status}". Rerun prepare-build to refresh the handoff.`);
+  }
+}
+
+// derived.input_currency, computed once per doctor read, and the warnings it
+// gives: a stage owed on the brief, a completed stage with no valid brief
+// stamp, a brief file edited since it was saved, and the build replay after
+// an input change (owed, or kept by the operator's recorded decision). None
+// is an error; `next` routes to the owed stage itself.
+function validateInputCurrency({ packet, packetPath, spec, report, warnings, derived }) {
+  const currency = deriveInputCurrency({ packet, packetPath, report, spec: isObject(spec) ? spec : null });
+  derived.input_currency = currency;
+  if (!isObject(report?.stages)) return;
+  const owedOnBrief = Object.keys(currency.reasons).filter((key) => currency.reasons[key] === "brief_material_changed");
+  if (owedOnBrief.length) {
+    addIssue(warnings, "build_brief.material_changed", `The Campaign Build Brief's content changed since ${owedOnBrief.join(", ")} ${owedOnBrief.length === 1 ? "was" : "were"} recorded, so ${owedOnBrief.length === 1 ? "it is" : "they are"} owed again. Save the brief with ${cmd("record")} brief --packet <packet> (it keeps stage history), then record ${owedOnBrief.join(", ")} again.`, { stages: owedOnBrief });
+  }
+  const unstamped = Object.keys(currency.stages).filter((key) => {
+    const stage = report.stages[key];
+    if (currency.reasons[key] !== "input_binding_unknown") return false;
+    const stamp = stage?.source_brief_material;
+    return !wellFormedBriefMaterial(stamp);
+  });
+  if (unstamped.length) {
+    addIssue(warnings, "build_brief.binding_unknown", `Recorded ${unstamped.join(", ")} ${unstamped.length === 1 ? "does" : "do"} not say which Campaign Build Brief content ${unstamped.length === 1 ? "it was" : "they were"} made against, so ${unstamped.length === 1 ? "it reads" : "they read"} unconfirmed, not current. Record ${unstamped.join(", ")} again (${unstamped.map((key) => (key === "assembly" ? "record build" : key === "polish" ? "record polish" : "qa run")).join(", ")}).`, { stages: unstamped });
+  }
+  const inputPath = optionalString(packet?.build_brief?.input_path);
+  const savedSha = optionalString(report.build_brief?.input_sha256);
+  const briefFile = inputPath ? resolveFromFile(packetPath, inputPath) : null;
+  if (briefFile && savedSha && existsSync(briefFile)) {
+    const bytes = `sha256:${createHash("sha256").update(readFileSync(briefFile)).digest("hex")}`;
+    if (bytes !== savedSha) {
+      addIssue(warnings, "build_brief.input_unsaved", `The brief file ${inputPath} changed since it was saved. Save it with ${cmd("record")} brief --packet <packet>; until then the build reads the saved brief.`, { input_path: inputPath });
+    }
+  }
+  if (currency.reasons.assembly === "output_unchanged_after_input_change") {
+    addIssue(warnings, "assembly.output_unchanged_after_input_change", `The build output is unchanged since the brief or CampaignSpec change was recorded, so the change has not reached the pages and build is owed again. Rebuild, or, only on the operator's explicit decision that the change needs no output change, record build with --deviation-reason "<the operator's reason>".`);
+  }
+  const keptReason = report.stages.assembly?.unchanged_output_reason;
+  if (currency.stages.assembly === "current" && isObject(keptReason) && typeof keptReason.text === "string") {
+    addIssue(warnings, "assembly.output_unchanged_by_operator_decision", `The build output was kept unchanged after an input change by the operator's recorded decision: "${keptReason.text}".`, { reason: keptReason.text });
   }
 }
 

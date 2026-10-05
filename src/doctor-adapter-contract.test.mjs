@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -98,10 +99,16 @@ function markAssemblyCompleted(reportPath, mutate = (report) => report) {
   if (report.design_source_package?.material_fingerprint) {
     report.stages.assembly.source_package_material_fingerprint = report.design_source_package.material_fingerprint;
   }
+  // Records made by this release say which brief and CampaignSpec content
+  // they were made against.
+  const packetPath = resolve(dirname(dirname(reportPath)), "campaign-runtime.build.json");
+  const stamps = inputStamps(currentPacketInputs({ packet: readJson(packetPath), packetPath }));
+  Object.assign(report.stages.assembly, stamps);
   mutate(report);
   if (report.stages.polish?.status?.startsWith("completed") && report.design_source_package?.material_fingerprint) {
     report.stages.polish.source_package_material_fingerprint = report.design_source_package.material_fingerprint;
   }
+  if (report.stages.polish?.status?.startsWith("completed")) Object.assign(report.stages.polish, stamps);
   writeJson(reportPath, report);
 }
 

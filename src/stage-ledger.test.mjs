@@ -105,10 +105,17 @@ test("producer identity replaces the previous pair and archives it with its own 
   assert.deepEqual(qa.evidence, { runtime_result: "all persisted cases verified" });
   assert.equal(Array.isArray(qa.history), true);
   assert.equal(qa.history.length, 1);
+  // The entry is the closed field list of the record it archives, stamped
+  // with the write's own clock, the producer and the reason.
   assert.deepEqual(qa.history[0], {
+    archived_at: "2026-09-11T02:59:06.305Z",
+    archived_by: "qa run",
+    reason_code: "rerecorded",
     status: "blocked",
+    completed_at: "2026-09-10T09:00:00.000Z",
     checked_at: "2026-09-10T09:00:00.000Z",
     verdict_run_id: "YESTERDAY_RUN",
+    outputs: [],
     evidence: { remaining_blocker: "a bug that has since been fixed" },
   });
 });
@@ -240,8 +247,12 @@ test("array-shaped previous evidence is archived, not deleted", () => {
   assert.deepEqual(qa.evidence, { runtime_result: "all persisted cases verified" });
   assert.equal(qa.history.length, 1);
   assert.deepEqual(qa.history[0], {
+    archived_at: "2026-09-11T02:59:06.305Z",
+    archived_by: "qa run",
+    reason_code: "rerecorded",
     status: "completed_with_warnings",
     checked_at: "2026-09-10T09:00:00.000Z",
+    outputs: [],
     evidence: [{ note: "operator note A" }, { note: "operator note B" }],
   });
 });
@@ -257,7 +268,7 @@ test("array-shaped evidence survives a producer write that carries no evidence o
   });
   const qa = updated.stages.qa;
   assert.equal(Object.prototype.hasOwnProperty.call(qa, "evidence"), false);
-  assert.deepEqual(qa.history, [{ status: "blocked", evidence: [{ note: "operator note A" }] }]);
+  assert.deepEqual(qa.history, [{ archived_at: "2026-09-11T02:59:06.305Z", archived_by: "qa run", reason_code: "rerecorded", status: "blocked", outputs: [], evidence: [{ note: "operator note A" }] }]);
 });
 
 test("an archived array is a copy, not a live reference into the caller's report", () => {
@@ -333,7 +344,7 @@ test("array evidence keeps its order as meaning even though object keys do not",
     command: "campaigns-os qa run",
     evidence: [{ note: "B" }, { note: "A" }],
   });
-  assert.deepEqual(second.stages.qa.history, [{ status: "completed", checked_at: "2026-09-11T02:59:06.305Z", evidence: [{ note: "A" }, { note: "B" }] }]);
+  assert.deepEqual(second.stages.qa.history, [{ archived_at: "2026-09-11T03:30:00.000Z", archived_by: "qa run", reason_code: "rerecorded", status: "completed", completed_at: "2026-09-11T02:59:06.305Z", checked_at: "2026-09-11T02:59:06.305Z", outputs: [], evidence: [{ note: "A" }, { note: "B" }] }]);
 });
 
 // Kilo review, PR #315: an empty object or array passed the truthiness check
@@ -365,7 +376,7 @@ test("empty prior evidence beside a real prior identity archives the identity al
     command: "campaigns-os qa run",
     identity: { verdict_run_id: "TODAY_RUN" },
   });
-  assert.deepEqual(updated.stages.qa.history, [{ status: "blocked", checked_at: "2026-09-10T00:00:00.000Z", verdict_run_id: "YESTERDAY_RUN" }]);
+  assert.deepEqual(updated.stages.qa.history, [{ archived_at: "2026-09-11T02:59:06.305Z", archived_by: "qa run", reason_code: "rerecorded", status: "blocked", checked_at: "2026-09-10T00:00:00.000Z", verdict_run_id: "YESTERDAY_RUN", outputs: [] }]);
 });
 
 test("producerStageOutcomeUnchanged ignores only the stage's own timestamps", () => {

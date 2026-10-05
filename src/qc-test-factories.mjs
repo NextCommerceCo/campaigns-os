@@ -85,6 +85,7 @@ const { checkpointStateFingerprint } = await import("./checkpoint-waiver.mjs");
 const { main } = await import("./cli.mjs");
 const { doctorPacket } = await import("./doctor/inspect.mjs");
 const { buildPolishCaptureIntegrity, canonicalJson } = await import("./polish-capture.mjs");
+const { currentPacketInputs, inputStamps } = await import("./input-currency.mjs");
 
 // Runs `run` (sync or async) under the guard, then asserts that no outbound
 // request was attempted.
@@ -425,6 +426,8 @@ export function installQaStage(fixture, {
     completed_at: measuredAt,
     identity: { verdict_run_id: QA_RUN_ID },
     evidence,
+    // Stamped with the packet's inputs now, as the QA stage write stamps them.
+    ...inputStamps(currentPacketInputs({ packet: readJson(fixture.packetPath), packetPath: fixture.packetPath })),
   };
   mutateReport(fixture, (report) => {
     if (buildFingerprint) report.stages.assembly.build_fingerprint = buildFingerprint;

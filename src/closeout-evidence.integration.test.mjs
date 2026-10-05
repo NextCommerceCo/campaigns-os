@@ -20,6 +20,7 @@ import { test } from "node:test";
 
 import { checkoutOrderBumpCart, nextStage, nextTinyPromptLines, recordQaStageOutcome } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
+import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 
@@ -115,7 +116,12 @@ function target({ prefix = "closeout-evidence-", orderPathDepth = "common", muta
   };
   stages.deploy.outputs = [DEPLOY_URL];
   stages.qa.status = "pending";
+  // Records made by this release say which brief and CampaignSpec content
+  // they were made against (a packet with no brief stamps the absent value).
+  const stamps = inputStamps(currentPacketInputs({ packet, packetPath }));
+  for (const key of ["assembly", "polish"]) Object.assign(stages[key], stamps);
   if (mutateReport) mutateReport(report);
+  if (String(stages.qa.status).startsWith("completed")) Object.assign(stages.qa, stamps);
 
   const runtimeDir = join(dir, "target-page-kit", ".campaign-runtime");
   mkdirSync(runtimeDir, { recursive: true });
@@ -153,6 +159,10 @@ function verdict({ runId, completedAt, orders = 1, assertions = [] }) {
 // The producer, writing real files exactly as `qa run` does.
 function runProducer({ dir, packetPath }, { runId, completedAt, orders = 1, assertions = [] }) {
   const built = verdict({ runId, completedAt, orders, assertions });
+  // What qa run records at run start: the spec material and the brief material.
+  const inputs = currentPacketInputs({ packet: JSON.parse(readFileSync(packetPath, "utf8")), packetPath });
+  built.spec_hash = inputs.specMaterial;
+  built.source_brief_material = inputs.briefMaterial;
   const localDir = join(dir, "qa-output", MAP_ID);
   mkdirSync(localDir, { recursive: true });
   const localPath = join(localDir, `${runId}.json`);

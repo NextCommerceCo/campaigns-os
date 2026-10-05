@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -56,7 +57,8 @@ function withBriefFixture(run) {
     const specPath = resolve(dir, "campaignspec.json");
     writeJson(specPath, readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json")));
     const briefPath = resolve(dir, "campaign-build-brief.yaml");
-    writeFileSync(briefPath, readFileSync(resolve(ROOT, "examples/campaign-build-brief.single-variant-gadget.yaml"), "utf8"));
+    // A hand-written file is guided unless it sets brief_mode: prepared.
+    writeFileSync(briefPath, `${readFileSync(resolve(ROOT, "examples/campaign-build-brief.single-variant-gadget.yaml"), "utf8").trimEnd()}\nbrief_mode: prepared\n`);
     return run({ dir, sourceRoot, targetRepo, specPath, briefPath });
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -66,6 +68,7 @@ function withBriefFixture(run) {
 function completePreparedBrief() {
   return {
     schema_version: BUILD_BRIEF_SCHEMA,
+    brief_mode: "prepared",
     campaign_intent: {
       audience: "busy households",
       conversion_goal: "single-product direct response funnel",
@@ -420,14 +423,15 @@ test("the guided-questions warning says how to record answers, and following it 
     assert.match(warning.message, /brand_palette_cta \(brand\.commerce_palette_source, brand\.cta_style\)/);
     assert.match(warning.message, /bundle_pricing_presentation \(offer_presentation\.bundle_cards\.primary_price\)/);
     assert.match(warning.message, new RegExp(`copy ${BUILD_BRIEF_NORMALIZED_REL_PATH.replaceAll(".", "\\.")} to campaign-build-brief\\.json in the target repo`));
-    assert.match(warning.message, /re-run start or prepare-build with the same arguments/);
+    assert.match(warning.message, /run (?:\S+ )*record brief --packet <packet>/);
     assert.match(warning.message, /--brief <file>/);
-    assert.match(warning.message, /needs --force, which clears the evidence/);
+    assert.match(warning.message, /Saving keeps every stage's recorded evidence unless the brief's content changes/);
 
     // Following the message: copy the draft, set the named fields, re-run.
     const brief = readJson(resolve(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH));
     brief.brand.cta_style = "solid dark button";
     brief.offer_presentation.bundle_cards.primary_price = "discounted_unit_price";
+    brief.brief_mode = "prepared";
     writeJson(resolve(targetRepo, "campaign-build-brief.json"), brief);
     const rerun = runCliJson(["prepare-build", ...intake, "--json"]);
     assert.equal(rerun.packet.build_brief.mode, "prepared");
@@ -443,6 +447,7 @@ test("doctor blocks an incomplete prepared Build Brief", () => {
   withBriefFixture(({ sourceRoot, targetRepo, specPath, briefPath }) => {
     writeFileSync(briefPath, [
       "schema_version: campaigns-os-build-brief/v1",
+      "brief_mode: prepared",
       "campaign_intent:",
       "  audience: busy households",
       "  conversion_goal: single-product funnel",
@@ -527,4 +532,74 @@ test("F2.1-B2: a brief file with brief_mode \"maybe\" makes doctor report the er
     assert.ok(Array.isArray(doctor.errors), "setup: doctor printed its result");
     assert.equal(doctor.errors.some((issue) => issue.code === "build_brief.brief_mode"), true, `doctor errors: ${JSON.stringify(doctor.errors.map((issue) => issue.code))}`);
   }));
+});
+
+// A normalized brief that is not valid JSON is doctor's existing
+// build_brief.normalized_path error, never a crashed doctor (or next).
+test("doctor reports build_brief.normalized_path for a normalized brief that is not valid JSON", () => {
+  withBriefFixture(({ sourceRoot, targetRepo, specPath }) => {
+    runCliJson(["prepare-build", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
+    writeFileSync(resolve(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH), "{\"schema_version\": ");
+    const doctor = runCliJson(["doctor", "--packet", resolve(targetRepo, "campaign-runtime.build.json"), "--no-live-refs", "--json"], { allowFailure: true });
+    const issue = doctor.errors.find((entry) => entry.code === "build_brief.normalized_path");
+    assert.ok(issue, `doctor errors: ${JSON.stringify(doctor.errors.map((entry) => entry.code))}`);
+    assert.match(issue.message, /not valid JSON/);
+  });
+});
+
+const sha256Of = (value) => `sha256:${createHash("sha256").update(JSON.stringify(canonicalSorted(value))).digest("hex")}`;
+function canonicalSorted(value) {
+  if (Array.isArray(value)) return value.map(canonicalSorted);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalSorted(value[key])]));
+  return value;
+}
+
+test("SUMMARY_FIELDS is the closed list of summary fields, in order", async () => {
+  const { SUMMARY_FIELDS } = await import("./build-brief.mjs");
+  assert.deepEqual(SUMMARY_FIELDS, [
+    "campaign_intent.audience", "campaign_intent.conversion_goal", "campaign_intent.tone",
+    "brand.commerce_palette_source", "brand.primary_accent", "brand.cta_style", "brand.avoid",
+    "design_authority.<page>.source", "template_residue_policy.block_placeholders",
+  ]);
+});
+
+// The generated draft, as intake makes it for the example spec.
+function exampleDraft(extra = {}) {
+  const spec = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+  const activePages = spec.funnels.flatMap((funnel) => funnel.pages);
+  return createCampaignBuildBriefArtifact({ spec, activePages, pageMappings: activePages.map((page) => ({ page_id: page.id, path: `${page.id}.html` })), ...extra });
+}
+
+test("a generated draft stamps field_sources default, with value fingerprints, per non-null summary field and per concrete page", () => {
+  const { artifact } = exampleDraft();
+  const sources = artifact._meta.field_sources;
+  const pages = Object.keys(artifact.design_authority);
+  assert.ok(pages.length > 0, "setup: the draft names page authority");
+  for (const page of pages) {
+    assert.deepEqual(sources[`design_authority.${page}.source`], { kind: "default", value_fingerprint: sha256Of(artifact.design_authority[page].source) });
+  }
+  assert.equal(Object.hasOwn(sources, "design_authority.<page>.source"), false, "the placeholder is never a key");
+  assert.equal(artifact.campaign_intent.audience, null, "setup: the draft leaves the audience unset");
+  assert.equal(Object.hasOwn(sources, "campaign_intent.audience"), false, "a null value has no entry");
+  assert.deepEqual(sources["campaign_intent.tone"], { kind: "default", value_fingerprint: sha256Of(artifact.campaign_intent.tone) });
+  assert.deepEqual(sources["template_residue_policy.block_placeholders"], { kind: "default", value_fingerprint: sha256Of(true) });
+});
+
+test("a saved brief file stamps an answered or changed field stated, keeps an unchanged one, and a filled default default", () => {
+  withBriefFixture(({ dir }) => {
+    const draft = exampleDraft().artifact;
+    const file = JSON.parse(JSON.stringify(draft));
+    file.brand.cta_style = "solid accent pill";
+    file.campaign_intent.audience = "busy households";
+    delete file.template_residue_policy.block_placeholders;
+    const path = resolve(dir, "campaign-build-brief.json");
+    writeJson(path, file);
+    const { artifact } = exampleDraft({ inputPath: path, inputSource: "operator_flag", previousNormalizedBrief: draft });
+    const sources = artifact._meta.field_sources;
+    assert.equal(sources["brand.cta_style"].kind, "stated", "an answer to an open question is stated");
+    assert.equal(sources["campaign_intent.audience"].kind, "stated", "a value that differs from the previous brief is stated");
+    assert.deepEqual(sources["campaign_intent.tone"], draft._meta.field_sources["campaign_intent.tone"], "an unchanged value keeps the previous entry");
+    assert.equal(sources["template_residue_policy.block_placeholders"].kind, "default", "a value normalization filled is default");
+    assert.equal(artifact._meta.mode_source, "generated", "a file without brief_mode and no prepared report is guided");
+  });
 });

@@ -2,6 +2,7 @@ import { campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { STATUS as QA_STATUS } from "./qa-verdict.mjs";
+import { wellFormedBriefMaterial } from "./input-currency.mjs";
 import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import {
@@ -44,6 +45,8 @@ function terminalStatus(disposition) {
 // `evidence` shapes archive, object and array alike; an array of operator notes
 // is exactly the evidence a producer has no standing to silently drop.
 const QA_OWNED_FIELDS = Object.freeze(["verdict_run_id", "evidence", "purchase_proof"]);
+// The input stamps a QA write restates from its verdict, like the fields above.
+const QA_STAMP_FIELDS = Object.freeze(["source_brief_material", "source_spec_material_hash"]);
 
 // Bounded so a committed handoff artifact cannot grow without limit, and deep
 // enough that a couple of repair attempts do not evict the state a reviewer
@@ -85,11 +88,8 @@ function meaningfulEvidence(value) {
 // IS meaning) before comparing.
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
-  if (isPlainObject(value)) {
-    const out = {};
-    for (const key of Object.keys(value).sort()) out[key] = canonicalize(value[key]);
-    return out;
-  }
+  // Entry-wise, so a key named __proto__ is compared as data.
+  if (isPlainObject(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
   return value;
 }
 
@@ -97,27 +97,168 @@ function sameJson(a, b) {
   return JSON.stringify(canonicalize(a ?? null)) === JSON.stringify(canonicalize(b ?? null));
 }
 
-/**
- * Archive the previous producer-owned identity, if there was one, without
- * inventing anything it did not carry.
- */
-function archivePreviousIdentity(previous, incoming) {
-  const hadIdentity = typeof previous.verdict_run_id === "string" && previous.verdict_run_id.trim()
-    ? previous.verdict_run_id.trim()
-    : null;
-  const hadEvidence = meaningfulEvidence(previous.evidence);
-  if (!hadIdentity && !hadEvidence) return null;
-  // An unchanged verdict is a re-record, not a new chapter: re-running the same
-  // producer against the same verdict must not grow history. Both sides are
-  // normalized the same way, so an empty incoming evidence block compares equal
-  // to an empty previous one instead of looking like a change.
-  if (sameJson(hadIdentity, incoming.verdict_run_id ?? null) && sameJson(hadEvidence, meaningfulEvidence(incoming.evidence))) return null;
+// The closed field list a history entry copies from the record it archives,
+// beside archived_at, archived_by and reason_code. History is display only:
+// no reader takes completion or currency from it.
+const HISTORY_ENTRY_FIELDS = Object.freeze([
+  "status", "completed_at", "recorded_by", "performed_by",
+  "build_fingerprint", "source_build_fingerprint", "source_package_material_fingerprint",
+  "source_brief_material", "source_spec_material_hash",
+  "verdict_run_id", "checked_at", "purchase_proof",
+  "outputs", "evidence",
+]);
+// The entry fields that say what a record was, rather than when or by whom it
+// was written: a replacement equal on all of them is a re-record, not a new
+// chapter, and archives nothing.
+const HISTORY_IDENTITY_FIELDS = Object.freeze([
+  "build_fingerprint", "source_build_fingerprint", "source_package_material_fingerprint",
+  "source_brief_material", "source_spec_material_hash", "verdict_run_id", "purchase_proof", "outputs", "evidence",
+]);
+export const HISTORY_ARCHIVED_BY = Object.freeze(["record brief", "record spec", "record build", "record polish", "qa run", "prepare-build --force"]);
+export const HISTORY_REASON_CODES = Object.freeze(["brief_presentation_changed", "brief_qa_policy_changed", "spec_material_changed", "rerecorded", "force_reset"]);
+const ARCHIVED_STAGE_KEYS = Object.freeze(["assembly", "polish", "qa"]);
+
+const isCompletedStatus = (status) => typeof status === "string" && status.startsWith("completed");
+
+// What a record says about itself, compared for the dedup. Evidence reads
+// through meaningfulEvidence (an empty block is absent) and a verdict id is
+// trimmed, as the QA producer always compared them.
+function recordIdentity(record) {
+  const identity = {};
+  for (const field of HISTORY_IDENTITY_FIELDS) {
+    const value = field === "evidence"
+      ? meaningfulEvidence(record?.evidence)
+      : field === "verdict_run_id"
+        ? (typeof record?.verdict_run_id === "string" && record.verdict_run_id.trim() ? record.verdict_run_id.trim() : null)
+        : record?.[field] ?? null;
+    if (value !== null && value !== undefined) identity[field] = value;
+  }
+  return identity;
+}
+
+// The entry for `previous`: the closed fields it carries, copied, with no
+// value it did not have (an absent timestamp stays absent).
+function historyEntry(previous, { by, reason, at }) {
   const entry = {};
-  if (typeof previous.status === "string" && previous.status.trim()) entry.status = previous.status;
-  if (typeof previous.checked_at === "string" && previous.checked_at.trim()) entry.checked_at = previous.checked_at;
-  if (hadIdentity) entry.verdict_run_id = hadIdentity;
-  if (hadEvidence) entry.evidence = JSON.parse(JSON.stringify(hadEvidence));
+  if (at !== undefined) entry.archived_at = at;
+  if (by !== undefined) entry.archived_by = by;
+  if (reason !== undefined) entry.reason_code = reason;
+  for (const field of HISTORY_ENTRY_FIELDS) {
+    if (!Object.hasOwn(previous, field)) continue;
+    if (field === "evidence") {
+      const evidence = meaningfulEvidence(previous.evidence);
+      if (evidence) entry.evidence = JSON.parse(JSON.stringify(evidence));
+      continue;
+    }
+    if (field === "verdict_run_id") {
+      if (typeof previous.verdict_run_id === "string" && previous.verdict_run_id.trim()) entry.verdict_run_id = previous.verdict_run_id.trim();
+      continue;
+    }
+    if (field === "status" || field === "checked_at" || field === "completed_at") {
+      if (typeof previous[field] === "string" && previous[field].trim()) entry[field] = previous[field];
+      continue;
+    }
+    entry[field] = JSON.parse(JSON.stringify(previous[field]));
+  }
   return entry;
+}
+
+// A record worth an entry: a completed record, or (QA) any record carrying a
+// verdict identity or evidence, which the QA producer has always archived.
+function archivable(stageKey, previous) {
+  if (!isPlainObject(previous)) return false;
+  if (isCompletedStatus(previous.status)) return true;
+  return stageKey === "qa" && Boolean(recordIdentity(previous).verdict_run_id || meaningfulEvidence(previous.evidence));
+}
+
+/**
+ * Append `previous` to `stage.history` when `incoming` replaces it with a
+ * different record: the closed entry fields, stamped archived_at, archived_by
+ * (`by`) and reason_code (`reason`). A replacement equal on every identity
+ * field is a re-record and archives nothing. History keeps the last
+ * PRODUCER_STAGE_HISTORY_LIMIT entries, oldest first evicted. Returns the
+ * stage record (a copy) carrying the history.
+ */
+export function archiveStageRecord(stage, previous, incoming, { by, reason, at = new Date().toISOString(), stageKey = stage?.stage } = {}) {
+  const target = isPlainObject(stage) ? { ...stage } : {};
+  if (!archivable(stageKey, previous)) return target;
+  if (sameJson(recordIdentity(previous), recordIdentity(incoming))) return target;
+  return appendHistoryEntry(target, historyEntry(previous, { by, reason, at }));
+}
+
+function appendHistoryEntry(stage, entry) {
+  const prior = Array.isArray(stage.history) ? stage.history.filter(isPlainObject) : [];
+  return { ...stage, history: [...prior, entry].slice(-PRODUCER_STAGE_HISTORY_LIMIT) };
+}
+
+/**
+ * Archive a whole superseded record into its own stage's history (a demotion,
+ * or intake with --force), without the re-record dedup.
+ */
+export function archiveSupersededRecord(stage, previous, { by, reason, at }) {
+  return appendHistoryEntry(isPlainObject(stage) ? { ...stage } : {}, historyEntry(previous, { by, reason, at }));
+}
+
+/**
+ * True when any stage of `report` carries a non-empty history: recorded
+ * operator-visible state an intake must not silently drop.
+ */
+export function stageHistoryPresent(report) {
+  const stages = isPlainObject(report?.stages) ? report.stages : {};
+  return Object.values(stages).some((stage) => isPlainObject(stage) && Array.isArray(stage.history) && stage.history.length > 0);
+}
+
+/**
+ * The input change a write records on a stage whose stamps differ from the
+ * current inputs: when, why, the build the stage was bound to, and the stamps
+ * of the record it supersedes.
+ */
+export function inputChangeFor(stageKey, previous, { at, reason }) {
+  const stamp = previous?.source_brief_material;
+  const build = stageKey === "assembly" ? previous?.build_fingerprint : stageKey === "polish" ? previous?.source_build_fingerprint : null;
+  return {
+    at,
+    reason,
+    superseded_build_fingerprint: typeof build === "string" && /^sha256:[0-9a-f]{64}$/.test(build) ? build : null,
+    superseded_inputs: {
+      brief_material: wellFormedBriefMaterial(stamp) ? { presentation: stamp.presentation, qa_policy: stamp.qa_policy } : null,
+      spec_material_hash: typeof previous?.source_spec_material_hash === "string" && /^sha256:[0-9a-f]{64}$/.test(previous.source_spec_material_hash) ? previous.source_spec_material_hash : null,
+    },
+  };
+}
+
+/**
+ * Intake with --force: before the reseeded report is published, every
+ * completed assembly, polish and qa record of `previousReport` goes to its
+ * stage's history (archived_by "prepare-build --force", reason_code
+ * "force_reset"); every stage's existing history, and each assembly, polish
+ * and qa input_change, are carried into `nextReport`; and a record whose
+ * stamps differ from the inputs this run binds gets a new input_change, so a
+ * replay over the superseded output still reads owed. `detectChange(key,
+ * record)` names the changed input's reason, or null.
+ */
+export function archiveForForceReset(previousReport, nextReport, { now, detectChange }) {
+  if (!isPlainObject(previousReport?.stages) || !isPlainObject(nextReport?.stages)) return nextReport;
+  const stages = { ...nextReport.stages };
+  for (const key of ASSEMBLY_REPORT_STAGE_KEYS) {
+    const previous = Object.hasOwn(previousReport.stages, key) ? previousReport.stages[key] : null;
+    if (!isPlainObject(previous) || !Object.hasOwn(stages, key) || !isPlainObject(stages[key])) continue;
+    let reseeded = { ...stages[key] };
+    const priorHistory = Array.isArray(previous.history) ? previous.history.filter(isPlainObject) : [];
+    if (priorHistory.length) reseeded.history = priorHistory.slice(-PRODUCER_STAGE_HISTORY_LIMIT);
+    if (!ARCHIVED_STAGE_KEYS.includes(key)) {
+      stages[key] = reseeded;
+      continue;
+    }
+    if (Object.hasOwn(previous, "input_change")) reseeded.input_change = JSON.parse(JSON.stringify(previous.input_change));
+    if (isCompletedStatus(previous.status)) {
+      reseeded = archiveSupersededRecord(reseeded, previous, { by: "prepare-build --force", reason: "force_reset", at: now });
+      const reason = typeof detectChange === "function" ? detectChange(key, previous) : null;
+      if (reason) reseeded.input_change = inputChangeFor(key, previous, { at: now, reason });
+    }
+    stages[key] = reseeded;
+  }
+  return { ...nextReport, stages };
 }
 
 function withoutStageTimestamps(report, stage) {
@@ -162,6 +303,8 @@ export function recordProducerStageOutcome(report, {
   identity = null,
   evidence = null,
   proof = null,
+  stamps = null,
+  inputs = null,
 } = {}) {
   if (!PRODUCER_STAGES.has(stage)) throw new Error("Producer stage must be doctor or qa.");
   if (typeof timestamp !== "string" || !Number.isFinite(Date.parse(timestamp))) {
@@ -199,15 +342,24 @@ export function recordProducerStageOutcome(report, {
       : null;
     const incomingEvidenceSource = evidenceValue(evidence);
     const incomingEvidence = incomingEvidenceSource ? JSON.parse(JSON.stringify(incomingEvidenceSource)) : null;
-    const archived = archivePreviousIdentity(previous, { verdict_run_id: incomingRunId, evidence: incomingEvidence });
-    for (const field of QA_OWNED_FIELDS) delete next[field];
+    for (const field of [...QA_OWNED_FIELDS, ...QA_STAMP_FIELDS]) delete next[field];
     if (incomingRunId) next.verdict_run_id = incomingRunId;
     if (incomingEvidence) next.evidence = incomingEvidence;
     if (isPlainObject(proof)) next.purchase_proof = JSON.parse(JSON.stringify(proof));
-    if (archived) {
-      const priorHistory = Array.isArray(previous.history) ? previous.history.filter(isPlainObject) : [];
-      next.history = [...priorHistory, archived].slice(-PRODUCER_STAGE_HISTORY_LIMIT);
+    // The verdict's own stamps: the brief material qa run bound at run start
+    // and the spec material it judged.
+    for (const field of QA_STAMP_FIELDS) {
+      if (stamps?.[field] != null) next[field] = JSON.parse(JSON.stringify(stamps[field]));
     }
+    // `inputs`: {detectChange(record) -> reason|null, stampsCurrent(record)}.
+    // A replaced completed record whose stamps differ from the current inputs
+    // records the change; a verdict stamped with the current inputs then
+    // clears it, the one it just recorded included; any other write carries it.
+    const detected = inputs && isCompletedStatus(previous.status) ? inputs.detectChange(previous) : null;
+    if (detected) next.input_change = inputChangeFor("qa", previous, { at: timestamp, reason: detected });
+    if (inputs && inputs.stampsCurrent(next)) delete next.input_change;
+    const archived = archiveStageRecord(next, previous, next, { by: "qa run", reason: detected || "rerecorded", at: timestamp, stageKey: "qa" });
+    if (Array.isArray(archived.history) && archived.history !== next.history) next.history = archived.history;
   }
   stages[stage] = next;
   updated.stages = stages;

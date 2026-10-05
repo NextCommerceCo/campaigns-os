@@ -8,6 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
 import { validateSourceHtmlManifest } from "./source-html-manifest.mjs";
 
 // The partial-source build contract (#238): a campaign where some active
@@ -155,6 +156,9 @@ function completeAssemblyWithInScopeBuild(fixture) {
   if (report.design_source_package?.material_fingerprint) {
     report.stages.assembly.source_package_material_fingerprint = report.design_source_package.material_fingerprint;
   }
+  // And the brief and CampaignSpec content it was made against, as build stamps it.
+  const packetPath = join(fixture.target, "campaign-runtime.build.json");
+  Object.assign(report.stages.assembly, inputStamps(currentPacketInputs({ packet: readJson(packetPath), packetPath })));
   writeJson(reportPath, report);
 }
 

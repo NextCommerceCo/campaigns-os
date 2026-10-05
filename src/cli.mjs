@@ -174,6 +174,8 @@ import {
   createCampaignBuildBriefArtifact,
   inferBuildBriefPath,
 } from "./build-brief.mjs";
+import { briefIntakeBindings, currentPacketInputs, inputRefreshCommands, inputStamps, stageWriteInputs } from "./input-currency.mjs";
+import { prepareBuildStageStatus, priorBriefInputsForIntake } from "./input-refresh.mjs";
 import {
   DESIGN_SOURCE_PACKAGE_REL_PATH,
 } from "./design-source-package.mjs";
@@ -709,6 +711,10 @@ export function recordQaStageOutcome(args, result) {
     const failed = (Array.isArray(verdict.assertions) ? verdict.assertions : [])
       .filter((assertion) => assertion?.status === "fail")
       .map((assertion) => `${assertion.id}: ${assertion.actual || "assertion failed"}`);
+    // The QA stamps are the verdict's: the brief material qa run bound at run
+    // start and the spec material it judged, never the inputs at write time.
+    const qaStamps = inputStamps({ briefMaterial: verdict.source_brief_material, specMaterial: verdict.spec_hash });
+    const qaInputs = stageWriteInputs("qa", currentPacketInputs({ packet, packetPath }));
     const committed = commitAssemblyReport(workspace, (report) => {
       if (hasLocalIdentity && !specHashesMatch(verdict.spec_hash, report.identity?.spec_material_hash)) {
         throw new Error("Local-spec QA verdict belongs to a different material revision; report evidence was not changed.");
@@ -734,6 +740,8 @@ export function recordQaStageOutcome(args, result) {
         // summarizePurchaseProof). This is what lets `next` tell a real purchase
         // path from a `--test-order off` diagnostic.
         proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
+        stamps: qaStamps,
+        inputs: qaInputs,
       });
     }, {
       stage: "qa",
@@ -1438,8 +1446,7 @@ function createInitialAssemblyReportStages({ scaffoldRequired, blockers, outputs
   // (STAGE_TERMINAL_STATUS_PREFIXES): declared out-of-scope pages do not hold
   // the ladder, they are recorded on the stage so downstream consumers can see
   // exactly which pages assemble from the template family instead of source HTML.
-  const terminalStatus = declaredScopeSkips.length ? "completed_partial" : "completed";
-  stages.prepare_build = createStage("prepare_build", blockers.length ? "blocked" : terminalStatus, {
+  stages.prepare_build = createStage("prepare_build", prepareBuildStageStatus({ blockers, declaredScopeSkips }), {
     outputs,
     blockers,
     ...(declaredScopeSkips.length ? { declared_out_of_scope: declaredScopeSkips } : {}),
@@ -1790,6 +1797,10 @@ function prepareBuildUnderLock({
     sourceRoot,
     targetRepo,
   });
+  // The report and normalized brief this run replaces: the report's brief
+  // mode keeps an existing prepared campaign prepared (when it is this
+  // campaign's report), and the previous brief carries field provenance.
+  const priorBriefInputs = priorBriefInputsForIntake({ reportPath, briefPath, identity: { spec: { map_id: mapId, ...(localSpecId ? { local_spec_id: localSpecId } : {}) }, campaign: { public_route_slug: publicRouteSlug } } });
   const buildBrief = createCampaignBuildBriefArtifact({
     inputPath: briefDiscovery?.path || null,
     inputSource: briefDiscovery?.source || null,
@@ -1799,10 +1810,19 @@ function prepareBuildUnderLock({
     templateFamily,
     sourceAssetCrawl,
     commerceZoneFindings,
+    boundReportMode: priorBriefInputs.boundReportMode,
+    previousNormalizedBrief: priorBriefInputs.previousNormalizedBrief,
   });
   if (buildBrief.inputPath && buildBrief.artifact?._meta) {
     buildBrief.artifact._meta.input_path = relFromFile(briefPath, buildBrief.inputPath);
   }
+  const briefBindings = briefIntakeBindings(buildBrief);
+  // The packet settings this run writes, checked against the packet on disk
+  // before anything is published.
+  const deploySettings = {
+    target: optionalString(args["deploy-target"], "unknown"),
+    preview_url: optionalString(args["preview-url"]),
+  };
   const buildBriefPrompts = buildBrief.mode === "prepared" ? [] : buildBrief.questions.map((question) => ({
     code: `BUILD_BRIEF_${toConstantCase(question.id)}`,
     stage: "prepare_build",
@@ -1836,6 +1856,7 @@ function prepareBuildUnderLock({
       }))
     : [];
   const designSourcePackage = publication.package({
+    plannedPacket: { deploy: deploySettings, qa: { proof_policy: { order_path_depth: orderPathDepthFlag || "common" } } },
     activePages,
     mappings: matched.mappings,
     manifestResult,
@@ -1887,6 +1908,7 @@ function prepareBuildUnderLock({
       normalized_path: relFromFile(packetPath, briefPath),
       question_count: buildBrief.questions.length,
       gate_count: buildBrief.gates.length,
+      ...briefBindings,
     },
     assembly: {
       implementation: "next-campaigns-build",
@@ -1914,8 +1936,7 @@ function prepareBuildUnderLock({
       compatible_outputs: ["static-html", "campaign-cart-sdk"],
     },
     deploy: {
-      target: optionalString(args["deploy-target"], "unknown"),
-      preview_url: optionalString(args["preview-url"]),
+      ...deploySettings,
       production_url: optionalString(args["production-url"]),
       live_url_path: liveUrlPath,
     },
@@ -2002,6 +2023,7 @@ function prepareBuildUnderLock({
       gate_count: buildBrief.gates.length,
       questions: buildBrief.questions,
       gates: buildBrief.gates,
+      ...briefBindings,
     },
     page_map: matched.mappings.map((mapping) => ({
       page_id: mapping.page_id,
@@ -4330,6 +4352,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     } });
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
+    if (doctor.derived?.input_currency) result.input_currency = doctor.derived.input_currency;
     result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
     // The QC handoff: read from data already loaded plus the
     // full QA verdict the QA stage names. It adds nothing to errors[],
@@ -4338,6 +4361,9 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     // one (from --report or the Build Context pointer), so it records there.
     const qc = readCurrentQcResults({ report, doctor, spec, targetRepo, packetPath, reportPath, qcStandIns, rederivers: qcRederivers });
     result.qc_handoff = buildQcHandoff({ results: qc.results, coverage: qc.coverage, accepts: report?.qc_accepts, packetPath, reportPath: explicitReportPath(reportPath, targetRepo) });
+    // One note per operator decision that kept the build output unchanged
+    // after an input change, quoting the operator's reason.
+    for (const issue of doctor.warnings) if (issue.code === "assembly.output_unchanged_by_operator_decision") (result.qc_handoff.notes ||= []).push(`Build output kept unchanged after an input change by the operator's decision: "${issue.detail.reason}"`);
     recordNextRecommendation(ambient, result);
     return result;
   };
@@ -4756,6 +4782,11 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     const inspect = divergenceInspectAction(divergences, packetPath);
     push(inspect.id, inspect.kind, asInvocation(inspect.command), inspect.description, { required: inspect.required });
     return actions;
+  }
+  for (const subcommand of inputRefreshCommands(result.input_currency)) {
+    push("refresh_inputs", "command", `${cmd("record")} ${subcommand} --packet ${shellToken(packetPath)} --json`, subcommand === "brief"
+      ? "A recorded stage was made against earlier Campaign Build Brief content: save the brief with record brief (keeps stage history), then re-run next."
+      : "A recorded stage was made against earlier CampaignSpec content: bind it with record spec (keeps stage history), then re-run next.");
   }
   if (result.stage === "doctor-blocked") {
     const checkpointGates = (result.gates || []).filter(

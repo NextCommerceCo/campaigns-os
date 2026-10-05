@@ -49,6 +49,10 @@
 // contacted.
 
 import assert from "node:assert/strict";
+import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
+
+// The brief and CampaignSpec content a record made by this release stamps.
+const recordStamps = (seed) => inputStamps(currentPacketInputs({ packet: JSON.parse(readFileSync(seed.packetPath, "utf8")), packetPath: seed.packetPath }));
 import { createHash } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -381,7 +385,7 @@ function seedPolishReady(seed) {
     }],
   })));
   const report = readJson(seed.reportPath);
-  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: buildFingerprint };
+  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: buildFingerprint, ...recordStamps(seed) };
   report.stages.polish = {
     ...report.stages.polish,
     status: "required",
@@ -411,7 +415,7 @@ function seedThemeReady(seed) {
     writeFileSync(join(dir, "index.html"), `<!doctype html><html><head><link rel="stylesheet" href="../css/next-core.css"><link rel="stylesheet" href="../css/brand-theme.css"><title>${page.page_id}</title></head><body><h1>${page.page_id}</h1></body></html>`);
   }
   const report = readJson(seed.reportPath);
-  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: computeBuildFingerprint(site).fingerprint };
+  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: computeBuildFingerprint(site).fingerprint, ...recordStamps(seed) };
   writeJson(seed.reportPath, report);
 }
 
@@ -422,7 +426,7 @@ function seedThemeReady(seed) {
 function seedDeployReady(seed) {
   seedPolishReady(seed);
   const report = readJson(seed.reportPath);
-  report.stages.polish = { ...report.stages.polish, status: "completed" };
+  report.stages.polish = { ...report.stages.polish, status: "completed", ...recordStamps(seed) };
   writeJson(seed.reportPath, report);
   const packet = readJson(seed.packetPath);
   packet.deploy = { ...packet.deploy, target: "local-serve" };
