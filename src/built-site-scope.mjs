@@ -16,6 +16,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 
+import { isFileReadFailure } from "./cart-placeholders.mjs";
+
 const HTML_EXT = ".html";
 
 // The route tokens inferPageType reads for the funnel roles, exported so a
@@ -56,7 +58,26 @@ export function inferPageType(routeOrName) {
   return "page";
 }
 
-function listHtmlFiles(root) {
+// Whether a symbolic link may stand for a built page: its name ends in .html,
+// or its target is a directory, or its target cannot be inspected (missing,
+// EACCES, ELOOP, any file-system error). A link to a regular file (or any
+// other non-directory) not named .html is no page. Only file-system errors
+// are caught; anything else throws.
+function linkMayBePage(full, name) {
+  if (name.toLowerCase().endsWith(HTML_EXT)) return true;
+  try {
+    return statSync(full).isDirectory();
+  } catch (error) {
+    if (!isFileReadFailure(error)) throw error;
+    return true;
+  }
+}
+
+// `links`, when given, collects every symbolic link that may stand for a page
+// (see linkMayBePage). They are never pages themselves (build output holds no
+// links, and a link is not followed), but a caller that must account for every
+// built page can name them.
+function listHtmlFiles(root, links = null) {
   const files = [];
   if (!existsSync(root) || !statSync(root).isDirectory()) return files;
   const walk = (dir) => {
@@ -67,9 +88,11 @@ function listHtmlFiles(root) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile() && entry.name.toLowerCase().endsWith(HTML_EXT)) files.push(full);
+      else if (links && entry.isSymbolicLink() && linkMayBePage(full, entry.name)) links.push(full);
     }
   };
   walk(root);
+  links?.sort();
   return files.sort();
 }
 
@@ -101,7 +124,13 @@ function resolveSiteRoot(targetRepo) {
  *
  * @param {string} targetRepo Absolute path to the page-kit target repo (or a
  *   `_site/` directory, or a campaign directory).
- * @param {{ slug?: string|null }} [options]
+ * @param {{ slug?: string|null, includeLinkedPages?: boolean }} [options]
+ *   `includeLinkedPages` adds `linked_pages`: every symbolic link under the
+ *   campaign directory that may stand for a page (named .html, or its target
+ *   a directory, or its target not inspectable; each one entry, its
+ *   `built_path` the link itself; skipped as pages, not followed), in the
+ *   same shape as `pages`. A link to a regular file not named .html is
+ *   dropped. Off by default; without it the result is unchanged.
  * @returns {{
  *   ok: boolean,
  *   error?: string,
@@ -114,7 +143,7 @@ function resolveSiteRoot(targetRepo) {
  *   slug_candidates?: string[],
  * }}
  */
-export function resolveBuiltSiteScope(targetRepo, { slug = null } = {}) {
+export function resolveBuiltSiteScope(targetRepo, { slug = null, includeLinkedPages = false } = {}) {
   const base = { ok: false, target_repo: targetRepo, site_root: null, slug: "", campaign_dir: null, pages: [], html_count: 0 };
   if (!targetRepo || !existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) {
     return { ...base, error: `Built campaign directory does not exist: ${targetRepo}` };
@@ -149,7 +178,7 @@ export function resolveBuiltSiteScope(targetRepo, { slug = null } = {}) {
     return { ...base, site_root: siteRoot, slug: resolvedSlug, error: `Campaign directory does not exist: ${campaignDir}` };
   }
 
-  const pages = listHtmlFiles(campaignDir).map((file) => {
+  const toPage = (file) => {
     const route = routeForFile(campaignDir, file);
     return {
       page_id: pageIdForRoute(route),
@@ -157,10 +186,13 @@ export function resolveBuiltSiteScope(targetRepo, { slug = null } = {}) {
       route,
       built_path: file,
     };
-  });
+  };
+  const links = includeLinkedPages ? [] : null;
+  const pages = listHtmlFiles(campaignDir, links).map(toPage);
+  const linked = links ? { linked_pages: links.map(toPage) } : {};
 
   if (!pages.length) {
-    return { ...base, site_root: siteRoot, slug: resolvedSlug, campaign_dir: campaignDir, error: `No built HTML pages found under ${campaignDir}.` };
+    return { ...base, site_root: siteRoot, slug: resolvedSlug, campaign_dir: campaignDir, ...linked, error: `No built HTML pages found under ${campaignDir}.` };
   }
 
   return {
@@ -171,6 +203,7 @@ export function resolveBuiltSiteScope(targetRepo, { slug = null } = {}) {
     campaign_dir: campaignDir,
     pages,
     html_count: pages.length,
+    ...linked,
   };
 }
 

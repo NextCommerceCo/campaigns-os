@@ -2,23 +2,39 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.51.0+agent.3] - 2026-10-05
+## [1.51.0+agent.5] - 2026-10-05
 
 ### Added
 
 - QA now checks that configured store policy links are rendered and reachable, recording link presence and availability separately. QA now sends bounded header-only requests to the configured policy URLs; the effects contract declares them.
 
-## [1.51.0+agent.2] - 2026-10-05
+## [1.51.0+agent.4] - 2026-10-05
 
 ### Added
 
 - QA now checks at runtime that declared content parameters hide their content, comparing fresh contexts with and without `?<name>=n`.
 
-## [1.51.0+agent.1] - 2026-10-04
+## [1.51.0+agent.3] - 2026-10-05
 
 ### Added
 
 - QA browser test orders now report URL preservation and order attribution for synthetic tracking parameters as separate results. QA order evidence no longer stores query strings in `checkout_url`, `final_url` or request URLs.
+
+## [1.51.0+agent.2] - 2026-10-05
+
+### Added
+
+- Polish capture now records image geometry and redirect chains, and reports origin and weight warnings for video and large images served from the page's own origin, plus oversized images.
+
+### Changed
+
+- `polish capture` now records media weight beside page load evidence in the Assembly Report, so `next` reads the image weight and oversize results of a fresh capture.
+
+## [1.51.0+agent.1] - 2026-10-04
+
+### Added
+
+- Doctor now warns on SDK cart placeholders printed in live built HTML (`built_output.cart_placeholders`), ported from the public starter-template lint.
 
 ## [1.51.0] - 2026-10-04
 
