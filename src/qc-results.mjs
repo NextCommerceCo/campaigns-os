@@ -4,8 +4,11 @@
 //
 // Storage per leg:
 // - doctor: derived.qc_results[], recomputed from built HTML on every run;
-// - polish: stages.polish.evidence.visual_review.media_weight, re-derived from
-//   its cells and cross-checked against the page_load capture;
+// - polish: one package-owned record per stages.polish.evidence.visual_review
+//   key (POLISH_RECORDS): media_weight, re-derived from its cells and
+//   cross-checked against the page_load capture, and readability, whose
+//   elements are re-derived through the shared contrast helper and whose
+//   route set is recomputed from the built output;
 // - qa: stages.qa.evidence.qc_results[] beside qc_build_fingerprint,
 //   re-derived from the qc.* assertions of the full QA verdict.
 //
@@ -20,12 +23,13 @@ import { isAbsolute, relative, resolve } from "node:path";
 
 import { campaignSidecarPaths } from "./campaign-workspace.mjs";
 import { checkpointStateFingerprint } from "./checkpoint-waiver.mjs";
+import { contrastToolkit } from "./contrast.mjs";
 import { sameFile } from "./fs-identity.mjs";
 import { buildPolishCaptureIntegrity, canonicalJson, captureOrigin, mediaFetchedResources } from "./polish-capture.mjs";
-import { currentBuildFingerprint } from "./polish-gate.mjs";
+import { currentBuildFingerprint, currentSourcePackageMaterialFingerprint } from "./polish-gate.mjs";
 import { sidecarPathForPacket } from "./qa-sidecar.mjs";
 import { QA_ASSERTION_FAMILY_VOCABULARY, QA_SCHEMA_VERSION, SEVERITY, STATUS } from "./qa-verdict.mjs";
-import { QC_CHECK_REGISTRY, loadedQcRederivers, qcChecksForLeg } from "./qc-check-registry.mjs";
+import { QC_CHECK_REGISTRY, loadedQcRederivers, qcChecksForLeg, qcChecksForRecord } from "./qc-check-registry.mjs";
 import { STORE_PAGE_MATCHERS } from "./spec-derive-store.mjs";
 
 export const QC_RESULT_SCHEMA = "campaigns-os-qc-result/v0";
@@ -184,10 +188,14 @@ function qaRederiver(check, { qcStandIns, rederivers }) {
   return entry;
 }
 
-export function resolvePolishRules({ qcStandIns, rederivers } = {}) {
-  const standIn = qcStandIns?.polish;
-  if (isPlainObject(standIn)) return { status: "loaded", rules: standIn };
-  const entry = (rederivers || loadedQcRederivers())?.["media.weight"];
+// The rules of the record a Polish check is read from. A stand-in is
+// `qcStandIns.polish[check]`, or `qcStandIns.polish` itself for the
+// media_weight checks.
+export function resolvePolishRules({ check = "media.weight", qcStandIns, rederivers } = {}) {
+  const standIn = isPlainObject(qcStandIns?.polish?.[check]) ? qcStandIns.polish[check]
+    : QC_CHECK_REGISTRY[check]?.record === "media_weight" && isPlainObject(qcStandIns?.polish) ? qcStandIns.polish : null;
+  if (standIn) return { status: "loaded", rules: standIn };
+  const entry = (rederivers || loadedQcRederivers())?.[check];
   if (!entry) return { status: "unresolved" };
   if (entry.status !== "loaded") return entry;
   const rules = entry.rederive;
@@ -400,14 +408,17 @@ function readQaRow(row, { verdictOk, assertion, measuredAt, qcStandIns, rederive
 }
 
 // ---------------------------------------------------------------------------
-// Polish reader site (media_weight against its page_load capture)
+// Polish reader sites (media_weight against its page_load capture, and
+// readability)
 
-// Unkeyed tamper evidence over every field but `integrity`, the canonical-JSON
-// + sha256 pattern of buildPolishCaptureIntegrity.
-export function mediaWeightIntegrity(record) {
+// Unkeyed tamper evidence of a package-owned Polish record over every field
+// but `integrity`, the canonical-JSON + sha256 pattern of
+// buildPolishCaptureIntegrity.
+export function polishRecordIntegrity(record) {
   const { integrity: _ignored, ...rest } = record || {};
   return `sha256:${createHash("sha256").update(canonicalJson(rest)).digest("hex")}`;
 }
+export const mediaWeightIntegrity = polishRecordIntegrity;
 
 const inVocabulary = (vocabulary, field, value) => Array.isArray(vocabulary?.[field]) && vocabulary[field].includes(value);
 const isPair = (value) => Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0);
@@ -809,25 +820,34 @@ function captureBindingProblem(capture, subject, currentBuild) {
 
 const PAGE_NOT_CAPTURED = "page_not_captured";
 
-export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStandIns = null, rederivers = null } = {}) {
+// Built output that no longer matches the recorded build: doctor's
+// derived.build_output_fingerprint, whose status is pass only when the
+// output under _site/<slug>/ is the one `record build` recorded. Any other
+// value, null included, is drift. A caller that passes no value (undefined)
+// reads without the output check.
+const outputDrifted = (buildOutput) => buildOutput !== undefined && buildOutput?.status !== "pass";
+
+export function readMediaWeight({ record, pageLoad, currentBuild = null, buildOutput = undefined, qcStandIns = null, rederivers = null } = {}) {
   if (record === undefined || record === null) return [];
+  const checks = POLISH_RECORDS.media_weight.checks;
   const measuredAt = validTime(record?.measured_at) ? record.measured_at : null;
   const cells = Array.isArray(record?.cells) ? record.cells.filter(isPlainObject) : [];
   const unreproduced = (subject) => unreproducedRow({ subject, check: subject.check }, E, { leg: "polish", measuredAt });
   const cellResult = (check, route, viewport) => unreproduced({ check, page: route, viewport, key: "cell" });
-  // A failed cell: one result per subject it lists, and one per Polish check
-  // it lists no subject for, so a failed cell, even one listing nothing, is
-  // never silent.
+  // A failed cell: one result per subject it lists, and one per media_weight
+  // check it lists no subject for, so a failed cell, even one listing
+  // nothing, is never silent.
   const failCell = (cell) => {
     const subjects = cellSubjects(cell);
     return [
       ...subjects.map(unreproduced),
-      ...POLISH_CHECKS.filter((check) => !subjects.some((subject) => subject.check === check)).map((check) => cellResult(check, cell?.route ?? null, cell?.viewport ?? null)),
+      ...checks.filter((check) => !subjects.some((subject) => subject.check === check)).map((check) => cellResult(check, cell?.route ?? null, cell?.viewport ?? null)),
     ];
   };
   // A record-level failure: every listed cell fails, and every route ×
   // viewport that the record or page_load declares or captured but no cell
-  // lists gets one result per Polish check, so a missing route is never silent.
+  // lists gets one result per media_weight check, so a missing route is never
+  // silent.
   const failAll = () => {
     const listed = new Set(cells.map((cell) => cellKey(cell.route, cell.viewport)));
     const unlisted = new Map();
@@ -840,11 +860,11 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
     for (const entry of Array.isArray(pageLoad?.measurement?.missing) ? pageLoad.measurement.missing : []) note(entry?.route, entry?.viewport);
     const rows = [
       ...cells.flatMap(failCell),
-      ...[...unlisted.values()].flatMap(({ route, viewport }) => POLISH_CHECKS.map((check) => cellResult(check, route, viewport))),
+      ...[...unlisted.values()].flatMap(({ route, viewport }) => checks.map((check) => cellResult(check, route, viewport))),
     ];
     return rows.length ? rows : [unreproduced({ check: "media.weight", page: null, key: "media_weight" })];
   };
-  const resolved = resolvePolishRules({ qcStandIns, rederivers });
+  const resolved = resolvePolishRules({ check: checks[0], qcStandIns, rederivers });
   if (resolved.status === "missing") return [];
   if (resolved.status !== "loaded") return failAll();
   const { rules } = resolved;
@@ -887,11 +907,13 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
     || captureByKey.size !== gridKeys.length
     || !gridKeys.every((key) => captureByKey.has(key) && cellKeys.includes(key))) return failAll();
 
-  // Both enclosing subjects are bound to the current build; an absent, null
-  // or other build on either reads stale_binding.
+  // Both enclosing subjects are bound to the current build, and the built
+  // output is still that build's; an absent, null or other build on either,
+  // or output drift, reads stale_binding.
   const recordBound = isNonEmptyString(currentBuild)
     && record.subject.build_fingerprint === currentBuild
-    && pageLoad.subject.build_fingerprint === currentBuild;
+    && pageLoad.subject.build_fingerprint === currentBuild
+    && !outputDrifted(buildOutput);
   const results = [];
   // A spec page with no source mapping: one result per 1.3 check and viewport,
   // unexercised / page_not_captured; keyed "cell" on its public route, or
@@ -902,7 +924,7 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
   ];
   for (const { page, key } of uncaptured) {
     for (const viewport of record.subject.viewports) {
-      for (const check of POLISH_CHECKS) {
+      for (const check of checks) {
         const subject = { check, page, viewport, key };
         const row = unreproducedRow({ subject, check }, PAGE_NOT_CAPTURED, { leg: "polish", measuredAt });
         results.push(recordBound ? row : staleRow(row));
@@ -926,7 +948,7 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
     // Every derived subject is one the cell lists (cellSubjects), exactly:
     // its own page, viewport and key, and no other field.
     const own = new Set(cellSubjects(cell).map((subject) => canonicalJson(subject)));
-    if (!Array.isArray(derived) || !derived.every((item) => ["media.weight", "media.oversize"].includes(item?.check) && validDerived(item, item.check) && own.has(canonicalJson(item.subject)))) {
+    if (!Array.isArray(derived) || !derived.every((item) => checks.includes(item?.check) && validDerived(item, item.check) && own.has(canonicalJson(item.subject)))) {
       results.push(...failCell(cell));
       continue;
     }
@@ -954,6 +976,234 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
   return results;
 }
 
+// The readability record's subject fields besides build_fingerprint.
+const READABILITY_SUBJECT_FIELDS = Object.freeze(["source_package_material_fingerprint", "campaign_slug", "route_source", "routes", "viewports"]);
+const READABILITY_DERIVED_FIELDS = Object.freeze(["fg_srgb", "bg_srgb", "gamut_clipped", "ratio", "size_class", "required"]);
+const contrast = contrastToolkit();
+const canonicalTime = (value) => validTime(value) && new Date(value).toISOString() === value;
+
+// Every derived field of a stored element re-derives exactly from its raw
+// computed colours and font through the shared contrast helper.
+function readabilityElementReproduces(element) {
+  let derived;
+  try {
+    derived = contrast.deriveElementMeasurement({
+      fg_raw: element.fg_raw,
+      fill_raw: element.fill_raw,
+      bg_layers_raw: element.bg_layers_raw,
+      font_size_px: element.font_size_px,
+      font_weight: element.font_weight,
+    });
+  } catch {
+    return false;
+  }
+  return READABILITY_DERIVED_FIELDS.every((field) => Object.hasOwn(element, field) && sameJson(element[field], derived[field]));
+}
+
+// A crop reference resolves when its file under the target repo holds bytes
+// whose sha256 is the one recorded.
+function readabilityCropResolves(ref, targetRepo) {
+  if (!isNonEmptyString(targetRepo) || !isPlainObject(ref) || !isNonEmptyString(ref.path) || !isNonEmptyString(ref.sha256)) return false;
+  try {
+    const file = resolve(targetRepo, ref.path);
+    if (!statSync(file).isFile()) return false;
+    return `sha256:${createHash("sha256").update(readFileSync(file)).digest("hex")}` === ref.sha256;
+  } catch {
+    return false;
+  }
+}
+
+// The readability record (contract 2.4 Result rules), read in precedence
+// order:
+// 1. the record and cell reader checks (producer, schema, helper version,
+//    integrity, canonical measured_at, the constant thresholds and limits,
+//    the fixed producer values, the vocabulary, the exact routes × viewports
+//    grid, every element re-derived through the shared helper, and each
+//    shared cell's page_load integrity) → evidence_not_reproducible;
+// 2. the binding (build, source package, and doctor's output fingerprint)
+//    → every row stale_binding, before any route-set result;
+// 3. the built route set, recomputed from _site/<slug>/: a captured route
+//    the record lacks, or one over the route cap, reads page_not_captured;
+//    a recorded route outside it, or different uncaptured routes or
+//    enumeration cap, → evidence_not_reproducible;
+// 4. the rows READABILITY_QC_RULES.evaluate derives from each cell.
+// `campaignSlug` is the packet's slug; a missing one never matches.
+export function readReadability({ record, pageLoad = null, currentBuild = null, currentSource = null, buildOutput = null, campaignSlug = null, targetRepo = null, qcStandIns = null, rederivers = null } = {}) {
+  if (record === undefined || record === null) return [];
+  const [check] = POLISH_RECORDS.readability.checks;
+  const measuredAt = canonicalTime(record?.measured_at) ? record.measured_at : null;
+  const cells = Array.isArray(record?.cells) ? record.cells.filter(isPlainObject) : [];
+  const subjectOf = (page, viewport, key) => ({ check, page, viewport, key });
+  const rowOf = (subject, reasonCode) => unreproducedRow({ subject, check }, reasonCode, { leg: "polish", measuredAt });
+  const unique = (rows) => [...new Map(rows.map((row) => [row.id, row])).values()];
+  let rules = null;
+  // A failed cell: one result per row the cell names and its `cell` row, so
+  // a failed cell is never silent and an accept of one of its rows lapses
+  // rather than orphans. The keys come from rules.rowKeys, which reads
+  // neither the record's thresholds nor any field the checks reject.
+  const failCell = (cell) => {
+    let named = [];
+    try {
+      named = typeof rules?.rowKeys === "function" ? rules.rowKeys(cell) : [];
+    } catch {
+      named = [];
+    }
+    const keys = [...new Set([...(Array.isArray(named) ? named.filter(isNonEmptyString) : []), "cell"])];
+    return keys.map((key) => rowOf(subjectOf(cell?.route ?? null, cell?.viewport ?? null, key), E));
+  };
+  // A record-level failure: every listed cell fails; every route the subject
+  // or a cell names, at every recorded or fixed viewport, that no cell lists
+  // gets its `cell` row; and the uncaptured routes and the enumeration cap
+  // keep the rows they would read.
+  const failAll = () => {
+    const listed = new Set(cells.map((cell) => cellKey(cell.route, cell.viewport)));
+    const routes = [...(Array.isArray(record?.subject?.routes) ? record.subject.routes : []), ...cells.map((cell) => cell.route)].filter(isNonEmptyString);
+    const uncaptured = (Array.isArray(record?.uncaptured_routes) ? record.uncaptured_routes : []).filter(isNonEmptyString);
+    let fixed = [];
+    try {
+      fixed = Array.isArray(rules?.viewports) ? rules.viewports : [];
+    } catch {
+      fixed = [];
+    }
+    const viewports = [...(Array.isArray(record?.subject?.viewports) ? record.subject.viewports : []), ...fixed].filter(isNonEmptyString);
+    const grid = [...new Set([...routes, ...uncaptured])].flatMap((route) => [...new Set(viewports)].map((viewport) => ({ route, viewport })));
+    const rows = [
+      ...cells.flatMap(failCell),
+      ...grid.filter(({ route, viewport }) => !listed.has(cellKey(route, viewport))).map(({ route, viewport }) => rowOf(subjectOf(route, viewport, "cell"), E)),
+      ...(record?.route_enumeration_capped === true ? [rowOf(subjectOf(null, null, "scope"), E)] : []),
+    ];
+    return unique(rows.length ? rows : [rowOf(subjectOf(null, null, "readability"), E)]);
+  };
+  const evaluate = (cell, cropAvailable) => {
+    try {
+      return rules.evaluate(cell, record.thresholds, { cropAvailable });
+    } catch {
+      return null;
+    }
+  };
+  const resolved = resolvePolishRules({ check, qcStandIns, rederivers });
+  if (resolved.status === "missing") return [];
+  if (resolved.status !== "loaded") return failAll();
+  ({ rules } = resolved);
+  if (typeof rules.routes !== "function" || typeof rules.cellShapeOk !== "function") return failAll();
+
+  // 1. Record level.
+  const subject = record?.subject;
+  const viewports = rules.viewports;
+  if (!isPlainObject(record)
+    || record.schema_version !== rules.schema_version
+    || record.performed_by !== QC_PRODUCERS.polish
+    || record.helper_version !== rules.helper_version
+    || record.helper_version !== contrast.version
+    || !measuredAt
+    || record.integrity !== polishRecordIntegrity(record)
+    || !sameJson(record.thresholds, rules.thresholds)
+    || !sameJson(record.limits, rules.limits)
+    || !hasExactly(subject, READABILITY_SUBJECT_FIELDS)
+    || !(subject.source_package_material_fingerprint === null || isNonEmptyString(subject.source_package_material_fingerprint))
+    || !sameJson(subject.viewports, viewports)
+    || subject.route_source !== rules.route_source
+    || !isNonEmptyString(campaignSlug)
+    || subject.campaign_slug !== campaignSlug
+    || !uniqueStrings(subject.routes)
+    || !Array.isArray(record.uncaptured_routes)
+    || !(record.uncaptured_routes.length === 0 || uniqueStrings(record.uncaptured_routes))
+    || record.uncaptured_routes.some((route) => subject.routes.includes(route))
+    || typeof record.route_enumeration_capped !== "boolean"
+    || !Array.isArray(record.cells)
+    || cells.length !== record.cells.length
+    || !cells.every((cell) => rules.cellShapeOk(cell))) return failAll();
+  // The cell set is exactly routes × viewports: none missing, none added,
+  // none twice, every cell's route and viewport in the subject.
+  const gridKeys = declaredGrid(subject).map(({ route, viewport }) => cellKey(route, viewport));
+  const cellKeys = cells.map((cell) => cellKey(cell.route, cell.viewport));
+  if (new Set(cellKeys).size !== cellKeys.length
+    || cellKeys.length !== gridKeys.length
+    || !cells.every((cell) => subject.routes.includes(cell.route) && subject.viewports.includes(cell.viewport))) return failAll();
+
+  // Cell level: every element re-derives, and a shared cell's page_load
+  // integrity is that route × viewport's capture integrity.
+  const captures = Array.isArray(pageLoad?.captures) ? pageLoad.captures : [];
+  const cellReadable = (cell) => {
+    if (!cell.elements.every(readabilityElementReproduces)) return false;
+    if (cell.page_load_integrity === null) return true;
+    const matching = captures.filter((capture) => capture?.subject?.requested_route === cell.route && capture?.subject?.viewport === cell.viewport);
+    if (matching.length !== 1) return false;
+    const [capture] = matching;
+    return isPlainObject(capture.integrity)
+      && sameJson(buildPolishCaptureIntegrity(capture), capture.integrity)
+      && capture.integrity.projection_fingerprint === cell.page_load_integrity;
+  };
+
+  // 2. Binding.
+  const bound = isNonEmptyString(currentBuild)
+    && subject.build_fingerprint === currentBuild
+    && subject.source_package_material_fingerprint === (isNonEmptyString(currentSource) ? currentSource : null)
+    && !outputDrifted(buildOutput ?? null);
+
+  // 3. The recomputed route set, read only when the output is the build's.
+  const results = [];
+  const notCaptured = (route) => subject.viewports.map((viewport) => rowOf(subjectOf(route, viewport, "cell"), PAGE_NOT_CAPTURED));
+  const scopeRow = () => rowOf(subjectOf(null, null, "scope"), "route_enumeration_capped");
+  if (bound) {
+    let built;
+    try {
+      built = rules.routes(targetRepo, campaignSlug);
+    } catch {
+      built = null;
+    }
+    if (!isPlainObject(built) || built.ok !== true
+      || !subject.routes.every((route) => built.routes.includes(route))
+      || !sameJson(record.uncaptured_routes, built.uncaptured_routes)
+      || record.route_enumeration_capped !== built.route_enumeration_capped) return failAll();
+    for (const route of built.routes.filter((route) => !subject.routes.includes(route))) results.push(...notCaptured(route));
+  }
+  for (const route of record.uncaptured_routes) results.push(...notCaptured(route).map((row) => (bound ? row : staleRow(row))));
+  if (record.route_enumeration_capped) results.push(bound ? scopeRow() : staleRow(scopeRow()));
+
+  // 4. The rows.
+  const cropAvailable = (ref) => rules.cropRefShapeOk?.(ref) === true && readabilityCropResolves(ref, targetRepo);
+  for (const cell of cells) {
+    if (!cellReadable(cell)) {
+      results.push(...failCell(cell));
+      continue;
+    }
+    const derived = evaluate(cell, cropAvailable);
+    // Every derived subject is the cell's own page and viewport, each key once.
+    const keys = Array.isArray(derived) ? derived.map((item) => item?.subject?.key) : [];
+    if (!Array.isArray(derived) || new Set(keys).size !== keys.length || !derived.every((item) => item?.check === check
+      && validDerived(item, check)
+      && hasExactly(item.subject, ["check", "page", "viewport", "key"])
+      && item.subject.page === cell.route
+      && item.subject.viewport === cell.viewport
+      && isNonEmptyString(item.subject.key))) {
+      results.push(...failCell(cell));
+      continue;
+    }
+    for (const item of derived) {
+      const members = item.members ?? [];
+      const row = {
+        schema: QC_RESULT_SCHEMA,
+        id: qcResultId(item.subject),
+        check,
+        leg: "polish",
+        result: item.result,
+        reason_code: item.result === "pass" ? null : item.reason_code,
+        subject: item.subject,
+        state_fingerprint: qcStateFingerprint({ subject: item.subject, state: item.state }),
+        observation: isPlainObject(item.observation) ? item.observation : {},
+        members,
+        accept_eligible: item.accept_eligible && qcAcceptEligible(item.result, members),
+        coverage: item.coverage ?? { observed: 1, expected: 1, limits: [] },
+        measured_at: measuredAt,
+        producer: QC_PRODUCERS.polish,
+      };
+      results.push(bound ? row : staleRow(row));
+    }
+  }
+  return results;
+}
+
 // ---------------------------------------------------------------------------
 // Every current result, per leg, and the silence rule
 
@@ -961,6 +1211,13 @@ const QA_ALWAYS = Object.freeze(["tracking.url", "tracking.order", "tracking.tag
 const QA_CONTENT = Object.freeze(["content_param"]);
 const QA_POLICY = Object.freeze(["policy.presence", "policy.availability"]);
 const POLISH_CHECKS = Object.freeze(qcChecksForLeg("polish"));
+// The Polish dispatch: each package-owned visual_review record, the checks
+// read from it, and its reader. Each record is read, and its silence judged,
+// on its own.
+const POLISH_RECORDS = Object.freeze({
+  media_weight: Object.freeze({ checks: Object.freeze(qcChecksForRecord("media_weight")), read: readMediaWeight }),
+  readability: Object.freeze({ checks: Object.freeze(qcChecksForRecord("readability")), read: readReadability }),
+});
 const STORE_POLICY_FIELDS = Object.freeze(Object.keys(STORE_PAGE_MATCHERS));
 
 // Applicability is decided without the leg running: the tracking checks
@@ -1014,13 +1271,32 @@ export function handoffCoverage({ report, spec, results = [], qcStandIns = null,
     for (const check of POLISH_CHECKS) entries.push(silence("polish", check, QC_REASON.LEG_NOT_RUN));
   } else {
     const visual = polishStage.evidence?.visual_review;
-    const captured = isPlainObject(visual?.page_load) && visual.media_weight != null;
-    const failed = captured && resolvePolishRules({ qcStandIns, rederivers }).status === "failed";
-    for (const check of POLISH_CHECKS) {
-      if (!hasRow("polish", check)) entries.push(silence("polish", check, silentReason(failed)));
+    for (const [name, { checks }] of Object.entries(POLISH_RECORDS)) {
+      const captured = name === "media_weight" ? isPlainObject(visual?.page_load) && visual.media_weight != null : visual?.[name] != null;
+      for (const check of checks) {
+        if (hasRow("polish", check)) continue;
+        const failed = captured && resolvePolishRules({ check, qcStandIns, rederivers }).status === "failed";
+        entries.push(silence("polish", check, silentReason(failed)));
+      }
     }
   }
   return entries;
+}
+
+// The campaign slug the Polish records bind to: the packet's, read from
+// packetPath; with no readable packet, the Assembly Report's (which capture
+// requires to equal the packet's). Null when neither names one.
+function packetCampaignSlug({ packetPath, report }) {
+  if (isNonEmptyString(packetPath)) {
+    try {
+      const slug = JSON.parse(readFileSync(packetPath, "utf8"))?.campaign?.public_route_slug;
+      return isNonEmptyString(slug) ? slug : null;
+    } catch {
+      // No readable packet: fall through to the report.
+    }
+  }
+  const slug = report?.identity?.public_route_slug;
+  return isNonEmptyString(slug) ? slug : null;
 }
 
 // Every current QC result `next` and `checkpoint accept` judge, read from
@@ -1030,9 +1306,18 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
   const currentBuild = currentBuildFingerprint(report);
   const doctorResults = (Array.isArray(doctor?.derived?.qc_results) ? doctor.derived.qc_results : []).filter((row) => isPlainObject(row) && row.leg === "doctor");
   const visual = report?.stages?.polish?.evidence?.visual_review;
-  const polishResults = isPlainObject(visual) && visual.media_weight != null
-    ? readMediaWeight({ record: visual.media_weight, pageLoad: visual.page_load, currentBuild, qcStandIns, rederivers })
-    : [];
+  const recorded = isPlainObject(visual) ? Object.entries(POLISH_RECORDS).filter(([name]) => visual[name] != null) : [];
+  const polishContext = recorded.length ? {
+    pageLoad: visual.page_load,
+    currentBuild,
+    currentSource: currentSourcePackageMaterialFingerprint(report),
+    buildOutput: doctor?.derived?.build_output_fingerprint ?? null,
+    campaignSlug: packetCampaignSlug({ packetPath, report }),
+    targetRepo,
+    qcStandIns,
+    rederivers,
+  } : null;
+  const polishResults = recorded.flatMap(([name, { read }]) => read({ ...polishContext, record: visual[name] }));
   const qaStage = report?.stages?.qa;
   const qaResults = Array.isArray(qaStage?.evidence?.qc_results)
     ? readQaResults({
@@ -1040,6 +1325,7 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
       stage: qaStage,
       fullVerdict: readQaFullVerdict({ stage: qaStage, targetRepo, packetPath, reportPath }),
       currentBuild,
+      qaCurrency: doctor?.derived?.input_currency?.stages?.qa,
       qcStandIns,
       rederivers,
     })

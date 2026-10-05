@@ -458,7 +458,7 @@ function customWorkspace(t) {
   const reportPath = join(f.dir, "custom reports", "qc report.json");
   mkdirSync(dirname(reportPath), { recursive: true });
   copyFileSync(f.reportPath, reportPath);
-  installPolishEvidence({ reportPath }, twoCellFixture([{ path: HERO, bytes: 600_000 }]), { buildFingerprint: BUILD_FP });
+  installPolishEvidence({ reportPath, targetRepo: f.targetRepo }, twoCellFixture([{ path: HERO, bytes: 600_000 }]), { buildFingerprint: BUILD_FP });
   return { f, packetPath, reportPath, qcStandIns: { polish: polishStandIn() } };
 }
 

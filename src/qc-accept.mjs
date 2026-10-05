@@ -14,6 +14,7 @@ import { isNamedHuman, validateWaiverAttribution } from "./checkpoint-waiver.mjs
 import { DOCTOR_SIDECAR_SCHEMA } from "./doctor-sidecar.mjs";
 import { cmd } from "./install-invocation.mjs";
 import { canonicalJson } from "./polish-capture.mjs";
+import { QC_CHECK_REGISTRY } from "./qc-check-registry.mjs";
 import { QC_LEGS, QC_REASON, fingerprint12, qcResultRef } from "./qc-results.mjs";
 import { shellToken } from "./shell-token.mjs";
 
@@ -22,7 +23,18 @@ export const QC_ACCEPT_SCOPE = "qc_accept";
 export const QC_ACCEPT_RECORDER = "campaigns-os checkpoint accept";
 export const QC_ACCEPT_STATUSES = Object.freeze(["active", "lapsed", "orphaned", "expired", "inert"]);
 export const QC_DISPOSITION = Object.freeze({ OPEN: "open", OPERATOR_ACCEPTED: "operator_accepted" });
-export const QC_MEASURED_SOURCES = Object.freeze({ doctor: "doctor_sidecar", polish: "polish_media_weight", qa: "qa_full_verdict" });
+// The evidence an accept's measurement came from: the doctor sidecar, the
+// full QA verdict, or, on the Polish leg, the package-owned record the
+// accepted check is read from (QC_CHECK_REGISTRY `record`).
+const QC_LEG_SOURCES = Object.freeze({ doctor: "doctor_sidecar", qa: "qa_full_verdict" });
+export const QC_POLISH_RECORD_SOURCES = Object.freeze({ media_weight: "polish_media_weight", readability: "polish_readability" });
+
+// Null for a Polish check with no record, or a leg with no source.
+export function measuredSourceFor(leg, check) {
+  if (leg !== "polish") return Object.hasOwn(QC_LEG_SOURCES, leg) ? QC_LEG_SOURCES[leg] : null;
+  const entry = Object.hasOwn(QC_CHECK_REGISTRY, check) ? QC_CHECK_REGISTRY[check] : null;
+  return entry?.leg === "polish" && Object.hasOwn(QC_POLISH_RECORD_SOURCES, entry.record) ? QC_POLISH_RECORD_SOURCES[entry.record] : null;
+}
 
 // The command's closed refusal list.
 export const QC_ACCEPT_REFUSALS = Object.freeze({
@@ -100,7 +112,7 @@ export function createQcAccept(result, { measuredAt, attribution }) {
     state_fingerprint: result.state_fingerprint,
     result_at_accept: "warning",
     measured_at: measuredAt,
-    measured_source: QC_MEASURED_SOURCES[result.leg],
+    measured_source: measuredSourceFor(result.leg, result.check),
     ...attribution,
     recorded_by: QC_ACCEPT_RECORDER,
   };
@@ -119,7 +131,8 @@ function malformed(record) {
     && FINGERPRINT.test(record.state_fingerprint || "")
     && record.result_at_accept === "warning"
     && validTime(record.measured_at)
-    && record.measured_source === QC_MEASURED_SOURCES[record.leg]
+    && isNonEmptyString(record.measured_source)
+    && record.measured_source === measuredSourceFor(record.leg, record.check)
     && typeof record.reason === "string"
     && typeof record.accepted_by === "string"
     && typeof record.accepted_at === "string"

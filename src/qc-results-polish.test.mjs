@@ -274,7 +274,7 @@ test("F1.0-I20 no Polish capture on the report: handoff coverage lists 1.3 unexe
   const tuples = [...new Set(coverage.map((entry) => JSON.stringify([entry.check, entry.result, entry.reason_code])))].map((text) => JSON.parse(text)).sort();
   assert.deepEqual(
     tuples,
-    [["media.oversize", "unexercised", "leg_not_run"], ["media.weight", "unexercised", "leg_not_run"]],
+    [["media.oversize", "unexercised", "leg_not_run"], ["media.weight", "unexercised", "leg_not_run"], ["readability.contrast", "unexercised", "leg_not_run"]],
     `qc_handoff.coverage lists both 1.3 checks, each unexercised / leg_not_run, and nothing else for Polish: ${JSON.stringify(handoff.coverage)}`,
   );
 });
