@@ -271,8 +271,8 @@ function classifyTarget(value) {
 // persisted in a verdict reads back as itself (readIdentity holds every
 // stored identity to that). The projection is one when, classified again, it
 // is the same class with the same stored value. When it is not (the
-// persisted-verdict projection replaced it whole or cut it, or it is no URL
-// of its class, as a file: URL's "null" origin), the placeholder is stored:
+// persisted-verdict projection replaced it whole or cut it, or it no longer
+// classifies as a URL of its class), the placeholder is stored:
 // it depends only on the scheme and host it names, so it parses back to
 // itself, and it is one when the projection leaves it unchanged. A
 // placeholder longer than the projection's bound is not, and the bounded

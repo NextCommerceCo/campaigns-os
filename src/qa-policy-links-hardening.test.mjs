@@ -691,9 +691,10 @@ const PRODUCED = Object.freeze({
   ],
 });
 
-// Values whose stored form the projection changes: a redacted path keeps the
-// marker, a value the projection replaces whole or leaves as no URL of its
-// class keeps its scheme (and host) with the marker, a long one is cut.
+// Pinned stored forms: a redacted path keeps the marker, a value the
+// projection replaces whole keeps its scheme with the marker, a long one is
+// cut, userinfo is dropped, and an other-scheme URL with an authority and no
+// query or fragment is stored as written.
 const STORED_AS = Object.freeze({
   [`${ORIGIN}/terms%3Fone`]: `${ORIGIN}/terms<query-redacted>`,
   [`${ORIGIN}/x%${"25".repeat(10)}41`]: `${ORIGIN}/<query-redacted>`,
@@ -701,8 +702,8 @@ const STORED_AS = Object.freeze({
   [`${ORIGIN}/${"a".repeat(PROJECTION_BOUND - ORIGIN.length)}`]: `${ORIGIN}/${"a".repeat(PROJECTION_BOUND - ORIGIN.length - 1 - "[truncated]".length)}[truncated]`,
   "mailto:a%2525b@example.test": "mailto:<query-redacted>",
   "mailto:a%3Fb@example.test": "mailto:a<query-redacted>",
-  "file:///terms": "file:<query-redacted>",
-  "foo://host.example.test/terms": "foo:<query-redacted>",
+  "file:///terms": "file:///terms",
+  "foo://host.example.test/terms": "foo://host.example.test/terms",
   "ws://example.test/terms%3Fone": "ws://example.test/terms<query-redacted>",
   "ftp://user@example.test/terms": "ftp://example.test/terms",
 });
