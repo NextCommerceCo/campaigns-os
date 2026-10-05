@@ -9,6 +9,10 @@
 // own world, or replaces or moves the section in the first animation frame
 // after the readiness signal. Every value is synthetic and every host is
 // loopback (127.0.0.1).
+//
+// Other pages replace themselves with a document at the same URL served with
+// 404 or 200, or are served by an installed service worker: the check reads
+// the status of the document it reads, never the one the navigation saw.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test, { after, afterEach } from "node:test";
@@ -152,6 +156,90 @@ const CASES = {
   "/remove-with-n/": removeScript,
 };
 
+// Same-URL replacements. The first request for each path is answered 200
+// with a cookie. /replace-404/ and /replace-200/ stream a head whose script
+// replaces the page with its own URL and never finish, so the navigation's
+// load completes on the replacement, which the server answers (cookie set)
+// with 404 or 200 and a working toggle. /reload-404/ is a complete page that
+// never signals readiness and replaces itself with its own URL once loaded;
+// the replacement is answered 404 with a working toggle.
+const REPLACED = { "/replace-404/": 404, "/replace-200/": 200, "/reload-404/": 404 };
+const REPLACED_COOKIE = "synthetic-replaced=1";
+function replacedPage(request, response, path) {
+  if (String(request.headers.cookie || "").includes(REPLACED_COOKIE)) {
+    response.writeHead(REPLACED[path], { "content-type": "text/html; charset=utf-8" });
+    return response.end(pageHtml(pageScript({ toggle: true })));
+  }
+  response.writeHead(200, { "content-type": "text/html; charset=utf-8", "set-cookie": `${REPLACED_COOKIE}; Path=/` });
+  if (path === "/reload-404/") {
+    return response.end(pageHtml(`addEventListener("load", function () { location.replace(location.href); });`));
+  }
+  response.write(`<!doctype html><html><head><meta charset="utf-8"><script>location.replace(location.href);</script></head><body>`);
+  return undefined;
+}
+
+// A service worker that answers /service-worker/?controlled=1 itself, with
+// status 200 and a working toggle; the server answers that URL 404, so only
+// the worker's document can be read. /service-worker/ registers it and waits
+// until it controls the page.
+const WORKER_SCRIPT = `self.addEventListener("install", function (event) { event.waitUntil(self.skipWaiting()); });
+self.addEventListener("activate", function (event) { event.waitUntil(self.clients.claim()); });
+self.addEventListener("fetch", function (event) {
+  var url = new URL(event.request.url);
+  if (url.pathname !== "/service-worker/" || url.searchParams.get("controlled") !== "1") return;
+  var hidden = url.searchParams.get("${NAME}") === "n" ? " style=\\"display:none\\"" : "";
+  event.respondWith(new Response("<!doctype html><html><head><meta charset=\\"utf-8\\"></head><body data-next-sdk-loading=\\"false\\"><main><section data-next-hide=\\"param.${NAME}\\"" + hidden + "><p>Synthetic worker copy.</p></section></main></body></html>", { status: 200, headers: { "content-type": "text/html" } }));
+});`;
+const WORKER_SETUP_HTML = `<!doctype html><html><head><meta charset="utf-8"></head><body><script>
+  navigator.serviceWorker.register("/sw.js").then(function () { return navigator.serviceWorker.ready; }).then(function () {
+    return new Promise(function (resolve) {
+      if (navigator.serviceWorker.controller) resolve();
+      else navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true });
+    });
+  }).then(function () { document.body.setAttribute("data-worker", "controlling"); });
+</script></body></html>`;
+
+// While `contextSetup` is set, every context the browser opens runs it first
+// and records the status and source of each main-frame document response.
+let contextSetup = null;
+let documentResponses = [];
+async function layerContextSetup() {
+  const { chromium } = await import("playwright");
+  if (chromium.__contentParamsSetup) return;
+  const launch = chromium.launch.bind(chromium);
+  chromium.launch = async (options = {}) => {
+    const browser = await launch(options);
+    const newContext = browser.newContext.bind(browser);
+    browser.newContext = async (...args) => {
+      const context = await newContext(...args);
+      if (!contextSetup) return context;
+      context.on("response", (response) => {
+        const request = response.request();
+        if (request.resourceType() !== "document" || request.frame().parentFrame()) return;
+        documentResponses.push({ path: new URL(response.url()).pathname, status: response.status(), worker: response.fromServiceWorker() });
+      });
+      await contextSetup(context);
+      return context;
+    };
+    return browser;
+  };
+  chromium.__contentParamsSetup = true;
+}
+
+// Registers the worker in a fresh context and waits until it controls a page.
+// A setup that fails is recorded, not thrown, so the browser is still closed.
+let workerSetupFailures = [];
+async function installWorker(context) {
+  try {
+    const setup = await context.newPage();
+    await setup.goto(`${stub.base}/service-worker/`, { waitUntil: "domcontentloaded", timeout: 15_000 });
+    await setup.waitForSelector("body[data-worker=controlling]", { state: "attached", timeout: 15_000 });
+    await setup.close();
+  } catch (error) {
+    workerSetupFailures.push(String(error?.message || error).split("\n")[0]);
+  }
+}
+
 let stub = null;
 async function stubServer() {
   if (stub) return stub;
@@ -161,6 +249,15 @@ async function stubServer() {
     if (redirect && url.searchParams.get(NAME) === "n") {
       response.writeHead(302, { "set-cookie": `${HIDDEN_COOKIE}; Path=/`, location: redirect });
       return response.end();
+    }
+    if (REPLACED[url.pathname]) return replacedPage(request, response, url.pathname);
+    if (url.pathname === "/sw.js") {
+      response.writeHead(200, { "content-type": "application/javascript" });
+      return response.end(WORKER_SCRIPT);
+    }
+    if (url.pathname === "/service-worker/" && !url.searchParams.has("controlled")) {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      return response.end(WORKER_SETUP_HTML);
     }
     const html = PAGES[url.pathname] ?? (CASES[url.pathname] ? pageHtml(CASES[url.pathname]) : null);
     if (!html) {
@@ -290,4 +387,45 @@ browserTest("a data-next-hide=\"param.reviews\" section inside <template> beside
   assert.deepEqual(row.observation.counts, { baseline: 1, param_n: 1 }, "the template's section is not counted");
   assert.deepEqual(row.observation.targets.map((entry) => entry.element_path), ["body>main[0]>section[0]"], "only the live section is a target");
   assert.deepEqual(row.observation.references.map((entry) => entry.element_path), ["body>main[0]>section[0]"], "only the live section is a reference");
+});
+
+// ---------------------------------------------------------------------------
+// The status is the read document's own
+
+browserTest("the page replaces itself, before its load completes, with a same-URL document served with 404 that hides the section with ?reviews=n: unexercised (page_not_served), never pass", T, async () => {
+  const row = await contentRow("/replace-404/");
+  assert.notEqual(row.result, "pass", "a document served with 404 never passes");
+  assertResult(row, NOT_SERVED);
+  assert.deepEqual(row.observation.readiness, { baseline: "page_not_served", param_n: "page_not_served" }, "neither read document was served");
+});
+
+browserTest("the page replaces itself, before its load completes, with a same-URL document served with 200 that hides the section with ?reviews=n: pass", T, async () => {
+  const row = await contentRow("/replace-200/");
+  assertResult(row, { result: "pass", reasonCode: null, acceptEligible: false, members: { [KEY]: ["pass", null] } });
+});
+
+browserTest("the page replaces itself once loaded with a same-URL document served with 404 that hides the section with ?reviews=n: never pass", T, async () => {
+  const row = await contentRow("/reload-404/");
+  assert.notEqual(row.result, "pass", "a document served with 404 never passes");
+  assert.equal(row.result, "unexercised", "neither load read a served document in a ready state");
+  assert.ok(["page_not_served", "readiness_timeout"].includes(row.reason_code), `${row.reason_code} is a load outcome`);
+});
+
+browserTest("the page is served by an installed service worker with status 200 and hides the section with ?reviews=n: pass", T, async () => {
+  await installBrowserGuard();
+  await layerContextSetup();
+  await stubServer();
+  contextSetup = installWorker;
+  documentResponses = [];
+  workerSetupFailures = [];
+  try {
+    const row = await contentRow("/service-worker/?controlled=1");
+    assert.deepEqual(workerSetupFailures, [], "the worker controlled a page in every context");
+    assertResult(row, { result: "pass", reasonCode: null, acceptEligible: false, members: { [KEY]: ["pass", null] } });
+    const loads = documentResponses.filter((entry) => entry.path === "/service-worker/" && entry.worker);
+    assert.ok(loads.length >= 2, "both loads were answered by the worker");
+    assert.ok(loads.every((entry) => entry.status === 200), "with status 200");
+  } finally {
+    contextSetup = null;
+  }
 });

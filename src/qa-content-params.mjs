@@ -40,7 +40,7 @@
 // the page's own world.
 import { createHash } from "node:crypto";
 
-import { DEADLINE_TIMEOUT_ERROR_CODE, runWithDeadline } from "./deadline.mjs";
+import { runWithDeadline } from "./deadline.mjs";
 import { aggregateQcResults, buildQcResult, toQaAssertion } from "./qc-results.mjs";
 
 export const CONTENT_PARAM_CHECK = "content_param";
@@ -56,9 +56,8 @@ export const CONTENT_PARAM_LIMITS = Object.freeze({
   readinessMs: 8_000,
   budgetMs: 60_000,
 });
-// After the budget cuts a pair, its open contexts are closed; waiting for the
-// cut loads to settle is bounded by this.
-const CUT_SETTLE_MS = 5_000;
+// What the leg's budget timer settles with when it fires.
+const BUDGET_CUT = Symbol("budget cut");
 
 const READINESS = Object.freeze(["ready", "readiness_timeout", "navigation_failed", "page_not_served"]);
 const VARIANTS = Object.freeze(["baseline", "param_n"]);
@@ -74,29 +73,19 @@ const ABSENT = Object.freeze({ present: false, visible: false, stable: false });
 const isPlainObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const isNonEmptyString = (value) => typeof value === "string" && value.trim() !== "";
 const isCount = (value) => Number.isSafeInteger(value) && value >= 0;
-const escapeRegExp = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export const expressionHash = (text) => `sha256:${createHash("sha256").update(String(text)).digest("hex")}`;
 
 // ---------------------------------------------------------------------------
 // Declared pairs
 
-// The declared parameter names, trimmed, in spec order, each once.
-function declaredParams(spec) {
-  const content = spec?.analytics?.params?.content;
-  const params = [];
-  for (const entry of Array.isArray(content) ? content : []) {
-    const name = typeof entry?.name === "string" ? entry.name.trim() : "";
-    if (!name || params.some((param) => param.name === name)) continue;
-    params.push({ name, pages: Array.isArray(entry.pages) ? entry.pages.map(String) : null });
-  }
-  return params;
-}
-
-// Every (param, page) pair to check, in declared param order, then topology
-// page order. A param applies to the pages its `pages` lists, or to every page
-// when `pages` is absent (the doctor's static content-param check reads the
-// spec the same way).
+// Every (param, page) pair to check, one per distinct (name, page), in
+// declaration order: each analytics.params.content entry in turn (its name
+// trimmed), then the pages its `pages` lists, or every page of the run's
+// topologies when `pages` is absent. The doctor's static content-param check
+// reads every entry the same way, so a name declared twice covers the pages
+// of both entries. A listed page id that is not one of the run's pages still
+// gets its pair, with no URL: it reads navigation_failed, never silence.
 export function contentParamPairs(spec, topologies) {
   const pages = [];
   for (const topology of Array.isArray(topologies) ? topologies : []) {
@@ -106,11 +95,18 @@ export function contentParamPairs(spec, topologies) {
       pages.push({ id, url: page.url || null });
     }
   }
+  const content = spec?.analytics?.params?.content;
   const pairs = [];
-  for (const param of declaredParams(spec)) {
-    for (const page of pages) {
-      if (param.pages && !param.pages.includes(page.id)) continue;
-      pairs.push({ param: param.name, page: page.id, url: page.url });
+  const seen = new Set();
+  for (const entry of Array.isArray(content) ? content : []) {
+    const name = typeof entry?.name === "string" ? entry.name.trim() : "";
+    if (!name) continue;
+    const ids = Array.isArray(entry.pages) ? entry.pages.map(String) : pages.map((page) => page.id);
+    for (const id of ids) {
+      const key = JSON.stringify([name, id]);
+      if (!id || seen.has(key)) continue;
+      seen.add(key);
+      pairs.push({ param: name, page: id, url: pages.find((page) => page.id === id)?.url ?? null });
     }
   }
   return pairs;
@@ -119,17 +115,127 @@ export function contentParamPairs(spec, topologies) {
 // ---------------------------------------------------------------------------
 // Expression classifier
 
-const LITERAL = String.raw`(?:'([^'"=!<>&|()]*)'|"([^'"=!<>&|()]*)"|([A-Za-z_][\w-]*))`;
-const literalValue = (match, from) => match[from] ?? match[from + 1] ?? match[from + 2];
-// An unquoted literal the SDK parses as a boolean or number is not a string
-// comparison.
-const bareNonString = (match, from) => match[from + 2] !== undefined && ["true", "false"].includes(match[from + 2]);
+// The reference scan and the classifier read an expression through one
+// tokenizer, so every expression the classifier can classify for a param is
+// one the scan lists. Tokens: identifiers (`[A-Za-z_][\w-]*`; the declared
+// name is one token wherever an identifier could start, whatever characters
+// it holds), quoted strings ('…', "…" or `…`, to the matching quote or the
+// end), the operators ===, !==, ==, !=, >=, <=, && and ||, and any other
+// character on its own. Whitespace (newlines and tabs included) separates
+// tokens; each token keeps its offsets, so a form can require two tokens to
+// touch.
+const IDENT_CHAR = /[\w-]/;
+const IDENT = /[A-Za-z_][\w-]*/y;
+const OPERATORS = Object.freeze(["===", "!==", "==", "!=", ">=", "<=", "&&", "||"]);
 
-// Whether `expression` refers to the param `name`: `param.<name>` /
-// `params.<name>`, or a param function naming it (`param.has('<name>')`).
+function tokenize(expression, name) {
+  const text = String(expression ?? "");
+  const tokens = [];
+  let at = 0;
+  while (at < text.length) {
+    const char = text[at];
+    if (/\s/.test(char)) {
+      at += 1;
+      continue;
+    }
+    const start = at;
+    if (char === "'" || char === '"' || char === "`") {
+      const close = text.indexOf(char, at + 1);
+      const end = close === -1 ? text.length : close + 1;
+      tokens.push({ type: "string", quote: char, value: text.slice(at + 1, close === -1 ? end : close), closed: close !== -1, start, end });
+      at = end;
+      continue;
+    }
+    const identStart = at === 0 || !IDENT_CHAR.test(text[at - 1]);
+    if (name && identStart && text.startsWith(name, at) && !IDENT_CHAR.test(text[at + name.length] ?? "")) {
+      at += name.length;
+      tokens.push({ type: "ident", value: name, name: true, start, end: at });
+      continue;
+    }
+    IDENT.lastIndex = at;
+    const ident = IDENT.exec(text);
+    if (ident) {
+      at += ident[0].length;
+      tokens.push({ type: "ident", value: ident[0], name: false, start, end: at });
+      continue;
+    }
+    const operator = OPERATORS.find((candidate) => text.startsWith(candidate, at));
+    at += operator ? operator.length : 1;
+    tokens.push({ type: operator ? "operator" : "punct", value: operator ?? char, start, end: at });
+  }
+  return tokens;
+}
+
+const isRoot = (token) => token?.type === "ident" && (token.value === "param" || token.value === "params");
+const isPunct = (token, value) => token?.type === "punct" && token.value === value;
+const touching = (tokens, from, to) => tokens.slice(from, to).every((token, index) => token.end === tokens[from + index + 1].start);
+// A backslash, a backquote, a bracket or a comment marker: no supported form
+// holds one, wherever it stands.
+const UNRECOGNISED_CHARS = /[\\`[]|\/\*|\*\/|\/\//;
+
+// The supported form `expression` is for the param `name`, or null when it is
+// not wholly one of them naming exactly `name`.
+function recognisedForm(expression, name) {
+  const text = String(expression ?? "");
+  return UNRECOGNISED_CHARS.test(text) ? null : supportedForm(tokenize(text, name), name);
+}
+
+// Whether `expression` is wholly a supported form naming one param other
+// than `name`. The candidates are its identifiers and quoted strings.
+function namesOtherParam(expression, name) {
+  const candidates = new Set(tokenize(expression).filter((token) => token.type === "ident" || token.type === "string").map((token) => token.value));
+  candidates.delete(name);
+  return [...candidates].some((other) => other !== "" && recognisedForm(expression, other) !== null);
+}
+
+// Whether `expression` refers to the param `name`, by a closed list. It is a
+// target expression only when the classifier wholly recognises it as a
+// supported form naming exactly `name`. It is irrelevant to `name` only when
+// it is wholly a supported form naming another param, or holds no `param`
+// at all (any case, anywhere). Every other expression holding `param` (in a
+// string, a comment, an escape or a template literal included) refers to
+// every declared param and classifies as unsupported: a review member.
 export function referencesParam(expression, name) {
-  const escaped = escapeRegExp(name);
-  return new RegExp(String.raw`(?:^|[^\w.])params?\.(?:${escaped}(?![\w-])|\w+\(\s*(['"]?)${escaped}\1\s*[,)])`).test(String(expression ?? ""));
+  const text = String(expression ?? "");
+  if (recognisedForm(text, name)) return true;
+  return /param/i.test(text) && !namesOtherParam(text, name);
+}
+
+// A string literal the parser reads as one value: single or double quotes,
+// none of the characters it splits conditions on. An unquoted literal is an
+// identifier, except the booleans, which are no string comparison.
+function literalOf(token) {
+  if (token?.type === "string") return token.closed && token.quote !== "`" && !/['"=!<>&|()]/.test(token.value) ? token.value : null;
+  if (token?.type === "ident" && /^[A-Za-z_][\w-]*$/.test(token.value) && !["true", "false"].includes(token.value)) return token.value;
+  return null;
+}
+// The param's name as a function argument: bare, or in single or double
+// quotes.
+const namesParam = (token, name) => (token?.type === "ident" && token.name)
+  || (token?.type === "string" && token.closed && token.quote !== "`" && token.value === name);
+
+// The form of one expression's tokens and the condition it reads with
+// `?<name>=n`, or null when it is not a supported form. `param.<name>` and
+// `param.<fn>(` are written without spaces; whitespace elsewhere is free.
+function supportedForm(tokens, name) {
+  const member = tokens.length >= 3 && isRoot(tokens[0]) && isPunct(tokens[1], ".") && tokens[2].type === "ident" && tokens[2].name && touching(tokens, 0, 2);
+  if (member && tokens.length === 3) return { form: "presence", condition: true };
+  if (member && tokens.length === 5 && tokens[3].type === "operator") {
+    const literal = literalOf(tokens[4]);
+    if (literal === null) return null;
+    if (tokens[3].value === "==" || tokens[3].value === "===") return { form: "equals", condition: literal === PARAM_VALUE };
+    if (tokens[3].value === "!=") return { form: "not_equals", condition: literal !== PARAM_VALUE };
+    return null;
+  }
+  const call = tokens.length >= 6 && isRoot(tokens[0]) && isPunct(tokens[1], ".") && tokens[2].type === "ident" && isPunct(tokens[3], "(")
+    && touching(tokens, 0, 3) && namesParam(tokens[4], name) && isPunct(tokens.at(-1), ")");
+  if (!call) return null;
+  if (tokens.length === 6 && ["has", "exists"].includes(tokens[2].value)) return { form: "has", condition: true };
+  if (tokens.length === 8 && ["is", "equals"].includes(tokens[2].value) && isPunct(tokens[5], ",")) {
+    const literal = literalOf(tokens[6]);
+    return literal === null ? null : { form: "is", condition: literal === PARAM_VALUE };
+  }
+  return null;
 }
 
 // The form of one expression that refers to the param, and what it predicts
@@ -139,35 +245,14 @@ export function referencesParam(expression, name) {
 // condition that also reads the cart) is `unsupported` with an `unknown`
 // prediction.
 export function classifyExpression(attr, expression, name) {
-  const text = String(expression ?? "").trim();
-  const unsupported = { form: "unsupported", prediction: "unknown", mixed_cart: /(?:^|[^\w.])cart\./.test(text) };
-  const escaped = escapeRegExp(name);
-  const param = String.raw`params?\.${escaped}`;
-  const quotedName = String.raw`(?:'${escaped}'|"${escaped}"|${escaped})`;
-  let condition = null;
-  let form = null;
-  let match;
-  if (new RegExp(`^${param}$`).test(text)) {
-    form = "presence";
-    condition = true;
-  } else if ((match = new RegExp(String.raw`^${param}\s*(===|==)\s*${LITERAL}$`).exec(text)) && !bareNonString(match, 2)) {
-    form = "equals";
-    condition = literalValue(match, 2) === PARAM_VALUE;
-  } else if ((match = new RegExp(String.raw`^${param}\s*!=\s*${LITERAL}$`).exec(text)) && !bareNonString(match, 1)) {
-    form = "not_equals";
-    condition = literalValue(match, 1) !== PARAM_VALUE;
-  } else if (new RegExp(String.raw`^params?\.(?:has|exists)\(\s*${quotedName}\s*\)$`).test(text)) {
-    form = "has";
-    condition = true;
-  } else if ((match = new RegExp(String.raw`^params?\.(?:is|equals)\(\s*${quotedName}\s*,\s*${LITERAL}\s*\)$`).exec(text)) && !bareNonString(match, 1)) {
-    form = "is";
-    condition = literalValue(match, 1) === PARAM_VALUE;
-  }
-  if (!form || unsupported.mixed_cart) return unsupported;
+  // Any `cart.` in the text, quoted or not, reads as a cart condition.
+  const mixedCart = /(?:^|[^\w.])cart\./.test(String(expression ?? ""));
+  const supported = recognisedForm(expression, name);
+  if (!supported || mixedCart) return { form: "unsupported", prediction: "unknown", mixed_cart: mixedCart };
   // data-next-hide hides when its condition holds; data-next-show hides when
   // its condition fails.
-  const hidden = attr === "hide" ? condition : !condition;
-  return { form, prediction: hidden ? "hidden" : "visible", mixed_cart: false };
+  const hidden = attr === "hide" ? supported.condition : !supported.condition;
+  return { form: supported.form, prediction: hidden ? "hidden" : "visible", mixed_cart: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -434,13 +519,18 @@ export function contentParamNotRequestedRows(spec, topologies, { measuredAt = ne
 // attribute values, and visible per the contract's rule.
 //
 // Every reading carries the URL its document was loaded at (after any
-// redirect), taken at document start. The driver uses a reading only when that
-// URL has the requested origin and path and, with `?<name>=n`, carries
-// `<name>=n` exactly once (the baseline: no `<name>`). A redirect that drops
-// the parameter or lands on another path, or a page that replaces itself with
-// another document before it is read, is not the page that was asked for: the
-// load reads page_not_served (the requested page got no response of its own).
-// The URL is compared in memory and never stored.
+// redirect) and the status of the response that document was served with
+// (its navigation timing entry's responseStatus, the status a service worker
+// answered with included), both taken at document start in the world of the
+// document that is read. The driver uses a reading only when that URL has the
+// requested origin and path and, with `?<name>=n`, carries `<name>=n` exactly
+// once (the baseline: no `<name>`), and that status is known and below 400. A
+// redirect that drops the parameter or lands on another path, a page that
+// replaces itself with another document before it is read (the same URL
+// included: the replacement reports its own status, never the one `goto`
+// saw), or a document served with an error status, no status or status 0 is
+// not the page that was asked for: the load reads page_not_served. The URL and
+// status are compared in memory and never stored.
 //
 // The world's script carries its own copy of the element path rule: "body",
 // then ">tag[index]" per step, index 0-based among same-tag element siblings
@@ -453,6 +543,7 @@ const READ_MARGIN_MS = 1_000;
 
 function installReader(key) {
   const url = location.href;
+  const status = performance.getEntriesByType("navigation")[0]?.responseStatus ?? null;
   const pathOf = (element) => {
     const steps = [];
     let node = element;
@@ -506,12 +597,12 @@ function installReader(key) {
   Object.defineProperty(globalThis, key, {
     value: Object.freeze({
       // The reading, or { ready: false } when the signal has not appeared
-      // within `timeoutMs`; either way with the document's URL.
+      // within `timeoutMs`; either way with the document's URL and status.
       read: (timeoutMs) => new Promise((resolve) => {
-        const timer = setTimeout(() => resolve({ url, ready: false, elements: [] }), timeoutMs);
+        const timer = setTimeout(() => resolve({ url, status, ready: false, elements: [] }), timeoutMs);
         reading.then((elements) => {
           clearTimeout(timer);
-          resolve({ url, ready: true, elements });
+          resolve({ url, status, ready: true, elements });
         });
       }),
     }),
@@ -586,14 +677,27 @@ function servesRequested(documentUrl, requestedUrl, name, variant) {
   }
 }
 
+// Whether the read document's own response status says it was served.
+const servedStatus = (status) => Number.isInteger(status) && status > 0 && status < 400;
+
 const withinDeadline = (operation, timeoutMs) => runWithDeadline(operation, { timeoutMs });
 
-// Whether the budget has ended for this pair: cut by the budget timer, or the
-// clock already at or past the deadline (a late timer is no evidence of time
-// left). There is time left only while the clock reads before the deadline.
+// Whether the leg's budget has ended: cut by the budget timer, or the clock
+// already at or past the deadline (a late timer is no evidence of time left).
+// There is time left only while the clock reads before the deadline.
 function lapsed(run) {
   if (!run.cancelled && run.now() >= run.deadline) run.cancelled = true;
   return run.cancelled;
+}
+
+// Closes a context without waiting on it beyond the returned promise, which
+// never rejects.
+function closeQuietly(context) {
+  try {
+    return Promise.resolve(context.close()).catch(() => {});
+  } catch {
+    return Promise.resolve();
+  }
 }
 
 // One load in a fresh context. Never throws: every failure is a readiness
@@ -613,25 +717,26 @@ async function loadVariant(url, name, variant, run) {
     if (lapsed(run)) return { readiness: null };
     let response = null;
     try {
-      response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: CONTENT_PARAM_LIMITS.navigationMs });
+      response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: run.limits.navigationMs });
     } catch {
       return { readiness: lapsed(run) ? null : "navigation_failed" };
     }
     if (lapsed(run)) return { readiness: null };
     const status = response?.status?.() ?? null;
     if (!response || !Number.isFinite(status) || status >= 400) return { readiness: "page_not_served" };
-    // A reading from a document other than the one requested is no reading
-    // of the requested page. A page that does not signal readiness in time,
+    // A reading from a document other than the one requested, or from a
+    // document whose own response was not served, is no reading of the
+    // requested page. A page that does not signal readiness in time,
     // navigates away or stalls before it can be read, or returns an
     // incomplete reading did not reach a readable ready state.
     let reading = null;
     try {
-      reading = await withinDeadline(() => readDocument(session, CONTENT_PARAM_LIMITS.readinessMs), CONTENT_PARAM_LIMITS.readinessMs + READ_MARGIN_MS);
+      reading = await withinDeadline(() => readDocument(session, run.limits.readinessMs), run.limits.readinessMs + READ_MARGIN_MS);
     } catch {
       reading = null;
     }
     if (lapsed(run)) return { readiness: null };
-    if (isPlainObject(reading) && !servesRequested(reading.url, url, name, variant)) return { readiness: "page_not_served" };
+    if (isPlainObject(reading) && (!servesRequested(reading.url, url, name, variant) || !servedStatus(reading.status))) return { readiness: "page_not_served" };
     const elements = readElements(reading);
     if (!elements) return { readiness: "readiness_timeout" };
     const references = contextReferences(elements, name);
@@ -646,7 +751,7 @@ async function loadVariant(url, name, variant, run) {
   } finally {
     if (context) {
       run.open.delete(context);
-      await context.close().catch(() => {});
+      await closeQuietly(context);
     }
   }
 }
@@ -700,62 +805,79 @@ function pairObservation(pair, baseline, paramN) {
 // Both loads of one pair inside what is left of the leg's budget. A pair the
 // budget cuts (whether or not a load had started) reads budget_exhausted, and
 // so does a pair that completes at or past the deadline, whatever its readings
-// say. A pair starts only while the clock reads before the deadline.
-async function runPair(pair, { newContext, withQueryParam, deadline, now }) {
-  const remaining = deadline - now();
-  if (!(remaining > 0)) return null;
-  const run = { newContext, open: new Set(), cancelled: false, deadline, now };
-  const closeOpen = () => Promise.all([...run.open].map((context) => context.close().catch(() => {})));
+// say. A pair starts only while the clock reads before the deadline. The pair
+// races `timeUp`, the leg's budget timer: once it fires the pair is left as it
+// is, never awaited further.
+async function runPair(pair, run, { withQueryParam, timeUp }) {
+  if (lapsed(run)) return null;
   const work = (async () => {
     const baseline = await loadVariant(pair.url ? baselineUrl(pair.url, pair.param) : null, pair.param, "baseline", run);
     const paramN = await loadVariant(pair.url ? withQueryParam(baselineUrl(pair.url, pair.param), pair.param, PARAM_VALUE) : null, pair.param, "param_n", run);
     return { baseline, paramN };
   })();
-  try {
-    const { baseline, paramN } = await runWithDeadline(() => work, {
-      timeoutMs: remaining,
-      onTimeout: () => {
-        run.cancelled = true;
-        return closeOpen();
-      },
-    });
-    if (lapsed(run) || baseline.readiness === null || paramN.readiness === null) return null;
-    // An observation the rules cannot read (its counts, targets and
-    // references do not reconcile) is no reading of a ready state, so it is
-    // kept as readiness_timeout in both contexts rather than dropped.
-    const observation = pairObservation(pair, baseline, paramN);
-    if (rederiveQcResult(observation)) return observation;
-    return { ...observation, readiness: { baseline: "readiness_timeout", param_n: "readiness_timeout" }, references: [], targets: [], counts: { baseline: null, param_n: null } };
-  } catch (error) {
-    run.cancelled = true;
-    await closeOpen();
-    await runWithDeadline(() => work.catch(() => null), { timeoutMs: CUT_SETTLE_MS }).catch(() => null);
-    if (error?.code === DEADLINE_TIMEOUT_ERROR_CODE) return null;
-    throw error;
-  }
+  work.catch(() => {});
+  const outcome = await Promise.race([work, timeUp]);
+  if (outcome === BUDGET_CUT || lapsed(run)) return null;
+  const { baseline, paramN } = outcome;
+  if (baseline.readiness === null || paramN.readiness === null) return null;
+  // An observation the rules cannot read (its counts, targets and
+  // references do not reconcile) is no reading of a ready state, so it is
+  // kept as readiness_timeout in both contexts rather than dropped.
+  const observation = pairObservation(pair, baseline, paramN);
+  if (rederiveQcResult(observation)) return observation;
+  return { ...observation, readiness: { baseline: "readiness_timeout", param_n: "readiness_timeout" }, references: [], targets: [], counts: { baseline: null, param_n: null } };
+}
+
+// The limits a run uses: each field of `limits` that is a positive number
+// (maxPairs: zero or more), else CONTENT_PARAM_LIMITS' field.
+function runLimits(limits) {
+  return Object.fromEntries(Object.entries(CONTENT_PARAM_LIMITS).map(([field, fallback]) => {
+    const value = isPlainObject(limits) ? limits[field] : undefined;
+    const usable = Number.isFinite(value) && (field === "maxPairs" ? value >= 0 : value > 0);
+    return [field, usable ? value : fallback];
+  }));
 }
 
 // The content parameter leg of `qa run --browser`, run after the page checks.
 // `newContext()` opens a fresh browser context with the page checks' options;
 // `withQueryParam(url, key, value)` builds the variant URL. Returns the rows
 // and their verdict assertions.
+//
+// The leg returns within its budget, cleanup included: one timer, armed for
+// budgetMs when the leg starts, cuts the pair in progress. At the cut the open
+// contexts are told to close and the leg returns at once; neither those closes
+// nor the cut loads are awaited (their errors are swallowed). A load's own
+// close, when it completes in time, is part of its pair's work.
 export async function runContentParamChecks({ topologies, spec, newContext, withQueryParam, now = () => Date.now(), limits = CONTENT_PARAM_LIMITS, measuredAt = null } = {}) {
   const pairs = contentParamPairs(spec, topologies);
   if (!pairs.length) return { rows: [], assertions: [] };
-  const deadline = now() + limits.budgetMs;
+  const bounds = runLimits(limits);
+  const run = { newContext, open: new Set(), cancelled: false, deadline: now() + bounds.budgetMs, now, limits: bounds };
+  let timer = null;
+  const timeUp = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      run.cancelled = true;
+      for (const context of run.open) closeQuietly(context);
+      resolve(BUDGET_CUT);
+    }, bounds.budgetMs);
+  });
   const observations = [];
-  for (const [index, pair] of pairs.entries()) {
-    let observation = null;
-    if (index < limits.maxPairs) {
-      // Loads never throw (every failure is a readiness outcome); anything
-      // else leaves the pair unmeasured, which is never a pass.
-      try {
-        observation = await runPair(pair, { newContext, withQueryParam, deadline, now });
-      } catch {
-        observation = null;
+  try {
+    for (const [index, pair] of pairs.entries()) {
+      let observation = null;
+      if (index < bounds.maxPairs) {
+        // Loads never throw (every failure is a readiness outcome); anything
+        // else leaves the pair unmeasured, which is never a pass.
+        try {
+          observation = await runPair(pair, run, { withQueryParam, timeUp });
+        } catch {
+          observation = null;
+        }
       }
+      observations.push(observation ?? unloadedObservation(pair, BUDGET_EXHAUSTED));
     }
-    observations.push(observation ?? unloadedObservation(pair, BUDGET_EXHAUSTED));
+  } finally {
+    clearTimeout(timer);
   }
   const capped = new Set(observations.filter((observation) => observation.limit === BUDGET_EXHAUSTED).map((observation) => observation.page));
   const at = measuredAt ?? new Date().toISOString();
