@@ -4,15 +4,14 @@
 // gate, price or commerce decision reads it.
 //
 // Every displayed brief value carries the marker its `_meta.field_sources`
-// entry proves, and nothing stronger: an entry counts only when its kind is
-// one of the three recorded kinds and its fingerprint matches the current
-// value. Values are rendered as quoted data and never interpreted.
+// entry proves, and nothing stronger: an entry counts only when build-brief's
+// fieldSourceEntryMatches accepts it (exactly {kind, value_fingerprint}, a
+// recorded kind, and the fingerprint of the current value). Values are
+// rendered as quoted data and never interpreted.
 //
 // Pure: equal inputs give byte-identical output. No file, clock or
 // environment access.
-import { createHash } from "node:crypto";
-
-import { SUMMARY_FIELDS } from "./build-brief.mjs";
+import { fieldSourceEntryMatches, SUMMARY_FIELDS } from "./build-brief.mjs";
 import { canonicalJson } from "./polish-capture.mjs";
 
 export const SUMMARY_WORD_LIMIT = 150;
@@ -25,7 +24,6 @@ const COMMERCE_TEXT = "products, prices and offers come from CampaignSpec/API va
 const [AUDIENCE, CONVERSION_GOAL, TONE, PALETTE_SOURCE, PRIMARY_ACCENT, CTA_STYLE, AVOID, PAGE_SOURCE, BLOCK_PLACEHOLDERS] = SUMMARY_FIELDS;
 const pageSourceField = (pageId) => PAGE_SOURCE.replace("<page>", pageId);
 
-const STAMPED_KINDS = new Set(["stated", "source", "default"]);
 const NOT_RECORDED = "not_recorded";
 const MARKERS = Object.freeze({ stated: "[stated]", source: "[from source]", default: "[default]", [NOT_RECORDED]: "[source not recorded]" });
 // Weakest first: a value whose origin was not recorded claims the least.
@@ -43,14 +41,13 @@ const LIST_CUT_LINES = Object.freeze([7, 4, 3]);
 const isPlainObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const own = (object, key) => (isPlainObject(object) && Object.hasOwn(object, key) ? object[key] : undefined);
 const valueAt = (brief, path) => path.split(".").reduce((value, key) => own(value, key), brief);
-const valueFingerprint = (value) => `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 const singleLine = (text) => text.replace(/\r\n|[\n\r\u2028\u2029]/g, " ");
 
 // stated | source | default | not_recorded, or null for an absent value.
 function provenanceOf(brief, field, value) {
   if (value == null) return null;
   const entry = own(own(own(brief, "_meta"), "field_sources"), field);
-  if (!isPlainObject(entry) || !STAMPED_KINDS.has(entry.kind) || entry.value_fingerprint !== valueFingerprint(value)) return NOT_RECORDED;
+  if (!fieldSourceEntryMatches(entry, value)) return NOT_RECORDED;
   return entry.kind;
 }
 

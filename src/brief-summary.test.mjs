@@ -6,9 +6,6 @@
 // No network. qc-test-factories installs its guard when it is imported, before
 // any module under test loads; every module under test is imported dynamically
 // below or inside a test, and assertNoNetworkAttempts runs after every test.
-//
-// Rows whose setup needs stream A's provenance stamping carry the node:test
-// `todo` option "closes after A" until stream C rebases onto A's merge.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -23,8 +20,6 @@ after(assertNoNetworkAttempts);
 
 const { canonicalJson } = await import("./polish-capture.mjs");
 const { createCampaignBuildBriefArtifact } = await import("./build-brief.mjs");
-
-const CLOSES_AFTER_A = { todo: "closes after A" };
 
 // The module the contract adds (2.3 Code plan). Loaded inside each test, so
 // every row fails on its own while the module does not exist.
@@ -244,7 +239,7 @@ test("F2.3-W7 20 two-word avoid items and 12 template pages stay within 150 word
 // ---------------------------------------------------------------------------
 // Broken rows
 
-test("F2.3-B1 a guided draft's hard-coded tone carries the [default] marker", CLOSES_AFTER_A, async () => {
+test("F2.3-B1 a guided draft's hard-coded tone carries the [default] marker", async () => {
   await summaryModule();
   const draft = guidedDraft();
   assert.equal(draft.campaign_intent.tone, "clear, practical, benefit-led", "setup: the draft's tone is the hard-coded default");
@@ -252,7 +247,7 @@ test("F2.3-B1 a guided draft's hard-coded tone carries the [default] marker", CL
   assert.equal(summaryLine(summary, 6), 'Tone: "clear, practical, benefit-led" [default].');
 });
 
-test("F2.3-B2 a hand-written file stating the default tone carries the [stated] marker", CLOSES_AFTER_A, async (t) => {
+test("F2.3-B2 a hand-written file stating the default tone carries the [stated] marker", async (t) => {
   await summaryModule();
   // No previous normalized brief: none is passed to the normalization.
   const brief = normalizeFile(writeBriefFile(t, { campaign_intent: { tone: "clear, practical, benefit-led" } }));
@@ -300,7 +295,7 @@ test("F2.3-B8 an audience hand-edited after its stamp carries the [source not re
   assert.equal(summaryLine(summary, 2), 'Audience: "returning buyers of a refill pack" [source not recorded].');
 });
 
-test("F2.3-B9 a guided draft with two mapped pages marks line 4 [default]", CLOSES_AFTER_A, async () => {
+test("F2.3-B9 a guided draft with two mapped pages marks line 4 [default]", async () => {
   await summaryModule();
   const draft = guidedDraft({ pageMappings: [{ page_id: "landing", path: "landing.html" }, { page_id: "checkout", path: "checkout.html" }] });
   assert.deepEqual(
@@ -315,7 +310,7 @@ test("F2.3-B9 a guided draft with two mapped pages marks line 4 [default]", CLOS
   assert.ok(line.includes("follow the template [default]"), line);
 });
 
-test("F2.3-B11 a guided draft's page-type conversion goal reads Purpose: not stated.", CLOSES_AFTER_A, async () => {
+test("F2.3-B11 a guided draft's page-type conversion goal reads Purpose: not stated.", async () => {
   await summaryModule();
   const draft = guidedDraft();
   const goal = draft.campaign_intent.conversion_goal;
@@ -325,7 +320,7 @@ test("F2.3-B11 a guided draft's page-type conversion goal reads Purpose: not sta
   assert.equal(summaryLine(summary, 1), "Purpose: not stated.");
 });
 
-test("F2.3-B12 a guided draft with an active page landing reads palette source not stated", CLOSES_AFTER_A, async () => {
+test("F2.3-B12 a guided draft with an active page landing reads palette source not stated", async () => {
   await summaryModule();
   const draft = guidedDraft();
   assert.ok(EXAMPLE_PAGE_IDS.includes("landing"), "setup: an active page id is landing");
@@ -409,7 +404,7 @@ test("F2.3-I9 an otherwise available brief with one active page lacking a design
   assert.equal(summary.status, "partial");
 });
 
-test("F2.3-I10 a normalized brief file that is not valid JSON reads intent_summary.status unavailable", CLOSES_AFTER_A, async (t) => {
+test("F2.3-I10 a normalized brief file that is not valid JSON reads intent_summary.status unavailable", async (t) => {
   await summaryModule();
   const fixture = campaignFixture({ setupCompleted: true });
   t.after(fixture.cleanup);

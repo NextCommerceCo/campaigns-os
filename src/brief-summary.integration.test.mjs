@@ -8,9 +8,6 @@
 // asserts no attempt, and assertNoNetworkAttempts runs after every test. The
 // one fresh-process row (W1, and W12 as W1) runs the CLI as a child with a
 // preloaded guard and asserts the child reported no attempt.
-//
-// Rows whose setup needs stream A (`record brief`, or provenance stamps) carry
-// the node:test `todo` option "closes after A" until stream C rebases onto A.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
@@ -24,7 +21,6 @@ afterEach(assertNoNetworkAttempts);
 after(assertNoNetworkAttempts);
 
 const CLI = join(ROOT, "bin/campaigns-os.mjs");
-const CLOSES_AFTER_A = { todo: "closes after A" };
 const AUDIENCE = "first-time buyers of a starter bundle";
 const EXAMPLE_SPEC = readJson(join(ROOT, "examples/campaignspec.v42.basic.json"));
 const EXAMPLE_PAGE_IDS = EXAMPLE_SPEC.funnels.flatMap((funnel) => funnel.pages).map((page) => page.id);
@@ -209,7 +205,7 @@ test("F2.3-W2 each stage prompt starts with the Campaign intent header line foll
   }
 });
 
-test("F2.3-W6 a record brief changing only brand.cta_style changes only summary line 5", CLOSES_AFTER_A, async (t) => {
+test("F2.3-W6 a record brief changing only brand.cta_style changes only summary line 5", async (t) => {
   const f = await intake(t);
   intentSummaryOf((await next(f)).json);
   const first = await saveBriefFile(f, (file) => { file.brand.cta_style = "solid pill"; });
@@ -234,7 +230,7 @@ test("F2.3-W8 a guided brief with audience:null gives no doctor error coded buil
   assert.deepEqual(doctor.json.errors.filter((issue) => String(issue.code).startsWith("build_brief.")).map((issue) => issue.code), []);
 });
 
-test("F2.3-W9 a fully stated prepared brief reads available when next is done", CLOSES_AFTER_A, async (t) => {
+test("F2.3-W9 a fully stated prepared brief reads available when next is done", async (t) => {
   const f = await intake(t, { briefFile: preparedBriefFile() });
   scaffold(f);
   setStages(f, { setup: "completed", assembly: "skipped", polish: "skipped", deploy: "completed", qa: "skipped" });
@@ -244,7 +240,7 @@ test("F2.3-W9 a fully stated prepared brief reads available when next is done", 
   assert.equal(intentSummaryOf(res.json).status, "available");
 });
 
-test("F2.3-W10 a fully stated prepared brief reads available on next deploy", CLOSES_AFTER_A, async (t) => {
+test("F2.3-W10 a fully stated prepared brief reads available on next deploy", async (t) => {
   const f = await intake(t, { briefFile: preparedBriefFile() });
   const res = await next(f, "deploy");
   assert.equal(res.json.stage, "deploy", "setup: next answered the deploy stage");
@@ -252,7 +248,7 @@ test("F2.3-W10 a fully stated prepared brief reads available on next deploy", CL
   assert.equal(intentSummaryOf(res.json).status, "available");
 });
 
-test("F2.3-W11 a fully stated prepared brief reads available when next is doctor-blocked", CLOSES_AFTER_A, async (t) => {
+test("F2.3-W11 a fully stated prepared brief reads available when next is doctor-blocked", async (t) => {
   const f = await intake(t, { briefFile: preparedBriefFile() });
   // Setup recorded without its scaffold: doctor reports the missing _data entry.
   setStages(f, { setup: "completed" });
@@ -262,7 +258,7 @@ test("F2.3-W11 a fully stated prepared brief reads available when next is doctor
   assert.equal(intentSummaryOf(res.json).status, "available");
 });
 
-test("F2.3-W12 a prepared brief's audience reads provenance stated in a fresh process (next build)", CLOSES_AFTER_A, async (t) => {
+test("F2.3-W12 a prepared brief's audience reads provenance stated in a fresh process (next build)", async (t) => {
   const f = await preparedThroughSetup(t);
   const run = freshNext(f, "build");
   assert.equal(run.status, 0, `setup: next build exits 0: ${run.stderr.slice(0, 300)}`);
@@ -273,7 +269,7 @@ test("F2.3-W12 a prepared brief's audience reads provenance stated in a fresh pr
 // ---------------------------------------------------------------------------
 // Broken rows
 
-test("F2.3-B6 a saved draft copy changing only brand.cta_style keeps the tone [default]", CLOSES_AFTER_A, async (t) => {
+test("F2.3-B6 a saved draft copy changing only brand.cta_style keeps the tone [default]", async (t) => {
   const f = await intake(t);
   intentSummaryOf((await next(f)).json);
   const saved = await saveBriefFile(f, (file) => { file.brand.cta_style = "solid pill"; });
@@ -283,7 +279,7 @@ test("F2.3-B6 a saved draft copy changing only brand.cta_style keeps the tone [d
   assert.equal(summaryLine(summary, 6), 'Tone: "clear, practical, benefit-led" [default].');
 });
 
-test("F2.3-B7 a saved draft copy changing only brand.cta_style marks the button style [stated] on line 5", CLOSES_AFTER_A, async (t) => {
+test("F2.3-B7 a saved draft copy changing only brand.cta_style marks the button style [stated] on line 5", async (t) => {
   const f = await intake(t);
   intentSummaryOf((await next(f)).json);
   const saved = await saveBriefFile(f, (file) => { file.brand.cta_style = "solid pill"; });
@@ -319,7 +315,7 @@ test("F2.3-B10 a price-override conversion goal leaves next build's stage, statu
   assert.equal(JSON.stringify(a) === JSON.stringify(b), true, `stage, status, next_actions, gates and issue codes equal:\n${JSON.stringify(a)}\n---\n${JSON.stringify(b)}`);
 });
 
-test("F2.3-B13 answering open question brand_palette_cta with the default palette source marks the palette [stated]", CLOSES_AFTER_A, async (t) => {
+test("F2.3-B13 answering open question brand_palette_cta with the default palette source marks the palette [stated]", async (t) => {
   const f = await intake(t);
   const draft = readJson(f.normalizedPath);
   assert.ok(draft.questions.some((question) => question.id === "brand_palette_cta"), "setup: the previous normalized brief has open question brand_palette_cta");
