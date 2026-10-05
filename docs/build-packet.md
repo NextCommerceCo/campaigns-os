@@ -1709,7 +1709,9 @@ names another campaign than the packet or the report), `page_scope_changed`,
 then, for the brief file last saved (by intake or `record brief`), `brief_too_large`,
 `brief_source_is_package_artifact` and `brief_file_missing` (the recorded
 path is missing or is not a readable regular file: a directory, a pipe or
-socket, a symlink to nothing, or a file without read permission). It reads
+socket, a symlink to nothing, or a file without read permission). When it must
+re-derive the brief, it also refuses `brief_inputs_unavailable` (the Build
+Context lacks an intake product re-deriving the brief needs). It reads
 `unchanged` and writes nothing when the bound material equals the spec and no
 stage's spec or brief stamp differs from the current content; a stage that
 does not record which content it was made against is named in a

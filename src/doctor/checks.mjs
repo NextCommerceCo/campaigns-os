@@ -91,7 +91,7 @@ import { SMOKE_QC, SMOKE_QC_LIMITS, builtFileOf, evaluateSmokeQc, insideRoot, is
 import { recordQcResults } from "../qc-results.mjs";
 import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
-import { deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
+import { briefFileUnusable, deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
@@ -924,7 +924,8 @@ function validateBuildBrief(packet, packetPath, spec, context, errors, warnings,
 
 // derived.input_currency, computed once per doctor read, and the warnings it
 // gives: a stage owed on the brief or on the CampaignSpec, a completed stage
-// with no valid brief or spec stamp, a brief file edited since it was saved,
+// with no valid brief or spec stamp, or read against a brief or CampaignSpec
+// that cannot be read, a brief file edited (or unreadable) since it was saved,
 // and the build replay after an input change (owed, or kept by the
 // operator's recorded decision). None is an error; `next` routes to the owed
 // stage itself.
@@ -956,12 +957,36 @@ function validateInputCurrency({ packet, packetPath, spec, report, warnings, der
   if (unstamped.length) {
     addIssue(warnings, "build_brief.binding_unknown", `Recorded ${unstamped.join(", ")} ${unstamped.length === 1 ? "does" : "do"} not say which Campaign Build Brief content ${unstamped.length === 1 ? "it was" : "they were"} made against, so ${unstamped.length === 1 ? "it reads" : "they read"} unconfirmed, not current. Record ${unstamped.join(", ")} again (${unstamped.map((key) => (key === "assembly" ? "record build" : key === "polish" ? "record polish" : "qa run")).join(", ")}).`, { stages: unstamped });
   }
+  // A completed stage also reads unknown when the current brief or
+  // CampaignSpec cannot be read: there is nothing to compare its stamps with.
+  // The warning names the file to restore.
+  const unknownStages = Object.keys(currency.stages).filter((key) => currency.reasons[key] === "input_binding_unknown");
+  const unconfirmed = (stages) => `recorded ${stages.join(", ")} ${stages.length === 1 ? "reads" : "read"} unconfirmed, not current`;
+  if (unknownStages.length && currency.brief.current === null) {
+    const normalizedPath = optionalString(packet?.build_brief?.normalized_path);
+    addIssue(warnings, "build_brief.binding_unknown", `${normalizedPath ? `The normalized Campaign Build Brief ${normalizedPath} cannot be read as a brief object` : "The Build Packet names no build_brief.normalized_path, so the current Campaign Build Brief cannot be read"}, so ${unconfirmed(unknownStages)}. Restore it, or save the brief again with ${cmd("record")} brief --packet <packet>.`, { stages: unknownStages, ...(normalizedPath ? { normalized_path: normalizedPath } : {}) });
+  }
+  const specPath = optionalString(packet?.spec?.local_path);
+  if (unknownStages.length && currency.spec.current === null && specPath) {
+    addIssue(warnings, "spec.binding_unknown", `The CampaignSpec ${specPath} cannot be read as a JSON object, so ${unconfirmed(unknownStages)}. Restore it, then run doctor again.`, { stages: unknownStages, spec_path: specPath });
+  }
   const inputPath = optionalString(packet?.build_brief?.input_path);
   const savedSha = optionalString(report.build_brief?.input_sha256);
   const briefFile = inputPath ? resolveFromFile(packetPath, inputPath) : null;
   if (briefFile && savedSha && existsSync(briefFile)) {
-    const bytes = `sha256:${createHash("sha256").update(readFileSync(briefFile)).digest("hex")}`;
-    if (bytes !== savedSha) {
+    // Read only a readable regular file: a pipe would block, a directory throws.
+    const unusable = briefFileUnusable(briefFile);
+    let bytes = null;
+    if (!unusable) {
+      try {
+        bytes = `sha256:${createHash("sha256").update(readFileSync(briefFile)).digest("hex")}`;
+      } catch {
+        bytes = null;
+      }
+    }
+    if (bytes === null) {
+      addIssue(warnings, "build_brief.input_unsaved", `The brief file ${inputPath} ${unusable || "cannot be read"}, so doctor cannot tell whether it changed since it was saved; the build reads the saved brief. Restore it, or save a readable brief file with ${cmd("record")} brief --packet <packet> --brief <file>.`, { input_path: inputPath });
+    } else if (bytes !== savedSha) {
       addIssue(warnings, "build_brief.input_unsaved", `The brief file ${inputPath} changed since it was saved. Save it with ${cmd("record")} brief --packet <packet>; until then the build reads the saved brief.`, { input_path: inputPath });
     }
   }

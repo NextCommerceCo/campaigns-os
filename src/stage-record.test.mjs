@@ -2799,3 +2799,100 @@ test("record with an unknown subcommand names every record subcommand, brief and
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /record <setup\|build\|polish\|theme\|deploy\|brief\|spec>/);
 });
+
+// ----- record spec without brief inputs, and doctor over unreadable inputs ----
+
+for (const [label, drop] of [
+  ["commerce_zone_findings", (context) => { delete context.commerce_zone_findings; }],
+  ["page_map", (context) => { delete context.page_map; }],
+  ["source.asset_crawl", (context) => { delete context.source.asset_crawl; }],
+]) {
+  for (const extra of [[], ["--dry-run"]]) {
+    test(`record spec ${extra.join(" ")} after a spec edit, over a Build Context without ${label}, refuses brief_inputs_unavailable and writes nothing`.replace("spec  ", "spec "), async () => {
+      await guardedLifecycle((f) => {
+        editSpec(f, bumpCheckoutQty);
+        mutateJson(f.contextPath, drop);
+        const before = treeDigest(f.dir);
+        const result = recordInput(f, "spec", extra);
+        assert.equal(result.status, 1, `a refusal exits 1: ${result.stderr.slice(0, 600)}`);
+        assert.match(result.stderr, new RegExp(`record spec refused; nothing was written:\\s*- brief_inputs_unavailable: the Build Context lacks ${label.replace(".", "\\.")}\\b`));
+        assertNothingWritten(f.dir, before, "the refused record spec");
+      });
+    });
+  }
+}
+
+// Makes `path` unreadable (`chmod 000`) or not JSON for the length of `run`.
+function withInputSpoiled(path, how, run) {
+  const bytes = readFileSync(path);
+  if (how === "unreadable") chmodSync(path, 0o000);
+  else writeFileSync(path, bytes.subarray(0, Math.floor(bytes.length / 2)));
+  try {
+    return run();
+  } finally {
+    chmodSync(path, 0o644);
+    writeFileSync(path, bytes);
+  }
+}
+
+for (const how of ["unreadable", "not JSON"]) {
+  test(`doctor warns build_brief.binding_unknown naming the normalized brief when it is ${how} and a recorded build reads unknown for that reason`, async () => {
+    await guardedLifecycle((f) => {
+      recordThroughBuild(f);
+      const doctorJson = withInputSpoiled(normalizedOf(f), how, () => doctorOk(f));
+      assert.equal(doctorJson.derived.input_currency.stages.assembly, "unknown", "setup: the build reads unknown");
+      const warning = doctorJson.warnings.find((issue) => issue.code === "build_brief.binding_unknown");
+      assert.ok(warning, JSON.stringify(doctorJson.warnings.map((issue) => issue.code)));
+      assert.match(warning.message, /campaign-build-brief\.normalized\.json/);
+      assert.match(warning.message, /cannot be read/);
+      assert.deepEqual(warning.detail?.stages, ["assembly"]);
+    });
+  });
+
+  test(`doctor warns spec.binding_unknown naming the CampaignSpec when it is ${how} and a recorded build reads unknown for that reason`, async () => {
+    await guardedLifecycle((f) => {
+      recordThroughBuild(f);
+      const doctorJson = withInputSpoiled(specPathOf(f), how, () => doctorOk(f));
+      assert.equal(doctorJson.derived.input_currency.stages.assembly, "unknown", "setup: the build reads unknown");
+      const warning = doctorJson.warnings.find((issue) => issue.code === "spec.binding_unknown");
+      assert.ok(warning, JSON.stringify(doctorJson.warnings.map((issue) => issue.code)));
+      assert.match(warning.message, /campaignspec\.json/);
+      assert.match(warning.message, /cannot be read/);
+      assert.deepEqual(warning.detail?.stages, ["assembly"]);
+    });
+  });
+}
+
+test("doctor names no unreadable input when the brief and the CampaignSpec read and the build is current", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    const doctorJson = doctorOk(f);
+    assert.equal(doctorJson.derived.input_currency.stages.assembly, "current", "setup: the build is current");
+    assert.deepEqual(inputWarnings(doctorJson), []);
+  });
+});
+
+for (const [label, replace] of NOT_A_READABLE_FILE) {
+  test(`doctor warns build_brief.input_unsaved, and does not fail, when the saved brief file is ${label}`, async () => {
+    await guardedLifecycle((f) => {
+      reintakeWithBrief(f);
+      const path = briefFileOf(f);
+      rmSync(path);
+      const cleanup = replace(path);
+      try {
+        const run = spawnSync(process.execPath, [CLI, "doctor", "--packet", f.packetPath, "--no-live-refs", "--json"], {
+          cwd: f.dir, encoding: "utf8", timeout: 30_000, env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" },
+        });
+        assert.equal(run.error, undefined, `doctor finished: ${run.error?.message}`);
+        assert.ok(run.stdout.trim(), `doctor printed its result (exit ${run.status}): ${String(run.stderr).slice(0, 400)}`);
+        const doctorJson = JSON.parse(run.stdout);
+        const warning = doctorJson.warnings.find((issue) => issue.code === "build_brief.input_unsaved");
+        assert.ok(warning, JSON.stringify(doctorJson.warnings.map((issue) => issue.code)));
+        assert.match(warning.message, /campaign-build-brief\.json/);
+        assert.match(warning.message, /cannot be read|not a regular file|directory/);
+      } finally {
+        cleanup?.();
+      }
+    });
+  });
+}

@@ -9,7 +9,7 @@
 // current: nothing else on the report stands in for a stamp. The stage's
 // superseded records are display only and are never read here.
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 
 import { BRIEF_ABSENT, briefMaterialFingerprint } from "./build-brief.mjs";
 import { isObject, optionalString, resolveFromFile } from "./cli-helpers.mjs";
@@ -101,6 +101,31 @@ export function currentBriefMaterial({ packet, packetPath }) {
   } catch {
     return null;
   }
+}
+
+// Why `path` is not a brief file this run can read, or null when it is one.
+// A brief file is a regular file, reached through any symlink, with read
+// permission. Nothing here opens the path, so a pipe or socket never blocks.
+export function briefFileUnusable(path) {
+  let stats;
+  try {
+    stats = statSync(path);
+  } catch {
+    try {
+      lstatSync(path);
+      return "is a symlink to nothing";
+    } catch {
+      return "does not exist";
+    }
+  }
+  if (stats.isDirectory()) return "is a directory, not a file";
+  if (!stats.isFile()) return "is not a regular file";
+  try {
+    accessSync(path, fsConstants.R_OK);
+  } catch {
+    return "cannot be read";
+  }
+  return null;
 }
 
 // The current spec material of a parsed CampaignSpec, or null.

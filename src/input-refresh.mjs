@@ -16,7 +16,7 @@
 // are checked in a fixed order before anything is written; --dry-run runs
 // every check and writes nothing.
 import { createHash } from "node:crypto";
-import { accessSync, constants as fsConstants, existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 import {
@@ -34,6 +34,7 @@ import {
   STAMPED_STAGES,
   absentBriefMaterial,
   assessInputCurrency,
+  briefFileUnusable,
   briefIntakeBindings,
   changeReason,
   currentBriefMaterial,
@@ -245,31 +246,6 @@ function isRegularFile(path) {
   } catch {
     return false;
   }
-}
-
-// Why `path` is not a brief file this run can read, or null when it is one.
-// A brief file is a regular file, reached through any symlink, with read
-// permission. Nothing here opens the path, so a pipe or socket never blocks.
-function briefFileUnusable(path) {
-  let stats;
-  try {
-    stats = statSync(path);
-  } catch {
-    try {
-      lstatSync(path);
-      return "is a symlink to nothing";
-    } catch {
-      return "does not exist";
-    }
-  }
-  if (stats.isDirectory()) return "is a directory, not a file";
-  if (!stats.isFile()) return "is not a regular file";
-  try {
-    accessSync(path, fsConstants.R_OK);
-  } catch {
-    return "cannot be read";
-  }
-  return null;
 }
 
 // The brief-file refusals both refreshes share, in their fixed order:
@@ -630,8 +606,10 @@ function refreshSpecUnderLock({ packetPath, sidecars, lockedTarget, dryRun, time
     // the stages its partitions name owed.
     let brief = null;
     if (normalizedPath) {
+      // Checked only when the brief is re-derived: an unchanged result reads
+      // nothing the missing intake products would give.
       const missing = briefInputsMissing(context);
-      if (missing.length) throw new Error(`record spec: the Build Context lacks ${missing.join(", ")}, which re-deriving the brief needs; re-run intake to restore it.`);
+      if (missing.length) throw refuseRecord("spec", [`brief_inputs_unavailable: the Build Context lacks ${missing.join(", ")}, which re-deriving the brief needs; re-run intake to restore it.`]);
       brief = rederiveBrief({ briefFile, spec, context, packet, report, normalizedPath });
       briefOutcome = briefSaveOutcome(report, brief.buildBrief, brief.bindings);
     }
