@@ -872,3 +872,102 @@ browserTest("the record persists no text from slotted host text or frames", asyn
   const serialized = JSON.stringify(record);
   assert.deepEqual(["Slotted host text", "Restyled host text", "Unassigned host text", "Shadow text", "Frame text", "Synthetic text"].filter((text) => serialized.includes(text)), []);
 });
+
+// ---------------------------------------------------------------------------
+// A shadow host's text assigned (manual slot assignment) to two differently
+// styled slots is never measured through the first slot alone; text in a
+// loaded same-origin frame is painted by the frame element and the document
+// around it as well; and text any element generates through ::before or
+// ::after, not only a role element, is listed as generated_text.
+
+const MANUAL_SLOTS = (second) => `<div id="host" data-next-action="add-to-cart" style="${P};color:#ffffff;background:#111111">First text<!---->Second text</div><script>
+const host = document.getElementById("host");
+const root = host.attachShadow({ mode: "open", slotAssignment: "manual" });
+root.innerHTML = '<span><slot></slot></span><span style="${second}"><slot></slot></span>';
+const [first, other] = root.querySelectorAll("slot");
+const texts = Array.from(host.childNodes).filter((node) => node.nodeType === 3);
+first.assign(texts[0]);
+other.assign(texts[1]);
+</script>`;
+const FRAMED = "<!doctype html><body style='margin:0'><p style='margin:0;padding:8px;color:#ffffff;background:#111111'>Frame text</p></body>";
+const GENERATED_STYLE = "<style>.generated::before{content:\"now\"}.generated-after::after{content:\"more\"}.clear::before,.clear::after{content:\" \";display:table}</style>";
+
+const UNOBSERVED_PAGES = {
+  "slot-manual-split": htmlPage(MANUAL_SLOTS("color:#111111")),
+  "slot-manual-gradient": htmlPage(MANUAL_SLOTS("background-image:linear-gradient(#111111,#333333)")),
+  "frame-translucent": htmlPage(`<iframe srcdoc="${FRAMED}" title="Synthetic frame" style="width:320px;height:120px;border:0;opacity:0.3"></iframe>`),
+  "frame-outer-filter": htmlPage(`<div style="filter:grayscale(1)"><iframe srcdoc="${FRAMED}" title="Synthetic frame" style="width:320px;height:120px;border:0"></iframe></div>`),
+  "generated-descendant": htmlPage(ATC("color:#ffffff;background:#111111", "Add <span class=\"generated\"></span>"), { head: GENERATED_STYLE }),
+  "generated-body": htmlPage(`<p class="generated-after" style="${P};color:#ffffff;background:#111111">Body text</p>`, { head: GENERATED_STYLE }),
+  "generated-blank": htmlPage(`<p class="clear" style="${P};color:#ffffff;background:#111111">Body text</p>`, { head: GENERATED_STYLE }),
+};
+
+const unobservedCapture = (() => {
+  let pending = null;
+  let site = null;
+  after(async () => {
+    await site?.close();
+  });
+  return () => {
+    pending ||= (async () => {
+      site = await readabilitySite({ pages: UNOBSERVED_PAGES });
+      const capture = await capturePolish(site);
+      assertCaptureCompleted(capture);
+      const record = readabilityRecord(capture.report);
+      const rows = await readabilityRows(site);
+      assert.ok(rows.length > 0, "readCurrentQcResults lists readability.contrast rows");
+      return { record, rows };
+    })();
+    return pending;
+  };
+})();
+
+browserTest("a shadow host's text assigned to two slots, the second black on black: review / overlapping_layer, and no pair row passes", async () => {
+  const { rows } = await unobservedCapture();
+  assert.deepEqual(pageRows(rows, "slot-manual-split", measuredRow), both({ key: "review:add_to_cart:overlapping_layer", result: "review", reason_code: "overlapping_layer" }));
+});
+
+browserTest("a shadow host's text assigned to two slots, the second over a gradient: review / background_gradient", async () => {
+  const { rows } = await unobservedCapture();
+  assert.deepEqual(pageRows(rows, "slot-manual-gradient", measuredRow), both({ key: "review:add_to_cart:background_gradient", result: "review", reason_code: "background_gradient" }));
+});
+
+browserTest("text in a loaded same-origin frame whose frame element has opacity 0.3 reads review, never pass", async () => {
+  const { record, rows } = await unobservedCapture();
+  const cells = cellsOf(record, "frame-translucent");
+  for (const viewport of VIEWPORTS) {
+    assert.deepEqual(cells[viewport].elements.map((element) => [element.selector_path, element.review_reason]), [["html>body>iframe:nth-of-type(1)>>>html>body>p:nth-of-type(1)", "opacity"]], `${viewport}: the frame's text is a review member`);
+  }
+  assert.deepEqual(pageRows(rows, "frame-translucent", measuredRow), both({ key: "review:body_text:non_solid", result: "review", reason_code: "non_solid_background" }));
+});
+
+browserTest("text in a loaded same-origin frame inside a filtered element of the outer document reads review, never pass", async () => {
+  const { record, rows } = await unobservedCapture();
+  const cells = cellsOf(record, "frame-outer-filter");
+  for (const viewport of VIEWPORTS) {
+    assert.deepEqual(cells[viewport].elements.map((element) => element.review_reason), ["filter"], `${viewport}: the frame's text is a review member`);
+  }
+  assert.deepEqual(pageRows(rows, "frame-outer-filter", measuredRow), both({ key: "review:body_text:non_solid", result: "review", reason_code: "non_solid_background" }));
+});
+
+browserTest("generated text on a descendant of a role element: role coverage row unexercised / generated_text", async () => {
+  const { rows } = await unobservedCapture();
+  assert.deepEqual(pageRows(rows, "generated-descendant", keyed("role:add_to_cart:coverage")), both({ key: "role:add_to_cart:coverage", result: "unexercised", reason_code: "generated_text" }));
+});
+
+browserTest("generated text on body text: role coverage row unexercised / generated_text", async () => {
+  const { rows } = await unobservedCapture();
+  assert.deepEqual(pageRows(rows, "generated-body", keyed("role:body_text:coverage")), both({ key: "role:body_text:coverage", result: "unexercised", reason_code: "generated_text" }));
+});
+
+browserTest("control: blank generated content (a clearfix) adds no generated_text row", async () => {
+  const { rows } = await unobservedCapture();
+  assert.deepEqual(pageRows(rows, "generated-blank", (key) => key.startsWith("role:")), []);
+  assert.deepEqual(pageRows(rows, "generated-blank", isPair), both({ key: "pair:ffffffff/111111ff:normal", result: "pass", reason_code: null }));
+});
+
+browserTest("the record persists no slotted, framed or generated text", async () => {
+  const { record } = await unobservedCapture();
+  const serialized = JSON.stringify(record);
+  assert.deepEqual(["First text", "Second text", "Frame text", "Body text", "\"now\"", "\"more\""].filter((text) => serialized.includes(text)), []);
+});

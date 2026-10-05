@@ -253,6 +253,25 @@ export function contrastToolkit() {
     for (let at = el; at; at = flatParent(at)) if (at === ancestor) return true;
     return false;
   };
+  // The frame element a window is shown in, when the document around it is
+  // readable (same-origin); otherwise null.
+  const frameOf = (view) => {
+    try {
+      return (view && view.frameElement) || null;
+    } catch {
+      return null;
+    }
+  };
+  // The next element out from `at` as the page paints it, with that
+  // element's window: its flat-tree parent, or, from the root of a
+  // same-origin frame's document, the frame element in the document around
+  // it.
+  const outward = (at, view) => {
+    const up = flatParent(at);
+    if (up) return [up, view];
+    const frame = at.ownerDocument && at === at.ownerDocument.documentElement ? frameOf(view) : null;
+    return frame ? [frame, frame.ownerDocument.defaultView] : [null, view];
+  };
   // Where an element's own text renders: the flat-tree parents of its
   // non-blank text nodes. That is the element itself, except for the host of
   // an open shadow root, whose own text renders only through the slot that
@@ -345,19 +364,36 @@ export function contrastToolkit() {
   }
 
   // The text's style, its control and state, and the paint walk start where
-  // its text renders (textParents; the first, when a shadow host's text
-  // renders through more than one slot, and every one for paint effects).
-  // The element's identity, its rendered flag and its box are its own.
+  // its text renders (textParents). The element's identity, its rendered
+  // flag and its box are its own. A shadow host's text can render through
+  // more than one slot (manual slot assignment): each slot's text is read
+  // through that slot, and the first slot's reading is recorded. When another
+  // slot's text sits in another control or state, or reads other colours,
+  // font or backgrounds, the host's box holds text painted by a subtree
+  // outside the recorded slot's ancestry: review trigger 4, never one slot's
+  // measurement standing for all of it. Every slot's triggers count.
+  //
+  // Text in a same-origin frame's document is painted by the frame element
+  // and everything around it too: the paint walk continues from the
+  // document's root to the frame element in the document around it, paint
+  // effects up to the top root, backgrounds through a transparent frame
+  // document until an opaque layer, and overlap candidates in each
+  // document the text box is shown in. A frame document whose root
+  // color-scheme differs from its frame element's paints its own canvas,
+  // which is not read: trigger 10.
   function measureTextElement(el, win) {
-    const [origin = el, ...otherOrigins] = textParents(el, win);
+    const origins = textParents(el, win);
+    const [origin = el] = origins;
     const style = win.getComputedStyle(origin);
     const font_size_px = Number.parseFloat(style.getPropertyValue("font-size"));
     const font_weight = Number(style.getPropertyValue("font-weight"));
     const large = isLargeText({ fontSizePx: font_size_px, fontWeight: font_weight });
     const control = flatClosest(origin, CONTROL_SELECTOR);
-    const disabled = el.matches(DISABLED_SELECTOR) || Boolean(control && control.matches(DISABLED_SELECTOR));
-    const control_loading = Boolean(control) && LOADING_ATTRIBUTES.some((name) => control.hasAttribute(name) && control.getAttribute(name) !== "false");
-    const head = { selector_path: selectorPath(el), state: stateOf(origin), disabled, rendered: isTextBearing(el, win), font_size_px, font_weight, size_class: large ? "large" : "normal" };
+    const state = stateOf(origin);
+    const mixed = origins.slice(1).some((other) => flatClosest(other, CONTROL_SELECTOR) !== control || stateOf(other) !== state);
+    const disabled = el.matches(DISABLED_SELECTOR) || (!mixed && Boolean(control && control.matches(DISABLED_SELECTOR)));
+    const control_loading = !mixed && Boolean(control) && LOADING_ATTRIBUTES.some((name) => control.hasAttribute(name) && control.getAttribute(name) !== "false");
+    const head = { selector_path: selectorPath(el), state, disabled, rendered: isTextBearing(el, win), font_size_px, font_weight, size_class: large ? "large" : "normal" };
     if (disabled || control_loading) return { ...head, ...COLOUR_FIELDS, required: requiredRatio(large), review_reason: null, control_loading };
 
     const triggers = new Set();
@@ -367,37 +403,78 @@ export function contrastToolkit() {
       if (isSet(layer.getPropertyValue("mix-blend-mode"), "normal")) triggers.add(7);
       if (isSet(layer.getPropertyValue("mask-image")) || isSet(layer.getPropertyValue("-webkit-mask-image"))) triggers.add(12);
     };
-    const fg_raw = style.getPropertyValue("color");
-    const fill_raw = style.getPropertyValue("-webkit-text-fill-color");
-    const fillTransparent = transparent(fill_raw);
-    const bg_layers_raw = [];
-    let opaque = false;
-    for (const other of otherOrigins) {
-      for (let at = other; at && at.nodeType === 1; at = flatParent(at)) paintEffects(win.getComputedStyle(at));
+    const schemeOf = (view, at) => view.getComputedStyle(at).getPropertyValue("color-scheme");
+    const light = (scheme) => scheme === "normal" || scheme === "light";
+    const sameScheme = (a, b) => (light(a) ? light(b) : a === b);
+    // One slot's (or the element's own) reading, adding the triggers on its
+    // way out.
+    const readThrough = (start) => {
+      const startStyle = start === origin ? style : win.getComputedStyle(start);
+      const fg_raw = startStyle.getPropertyValue("color");
+      const fill_raw = startStyle.getPropertyValue("-webkit-text-fill-color");
+      const fillTransparent = transparent(fill_raw);
+      const bg_layers_raw = [];
+      let opaque = false;
+      let unread = false;
+      let view = win;
+      let root = el.ownerDocument.documentElement;
+      for (let at = start; at && at.nodeType === 1;) {
+        const layer = at === start ? startStyle : view.getComputedStyle(at);
+        paintEffects(layer);
+        if (!opaque && !unread) {
+          const image = layer.getPropertyValue("background-image");
+          if (image.includes("-gradient(")) triggers.add(1);
+          else if (isSet(image)) triggers.add(2);
+          if (["::before", "::after"].some((pseudo) => {
+            const generated = view.getComputedStyle(at, pseudo);
+            return !["none", "normal"].includes(generated.getPropertyValue("content")) && paintsBackground(generated);
+          })) triggers.add(3);
+          if (fillTransparent && [layer.getPropertyValue("background-clip"), layer.getPropertyValue("-webkit-background-clip")].some((clip) => /\btext\b/.test(clip))) triggers.add(8);
+          const color = layer.getPropertyValue("background-color");
+          bg_layers_raw.push(color);
+          opaque = parseComputedColor(color).alpha >= 1;
+        }
+        const [next, nextView] = outward(at, view);
+        if (next && nextView !== view) {
+          if (!opaque && !unread && !sameScheme(schemeOf(view, root), schemeOf(nextView, next))) {
+            triggers.add(10);
+            unread = true;
+          }
+          root = next.ownerDocument.documentElement;
+        }
+        at = next;
+        view = nextView;
+      }
+      if (!opaque && !unread) {
+        if (light(schemeOf(view, root))) bg_layers_raw.push(DEFAULT_CANVAS);
+        else triggers.add(10);
+      }
+      return { fg_raw, fill_raw, bg_layers_raw, font_size_px: Number.parseFloat(startStyle.getPropertyValue("font-size")), font_weight: Number(startStyle.getPropertyValue("font-weight")) };
+    };
+    const { fg_raw, fill_raw, bg_layers_raw } = readThrough(origin);
+    const reading = JSON.stringify({ fg_raw, fill_raw, bg_layers_raw, font_size_px, font_weight });
+    if (mixed) triggers.add(4);
+    for (const other of origins.slice(1)) if (JSON.stringify(readThrough(other)) !== reading) triggers.add(4);
+
+    // Overlap in the element's own document, then in each document around
+    // its frames, with the text box moved into that document's viewport.
+    let box = el.getBoundingClientRect();
+    let inner = origin;
+    let view = win;
+    for (let doc = el.ownerDocument; doc;) {
+      if (overlapCandidatesOf(doc, view).some(({ node, rect }) => !flatContains(node, inner) && !flatContains(inner, node) && intersects(rect, box))) triggers.add(4);
+      const frame = frameOf(view);
+      if (!frame) break;
+      const outer = frame.ownerDocument.defaultView;
+      const frameBox = frame.getBoundingClientRect();
+      const frameStyle = outer.getComputedStyle(frame);
+      const dx = frameBox.left + frame.clientLeft + (Number.parseFloat(frameStyle.getPropertyValue("padding-left")) || 0);
+      const dy = frameBox.top + frame.clientTop + (Number.parseFloat(frameStyle.getPropertyValue("padding-top")) || 0);
+      box = { left: box.left + dx, right: box.right + dx, top: box.top + dy, bottom: box.bottom + dy };
+      inner = frame;
+      view = outer;
+      doc = frame.ownerDocument;
     }
-    for (let at = origin; at && at.nodeType === 1; at = flatParent(at)) {
-      const layer = at === origin ? style : win.getComputedStyle(at);
-      paintEffects(layer);
-      if (opaque) continue;
-      const image = layer.getPropertyValue("background-image");
-      if (image.includes("-gradient(")) triggers.add(1);
-      else if (isSet(image)) triggers.add(2);
-      if (["::before", "::after"].some((pseudo) => {
-        const generated = win.getComputedStyle(at, pseudo);
-        return !["none", "normal"].includes(generated.getPropertyValue("content")) && paintsBackground(generated);
-      })) triggers.add(3);
-      if (fillTransparent && [layer.getPropertyValue("background-clip"), layer.getPropertyValue("-webkit-background-clip")].some((clip) => /\btext\b/.test(clip))) triggers.add(8);
-      const color = layer.getPropertyValue("background-color");
-      bg_layers_raw.push(color);
-      opaque = parseComputedColor(color).alpha >= 1;
-    }
-    if (!opaque) {
-      const scheme = win.getComputedStyle(el.ownerDocument.documentElement).getPropertyValue("color-scheme");
-      if (scheme === "normal" || scheme === "light") bg_layers_raw.push(DEFAULT_CANVAS);
-      else triggers.add(10);
-    }
-    const box = el.getBoundingClientRect();
-    if (overlapCandidatesOf(el.ownerDocument, win).some(({ node, rect }) => !flatContains(node, origin) && !flatContains(origin, node) && intersects(rect, box))) triggers.add(4);
     if (el.matches(".next-disabled") || Boolean(control && control.matches(".next-disabled"))) triggers.add(11);
 
     const derived = deriveElementMeasurement({ fg_raw, fill_raw, bg_layers_raw, font_size_px, font_weight });

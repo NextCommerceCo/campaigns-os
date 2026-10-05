@@ -239,3 +239,35 @@ browserTest("QA CTA: a shadow host's own text slotted beneath a translucent shad
   const elements = entry.evidence.candidates.flatMap((candidate) => candidate.elements || []);
   assert.deepEqual(elements.map((element) => element.review_reason), ["opacity"], JSON.stringify(elements));
 });
+
+// Text generated through ::before or ::after inside the route CTA is never
+// measured, so the CTA is reviewed, never passed on its other text.
+const GENERATED = "<style>.generated::before{content:\"Now\";color:#111111}.cta-after::after{content:\" now\";color:#111111}</style>";
+
+browserTest("QA CTA: white-on-black route CTA text plus black-on-black ::before text on a descendant reads manual_review / contrast_review at severity warn", async () => {
+  const entry = one(await primaryCta(htmlPage(cta("color:#ffffff;background:#111111", "Buy <span class=\"generated\"></span>"), { head: GENERATED })));
+  assert.deepEqual(outcome(entry), { status: "manual_review", reason: "contrast_review" }, entry.actual);
+  assert.equal(entry.severity, "warn");
+});
+
+browserTest("QA CTA: route CTA text plus ::after text on the candidate itself reads manual_review / contrast_review at severity warn", async () => {
+  const entry = one(await primaryCta(htmlPage(cta("color:#ffffff;background:#111111", "Buy", { extra: " class=\"cta-after\"" }), { head: GENERATED })));
+  assert.deepEqual(outcome(entry), { status: "manual_review", reason: "contrast_review" }, entry.actual);
+  assert.equal(entry.severity, "warn");
+});
+
+browserTest("QA CTA: a shadow host's text inside the route CTA assigned to two slots, the second black on black, reads manual_review / contrast_review", async () => {
+  const host = `<span id="host">Buy<!---->now</span><script>
+const host = document.getElementById("host");
+const root = host.attachShadow({ mode: "open", slotAssignment: "manual" });
+root.innerHTML = '<span><slot></slot></span><span style="color:#111111"><slot></slot></span>';
+const [first, other] = root.querySelectorAll("slot");
+const texts = Array.from(host.childNodes).filter((node) => node.nodeType === 3);
+first.assign(texts[0]);
+other.assign(texts[1]);
+</script>`;
+  const entry = one(await primaryCta(htmlPage(cta("color:#ffffff;background:#111111", host))));
+  assert.deepEqual(outcome(entry), { status: "manual_review", reason: "contrast_review" }, entry.actual);
+  const elements = entry.evidence.candidates.flatMap((candidate) => candidate.elements || []);
+  assert.deepEqual(elements.map((element) => element.review_reason), ["overlapping_layer"], JSON.stringify(elements));
+});

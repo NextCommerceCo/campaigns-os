@@ -411,16 +411,16 @@ export const READABILITY_QC_RULES = Object.freeze({
 // and returns no text content. It reads the document, every open shadow root
 // (recursively) and every visible same-origin frame's loaded document, each
 // measured with its own window; a visible frame still loading is listed as
-// text it cannot reach, like a cross-origin one. The cell measurability checks run on the
-// document and on each frame document it measures, each with the open shadow
-// roots inside it; the first that fails makes the cell read that reason.
-// `limits.elements`
-// bounds the text-bearing elements it measures; `closedRoots` are the closed
-// shadow roots the adapter resolved (or, for one inside a frame, that
-// frame's element). Every element carries its rectangle in the main frame's
-// viewport (`rect`, clipped to its frames) for crops, which the record does
-// not keep.
-export function readabilityProbe(toolkit, limits, closedRoots) {
+// text it cannot reach, like a cross-origin one. The cell measurability
+// checks run on the document and on each frame document it measures, each
+// with the open shadow roots inside it; the first that fails makes the cell
+// read that reason. `limits.elements` bounds the text-bearing elements it
+// measures; `closedRoots` are the closed shadow roots the adapter resolved
+// (or, for one inside a frame, that frame's element); `generatedText` is
+// generatedTextRenders. Every element carries its rectangle in the main
+// frame's viewport (`rect`, clipped to its frames) for crops, which the
+// record does not keep.
+export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
   const win = window;
   const doc = document;
   const viewport = { width: win.innerWidth, height: win.innerHeight };
@@ -670,6 +670,7 @@ export function readabilityProbe(toolkit, limits, closedRoots) {
     ...scopes.flatMap((scope) => Array.from(scope.root.querySelectorAll("label")).filter(checkoutLabel).map((el) => [el, scope])),
   ];
   let checked = 0;
+  const listed = new Set();
   for (const [el, scope] of roleElements) {
     if (checked >= limits.elements) {
       capped = true;
@@ -683,13 +684,26 @@ export function readabilityProbe(toolkit, limits, closedRoots) {
     const generated = ["::before", "::after"].some((pseudo) => /^(["']).+\1$/s.test(scope.win.getComputedStyle(el, pseudo).getPropertyValue("content")));
     if (generated) {
       gap("generated_text", role, el);
+      listed.add(el);
       continue;
     }
     if (!/\S/.test(button ? el.value : flatText(el))) {
       elements.push(recordOf(toolkit.measureTextElement(el, scope.win), role, rectOf(el, scope)));
       continue;
     }
-    if (!showsText(el) && !collapsed.some((scope) => flatContains(scope, el))) gap("not_visible_at_load", role, el);
+    if (!showsText(el) && !collapsed.some((scope) => flatContains(scope, el))) {
+      gap("not_visible_at_load", role, el);
+      listed.add(el);
+    }
+  }
+
+  // Generated text anywhere in the cell, not only on role elements (a
+  // descendant of a role element, or body text): every element the probe
+  // reads whose ::before or ::after renders text (generatedText), with the
+  // role its text would be measured under. A role element already listed
+  // above is not listed twice.
+  for (const [el, scope] of inOrder) {
+    if (!listed.has(el) && generatedText(el, scope.win)) gap("generated_text", roleOf(el), el);
   }
 
   // Bundle cards and order bumps with no member selected or active at load.
@@ -718,9 +732,31 @@ export function readabilityProbe(toolkit, limits, closedRoots) {
 }
 
 // The function declaration the adapter calls in the isolated world: the
-// probe, composed with the shared contrast helper by source text.
+// probe, composed with the shared contrast helper and generatedTextRenders
+// by source text.
 export function readabilityProbeSource() {
-  return `function (limits, ...closedRoots) { return (${readabilityProbe.toString()})((${contrastToolkit.toString()})(), limits, closedRoots); }`;
+  return `function (limits, ...closedRoots) { return (${readabilityProbe.toString()})((${contrastToolkit.toString()})(), limits, closedRoots, ${generatedTextRenders.toString()}); }`;
+}
+
+// Whether an element's ::before or ::after renders text: its computed
+// content holds a string with a non-blank character, a counter, an
+// attribute value or a quotation mark, and the pseudo-element is displayed
+// and visible on an element that is rendered (an element with
+// display: contents renders its pseudo-elements without a box of its own).
+// Generated text is never measured. Polish and QA both hand it to pages as
+// source text, so it references nothing outside itself.
+export function generatedTextRenders(el, win) {
+  const own = win.getComputedStyle(el);
+  if (!el.checkVisibility() && own.getPropertyValue("display") !== "contents") return false;
+  const STRING = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
+  return ["::before", "::after"].some((pseudo) => {
+    const generated = win.getComputedStyle(el, pseudo);
+    if (generated.getPropertyValue("display") === "none" || generated.getPropertyValue("visibility") !== "visible") return false;
+    const content = generated.getPropertyValue("content");
+    if (content === "none" || content === "normal") return false;
+    if ((content.match(STRING) || []).some((text) => /\S/.test(text.slice(1, -1)))) return true;
+    return /\b(?:counters?|attr)\(|\b(?:open|close)-quote\b/.test(content.replace(STRING, ""));
+  });
 }
 
 // ---------------------------------------------------------------------------

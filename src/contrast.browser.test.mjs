@@ -26,6 +26,19 @@ const STRIP = "<p style=\"margin:0;padding:8px;color:#ffffff;background:#111111\
 // An open shadow root, declared in the markup.
 const OPEN = (inner) => `<template shadowrootmode="open">${inner}</template>`;
 const FRAME_DOC = "<!doctype html><body style='margin:0'><p style='margin:0;padding:8px;color:#ffffff;background:#111111'>Frame text</p></body>";
+// A shadow host whose two text nodes are assigned (manual slot assignment)
+// to two slots; the second slot sits in a wrapper styled `second`.
+const MANUAL_SLOTS = (second) => `<div id="host" style="${P};color:#ffffff;background:#111111">First text<!---->Second text</div><script>
+const host = document.getElementById("host");
+const root = host.attachShadow({ mode: "open", slotAssignment: "manual" });
+root.innerHTML = '<span><slot></slot></span><span style="${second}"><slot></slot></span>';
+const [first, other] = root.querySelectorAll("slot");
+const texts = Array.from(host.childNodes).filter((node) => node.nodeType === 3);
+first.assign(texts[0]);
+other.assign(texts[1]);
+</script>`;
+const FRAME = (style, doc = FRAME_DOC) => `<iframe srcdoc="${doc}" style="width:320px;height:120px;border:0;${style}"></iframe>`;
+const BARE_FRAME_DOC = "<!doctype html><body style='margin:0'><p style='margin:0;padding:8px;color:#222222'>Frame text</p></body>";
 const NESTED = (outer) => `<div style="${outer}"><div style="background:#111"><span data-next-action="add-to-cart" style="color:#fff">x</span></div></div>`;
 
 const PAGES = ({ other }) => ({
@@ -77,6 +90,14 @@ const PAGES = ({ other }) => ({
   "slot-host-translucent": htmlPage(`<div style="${P};color:#ffffff;background:#111111">Host text${OPEN("<span style=\"opacity:0.3\"><slot></slot></span>")}</div>`),
   "slot-host-restyled": htmlPage(`<div style="${P};color:#ffffff;background:#111111">Host text${OPEN("<span style=\"color:#333333;font-size:24px\"><slot></slot></span>")}</div>`),
   "slot-host-unassigned": htmlPage(`<div style="${P};color:#ffffff;background:#111111">Host text${OPEN(`<p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
+  "slot-manual-split": htmlPage(MANUAL_SLOTS("color:#111111")),
+  "slot-manual-gradient": htmlPage(MANUAL_SLOTS("background-image:linear-gradient(#111111,#333333)")),
+  "slot-manual-same": htmlPage(MANUAL_SLOTS("font-style:normal")),
+  "frame-translucent": htmlPage(FRAME("opacity:0.3")),
+  "frame-outer-filter": htmlPage(`<div style="filter:grayscale(1)">${FRAME("")}</div>`),
+  "frame-overlay": htmlPage(`<div style="position:relative">${FRAME("")}<div style="position:absolute;left:0;top:0;width:320px;height:20px;background:#000000"></div></div>`),
+  "frame-transparent": htmlPage(`<div style="padding:8px;background:#111111">${FRAME("display:block", BARE_FRAME_DOC)}</div>`),
+  "frame-scheme": htmlPage(`<div style="padding:8px;background:#ffffff">${FRAME("display:block", "<!doctype html><html style='color-scheme:dark'><body style='margin:0'><p style='margin:0;padding:8px;color:#222222'>Frame text</p></body></html>")}</div>`),
   "frame-path": htmlPage(`<p style="${P};color:#ffffff;background:#111111">Light text</p><iframe srcdoc="${FRAME_DOC}" style="width:320px;height:120px;border:0"></iframe>`),
   "shadow-link-pending": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="/shadow-link-pending/stalled.css"><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
   "shadow-link-missing": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="/shadow-link-missing/missing.css"><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
@@ -421,6 +442,58 @@ browserTest("a shadow host's own text takes its colour and size from the slot th
 browserTest("a shadow host's own text that no slot takes in is not text-bearing", async () => {
   const element = await flat("slot-host-unassigned");
   assert.equal(element.selector_path, "html>body>div:nth-of-type(1)>>>p:nth-of-type(1)");
+});
+
+// A shadow host's text assigned (manual slot assignment) to two slots is
+// read through each slot: one slot's reading never stands for text another
+// slot paints differently.
+browserTest("a shadow host's text assigned to two differently coloured slots reads review / overlapping_layer, never one slot's ratio", async () => {
+  const element = await flat("slot-manual-split");
+  assert.equal(element.selector_path, "html>body>div:nth-of-type(1)", "setup: the host is the one text-bearing element");
+  assert.equal(element.fg_raw, "rgb(255, 255, 255)", "setup: the first slot's reading is recorded");
+  assert.equal(element.review_reason, "overlapping_layer");
+});
+
+browserTest("a shadow host's text whose second slot sits over a gradient reads review / background_gradient", async () => {
+  const element = await flat("slot-manual-gradient");
+  assert.equal(element.review_reason, "background_gradient");
+});
+
+browserTest("control: a shadow host's text assigned to two slots that read alike is measured", async () => {
+  const element = await flat("slot-manual-same");
+  assert.deepEqual([element.review_reason, element.fg_raw, element.bg_layers_raw.at(-1)], [null, "rgb(255, 255, 255)", "rgb(17, 17, 17)"]);
+  assert.ok(element.ratio > 18, `ratio ${element.ratio}`);
+});
+
+// Text in a same-origin frame is painted by the frame element and the
+// document around it as well.
+const frameText = async (name) => {
+  const { elements } = await measure(name, { probe: FLAT_PROBE });
+  const inner = elements.filter((element) => element.selector_path.includes("iframe:nth-of-type(1)>>>"));
+  assert.equal(inner.length, 1, `/${name}/: the frame's text is measured (${elements.map((element) => element.selector_path).join(", ")})`);
+  return inner[0];
+};
+
+browserTest("text in a same-origin frame whose frame element has opacity 0.3 reads review / opacity", async () => {
+  assert.equal((await frameText("frame-translucent")).review_reason, "opacity");
+});
+
+browserTest("text in a same-origin frame inside a filtered element of the outer document reads review / filter", async () => {
+  assert.equal((await frameText("frame-outer-filter")).review_reason, "filter");
+});
+
+browserTest("text in a same-origin frame under a positioned layer of the outer document reads review / overlapping_layer", async () => {
+  assert.equal((await frameText("frame-overlay")).review_reason, "overlapping_layer");
+});
+
+browserTest("text in a transparent same-origin frame document is composited over the outer document's background, not a default canvas", async () => {
+  const element = await frameText("frame-transparent");
+  assert.equal(element.bg_layers_raw.at(-1), "rgb(17, 17, 17)", JSON.stringify(element.bg_layers_raw));
+  assert.equal(kit.meetsRequirement(element.ratio, element.required), false, `ratio ${element.ratio}`);
+});
+
+browserTest("control: text in a transparent same-origin frame document whose color-scheme differs from its frame element's reads review / canvas_unknown (that frame paints its own canvas)", async () => {
+  assert.equal((await frameText("frame-scheme")).review_reason, "canvas_unknown");
 });
 
 browserTest("text in a same-origin frame stops at the frame's root, and its path names the frame", async () => {

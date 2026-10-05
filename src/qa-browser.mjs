@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { runWithDeadline } from "./deadline.mjs";
 import { PLACEHOLDER_TEXT_ASSERTION_SUFFIX, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { contrastToolkit } from "./contrast.mjs";
+import { generatedTextRenders } from "./polish-readability.mjs";
 import {
   analyticsCaptureError,
   projectAnalyticsCaptureError,
@@ -1313,8 +1314,9 @@ const PRIMARY_CTA_SELECTOR = ["a[href]", "button", "[role='button']", "[data-nex
 
 // The in-page half of the primary-CTA inspection, as the source text the
 // page evaluates. The route rule it needs (cartEntryHrefFor, unit-tested in
-// qa-cart-entry) and the shared contrast helper (contrastToolkit) are handed
-// in as function values rather than closed over, so every function body must
+// qa-cart-entry), the shared contrast helper (contrastToolkit) and the
+// generated-text rule Polish reads (generatedTextRenders) are handed in as
+// function values rather than closed over, so every function body must
 // stay free of module-scope references: the text is run in a fresh context by
 // a test (primary-CTA inspection script is self-contained) that would surface
 // a leaked identifier as a ReferenceError.
@@ -1326,7 +1328,7 @@ function primaryCtaInspectionScript(expectedUrl) {
     cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE,
     ignoredRouteAttributes: [...UNDECLARED_ROUTE_ATTRIBUTES],
   };
-  return `(${inspectPrimaryCtaScript.toString()})(${JSON.stringify(args)}, ${cartEntryHrefFor.toString()}, ${contrastToolkit.toString()})`;
+  return `(${inspectPrimaryCtaScript.toString()})(${JSON.stringify(args)}, ${cartEntryHrefFor.toString()}, ${contrastToolkit.toString()}, ${generatedTextRenders.toString()})`;
 }
 
 async function inspectPrimaryCta(browserPage, expectedUrl) {
@@ -1340,7 +1342,7 @@ async function inspectPrimaryCta(browserPage, expectedUrl) {
   }));
 }
 
-function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute, ignoredRouteAttributes }, hrefForImpl, contrastToolkitImpl) {
+function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute, ignoredRouteAttributes }, hrefForImpl, contrastToolkitImpl, generatedTextImpl) {
   const CTA_SELECTOR = ctaSelector;
   const toolkit = contrastToolkitImpl();
 
@@ -1421,16 +1423,19 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
   // whose control is disabled or loading has no colours read. Text whose
   // control is disabled is inactive: it is not rendered text the check can
   // read, so it never counts toward text_rendered or toward a pass. Disabled
-  // candidates are not measured at all.
+  // candidates are not measured at all. Text an element inside the candidate
+  // generates through ::before or ::after (generatedTextImpl) is never
+  // measured, so the candidate is reviewed, never passed on its other text.
   const measureCandidate = (element) => {
     if (element.matches(":disabled, [aria-disabled=\"true\"]")) {
       return { disabled: true, text_rendered: null, control_loading: null, contrast_ratio: null, elements: [], below: false, review: false, measured: false, inactive: false };
     }
-    const reads = flatSubtree(element)
+    const subtree = flatSubtree(element);
+    const reads = subtree
       .filter((node) => toolkit.isTextBearing(node, window))
       .map((node) => toolkit.measureTextElement(node, window));
     const compared = [];
-    let review = false;
+    let review = subtree.some((node) => generatedTextImpl(node, window));
     for (const read of reads) {
       if (read.disabled || read.control_loading) continue;
       if (read.review_reason !== null || typeof read.ratio !== "number") review = true;
