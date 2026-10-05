@@ -33,11 +33,13 @@ function cmd(verb, rest = "") {
 }
 import { isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, upsellActionCoverageWithoutOrders, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
+import { trackingQaAssertion, trackingRunScopeRows } from "./qa-tracking-params.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { publishQaVerdict, qaPortalUrl, qaVerdictPublishBlock, QA_VERDICT_PUBLISHERS, skippedQaVerdictPublish } from "./qa-verdict-publish.mjs";
+import { redactPersisted } from "./qa-url-privacy.mjs";
 import {
   isLocalServePacket,
   LOCAL_PROOF_BUILD_ENVIRONMENT,
@@ -2348,7 +2350,8 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
     }
   }
 
-  const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions });
+  const qcResults = [];
+  const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });
   const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
   let commercialResult;
   try {
@@ -2375,6 +2378,7 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
     testOrders,
     commercial: commercialResult.commercial,
     runSessionActive,
+    qcResults,
   });
 }
 
@@ -2389,7 +2393,7 @@ function reportCommercialRunnerError(args, error, write = (message) => process.s
 // one canonical typed-card run captures its settled terminal and only then do
 // we finalize the stable purchase-fires assertion. There is no receipt replay
 // and no second order.
-async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, overrides = {}) {
+async function runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults = null }, overrides = {}) {
   const operations = {
     runInventory: runAnalyticsCorrectnessChecks,
     runParity: runAnalyticsParityChecks,
@@ -2427,6 +2431,7 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
     assertions,
     captureAnalytics: analyticsLeg === "run",
   });
+  if (Array.isArray(qcResults) && Array.isArray(result.qc_results)) qcResults.push(...result.qc_results);
   if (analyticsLeg === "run") {
     assertions.push(operations.assessReceipt(result.receiptAnalytics, { waivers: resolved.qaWaivers }));
   }
@@ -2554,7 +2559,7 @@ function applyLocalServeAnalyticsReview(assertions, localServe) {
   }
 }
 
-async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null, runSessionActive = false, browser = null }) {
+async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null, runSessionActive = false, browser = null, qcResults = [] }) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
   const testedUrls = deriveTestedUrlsFromAssertions(assertions, pageUrls);
@@ -2575,7 +2580,10 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     currentRunId: runId,
     isFinding: isFindingAssertion,
   });
-  const verdict = createVerdict({
+  // The verdict as it is persisted: the local file, the committed sidecar and
+  // the published copy all read this one projection (no URL query in any
+  // string or key), whichever runner, return path or field produced a value.
+  const verdict = redactPersisted(createVerdict({
     runId,
     mapId: resolved.mapId,
     localSpecId: resolved.localSpecId,
@@ -2596,7 +2604,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     commercial,
     causeSummary,
     browser,
-  });
+  }));
 
   const validationErrors = validateVerdict(verdict);
   if (validationErrors.length) throw new Error(`QA verdict failed local validation:\n- ${validationErrors.join("\n- ")}`);
@@ -2678,6 +2686,9 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     browser: verdict.browser || null,
     commercial: verdict.commercial || null,
     next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath, runSessionActive, disposition: verdict.disposition }),
+    // The QC rows the QA stage records; readers re-derive them from the qc.*
+    // assertions of the verdict written above.
+    qc_results: qcResults,
     verdict,
   };
 }
@@ -3067,21 +3078,32 @@ async function maybeRunTestOrders(
     const coverage = upsellActionCoverageWithoutOrders(resolved.topologies);
     if (coverage) assertions.push(coverage);
   }
+  // Tracking parameters ride browser test orders only: a run without one
+  // says so with a run-scope excluded row per tracking check.
+  const notRequestedRows = () => {
+    const rows = trackingRunScopeRows({ runId });
+    assertions.push(...rows.map(trackingQaAssertion));
+    return rows;
+  };
   if ((!mode || mode === "off") && (!legacyMode || legacyMode === "off")) {
-    return { orders: [], receiptAnalytics: emptyReceiptAnalytics() };
+    return { orders: [], receiptAnalytics: emptyReceiptAnalytics(), qc_results: notRequestedRows() };
   }
   if (mode && mode !== "off") {
     // Test Orders use global test cards: they bypass the payment gateway, create
     // no transactions, and need no merchant setup or approval. `--test-order
     // <mode>` is sufficient intent — no permission flags or packet policy gate.
-    const result = await operations.runBrowser(resolved.topologies, args, runId, { captureAnalytics });
+    const result = await operations.runBrowser(resolved.topologies, args, runId, { captureAnalytics, spec: resolved.spec });
     assertions.push(...result.assertions);
-    return { orders: result.orders, receiptAnalytics: result.receiptAnalytics || emptyReceiptAnalytics() };
+    return {
+      orders: result.orders,
+      receiptAnalytics: result.receiptAnalytics || emptyReceiptAnalytics(),
+      qc_results: Array.isArray(result.qc_results) ? result.qc_results : [],
+    };
   }
 
   const orders = await operations.runLegacy({ args: { ...args, "test-order": legacyMode }, resolved, runId, assertions });
   // Direct API diagnostics never qualify as canonical receipt proof.
-  return { orders, receiptAnalytics: emptyReceiptAnalytics() };
+  return { orders, receiptAnalytics: emptyReceiptAnalytics(), qc_results: notRequestedRows() };
 }
 
 async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }) {
@@ -4063,6 +4085,7 @@ export const __qaNodeTestHooks = Object.freeze({
   analyticsCorrectnessDisabledAssertion,
   runAnalyticsOrderSequence,
   maybeRunTestOrders,
+  finalizeQaRun,
   campaignOutputDir,
   polishBlockedAssertions,
   polishGateAssertion,
