@@ -296,11 +296,18 @@ function assertBlock(actual, expected, keys = Object.keys(expected)) {
   assert.deepEqual(Object.fromEntries(keys.map((key) => [key, actual[key]])), Object.fromEntries(keys.map((key) => [key, expected[key]])), `availability block (${keys.join(", ")})`);
 }
 
+const identityOf = (url) => {
+  if (url == null || !/^https?:/.test(url)) return null;
+  const { protocol, host, pathname } = new URL(url);
+  return { url_sha256: sha256(`${protocol}//${host}${pathname}`), path_sha256: sha256(pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname), host_sha256: sha256(host.replace(/^www\./, "")) };
+};
+
 const availabilityObservation = ({ origin, path, query = null, availability, field = FIELD, scheme = "http", configured = `${origin}${path}` }) => ({
   check: "policy.availability",
   field,
   configured,
   configured_query_sha256: query == null ? null : sha256(query),
+  configured_identity: identityOf(configured),
   scheme,
   availability,
 });
@@ -310,6 +317,7 @@ const presenceObservation = ({ configured, query = null, scheme = "https", prese
   field,
   configured,
   configured_query_sha256: query == null ? null : sha256(query),
+  configured_identity: identityOf(configured),
   scheme,
   presence,
 });
@@ -319,7 +327,10 @@ const availabilityState = (reasonCode, observation, expected) => ({
   reason_code: reasonCode,
   configured: observation.configured,
   configured_query_sha256: observation.configured_query_sha256,
+  configured_identity: observation.configured_identity,
   chain: expected.chain.map(({ url, query_sha256, status }) => ({ url, query_sha256, status })),
+  chain_identity: expected.chain.map(({ url }) => identityOf(url)),
+  next_hop_identity: null,
   final: expected.final,
   final_query_sha256: expected.final_query_sha256,
   status: expected.status,
@@ -331,6 +342,7 @@ const presenceState = (reasonCode, observation) => ({
   reason_code: reasonCode,
   configured: observation.configured,
   configured_query_sha256: observation.configured_query_sha256,
+  configured_identity: observation.configured_identity,
   pages_expected: observation.presence.pages_expected,
   pages_read: observation.presence.pages_read,
   pages_with_match: observation.presence.pages_with_match,

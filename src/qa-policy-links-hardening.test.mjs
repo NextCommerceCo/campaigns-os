@@ -19,6 +19,7 @@ import {
   runPolicyLinkChecks,
 } from "./qa-policy-links.mjs";
 import { redactPersisted } from "./qa-url-privacy.mjs";
+import { assessQcAccepts, createQcAccept, qcAcceptAttribution } from "./qc-accept.mjs";
 import { loadQcRederivers } from "./qc-check-registry.mjs";
 import { buildQcResult, readQaResults } from "./qc-results.mjs";
 
@@ -164,6 +165,7 @@ const availabilityObservation = (block, { field = "store_terms", scheme = "https
   field,
   configured: block.chain[0]?.url ?? null,
   configured_query_sha256: block.chain[0]?.query_sha256 ?? null,
+  configured_identity: block.chain_identity[0] ?? null,
   scheme,
   availability: block,
 });
@@ -573,11 +575,14 @@ const availabilityState = (observation, reasonCode) => ({
   reason_code: reasonCode,
   configured: observation.configured,
   configured_query_sha256: observation.configured_query_sha256,
+  configured_identity: observation.configured_identity,
   chain: observation.availability.chain.map(({ url, query_sha256: querySha, status }) => ({ url, query_sha256: querySha, status })),
+  chain_identity: observation.availability.chain_identity,
   final: observation.availability.final,
   final_query_sha256: observation.availability.final_query_sha256,
   status: observation.availability.status,
   content_type: observation.availability.content_type,
+  next_hop_identity: observation.availability.next_hop && { url_sha256: observation.availability.next_hop.url_sha256, path_sha256: observation.availability.next_hop.path_sha256, host_sha256: observation.availability.next_hop.host_sha256 },
 });
 
 // A path the persisted-verdict projection truncates.
@@ -757,13 +762,15 @@ const COMPLETE_PRESENCE = Object.freeze({
   label_anchor_mismatch_pages: 0,
   hint_anchor_elsewhere: 0,
 });
+// The hashes of TERMS the producer stores as its configured_identity.
+const TERMS_IDENTITY = Object.freeze({ url_sha256: sha256(TERMS), path_sha256: sha256("/terms"), host_sha256: sha256("store.example.invalid") });
 const NON_HTTP_BLOCK = Object.freeze({ chain: [], chain_identity: [], final: null, final_query_sha256: null, status: null, content_type: null, outcome: "non_http_destination", next_hop: null });
 
 // The presence and availability observations of `configured` stored under
 // `scheme`, with complete presence counts and a match on the only page.
 const storedIdentity = (configured, scheme) => [
-  { check: "policy.presence", field: "store_terms", configured, configured_query_sha256: null, scheme, presence: { ...COMPLETE_PRESENCE } },
-  { check: "policy.availability", field: "store_terms", configured, configured_query_sha256: null, scheme, availability: structuredClone(NON_HTTP_BLOCK) },
+  { check: "policy.presence", field: "store_terms", configured, configured_query_sha256: null, configured_identity: null, scheme, presence: { ...COMPLETE_PRESENCE } },
+  { check: "policy.availability", field: "store_terms", configured, configured_query_sha256: null, configured_identity: null, scheme, availability: structuredClone(NON_HTTP_BLOCK) },
 ];
 
 // A stored row claiming the result its consistent twin (tel:+15550100, scheme
@@ -829,7 +836,7 @@ test("policy links: http(s) and mailto configured values stored as scheme other 
 test("policy links: a stored presence observation with pages_with_match above pages_read neither re-derives nor reads as anything but not reproducible", async () => {
   for (const [read, withMatch] of [[1, 2], [2, 3]]) {
     const counts = { ...COMPLETE_PRESENCE, pages_expected: read, pages_read: read };
-    const consistent = { check: "policy.presence", field: "store_terms", configured: TERMS, configured_query_sha256: null, scheme: "https", presence: { ...counts, pages_with_match: read } };
+    const consistent = { check: "policy.presence", field: "store_terms", configured: TERMS, configured_query_sha256: null, configured_identity: TERMS_IDENTITY, scheme: "https", presence: { ...counts, pages_with_match: read } };
     const derived = rederiveQcResult(consistent);
     assert.deepEqual([derived?.result, derived?.reason_code], ["pass", null], "setup: the consistent counts derive pass");
     const observation = { ...consistent, presence: { ...counts, pages_with_match: withMatch } };
@@ -1039,11 +1046,12 @@ async function assertEachRefused(cases) {
 }
 
 // The stored objects of an observation as [label, path]: the observation, its
-// block and, in an availability block, each chain hop, each chain_identity
-// entry and the next hop.
+// configured_identity, its block and, in an availability block, each chain
+// hop, each chain_identity entry and the next hop.
 function storedObjects(observation) {
   const block = observation.check === "policy.presence" ? "presence" : "availability";
   const objects = [["observation", []], [block, [block]]];
+  if (observation.configured_identity) objects.push(["configured_identity", ["configured_identity"]]);
   if (block === "availability") {
     const { chain, chain_identity: ids, next_hop: nextHop } = observation.availability;
     chain.forEach((_, index) => objects.push([`chain[${index}]`, ["availability", "chain", index]]));
@@ -1224,3 +1232,136 @@ test("policy links: a stored chain that repeats a hop is refused by re-derivatio
   assert.ok(cases.every(({ observation }) => new Set(observation.availability.chain_identity.map(({ url_sha256: url }) => url)).size < observation.availability.chain.length), "setup: each chain repeats a request");
   await assertEachRefused(cases);
 });
+
+// ---------------------------------------------------------------------------
+// Accept state carries the raw URL identities
+
+const SHOP = "https://shop.example";
+const PRESENCE_ID = "policy.presence:campaign:store_terms";
+const AVAILABILITY_ID = "policy.availability:campaign:store_terms";
+
+// One field configured as `configured`, its only read page linking elsewhere
+// (presence policy_link_absent), every request answered by `routes`. Returns
+// the producer rows and the rows the 1.0 QA reader reads from them, by id.
+async function warningRun(configured, routes) {
+  const spec = { campaign: { store_terms: configured } };
+  const pages = [{ read: true, anchors: [{ href: `${SHOP}/about`, label_fields: [], hint_fields: [] }] }];
+  const { rows } = await runPolicyLinkChecks({ spec, pages, fetchImpl: fakeFetch(virtualClock(), routes, []), measuredAt });
+  return { rows: rowsById(rows), read: rowsById(await readStored(rows)) };
+}
+
+// The accept state the row of `id` re-derives from its stored observation.
+const stateOf = (run, id) => rederiveQcResult(run.rows.get(id).observation).state;
+
+// An operator accept on each read row, as checkpoint accept records it.
+function acceptsOn(read) {
+  const attribution = qcAcceptAttribution({ reason: "known synthetic", acceptedBy: "Jordan Lee", now: new Date().toISOString() });
+  return [...read.values()].map((row) => createQcAccept(row, { measuredAt, attribution }));
+}
+
+// Each accept assessed against the read rows: [result id, status, why, applied].
+const assessedOn = (records, read) => assessQcAccepts(records, [...read.values()]).map(({ status, why, applied }, index) => [records[index].result_id, status, why, applied]);
+
+test("policy links: configured /terms%3Fone and /terms%3Ftwo store the same text, yet their warnings give different states, and an accept on the first lapses on the second", async () => {
+  const runs = [];
+  for (const path of ["/terms%3Fone", "/terms%3Ftwo"]) {
+    const configured = `${SHOP}${path}`;
+    const run = await warningRun(configured, (url) => (url === configured ? { status: 404 } : undefined));
+    assert.deepEqual(
+      [...run.read.values()].map((row) => [row.id, row.result, row.reason_code]).sort(),
+      [[AVAILABILITY_ID, "warning", "not_found"], [PRESENCE_ID, "warning", "policy_link_absent"]],
+      `setup: ${path}: both rows read as warnings`,
+    );
+    runs.push(run);
+  }
+  const [one, two] = runs;
+  for (const id of [PRESENCE_ID, AVAILABILITY_ID]) {
+    assert.equal(one.rows.get(id).observation.configured, `${SHOP}/terms<query-redacted>`, `setup: ${id}: the configured value is stored redacted`);
+    assert.equal(two.rows.get(id).observation.configured, one.rows.get(id).observation.configured, `setup: ${id}: both runs store the same configured text`);
+    assert.notDeepEqual(stateOf(two, id), stateOf(one, id), `${id}: the states differ`);
+    assert.notEqual(two.rows.get(id).state_fingerprint, one.rows.get(id).state_fingerprint, `${id}: the producer's state fingerprints differ`);
+    assert.notEqual(two.read.get(id).state_fingerprint, one.read.get(id).state_fingerprint, `${id}: the read state fingerprints differ`);
+  }
+  const records = acceptsOn(one.read);
+  assert.deepEqual(assessedOn(records, one.read), [[PRESENCE_ID, "active", null, true], [AVAILABILITY_ID, "active", null, true]], "setup: both accepts apply on the run they were recorded on");
+  assert.deepEqual(assessedOn(records, two.read), [[PRESENCE_ID, "lapsed", "state_changed", false], [AVAILABILITY_ID, "lapsed", "state_changed", false]], "both accepts lapse when the configured URL changes");
+});
+
+test("policy links: the same configured URL measured twice with the same outcomes keeps its accepts active", async () => {
+  const configured = `${SHOP}/terms%3Fone`;
+  const routes = (url) => (url === configured ? { status: 404 } : undefined);
+  const first = await warningRun(configured, routes);
+  const second = await warningRun(configured, routes);
+  for (const id of [PRESENCE_ID, AVAILABILITY_ID]) {
+    assert.deepEqual(stateOf(second, id), stateOf(first, id), `${id}: the same state`);
+    assert.equal(second.read.get(id).state_fingerprint, first.read.get(id).state_fingerprint, `${id}: the same state fingerprint`);
+  }
+  const records = acceptsOn(first.read);
+  assert.deepEqual(assessedOn(records, second.read), [[PRESENCE_ID, "active", null, true], [AVAILABILITY_ID, "active", null, true]]);
+});
+
+test("policy links: an intermediate hop or the final URL whose raw path changes while its stored text stays the same lapses an availability accept", async () => {
+  const configured = `${SHOP}/start`;
+  const cases = [
+    ["intermediate hop", (path) => (url) => ({
+      [configured]: { status: 302, location: path },
+      [`${SHOP}${path}`]: { status: 302, location: "/end" },
+      [`${SHOP}/end`]: { status: 404 },
+    })[url], ["/hop%3Fone", "/hop%3Ftwo"], [302, 302, 404]],
+    ["final URL", (path) => (url) => ({
+      [configured]: { status: 302, location: path },
+      [`${SHOP}${path}`]: { status: 404 },
+    })[url], ["/gone%3Fone", "/gone%3Ftwo"], [302, 404]],
+  ];
+  for (const [label, routesFor, paths, statuses] of cases) {
+    const [one, two] = [await warningRun(configured, routesFor(paths[0])), await warningRun(configured, routesFor(paths[1]))];
+    for (const run of [one, two]) {
+      const availability = run.rows.get(AVAILABILITY_ID);
+      assert.deepEqual([availability.result, availability.reason_code, availability.observation.availability.chain.map(({ status }) => status)], ["warning", "not_found", statuses], `setup: ${label}: a not_found warning after the redirects`);
+    }
+    const chainText = (run) => run.rows.get(AVAILABILITY_ID).observation.availability.chain.map(({ url, query_sha256: query }) => [url, query]);
+    assert.deepEqual(chainText(two), chainText(one), `setup: ${label}: both runs store the same chain text`);
+    assert.deepEqual(stateOf(two, PRESENCE_ID), stateOf(one, PRESENCE_ID), `setup: ${label}: presence is unchanged`);
+    assert.notDeepEqual(stateOf(two, AVAILABILITY_ID), stateOf(one, AVAILABILITY_ID), `${label}: the availability states differ`);
+    const records = acceptsOn(one.read);
+    assert.deepEqual(
+      assessedOn(records, two.read),
+      [[PRESENCE_ID, "active", null, true], [AVAILABILITY_ID, "lapsed", "state_changed", false]],
+      `${label}: the availability accept lapses; the presence accept stays`,
+    );
+  }
+});
+
+test("policy links: a stored configured identity edited away from its stored URL, or from the first request's, is refused by re-derivation and read as not reproducible", async () => {
+  const cases = [];
+  const edit = (row, label, change) => {
+    const observation = structuredClone(row.observation);
+    change(observation);
+    cases.push({ label: `${row.id}: ${label}`, valid: row.observation, observation });
+  };
+  const direct = await produced(TERMS);
+  const redacted = await produced(`${SHOP}/terms%3Fone`);
+  for (const row of [...direct, ...redacted]) {
+    assert.ok(isIdentity(row.observation.configured_identity), `setup: ${row.id} ${row.observation.configured}: the producer stores the configured identity`);
+  }
+  for (const row of direct) {
+    edit(row, "path hash of a shown path edited", (observation) => { observation.configured_identity.path_sha256 = sha256("/elsewhere"); });
+    edit(row, "url hash of a shown path edited", (observation) => { observation.configured_identity.url_sha256 = sha256("https://store.example.invalid/elsewhere"); });
+    edit(row, "host hash edited", (observation) => { observation.configured_identity.host_sha256 = sha256("elsewhere.example.invalid"); });
+  }
+  for (const row of redacted) {
+    edit(row, "host hash of a redacted URL edited", (observation) => { observation.configured_identity.host_sha256 = sha256("elsewhere.example"); });
+  }
+  // The stored path is redacted, so its hash is not held to it; the first
+  // request's identity is.
+  const availability = redacted.find((row) => row.check === "policy.availability");
+  edit(availability, "path hash of a redacted URL edited away from the first request's", (observation) => { observation.configured_identity.path_sha256 = sha256("/terms?two"); });
+  edit(availability, "url hash of a redacted URL edited away from the first request's", (observation) => { observation.configured_identity.url_sha256 = sha256(`${SHOP}/terms%3Ftwo`); });
+  for (const row of await produced("mailto:help@example.test")) {
+    edit(row, "an identity stored for a mailto value", (observation) => { observation.configured_identity = structuredClone(direct[0].observation.configured_identity); });
+  }
+  assert.ok(cases.every(({ valid }) => rederiveQcResult(valid)), "setup: every unedited producer observation re-derives");
+  await assertEachRefused(cases);
+});
+
+const isIdentity = (value) => Boolean(value) && typeof value === "object" && ["url_sha256", "path_sha256", "host_sha256"].every((key) => /^sha256:[a-f0-9]{64}$/.test(value[key]));

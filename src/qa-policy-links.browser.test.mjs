@@ -297,11 +297,18 @@ const counts = (pagesExpected, pagesRead, withMatch, queryDiffers, labelDeclared
   hint_anchor_elsewhere: hintElsewhere,
 });
 
+const identityOf = (url) => {
+  if (url == null || !/^https?:/.test(url)) return null;
+  const { protocol, host, pathname } = new URL(url);
+  return { url_sha256: sha256(`${protocol}//${host}${pathname}`), path_sha256: sha256(pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname), host_sha256: sha256(host.replace(/^www\./, "")) };
+};
+
 // The contract's presence accept state.
 const presenceState = (reasonCode, configured, configuredQuery, presence) => ({
   reason_code: reasonCode,
   configured,
   configured_query_sha256: configuredQuery,
+  configured_identity: identityOf(configured),
   pages_expected: presence.pages_expected,
   pages_read: presence.pages_read,
   pages_with_match: presence.pages_with_match,
@@ -354,7 +361,7 @@ async function assertAvailabilityPass(policy, field, { configured, query = null 
   const queryHash = query == null ? null : sha256(query);
   const availability = { chain: [{ url: configured, query_sha256: queryHash, status: 200 }], final: configured, final_query_sha256: queryHash, status: 200, content_type: "text/html", outcome: "pass" };
   const { outcome: _outcome, ...measured } = availability;
-  const fingerprint = qcStateFingerprint({ subject: subjectOf("policy.availability", field), state: { reason_code: null, configured, configured_query_sha256: queryHash, ...measured } });
+  const fingerprint = qcStateFingerprint({ subject: subjectOf("policy.availability", field), state: { reason_code: null, configured, configured_query_sha256: queryHash, configured_identity: identityOf(configured), ...measured, chain_identity: [identityOf(configured)], next_hop_identity: null } });
   const row = assertRowBoth(policy, "policy.availability", field, { result: "pass", reasonCode: null, acceptEligible: false, coverage: { observed: 1, expected: 1, limits: [] }, fingerprint });
   const observation = row.observation || {};
   assert.deepEqual(

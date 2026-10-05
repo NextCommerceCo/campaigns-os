@@ -19,9 +19,11 @@
 // origin+path, written as the persisted-verdict projection
 // (src/qa-url-privacy.mjs) leaves it, so a row and its verdict assertion carry
 // the same observation. That projection can merge distinct paths (an encoded
-// "?" in a path is redacted), so no rule compares stored URLs: each hop also
-// keeps sha256 hashes of its raw URL, path and host (chain_identity), and the
-// rules compare those.
+// "?" in a path is redacted), so no rule compares stored URLs: the configured
+// value (configured_identity) and each hop (chain_identity) also keep sha256
+// hashes of the raw URL, path and host, and the rules compare those. A row's
+// accept state carries them too, so an accept lapses when a raw URL changes
+// behind the same stored text.
 //
 // Time: one run budget (createPolicyLinkBudget) bounds the time the policy
 // link checks add to a QA run. Every anchor read and the probes take their
@@ -189,9 +191,10 @@ const safeDecode = (text) => {
 // The hashes of one raw http(s) URL that the availability rules compare:
 // url_sha256 its exact origin+path (with query_sha256, a hop's identity for
 // loops), path_sha256 its path with the trailing slash ignored, host_sha256
-// its host without a leading "www." (the pass allowances). Stored as a hop's
-// chain_identity entry.
+// its host without a leading "www." (the pass allowances). Stored as an http(s)
+// configured value's configured_identity and as a hop's chain_identity entry.
 const IDENTITY_KEYS = Object.freeze(["url_sha256", "path_sha256", "host_sha256"]);
+const sameIdentity = (a, b) => IDENTITY_KEYS.every((key) => a[key] === b[key]);
 const urlIdentity = (protocol, host, pathname) => record(IDENTITY_KEYS, {
   url_sha256: sha256(`${protocol}//${host}${pathname}`),
   path_sha256: sha256(trimSlash(pathname)),
@@ -483,7 +486,7 @@ function finalOutcome(final, contentType, configured) {
 
 // The outcome a stored availability block re-derives to, or null when the
 // block is not one a probe of the configured value can have written.
-function availabilityOutcome({ scheme, configured, configured_query_sha256: configuredQuery, run_scope: runScope }, block, { maxRedirects = POLICY_LINK_LIMITS.maxRedirects } = {}) {
+function availabilityOutcome({ scheme, configured, configured_query_sha256: configuredQuery, configured_identity: configuredIds, run_scope: runScope }, block, { maxRedirects = POLICY_LINK_LIMITS.maxRedirects } = {}) {
   if (!hasExactKeys(block, BLOCK_KEYS) || !Array.isArray(block.chain)) return null;
   const { chain, chain_identity: ids, next_hop: nextHop } = block;
   if (!Array.isArray(ids)) return null;
@@ -497,9 +500,10 @@ function availabilityOutcome({ scheme, configured, configured_query_sha256: conf
   if (ids.length !== chain.length || !ids.every((hopIds, index) => validIdentity(hopIds, chain[index].url))) return null;
   const requests = chain.map((hop, index) => [hop.url, ids[index]]);
   if (!sameStoredUrl(requests)) return null;
-  // The first request is the configured URL; every hop but the last is a
-  // redirect; no request repeats (a repeat ends the chain as a loop instead).
-  if (chain[0].url !== configured || chain[0].query_sha256 !== configuredQuery) return null;
+  // The first request is the configured URL, its hashes included; every hop
+  // but the last is a redirect; no request repeats (a repeat ends the chain as
+  // a loop instead).
+  if (chain[0].url !== configured || chain[0].query_sha256 !== configuredQuery || !sameIdentity(ids[0], configuredIds)) return null;
   if (!chain.slice(0, -1).every((hop) => REDIRECT_STATUSES.has(hop.status))) return null;
   const keys = chain.map((hop, index) => requestKey(ids[index], hop.query_sha256));
   if (new Set(keys).size !== keys.length) return null;
@@ -632,7 +636,7 @@ export async function probePolicyUrl(url, {
       outcome: null,
       next_hop: nextHop,
     });
-    const observed = { scheme: configured.scheme, configured: configured.stored, configured_query_sha256: configured.querySha };
+    const observed = { scheme: configured.scheme, configured: configured.stored, configured_query_sha256: configured.querySha, configured_identity: configured.ids };
     block.outcome = availabilityOutcome(observed, block, { maxRedirects });
     // A chain the rules cannot read is kept as unanswered: never a pass.
     return block.outcome ? block : emptyBlock(NETWORK);
@@ -678,7 +682,7 @@ const PRESENCE_COUNTS = Object.freeze(PRESENCE_KEYS.filter((key) => key !== "lab
 // value, byte for byte.
 function readIdentity(observation) {
   if (!isPlainObject(observation)) return null;
-  const { check, field, configured, configured_query_sha256: configuredQuery, scheme } = observation;
+  const { check, field, configured, configured_query_sha256: configuredQuery, configured_identity: configuredIds, scheme } = observation;
   if (!CHECKS.includes(check) || !POLICY_LINK_FIELDS.includes(field) || !SCHEMES.includes(scheme)) return null;
   const scoped = Object.hasOwn(observation, "run_scope");
   if (!hasExactKeys(observation, observationKeys(check, scoped))) return null;
@@ -686,14 +690,19 @@ function readIdentity(observation) {
   const runScope = scoped ? observation.run_scope : null;
   if (scoped && runScope !== NOT_REQUESTED) return null;
   if (scheme === "invalid") {
-    if (configured !== null || configuredQuery !== null) return null;
+    if (configured !== null || configuredQuery !== null || configuredIds !== null) return null;
   } else {
     const target = parseTarget(configured);
     if (target.scheme !== scheme || target.stored !== configured) return null;
-    // Only an http(s) value keeps a query (as its hash).
-    if (!(scheme === "http" || scheme === "https") && configuredQuery !== null) return null;
+    // Only an http(s) value keeps a query (as its hash) and the hashes of its
+    // raw URL, which agree with what its stored value shows.
+    if (scheme === "http" || scheme === "https") {
+      if (!validIdentity(configuredIds, configured)) return null;
+    } else if (configuredQuery !== null || configuredIds !== null) {
+      return null;
+    }
   }
-  return { check, field, configured, configured_query_sha256: configuredQuery, scheme, run_scope: runScope };
+  return { check, field, configured, configured_query_sha256: configuredQuery, configured_identity: configuredIds, scheme, run_scope: runScope };
 }
 
 function readPresence(presence, scheme) {
@@ -733,6 +742,7 @@ function derivePresence(identity, observation) {
       reason_code: decided.reason_code,
       configured: identity.configured,
       configured_query_sha256: identity.configured_query_sha256,
+      configured_identity: identity.configured_identity,
       pages_expected: presence.pages_expected,
       pages_read: presence.pages_read,
       pages_with_match: presence.pages_with_match,
@@ -762,11 +772,14 @@ function deriveAvailability(identity, observation) {
       reason_code: reasonCode,
       configured: identity.configured,
       configured_query_sha256: identity.configured_query_sha256,
+      configured_identity: identity.configured_identity,
       chain: block.chain.map(({ url, query_sha256: querySha, status }) => ({ url, query_sha256: querySha, status })),
+      chain_identity: block.chain_identity.map((ids) => record(IDENTITY_KEYS, ids)),
       final: block.final,
       final_query_sha256: block.final_query_sha256,
       status: block.status,
       content_type: block.content_type,
+      next_hop_identity: block.next_hop === null ? null : record(IDENTITY_KEYS, block.next_hop),
     },
   };
 }
@@ -826,7 +839,7 @@ export function policyLinkQaAssertion(row) {
 // The stored observation of one row: the field's identity, the check's block
 // and, for a run-scope row only, run_scope.
 const observationKeys = (check, scoped) => [
-  "check", "field", "configured", "configured_query_sha256", "scheme",
+  "check", "field", "configured", "configured_query_sha256", "configured_identity", "scheme",
   check === POLICY_PRESENCE_CHECK ? "presence" : "availability",
   ...(scoped ? ["run_scope"] : []),
 ];
@@ -835,6 +848,7 @@ const identityOf = (check, field, target) => ({
   field,
   configured: target.scheme === "invalid" ? null : target.stored,
   configured_query_sha256: target.scheme === "invalid" ? null : target.querySha,
+  configured_identity: target.ids ?? null,
   scheme: target.scheme,
 });
 
