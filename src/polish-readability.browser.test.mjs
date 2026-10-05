@@ -775,3 +775,100 @@ browserTest("control: a loaded stylesheet inside an open shadow root leaves the 
   assert.deepEqual(pageRows(rows, "shadow-styles-loaded", keyed("cell")), [], "no cell row for a measured cell");
   assert.deepEqual(pageRows(rows, "shadow-styles-loaded", isPair), both({ key: "pair:ffffffff/111111ff:normal", result: "pass", reason_code: null }));
 });
+
+// ---------------------------------------------------------------------------
+// A shadow host's own text renders inside its open shadow root, through the
+// slot that takes it in: it inherits that slot's style, and the shadow tree's
+// wrappers around the slot paint over it. A same-origin frame still loading
+// its document (the initial blank document standing in for a pending src, or
+// a document not yet complete) has text the probe cannot read yet: the cell
+// lists it as a gap. A loaded frame, and one blank by design, read as before.
+
+const SLOTTED_PAGES = {
+  "slot-host-translucent": htmlPage(`<div data-next-action="add-to-cart" style="${P};color:#ffffff;background:#111111">Slotted host text${OPEN("<span style=\"opacity:0.3\"><slot></slot></span>")}</div>`),
+  "slot-host-restyled": htmlPage(`<div style="${P};color:#ffffff;background:#111111">Restyled host text${OPEN("<span style=\"color:#333333\"><slot></slot></span>")}</div>`),
+  "slot-host-unassigned": htmlPage(`<div style="${P};color:#ffffff;background:#111111">Unassigned host text${OPEN("<p style=\"margin:0;color:#ffffff;background:#111111\">Shadow text</p>")}</div>`),
+  "frame-pending": htmlPage(`<iframe src="${routeOf("frame-pending")}stalled.html" title="Synthetic frame" style="width:320px;height:120px;border:0"></iframe>${STRIP}`),
+  "frame-incomplete": htmlPage(`<iframe src="${routeOf("frame-incomplete")}inner.html" title="Synthetic frame" style="width:320px;height:120px;border:0"></iframe>${STRIP}`),
+  "frame-blank": htmlPage(`<iframe title="Blank frame" style="width:320px;height:60px;border:0"></iframe><iframe src="about:blank" title="Blank frame" style="width:320px;height:60px;border:0"></iframe>${STRIP}`),
+  "frame-src-loaded": htmlPage(`<iframe src="${routeOf("frame-src-loaded")}inner.html" title="Synthetic frame" style="width:320px;height:120px;border:0"></iframe>`),
+};
+const FRAME_TEXT = "<p style=\"margin:0;padding:8px;font-size:16px;font-weight:400;color:#ffffff;background:#111111\">Frame text</p>";
+
+const slottedCapture = (() => {
+  let pending = null;
+  let site = null;
+  after(async () => {
+    await site?.close();
+  });
+  return () => {
+    pending ||= (async () => {
+      site = await readabilitySite({
+        pages: SLOTTED_PAGES,
+        assets: {
+          [`${routeOf("frame-pending")}stalled.html`]: stall(),
+          [`${routeOf("frame-incomplete")}inner.html`]: respond("200 OK", "text/html; charset=utf-8", htmlPage(`${FRAME_TEXT}<img alt="" src="${routeOf("frame-incomplete")}stalled.png" style="width:1px;height:1px">`)),
+          [`${routeOf("frame-incomplete")}stalled.png`]: stall(),
+          [`${routeOf("frame-src-loaded")}inner.html`]: respond("200 OK", "text/html; charset=utf-8", htmlPage(FRAME_TEXT)),
+        },
+      });
+      const capture = await capturePolish(site);
+      assertCaptureCompleted(capture);
+      const record = readabilityRecord(capture.report);
+      const rows = await readabilityRows(site);
+      assert.ok(rows.length > 0, "readCurrentQcResults lists readability.contrast rows");
+      return { site, record, rows };
+    })();
+    return pending;
+  };
+})();
+
+const measuredRow = (key) => key.startsWith("pair:") || key.startsWith("review:") || key.startsWith("role:");
+
+browserTest("a shadow host's own text slotted beneath a translucent shadow wrapper reads review / opacity, never pass", async () => {
+  const { rows } = await slottedCapture();
+  assert.deepEqual(pageRows(rows, "slot-host-translucent", measuredRow), both({ key: "review:add_to_cart:opacity", result: "review", reason_code: "opacity" }));
+});
+
+browserTest("a shadow host's own text takes the colour of the slot that renders it", async () => {
+  const { rows } = await slottedCapture();
+  assert.deepEqual(warningRows(pageRows(rows, "slot-host-restyled", measuredRow)), warningRows(both({ key: "pair:333333ff/111111ff:normal", result: "warning" })));
+});
+
+browserTest("a shadow host's own text that no slot takes in is not rendered and not measured", async () => {
+  const { record } = await slottedCapture();
+  const cells = cellsOf(record, "slot-host-unassigned");
+  for (const viewport of VIEWPORTS) {
+    assert.deepEqual(cells[viewport].elements.map((element) => element.selector_path), ["html>body>div:nth-of-type(1)>>>p:nth-of-type(1)"], `${viewport}: only the shadow root's own text is measured`);
+  }
+});
+
+browserTest("a visible same-origin iframe still on its initial blank document with a pending src: gap row unexercised / cross_origin_text", async () => {
+  const { site, rows } = await slottedCapture();
+  assert.ok(site.same.requested(`${routeOf("frame-pending")}stalled.html`), "setup: the frame's src was requested");
+  assert.deepEqual(pageRows(rows, "frame-pending", (key) => key.startsWith("gap:")), both({ key: "gap:cross_origin_text", result: "unexercised", reason_code: "cross_origin_text" }));
+});
+
+browserTest("a visible same-origin iframe whose document has not finished loading: gap row unexercised / cross_origin_text, and its text is not measured", async () => {
+  const { site, record, rows } = await slottedCapture();
+  assert.ok(site.same.requested(`${routeOf("frame-incomplete")}stalled.png`), "setup: the frame's document loaded and its image stalled");
+  assert.deepEqual(pageRows(rows, "frame-incomplete", (key) => key.startsWith("gap:")), both({ key: "gap:cross_origin_text", result: "unexercised", reason_code: "cross_origin_text" }));
+  const cells = cellsOf(record, "frame-incomplete");
+  for (const viewport of VIEWPORTS) assert.deepEqual(cells[viewport].elements.map((element) => element.selector_path), ["html>body>p:nth-of-type(1)"], `${viewport}: only the outer text is measured`);
+});
+
+browserTest("control: frames blank by design (no src, src about:blank) add no gap, and a loaded same-origin src frame is measured with no gap", async () => {
+  const { record, rows } = await slottedCapture();
+  assert.deepEqual(pageRows(rows, "frame-blank", (key) => key.startsWith("gap:") || key === "cell"), [], "no gap or cell row for blank frames");
+  assert.deepEqual(pageRows(rows, "frame-blank", isPair), both({ key: "pair:ffffffff/111111ff:normal", result: "pass", reason_code: null }));
+  assert.deepEqual(pageRows(rows, "frame-src-loaded", (key) => key.startsWith("gap:") || key === "cell"), [], "no gap or cell row for a loaded frame");
+  assert.deepEqual(pageRows(rows, "frame-src-loaded", isPair), both({ key: "pair:ffffffff/111111ff:normal", result: "pass", reason_code: null }));
+  const cells = cellsOf(record, "frame-src-loaded");
+  for (const viewport of VIEWPORTS) assert.deepEqual(cells[viewport].elements.map((element) => element.selector_path), ["html>body>iframe:nth-of-type(1)>>>html>body>p:nth-of-type(1)"], `${viewport}: the frame's text is measured`);
+});
+
+browserTest("the record persists no text from slotted host text or frames", async () => {
+  const { record } = await slottedCapture();
+  const serialized = JSON.stringify(record);
+  assert.deepEqual(["Slotted host text", "Restyled host text", "Unassigned host text", "Shadow text", "Frame text", "Synthetic text"].filter((text) => serialized.includes(text)), []);
+});

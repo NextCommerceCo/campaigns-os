@@ -409,8 +409,9 @@ export const READABILITY_QC_RULES = Object.freeze({
 // the shared contrast helper (readabilityProbeSource), and only reads the
 // page: it never clicks, focuses, hovers, scrolls, types or writes a style,
 // and returns no text content. It reads the document, every open shadow root
-// (recursively) and every visible same-origin frame's document, each
-// measured with its own window. The cell measurability checks run on the
+// (recursively) and every visible same-origin frame's loaded document, each
+// measured with its own window; a visible frame still loading is listed as
+// text it cannot reach, like a cross-origin one. The cell measurability checks run on the
 // document and on each frame document it measures, each with the open shadow
 // roots inside it; the first that fails makes the cell read that reason.
 // `limits.elements`
@@ -479,6 +480,16 @@ export function readabilityProbe(toolkit, limits, closedRoots) {
       return null;
     }
   };
+  // A frame's document has loaded when it is complete and is not the initial
+  // blank document standing in for a page still on its way (a src other than
+  // about:blank, or a srcdoc). A frame with no src, or src about:blank, is
+  // blank by design.
+  const frameLoaded = (frame, inner) => {
+    if (inner.readyState !== "complete") return false;
+    if (inner.URL !== "about:blank") return true;
+    const src = (frame.getAttribute("src") || "").trim();
+    return !frame.hasAttribute("srcdoc") && (src === "" || /^about:blank(?:[?#]|$)/i.test(frame.src));
+  };
   const meet = (a, b) => {
     if (!a) return b;
     const x = Math.max(a.x, b.x);
@@ -487,10 +498,12 @@ export function readabilityProbe(toolkit, limits, closedRoots) {
   };
 
   // Every tree the probe reads: the document, each open shadow root and each
-  // visible same-origin frame's document, with the window that measures it,
-  // its offset in the main frame's viewport and the frame boxes clipping it.
-  // `elements` lists every element in tree order, a host's shadow tree and
-  // a frame's document right after the host or frame.
+  // visible same-origin frame's loaded document, with the window that
+  // measures it, its offset in the main frame's viewport and the frame boxes
+  // clipping it. `elements` lists every element in tree order, a host's
+  // shadow tree and a frame's document right after the host or frame. A
+  // frame (iframe or frame) whose document is cross-origin or still loading
+  // is not readable.
   const scopes = [];
   const inOrder = [];
   const frames = [];
@@ -500,10 +513,11 @@ export function readabilityProbe(toolkit, limits, closedRoots) {
     for (const el of top) {
       inOrder.push([el, scope]);
       if (el.shadowRoot) enter(el.shadowRoot, scopeWin, offset, clip, el.shadowRoot.querySelectorAll("*"));
-      if (el.localName !== "iframe") continue;
+      if (el.localName !== "iframe" && el.localName !== "frame") continue;
       const inner = frameDocument(el);
-      frames.push([el, scope, Boolean(inner)]);
-      if (!inner || !inner.body || !inner.defaultView || !shown(el)) continue;
+      const readable = Boolean(inner) && frameLoaded(el, inner);
+      frames.push([el, scope, readable]);
+      if (!readable || !inner.body || !inner.defaultView || !shown(el)) continue;
       const box = el.getBoundingClientRect();
       const style = scopeWin.getComputedStyle(el);
       const padding = (side) => Number.parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
@@ -691,7 +705,7 @@ export function readabilityProbe(toolkit, limits, closedRoots) {
   }
 
   // Text the probe cannot reach: closed shadow roots, and visible frames
-  // whose document it cannot read.
+  // whose document it cannot read, cross-origin or still loading.
   for (const root of closedRoots) {
     const holder = root && (root.host || (root.nodeType === 1 ? root : null));
     if (holder) gap("closed_shadow_root", null, holder);

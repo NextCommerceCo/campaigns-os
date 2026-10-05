@@ -74,6 +74,9 @@ const PAGES = ({ other }) => ({
   "shadow-positioned-host": htmlPage(`<div style="position:sticky;top:0;background:#111111">${OPEN(`<p style="${P};color:#ffffff">Shadow text</p>`)}</div>`),
   "shadow-overlay": htmlPage(`<div style="position:relative"><div>${OPEN("<div style=\"position:absolute;left:0;top:0;width:240px;height:60px;background:#000000\"></div>")}</div><p style="${P};color:#ffffff;background:#111111">Light text</p></div>`),
   "shadow-slot": htmlPage(`<div style="background:#ffffff">${OPEN("<div style=\"opacity:0.3;background:#000000\"><slot></slot></div>")}<p style="${P};color:#eeeeee">Slotted text</p></div>`),
+  "slot-host-translucent": htmlPage(`<div style="${P};color:#ffffff;background:#111111">Host text${OPEN("<span style=\"opacity:0.3\"><slot></slot></span>")}</div>`),
+  "slot-host-restyled": htmlPage(`<div style="${P};color:#ffffff;background:#111111">Host text${OPEN("<span style=\"color:#333333;font-size:24px\"><slot></slot></span>")}</div>`),
+  "slot-host-unassigned": htmlPage(`<div style="${P};color:#ffffff;background:#111111">Host text${OPEN(`<p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
   "frame-path": htmlPage(`<p style="${P};color:#ffffff;background:#111111">Light text</p><iframe srcdoc="${FRAME_DOC}" style="width:320px;height:120px;border:0"></iframe>`),
   "shadow-link-pending": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="/shadow-link-pending/stalled.css"><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
   "shadow-link-missing": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="/shadow-link-missing/missing.css"><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
@@ -401,6 +404,23 @@ browserTest("light text slotted into an open shadow root walks through its slot:
   const element = await flat("shadow-slot");
   assert.equal(element.review_reason, "opacity");
   assert.equal(element.selector_path, "html>body>div:nth-of-type(1)>>>div:nth-of-type(1)>slot:nth-of-type(1)>>>p:nth-of-type(1)", "the path follows the flat tree through the slot");
+});
+
+browserTest("a shadow host's own text walks through the slot that renders it: a translucent shadow wrapper reads review / opacity", async () => {
+  const element = await flat("slot-host-translucent");
+  assert.equal(element.review_reason, "opacity");
+  assert.deepEqual(element.bg_layers_raw, ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)", "rgb(17, 17, 17)"], "the slot, its wrapper, then the host");
+  assert.equal(element.selector_path, "html>body>div:nth-of-type(1)", "the element is still the host");
+});
+
+browserTest("a shadow host's own text takes its colour and size from the slot that renders it", async () => {
+  const element = await flat("slot-host-restyled");
+  assert.deepEqual([element.fg_raw, element.font_size_px, element.size_class, element.review_reason], ["rgb(51, 51, 51)", 24, "large", null]);
+});
+
+browserTest("a shadow host's own text that no slot takes in is not text-bearing", async () => {
+  const element = await flat("slot-host-unassigned");
+  assert.equal(element.selector_path, "html>body>div:nth-of-type(1)>>>p:nth-of-type(1)");
 });
 
 browserTest("text in a same-origin frame stops at the frame's root, and its path names the frame", async () => {

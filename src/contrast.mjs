@@ -253,6 +253,23 @@ export function contrastToolkit() {
     for (let at = el; at; at = flatParent(at)) if (at === ancestor) return true;
     return false;
   };
+  // Where an element's own text renders: the flat-tree parents of its
+  // non-blank text nodes. That is the element itself, except for the host of
+  // an open shadow root, whose own text renders only through the slot that
+  // takes it in. Such text inherits that slot's style and is painted by the
+  // shadow tree around the slot; text no slot takes in, or that its slot
+  // does not show, is not rendered.
+  const textParents = (el, win) => {
+    const own = Array.from(el.childNodes).filter((node) => node.nodeType === 3 && /\S/.test(node.nodeValue));
+    if (!el.shadowRoot) return own.length ? [el] : [];
+    const range = el.ownerDocument.createRange();
+    const shown = own.filter((node) => {
+      if (!node.assignedSlot || win.getComputedStyle(node.assignedSlot).getPropertyValue("visibility") !== "visible") return false;
+      range.selectNodeContents(node);
+      return range.getClientRects().length > 0;
+    });
+    return [...new Set(shown.map((node) => node.assignedSlot))];
+  };
   // Every element under `scope`, and under each open shadow root inside it.
   const deepElements = (scope) => {
     const found = [];
@@ -324,32 +341,43 @@ export function contrastToolkit() {
   function isTextBearing(el, win) {
     if (!isVisible(el)) return false;
     if (el.localName === "input") return (el.type === "submit" || el.type === "button") && el.value !== "";
-    return Array.from(el.childNodes).some((node) => node.nodeType === 3 && /\S/.test(node.nodeValue));
+    return textParents(el, win).length > 0;
   }
 
+  // The text's style, its control and state, and the paint walk start where
+  // its text renders (textParents; the first, when a shadow host's text
+  // renders through more than one slot, and every one for paint effects).
+  // The element's identity, its rendered flag and its box are its own.
   function measureTextElement(el, win) {
-    const style = win.getComputedStyle(el);
+    const [origin = el, ...otherOrigins] = textParents(el, win);
+    const style = win.getComputedStyle(origin);
     const font_size_px = Number.parseFloat(style.getPropertyValue("font-size"));
     const font_weight = Number(style.getPropertyValue("font-weight"));
     const large = isLargeText({ fontSizePx: font_size_px, fontWeight: font_weight });
-    const control = flatClosest(el, CONTROL_SELECTOR);
+    const control = flatClosest(origin, CONTROL_SELECTOR);
     const disabled = el.matches(DISABLED_SELECTOR) || Boolean(control && control.matches(DISABLED_SELECTOR));
     const control_loading = Boolean(control) && LOADING_ATTRIBUTES.some((name) => control.hasAttribute(name) && control.getAttribute(name) !== "false");
-    const head = { selector_path: selectorPath(el), state: stateOf(el), disabled, rendered: isTextBearing(el, win), font_size_px, font_weight, size_class: large ? "large" : "normal" };
+    const head = { selector_path: selectorPath(el), state: stateOf(origin), disabled, rendered: isTextBearing(el, win), font_size_px, font_weight, size_class: large ? "large" : "normal" };
     if (disabled || control_loading) return { ...head, ...COLOUR_FIELDS, required: requiredRatio(large), review_reason: null, control_loading };
 
     const triggers = new Set();
+    const paintEffects = (layer) => {
+      if (Number.parseFloat(layer.getPropertyValue("opacity")) < 1) triggers.add(5);
+      if (isSet(layer.getPropertyValue("filter")) || isSet(layer.getPropertyValue("backdrop-filter"))) triggers.add(6);
+      if (isSet(layer.getPropertyValue("mix-blend-mode"), "normal")) triggers.add(7);
+      if (isSet(layer.getPropertyValue("mask-image")) || isSet(layer.getPropertyValue("-webkit-mask-image"))) triggers.add(12);
+    };
     const fg_raw = style.getPropertyValue("color");
     const fill_raw = style.getPropertyValue("-webkit-text-fill-color");
     const fillTransparent = transparent(fill_raw);
     const bg_layers_raw = [];
     let opaque = false;
-    for (let at = el; at && at.nodeType === 1; at = flatParent(at)) {
-      const layer = at === el ? style : win.getComputedStyle(at);
-      if (Number.parseFloat(layer.getPropertyValue("opacity")) < 1) triggers.add(5);
-      if (isSet(layer.getPropertyValue("filter")) || isSet(layer.getPropertyValue("backdrop-filter"))) triggers.add(6);
-      if (isSet(layer.getPropertyValue("mix-blend-mode"), "normal")) triggers.add(7);
-      if (isSet(layer.getPropertyValue("mask-image")) || isSet(layer.getPropertyValue("-webkit-mask-image"))) triggers.add(12);
+    for (const other of otherOrigins) {
+      for (let at = other; at && at.nodeType === 1; at = flatParent(at)) paintEffects(win.getComputedStyle(at));
+    }
+    for (let at = origin; at && at.nodeType === 1; at = flatParent(at)) {
+      const layer = at === origin ? style : win.getComputedStyle(at);
+      paintEffects(layer);
       if (opaque) continue;
       const image = layer.getPropertyValue("background-image");
       if (image.includes("-gradient(")) triggers.add(1);
@@ -369,7 +397,7 @@ export function contrastToolkit() {
       else triggers.add(10);
     }
     const box = el.getBoundingClientRect();
-    if (overlapCandidatesOf(el.ownerDocument, win).some(({ node, rect }) => !flatContains(node, el) && !flatContains(el, node) && intersects(rect, box))) triggers.add(4);
+    if (overlapCandidatesOf(el.ownerDocument, win).some(({ node, rect }) => !flatContains(node, origin) && !flatContains(origin, node) && intersects(rect, box))) triggers.add(4);
     if (el.matches(".next-disabled") || Boolean(control && control.matches(".next-disabled"))) triggers.add(11);
 
     const derived = deriveElementMeasurement({ fg_raw, fill_raw, bg_layers_raw, font_size_px, font_weight });

@@ -229,3 +229,13 @@ browserTest("F2.4-I45 QA CTA page whose webfont request stalls: browser-primary-
   ));
   assert.deepEqual(outcome(entry), { status: "manual_review", reason: "fonts_pending" }, `browser-primary-cta reason fonts_pending (${entry.actual})`);
 });
+
+// A shadow host's own text inside the route CTA renders through its slot, so
+// a translucent wrapper around the slot is seen: the CTA is reviewed, never
+// passed.
+browserTest("QA CTA: a shadow host's own text slotted beneath a translucent shadow wrapper in the route CTA reads manual_review / contrast_review", async () => {
+  const entry = one(await primaryCta(htmlPage(cta("color:#ffffff;background:#111111", "<span>Buy now<template shadowrootmode=\"open\"><span style=\"opacity:0.3\"><slot></slot></span></template></span>"))));
+  assert.deepEqual(outcome(entry), { status: "manual_review", reason: "contrast_review" }, entry.actual);
+  const elements = entry.evidence.candidates.flatMap((candidate) => candidate.elements || []);
+  assert.deepEqual(elements.map((element) => element.review_reason), ["opacity"], JSON.stringify(elements));
+});
