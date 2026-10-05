@@ -669,25 +669,32 @@ async function probeImageElements(options) {
 // inside the bound and raced against it. A step that settles past the bound
 // reads BOUND_ENDED, not its result. `hardMs`, when given, is a second bound
 // in real time from now (the adapter cell deadline's headroom), whatever
-// `clock` is; `hardEnded()` tells whether it is the one that ended.
+// `clock` is; `hardEnded()` tells whether it is the one that ended. Which
+// bound ended is recorded when it ends: by the timer that fired, or by the
+// clock read that found it passed (the real-time bound first), so a timer
+// that fires before performance.now() reaches its end still names its bound.
 function boundedProbeSteps({ clock, session, token, started, boundMs, hardMs = Infinity }) {
   const boundEnd = started + boundMs;
   const hardEnd = performance.now() + hardMs;
-  const hardEnded = () => performance.now() >= hardEnd;
+  let endedBy = null;
+  const end = (by) => {
+    if (token.cancelled) return;
+    token.cancelled = true;
+    endedBy = by;
+  };
+  const hardEnded = () => endedBy === "hard";
   const cancelled = () => {
-    if (!token.cancelled && (clock.now() >= boundEnd || hardEnded())) token.cancelled = true;
+    if (performance.now() >= hardEnd) end("hard");
+    else if (clock.now() >= boundEnd) end("clock");
     return token.cancelled;
   };
   const send = (method, params) => (cancelled()
     ? Promise.reject(new Error("The probe was cancelled."))
     : session.send(method, params));
   const deadline = Promise.race([
-    clock.sleep(boundMs),
-    ...(Number.isFinite(hardMs) ? [realProbeClock.sleep(Math.max(0, hardMs))] : []),
-  ]).then(() => {
-    token.cancelled = true;
-    return BOUND_ENDED;
-  });
+    clock.sleep(boundMs).then(() => end("clock")),
+    ...(Number.isFinite(hardMs) ? [realProbeClock.sleep(Math.max(0, hardMs)).then(() => end("hard"))] : []),
+  ]).then(() => BOUND_ENDED);
   const step = async (start) => {
     if (cancelled()) return BOUND_ENDED;
     const settled = await Promise.race([Promise.resolve().then(start).then((value) => ({ value }), (error) => ({ error })), deadline]);

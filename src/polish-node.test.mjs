@@ -1386,19 +1386,25 @@ test("a readability-only cell whose context creation outlasts the added budget r
 });
 
 test("a readability-only cell whose context creation outlasts the cell deadline's headroom reads probe_timeout, the late context is closed, and the adapter stays usable", async () => {
-  let held = false;
+  // The run clock never advances, so the added budget cannot end the setup:
+  // only the cell deadline's headroom can. The context is created only once
+  // the cell has returned.
+  const clock = virtualClock();
+  let release = null;
   const fake = readabilityChromium({
     holdContext: () => {
-      if (held) return null;
-      held = true;
-      return new Promise((resolve) => setTimeout(resolve, 1_600));
+      if (release) return null;
+      return new Promise((resolve) => { release = resolve; });
     },
   });
   const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 1_200 });
   try {
-    const observation = await adapter.probeReadabilityRoute({ route: "/merchant/stock/", url: "http://127.0.0.1:4173/merchant/stock/" }, DESKTOP, { probe: readabilityOptions(null) });
+    const observation = await adapter.probeReadabilityRoute({ route: "/merchant/stock/", url: "http://127.0.0.1:4173/merchant/stock/" }, DESKTOP, { probe: readabilityOptions(clock) });
     assert.equal(observation.status, "probe_timeout");
-    await new Promise((resolve) => setTimeout(resolve, 1_700));
+    release();
+    for (let turn = 0; turn < 10 && !fake.calls.some((call) => call[0] === "context.close" && call[1] === 0); turn += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
     assert.ok(fake.calls.some((call) => call[0] === "context.close" && call[1] === 0), "the context created after the bound ended is closed");
     assert.equal(sent(fake.calls, "Page.getFrameTree"), 0, "no CDP command follows the ended bound");
     const next = await adapter.captureRoute({ url: LANDING_URL, viewport: DESKTOP });
