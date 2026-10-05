@@ -1395,6 +1395,14 @@
               "demo_value": "Our formula works with your body's own sleep systems \u2014 not against them. Our synergistic blend lower"
             },
             {
+              "key": "benefits_2_section_id",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Section anchor id, the target of the header nav's in-page link. Template-owned, assembly never touches it: the nav href and this id must stay paired.",
+              "source_policy": "template_static"
+            },
+            {
               "key": "benefits_2_section_heading",
               "kind": "copy",
               "role": "headline",
@@ -1708,6 +1716,14 @@
                 "max": 246
               },
               "demo_value": "The compounding effect reaches its peak. Consistent deep sleep every night, sustained daytime energy"
+            },
+            {
+              "key": "ingredients_3_section_id",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Section anchor id, the target of the header nav's in-page link. Template-owned, assembly never touches it: the nav href and this id must stay paired.",
+              "source_policy": "template_static"
             },
             {
               "key": "ingredients_3_heading",
@@ -2530,6 +2546,14 @@
               "proof_surface": true,
               "proof_modality": "review",
               "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_section_id",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Section anchor id, the target of the header nav's in-page link. Template-owned, assembly never touches it: the nav href and this id must stay paired.",
+              "source_policy": "template_static"
             },
             {
               "key": "reviews_3_badge_text",

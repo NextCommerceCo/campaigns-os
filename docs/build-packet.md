@@ -957,6 +957,20 @@ it reads for credential declarations (`script-parse:<page_id>`; see
 
 **Raw cart placeholders (`built_output.cart_placeholders`).** Doctor warns when a known SDK placeholder, such as `{item.name}`, `{subtotal}` or `{package.name}`, appears in live built HTML text or in a text attribute (`alt`, `title`, `placeholder`, `aria-label`, button `value`), where it prints as raw text. Placeholders inside `<template>`, inside `data-next-cart-items`/`data-next-order-items` rows and their declared row templates, and SDK-substituted quantity text are expected. Brace strings that are not known SDK placeholders, including `{tax}`, are review results. The placeholder list is vendored from the SDK version pinned in `src/sdk-attribute-index.mjs`. Pages whose SDK loader does not name an exact version, or names a version the list was not verified against, are reported as unexercised rather than passing. These are warnings, never blockers.
 
+### Built-output smoke checks (`built_output.smoke_qc`)
+
+**Smoke checks (`built_output.smoke_qc`).** Doctor warns on built pages that have:
+
+- an in-page `#link` with no matching `id` or `name` on the same page;
+- no favicon link;
+- no `og:title`, `og:description` or `og:image`;
+- an `og:image` that is relative or points to a missing file;
+- the Tailwind CDN script in a production build;
+- references to the `cdn.29next.store` asset host in any attribute or `<style>` block (use `cdn.cachebucket.com`);
+- `localhost` or loopback URLs in a production build.
+
+Targets inside `<template>` or named in page scripts are review results, and pages whose scripts could not all be read are unexercised. Remote `og:image` URLs are not fetched by doctor. The Tailwind and loopback checks need a recorded production build: development builds (including local proof) and `doctor --built`, which cannot tell the environment, report them as unexercised. All are warnings, never blockers.
+
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
 ## Artifact Locations

@@ -21,6 +21,7 @@ import { CAMPAIGN_IDENTITY } from "../campaign-identity.mjs";
 import { SDK_MARKUP } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs } from "../built-script-syntax.mjs";
 import { CART_PLACEHOLDERS } from "../cart-placeholders.mjs";
+import { SMOKE_QC } from "../built-smoke-qc.mjs";
 import { stageIsTerminal } from "../orchestration-stage-contract.mjs";
 import { evaluatePolishGate } from "../polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "../polish-node.mjs";
@@ -46,6 +47,7 @@ import {
   recordSdkMarkupGate,
   recordCartPlaceholders,
   collectCartPlaceholderPages,
+  recordSmokeQc,
   summarizeCopyMatches,
   resolveBrandContractOnce,
   reportBrandContractDefectOnce,
@@ -365,6 +367,25 @@ export function doctorBuiltOutput(args) {
     derived,
   });
   derived.doctor_checks.push(CART_PLACEHOLDERS);
+
+  // Built-output smoke checks. Same placement, same reasons. This path has
+  // no Assembly Report and no deploy URL, so the build environment and the
+  // deploy base are unknown: the production-only rules and an absolute
+  // og:image read unexercised here.
+  recordSmokeQc({
+    subject: {
+      public_route_slug: scope.slug || null,
+      site_root: relFromDir(targetRepo, scope.campaign_dir),
+    },
+    targetRepo,
+    pages: collectCartPlaceholderPages(targetRepo, optionalString(args.slug)),
+    environment: "unknown",
+    deployBase: null,
+    warnings,
+    ready,
+    derived,
+  });
+  derived.doctor_checks.push(SMOKE_QC);
 
   const synthesized = synthesizeMinimalBuildPacket({
     schemaVersion: PACKET_SCHEMA,
