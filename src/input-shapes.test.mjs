@@ -161,6 +161,24 @@ for (const [name, mutate] of MALFORMED) {
   });
 }
 
+test("an operator's unchanged_output_reason keeps a replayed build current only for the inputs its for_inputs names", () => {
+  // The output is still the build the input change superseded.
+  const replayed = (forInputs) => ({
+    ...assembly(),
+    input_change: { ...clone(INPUT_CHANGE), superseded_build_fingerprint: fp("1") },
+    unchanged_output_reason: { text: "Operator kept the output.", for_inputs: forInputs },
+  });
+  assert.deepEqual(assessStageCurrency("assembly", replayed(clone(UNCHANGED_REASON.for_inputs)), CURRENT), { currency: "current", reason: null }, "the reason bound to the current inputs holds");
+  for (const [label, forInputs] of [
+    ["another CampaignSpec", { brief_material: clone(BRIEF), spec_material_hash: fp("d") }],
+    ["another brief presentation", { brief_material: { ...clone(BRIEF), presentation: fp("f") }, spec_material_hash: SPEC }],
+  ]) {
+    const record = replayed(forInputs);
+    assert.equal(assessStageCurrency("assembly", { ...record, unchanged_output_reason: { ...record.unchanged_output_reason, for_inputs: clone(UNCHANGED_REASON.for_inputs) } }, CURRENT).currency, "current", `setup (${label}): only for_inputs differs from the holding reason`);
+    assert.deepEqual(assessStageCurrency("assembly", record, CURRENT), { currency: "owed", reason: "output_unchanged_after_input_change" }, `a well-formed reason naming ${label} does not hold for the current inputs`);
+  }
+});
+
 test("a QA record whose input_change carries an extra key reads unknown", () => {
   const qa = { stage: "qa", status: "completed", source_brief_material: clone(BRIEF), source_spec_material_hash: SPEC, input_change: { ...clone(INPUT_CHANGE), superseded_build_fingerprint: null, unexpected: true } };
   assert.equal(assessStageCurrency("qa", qa, CURRENT).currency, "unknown");

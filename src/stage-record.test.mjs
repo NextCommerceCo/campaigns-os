@@ -2521,12 +2521,12 @@ function recordedBriefReplaced(f, replace) {
 }
 
 // A symlink at `path` to a file without read permission, kept outside the
-// fixture directory so the written-nothing digest never reads it. Returns
-// the cleanup.
-function unreadableAt(path) {
+// fixture directory so the written-nothing digest never reads it. The file
+// holds `content`. Returns the cleanup.
+function unreadableAt(path, content = "{}\n") {
   const outside = mkdtempSync(join(tmpdir(), "campaigns-os-unreadable-"));
   const file = join(outside, "campaign-build-brief.json");
-  writeFileSync(file, "{}\n");
+  writeFileSync(file, content);
   chmodSync(file, 0o000);
   symlinkSync(file, path);
   return () => rmSync(outside, { recursive: true, force: true });
@@ -2586,5 +2586,115 @@ test("record brief refuses brief_file_missing when the discovered brief file can
     } finally {
       cleanup();
     }
+  });
+});
+
+// ----- Stage records across a forced intake, a cosmetic save and the ladder --
+
+test("prepare-build --force over completed build, Polish and QA with a changed spec archives all three records and records the input change", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    const before = readJson(f.reportPath).stages;
+    assert.equal(before.qa.purchase_proof?.order_paths_executed, 1, "setup: QA carries purchase proof");
+    editSpec(f, bumpCheckoutQty);
+    reintake(f, ["--force"]);
+    const { stages } = readJson(f.reportPath);
+    for (const key of ["assembly", "polish", "qa"]) {
+      const entry = stages[key].history?.at(-1);
+      assert.equal(entry?.archived_by, "prepare-build --force", `stages.${key}.history[-1] is the record --force replaced: ${JSON.stringify(stages[key]).slice(0, 400)}`);
+      assert.equal(entry.reason_code, "force_reset");
+      assert.equal(entry.status, before[key].status, `the archived ${key} record keeps its status`);
+      assert.equal(stages[key].input_change?.reason, "spec_material_changed", `stages.${key}.input_change records the spec change`);
+    }
+    assert.equal(stages.assembly.history.at(-1).build_fingerprint, before.assembly.build_fingerprint);
+    assert.equal(stages.qa.history.at(-1).verdict_run_id, before.qa.verdict_run_id, "the archived QA record keeps its verdict");
+    assert.deepEqual(stages.qa.history.at(-1).purchase_proof, before.qa.purchase_proof, "the archived QA record keeps its purchase proof");
+  });
+});
+
+// Each stage's input stamps, serialized, keyed by stage.
+function stageStamps(f) {
+  const { stages } = readJson(f.reportPath);
+  return Object.fromEntries(STAGE_KEYS.map((key) => [key, Object.fromEntries(["source_brief_material", "source_spec_material_hash"]
+    .filter((field) => Object.hasOwn(stages[key] || {}, field))
+    .map((field) => [field, JSON.stringify(stages[key][field])]))]));
+}
+
+test("a reformatted brief save leaves every stage's input stamps unchanged and an unconfirmed completed build unconfirmed", async () => {
+  await guardedLifecycle((f) => {
+    saveBrief(f, answeredDraft(f));
+    recordThroughBuild(f);
+    mutateJson(f.reportPath, (report) => {
+      delete report.stages.assembly.source_brief_material;
+    });
+    assert.equal(inputCurrency(f).stages.assembly, "unknown", "setup: the build without a brief stamp is unconfirmed");
+    const before = stageStamps(f);
+    writeFileSync(briefFileOf(f), `${JSON.stringify(reverseKeys(readJson(briefFileOf(f))), null, 2)}\n`);
+    recordInputOk(f, "brief", "saved");
+    assert.deepEqual(stageStamps(f), before, "no stage's input stamps change");
+    assert.equal(readJson(f.reportPath).stages.assembly.status, "completed");
+    assert.equal(inputCurrency(f).stages.assembly, "unknown", "the build stays unconfirmed, not current");
+    assert.equal(nextOk(f).stage, "build");
+  });
+});
+
+// The fixed refusal order puts the size check before the readability check.
+function oversizedUnreadableAt(f) {
+  const content = briefJsonOfSize(answeredDraft(f), 1_048_577);
+  return (path) => {
+    const cleanup = unreadableAt(path, content);
+    assert.equal(statSync(path).size, 1_048_577, "setup: the brief file is 1 MiB + 1 byte");
+    assert.throws(() => readFileSync(path), { code: "EACCES" }, "setup: the brief file cannot be read");
+    return cleanup;
+  };
+}
+
+test("record brief refuses an oversized brief file it also cannot read with brief_too_large", async () => {
+  await guardedLifecycle((f) => {
+    const cleanup = oversizedUnreadableAt(f)(briefFileOf(f));
+    try {
+      assertRefusedWritingNothing(f, "brief", "brief_too_large");
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+test("record spec refuses with brief_too_large when the recorded brief file is oversized and cannot be read", async () => {
+  await guardedLifecycle((f) => {
+    const cleanup = recordedBriefReplaced(f, oversizedUnreadableAt(f));
+    try {
+      assertRefusedWritingNothing(f, "spec", "brief_too_large");
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+test("next answers qa when a qa_policy change after the QA verdict leaves build and Polish current and QA's recorded status completed", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    mutateJson(normalizedOf(f), (brief) => {
+      brief.qa_policy.require_checkout_flow = !brief.qa_policy.require_checkout_flow;
+    });
+    assert.deepEqual(inputCurrency(f).stages, { assembly: "current", polish: "current", qa: "owed" }, "setup: only QA is owed");
+    assert.deepEqual(stageStatuses(f, ["assembly", "polish", "qa"]), { assembly: "completed", polish: "completed", qa: "completed" }, "setup: every recorded status stays completed");
+    assert.equal(nextOk(f).stage, "qa");
+  });
+});
+
+test("a presentation change saved with record brief after a QA verdict demotes QA as well as build and Polish", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    const before = readJson(f.reportPath);
+    const saved = saveBrief(f, answeredDraft(f));
+    const after = readJson(f.reportPath);
+    assert.equal(saved.input_change?.reason, "brief_presentation_changed", "setup: the save is a presentation change");
+    assert.equal(after.build_brief.material.qa_policy, before.build_brief.material.qa_policy, "setup: qa_policy is unchanged, so only presentation reaches QA");
+    assert.deepEqual([...saved.demoted].sort(), ["assembly", "polish", "qa"]);
+    assert.equal(after.stages.qa.status, "required");
+    assert.equal(after.stages.qa.required_by, "brief");
+    assert.equal(after.stages.qa.history?.at(-1)?.reason_code, "brief_presentation_changed");
+    assert.equal(after.stages.qa.history.at(-1).verdict_run_id, before.stages.qa.verdict_run_id);
   });
 });
