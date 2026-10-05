@@ -5708,21 +5708,135 @@
       "sequence": 223,
       "date": "2026-10-05",
       "kind": "release",
-      "surface_version": null,
-      "changelog_section": "1.51.0+agent.5",
-      "changelog_sha256": "618d822396ab9d9a316a6d3bafc2e024ef4e6dbf68e4f0eb535d5375b08edc48",
-      "agent_impact": "qa run --browser now checks each configured store_terms, store_privacy, store_returns, store_shipping and store_contact URL and reports policy.presence and policy.availability QC results in the verdict and the next QC handoff. Presence passes only when QA read the links on every page it visits and one resolves to the configured destination (trailing slash and default port normalized, query kept); a declared footer label that points elsewhere is a warning. Availability passes only when bounded header-only GETs reach a 2xx text/html or application/xhtml+xml page within 5 redirects that differs from the configured URL only in scheme, www. or trailing slash. 404s, server errors and redirects to the store home page are warnings; authentication, rate limits, loops, non-HTML responses, unexpected statuses, non-absolute configured values and redirects elsewhere are review; network failures and anything not finished within the shared 20 s budget or the 15 s per-URL deadline are unexercised. mailto contacts are checked for presence only. Results are never blockers; runs without --browser list them as not requested. Stored destinations carry no query, and a stored record reads back only with exactly the keys QA writes.",
+      "surface_version": "1.52.0",
+      "changelog_section": "1.52.0",
+      "changelog_sha256": "42e6f8fbe9ed21935c14e69594c5afc6bc6846714b1bd69f88f7e6f556e023fe",
+      "agent_impact": "Surface 1.52.0. qa run --browser now checks each configured store_terms, store_privacy, store_returns, store_shipping and store_contact URL and reports policy.presence and policy.availability QC results in the verdict and the next QC handoff. Presence passes only when QA read the links on every page it visits and one resolves to the configured destination (trailing slash and default port normalized, query kept); a declared footer label that points elsewhere is a warning. Availability passes only when bounded header-only GETs reach a 2xx text/html or application/xhtml+xml page within 5 redirects that differs from the configured URL only in scheme, www. or trailing slash. 404s, server errors and redirects to the store home page are warnings; authentication, rate limits, loops, non-HTML responses, unexpected statuses, non-absolute configured values and redirects elsewhere are review; network failures and anything not finished within the shared 20 s budget or the 15 s per-URL deadline are unexercised. mailto contacts are checked for presence only. Results are never blockers; runs without --browser list them as not requested. Stored destinations carry no query, and a stored record reads back only with exactly the keys QA writes. The effects contract states that qa run --browser sends these header-only GETs to the configured store policy URLs. Bundled skills carry revision 1.52.0+skills.1: an agent that loaded an earlier revision should start a fresh session. Install the 1.52.0 package with the documented local setup command.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Advance the declared version to 1.52.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "State that the two qa run --browser rows send the header-only GETs to the configured store policy URLs, the offline fixture not observing them only because its browser run is blocked at the gate; and state that the offline checkpoint accept fixture is refused (changed_since_handoff) because its synthetic result ref matches no current result, while doctor, Polish and QA checks produce accept-eligible warnings."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.52.0 and record the effects contract hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the 1.52.0 package in the local setup install command."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate at surface 1.52.0."
+        },
         {
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
           "summary": "Describe the policy link results: what presence and availability check, which outcomes are warnings or review results, and what is not requested without --browser."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate at surface 1.52.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.52.0+skills.1 bundle in executable examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.52.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.52.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.52.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.52.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.52.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.52.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.52.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.52.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.52.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.52.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.52.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.52.0+skills.1 bundle revision."
         }
       ],
-      "entry_sha256": "d34820eac0cbcca04c7042834fd559ac7a31270582304ab553f8f75ee7cdf8a2"
+      "entry_sha256": "303fbf65d9d538ae55340e7f1606b3acae50453ead24740ddd39149e77082f41"
     }
   ]
 }
