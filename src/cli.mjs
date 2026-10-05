@@ -1858,7 +1858,11 @@ function prepareBuildUnderLock({
       }))
     : [];
   const designSourcePackage = publication.package({
-    plannedPacket: { deploy: deploySettings, qa: { proof_policy: { order_path_depth: orderPathDepthFlag || "common" } } },
+    plannedPacket: {
+      campaign: { allowed_domains_confirmed: args["allowed-domains-confirmed"] === true },
+      deploy: { ...deploySettings, production_url: optionalString(args["production-url"]) },
+      qa: { proof_policy: { order_path_depth: orderPathDepthFlag || "common" } },
+    },
     activePages,
     mappings: matched.mappings,
     manifestResult,

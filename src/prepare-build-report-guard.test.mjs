@@ -365,3 +365,24 @@ test("F2.1-B23: after qa policy set --order-path-depth full, re-running intake w
     assertNothingWritten(dir, before, "the refused intake");
   });
 });
+
+for (const [field, policyArgs, read, value] of [
+  ["deploy.production_url", ["--production-url", "https://production.example.invalid/x/"], (packet) => packet.deploy.production_url, "https://production.example.invalid/x/"],
+  ["campaign.allowed_domains_confirmed", ["--allowed-domains-confirmed", "true"], (packet) => packet.campaign.allowed_domains_confirmed, true],
+]) {
+  test(`after qa policy set records ${field}, re-running intake with the original args refuses naming it, and --force clears it naming it`, async () => {
+    await guarded((dir, { treeDigest, assertNothingWritten }) => {
+      const packetPath = intakeThenPolicySet(dir, policyArgs);
+      assert.equal(read(readJson(packetPath)), value, `setup: the packet records ${field}`);
+      const before = treeDigest(dir);
+      const rerun = runPrepare(dir);
+      assert.equal(rerun.status, 1, `intake exits 1: ${rerun.stderr.slice(0, 400)}`);
+      assert.match(rerun.stderr, new RegExp(`would discard recorded operator state: [^\\n]*${field.replaceAll(".", "\\.")} \\(recorded ${JSON.stringify(value).replaceAll(".", "\\.").replaceAll("/", "\\/")}; this run would write `));
+      assertNothingWritten(dir, before, "the refused intake");
+      const forced = runPrepare(dir, ["--force"]);
+      assert.equal(forced.status, 0, `intake --force exits 0: ${forced.stderr.slice(0, 400)}`);
+      assert.match(forced.stderr, new RegExp(`--force: clearing recorded operator state: [^\\n]*${field.replaceAll(".", "\\.")} \\(recorded `));
+      assert.notEqual(read(readJson(packetPath)), value, `--force rewrites ${field}`);
+    });
+  });
+}

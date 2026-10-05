@@ -4406,7 +4406,7 @@
       ],
       "effect_test": "effects: start",
       "test_scope": "full",
-      "notes": "Intake: Build Packet, sidecars, agent context and the auto-opened run session. Not idempotent — a second `start` is refused without --force when the report carries stage evidence, stage history or operator decisions (recorded waivers, warning accepts, an applied theme or report evidence), or when the run would change the packet's recorded deploy target, preview URL or order-path depth. To save brief answers or a CampaignSpec change without discarding anything, run `record brief` or `record spec` instead."
+      "notes": "Intake: Build Packet, sidecars, agent context and the auto-opened run session. Not idempotent — a second `start` is refused without --force when the report carries stage evidence, stage history or operator decisions (recorded waivers, warning accepts, an applied theme or report evidence), or when the run would change the packet's recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation. To save brief answers or a CampaignSpec change without discarding anything, run `record brief` or `record spec` instead."
     },
     {
       "command": "start",
@@ -4565,7 +4565,7 @@
       ],
       "effect_test": "effects: start --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy and order-path settings, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `start` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `start` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path."
     },
     {
       "command": "start",
@@ -4831,7 +4831,7 @@
       ],
       "effect_test": "effects: prepare-build",
       "test_scope": "full",
-      "notes": "Intake without doctor and without the agent-context install: the packet, the sidecars and the auto-opened session. Same stale-session closeout as `start`. A second `prepare-build` is refused without --force when the report carries stage evidence, stage history or operator decisions (recorded waivers, warning accepts, an applied theme or report evidence), or when the run would change the packet's recorded deploy target, preview URL or order-path depth. To save brief answers or a CampaignSpec change without discarding anything, run `record brief` or `record spec` instead."
+      "notes": "Intake without doctor and without the agent-context install: the packet, the sidecars and the auto-opened session. Same stale-session closeout as `start`. A second `prepare-build` is refused without --force when the report carries stage evidence, stage history or operator decisions (recorded waivers, warning accepts, an applied theme or report evidence), or when the run would change the packet's recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation. To save brief answers or a CampaignSpec change without discarding anything, run `record brief` or `record spec` instead."
     },
     {
       "command": "prepare-build",
@@ -5077,7 +5077,7 @@
       ],
       "effect_test": "effects: prepare-build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy and order-path settings, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `prepare-build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `prepare-build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
     },
     {
       "command": "build",
@@ -5223,7 +5223,7 @@
       ],
       "effect_test": "effects: build",
       "test_scope": "full",
-      "notes": "The intake alias for prepare-build + doctor: the same packet and sidecars, plus the doctor sidecar. It does not install the agent context. A second `build` is refused without --force when the report carries stage evidence, stage history or operator decisions (recorded waivers, warning accepts, an applied theme or report evidence), or when the run would change the packet's recorded deploy target, preview URL or order-path depth. To save brief answers or a CampaignSpec change without discarding anything, run `record brief` or `record spec` instead."
+      "notes": "The intake alias for prepare-build + doctor: the same packet and sidecars, plus the doctor sidecar. It does not install the agent context. A second `build` is refused without --force when the report carries stage evidence, stage history or operator decisions (recorded waivers, warning accepts, an applied theme or report evidence), or when the run would change the packet's recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation. To save brief answers or a CampaignSpec change without discarding anything, run `record brief` or `record spec` instead."
     },
     {
       "command": "build",
@@ -5491,7 +5491,7 @@
       ],
       "effect_test": "effects: build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy and order-path settings, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
     },
     {
       "command": "spec",
@@ -5797,7 +5797,7 @@
       "writes": [
         {
           "path": "{target}/.campaign-runtime/input/*",
-          "when": "the refresh runs (outcome refreshed) and the brief re-derived from the brief file intake used (or from the generated draft) differs from what is bound, or the normalized brief on disk no longer holds the re-derived brief's material — the normalized brief",
+          "when": "the refresh runs (outcome refreshed) and the brief re-derived from the brief file last saved by intake or `record brief` (or from the generated draft) differs from what is bound, or the normalized brief on disk no longer holds the re-derived brief's material — the normalized brief",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -5851,7 +5851,7 @@
       "sends": [],
       "effect_test": "effects: record spec",
       "test_scope": "full",
-      "notes": "Destructive: build, Polish and QA records made against earlier CampaignSpec or brief content become owed again, each moving to that stage's history, which keeps the last five per stage and is never used as current proof. Waivers, warning accepts, the applied theme and deploy settings are kept. Idempotent: a repeat reads unchanged. When the bound CampaignSpec material is the spec's and no stage's recorded CampaignSpec or brief content differs from the current inputs it reads unchanged and writes nothing but the lifecycle entry. The Build Packet is read, not written; the brief is re-read from the file intake used, never rediscovered. For a saved-Map or gateway packet it compares the copy intake fetched and sends nothing. Refused, writing nothing but the lifecycle entry, when the CampaignSpec cannot be read as a JSON object, names another campaign (local_spec_id or map_id) than the Build Packet or the Assembly Report binds, or its active pages (ids, order or routes) changed (that needs intake), or when the brief file intake used is over 1 MiB or names more than 512 design_authority entries, names a file Campaigns OS writes itself, or is missing or not a readable regular file."
+      "notes": "Destructive: build, Polish and QA records made against earlier CampaignSpec or brief content become owed again, each moving to that stage's history, which keeps the last five per stage and is never used as current proof. Waivers, warning accepts, the applied theme and deploy settings are kept. Idempotent: a repeat reads unchanged. When the bound CampaignSpec material is the spec's and no stage's recorded CampaignSpec or brief content differs from the current inputs it reads unchanged and writes nothing but the lifecycle entry. The Build Packet is read, not written; the brief is re-read from the brief file last saved by intake or `record brief`, never rediscovered. For a saved-Map or gateway packet it compares the copy intake fetched and sends nothing. Refused, writing nothing but the lifecycle entry, when the CampaignSpec cannot be read as a JSON object, names another campaign (local_spec_id or map_id) than the Build Packet or the Assembly Report binds, or its active pages (ids, order or routes) changed (that needs intake), or when that brief file is over 1 MiB or names more than 512 design_authority entries, names a file Campaigns OS writes itself, or is missing or not a readable regular file."
     },
     {
       "command": "record",

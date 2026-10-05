@@ -211,18 +211,26 @@ export function stageHistoryPresent(report) {
 /**
  * The input change a write records on a stage whose stamps differ from the
  * current inputs: when, why, the build the stage was bound to, and the stamps
- * of the record it supersedes.
+ * of the record it supersedes. A record that carries no build or stamps of
+ * its own (a stage intake reseeded) keeps those of the input change already
+ * on it, so a later change never drops the superseded build a replay is
+ * compared with.
  */
 export function inputChangeFor(stageKey, previous, { at, reason }) {
   const stamp = previous?.source_brief_material;
   const build = stageKey === "assembly" ? previous?.build_fingerprint : stageKey === "polish" ? previous?.source_build_fingerprint : null;
+  const isFingerprint = (value) => typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value);
+  const earlier = isPlainObject(previous?.input_change) ? previous.input_change : {};
+  const earlierInputs = isPlainObject(earlier.superseded_inputs) ? earlier.superseded_inputs : {};
   return {
     at,
     reason,
-    superseded_build_fingerprint: typeof build === "string" && /^sha256:[0-9a-f]{64}$/.test(build) ? build : null,
+    superseded_build_fingerprint: isFingerprint(build) ? build : isFingerprint(earlier.superseded_build_fingerprint) ? earlier.superseded_build_fingerprint : null,
     superseded_inputs: {
-      brief_material: wellFormedBriefMaterial(stamp) ? { presentation: stamp.presentation, qa_policy: stamp.qa_policy } : null,
-      spec_material_hash: typeof previous?.source_spec_material_hash === "string" && /^sha256:[0-9a-f]{64}$/.test(previous.source_spec_material_hash) ? previous.source_spec_material_hash : null,
+      brief_material: wellFormedBriefMaterial(stamp)
+        ? { presentation: stamp.presentation, qa_policy: stamp.qa_policy }
+        : wellFormedBriefMaterial(earlierInputs.brief_material) ? { presentation: earlierInputs.brief_material.presentation, qa_policy: earlierInputs.brief_material.qa_policy } : null,
+      spec_material_hash: isFingerprint(previous?.source_spec_material_hash) ? previous.source_spec_material_hash : isFingerprint(earlierInputs.spec_material_hash) ? earlierInputs.spec_material_hash : null,
     },
   };
 }

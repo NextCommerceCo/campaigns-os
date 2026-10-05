@@ -1687,7 +1687,7 @@ own stages) → calls `next` again → repeat until stage="done"
 
 ### Refreshing after a CampaignSpec change
 
-When the CampaignSpec's material content changes, every build, Polish and QA record made against the earlier content stops counting as current, in local-spec, saved-Map and gateway packets alike. For a saved Map or gateway packet, Campaigns OS compares the copy intake fetched; it does not check whether that copy is the latest remote revision, and reports the remote as unconfirmed. Doctor warns `spec.material_stale`, and `next`, progress, readback, the Assembly Report's own status and the QA gate show the stages that are owed again; `next` routes to the first one. Run `campaigns-os record spec --packet <packet>` to bind the new content: it updates the build context and report identity, re-reads the brief file intake used, keeps waivers, warning accepts, the applied theme and deploy settings, and moves each superseded stage record into that stage's `history`, which is never used as current proof. `spec derive` no longer rebinds identity; run `record spec` after it. A change to the set, order or routes of active pages still needs intake. Re-recording an unchanged build after a spec change keeps the build owed, because the change has not reached the pages, unless the operator records a reason with `--deviation-reason`; this holds even when `record spec` was not run, and that `record build` also marks Polish and QA owed again. Polish stays owed until a new `polish capture`, and QA must produce a new verdict against the current content. Polish measurements of byte-identical output keep their values, but the Polish stage is owed again. These checks are tamper evidence, not proof: a hand-written record that copies the current values, or a packet pointed at an older copy of the spec, is not detected.
+When the CampaignSpec's material content changes, every build, Polish and QA record made against the earlier content stops counting as current, in local-spec, saved-Map and gateway packets alike. For a saved Map or gateway packet, Campaigns OS compares the copy intake fetched; it does not check whether that copy is the latest remote revision, and reports the remote as unconfirmed. Doctor warns `spec.material_stale`, and `next`, progress, readback, the Assembly Report's own status and the QA gate show the stages that are owed again; `next` routes to the first one. Run `campaigns-os record spec --packet <packet>` to bind the new content: it updates the build context and report identity, re-reads the brief file last saved (by intake or `record brief`), keeps waivers, warning accepts, the applied theme and deploy settings, and moves each superseded stage record into that stage's `history`, which is never used as current proof. `spec derive` no longer rebinds identity; run `record spec` after it. A change to the set, order or routes of active pages still needs intake. Re-recording an unchanged build after a spec change keeps the build owed, because the change has not reached the pages, unless the operator records a reason with `--deviation-reason`; this holds even when `record spec` was not run, and that `record build` also marks Polish and QA owed again. Polish stays owed until a new `polish capture`, and QA must produce a new verdict against the current content. Polish measurements of byte-identical output keep their values, but the Polish stage is owed again. These checks are tamper evidence, not proof: a hand-written record that copies the current values, or a packet pointed at an older copy of the spec, is not detected.
 
 The CampaignSpec's material content is the whole spec except `spec_identity`,
 `slug`, `map_id` and `saved_at`; a page `label` edit is material. A spec
@@ -1706,7 +1706,7 @@ change affects the stages as follows:
 `record spec` refuses, writing nothing, in this order: `spec_unreadable` (the
 spec does not parse), `spec_identity_changed` (its map id or local spec id
 names another campaign than the packet or the report), `page_scope_changed`,
-then, for the brief file intake used, `brief_too_large`,
+then, for the brief file last saved (by intake or `record brief`), `brief_too_large`,
 `brief_source_is_package_artifact` and `brief_file_missing` (the recorded
 path is missing or is not a readable regular file: a directory, a pipe or
 socket, a symlink to nothing, or a file without read permission). It reads
@@ -1714,7 +1714,7 @@ socket, a symlink to nothing, or a file without read permission). It reads
 stage's spec or brief stamp differs from the current content; a stage that
 does not record which content it was made against is named in a
 `binding_unknown` notice instead. Otherwise it refreshes, re-deriving the
-normalized brief from the brief file intake used, so an edit made to the
+normalized brief from the brief file last saved, so an edit made to the
 normalized brief itself is replaced by what its source gives. A stage whose spec
 stamp already equals the new content (a build recorded after the edit) is not
 demoted. `record spec` does not write the Build Packet. `--dry-run` runs every

@@ -908,6 +908,10 @@ function validateBuildBrief(packet, packetPath, spec, context, errors, warnings,
     addIssue(errors, "build_brief.normalized_path", `Campaign Build Brief normalized artifact is not valid JSON: ${normalizedPath}. Restore it, or save the brief again with ${cmd("record")} brief --packet <packet>.`);
     return;
   }
+  if (!isObject(brief)) {
+    addIssue(errors, "build_brief.normalized_path", `Campaign Build Brief normalized artifact is not a valid brief object: ${normalizedPath}. Restore it, or save the brief again with ${cmd("record")} brief --packet <packet>.`);
+    return;
+  }
   const result = validateCampaignBuildBriefArtifact(brief, { spec, normalizedPath });
   for (const issue of result.errors) errors.push(issue);
   for (const issue of result.warnings) warnings.push(issue);

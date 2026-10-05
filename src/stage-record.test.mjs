@@ -2698,3 +2698,104 @@ test("a presentation change saved with record brief after a QA verdict demotes Q
     assert.equal(after.stages.qa.history.at(-1).verdict_run_id, before.stages.qa.verdict_run_id);
   });
 });
+
+// ----- current QC results, replay protection, the saved brief source, usage -----
+
+// The QA QC rows `next` and `checkpoint accept` read, through the same
+// aggregate and a real doctor run, as [result, reason_code] pairs.
+async function currentQaRows(f) {
+  const { readCurrentQcResults } = await import("./qc-results.mjs");
+  const { qaStandIns } = await import("./qc-test-factories.mjs");
+  const { results } = readCurrentQcResults({
+    report: readJson(f.reportPath),
+    doctor: doctorOk(f),
+    spec: readJson(specPathOf(f)),
+    targetRepo: f.target,
+    packetPath: f.packetPath,
+    reportPath: f.reportPath,
+    qcStandIns: { qa: qaStandIns() },
+  });
+  return results.filter((row) => row.leg === "qa").map((row) => [row.result, row.reason_code]);
+}
+
+test("after a material CampaignSpec edit, the QA QC rows next and checkpoint accept read are stale_binding, not pass", async () => {
+  await guardedLifecycle(async (f) => {
+    const { qaAssertionFor, qaObservation, qaRowFor } = await import("./qc-test-factories.mjs");
+    const at = new Date(Date.now() - 60_000).toISOString();
+    const qcResults = [
+      qaRowFor(qaObservation({ check: "policy.presence", key: "store_privacy", outcome: "reachable" }), { measured_at: at }),
+      qaRowFor(qaObservation({ check: "policy.availability", key: "store_terms", outcome: "reachable" }), { measured_at: at }),
+    ];
+    await recordThroughQa(f, { qcResults, assertions: qcResults.map((row) => qaAssertionFor(row)), at });
+    mutateJson(f.reportPath, (report) => {
+      report.stages.qa.identity = { verdict_run_id: report.stages.qa.verdict_run_id };
+    });
+    assert.deepEqual(await currentQaRows(f), [["pass", null], ["pass", null]], "control: with current inputs both QA rows read pass");
+    editSpec(f, bumpCheckoutQty);
+    assert.equal(inputCurrency(f).stages.qa, "owed", "setup: doctor reads QA owed");
+    assert.deepEqual(await currentQaRows(f), [["unexercised", "stale_binding"], ["unexercised", "stale_binding"]]);
+  });
+});
+
+test("a brief save after prepare-build --force keeps the superseded build, so an unchanged rebuild still leaves assembly owed", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    const built = readJson(f.reportPath).stages.assembly.build_fingerprint;
+    editSpec(f, bumpCheckoutQty);
+    reintake(f, ["--force"]);
+    recordOk(f, "setup");
+    assert.equal(readJson(f.reportPath).stages.assembly.input_change?.superseded_build_fingerprint, built, "setup: forced intake records the superseded build");
+    saveBrief(f, answeredDraft(f));
+    assert.equal(readJson(f.reportPath).stages.assembly.input_change?.superseded_build_fingerprint, built, "the save keeps the superseded build");
+    recordOk(f, "build");
+    assert.equal(readJson(f.reportPath).stages.assembly.build_fingerprint, built, "setup: the rebuild is the superseded output");
+    const currency = inputCurrency(f);
+    assert.equal(currency.stages.assembly, "owed");
+    assert.equal(currency.reasons.assembly, "output_unchanged_after_input_change");
+  });
+});
+
+for (const [label, save] of [
+  ["a new --brief file", (f, second) => {
+    const path = join(f.dir, "second-brief.json");
+    writeJson(path, second);
+    recordInputOk(f, "brief", "saved_with_invalidation", ["--brief", path]);
+    return path;
+  }],
+  ["a brief file found in the target", (f, second) => {
+    writeJson(briefFileOf(f), second);
+    recordInputOk(f, "brief", "saved_with_invalidation");
+    return null;
+  }],
+]) {
+  test(`after intake with --brief, record spec re-derives the brief from ${label} that record brief saved`, async () => {
+    await guardedLifecycle((f) => {
+      const audience = (value) => {
+        const brief = answeredDraft(f);
+        brief.campaign_intent.audience = value;
+        return brief;
+      };
+      const first = join(f.dir, "first-brief.json");
+      writeJson(first, audience("first audience"));
+      reintake(f, ["--brief", first]);
+      assert.equal(readJson(normalizedOf(f)).campaign_intent.audience, "first audience", "setup: intake read the first brief");
+      const saved = save(f, audience("second audience"));
+      assert.equal(readJson(normalizedOf(f)).campaign_intent.audience, "second audience", "setup: record brief saved the second brief");
+      editSpec(f, (spec) => {
+        const landing = spec.funnels.flatMap((funnel) => funnel.pages).find((page) => page.id === "landing");
+        landing.label = `${landing.label || "Landing"} (edited)`;
+      });
+      recordInputOk(f, "spec", "refreshed");
+      assert.equal(readJson(normalizedOf(f)).campaign_intent.audience, "second audience");
+      const recorded = readJson(f.contextPath).intake.brief_path;
+      if (saved) assert.equal(resolve(f.target, recorded), resolve(saved), "the Build Context records the saved --brief file");
+      else assert.equal(recorded, null, "the Build Context no longer records the first --brief file");
+    });
+  });
+}
+
+test("record with an unknown subcommand names every record subcommand, brief and spec included", () => {
+  const result = runCli(["record", "bogus", "--packet", "campaign-runtime.build.json"], ROOT);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /record <setup\|build\|polish\|theme\|deploy\|brief\|spec>/);
+});

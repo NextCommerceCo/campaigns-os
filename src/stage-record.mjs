@@ -133,7 +133,7 @@ export function refuseRecord(stage, problems) {
 export function parseRecordArgs(args) {
   const stage = args._[1];
   if (!RECORD_SUBCOMMANDS.includes(stage) || args._.length !== 2) {
-    throw refused(`Use: ${cmd("record")} <${RECORD_STAGES.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, record deploy --base-url <served url>, and record build [--build-environment <${BUILD_ENVIRONMENTS.join("|")}>].`);
+    throw refused(`Use: ${cmd("record")} <${RECORD_SUBCOMMANDS.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, record deploy --base-url <served url>, record build [--build-environment <${BUILD_ENVIRONMENTS.join("|")}>], and record brief [--brief <yaml|json>].`);
   }
   const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : []), ...(stage === "build" ? BUILD_RECORD_FLAGS : []), ...(stage === "brief" ? BRIEF_RECORD_FLAGS : [])]);
   const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));

@@ -98,11 +98,14 @@ function assemblyReportOperatorState(existingReport) {
 }
 
 // Packet settings recorded since the last intake that this run would
-// overwrite: each named with the value on disk and the value this run writes.
+// overwrite (every setting `qa policy set` records): each named with the
+// value on disk and the value this run writes.
 const INTAKE_PACKET_SETTINGS = Object.freeze([
   ["deploy.target", (packet) => packet?.deploy?.target],
   ["deploy.preview_url", (packet) => packet?.deploy?.preview_url],
+  ["deploy.production_url", (packet) => packet?.deploy?.production_url],
   ["qa.proof_policy.order_path_depth", (packet) => packet?.qa?.proof_policy?.order_path_depth],
+  ["campaign.allowed_domains_confirmed", (packet) => packet?.campaign?.allowed_domains_confirmed],
 ]);
 
 function packetSettingChanges(packetPath, planned) {
@@ -138,7 +141,8 @@ function guardIntakeOperatorState(reportPath, packetPath, { force, planned = nul
     throw new Error(
       `Rerunning prepare-build/start/build would discard recorded operator state: ${items.join("; ")}. `
       + `To save brief answers or a CampaignSpec change without discarding anything, run ${cmd("record")} brief or ${cmd("record")} spec instead. `
-      + "To rerun intake anyway, pass the original deploy and order-path flags, or --force to clear the listed state (destructive; completed build, Polish and QA records are archived into stage history).",
+      + "To rerun intake anyway, pass the original deploy and order-path flags, or --force to clear the listed state (destructive; completed build, Polish and QA records are archived into stage history). "
+      + `After --force, record a cleared packet setting again with ${cmd("qa")} policy set.`,
     );
   }
   const unannounced = items.filter((item) => !announced.includes(item));
@@ -911,8 +915,8 @@ export async function withDesignSourcePublication({ targetRepo, outputs, force =
     return fn(Object.freeze({
       paths,
       // `plannedPacket`: the part of the packet this run would write that
-      // carries deploy.target, deploy.preview_url and
-      // qa.proof_policy.order_path_depth, checked against the packet on disk.
+      // carries the settings INTAKE_PACKET_SETTINGS names, checked against
+      // the packet on disk.
       package({ plannedPacket = null, ...inputs }) {
         enter(0, { once: true });
         plannedPacketSettings = plannedPacket;

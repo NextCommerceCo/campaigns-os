@@ -547,6 +547,24 @@ test("doctor reports build_brief.normalized_path for a normalized brief that is 
   });
 });
 
+// A normalized brief that parses to JSON other than an object is the same
+// error: doctor reports it and next still prints its result.
+for (const [label, content] of [["null", "null\n"], ["an array", "[]\n"], ["a number", "42\n"], ["a string", "\"brief\"\n"]]) {
+  test(`doctor reports build_brief.normalized_path and next prints its result for a normalized brief that is ${label}`, () => {
+    withBriefFixture(({ sourceRoot, targetRepo, specPath }) => {
+      runCliJson(["prepare-build", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
+      writeFileSync(resolve(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH), content);
+      const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
+      const doctor = runCliJson(["doctor", "--packet", packetPath, "--no-live-refs", "--json"], { allowFailure: true });
+      const issue = doctor.errors.find((entry) => entry.code === "build_brief.normalized_path");
+      assert.ok(issue, `doctor errors: ${JSON.stringify(doctor.errors.map((entry) => entry.code))}`);
+      assert.match(issue.message, /not a valid brief object/);
+      const next = runCliJson(["next", "--packet", packetPath, "--no-write", "--json"], { allowFailure: true });
+      assert.equal(typeof next.stage, "string", `next printed its result: ${JSON.stringify(next).slice(0, 400)}`);
+    });
+  });
+}
+
 const sha256Of = (value) => `sha256:${createHash("sha256").update(JSON.stringify(canonicalSorted(value))).digest("hex")}`;
 function canonicalSorted(value) {
   if (Array.isArray(value)) return value.map(canonicalSorted);

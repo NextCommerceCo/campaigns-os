@@ -9,11 +9,12 @@
 // map names owed again (status `required` with input_change), each superseded
 // record going whole into its stage's history first. `record spec` rebinds
 // the Build Context's and the Assembly Report's spec identity, re-derives the
-// brief from the file intake used (never by discovery), and makes build,
-// Polish and QA owed again unless a stage was already recorded against the
-// new content; waivers, accepts, the theme, the packet and the setup and
-// deploy records are never touched. Refusals are checked in a fixed order
-// before anything is written; --dry-run runs every check and writes nothing.
+// brief from the brief file last saved by intake or record brief (never by
+// discovery), and makes build, Polish and QA owed again unless a stage was
+// already recorded against the new content; waivers, accepts, the theme,
+// the packet and the setup and deploy records are never touched. Refusals
+// are checked in a fixed order before anything is written; --dry-run runs
+// every check and writes nothing.
 import { createHash } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -385,6 +386,9 @@ function briefSaveOutcome(report, buildBrief, bindings) {
 // The Build Context and Assembly Report a brief save writes: the brief
 // summary and bindings on both, the brief's prompts on the context, and
 // prepare_build re-derived from the brief's blockers. No other stage field.
+// The saved file becomes the brief source a later refresh reads: the
+// context's intake.brief_path names it when it was given with --brief, and
+// is cleared when it was found by discovery, as intake records it.
 function briefSaveArtifacts({ context, report, buildBrief, bindings, targetRepo }) {
   const briefSummary = {
     ...(isObject(context.build_brief) ? context.build_brief : {}),
@@ -397,8 +401,10 @@ function briefSaveArtifacts({ context, report, buildBrief, bindings, targetRepo 
     gates: buildBrief.gates,
     ...bindings,
   };
+  const explicitSource = buildBrief.inputPath && buildBrief.artifact._meta?.input_source === "operator_flag";
   const nextContext = {
     ...context,
+    ...(isObject(context.intake) ? { intake: { ...context.intake, brief_path: explicitSource ? relFromDir(targetRepo, buildBrief.inputPath) : null } } : {}),
     build_brief: briefSummary,
     prompts_required: [
       ...(Array.isArray(context.prompts_required) ? context.prompts_required : []).filter((prompt) => !isBriefBlocker(prompt)),
@@ -549,8 +555,9 @@ function readSpecFile(specPath) {
   }
 }
 
-// The brief file intake used: its --brief path, otherwise the file it found;
-// never discovery. Null when intake generated the guided draft.
+// The brief file last saved, by intake or record brief: its --brief path,
+// otherwise the file that save found; never discovery. Null when intake
+// generated the guided draft and no brief file was saved since.
 function recordedBriefFile(context, { targetRepo, previousNormalizedBrief }) {
   const explicit = optionalString(context?.intake?.brief_path);
   if (explicit) return { path: resolve(targetRepo, explicit), source: "operator_flag" };
@@ -573,7 +580,7 @@ function specRefusal({ read, specPath, packet, report, context, briefFile, packa
     return ["page_scope_changed", `the CampaignSpec's active pages (ids, order or routes) differ from the Build Context's spec.active_pages. The Design Source Package and the source mapping are built per page, so a page-scope change needs intake (${cmd("prepare-build")}); with --force it clears recorded stage evidence and operator decisions, archiving the build, Polish and QA records.`];
   }
   if (!briefFile) return null;
-  return briefFileRefusal([briefFile], packageArtifacts, (file) => `the brief file intake used, ${briefFile.path}, ${file?.why || "does not exist"}; restore it, or save a brief file with ${cmd("record")} brief --brief <file>.`);
+  return briefFileRefusal([briefFile], packageArtifacts, (file) => `the brief file last saved, ${briefFile.path}, ${file?.why || "does not exist"}; restore it, or save a brief file with ${cmd("record")} brief --brief <file>.`);
 }
 
 // The currency reasons that mean a stage's stamp differs from the current
