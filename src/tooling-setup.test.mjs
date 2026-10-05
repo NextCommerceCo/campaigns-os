@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -317,4 +318,83 @@ test("packaged setup dry run creates no campaign runtime, global skills or lifec
   assert.equal(existsSync(journal), false);
   assert.equal(existsSync(join(f.target, ".campaign-runtime")), false);
   assert.equal(existsSync(join(home, ".claude")), false);
+});
+
+// Frozen 2.3 rows F2.3-B4, B5 and B14: the installed agent context against
+// `tooling setup --dry-run`, through the packaged CLI as a child process. A
+// preloaded guard reports and refuses every outbound request, and each run
+// asserts it reported none.
+const AGENT_CONTEXT_1_52_0 = join(ROOT, "fixtures/agent-context-1.52.0/AGENTS.md");
+// sha256 of agents/codex/AGENTS.md at 2a94726db9b5d2658b71a9cee3310098e94d323d (1.52.0+agent.1).
+const AGENT_CONTEXT_1_52_0_SHA256 = "621aedd58b799e0204532c747ce8a460b34efffae4126a99e3cba475c24ad15f";
+const NETWORK_ATTEMPT = "tooling-setup-test: network attempt";
+const CHILD_NETWORK_GUARD = `data:text/javascript,${encodeURIComponent(`
+  import http from "node:http";
+  import https from "node:https";
+  import { syncBuiltinESMExports } from "node:module";
+  const blocked = (kind) => (...args) => {
+    process.stderr.write(${JSON.stringify(NETWORK_ATTEMPT)} + " (" + kind + ")\\n");
+    throw new Error("network blocked");
+  };
+  globalThis.fetch = async (...args) => blocked("fetch")(...args);
+  for (const [name, object] of [["http", http], ["https", https]]) for (const method of ["request", "get"]) object[method] = blocked(name + "." + method);
+  syncBuiltinESMExports();
+`)}`;
+
+function packagedCli(f, args) {
+  const env = { ...process.env, HOME: f.home, CAMPAIGNS_OS_TELEMETRY: "off" };
+  delete env.CAMPAIGNS_OS_LIFECYCLE_LOG;
+  const run = spawnSync(process.execPath, ["--import", CHILD_NETWORK_GUARD, join(f.packageRoot, "bin/campaigns-os.mjs"), ...args], { cwd: f.target, encoding: "utf8", env });
+  assert.equal(run.stderr.includes(NETWORK_ATTEMPT), false, `no outbound request was attempted: ${run.stderr.slice(0, 300)}`);
+  return run;
+}
+
+// A packaged project with a fresh `install-agent-context`: the four installed
+// context files are the package's own.
+function freshAgentContext(t) {
+  const f = fixture(t, true);
+  f.home = join(f.dir, "home");
+  mkdirSync(f.home);
+  const installed = packagedCli(f, ["install-agent-context", "--target", f.target]);
+  assert.equal(installed.status, 0, `setup: install-agent-context exits 0: ${installed.stderr}`);
+  for (const [name, src] of Object.entries(SOURCES)) {
+    assert.equal(readFileSync(join(f.target, ".campaign-runtime/agent-context", name), "utf8"), readFileSync(join(f.packageRoot, "agents", src), "utf8"), `setup: the installed ${name} is the package's copy`);
+  }
+  return f;
+}
+
+const setupDryRun = (f) => packagedCli(f, ["tooling", "setup", "--target", f.target, "--dry-run"]);
+
+// Replace the installed AGENTS.md with the one the previous release (1.52.0)
+// installed, after a control dry run over the fresh context exits 0.
+function installPreviousAgentsContext(f) {
+  const control = setupDryRun(f);
+  assert.equal(control.status, 0, `setup: over the fresh context the dry run exits 0: ${control.stderr}`);
+  const previous = readFileSync(AGENT_CONTEXT_1_52_0);
+  assert.equal(createHash("sha256").update(previous).digest("hex"), AGENT_CONTEXT_1_52_0_SHA256, "setup: the fixture is the 1.52.0 AGENTS.md");
+  const installed = join(f.target, ".campaign-runtime/agent-context/AGENTS.md");
+  writeFileSync(installed, previous);
+  assert.deepEqual(readFileSync(installed), previous, "setup: the installed AGENTS.md is the 1.52.0 copy");
+}
+
+test("F2.3-B4 a fresh install-agent-context, then tooling setup --dry-run, reads Status DRY_RUN (exit 0)", (t) => {
+  const f = freshAgentContext(t);
+  const run = setupDryRun(f);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout.split("\n")[0], "Status: DRY_RUN");
+});
+
+test("F2.3-B5 an installed AGENTS.md from the previous release makes tooling setup --dry-run exit 1", (t) => {
+  const f = freshAgentContext(t);
+  installPreviousAgentsContext(f);
+  const run = setupDryRun(f);
+  assert.equal(run.status, 1, `tooling setup --dry-run exit code: ${run.stdout.slice(0, 300)} ${run.stderr.slice(0, 300)}`);
+});
+
+test("F2.3-B14 with an installed AGENTS.md from the previous release, tooling setup --dry-run stderr names install-agent-context", (t) => {
+  const f = freshAgentContext(t);
+  installPreviousAgentsContext(f);
+  const run = setupDryRun(f);
+  assert.equal(run.stderr.includes("install-agent-context"), true, `stderr names install-agent-context: ${run.stderr.slice(0, 500)}`);
+  assert.equal(run.status, 1, "the mention is the refusal's");
 });
