@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { contrastToolkit } from "./contrast.mjs";
 import { shellToken } from "./shell-token.mjs";
 import {
   existsSync,
@@ -677,18 +678,15 @@ function mixColor(value, target, amount) {
   });
 }
 
-function relativeLuminance({ r, g, b }) {
-  const channel = (value) => {
-    const c = value / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-}
+// Luminance and ratio are the shared WCAG 2.x measurement Polish and QA use.
+// Ratios are compared unrounded; only recorded values are rounded, for
+// display.
+const contrast = contrastToolkit();
+const { contrastRatio, displayRatio } = contrast;
 
-function contrastRatio(luminanceA, luminanceB) {
-  const lighter = Math.max(luminanceA, luminanceB);
-  const darker = Math.min(luminanceA, luminanceB);
-  return (lighter + 0.05) / (darker + 0.05);
+// The 8-bit channels colorToRgb reads, as the [0,1] sRGB the helper takes.
+function relativeLuminance({ r, g, b }) {
+  return contrast.relativeLuminance([r / 255, g / 255, b / 255]);
 }
 
 // Pick the foreground color (dark vs light) most legible on `bgValue`. A light
@@ -708,9 +706,11 @@ function readableForeground(bgValue, choices = {}) {
   const darkContrast = contrastRatio(bgLuminance, relativeLuminance(colorToRgb(darkValue)));
   const lightContrast = contrastRatio(bgLuminance, relativeLuminance(colorToRgb(lightValue)));
   const useDark = darkContrast >= lightContrast;
+  const ratio = Math.max(darkContrast, lightContrast);
   return {
     value: useDark ? darkValue : lightValue,
-    contrast: Math.round(Math.max(darkContrast, lightContrast) * 100) / 100,
+    ratio,
+    contrast: displayRatio(ratio),
     on: useDark ? "dark" : "light",
   };
 }
@@ -732,11 +732,12 @@ function declaredForeground(bgValue, declaredValue) {
   if (!bgRgb || !declared) return null;
   const bgLuminance = relativeLuminance(bgRgb);
   const declaredLuminance = relativeLuminance(colorToRgb(declared));
-  const contrast = contrastRatio(bgLuminance, declaredLuminance);
-  if (contrast < DECLARED_CTA_FOREGROUND_MIN_CONTRAST) return null;
+  const ratio = contrastRatio(bgLuminance, declaredLuminance);
+  if (ratio < DECLARED_CTA_FOREGROUND_MIN_CONTRAST) return null;
   return {
     value: declared,
-    contrast: Math.round(contrast * 100) / 100,
+    ratio,
+    contrast: displayRatio(ratio),
     on: declaredLuminance < bgLuminance ? "dark" : "light",
   };
 }
@@ -768,7 +769,7 @@ function deriveForegroundMappings(existingMappings, targetTokens, { ctaForegroun
     const declared = backgroundTarget === CTA_BACKGROUND_TARGET ? declaredForeground(backgroundValue, ctaForeground) : null;
     const readable = declared || readableForeground(backgroundValue, choices);
     if (!readable) continue;
-    if (minContrast && readable.contrast < minContrast) {
+    if (minContrast && readable.ratio < minContrast) {
       warnings.push(issue(
         "theme.foreground.low_contrast",
         declared
@@ -779,7 +780,7 @@ function deriveForegroundMappings(existingMappings, targetTokens, { ctaForegroun
     }
     // Scale confidence by the achieved contrast so a strong derivation reads as
     // trustworthy as a direct mapping (AAA >= 7:1 high, AA >= 4.5:1 medium).
-    const confidence = readable.contrast >= 7 ? "high" : readable.contrast >= 4.5 ? "medium" : "low";
+    const confidence = readable.ratio >= 7 ? "high" : readable.ratio >= 4.5 ? "medium" : "low";
     mappings.push({
       source: backgroundTarget,
       target: foregroundTarget,
@@ -893,9 +894,9 @@ function darkestDeclaredBodyText(rootTokens, bodyBackground) {
     if (!value) continue;
     const luminance = relativeLuminance(colorToRgb(value));
     if (luminance >= bgLuminance) continue;
-    const contrast = contrastRatio(bgLuminance, luminance);
-    if (contrast < BODY_TEXT_MIN_CONTRAST) continue;
-    if (!best || luminance < best.luminance) best = { name, value, luminance, contrast: Math.round(contrast * 100) / 100 };
+    const ratio = contrastRatio(bgLuminance, luminance);
+    if (ratio < BODY_TEXT_MIN_CONTRAST) continue;
+    if (!best || luminance < best.luminance) best = { name, value, luminance, contrast: displayRatio(ratio) };
   }
   return best;
 }

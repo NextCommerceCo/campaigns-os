@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Added
 
-- Polish now measures text readability on every built page at desktop and mobile widths and reports warnings, review and coverage results in the QC handoff. `polish capture` on a campaign with no mapped pages now measures readability and exits successfully, printing the page-load message as a warning. Polish media weight and readability results now read as stale when the built output changed without a new `record build`.
+- Polish now measures text readability on every built page at desktop and mobile widths and reports warnings, review and coverage results in the QC handoff. QA's primary-CTA check and the theme generator use the same unrounded WCAG 2.x measurement. Results change on some campaigns: ratios in [4.495, 4.5), translucent text or backgrounds, and child text now warn; large bold text at 3:1 and Tailwind v4 `oklch()` colours are measured correctly; gradients, unreadable colours, and opacity, filters, blend modes or masks on surrounding elements become manual review instead of a contrast result. QA's primary-CTA check no longer skips pages by page type: every page with an expected next route is checked, every route-matching CTA is measured (not only the most readable one), each piece of text inside a CTA is compared with the requirement for its own size, and a CTA measured before its text, the SDK, stylesheets or fonts are ready is reported for manual review, never as a pass. `polish capture` on a campaign with no mapped pages now measures readability and exits successfully, printing the page-load message as a warning. Polish media weight and readability results now read as stale when the built output changed without a new `record build`.
 
 ## [1.52.0+agent.1] - 2026-10-05
 

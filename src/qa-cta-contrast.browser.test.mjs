@@ -123,6 +123,75 @@ browserTest("F2.4-B23 one route CTA, 24px/700 label at 3.5 and a 14px/400 child 
   assert.deepEqual(outcome(entry), { status: "fail", reason: "low_contrast" }, `browser-primary-cta status fail (${entry.actual})`);
 });
 
+// Beside F2.4-B23: the failure comes from the child text, not the label, so
+// the row cannot pass because the large label was held to 4.5.
+browserTest("F2.4-B23 companion: the failing element in the evidence is the 14px child; the 24px/700 label meets 3", async () => {
+  const entry = one(await primaryCta(htmlPage(cta("width:240px;height:72px;line-height:36px;font-size:24px;font-weight:700;color:#ffffff;background:#898989", "Buy now<br><span style=\"font-size:14px;font-weight:400;color:#2c2c2c\">Free returns</span>"))));
+  const elements = entry.evidence.candidates.flatMap((candidate) => candidate.elements || []);
+  assert.equal(elements.length, 2, JSON.stringify(elements));
+  const failing = elements.filter((element) => element.contrast_ratio_exact < element.required_ratio);
+  assert.equal(failing.length, 1, JSON.stringify(elements));
+  assert.match(failing[0].selector_path, />span:nth-of-type\(1\)$/);
+  assert.deepEqual([failing[0].size_class, failing[0].required_ratio], ["normal", 4.5]);
+  const label = elements.find((element) => element !== failing[0]);
+  assert.match(label.selector_path, />a:nth-of-type\(1\)$/);
+  assert.deepEqual([label.size_class, label.required_ratio], ["large", 3]);
+  assert.ok(label.contrast_ratio_exact >= 3 && label.contrast_ratio_exact < 4.5, `the label reads 3.5:1 (${label.contrast_ratio_exact})`);
+});
+
+// The box rule keeps its meaning: no route candidate at least 40x20.
+browserTest("QA CTA: a readable route CTA smaller than 40x20 reads fail / cta_too_small", async () => {
+  const entry = one(await primaryCta(htmlPage(cta("width:36px;height:18px;line-height:18px;font-size:12px;color:#ffffff;background:#111111", "Go"))));
+  assert.deepEqual(outcome(entry), { status: "fail", reason: "cta_too_small" }, entry.actual);
+});
+
+// Disabled candidates are not contrast-measured; when every candidate is
+// disabled the page is reviewed, at severity warn, never passed.
+browserTest("QA CTA: every route candidate disabled reads manual_review / cta_disabled at severity warn, unmeasured", async () => {
+  const entry = one(await primaryCta(htmlPage(cta("color:#eeeeee;background:#ffffff", "Buy now", { extra: " aria-disabled=\"true\"" }))));
+  assert.deepEqual(outcome(entry), { status: "manual_review", reason: "cta_disabled" }, entry.actual);
+  assert.equal(entry.severity, "warn");
+  assert.deepEqual(entry.evidence.candidates.flatMap((candidate) => candidate.elements || []), []);
+});
+
+// Text whose own control is disabled is not read, so it never counts as
+// rendered text or toward a pass: an enabled route CTA whose only text sits in
+// a disabled inner control has nothing measured and reads as having no
+// rendered text. cta_disabled stays reserved for every candidate disabled.
+const INACTIVE_LABEL = "<span role=\"button\" aria-disabled=\"true\" style=\"color:#eeeeee\">Buy now</span>";
+
+browserTest("QA CTA: an enabled route CTA whose only text is in a disabled inner control reads manual_review / text_not_rendered, never pass", async () => {
+  const entry = one(await primaryCta(htmlPage(cta("color:#ffffff;background:#111111", INACTIVE_LABEL))));
+  assert.deepEqual(outcome(entry), { status: "manual_review", reason: "text_not_rendered" }, entry.actual);
+  assert.equal(entry.severity, "warn");
+  const [candidate] = entry.evidence.candidates.filter((row) => row.route_matches);
+  assert.deepEqual([candidate.disabled, candidate.text_rendered, candidate.contrast_ratio], [false, false, null], JSON.stringify(candidate));
+});
+
+browserTest("QA CTA: a readable route CTA beside one whose only text is inactive reads manual_review / text_not_rendered, never pass", async () => {
+  const entry = one(await primaryCta(htmlPage(`${cta("color:#ffffff;background:#111111")}<p></p>${cta("color:#ffffff;background:#111111", INACTIVE_LABEL)}`)));
+  assert.deepEqual(outcome(entry), { status: "manual_review", reason: "text_not_rendered" }, entry.actual);
+});
+
+// Review members are not compared, so they never count toward a pass either:
+// a readable route CTA beside one whose only text is a review member is
+// reviewed.
+browserTest("QA CTA: a readable route CTA beside one whose only text is a review member reads manual_review / contrast_review", async () => {
+  const entry = one(await primaryCta(htmlPage(`${cta("color:#ffffff;background:#111111")}<p></p>${cta("color:#ffffff;background-color:#111111;background-image:linear-gradient(#111,#333)", "Order now")}`)));
+  assert.deepEqual(outcome(entry), { status: "manual_review", reason: "contrast_review" }, entry.actual);
+});
+
+// Text inside an open shadow root in a route CTA is measured too, against
+// the background the page paints behind it.
+browserTest("QA CTA: unreadable text inside an open shadow root in the route CTA reads fail / low_contrast", async () => {
+  const html = htmlPage(`${cta("color:#111111;background:#ffffff", "<span id=\"host\"></span>")}<script>document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = "<b style=\\"color:#eeeeee\\">Buy now</b>";</script>`);
+  const entry = one(await primaryCta(html));
+  assert.deepEqual(outcome(entry), { status: "fail", reason: "low_contrast" }, entry.actual);
+  const elements = entry.evidence.candidates.flatMap((candidate) => candidate.elements || []);
+  assert.equal(elements.length, 1, JSON.stringify(elements));
+  assert.match(elements[0].selector_path, />>>b:nth-of-type\(1\)$/);
+});
+
 browserTest("F2.4-B26 QA page with expected_next_url and no route-matching control: browser-primary-cta reason missing_route_cta", async () => {
   const entry = one(await primaryCta(htmlPage(cta("color:#ffffff;background:#111111", "Learn more", { href: "/about/" }))));
   assert.deepEqual(outcome(entry), { status: "fail", reason: "missing_route_cta" }, `browser-primary-cta reason missing_route_cta (${entry.actual})`);
