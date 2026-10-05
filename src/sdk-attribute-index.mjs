@@ -210,3 +210,74 @@ export function isKnownCheckoutFieldName(value) {
   return SDK_CHECKOUT_FIELD_NAMES.includes(name)
     || SDK_CHECKOUT_FIELD_PREFIXES.some((prefix) => name.startsWith(prefix) && name.length > prefix.length);
 }
+
+// The Campaign Cart template placeholders, for the raw cart placeholder check
+// (built_output.cart_placeholders). Generated from the SDK renderers at the
+// same tag as the attribute index above, v0.4.38:
+//
+//   src/features/cart/cart-summary/cart-summary.renderer.ts:46-83 (bare vars)
+//   src/features/cart/cart-summary/cart-summary.line-renderer.ts:150-173,
+//     228-240,256-314 ({item.*} and its {line.*} alias, {property.*},
+//     {discount.*})
+//   src/features/cart/package-selector/package-selector.renderer.ts:26
+//     ({package.<any key>})
+//   src/features/cart/bundle-selector/bundle-selector.renderer.ts:37-42
+//     ({bundle.<any key>})
+//   src/features/cart/package-toggle/package-toggle.enhancer.ts:59-65
+//     ({toggle.<any key>})
+//   src/features/cart/quantity-control/quantity-control.renderer.ts:69-70
+//     ({quantity}, {step})
+//   src/features/cart/remove-item/remove-item.renderer.ts:26 ({quantity})
+//   src/features/display/quantity-text/quantity-text.enhancer.ts:124,149
+//     ({qty...} and {singular|plural})
+//
+// Every namespaced renderer replaces any `{<namespace>.<key>}` in its
+// template (item.property.<key> and the package, bundle and toggle keys are
+// open-ended; an unmapped key renders empty), so the namespace alone makes a
+// token known. `{tax}` is not a cart-summary var at this tag. Regenerate the
+// lists whole from the renderers when the index pin advances; never edit them
+// by hand.
+export const SDK_TEMPLATE_PLACEHOLDERS = Object.freeze({
+  cart_summary_vars: Object.freeze([
+    "subtotal",
+    "total",
+    "shipping",
+    "shippingName",
+    "shippingCode",
+    "shippingOriginal",
+    "shippingDiscountAmount",
+    "shippingDiscountPercentage",
+    "totalDiscount",
+    "totalDiscountPercentage",
+    "discounts",
+    "currency",
+    "isCalculating",
+    "isEmpty",
+    "itemCount",
+    "totalQuantity",
+    "isFreeShipping",
+    "hasShippingDiscount",
+    "hasDiscounts",
+  ]),
+  namespaces: Object.freeze(["item", "line", "discount", "property", "package", "bundle", "toggle"]),
+  // Tokens the SDK substitutes in live markup, and the elements that own them.
+  live_tokens: Object.freeze(["quantity", "step", "qty"]),
+  // [data-next-quantity="increase|decrease|set"]: {quantity} and {step}.
+  quantity_control: Object.freeze({ attribute: "data-next-quantity", values: Object.freeze(["increase", "decrease", "set"]), tokens: Object.freeze(["quantity", "step"]) }),
+  // [data-next-remove-item]: {quantity} only.
+  remove_item: Object.freeze({ attribute: "data-next-remove-item", tokens: Object.freeze(["quantity"]) }),
+  // [data-next-quantity-text]: {qty...} and the singular/plural form.
+  // `qty_forms` is the renderer's own {qty} pattern (quantity-text.enhancer.ts:
+  // 124, /\{qty([*+\-]?\d*)\}/): {qty}, {qty*2}, {qty+1}, {qty-1}.
+  quantity_text: Object.freeze({ attribute: "data-next-quantity-text", tokens: Object.freeze(["qty"]), qty_forms: "qty[*+\\-]?\\d*" }),
+  // Item lists whose innerHTML the SDK uses as the row template or replaces
+  // (cart-item-list.enhancer.ts:21-35, order-item-list.enhancer.ts:26-36).
+  item_list_containers: Object.freeze(["data-next-cart-items", "data-next-order-items"]),
+  item_template_selector: "data-item-template-selector",
+  item_template: "data-item-template",
+});
+
+// The SDK versions whose renderer files above were verified unchanged from
+// v0.4.38 (git blob ids equal at v0.4.38, v0.4.39 and v0.4.40). A page whose
+// loader pins another version cannot pass the placeholder check.
+export const SDK_TEMPLATE_PLACEHOLDERS_VERIFIED_PINS = Object.freeze(["0.4.38", "0.4.39", "0.4.40"]);

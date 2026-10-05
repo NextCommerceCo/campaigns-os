@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.51.0+agent.1] - 2026-10-04
+## [1.51.0+agent.2] - 2026-10-05
 
 ### Added
 
@@ -11,6 +11,12 @@ Notable supported-surface changes are recorded here.
 ### Changed
 
 - `polish capture` now records media weight beside page load evidence in the Assembly Report, so `next` reads the image weight and oversize results of a fresh capture.
+
+## [1.51.0+agent.1] - 2026-10-04
+
+### Added
+
+- Doctor now warns on SDK cart placeholders printed in live built HTML (`built_output.cart_placeholders`), ported from the public starter-template lint.
 
 ## [1.51.0] - 2026-10-04
 
