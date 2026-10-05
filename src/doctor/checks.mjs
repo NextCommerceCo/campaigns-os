@@ -957,18 +957,21 @@ function validateInputCurrency({ packet, packetPath, spec, report, warnings, der
   if (unstamped.length) {
     addIssue(warnings, "build_brief.binding_unknown", `Recorded ${unstamped.join(", ")} ${unstamped.length === 1 ? "does" : "do"} not say which Campaign Build Brief content ${unstamped.length === 1 ? "it was" : "they were"} made against, so ${unstamped.length === 1 ? "it reads" : "they read"} unconfirmed, not current. Record ${unstamped.join(", ")} again (${unstamped.map((key) => (key === "assembly" ? "record build" : key === "polish" ? "record polish" : "qa run")).join(", ")}).`, { stages: unstamped });
   }
-  // A completed stage also reads unknown when the current brief or
-  // CampaignSpec cannot be read: there is nothing to compare its stamps with.
-  // The warning names the file to restore.
+  // A completed stage with a well-formed stamp also reads unknown when the
+  // current brief or CampaignSpec cannot be read: there is nothing to compare
+  // that stamp with. The warning names the file to restore; a stage whose
+  // stamp is missing or malformed is named by the stamp warning above only.
   const unknownStages = Object.keys(currency.stages).filter((key) => currency.reasons[key] === "input_binding_unknown");
   const unconfirmed = (stages) => `recorded ${stages.join(", ")} ${stages.length === 1 ? "reads" : "read"} unconfirmed, not current`;
-  if (unknownStages.length && currency.brief.current === null) {
+  const briefUnreadable = unknownStages.filter((key) => !unstamped.includes(key));
+  if (briefUnreadable.length && currency.brief.current === null) {
     const normalizedPath = optionalString(packet?.build_brief?.normalized_path);
-    addIssue(warnings, "build_brief.binding_unknown", `${normalizedPath ? `The normalized Campaign Build Brief ${normalizedPath} cannot be read as a brief object` : "The Build Packet names no build_brief.normalized_path, so the current Campaign Build Brief cannot be read"}, so ${unconfirmed(unknownStages)}. Restore it, or save the brief again with ${cmd("record")} brief --packet <packet>.`, { stages: unknownStages, ...(normalizedPath ? { normalized_path: normalizedPath } : {}) });
+    addIssue(warnings, "build_brief.binding_unknown", `${normalizedPath ? `The normalized Campaign Build Brief ${normalizedPath} cannot be read as a brief object` : "The Build Packet names no build_brief.normalized_path, so the current Campaign Build Brief cannot be read"}, so ${unconfirmed(briefUnreadable)}. Restore it, or save the brief again with ${cmd("record")} brief --packet <packet>.`, { stages: briefUnreadable, ...(normalizedPath ? { normalized_path: normalizedPath } : {}) });
   }
   const specPath = optionalString(packet?.spec?.local_path);
-  if (unknownStages.length && currency.spec.current === null && specPath) {
-    addIssue(warnings, "spec.binding_unknown", `The CampaignSpec ${specPath} cannot be read as a JSON object, so ${unconfirmed(unknownStages)}. Restore it, then run doctor again.`, { stages: unknownStages, spec_path: specPath });
+  const specUnreadable = unknownStages.filter((key) => !specUnstamped.includes(key));
+  if (specUnreadable.length && currency.spec.current === null && specPath) {
+    addIssue(warnings, "spec.binding_unknown", `The CampaignSpec ${specPath} cannot be read as a JSON object, so ${unconfirmed(specUnreadable)}. Restore it, then run doctor again.`, { stages: specUnreadable, spec_path: specPath });
   }
   const inputPath = optionalString(packet?.build_brief?.input_path);
   const savedSha = optionalString(report.build_brief?.input_sha256);

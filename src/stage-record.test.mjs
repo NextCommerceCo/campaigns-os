@@ -2814,8 +2814,8 @@ for (const [label, drop] of [
         mutateJson(f.contextPath, drop);
         const before = treeDigest(f.dir);
         const result = recordInput(f, "spec", extra);
-        assert.equal(result.status, 1, `a refusal exits 1: ${result.stderr.slice(0, 600)}`);
-        assert.match(result.stderr, new RegExp(`record spec refused; nothing was written:\\s*- brief_inputs_unavailable: the Build Context lacks ${label.replace(".", "\\.")}\\b`));
+        assertRecordRefusal(result, "spec", "brief_inputs_unavailable");
+        assert.match(result.stderr, new RegExp(`brief_inputs_unavailable: the Build Context lacks ${label.replace(".", "\\.")}\\b`));
         assertNothingWritten(f.dir, before, "the refused record spec");
       });
     });
@@ -2859,6 +2859,35 @@ for (const how of ["unreadable", "not JSON"]) {
       assert.match(warning.message, /campaignspec\.json/);
       assert.match(warning.message, /cannot be read/);
       assert.deepEqual(warning.detail?.stages, ["assembly"]);
+    });
+  });
+}
+
+// One stage with well-formed stamps (assembly) and one with malformed stamps
+// (polish), while one input cannot be read: each stage is named once per
+// input, by the cause that applies to it.
+for (const [code, input, spoiled, fileWord] of [
+  ["build_brief.binding_unknown", "brief", normalizedOf, /campaign-build-brief\.normalized\.json/],
+  ["spec.binding_unknown", "CampaignSpec", specPathOf, /campaignspec\.json/],
+]) {
+  test(`doctor names each stage once in ${code} when one stage's stamp is malformed and the ${input} cannot be read`, async () => {
+    await guardedLifecycle((f) => {
+      recordThroughBuild(f);
+      mutateJson(f.reportPath, (report) => {
+        report.stages.polish = { ...report.stages.polish, status: "completed", source_brief_material: { presentation: "malformed" }, source_spec_material_hash: "malformed" };
+      });
+      const doctorJson = withInputSpoiled(spoiled(f), "not JSON", () => doctorOk(f));
+      assert.equal(doctorJson.derived.input_currency.stages.assembly, "unknown", "setup: the build reads unknown");
+      assert.equal(doctorJson.derived.input_currency.stages.polish, "unknown", "setup: Polish reads unknown");
+      const warnings = doctorJson.warnings.filter((issue) => issue.code === code);
+      const byStamp = warnings.filter((issue) => /does not say which/.test(issue.message));
+      const byFile = warnings.filter((issue) => /cannot be read/.test(issue.message));
+      assert.equal(warnings.length, 2, `one ${code} per cause: ${JSON.stringify(warnings)}`);
+      assert.equal(byStamp.length, 1, `one ${code} names the malformed stamp: ${JSON.stringify(warnings)}`);
+      assert.equal(byFile.length, 1, `one ${code} names the unreadable ${input}: ${JSON.stringify(warnings)}`);
+      assert.deepEqual(byStamp[0].detail?.stages, ["polish"], "the malformed stamp names Polish only");
+      assert.deepEqual(byFile[0].detail?.stages, ["assembly"], "the unreadable file names the stage whose stamp is well-formed only");
+      assert.match(byFile[0].message, fileWord);
     });
   });
 }
