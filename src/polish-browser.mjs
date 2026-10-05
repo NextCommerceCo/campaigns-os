@@ -701,7 +701,8 @@ function boundedProbeSteps({ clock, session, token, started, boundMs, hardMs = I
 // (DOM.getDocument, piercing shadow roots) and each closed shadow root
 // resolved into that world (DOM.resolveNode); and the one read
 // (Runtime.callFunctionOn of `functionDeclaration` in that world, with
-// `leadingArgs` and then the closed roots; with `frameOwners`, also the
+// `leadingArgs` and then the closed roots, passed by object id so the
+// function receives the root nodes themselves; with `frameOwners`, also the
 // iframes holding closed roots, see closedShadowRoots). Returns BOUND_ENDED
 // when the bound ended a step, null when a step failed (its execution
 // context destroyed), or { value } of the read.
@@ -1285,16 +1286,18 @@ export async function createPolishBrowserAdapter({
       const addedLeft = () => probe.addedRemainingMs - Math.max(0, clock.now() - cellStarted);
       const unmeasured = (status, networkidle = null) => ({ status, capped: false, coverage_gaps: [], elements: [], crops: [], probe_ms: 0, crop_ms: 0, networkidle });
       // Every browser call of the cell is a step of a bound: the added budget
-      // left on `clock` (a cell that starts with none makes no call), and once
-      // the page exists, the cell deadline's headroom in real time too. A
-      // bound the added budget ends reads run_budget_exhausted; one the cell
-      // deadline's headroom ends, probe_timeout.
+      // left on `clock` (a cell that starts with none makes no call), and the
+      // cell deadline's headroom in real time. A bound the added budget ends
+      // reads run_budget_exhausted; one the cell deadline's headroom ends,
+      // probe_timeout. The setup calls (context, page, CDP session) have their
+      // own bound, so it never cancels the page's steps.
       const token = { cancelled: false };
+      const setupToken = { cancelled: false };
       let cdp = null;
-      const bounded = (boundMs, hardMs) => boundedProbeSteps({ clock, session: { send: (method, params) => cdp.send(method, params) }, token, started: clock.now(), boundMs, hardMs });
+      const bounded = (boundMs, hardMs, stepsToken = token) => boundedProbeSteps({ clock, session: { send: (method, params) => cdp.send(method, params) }, token: stepsToken, started: clock.now(), boundMs, hardMs });
       try {
-        const setupSteps = bounded(probe.addedRemainingMs);
-        const setup = { step: setupSteps.step, ended: () => unmeasured("run_budget_exhausted") };
+        const setupSteps = bounded(probe.addedRemainingMs, boundedCellDeadlineMs - READABILITY_CELL_HEADROOM_MS, setupToken);
+        const setup = { step: setupSteps.step, ended: () => unmeasured(setupSteps.hardEnded() ? "probe_timeout" : "run_budget_exhausted") };
         return await inCaptureContext({ url: route?.url, viewport, signal, setup }, async ({ page, session, awaitActive, cellLeftMs }) => {
           cdp = session;
           const addedAtStart = addedLeft();
@@ -1340,6 +1343,7 @@ export async function createPolishBrowserAdapter({
         });
       } finally {
         token.cancelled = true;
+        setupToken.cancelled = true;
       }
     },
 

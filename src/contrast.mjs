@@ -466,7 +466,9 @@ export function contrastToolkit() {
       if (isSet(layer.getPropertyValue("mask-image")) || isSet(layer.getPropertyValue("-webkit-mask-image"))) triggers.add(12);
     };
     const schemeOf = (view, at) => view.getComputedStyle(at).getPropertyValue("color-scheme");
-    const light = (scheme) => scheme === "normal" || scheme === "light";
+    // A scheme list that includes light is used as light (the page is read
+    // with a light colour-scheme preference); normal is light too.
+    const light = (scheme) => scheme === "normal" || scheme.trim().split(/\s+/).includes("light");
     const sameScheme = (a, b) => (light(a) ? light(b) : a === b);
     // One slot's (or the element's own) reading, adding the triggers on its
     // way out.

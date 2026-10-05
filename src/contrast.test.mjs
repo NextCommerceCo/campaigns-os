@@ -211,6 +211,22 @@ test("measureTextElement in an in-memory page: transparent backgrounds end at th
   assert.deepEqual([dark.review_reason, dark.ratio], ["canvas_unknown", null]);
 });
 
+test("measureTextElement in an in-memory page: a color-scheme list that includes light ends at the default canvas", async () => {
+  const { contrastToolkit } = await import("./contrast.mjs");
+  const { vmPage } = await import("./readability-harness.test.mjs");
+  const measureIn = (rootStyle) => {
+    const page = vmPage({ rootStyle, body: [{ tag: "p", key: "text", text: "Synthetic", style: { color: "rgb(17, 17, 17)" } }] });
+    return JSON.parse(JSON.stringify(page.run(`(${contrastToolkit.toString()})()`).measureTextElement(page.byKey.text, page.window)));
+  };
+  for (const colorScheme of ["light dark", "dark light", "only light"]) {
+    const read = measureIn({ colorScheme });
+    assert.deepEqual([read.review_reason, read.bg_layers_raw.at(-1)], [null, "rgb(255, 255, 255)"], colorScheme);
+  }
+  for (const colorScheme of ["dark", "only dark"]) {
+    assert.equal(measureIn({ colorScheme }).review_reason, "canvas_unknown", colorScheme);
+  }
+});
+
 test("documentMeasurability reads sdk_not_ready, then styles_incomplete, then fonts_pending", async () => {
   const kit = await toolkit();
   const reading = ({ bodyAttrs = {}, sheet = {}, fonts = "loaded", script = null }) => {

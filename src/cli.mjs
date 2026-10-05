@@ -2821,7 +2821,7 @@ export async function polishCaptureCommand(args, options = {}) {
         route_scope: null,
         routes: [],
         viewports: [],
-        readability_routes: capture.readability.subject.routes,
+        readability_routes: capture.readability?.subject?.routes ?? [],
       },
     };
   }
@@ -2831,13 +2831,13 @@ export async function polishCaptureCommand(args, options = {}) {
     status: ok ? (checkpoint.status === "waived" ? "ready_with_waivers" : "ready") : "blocked",
     action: "polish-capture",
     report_path: reportPath,
-    measurement: capture.page_load.measurement,
+    measurement: capture.page_load?.measurement ?? null,
     checkpoint,
-    observed_findings: capture.page_load.findings,
+    observed_findings: capture.page_load?.findings ?? [],
     capture: {
-      route_scope: capture.plan.route_scope,
-      routes: capture.plan.routes.map((route) => route.requested_route),
-      viewports: capture.plan.viewports.map((viewport) => viewport.key),
+      route_scope: capture.plan?.route_scope ?? null,
+      routes: (capture.plan?.routes ?? []).map((route) => route.requested_route),
+      viewports: (capture.plan?.viewports ?? []).map((viewport) => viewport.key),
     },
   };
 }

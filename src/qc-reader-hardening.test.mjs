@@ -366,6 +366,19 @@ test("QC handoff: one check and key warned on two pages is listed once with both
   }
 });
 
+test("QC handoff: a readability review entry carries its crop path, and an entry with no crop has no crop key", async () => {
+  const { buildQcHandoff, qcHandoffTextLines } = await import("./qc-accept.mjs");
+  const review = (page, members) => qcRow({ check: "readability.contrast", leg: "polish", page, key: "review:add_to_cart:background_gradient", result: "review", reason_code: "background_gradient", state: { page }, observation: { members }, producer: "campaigns-os polish capture", viewport: "desktop" });
+  const cropped = review("checkout", [{ crop_ref: null }, { crop_ref: { path: "polish-crops/checkout-desktop-1.png", sha256: `sha256:${"c".repeat(64)}` } }]);
+  const uncropped = review("index", [{ crop_ref: null }]);
+  const handoff = buildQcHandoff({ results: [cropped, uncropped], accepts: [] });
+  const entries = Object.fromEntries(handoff.review.map((entry) => [entry.page, entry]));
+  assert.equal(entries.checkout.crop, "polish-crops/checkout-desktop-1.png", "the cropped entry names its first member's crop");
+  assert.equal(Object.hasOwn(entries.index, "crop"), false, "the entry with no crop has no crop key");
+  assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(handoff)).review.find((entry) => entry.page === "index"), "crop"), false, "nor does its JSON");
+  assert.equal(qcHandoffTextLines(handoff).filter((line) => line.includes(" crop: ")).length, 1, "only the cropped entry prints a crop");
+});
+
 // ---------------------------------------------------------------------------
 // Every qc.* assertion takes part in pairing; none is skipped.
 

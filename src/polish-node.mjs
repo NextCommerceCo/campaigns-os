@@ -727,7 +727,9 @@ async function runPolishCapture({
   const clock = isProbeClock(probeClock) ? probeClock : { now: () => performance.now() };
   // The readability budgets, charged on `clock`: probe time, crop time, and
   // all readability work (shared-cell probes and crops, and readability-only
-  // cells end to end).
+  // cells end to end). Probe and crop time are subtotals of the added work, so
+  // a shared cell's probe and crop time is charged once to its own budget and
+  // once to the added budget.
   const spentMs = { probe: 0, crop: 0, added: 0 };
   const readabilityProbe = () => ({
     ...(isProbeClock(probeClock) ? { clock: probeClock } : {}),

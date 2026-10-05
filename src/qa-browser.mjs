@@ -1413,10 +1413,12 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
   // no ratio to compare) is a review member and is not compared; an element
   // whose control is disabled or loading has no colours read. Text whose
   // control is disabled is inactive: it is not rendered text the check can
-  // read, so it never counts toward text_rendered or toward a pass. Disabled
-  // candidates are not measured at all. Text an element inside the candidate
-  // generates through ::before or ::after (generatedTextImpl) is never
-  // measured, so the candidate is reviewed, never passed on its other text.
+  // read, so it never counts toward text_rendered or toward a pass. A
+  // disabled candidate is not measured at all, whatever text it generates,
+  // and never counts toward a pass. In an enabled candidate, text an element
+  // inside it generates through ::before or ::after (generatedTextImpl) is
+  // never measured, so the candidate is reviewed, never passed on its other
+  // text.
   const measureCandidate = (element) => {
     if (element.matches(":disabled, [aria-disabled=\"true\"]")) {
       return { disabled: true, text_rendered: null, control_loading: null, contrast_ratio: null, elements: [], below: false, review: false, measured: false, inactive: false };

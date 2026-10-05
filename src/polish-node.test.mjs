@@ -1373,13 +1373,36 @@ test("a readability-only cell whose context creation outlasts the added budget r
       return new Promise((resolve) => setTimeout(resolve, 300));
     },
   });
-  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 200 });
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 1_400 });
   try {
     const observation = await adapter.probeReadabilityRoute({ route: "/merchant/stock/", url: "http://127.0.0.1:4173/merchant/stock/" }, DESKTOP, { probe: readabilityOptions(clock, { addedRemainingMs: 40 }) });
     assert.equal(observation.status, "run_budget_exhausted");
     await new Promise((resolve) => setTimeout(resolve, 400));
     assert.ok(fake.calls.some((call) => call[0] === "context.close" && call[1] === 0), "the context created after the bound ended is closed");
     assert.equal(sent(fake.calls, "Page.getFrameTree"), 0, "no CDP command follows the ended bound");
+  } finally {
+    await adapter.close();
+  }
+});
+
+test("a readability-only cell whose context creation outlasts the cell deadline's headroom reads probe_timeout, the late context is closed, and the adapter stays usable", async () => {
+  let held = false;
+  const fake = readabilityChromium({
+    holdContext: () => {
+      if (held) return null;
+      held = true;
+      return new Promise((resolve) => setTimeout(resolve, 1_600));
+    },
+  });
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 1_200 });
+  try {
+    const observation = await adapter.probeReadabilityRoute({ route: "/merchant/stock/", url: "http://127.0.0.1:4173/merchant/stock/" }, DESKTOP, { probe: readabilityOptions(null) });
+    assert.equal(observation.status, "probe_timeout");
+    await new Promise((resolve) => setTimeout(resolve, 1_700));
+    assert.ok(fake.calls.some((call) => call[0] === "context.close" && call[1] === 0), "the context created after the bound ended is closed");
+    assert.equal(sent(fake.calls, "Page.getFrameTree"), 0, "no CDP command follows the ended bound");
+    const next = await adapter.captureRoute({ url: LANDING_URL, viewport: DESKTOP });
+    assert.equal(next.finalDocumentUrl, LANDING_URL, "the next cell runs: the adapter is not poisoned");
   } finally {
     await adapter.close();
   }

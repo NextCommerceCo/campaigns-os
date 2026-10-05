@@ -317,11 +317,12 @@ function readabilityPairSummary(rows) {
 }
 
 // The crop path of a readability review row: its first member's crop.
+// Undefined for a review row with no crop, and for any other row.
 function readabilityReviewCrop(row) {
   if (row?.check !== "readability.contrast" || row.result !== "review") return undefined;
   const members = Array.isArray(row.observation?.members) ? row.observation.members : [];
   const ref = members.find((member) => isPlainObject(member?.crop_ref))?.crop_ref;
-  return typeof ref?.path === "string" ? ref.path : null;
+  return typeof ref?.path === "string" ? ref.path : undefined;
 }
 
 function handoffEntry(row) {

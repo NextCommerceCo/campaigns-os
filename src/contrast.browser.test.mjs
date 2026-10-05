@@ -104,6 +104,8 @@ const PAGES = ({ other }) => ({
   "frame-overlay": htmlPage(`<div style="position:relative">${FRAME("")}<div style="position:absolute;left:0;top:0;width:320px;height:20px;background:#000000"></div></div>`),
   "frame-transparent": htmlPage(`<div style="padding:8px;background:#111111">${FRAME("display:block", BARE_FRAME_DOC)}</div>`),
   "frame-scheme": htmlPage(`<div style="padding:8px;background:#ffffff">${FRAME("display:block", "<!doctype html><html style='color-scheme:dark'><body style='margin:0'><p style='margin:0;padding:8px;color:#222222'>Frame text</p></body></html>")}</div>`),
+  "frame-scheme-list": htmlPage(`<div style="padding:8px;background:#111111">${FRAME("display:block", "<!doctype html><html style='color-scheme:light'><body style='margin:0'><p style='margin:0;padding:8px;color:#222222'>Frame text</p></body></html>")}</div>`, { htmlAttrs: "style=\"color-scheme:light dark\"" }),
+  "root-scheme-list": htmlPage(ATC("color:#111111;background:transparent"), { base: ":root{color-scheme:light dark}body{margin:0;background:transparent}" }),
   "frame-path": htmlPage(`<p style="${P};color:#ffffff;background:#111111">Light text</p><iframe srcdoc="${FRAME_DOC}" style="width:320px;height:120px;border:0"></iframe>`),
   "shadow-link-pending": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="/shadow-link-pending/stalled.css"><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
   "shadow-link-missing": htmlPage(`<div>${OPEN(`<link rel="stylesheet" href="/shadow-link-missing/missing.css"><p style="${P};color:#ffffff;background:#111111">Shadow text</p>`)}</div>`),
@@ -518,6 +520,19 @@ browserTest("text in a transparent same-origin frame document is composited over
 
 browserTest("control: text in a transparent same-origin frame document whose color-scheme differs from its frame element's reads review / canvas_unknown (that frame paints its own canvas)", async () => {
   assert.equal((await frameText("frame-scheme")).review_reason, "canvas_unknown");
+});
+
+browserTest("text in a transparent same-origin frame document with color-scheme light, inside a color-scheme light dark document, is composited over the outer document's background (both are light)", async () => {
+  const element = await frameText("frame-scheme-list");
+  assert.equal(element.review_reason, null);
+  assert.equal(element.bg_layers_raw.at(-1), "rgb(17, 17, 17)", JSON.stringify(element.bg_layers_raw));
+});
+
+browserTest("a transparent page whose root color-scheme is light dark ends at the default canvas, not canvas_unknown", async () => {
+  const { elements } = await measure("root-scheme-list");
+  const [element] = elements.filter((measured) => measured.selector_path.includes("button"));
+  assert.equal(element.review_reason, null);
+  assert.equal(element.bg_layers_raw.at(-1), "rgb(255, 255, 255)", JSON.stringify(element.bg_layers_raw));
 });
 
 browserTest("text in a same-origin frame stops at the frame's root, and its path names the frame", async () => {
