@@ -2077,7 +2077,8 @@ function prepareBuildUnderLock({
 
   // The top-level status/next/blockers are derived from the stages by the same
   // function every later commit of the report runs (stage-ledger.mjs), so
-  // prepare-build's first write and a producer's last write spell them alike.
+  // prepare-build's first write and a producer's last write spell them alike,
+  // against the brief and CampaignSpec material this run binds.
   const report = applyDerivedAssemblyReportSummary(createAssemblyReport({
     packetPath,
     contextPath,
@@ -2094,7 +2095,7 @@ function prepareBuildUnderLock({
     buildScopeReasonsInvalid,
     templateSelection,
     evidence: strippedSpecBytes == null ? [] : hostStripped.evidence,
-  }));
+  }), { briefMaterial: briefBindings.material, specMaterial: specMaterialHash(spec) });
 
   // Values a spec left as it is still holds that doctor blocks on. An
   // absolute http(s) page_url is not among them: projection takes its path.
@@ -2665,7 +2666,7 @@ export function commitWaiverToAssemblyReport(workspace, mutate, options, { dryRu
     // run's own "do not write" is this wrapper's null below, not the mutator's.
     if (!isPlainObject(mutated)) throw new TypeError("commitAssemblyReport mutate(report) must return an Assembly Report object.");
     if (!dryRun) return mutated;
-    applyDerivedAssemblyReportSummary(mutated);
+    applyDerivedAssemblyReportSummary(mutated, currentPacketInputs({ packet: workspace.packet, packetPath: workspace.packetPath }));
     return null;
   };
   // A preview writes nothing, so it does not take the target lock either: the
@@ -3531,7 +3532,6 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     store: storeFlags
       ? { subdomain: storeFlags.subdomain, admin_api: adminApiBaseForStore(storeFlags.subdomain), ...(storeFlags.token_env ? {} : { transport: "gateway", endpoint: "https://mcp.nextcommerce.com/admin/" }), token_source: storeFlags.token_env ? `env:${storeFlags.token_env}` : "gateway:login", store_read: null, pages_read: null, primary_domain: null }
       : null,
-    rebound: { build_context: null, assembly_report: null },
     errors: [],
     warnings: [],
     next: `${cmd("doctor")} --packet ${shellToken(packetPath)}`,
@@ -3765,17 +3765,15 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
       addIssue(result.warnings, "spec.derive.projection_stale", `A page route ${dryRun ? "would move" : "moved"}, and the packet's page-kit projection (source_html.pages[].page_kit) and the Build Context were prepared from the old routes. Re-run ${cmd("prepare-build")} (or start) before the next build so they describe the routes the spec carries.`);
     }
     if (stageIsTerminal(report?.stages?.assembly?.status)) {
-      addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec ${dryRun ? "this would rewrite" : "just rewritten"}. Re-run the build stage before polish, deploy or QA if a route or the pin moved; QA correlates its verdict against the spec identity the sidecars carry.`);
-      result.next = `${cmd("doctor")} --packet ${shellToken(packetPath)}, then rebuild: set stages.assembly.status back to "pending" on the Assembly Report and run ${cmd("next")} --packet ${shellToken(packetPath)}`;
+      addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec ${dryRun ? "this would rewrite" : "just rewritten"}. Bind the rewritten spec with ${cmd("record")} spec (it keeps stage history); next then routes back to the build, and Polish and QA are owed again.`);
     }
+    // spec derive writes the spec alone: the Build Context and the Assembly
+    // Report keep the identity they bound, so every recorded stage reads its
+    // stamps against the new content and `record spec` is what binds it.
+    if (report) result.next = `${cmd("record")} spec --packet ${shellToken(packetPath)} ${dryRun ? "after the write " : ""}to bind the derived spec (it keeps stage history), then ${cmd("next")} --packet ${shellToken(packetPath)}`;
   }
 
   if (plan.changes.length && !dryRun) {
-    // The identity the sidecars bound to the spec BEFORE this write, so the
-    // re-bind below can tell "bound to the spec being replaced" from "already
-    // drifted" and only ever moves the former.
-    const beforeRawHash = createHash("sha256").update(text).digest("hex");
-    const beforeMaterialHash = specMaterialHash(spec);
     // The plan already refused every path its containers cannot take, so a
     // throw here is a defect in this toolkit rather than in the spec; it is
     // still a structured error, never a crash past the --json contract.
@@ -3813,82 +3811,7 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
       rmSync(tmpPath, { force: true });
     }
     result.written = true;
-    // The Build Context and the Assembly Report carry the spec's identity
-    // (raw and material hashes) from prepare-build, and QA's verdict is
-    // correlated against the material hash by the bundle check. Each sidecar
-    // that was bound to the spec just replaced is re-bound to the new one;
-    // one that already carried another identity is left as it is and named.
-    const afterRawHash = createHash("sha256").update(serialized).digest("hex");
-    const afterMaterialHash = specMaterialHash(spec);
-    const boundToOld = (raw, material) => raw === beforeRawHash || material === beforeMaterialHash;
-    // A sidecar is re-bound only when it names the spec being written: two
-    // packets sharing a target repo can carry byte-identical spec exports,
-    // and a matching hash alone would let one packet's derive re-bind the
-    // other's sidecar to a spec it never used.
-    const namesThisSpec = (recorded) => {
-      if (!isNonEmptyString(recorded)) return false;
-      try {
-        return realpathSync(resolve(targetRepo, recorded)) === realSpecPath;
-      } catch {
-        return false;
-      }
-    };
-    const contextPath = workspace?.contextPath || null;
-    let context = null;
-    try {
-      context = contextPath ? readJsonIfExists(contextPath) : null;
-    } catch (error) {
-      result.rebound.build_context = false;
-      addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context could not be read (${singleLineDetail(error.message)}); its spec identity was not updated. Re-run prepare-build before QA so the bundle correlates.`);
-    }
-    if (isObject(context?.spec)) {
-      if (!namesThisSpec(context.spec.path)) {
-        result.rebound.build_context = false;
-        addIssue(result.warnings, "spec.derive.identity_not_rebound", "The Build Context names a different spec file than the one derive wrote (another packet's, or a moved export); it was left as it is. Re-run prepare-build before QA so the bundle correlates.");
-      } else if (boundToOld(context.spec.hash, context.spec.material_hash)) {
-        try {
-          writeJsonAtomic(contextPath, { ...context, spec: { ...context.spec, hash: afterRawHash, material_hash: afterMaterialHash } });
-          result.rebound.build_context = true;
-        } catch (error) {
-          result.rebound.build_context = false;
-          addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context's spec identity could not be updated (${singleLineDetail(error.message)}); re-run prepare-build before QA so the bundle correlates.`);
-        }
-      } else {
-        result.rebound.build_context = false;
-        addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context's spec identity was already bound to a different spec than the one derive replaced; it was left as it is. Re-run prepare-build before QA so the bundle correlates.`);
-      }
-    }
-    if (report && isObject(report.identity) && workspace) {
-      if (!namesThisSpec(report.inputs?.spec_path)) {
-        result.rebound.assembly_report = false;
-        addIssue(result.warnings, "spec.derive.identity_not_rebound", "The Assembly Report names a different spec file than the one derive wrote (another packet's, or a moved export); it was left as it is. Re-run prepare-build before QA so the bundle correlates.");
-      } else if (boundToOld(report.identity.spec_hash, report.identity.spec_material_hash)) {
-        try {
-          // The identity is re-checked on the report as it is re-read for
-          // the commit, so a prepare-build that re-bound it in the meantime
-          // is left alone.
-          const committed = commitAssemblyReport(workspace, (current) => (
-            isObject(current.identity) && boundToOld(current.identity.spec_hash, current.identity.spec_material_hash)
-              ? { ...current, identity: { ...current.identity, spec_hash: afterRawHash, spec_material_hash: afterMaterialHash } }
-              : null
-          ), {
-            command: "spec derive",
-            staleReason: `spec derive rewrote the CampaignSpec after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
-          });
-          result.rebound.assembly_report = committed.written;
-          if (!committed.written) addIssue(result.warnings, "spec.derive.identity_not_rebound", "The Assembly Report's spec identity moved while spec derive was running; it was left as it is. Re-run prepare-build before QA so the bundle correlates.");
-        } catch (error) {
-          result.rebound.assembly_report = false;
-          addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Assembly Report's spec identity could not be updated (${singleLineDetail(error.message)}); re-run prepare-build before QA so the bundle correlates.`);
-        }
-      } else {
-        result.rebound.assembly_report = false;
-        addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Assembly Report's spec identity was already bound to a different spec than the one derive replaced; it was left as it is. Re-run prepare-build before QA so the bundle correlates.`);
-      }
-    }
     // The retained doctor snapshot (if any) now predates the spec it judged.
-    // commitAssemblyReport stamps it when the report was re-bound; every
-    // other path stamps it here.
     try {
       markDoctorSidecarStale(targetRepo, {
         command: "spec derive",

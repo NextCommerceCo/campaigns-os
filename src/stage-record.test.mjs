@@ -4,7 +4,7 @@
 // would reject and stamping only the fingerprint doctor computes.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -830,19 +830,43 @@ test("doctor and next name a CampaignSpec edited materially after prepare-build,
     const after = doctor(f);
     const warning = after.warnings.find((issue) => issue.code === "spec.material_stale");
     assert.ok(warning, JSON.stringify(codes(after)));
-    assert.match(warning.message, /changed materially since prepare-build bound it/);
-    assert.match(warning.message, /QA refuses/);
+    assert.equal(warning.message, "CampaignSpec material changed since it was bound; run `record spec` (keeps history). `prepare-build --force` resets every stage and archives their records.");
     assert.equal(warning.detail.bound_material_hash, readJson(f.reportPath).identity.spec_material_hash);
     assert.match(warning.detail.current_material_hash, /^sha256:[0-9a-f]{64}$/);
     assert.notEqual(warning.detail.current_material_hash, warning.detail.bound_material_hash);
     const { json } = runJson(["next", "--packet", f.packetPath, "--no-write"], f.dir);
     assert.ok((json.warnings || []).some((issue) => issue.code === "spec.material_stale"), "next shows it before QA does");
+
+    // record spec binds the edited spec: the warning clears.
+    const refreshed = runJson(["record", "spec", "--packet", f.packetPath], f.dir);
+    assert.equal(refreshed.status, 0, refreshed.stderr);
+    assert.equal(refreshed.json.outcome, "refreshed");
+    assert.ok(!codes(doctor(f)).includes("spec.material_stale"), "the refreshed binding is current");
   }, {
     // A local-spec campaign, the kind QA checks the material hash for.
     mutateSpec(spec) {
       spec.spec_identity = { local_spec_id: "record-local-demo", public_route_slug: spec.spec_identity.public_route_slug };
       delete spec.map_id;
     },
+  });
+});
+
+test("doctor names a saved-Map campaign's cached CampaignSpec edited materially after prepare-build", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    const codes = (result) => (result.warnings || []).map((issue) => issue.code);
+    assert.ok(f.packet.spec.map_id, "a saved-Map packet");
+    assert.ok(!codes(doctor(f)).includes("spec.material_stale"), "control: the spec prepare-build bound");
+    const specPath = join(f.dir, "campaignspec.json");
+    const spec = readJson(specPath);
+    const checkout = spec.funnels.flatMap((funnel) => funnel.pages).find((page) => page.type === "checkout");
+    checkout.packages[0].qty = Number(checkout.packages[0].qty ?? 1) + 1;
+    writeJson(specPath, spec);
+    const after = doctor(f);
+    assert.ok(codes(after).includes("spec.material_stale"), JSON.stringify(codes(after)));
+    assert.equal(after.derived.input_currency.spec.snapshot_material, "owed");
+    assert.equal(after.derived.input_currency.spec.remote_currency, "unconfirmed");
   });
 });
 
@@ -2256,7 +2280,7 @@ test("F2.2-B10: on a gateway-fetched packet whose cached spec qty is edited, doc
   });
 });
 
-test("F2.2-B11: after F2.1-W24, record polish with the pre-change evidence file, the old page_load still binding the same build, leaves polish owed", async () => {
+test("F2.2-B11: after F2.1-W24, record polish with the pre-change evidence file, the old page_load still binding the same build, leaves polish owed", CLOSES_AFTER_D, async () => {
   await guardedLifecycle(async (f) => {
     let before = null;
     await presentationChangeAfterQa(f, (report) => {
@@ -2423,5 +2447,144 @@ test("F2.2-I12: intake ran with --brief <file>, the file is deleted and the spec
     rmSync(explicit);
     editSpec(f, bumpCheckoutQty);
     assertRefusedWritingNothing(f, "spec", "brief_file_missing");
+  });
+});
+
+// ----- effective status in progress, record spec outcome and brief paths -----
+
+// The stage statuses of the progress snapshot `next` writes.
+function progressStatuses(f) {
+  nextOk(f, ["--no-remit"]);
+  const progressRoot = join(f.target, ".campaign-runtime/progress");
+  const latest = readdirSync(progressRoot).map((scope) => join(progressRoot, scope, "latest.json")).filter((path) => existsSync(path));
+  assert.equal(latest.length, 1, "setup: next wrote one progress snapshot");
+  return Object.fromEntries(readJson(latest[0]).stages.map((entry) => [entry.stage, entry.status]));
+}
+
+test("progress reports build, Polish and QA owed by a CampaignSpec edit as required, as doctor reads them, not unknown", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    editSpec(f, bumpCheckoutQty);
+    const currency = inputCurrency(f);
+    assert.deepEqual([currency.stages.assembly, currency.stages.polish, currency.stages.qa], ["owed", "owed", "owed"], "setup: doctor reads build, Polish and QA owed");
+    const statuses = progressStatuses(f);
+    assert.deepEqual([statuses.assembly, statuses.polish, statuses.qa], ["required", "required", "required"]);
+    assert.equal(statuses.setup, "completed", "setup carries no input stamps and keeps its recorded status");
+  }, LOCAL_SPEC);
+});
+
+// A presentation edit made to the normalized brief itself, not to a brief file.
+function editNormalizedPresentation(f) {
+  mutateJson(normalizedOf(f), (brief) => {
+    brief.brand.cta_style = `${brief.brand.cta_style || "solid"} (edited in the normalized brief)`;
+  });
+}
+
+for (const [label, prepare] of [
+  ["the guided draft", () => {}],
+  ["the recorded brief file", (f) => reintakeWithBrief(f)],
+]) {
+  test(`record spec re-derives the brief from ${label} when a brief stamp reads owed, and then reads unchanged`, async () => {
+    await guardedLifecycle((f) => {
+      prepare(f);
+      recordThroughBuild(f);
+      editNormalizedPresentation(f);
+      const before = inputCurrency(f);
+      assert.equal(before.stages.assembly, "owed", "setup: the normalized brief edit makes the build owed");
+      assert.equal(before.reasons.assembly, "brief_material_changed", "setup: owed on the brief, not the spec");
+      recordInputOk(f, "spec", "refreshed");
+      const after = inputCurrency(f);
+      assert.ok(!Object.values(after.stages).includes("owed"), `no stage still reads owed: ${JSON.stringify(after.stages)}`);
+      recordInputOk(f, "spec", "unchanged");
+    });
+  });
+}
+
+test("record spec reads refreshed, never unchanged, while any stamp reads owed, and a dry run writes nothing", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    editNormalizedPresentation(f);
+    const before = treeDigest(f.dir);
+    const dry = recordInputOk(f, "spec", "refreshed", ["--dry-run"]);
+    assert.equal(dry.dry_run, true);
+    assertNothingWritten(f.dir, before, "the record spec dry run");
+  });
+});
+
+// The brief file intake recorded, replaced by `replace` after the spec edit.
+function recordedBriefReplaced(f, replace) {
+  reintakeWithBrief(f);
+  editSpec(f, bumpCheckoutQty);
+  const path = briefFileOf(f);
+  rmSync(path);
+  return replace(path);
+}
+
+// A symlink at `path` to a file without read permission, kept outside the
+// fixture directory so the written-nothing digest never reads it. Returns
+// the cleanup.
+function unreadableAt(path) {
+  const outside = mkdtempSync(join(tmpdir(), "campaigns-os-unreadable-"));
+  const file = join(outside, "campaign-build-brief.json");
+  writeFileSync(file, "{}\n");
+  chmodSync(file, 0o000);
+  symlinkSync(file, path);
+  return () => rmSync(outside, { recursive: true, force: true });
+}
+
+// Each replacement returns its cleanup, or nothing.
+const NOT_A_READABLE_FILE = [
+  ["a directory", (path) => { mkdirSync(path); }],
+  ["a named pipe", (path) => { assert.equal(spawnSync("mkfifo", [path]).status, 0, "setup: mkfifo made the pipe"); }],
+  ["an unreadable file", unreadableAt],
+];
+
+for (const [label, replace] of NOT_A_READABLE_FILE) {
+  test(`record spec refuses brief_file_missing when the recorded brief path is ${label}`, async () => {
+    await guardedLifecycle((f) => {
+      const cleanup = recordedBriefReplaced(f, replace);
+      try {
+        assertRefusedWritingNothing(f, "spec", "brief_file_missing");
+      } finally {
+        cleanup?.();
+      }
+    });
+  });
+
+  test(`record spec refuses brief_file_missing, not unchanged, when the spec is unedited and the recorded brief path is ${label}`, async () => {
+    await guardedLifecycle((f) => {
+      reintakeWithBrief(f);
+      const path = briefFileOf(f);
+      rmSync(path);
+      const cleanup = replace(path);
+      try {
+        assertRefusedWritingNothing(f, "spec", "brief_file_missing");
+      } finally {
+        cleanup?.();
+      }
+    });
+  });
+
+  test(`record brief refuses brief_file_missing when --brief names ${label}`, async () => {
+    await guardedLifecycle((f) => {
+      const path = join(f.dir, "operator-brief.json");
+      const cleanup = replace(path);
+      try {
+        assertRefusedWritingNothing(f, "brief", "brief_file_missing", ["--brief", path]);
+      } finally {
+        cleanup?.();
+      }
+    });
+  });
+}
+
+test("record brief refuses brief_file_missing when the discovered brief file cannot be read", async () => {
+  await guardedLifecycle((f) => {
+    const cleanup = unreadableAt(briefFileOf(f));
+    try {
+      assertRefusedWritingNothing(f, "brief", "brief_file_missing");
+    } finally {
+      cleanup();
+    }
   });
 });

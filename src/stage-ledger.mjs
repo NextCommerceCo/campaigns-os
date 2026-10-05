@@ -2,7 +2,7 @@ import { campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { STATUS as QA_STATUS } from "./qa-verdict.mjs";
-import { wellFormedBriefMaterial } from "./input-currency.mjs";
+import { assessInputCurrency, currentPacketInputs, effectiveStageStatus, effectiveStatusIsTerminal, wellFormedBriefMaterial } from "./input-currency.mjs";
 import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import {
@@ -405,7 +405,7 @@ function nextBlock(stage, action, { ownerKey = stage, ...extras } = {}) {
 
 /**
  * The Assembly Report's top-level summary, computed from the stage ledger it
- * carries and nothing else. Every write of the report restates it
+ * carries and the campaign's current inputs. Every write of the report restates it
  * (commitAssemblyReport, and prepare-build's initial write), so the summary
  * can never lag the stages: before this it was written once by prepare-build
  * and a finished ladder still read `status: "prepared"`, `next.stage:
@@ -436,15 +436,24 @@ function nextBlock(stage, action, { ownerKey = stage, ...extras } = {}) {
  *   own blocker values, not copies: the summary is computed for a write, and
  *   the report is serialized right after.
  *
- * Pure: reads `report`, returns a fresh summary, copies nothing else.
+ * Every stage is read at its effective status against `inputs`, the current
+ * `{briefMaterial, specMaterial}` (src/input-currency.mjs): a build, Polish or
+ * QA record made against earlier brief or CampaignSpec content reads
+ * `required`, and one whose inputs cannot be confirmed (no stamp, or inputs
+ * that cannot be read) reads `unknown`. Neither is terminal, so such a report
+ * reads `prepared` with `next` naming that stage, never `completed`.
+ *
+ * Pure: reads `report` and `inputs`, returns a fresh summary, copies nothing else.
  */
-export function deriveAssemblyReportSummary(report) {
+export function deriveAssemblyReportSummary(report, { briefMaterial = null, specMaterial = null } = {}) {
   if (!isPlainObject(report)) throw new TypeError("deriveAssemblyReportSummary requires an Assembly Report object.");
+  const currency = assessInputCurrency({ report, briefMaterial, specMaterial });
+  const statusOf = (key) => effectiveStageStatus(key, stageOf(report, key), currency);
   const blockers = [];
   const seen = new Set();
   for (const key of ASSEMBLY_REPORT_STAGE_KEYS) {
     const stage = stageOf(report, key);
-    if (!stageIsBlocked(stage?.status)) continue;
+    if (!stageIsBlocked(statusOf(key))) continue;
     for (const blocker of stageBlockers(stage)) {
       const id = JSON.stringify(canonicalize(blocker));
       if (seen.has(id)) continue;
@@ -452,30 +461,35 @@ export function deriveAssemblyReportSummary(report) {
       blockers.push(blocker);
     }
   }
-  const anyBlocked = anyAssemblyReportStageBlocked(report);
+  const anyBlocked = ASSEMBLY_REPORT_STAGE_KEYS.some((key) => stageIsBlocked(statusOf(key)));
 
   let next = null;
   for (const gate of PRE_LADDER_GATES) {
-    if (!stageIsBlocked(stageOf(report, gate.reportKey)?.status)) continue;
+    if (!stageIsBlocked(statusOf(gate.reportKey))) continue;
     next = nextBlock(gate.blockedStage, `Stage "${gate.reportKey}" is blocked; resolve its blockers before any stage runs.`, { blocked: true });
     break;
   }
   if (!next) {
     for (const { cliStage, reportKey } of NEXT_STAGE_CONTRACTS) {
-      const status = stageOf(report, reportKey)?.status;
+      const status = statusOf(reportKey);
       if (stageIsBlocked(status)) {
         next = nextBlock(cliStage, `Stage "${reportKey}" is blocked; unblock it, then run ${cliStage}.`, { blocked: true });
         break;
       }
-      if (!stageIsTerminal(status)) {
-        next = nextBlock(cliStage, `Run ${cliStage} with this packet.`);
+      if (!effectiveStatusIsTerminal(status)) {
+        const recorded = stageOf(report, reportKey)?.status;
+        next = nextBlock(cliStage, status === "required" && recorded !== "required"
+          ? `Stage "${reportKey}" was recorded against earlier brief or CampaignSpec content; run ${cliStage} again with this packet.`
+          : status === "unknown"
+            ? `Stage "${reportKey}" does not record which brief and CampaignSpec content it was made against; run ${cliStage} again with this packet.`
+            : `Run ${cliStage} with this packet.`);
         break;
       }
     }
   }
   if (!next) {
     for (const gate of PRE_LADDER_GATES) {
-      if (stageIsTerminal(stageOf(report, gate.reportKey)?.status)) continue;
+      if (effectiveStatusIsTerminal(statusOf(gate.reportKey))) continue;
       next = nextBlock(gate.pendingStage, `Stage "${gate.reportKey}" has not recorded a terminal outcome; run it before treating the report as complete.`, { ownerKey: gate.blockedStage });
       break;
     }
@@ -491,9 +505,10 @@ export function deriveAssemblyReportSummary(report) {
  * stages, in place, and return it. The report is the caller's own object
  * (the fresh one prepare-build built, or the copy a producer's
  * recordProducerStageOutcome already made), so nothing is cloned here.
+ * `inputs` is the campaign's current `{briefMaterial, specMaterial}`.
  */
-export function applyDerivedAssemblyReportSummary(report) {
-  return Object.assign(report, deriveAssemblyReportSummary(report));
+export function applyDerivedAssemblyReportSummary(report, inputs = {}) {
+  return Object.assign(report, deriveAssemblyReportSummary(report, inputs));
 }
 
 // QA-owned gate evidence on the qa stage. The QA producer records, beside
@@ -518,7 +533,11 @@ export function qaGateEvidence(report, gate) {
   };
 }
 
-export function qaGatePassedForCurrentBuild(report, gate, { buildFingerprint }) {
+// `qaCurrency` is QA's read-time input currency
+// (derived.input_currency.stages.qa): while QA is owed again or its inputs
+// cannot be confirmed, no QA gate pass counts.
+export function qaGatePassedForCurrentBuild(report, gate, { buildFingerprint, qaCurrency = null }) {
+  if (qaCurrency === "owed" || qaCurrency === "unknown") return false;
   const outcome = qaGateEvidence(report, gate);
   const current = optionalString(buildFingerprint);
   return Boolean(outcome && outcome.status === QA_STATUS.PASS && current && outcome.source_build_fingerprint === current);
@@ -630,6 +649,17 @@ export function commitAssemblyReport(workspace, mutate, {
   });
 }
 
+/**
+ * The current `{briefMaterial, specMaterial}` of a campaign workspace: the
+ * normalized brief and the CampaignSpec its packet names, read from disk
+ * (null where they cannot be read).
+ */
+export function workspaceInputs(workspace) {
+  return isPlainObject(workspace?.packet) && optionalString(workspace?.packetPath)
+    ? currentPacketInputs({ packet: workspace.packet, packetPath: workspace.packetPath })
+    : { briefMaterial: null, specMaterial: null };
+}
+
 function commitAssemblyReportUnderLock(workspace, mutate, {
   refreshDoctor, staleReason, command, stage, hasRefresh, reportPath, doctorOutPath, targetRepo,
 }) {
@@ -679,8 +709,9 @@ function commitAssemblyReportUnderLock(workspace, mutate, {
   // commit; after that the restatement is a no-op and the unchanged check
   // below keeps the file's bytes alone. `mutated` is the mutator's own object
   // (every mutator in this repo returns a copy), so the restatement is in
-  // place rather than a second deep clone.
-  const next = applyDerivedAssemblyReportSummary(mutated);
+  // place rather than a second deep clone. Stages are read at their effective
+  // status against the inputs the workspace's packet names now.
+  const next = applyDerivedAssemblyReportSummary(mutated, workspaceInputs(workspace));
   if (stage && producerStageOutcomeUnchanged(report, next, stage)) {
     outcome.skipped = "unchanged";
     return finish();

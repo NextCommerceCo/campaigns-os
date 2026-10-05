@@ -224,6 +224,7 @@ export function assessInputCurrency({ report, briefMaterial = null, specMaterial
     stages[key] = assessed.currency;
     reasons[key] = assessed.reason;
   }
+  const boundSpec = optionalString(report?.identity?.spec_material_hash) || null;
   return {
     brief: {
       bound: boundBrief ? JSON.parse(JSON.stringify(boundBrief)) : null,
@@ -231,12 +232,21 @@ export function assessInputCurrency({ report, briefMaterial = null, specMaterial
       status: briefStatus(boundBrief, current.brief),
     },
     spec: {
-      bound: optionalString(report?.identity?.spec_material_hash) || null,
+      bound: boundSpec,
       current: current.spec,
+      snapshot_material: snapshotMaterialStatus(boundSpec, current.spec),
     },
     stages,
     reasons,
   };
+}
+
+// The selected local spec file against the material the report binds: the
+// copy on disk only, never a remote revision.
+function snapshotMaterialStatus(bound, current) {
+  const boundStamp = specMaterialStamp(bound);
+  if (!boundStamp || !current) return "unknown";
+  return boundStamp === current ? "current" : "owed";
 }
 
 /**
@@ -343,12 +353,17 @@ export function inputRefreshCommands(inputCurrency) {
 
 /**
  * derived.input_currency for a doctor read: the report's stamps against the
- * normalized brief and the CampaignSpec on disk now.
+ * normalized brief and the CampaignSpec on disk now. A saved-Map or gateway
+ * packet compares the copy intake fetched; no offline read can confirm that
+ * copy is the latest remote revision, so it also reports the remote as
+ * unconfirmed.
  */
 export function deriveInputCurrency({ packet, packetPath, report, spec }) {
-  return assessInputCurrency({
+  const currency = assessInputCurrency({
     report,
     briefMaterial: currentBriefMaterial({ packet, packetPath }),
     specMaterial: currentSpecMaterial(spec),
   });
+  if (optionalString(packet?.spec?.map_id)) currency.spec.remote_currency = "unconfirmed";
+  return currency;
 }

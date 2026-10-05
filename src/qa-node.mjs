@@ -588,7 +588,7 @@ function resolvePacketCheckpointPreflight(args, {
   }
   if (packet?.spec?.local_spec_id != null && (!reportMatchesPacketIdentity(report, packet)
     || (specStatus === "ok" && !specHashesMatch(report.identity?.spec_material_hash, computeSpecHash(rawSpec))))) {
-    throw new Error("Local-spec QA requires the matching Assembly Report and current spec material hash. Re-run prepare-build after a material revision; do not reuse foreign or stale proof.");
+    throw new Error("Local-spec QA requires the matching Assembly Report and current spec material hash. Run `record spec` after a material revision (it keeps stage history); do not reuse foreign or stale proof.");
   }
   const checkpointGates = [
     evaluatePageKitStoreProfile({

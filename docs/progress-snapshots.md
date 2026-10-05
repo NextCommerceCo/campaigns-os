@@ -18,8 +18,7 @@ blocked QA keeps it open. A progress delivery cannot close a run.
 
 The strict v0 object carries its schema, package version, observation timestamp,
 producer (`next` or `qa`), opaque progress stream and sequence, prior snapshot ID,
-content digest, Map ID and separate revision/spec/build hashes. Six independent
-stage records retain observed status and explicit build binding. Continuation
+content digest, Map ID and separate revision/spec/build hashes. Six independent stage records carry each stage's effective status and explicit build binding: the status the Assembly Report records, except that a stage made owed again by a brief or CampaignSpec change reads `required`, and a stage whose inputs cannot be confirmed reads `unknown`. Continuation
 retains the canonical stage, blocked/divergent flags, fixed action IDs and gate
 states. Preview carries only presence and a hash of the URL. An optional QA block
 retains the exact verdict ID, disposition (including `ready_with_exceptions`),
@@ -28,8 +27,7 @@ retained verdict; recovery uses `qa publish`, without repeating an order.
 
 No commands, prompts, free text, content, local paths, URLs, query strings,
 credentials, order values or customer payloads enter the wire. Unknown vocabulary
-becomes a fixed `unknown` marker and cannot imply a passing continuation. A
-stage's observed `completed` status is a ledger claim, not independent verification.
+becomes a fixed `unknown` marker and cannot imply a passing continuation. A stage's `completed` status is a ledger claim, checked only against the brief and CampaignSpec content it records; it is not independent verification.
 Only matching fingerprints carry `matching`; absent or unverifiable binding is
 `unconfirmed`. A current local output hash never proves a deployment is current.
 

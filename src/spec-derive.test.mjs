@@ -357,7 +357,7 @@ test("spec derive writes the repo pin and ids into the spec, touches nothing els
     ]);
     assert.equal(result.spec_path, realpathSync(specPath));
     assert.equal(result.page_tree, "src/runtime-packet-demo");
-    assert.equal(result.next, `campaigns-os doctor --packet ${packetPath}`);
+    assert.equal(result.next, `campaigns-os record spec --packet ${packetPath} to bind the derived spec (it keeps stage history), then campaigns-os next --packet ${packetPath}`);
 
     const written = readJson(specPath);
     assert.equal(written.global_config.sdk_version, "0.4.38");
@@ -630,7 +630,9 @@ test("spec derive stamps the retained doctor sidecar stale after a write, warns 
     assert.match(stamped.stale_reason, /spec derive rewrote the CampaignSpec/);
     assert.deepEqual(stamped.warnings, sidecar.warnings, "the original fields survive the stamp");
     assert.ok(result.warnings.some((issue) => issue.code === "spec.derive.build_stale"));
-    assert.match(result.next, /then rebuild/);
+    assert.match(result.warnings.find((issue) => issue.code === "spec.derive.build_stale").message, /record spec \(it keeps stage history\)/);
+    assert.match(result.next, /^campaigns-os record spec --packet /);
+    assert.doesNotMatch(result.next, /stages\.assembly\.status/, "no hand edit of the Assembly Report is suggested");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -662,10 +664,10 @@ test("spec derive spells its doctor pointer with the consumer install's npx pref
     const env = { ...process.env, PATH: "/usr/bin:/bin" };
     const run = spawnSync(process.execPath, [pkgCli, "spec", "derive", "--packet", packetPath, "--dry-run"], { cwd: installRoot, encoding: "utf8", env });
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /^Next: npx --no-install campaigns-os doctor --packet /m);
-    assert.doesNotMatch(run.stdout, /(?<!npx --no-install )campaigns-os doctor/);
+    assert.match(run.stdout, /^Next: npx --no-install campaigns-os record spec --packet .* then npx --no-install campaigns-os next --packet /m);
+    assert.doesNotMatch(run.stdout, /(?<!npx --no-install )campaigns-os (record|next|doctor)/);
     const checkout = spawnSync("node", [CLI, "spec", "derive", "--packet", packetPath, "--dry-run"], { encoding: "utf8" });
-    assert.match(checkout.stdout, /^Next: campaigns-os doctor --packet /m);
+    assert.match(checkout.stdout, /^Next: campaigns-os record spec --packet /m);
   } finally {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(dir, { recursive: true, force: true });
@@ -988,50 +990,28 @@ test("planSpecDerive refuses the entry route on a page not flagged is_entry, a p
   assert.doesNotMatch(long.not_derived[0].detail, /a{50}/);
 });
 
-test("spec derive re-binds the sidecars' spec identity after a write, and leaves an already-drifted identity alone", () => {
+test("spec derive writes the spec alone: the sidecars keep the spec identity they bound, and the result names record spec", () => {
   const { dir, packetPath, specPath, reportPath, targetRepo } = fixture();
   try {
     const contextPath = join(targetRepo, ".campaign-runtime", "build-context.json");
     const before = readJson(reportPath).identity;
-    writeJson(contextPath, { schema_version: "campaign-runtime-build-context/v0", report_path: ".campaign-runtime/assembly-report.json", spec: { path: "../campaignspec.v42.basic.json", hash: before.spec_hash, material_hash: before.spec_material_hash } });
+    const context = { schema_version: "campaign-runtime-build-context/v0", report_path: ".campaign-runtime/assembly-report.json", spec: { path: "../campaignspec.v42.basic.json", hash: before.spec_hash, material_hash: before.spec_material_hash } };
+    writeJson(contextPath, context);
+    const contextBytes = readFileSync(contextPath);
+    const reportBytes = readFileSync(reportPath);
     const result = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
     assert.equal(result.status, "derived");
-    assert.deepEqual(result.rebound, { build_context: true, assembly_report: true });
+    assert.equal(Object.hasOwn(result, "rebound"), false, "no sidecar is re-bound");
     const written = readFileSync(specPath);
     const rawHash = createHash("sha256").update(written).digest("hex");
     const materialHash = specMaterialHash(JSON.parse(written.toString("utf8")));
-    assert.notEqual(rawHash, before.spec_hash);
-    assert.deepEqual([readJson(reportPath).identity.spec_hash, readJson(reportPath).identity.spec_material_hash], [rawHash, materialHash]);
-    assert.deepEqual([readJson(contextPath).spec.hash, readJson(contextPath).spec.material_hash], [rawHash, materialHash]);
-    assert.equal(readJson(contextPath).spec.path, "../campaignspec.v42.basic.json", "the rest of the context survives");
+    assert.notEqual(rawHash, before.spec_hash, "setup: the spec was rewritten");
+    assert.notEqual(materialHash, before.spec_material_hash, "setup: its material changed");
+    assert.ok(readFileSync(reportPath).equals(reportBytes), "the Assembly Report is byte-equal: its identity still names the spec it bound");
+    assert.ok(readFileSync(contextPath).equals(contextBytes), "the Build Context is byte-equal");
     assert.equal(result.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound"), false);
-
-    // A sidecar bound to some other spec is not touched, and says so.
-    const report = readJson(reportPath);
-    report.identity.spec_hash = "0".repeat(64);
-    report.identity.spec_material_hash = "sha256:" + "1".repeat(64);
-    writeJson(reportPath, report);
-    const campaigns = readJson(join(targetRepo, "_data/campaigns.json"));
-    campaigns["runtime-packet-demo"].gtm_id = "GTM-NEW9999";
-    writeJson(join(targetRepo, "_data/campaigns.json"), campaigns);
-    const drifted = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
-    assert.equal(drifted.written, true);
-    assert.deepEqual(drifted.rebound, { build_context: true, assembly_report: false });
-    assert.ok(drifted.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound" && /Assembly Report/.test(issue.message)));
-    assert.equal(readJson(reportPath).identity.spec_hash, "0".repeat(64));
-
-    // A sidecar that names another packet's spec is never re-bound, even
-    // when its hashes happen to match (byte-identical exports).
-    const other = readJson(contextPath);
-    other.spec = { ...other.spec, path: "../other-campaign.spec.json" };
-    writeJson(contextPath, other);
-    campaigns["runtime-packet-demo"].fb_pixel_id = "987654321098";
-    writeJson(join(targetRepo, "_data/campaigns.json"), campaigns);
-    const foreign = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
-    assert.equal(foreign.written, true);
-    assert.equal(foreign.rebound.build_context, false);
-    assert.ok(foreign.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound" && /names a different spec file/.test(issue.message)));
-    assert.equal(readJson(contextPath).spec.hash, other.spec.hash, "the other packet's context keeps its own identity");
+    assert.match(result.next, new RegExp(`^campaigns-os record spec --packet ${packetPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} `));
+    assert.ok(specDeriveTextLines(result).some((line) => /^Next: campaigns-os record spec --packet /.test(line)), "the text result names record spec");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1045,8 +1025,7 @@ test("spec derive survives a malformed Build Context after the write and still s
     const result = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
     assert.equal(result.ok, true);
     assert.equal(result.written, true);
-    assert.deepEqual(result.rebound, { build_context: false, assembly_report: true });
-    assert.ok(result.warnings.some((issue) => issue.code === "spec.derive.identity_not_rebound" && /Build Context could not be read/.test(issue.message)));
+    assert.equal(readFileSync(join(targetRepo, ".campaign-runtime", "build-context.json"), "utf8"), "{not json", "the Build Context is not read or written");
     assert.equal(readJson(join(targetRepo, DOCTOR_SIDECAR_REL_PATH)).stale, true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -1100,7 +1079,7 @@ test("spec derive treats an unreadable report as unknown waivers, rejects a bare
     assert.deepEqual(dry.warnings.map((issue) => issue.code).sort(), ["spec.derive.analytics_block_created", "spec.derive.analytics_block_created", "spec.derive.build_stale", "spec.derive.file_reformatted"]);
     assert.match(dry.warnings.find((issue) => issue.code === "spec.derive.file_reformatted").message, /would be re-serialized/);
     assert.match(dry.warnings.find((issue) => issue.code === "spec.derive.build_stale").message, /this would rewrite/);
-    assert.match(dry.next, /then rebuild/);
+    assert.match(dry.next, /^campaigns-os record spec --packet .* after the write to bind the derived spec/);
     // A torn report: waivers unknown, the pin waits, the ids still derive.
     writeFileSync(reportPath, "{torn");
     const torn = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });

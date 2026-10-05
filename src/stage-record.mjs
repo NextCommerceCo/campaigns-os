@@ -47,7 +47,7 @@ import {
 } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
-import { demoteStages, recordBrief } from "./input-refresh.mjs";
+import { demoteStages, recordBrief, recordSpec } from "./input-refresh.mjs";
 import { applyDerivedAssemblyReportSummary, archiveStageRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor } from "./stage-ledger.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { commerceScopeFromScope } from "./theme-gate.mjs";
@@ -64,7 +64,8 @@ const BUILD_RECORD_FLAGS = Object.freeze(["build-environment"]);
 // `record brief` saves a brief file: --brief names it (otherwise intake's
 // discovery finds it).
 const BRIEF_RECORD_FLAGS = Object.freeze(["brief"]);
-const RECORD_SUBCOMMANDS = Object.freeze([...RECORD_STAGES, "brief"]);
+// `record spec` binds the CampaignSpec as it is now; it takes no extra flag.
+const RECORD_SUBCOMMANDS = Object.freeze([...RECORD_STAGES, "brief", "spec"]);
 // The page-kit environment the built output was rendered in, recorded on
 // stages.assembly.evidence.build_environment (local proof mode builds in
 // development; doctor and page-kit parity read it).
@@ -788,6 +789,14 @@ export async function recordCommand(args, options = {}) {
       dryRun,
     }, options.now ? { now: options.now } : {});
   }
+  if (stage === "spec") {
+    return recordSpec({
+      packetPath,
+      contextPath: args.context ? resolve(args.context) : undefined,
+      reportPath: args.report ? resolve(args.report) : undefined,
+      dryRun,
+    }, options.now ? { now: options.now } : {});
+  }
   const probe = stage === "deploy" && existsSync(packetPath)
     ? await probeLocalPreview({ packetPath, baseUrl, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) })
     : null;
@@ -931,7 +940,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
           : stage === "deploy"
             ? composeDeploy(report, packet, { now: timestamp, recordedBy, probe: input })
             : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor) });
-    applyDerivedAssemblyReportSummary(next.report);
+    applyDerivedAssemblyReportSummary(next.report, recordInputs(doctor));
     // The packet's one new value, deploy.preview_url, is checked by
     // localPreviewUrl; the rest of the packet is as the operator left it.
     validateRecord(stage, { report: next.report, context: next.context, packet, fingerprint: facts.fingerprint });

@@ -8,7 +8,9 @@
  * most once, plus two fixed Git metadata files for the staleness comparison
  * (the nearest `.git` entry at the target or one of its ancestors — funnels are
  * usually subdirectories of their enclosing campaign repository — to locate the
- * Git directory, and that directory's `logs/HEAD` reflog). It writes nothing,
+ * Git directory, and that directory's `logs/HEAD` reflog), plus the CampaignSpec
+ * and normalized Campaign Build Brief the Build Packet names, whose current
+ * content decides each stage's effective status. It writes nothing,
  * starts no process, and touches no network. That contract is why the CLI
  * exempts `readback` from lifecycle-journal capture the way it exempts doctor
  * inspection: a command declared read-only must not append a journal entry.
@@ -48,6 +50,9 @@
 import { closeSync, fstatSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { assessInputCurrency, currentPacketInputs, effectiveStageStatus } from "./input-currency.mjs";
+import { deriveAssemblyReportSummary } from "./stage-ledger.mjs";
 
 export const MAX_ARTIFACT_BYTES = 32 * 1024 * 1024;
 export const MAX_GIT_METADATA_BYTES = 64 * 1024;
@@ -1268,28 +1273,68 @@ export function renderBlocker(blocker) {
   return `(non-string entry, shown as written) ${rendered}`;
 }
 
-function renderStages(views, lines) {
+/**
+ * The campaign's current inputs, read through the projected Build Packet: the
+ * material of the CampaignSpec and of the normalized brief it names. A value
+ * that cannot be read is null, and the stages that depend on it read unknown.
+ */
+export function readbackInputs(views) {
+  const packet = artifactData(views, "packet");
+  if (packet === null) return { briefMaterial: null, specMaterial: null };
+  return currentPacketInputs({ packet, packetPath: resolve(views.packet.path) });
+}
+
+// Superseded records shown per stage, newest last (the report keeps five).
+const HISTORY_RENDER_CAP = 5;
+
+/**
+ * Each stage at its effective status against `inputs` (readbackInputs): a
+ * stage owed again by a brief or CampaignSpec change reads `required`, one
+ * whose inputs cannot be confirmed reads `unknown`, and where that differs
+ * from the record the line adds the recorded status and the reason. The
+ * header carries the report's recorded status beside the one recomputed from
+ * the effective statuses. Superseded records are listed only under the
+ * "history (not current proof)" label.
+ */
+function renderStages(views, lines, inputs = null) {
   const report = artifactData(views, "report");
   if (report === null) return;
-  lines.push(`STAGES  [assembly report; report status: ${recorded(report.status)}]`);
+  const current = { briefMaterial: inputs?.briefMaterial ?? null, specMaterial: inputs?.specMaterial ?? null };
+  const currency = assessInputCurrency({ report, ...current });
+  const effectiveReport = deriveAssemblyReportSummary(report, current).status;
+  lines.push(`STAGES  [assembly report; report status: ${recorded(report.status)}; effective: ${effectiveReport}]`);
   const stages = report.stages;
   if (isPlainObject(stages)) {
     for (const [name, stage] of Object.entries(stages)) {
       if (!isPlainObject(stage)) continue;
       const status = stage.status ?? "(no status recorded)";
+      const effective = effectiveStageStatus(name, stage, currency);
+      const shown = effective === stage.status
+        ? status
+        : `${effective.padEnd(10)} (recorded: ${status}; ${currency.reasons?.[name] ?? "status_unrecognized"})`;
       const counters = [];
       const blockers = stage.blockers;
       const warnings = stage.warnings;
       if (Array.isArray(blockers) && blockers.length) counters.push(`${blockers.length} blocker(s)`);
       if (Array.isArray(warnings) && warnings.length) counters.push(`${warnings.length} warning(s)`);
       const suffix = counters.length ? `  (${counters.join(", ")})` : "";
-      lines.push(`  ${name.padEnd(14)} ${status}${suffix}`);
+      lines.push(`  ${name.padEnd(14)} ${shown}${suffix}`);
       if (Array.isArray(blockers) && blockers.length) {
         for (const blocker of blockers.slice(0, BLOCKER_RENDER_CAP)) {
           lines.push(`    blocker: ${renderBlocker(blocker)}`);
         }
         const hidden = blockers.length - BLOCKER_RENDER_CAP;
         if (hidden > 0) lines.push(`    ... and ${hidden} more blocker(s) recorded in the assembly report`);
+      }
+      const history = Array.isArray(stage.history) ? stage.history.filter(isPlainObject) : [];
+      if (history.length) {
+        lines.push(`    history (not current proof): ${history.length} superseded record(s)`);
+        for (const entry of history.slice(-HISTORY_RENDER_CAP)) {
+          lines.push(
+            `      ${oneLine(String(recorded(entry.archived_at)))} ${oneLine(String(recorded(entry.reason_code)))}: ` +
+              `was ${oneLine(String(recorded(entry.status)))}${entry.archived_by ? ` (archived by ${oneLine(String(entry.archived_by))})` : ""}`,
+          );
+        }
       }
     }
   }
@@ -1496,8 +1541,10 @@ function renderFindings(views, lines) {
  * artifact table says nothing about how the packet was chosen. The
  * one-argument form keeps working: the artifact table shows each loaded
  * artifact's generated_at regardless of whether an assessment was supplied.
+ * `inputs` is readbackInputs(views); when omitted, every input reads as not
+ * readable, so a build, Polish or QA record reads unknown.
  */
-export function projectReadback(views, staleness = null, packetSelection = null) {
+export function projectReadback(views, staleness = null, packetSelection = null, inputs = null) {
   const lines = [
     "CAMPAIGNS OS RUN-ARTIFACT READBACK",
     "A read-only projection of this run's emitted artifacts. Campaigns OS",
@@ -1509,7 +1556,7 @@ export function projectReadback(views, staleness = null, packetSelection = null)
   renderStaleness(staleness, lines);
   renderArtifactTable(views, lines, packetSelection);
   renderIdentity(views, lines);
-  renderStages(views, lines);
+  renderStages(views, lines, inputs);
   renderContext(views, lines);
   renderDoctor(views, lines);
   renderVerdict(views, lines);
@@ -1806,7 +1853,7 @@ export function resolvePaths(root, overrides = {}) {
 export function projectTarget(root, overrides = {}) {
   const { paths, packetSelection, packetView } = resolveProjection(root, overrides);
   const views = loadArtifacts(paths, { packet: packetView });
-  return { views, staleness: assessStaleness(root, views), packetSelection };
+  return { views, staleness: assessStaleness(root, views), packetSelection, inputs: readbackInputs(views) };
 }
 
 // The bundled synthetic sample `--example` projects. It is already on the
@@ -1837,6 +1884,7 @@ export const EXAMPLE_HEAD_DETAIL =
 export function projectExample() {
   const { paths, packetSelection, packetView } = resolveProjection(EXAMPLE_ROOT, {});
   const views = loadArtifacts(paths, { packet: packetView });
+  const inputs = readbackInputs(views);
   for (const view of Object.values(views)) {
     const within = view.path.slice(EXAMPLE_ROOT.length).replace(/\\/g, "/").replace(/^\/+/, "");
     view.path = `${EXAMPLE_RELATIVE_ROOT}/${within}`;
@@ -1844,7 +1892,7 @@ export function projectExample() {
   const staleness = assessStaleness(EXAMPLE_ROOT, views, {
     headMovement: { time: null, detail: EXAMPLE_HEAD_DETAIL },
   });
-  return { views, staleness, packetSelection };
+  return { views, staleness, packetSelection, inputs };
 }
 
 const OVERRIDE_FLAGS = {
@@ -1938,9 +1986,9 @@ export function runReadbackCommand(args) {
     if (error instanceof ReadbackUsageError) return { exitCode: 2, text: `${error.message}\n` };
     throw error;
   }
-  const { views, staleness, packetSelection } = projection;
+  const { views, staleness, packetSelection, inputs } = projection;
   const text = request.json
     ? `${JSON.stringify(buildJsonPayload(views, staleness, packetSelection), null, 2)}\n`
-    : projectReadback(views, staleness, packetSelection);
+    : projectReadback(views, staleness, packetSelection, inputs);
   return { exitCode: 0, text };
 }

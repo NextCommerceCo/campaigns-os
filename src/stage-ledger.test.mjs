@@ -16,6 +16,15 @@ import {
   producerStageOutcomeUnchanged,
   recordProducerStageOutcome,
 } from "./stage-ledger.mjs";
+import { STAMPED_STAGES, absentBriefMaterial, inputStamps } from "./input-currency.mjs";
+import { specMaterialHash } from "./spec-identity.mjs";
+
+// The inputs the ledger fixtures' build, Polish and QA records are stamped
+// with, and the workspace's packet names: a packet without a Campaign Build
+// Brief, and FIXTURE_SPEC.
+const FIXTURE_SPEC = Object.freeze({ campaign: { slug: "demo" } });
+const FIXTURE_INPUTS = Object.freeze({ briefMaterial: absentBriefMaterial(), specMaterial: specMaterialHash(FIXTURE_SPEC) });
+const FIXTURE_STAMPS = inputStamps(FIXTURE_INPUTS);
 
 function report() {
   return {
@@ -414,7 +423,8 @@ function workspaceFixture({ report = { identity: { map_id: "map_1", public_route
   const doctorOutPath = join(targetRepo, ".campaign-runtime/doctor-output.json");
   if (report) writeFileSync(reportPath, JSON.stringify(report));
   if (sidecar) writeFileSync(doctorOutPath, JSON.stringify(sidecar));
-  const packet = { spec: { map_id: "map_1" }, campaign: { public_route_slug: "demo" } };
+  writeFileSync(join(dir, "campaignspec.json"), JSON.stringify(FIXTURE_SPEC));
+  const packet = { spec: { map_id: "map_1", local_path: "campaignspec.json" }, campaign: { public_route_slug: "demo" } };
   return { dir, workspace: { packet, packetPath: join(dir, "packet.json"), targetRepo, reportPath, doctorOutPath } };
 }
 
@@ -628,6 +638,7 @@ function freshReport(statuses = {}, { scaffoldRequired = true } = {}) {
     commands: [],
     blockers: [],
     warnings: [],
+    ...(STAMPED_STAGES.includes(stage) ? structuredClone(FIXTURE_STAMPS) : {}),
   }]));
   return {
     identity: { map_id: "map_1", public_route_slug: "demo" },
@@ -653,6 +664,8 @@ test("a finished ladder no longer reads prepared/setup: status, next and blocker
     disposition: "ready_with_warnings",
     timestamp: "2026-09-16T00:00:00.000Z",
     command: "campaigns-os qa run",
+    // The verdict's own stamps: the inputs it was run against.
+    stamps: FIXTURE_STAMPS,
   }), { stage: "qa", command: "unit-test", refreshDoctor: () => null });
   assert.equal(outcome.written, true);
   const written = readJson(workspace.reportPath);
@@ -712,6 +725,7 @@ test("an operator edit restates the summary too, and a summary that is already c
     disposition: "ready",
     timestamp,
     command: "campaigns-os qa run",
+    stamps: FIXTURE_STAMPS,
   });
   const first = commitAssemblyReport(workspace, (report) => restate("2026-09-16T00:00:00.000Z")({ ...report, note: "edited" }), { command: "unit waive", staleReason: "unit reason" });
   assert.equal(first.written, true);
@@ -724,37 +738,37 @@ test("an operator edit restates the summary too, and a summary that is already c
 });
 
 test("deriveAssemblyReportSummary walks the ladder in next's order and collapses duplicate blockers", () => {
-  const partway = deriveAssemblyReportSummary(ladderReport({ polish: "pending", deploy: "pending", qa: "pending" }));
+  const partway = deriveAssemblyReportSummary(ladderReport({ polish: "pending", deploy: "pending", qa: "pending" }), FIXTURE_INPUTS);
   assert.deepEqual([partway.status, partway.next.stage, partway.next.owner], ["prepared", "polish", "next-campaigns-polish"]);
   assert.equal(partway.next.blocked, undefined);
 
-  const skipped = deriveAssemblyReportSummary(ladderReport({ setup: "skipped", assembly: "pending", polish: "pending", deploy: "pending", qa: "pending" }));
+  const skipped = deriveAssemblyReportSummary(ladderReport({ setup: "skipped", assembly: "pending", polish: "pending", deploy: "pending", qa: "pending" }), FIXTURE_INPUTS);
   assert.equal(skipped.next.stage, "build", "the report's next uses the next <stage> vocabulary, so assembly is named build");
 
   const gate = ladderReport({ prepare_build: "blocked", setup: "pending", assembly: "pending", polish: "pending", deploy: "pending", qa: "pending" });
   const blocker = { code: "MISSING_SOURCE_PAGE", message: "no source for checkout" };
   gate.stages.prepare_build.blockers = [blocker, { ...blocker }];
-  const blocked = deriveAssemblyReportSummary(gate);
+  const blocked = deriveAssemblyReportSummary(gate, FIXTURE_INPUTS);
   assert.deepEqual([blocked.status, blocked.next.stage, blocked.next.owner, blocked.next.blocked], ["blocked", "prepare-build", "next-campaigns-os", true]);
   assert.deepEqual(blocked.blockers, [blocker]);
 
   const completed = ladderReport();
-  assert.equal(applyDerivedAssemblyReportSummary(completed), completed, "the summary is applied in place on the caller's object");
+  assert.equal(applyDerivedAssemblyReportSummary(completed, FIXTURE_INPUTS), completed, "the summary is applied in place on the caller's object");
   assert.deepEqual([completed.status, completed.next.stage], ["completed", "done"]);
   assert.throws(() => deriveAssemblyReportSummary(null), /Assembly Report object/);
 });
 
 test("a freshly prepared report reads prepared and names setup or build, never completed", () => {
-  const scaffold = deriveAssemblyReportSummary(freshReport());
+  const scaffold = deriveAssemblyReportSummary(freshReport(), FIXTURE_INPUTS);
   assert.deepEqual([scaffold.status, scaffold.next.stage, scaffold.next.owner, scaffold.blockers], ["prepared", "setup", "next-campaigns-os-setup", []]);
-  const scaffolded = deriveAssemblyReportSummary(freshReport({}, { scaffoldRequired: false }));
+  const scaffolded = deriveAssemblyReportSummary(freshReport({}, { scaffoldRequired: false }), FIXTURE_INPUTS);
   assert.deepEqual([scaffolded.status, scaffolded.next.stage, scaffolded.next.owner], ["prepared", "build", "next-campaigns-build"]);
 });
 
 test("a pending doctor never lets the report read completed: the ladder can finish, but done waits for every recorded stage", () => {
   // prepare-build --no-doctor, then the whole ladder run: doctor still has no recorded outcome.
   const pendingDoctor = ladderReport({ doctor: "pending" });
-  const summary = deriveAssemblyReportSummary(pendingDoctor);
+  const summary = deriveAssemblyReportSummary(pendingDoctor, FIXTURE_INPUTS);
   assert.equal(summary.status, "prepared", "completed means every recorded stage is terminal, doctor included");
   assert.equal(summary.next.stage, "doctor");
   assert.equal(summary.next.owner, "next-campaigns-os");
@@ -762,7 +776,7 @@ test("a pending doctor never lets the report read completed: the ladder can fini
   assert.deepEqual(summary.blockers, []);
 
   // A pending doctor does not hold the ladder mid-run, exactly as the picker does not walk it.
-  const midRun = deriveAssemblyReportSummary(ladderReport({ doctor: "pending", polish: "pending", deploy: "pending", qa: "pending" }));
+  const midRun = deriveAssemblyReportSummary(ladderReport({ doctor: "pending", polish: "pending", deploy: "pending", qa: "pending" }), FIXTURE_INPUTS);
   assert.deepEqual([midRun.status, midRun.next.stage], ["prepared", "polish"]);
 
   // Once doctor records an outcome the same report reads completed.
@@ -896,4 +910,36 @@ test("a stage writer names an ownerless target lock and how to clear it", async 
   );
   assert.ok(Date.now() - started < 10_000, "refused after the ownerless grace, not the one-minute budget");
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("deriveAssemblyReportSummary reads stages at their effective status: a stage owed again or unconfirmed is never done", () => {
+  const done = deriveAssemblyReportSummary(ladderReport(), FIXTURE_INPUTS);
+  assert.deepEqual([done.status, done.next.stage], ["completed", "done"], "control: stamped with the current inputs, the ladder is done");
+
+  // The CampaignSpec changed since build, Polish and QA were recorded.
+  const edited = deriveAssemblyReportSummary(ladderReport(), { ...FIXTURE_INPUTS, specMaterial: `sha256:${"9".repeat(64)}` });
+  assert.deepEqual([edited.status, edited.next.stage, edited.next.owner], ["prepared", "build", "next-campaigns-build"]);
+  assert.match(edited.next.action, /recorded against earlier brief or CampaignSpec content/);
+
+  // Inputs that cannot be read, or a record with no stamp, confirm nothing.
+  assert.deepEqual([deriveAssemblyReportSummary(ladderReport()).status, deriveAssemblyReportSummary(ladderReport()).next.stage], ["prepared", "build"]);
+  const unstampedQa = ladderReport();
+  delete unstampedQa.stages.qa.source_spec_material_hash;
+  const unconfirmed = deriveAssemblyReportSummary(unstampedQa, FIXTURE_INPUTS);
+  assert.deepEqual([unconfirmed.status, unconfirmed.next.stage], ["prepared", "qa"]);
+
+  // An unrecognized raw status on an unstamped stage reads unknown, not terminal.
+  const odd = ladderReport({ deploy: "completed_x" });
+  assert.deepEqual([deriveAssemblyReportSummary(odd, FIXTURE_INPUTS).status, deriveAssemblyReportSummary(odd, FIXTURE_INPUTS).next.stage], ["prepared", "deploy"]);
+});
+
+test("qaGatePassedForCurrentBuild counts no pass while QA is owed again or unconfirmed", () => {
+  const passed = ladderReport();
+  passed.stages.assembly.build_fingerprint = `sha256:${"b".repeat(64)}`;
+  passed.stages.qa.evidence = { source_build_fingerprint: passed.stages.assembly.build_fingerprint, gates: { [QA_GATE_PLACEHOLDER_TEXT_RESIDUE]: { status: "pass" } } };
+  const buildFingerprint = passed.stages.assembly.build_fingerprint;
+  assert.equal(qaGatePassedForCurrentBuild(passed, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint, qaCurrency: "current" }), true);
+  for (const qaCurrency of ["owed", "unknown"]) {
+    assert.equal(qaGatePassedForCurrentBuild(passed, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint, qaCurrency }), false, qaCurrency);
+  }
 });

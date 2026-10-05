@@ -5,6 +5,7 @@ import {mkdirSync,readFileSync,writeFileSync,renameSync,rmSync,readdirSync} from
 import {join,resolve,dirname} from 'node:path';
 import {PROGRESS_SCHEMA_VERSION,PROGRESS_STAGES,PROGRESS_STAGE_STATUSES,PROGRESS_CONTINUATIONS,PROGRESS_ACTION_IDS,PROGRESS_GATE_IDS,canonicalProgressJson,progressSnapshotId,verifyProgressSnapshot} from './progress.mjs';
 import {specMaterialHash} from './spec-identity.mjs';
+import {effectiveStageStatus} from './input-currency.mjs';
 import {sameFile} from './fs-identity.mjs';
 import {withDirectoryLock} from './directory-lock.mjs';
 import {resolveConsent,CANONICAL_REMIT_SCOPE,normalizeConsentScope,announceDefaultOnTelemetry} from './consent.mjs';
@@ -54,7 +55,15 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
   const aligned=contextBound&&mapId&&localMapId===mapId&&baseline?.map_id===mapId&&baseline?.algorithm==='map-store-v1'&&hash(baseline.hash)&&localHash&&localHash===hash(baseline.local_spec_material_hash);
   const build=hash(doctor?.derived?.build_output_fingerprint?.value);
   const recordedBuild=hash(report?.stages?.assembly?.build_fingerprint);
-  const reportBound=doctor?.derived?.prepare_build_gate?.binding_failure!==true&&contextBound&&campaignIdentitiesMatch(packet?.spec,campaignSpecIdentity(spec))&&campaignIdentitiesMatch(packet?.spec,report?.identity)&&localHash&&localHash===hash(report?.identity?.spec_material_hash);
+  // The report belongs to this packet and spec: its stages can be read. A
+  // spec edit since the report was bound does not unbind it; the edit makes
+  // the stamped stages owed, which their effective status reports. The
+  // doctor read must have assessed the same spec material this read sees.
+  const inputCurrency=doctor?.derived?.input_currency;
+  const stagesBound=doctor?.derived?.prepare_build_gate?.binding_failure!==true&&contextBound&&campaignIdentitiesMatch(packet?.spec,campaignSpecIdentity(spec))&&campaignIdentitiesMatch(packet?.spec,report?.identity)&&localHash&&(!inputCurrency||hash(inputCurrency.spec?.current)===localHash);
+  // The report is also bound to the spec material on disk now, so output and
+  // verdict evidence recorded against it can match.
+  const reportBound=stagesBound&&localHash===hash(report?.identity?.spec_material_hash);
   const qaSource=hash(report?.stages?.qa?.evidence?.source_build_fingerprint);
   const verdict=qaResult?.verdict;
   const qa=verdict?{
@@ -73,8 +82,11 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
   return {
     schema_version:PROGRESS_SCHEMA_VERSION,package_version:packageVersion,producer:qaResult?'qa':'next',
     identity:{map_id:mapId,...localSpecIdentityFields(packet?.spec),map_revision_hash:mapId?(contextBound&&baseline?.map_id===mapId?hash(baseline?.hash):(localMapId===mapId?hash(spec?.spec_identity?.spec_hash||spec?.spec_hash):null)):null,map_revision_algorithm:'map-store-v1',saved_revision_alignment:aligned?'aligned':'unconfirmed',local_spec_material_hash:localHash,local_spec_material_algorithm:'campaign-spec-material-v1',build_fingerprint:build,build_fingerprint_algorithm:'sha256-manifest/v1'},
+    // Each stage's effective status: a stage owed again by a brief or
+    // CampaignSpec change reads required, one whose inputs cannot be
+    // confirmed reads unknown (src/input-currency.mjs).
     stages:PROGRESS_STAGES.map(stage=>{
-      const status=reportBound?accepted(report?.stages?.[stage]?.status,PROGRESS_STAGE_STATUSES):'unknown';
+      const status=stagesBound?accepted(effectiveStageStatus(stage,report?.stages?.[stage],inputCurrency),PROGRESS_STAGE_STATUSES):'unknown';
       const source=stage==='assembly'?recordedBuild:stage==='qa'?qaSource:null;
       return {stage,status,source_build_fingerprint:source,build_binding:reportBound&&build&&source===build&&doctor?.derived?.build_output_fingerprint?.status==='pass'?'matching':'unconfirmed'};
     }),

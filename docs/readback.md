@@ -6,7 +6,9 @@ Packet, the doctor output sidecar, the build context, the assembly report, a QA
 verdict, and a findings export when present. It reads each of those files at
 most once, plus two fixed Git metadata files (the nearest `.git` entry at the
 target or an ancestor, and that Git directory's `logs/HEAD` reflog) for the
-freshness comparison.
+freshness comparison, and the CampaignSpec and normalized Campaign Build Brief
+the Build Packet names, whose current content decides each stage's effective
+status.
 
 The safety contract is the point of the command. The readback **writes nothing**
 under the target — not even a lifecycle journal entry, which every other command
@@ -107,7 +109,7 @@ RUN IDENTITY
   template_family = olympus  [build packet]
   qa run_id = MSRBUNDLEFIXTURE000000000000  [QA verdict]
 
-STAGES  [assembly report; report status: prepared]
+STAGES  [assembly report; report status: prepared; effective: prepared]
   prepare_build  completed
   doctor         pending
   setup          pending
@@ -127,6 +129,21 @@ DOCTOR  [doctor output; status: ready_with_warnings]
 QA VERDICT  [QA verdict; disposition: ready — Campaigns OS is the verdict authority]
   assertions: 0 fail, 1 pass, 0 skipped
   pass  http:checkout  (family funnel-flow)
+```
+
+### STAGES
+
+The STAGES header prints the status the Assembly Report records and the status recomputed from each stage's effective status. A stage's effective status is the recorded one, except that a stage made owed again by a brief or CampaignSpec change reads `required`, and a stage whose inputs cannot be confirmed reads `unknown`. When the two differ, the stage line adds the recorded status and the reason. Superseded records appear only under "history (not current proof)".
+
+```
+STAGES  [assembly report; report status: completed; effective: prepared]
+  prepare_build  completed
+  doctor         pending
+  setup          completed
+  assembly       required   (recorded: completed; spec_material_changed)
+  polish         required   (recorded: completed; spec_material_changed)
+  deploy         completed
+  qa             required   (recorded: completed; spec_material_changed)
 ```
 
 ## The JSON contract
