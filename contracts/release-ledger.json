@@ -6055,7 +6055,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.53.0+agent.1",
-      "changelog_sha256": "27b31f1b92b84b819b14f7c72e749158cefb41a8ed8cef090e1733db8bc661fc",
+      "changelog_sha256": "217500032d1920eb2061dc6b59522567b05e7607bdf526f56813c34a01d3677a",
       "agent_impact": "next prints a campaign intent summary, generated from the normalized Campaign Build Brief, on every result (intent_summary in JSON, a Campaign intent section in text) and at the top of the setup, build, Polish and QA prompts. Each value carries its origin (stated, from the source, default, not stated, or source not recorded); values are quoted data, purpose and palette source inferred from page types or names read not stated, and nothing reads the summary, so it never sets prices or commerce behaviour. The four agent context files and the setup, build, Polish and QA skills tell agents to read .campaign-runtime/input/campaign-build-brief.normalized.json and the recorded assembly decisions. Bundled skills carry revision 1.53.0+skills.2: an agent that loaded an earlier revision should start a fresh session. The lifecycle skill returns the single compact brief in references/session-intake.md (Intent: is now Work:, with a new Campaign: field and Proof policy:) and saves brief answers with record brief after asking the operator; the build skill passes --deviation-reason only on the operator's explicit decision, the Polish skill records a skipped Polish only on the operator's decision, and the Polish and QA skills report readability warnings and offer repairs inside the brand palette. tooling setup refuses an installed agent context from an earlier release and names install-agent-context --target . in its refusal.",
       "compatibility": "breaking",
       "migration": "From each existing campaign folder: install the exact 1.53.0 package, run npx --no-install campaigns-os install-agent-context --target . (it overwrites all four files under .campaign-runtime/agent-context/; local edits there are lost), review and commit the diff, rerun npx --no-install campaigns-os tooling setup --target . --platform claude, and restart the agent session. Codex, Cursor and Copilot users run install-agent-context and reinstall skills with install-skills --platform codex (or agents).",
@@ -6163,7 +6163,7 @@
           "summary": "next carries intent_summary on every result and prints a Campaign intent section under the status; the setup, build, Polish and QA prompts start with the summary and the absolute normalized brief path, and the build prompt names record brief and record spec for refreshing a changed brief or CampaignSpec."
         }
       ],
-      "entry_sha256": "6e2a6fb7ffc5218302e5d54964c5dd05da10f397a49c6b1228a4be53e6cace3b"
+      "entry_sha256": "897792136d23e8705f6ac6409beed1241d771849d590ffa9d53b45b35aae991b"
     }
   ]
 }

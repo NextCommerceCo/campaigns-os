@@ -53,7 +53,8 @@ const isPlainObject = (value) => Boolean(value) && typeof value === "object" && 
 const own = (object, key) => (isPlainObject(object) && Object.hasOwn(object, key) ? object[key] : undefined);
 const valueAt = (brief, path) => path.split(".").reduce((value, key) => own(value, key), brief);
 const singleLine = (text) => text.replace(/\r\n|[\n\r\u2028\u2029]/g, " ");
-const isBlank = (value) => typeof value === "string" && !value.trim();
+// Whitespace only, counting NEL (U+0085), which String.prototype.trim keeps.
+const isBlank = (value) => typeof value === "string" && !value.replace(/\u0085/g, "").trim();
 const notStated = (value) => value == null || isBlank(value);
 
 // C0, DEL and C1 control characters (ESC and NEL among them) written as \t or
@@ -149,7 +150,7 @@ function authorityGroups(brief, pageIds) {
 function readModel(brief, activePageIds) {
   // Page ids stay as recorded and are escaped only when rendered; a missing,
   // non-string or blank id is null and keeps its place.
-  const pageIds = (Array.isArray(activePageIds) ? activePageIds : []).map((id) => (typeof id === "string" && id.trim() ? id : null));
+  const pageIds = (Array.isArray(activePageIds) ? activePageIds : []).map((id) => (typeof id === "string" && !isBlank(id) ? id : null));
   const avoid = field(brief, AVOID);
   const avoidItems = avoid.value == null ? [] : Array.isArray(avoid.value) ? avoid.value : [avoid.value];
   // Questions not recorded as a list are null, never read as none.
@@ -165,7 +166,7 @@ function readModel(brief, activePageIds) {
     tone: field(brief, TONE),
     avoid: { ...avoid, items: avoidItems, itemNotStated: avoidItems.some(notStated) },
     placeholders: field(brief, BLOCK_PLACEHOLDERS),
-    questions: Array.isArray(questions) ? questions.map((question) => (typeof question?.id === "string" && question.id.trim() ? singleLine(question.id.trim()) : "unnamed question")) : null,
+    questions: Array.isArray(questions) ? questions.map((question) => (typeof question?.id === "string" && !isBlank(question.id) ? singleLine(question.id.trim()) : "unnamed question")) : null,
   };
 }
 

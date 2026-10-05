@@ -837,7 +837,7 @@ const BLANK_SITES = [
 
 test("blank values: an empty or whitespace-only value reads not stated and partial wherever it is shown", async () => {
   await assertStatedBriefAvailable();
-  for (const blank of ["", "   ", "\n\t "]) {
+  for (const blank of ["", "   ", "\n\t ", "\u0085", " \u0085  　 "]) {
     for (const [path, place, n, expected] of BLANK_SITES) {
       const brief = statedBrief();
       place(brief, blank);

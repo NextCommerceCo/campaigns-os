@@ -5017,8 +5017,8 @@ function localProofPromptLines(packet, packetPath = "<packet>") {
 // Read the normalized brief the packet records, resolved against the packet
 // file as doctor resolves it, and summarize it over the Build Context's active
 // pages in recorded order. A missing, unreadable or invalid brief reads
-// unavailable; this never fails `next`. A read or summarising failure is
-// named in one stderr line, never on stdout.
+// unavailable; this never fails `next`. Each read or summarising failure is
+// named on stderr, one line per failure, never on stdout.
 function readIntentSummary(packetPath, packet, contextPath) {
   const reportFailure = (error) => process.stderr.write(`campaigns-os: intent summary unavailable: ${singleLineFragment(error?.message ?? error, "unknown error")}\n`);
   const normalizedPath = resolveFromFile(packetPath, packet?.build_brief?.normalized_path);
