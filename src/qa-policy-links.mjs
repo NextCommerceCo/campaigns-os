@@ -36,7 +36,7 @@ import { createHash } from "node:crypto";
 
 import { runWithDeadline } from "./deadline.mjs";
 import { buildQcResult, toQaAssertion } from "./qc-results.mjs";
-import { REDACTED_QUERY, redactPersisted } from "./qa-url-privacy.mjs";
+import { REDACTED_QUERY, TRUNCATED, redactPersisted } from "./qa-url-privacy.mjs";
 
 export const POLICY_PRESENCE_CHECK = "policy.presence";
 export const POLICY_AVAILABILITY_CHECK = "policy.availability";
@@ -379,21 +379,85 @@ const isHttpStored = (text) => {
 const validQuery = (value) => value === null || SHA.test(value);
 const validHop = (hop) => hasExactKeys(hop, HOP_KEYS) && isHttpStored(hop.url) && validQuery(hop.query_sha256) && Number.isSafeInteger(hop.status) && hop.status >= 100 && hop.status <= 599;
 // The raw-URL hashes kept for a stored URL, in an object of exactly `keys`.
-// When the stored URL is the raw origin+path itself (the projection redacted
-// nothing), they must be its hashes.
+//
+// Rule: the hashes agree with every part of the raw URL the stored URL still
+// shows, whatever the projection redacted. The projection never cuts a host,
+// so host_sha256 is always the hash of the stored host (only a bounded
+// placeholder shows no host). When the stored path is shown whole (neither
+// redacted nor truncated), the stored URL is the raw origin+path, so
+// url_sha256 (scheme, host and path) and path_sha256 are its hashes too.
+// Otherwise the scheme is held by sameStoredUrl: requests with one url_sha256
+// have one stored URL.
 function validIdentity(ids, stored, keys = IDENTITY_KEYS) {
   if (!hasExactKeys(ids, keys) || !IDENTITY_KEYS.every((key) => SHA.test(ids[key]))) return false;
-  if (stored.includes(REDACTED_QUERY) || stored.endsWith("[truncated]")) return true;
   const url = new URL(stored);
+  if (stored === BOUNDED_PLACEHOLDERS[url.protocol.slice(0, -1)]) return true;
   const recomputed = urlIdentity(url.protocol, url.host, url.pathname);
-  return IDENTITY_KEYS.every((key) => ids[key] === recomputed[key]);
+  const shown = stored.includes(REDACTED_QUERY) || stored.endsWith(TRUNCATED) ? ["host_sha256"] : IDENTITY_KEYS;
+  return shown.every((key) => ids[key] === recomputed[key]);
+}
+// Whether every pair [stored URL, its hashes] with the same url_sha256 has the
+// same stored URL and hashes, as the stored value and the hashes are both
+// taken from the raw origin+path alone.
+function sameStoredUrl(entries) {
+  const byUrl = new Map();
+  for (const [stored, ids] of entries) {
+    const shown = JSON.stringify([stored, ids.path_sha256, ids.host_sha256]);
+    if ((byUrl.get(ids.url_sha256) ?? shown) !== shown) return false;
+    byUrl.set(ids.url_sha256, shown);
+  }
+  return true;
 }
 // A request's identity: its exact raw origin+path and its query.
 const requestKey = (ids, querySha) => `${ids.url_sha256} ${querySha}`;
 
+// What a stored http(s) URL shows of its destination: its host without a
+// leading "www." and its path with the trailing slash ignored, or, when the
+// projection cut the path (redacted or truncated), the start of the raw path
+// it still shows (`cut`). null when it shows no destination (a bounded
+// placeholder); false when it is not written as its own origin+path.
+function shownDestination(stored) {
+  const url = new URL(stored);
+  if (stored === BOUNDED_PLACEHOLDERS[url.protocol.slice(0, -1)]) return null;
+  const origin = `${url.protocol}//${url.host}`;
+  if (!stored.startsWith(origin)) return false;
+  const marker = [REDACTED_QUERY, TRUNCATED].find((end) => stored.endsWith(end));
+  const path = stored.slice(origin.length, marker ? -marker.length : undefined);
+  return { host: url.host.replace(/^www\./, ""), path: marker ? path : trimSlash(path), cut: Boolean(marker) };
+}
+// Whether two shown paths can be one path with the trailing slash ignored: a
+// cut path is the start of a raw path that is the other path or the other
+// path with a slash added.
+function shownPathsAgree(a, b) {
+  if (!a.cut && !b.cut) return a.path === b.path;
+  if (!b.cut) return `${b.path}/`.startsWith(a.path);
+  if (!a.cut) return `${a.path}/`.startsWith(b.path);
+  return a.path.startsWith(b.path) || b.path.startsWith(a.path);
+}
+const shownAgree = (a, b, compare) => a !== false && b !== false && (a === null || b === null || compare(a, b));
+// Whether two stored URLs can be one destination under the pass allowances. A
+// placeholder is one destination only with another placeholder.
+const sameShownDestination = (a, b) => {
+  const [x, y] = [shownDestination(a), shownDestination(b)];
+  return (x === null) === (y === null) && shownAgree(x, y, (p, q) => p.host === q.host && shownPathsAgree(p, q));
+};
+// Whether a stored URL can be at the root path.
+const showsRoot = (stored) => shownAgree(shownDestination(stored), { path: "/", cut: false }, shownPathsAgree);
+
 // Whether the final URL is the configured one, allowing only a scheme, a
 // leading "www." or a trailing-slash difference. Both are compared through the
 // hashes of their raw URLs.
+//
+// Rule: an outcome that says two requests are one destination stands only
+// when their stored URLs say so too, under exactly the allowances the
+// decision makes; a stored chain where they do not re-derives to nothing.
+// pass: the stored final and configured URLs agree but for the scheme, a
+// leading "www." and a trailing slash (sameShownDestination), a bounded
+// placeholder agreeing only with another placeholder; a redacted or
+// truncated path is compared up to its cut. redirected_to_root: the stored
+// final URL shows the root path (showsRoot). redirect_loop: the two requests have one url_sha256, so
+// one stored URL (sameStoredUrl). The producer always writes agreeing stored
+// URLs, as equal raw URLs give equal stored URLs.
 function passesAs(final, configured) {
   return final.query_sha256 === configured.query_sha256
     && final.ids.host_sha256 === configured.ids.host_sha256
@@ -403,7 +467,11 @@ function passesAs(final, configured) {
 function finalOutcome(final, contentType, configured) {
   const status = final.status;
   if (status >= 200 && status < 300) {
-    if (!passesAs(final, configured)) return final.ids.path_sha256 === ROOT_PATH_SHA && configured.ids.path_sha256 !== ROOT_PATH_SHA ? "redirected_to_root" : "redirected_elsewhere";
+    if (!passesAs(final, configured)) {
+      if (final.ids.path_sha256 !== ROOT_PATH_SHA || configured.ids.path_sha256 === ROOT_PATH_SHA) return "redirected_elsewhere";
+      return showsRoot(final.url) ? "redirected_to_root" : null;
+    }
+    if (!sameShownDestination(final.url, configured.url)) return null;
     return HTML_TYPES.includes(contentType) ? "pass" : "non_html_response";
   }
   if (status === 404 || status === 410) return "not_found";
@@ -427,6 +495,8 @@ function availabilityOutcome({ scheme, configured, configured_query_sha256: conf
   if (!chain.length) return empty ? NETWORK : null;
   if (chain.length > maxRedirects + 1 || !chain.every(validHop)) return null;
   if (ids.length !== chain.length || !ids.every((hopIds, index) => validIdentity(hopIds, chain[index].url))) return null;
+  const requests = chain.map((hop, index) => [hop.url, ids[index]]);
+  if (!sameStoredUrl(requests)) return null;
   // The first request is the configured URL; every hop but the last is a
   // redirect; no request repeats (a repeat ends the chain as a loop instead).
   if (chain[0].url !== configured || chain[0].query_sha256 !== configuredQuery) return null;
@@ -438,6 +508,7 @@ function availabilityOutcome({ scheme, configured, configured_query_sha256: conf
   if (block.content_type !== null && !CONTENT_TYPE.test(block.content_type)) return null;
   if (REDIRECT_STATUSES.has(last.status) && nextHop !== null) {
     if (!isPlainObject(nextHop) || !isHttpStored(nextHop.url) || !validQuery(nextHop.query_sha256) || !validIdentity(nextHop, nextHop.url, NEXT_HOP_KEYS)) return null;
+    if (!sameStoredUrl([...requests, [nextHop.url, nextHop]])) return null;
     if (keys.includes(requestKey(nextHop, nextHop.query_sha256))) return "redirect_loop";
     if (chain.length === maxRedirects + 1) return "redirect_limit";
     // The redirect was due but its request got no response in time.
@@ -889,7 +960,8 @@ const anchorReadSource = (spec) => `(${anchorReadExpression})(${MAX_ANCHORS}, ${
 // The anchors of the page's current document, or null when they could not be
 // read in full (the page then counts as not read). The read is one step of
 // `budget` and ends by the earlier of ANCHOR_READ_MS and the budget's end; it
-// does not start once the budget is spent. Never throws.
+// does not start once the budget is spent, and its anchors are kept only when
+// it completed before its end. Never throws.
 export async function readPageAnchors(context, browserPage, { spec = null, budget = createPolicyLinkBudget() } = {}) {
   const { clock } = budget;
   return budget.step(async (endsAt) => {
@@ -898,7 +970,7 @@ export async function readPageAnchors(context, browserPage, { spec = null, budge
     let session = null;
     let ended = false;
     try {
-      return await untilClock(clock, readEndsAt, async () => {
+      const anchors = await untilClock(clock, readEndsAt, async () => {
         const opened = await context.newCDPSession(browserPage);
         if (ended) {
           Promise.resolve().then(() => opened.detach()).catch(() => {});
@@ -912,6 +984,10 @@ export async function readPageAnchors(context, browserPage, { spec = null, budge
         if (!isPlainObject(value) || value.complete !== true || !Array.isArray(value.anchors)) return null;
         return value.anchors.every(isReadAnchor) ? value.anchors : null;
       }, { onTimeout: () => { ended = true; }, label: "readPageAnchors" });
+      // A read that completed at or after its end (its own deadline or the
+      // budget's end) is not one the read got in time, even when no timer
+      // fired.
+      return clock.now() < readEndsAt ? anchors : null;
     } catch {
       return null;
     } finally {

@@ -368,6 +368,61 @@ test("policy links: a final HTML 200 that completes at or after its URL's 15 s d
   }
 });
 
+// A browser context whose Runtime.evaluate answers at once, with the clock
+// moved on by takesMs.
+function steppedContext(clock, anchors, takesMs) {
+  const context = fakeContext({ anchors });
+  return {
+    async newCDPSession(browserPage) {
+      const session = await context.newCDPSession(browserPage);
+      const send = session.send;
+      session.send = async (method, params) => {
+        const answer = await send(method, params);
+        if (method === "Runtime.evaluate") clock.advance(takesMs);
+        return answer;
+      };
+      return session;
+    },
+  };
+}
+
+// One page read on a stepped clock: earlier steps charged `chargedMs` to the
+// run budget, then the read took `readMs`. Returns the anchors read and the
+// presence row.
+async function steppedPresence(chargedMs, readMs) {
+  const clock = steppedClock();
+  const spec = { campaign: { store_terms: TERMS } };
+  const budget = createPolicyLinkBudget({ clock });
+  if (chargedMs) await budget.step(async () => clock.advance(chargedMs));
+  const read = await readPageAnchors(steppedContext(clock, [{ href: TERMS, text: "Terms" }], readMs), {}, { spec, budget });
+  assert.equal(clock.armed.size, 0, `charged ${chargedMs} ms, read ${readMs} ms: the read's deadline race settled with it, before its timer`);
+  const pages = [read ? { read: true, anchors: read } : { read: false, anchors: null }];
+  const { rows } = await runPolicyLinkChecks({ spec, pages, fetchImpl: steppedFetch(clock, () => ({ status: 200, takesMs: 0 }), []), measuredAt, budget });
+  return { read, row: rowsById(rows).get("policy.presence:campaign:store_terms") };
+}
+
+test("policy links: an anchor read that completes at or after the run budget's end, or its own 5 s, is not a read, even when no timer fired; one that completes before both is", async () => {
+  const cases = [
+    // The run budget's end: 15,002 ms charged, so the read's end is 20,000 ms.
+    ["completes at 20,001 ms", 15_002, 4_999, false],
+    ["completes at 20,000 ms", 15_002, 4_998, false],
+    ["completes at 19,999 ms", 15_002, 4_997, true],
+    // The read's own 5 s.
+    ["completes at its 5,000 ms", 0, 5_000, false],
+    ["completes at its 4,999 ms", 0, 4_999, true],
+  ];
+  const actual = [];
+  const expected = [];
+  for (const [label, chargedMs, readMs, inTime] of cases) {
+    const { read, row } = await steppedPresence(chargedMs, readMs);
+    actual.push([label, read === null, row.result, row.reason_code, row.coverage]);
+    expected.push(inTime
+      ? [label, false, "pass", null, { observed: 1, expected: 1, limits: [] }]
+      : [label, true, "unexercised", "pages_not_read", { observed: 0, expected: 1, limits: ["pages_not_read"] }]);
+  }
+  assert.deepEqual(actual, expected);
+});
+
 // ---------------------------------------------------------------------------
 // Anchor text is compared in full
 
@@ -511,6 +566,159 @@ test("policy links: a stored chain whose URL hashes disagree with its unredacted
   const observation = structuredClone(row.observation);
   observation.availability.chain_identity[0].path_sha256 = sha256("/elsewhere");
   assert.equal(rederiveQcResult(observation), null);
+});
+
+// The state an availability observation derives with `reasonCode`.
+const availabilityState = (observation, reasonCode) => ({
+  reason_code: reasonCode,
+  configured: observation.configured,
+  configured_query_sha256: observation.configured_query_sha256,
+  chain: observation.availability.chain.map(({ url, query_sha256: querySha, status }) => ({ url, query_sha256: querySha, status })),
+  final: observation.availability.final,
+  final_query_sha256: observation.availability.final_query_sha256,
+  status: observation.availability.status,
+  content_type: observation.availability.content_type,
+});
+
+// A path the persisted-verdict projection truncates.
+const LONG_PATH = `/${"a".repeat(17_000)}`;
+
+// The producer row of `configured` redirected to `elsewhere`, an HTML 200,
+// which re-derives and reads back as `result` / `reasonCode`.
+async function redirectedRow(configured, elsewhere, result, reasonCode) {
+  const { rows, row } = await availabilityRun(configured, (url) => ({
+    [configured]: { status: 302, location: elsewhere },
+    [elsewhere]: { status: 200 },
+  })[url]);
+  assertRow(rows, row.id, result, reasonCode);
+  assert.deepEqual(readEntries(await readStored([row])), [[row.id, result, reasonCode]], `${configured.slice(0, 60)}: the producer row reads back`);
+  return row;
+}
+
+test("policy links: producer rows whose stored URLs are redacted or truncated still re-derive and read back", async () => {
+  for (const [configured, elsewhere, result, reasonCode, storedFinal] of [
+    ["https://shop.example/a%3Fz", "http://www.shop.example/a%3Fz/", "pass", null, "http://www.shop.example/a<query-redacted>"],
+    ["https://shop.example/a%3Fz", "https://evil.example/b%3Fz", "review", "redirected_elsewhere", "https://evil.example/b<query-redacted>"],
+    [`https://shop.example${LONG_PATH}`, `http://www.shop.example${LONG_PATH}/`, "pass", null, null],
+    [TERMS, `https://other.example.invalid${LONG_PATH}`, "review", "redirected_elsewhere", null],
+  ]) {
+    const row = await redirectedRow(configured, elsewhere, result, reasonCode);
+    const { final } = row.observation.availability;
+    if (storedFinal) assert.equal(final, storedFinal, `${elsewhere}: stored redacted`);
+    else assert.ok(final.startsWith(new URL(elsewhere).origin) && final.endsWith("[truncated]"), `${elsewhere.slice(0, 60)}: stored truncated, its host kept`);
+  }
+});
+
+test("policy links: a redirect to another host whose final hashes are edited to the configured host's, claiming pass, is refused, whether its stored URLs are redacted or truncated", async () => {
+  const passing = (await availabilityRun(TERMS, htmlAt(TERMS))).row.observation;
+  const cases = [];
+  for (const [label, configured, elsewhere, keys] of [
+    ["terms%3Fone to another host, final host hash edited", "https://store.example.invalid/terms%3Fone", "https://other.example.invalid/terms%3Fone", ["host_sha256"]],
+    ["a%3Fz to evil.example/b%3Fz, host and path hashes copied", "https://shop.example/a%3Fz", "https://evil.example/b%3Fz", ["host_sha256", "path_sha256"]],
+    ["a truncated final URL on another host, host and path hashes copied", TERMS, `https://other.example.invalid${LONG_PATH}`, ["host_sha256", "path_sha256"]],
+  ]) {
+    const row = await redirectedRow(configured, elsewhere, "review", "redirected_elsewhere");
+    const observation = structuredClone(row.observation);
+    const { chain_identity: ids } = observation.availability;
+    for (const key of keys) ids[1][key] = ids[0][key];
+    observation.availability.outcome = "pass";
+    assert.equal(new URL(observation.availability.final).host, new URL(elsewhere).host, `setup: ${label}: the stored final URL still shows the other host`);
+    cases.push({ label, valid: passing, observation, state: availabilityState(observation, null) });
+  }
+  await assertEachRefused(cases);
+});
+
+test("policy links: a next hop whose URL hash is edited to an earlier request's while its stored scheme differs, claiming redirect_loop, is refused", async () => {
+  const configured = "https://shop.example/a%3Fz";
+  const next = "http://shop.example/a%3Fz";
+  // The redirect's request gets no response: the block keeps its next hop.
+  const { rows, row } = await availabilityRun(configured, (url) => (url === configured ? { status: 302, location: next } : undefined));
+  assertRow(rows, row.id, "unexercised", "network_unavailable");
+  const loop = (await availabilityRun(configured, (url) => (url === configured ? { status: 302, location: configured } : undefined))).row;
+  assertRow([loop], loop.id, "review", "redirect_loop");
+  const observation = structuredClone(row.observation);
+  const { next_hop: nextHop, chain_identity: ids } = observation.availability;
+  assert.deepEqual([observation.availability.chain[0].url, nextHop.url], ["https://shop.example/a<query-redacted>", "http://shop.example/a<query-redacted>"], "setup: both stored URLs are redacted, with different schemes");
+  nextHop.url_sha256 = ids[0].url_sha256;
+  observation.availability.outcome = "redirect_loop";
+  await assertEachRefused([{ label: "next hop url_sha256 edited", valid: loop.observation, observation, state: availabilityState(observation, "redirect_loop") }]);
+});
+
+// A path the projection truncates, starting with `start`.
+const longPath = (start) => `/${start}${"x".repeat(17_000)}`;
+// The longest path of `origin` the projection keeps whole.
+const wholePathOf = (origin) => `/${"a".repeat(16 * 1024 - origin.length - 1)}`;
+
+test("policy links: producer rows on one destination, its stored URLs differing by scheme, www., trailing slash or the cut, still re-derive and read back", async () => {
+  const edge = wholePathOf("https://shop.example");
+  for (const [configured, elsewhere, result, reasonCode] of [
+    ["http://shop.example/terms", "https://shop.example/terms", "pass", null],
+    ["https://shop.example/terms", "https://www.shop.example/terms", "pass", null],
+    ["https://www.shop.example/terms/", "https://shop.example/terms", "pass", null],
+    ["https://shop.example/terms", "http://shop.example/terms/", "pass", null],
+    ["https://www.shop.example/a%3Fz", "https://shop.example/a%3Fz/", "pass", null],
+    [`http://www.shop.example${longPath("a")}`, `https://shop.example${longPath("a")}`, "pass", null],
+    [`https://shop.example${edge}`, `https://www.shop.example${edge}/`, "pass", null],
+    ["https://shop.example/a%3Fz", "http://www.shop.example/", "warning", "redirected_to_root"],
+    [`https://shop.example${longPath("a")}`, "https://shop.example//", "warning", "redirected_to_root"],
+  ]) {
+    const row = await redirectedRow(configured, elsewhere, result, reasonCode);
+    const { chain } = row.observation.availability;
+    assert.notEqual(chain[0].url, chain[1].url, `setup: ${elsewhere.slice(0, 60)}: the stored URLs differ`);
+  }
+  const { chain } = (await redirectedRow(`https://shop.example${edge}`, `https://www.shop.example${edge}/`, "pass", null)).observation.availability;
+  assert.deepEqual(chain.map(({ url }) => url.endsWith("[truncated]")), [false, true], "setup: only the final URL is truncated");
+});
+
+test("policy links: a redirect on one host whose final path hash is edited to the configured path's, claiming pass, is refused when the stored paths differ before a redaction or truncation", async () => {
+  const passing = (await availabilityRun(TERMS, htmlAt(TERMS))).row.observation;
+  const cases = [];
+  for (const [label, configured, elsewhere, keys] of [
+    ["a%3Fz to b%3Fz, path hash copied", "https://shop.example/a%3Fz", "https://shop.example/b%3Fz", ["path_sha256"]],
+    ["a%3Fz to b%3Fz, path and url hashes copied", "https://shop.example/a%3Fz", "https://shop.example/b%3Fz", ["path_sha256", "url_sha256"]],
+    ["truncated /a… to /b…, path hash copied", `https://shop.example${longPath("a")}`, `https://shop.example${longPath("b")}`, ["path_sha256"]],
+    ["truncated /a… to /b…, path and url hashes copied", `https://shop.example${longPath("a")}`, `https://shop.example${longPath("b")}`, ["path_sha256", "url_sha256"]],
+    ["truncated /a… to www. and /b…, path hash copied", `https://shop.example${longPath("a")}`, `https://www.shop.example${longPath("b")}`, ["path_sha256"]],
+  ]) {
+    const row = await redirectedRow(configured, elsewhere, "review", "redirected_elsewhere");
+    const observation = structuredClone(row.observation);
+    const { chain, chain_identity: ids } = observation.availability;
+    for (const key of keys) ids[1][key] = ids[0][key];
+    observation.availability.outcome = "pass";
+    assert.ok(/(<query-redacted>|\[truncated\])$/.test(chain[1].url), `setup: ${label}: the stored final URL is cut`);
+    cases.push({ label, valid: passing, observation, state: availabilityState(observation, null) });
+  }
+  await assertEachRefused(cases);
+});
+
+test("policy links: a redirect whose stored final URL is replaced by the bounded placeholder, with the configured host and path hashes copied, claiming pass, is refused", async () => {
+  const passing = (await availabilityRun(TERMS, htmlAt(TERMS))).row.observation;
+  const row = await redirectedRow("https://shop.example/terms", "https://other.example.invalid/elsewhere", "review", "redirected_elsewhere");
+  const observation = structuredClone(row.observation);
+  const { availability } = observation;
+  const placeholder = "https://host-redacted.invalid/<query-redacted>";
+  availability.chain[1].url = placeholder;
+  availability.final = placeholder;
+  for (const key of ["host_sha256", "path_sha256"]) availability.chain_identity[1][key] = availability.chain_identity[0][key];
+  availability.outcome = "pass";
+  assert.equal(availability.final_query_sha256, observation.configured_query_sha256, "setup: the final query is the configured one");
+  await assertEachRefused([{ label: "stored final replaced by the https placeholder", valid: passing, observation, state: availabilityState(observation, null) }]);
+});
+
+test("policy links: a redirect whose final path hash is edited to the root's while its stored path shows another path, claiming redirected_to_root, is refused", async () => {
+  const root = (await redirectedRow(TERMS, "https://store.example.invalid/", "warning", "redirected_to_root")).observation;
+  const cases = [];
+  for (const [label, configured, elsewhere] of [
+    ["a%3Fz to b%3Fz", "https://shop.example/a%3Fz", "https://shop.example/b%3Fz"],
+    ["truncated /a… to /b…", `https://shop.example${longPath("a")}`, `https://shop.example${longPath("b")}`],
+  ]) {
+    const row = await redirectedRow(configured, elsewhere, "review", "redirected_elsewhere");
+    const observation = structuredClone(row.observation);
+    observation.availability.chain_identity[1].path_sha256 = sha256("/");
+    observation.availability.outcome = "redirected_to_root";
+    cases.push({ label, valid: root, observation, state: availabilityState(observation, "redirected_to_root") });
+  }
+  await assertEachRefused(cases);
 });
 
 // ---------------------------------------------------------------------------
