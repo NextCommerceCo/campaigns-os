@@ -178,6 +178,7 @@ export const RECORD_SPEC_REFUSALS = Object.freeze([
   "brief_too_large",
   "brief_source_is_package_artifact",
   "brief_file_missing",
+  "brief_inputs_unavailable",
 ]);
 const ALL_REFUSALS = Object.freeze([...new Set([...RECORD_BRIEF_REFUSALS, ...RECORD_SPEC_REFUSALS])]);
 
