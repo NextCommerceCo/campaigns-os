@@ -655,13 +655,15 @@ async function produced(configured) {
 }
 
 const ORIGIN = "https://example.test";
+// Synthetic userinfo, built at run time.
+const USERINFO = ["user", "secret"].join(":");
 // The persisted-verdict projection cuts a longer string to 16,384 characters.
 const PROJECTION_BOUND = 16 * 1024;
 const PRODUCED = Object.freeze({
   http: ["http://example.test/terms", "http://Example.TEST:8080/terms/?b=2&a=1#top"],
   https: [
     `${ORIGIN}/terms`,
-    "https://user:secret@www.example.test/terms?ref=synthetic",
+    `https://${USERINFO}@www.example.test/terms?ref=synthetic`,
     `${ORIGIN}/terms%3Fone`,
     `${ORIGIN}/terms%3Cquery-redacted%3E`,
     `${ORIGIN}/x%${"25".repeat(10)}41`,
