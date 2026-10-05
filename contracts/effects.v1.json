@@ -4406,7 +4406,7 @@
       ],
       "effect_test": "effects: start",
       "test_scope": "full",
-      "notes": "Intake: Build Packet, sidecars, agent context and the auto-opened run session. Not idempotent — a second `start` over an assembly report that carries stage evidence is refused without --force."
+      "notes": "Intake: Build Packet, sidecars, agent context and the auto-opened run session. Not idempotent — a second `start` is refused without --force when the report carries stage evidence, stage history or operator decisions (recorded waivers, warning accepts, an applied theme or report evidence), or when the run would change the packet's recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation. To save brief answers or a CampaignSpec change without discarding anything, run `record brief` or `record spec` instead."
     },
     {
       "command": "start",
@@ -4565,7 +4565,7 @@
       ],
       "effect_test": "effects: start --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `start` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `start` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path."
     },
     {
       "command": "start",
@@ -4831,7 +4831,7 @@
       ],
       "effect_test": "effects: prepare-build",
       "test_scope": "full",
-      "notes": "Intake without doctor and without the agent-context install: the packet, the sidecars and the auto-opened session. Same stale-session closeout as `start`."
+      "notes": "Intake without doctor and without the agent-context install: the packet, the sidecars and the auto-opened session. Same stale-session closeout as `start`. A second `prepare-build` is refused without --force when the report carries stage evidence, stage history or operator decisions (recorded waivers, warning accepts, an applied theme or report evidence), or when the run would change the packet's recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation. To save brief answers or a CampaignSpec change without discarding anything, run `record brief` or `record spec` instead."
     },
     {
       "command": "prepare-build",
@@ -5077,7 +5077,7 @@
       ],
       "effect_test": "effects: prepare-build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `prepare-build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `prepare-build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
     },
     {
       "command": "build",
@@ -5223,7 +5223,7 @@
       ],
       "effect_test": "effects: build",
       "test_scope": "full",
-      "notes": "The intake alias for prepare-build + doctor: the same packet and sidecars, plus the doctor sidecar. It does not install the agent context."
+      "notes": "The intake alias for prepare-build + doctor: the same packet and sidecars, plus the doctor sidecar. It does not install the agent context. A second `build` is refused without --force when the report carries stage evidence, stage history or operator decisions (recorded waivers, warning accepts, an applied theme or report evidence), or when the run would change the packet's recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation. To save brief answers or a CampaignSpec change without discarding anything, run `record brief` or `record spec` instead."
     },
     {
       "command": "build",
@@ -5491,7 +5491,7 @@
       ],
       "effect_test": "effects: build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, printing the stage keys it cleared. This is the flag that makes `build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
     },
     {
       "command": "spec",
@@ -5685,6 +5685,195 @@
     },
     {
       "command": "record",
+      "subcommand": "brief",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{packet}",
+          "when": "the save changes the brief (outcome saved or saved_with_invalidation) — build_brief's mode, status, input_path, question and gate counts and brief bindings",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "the save changes the brief (outcome saved or saved_with_invalidation) — the normalized brief, re-derived from the saved brief file",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "the save changes the brief (outcome saved or saved_with_invalidation) — the brief summary, its bindings and the brief's prompts",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the save changes the brief (outcome saved or saved_with_invalidation) — the brief summary and bindings, and stages.prepare_build re-derived from the brief's blockers; on a material change (saved_with_invalidation) build, Polish and QA become required (QA alone when only qa_policy changed), each recording input_change and keeping the record it replaced in its history, and evidence[] gains a line",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "a save changes the brief (outcome saved or saved_with_invalidation) and a retained doctor sidecar exists — the write postdates the doctor snapshot, so it is stamped stale",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG — on every outcome, an unchanged or refused save included; only --dry-run, and a flag refused before the command runs (such as an unknown flag), append no entry",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: record brief",
+      "test_scope": "full",
+      "notes": "Destructive: a save whose brief material changed makes build, Polish and QA owed again (QA alone when only qa_policy changed); each superseded record moves to that stage's history, which keeps the last five per stage and is never used as current proof. Setup and deploy records, waivers, warning accepts and the applied theme are kept. Idempotent: a repeat reads unchanged. A save whose brief content, mode, status, open questions, gates and file bytes all match what is bound reads unchanged and writes nothing but the lifecycle entry; a reformatted save (key order, an explicit default, `_meta` only) keeps every stage's evidence and status but may rewrite the brief files. Reads the brief file (--brief, otherwise campaign-build-brief.yaml, .yml or .json in the source root or the target) and the CampaignSpec; sends nothing. Refused, writing nothing but the lifecycle entry, when the brief file is over 1 MiB or names more than 512 design_authority entries, names a file Campaigns OS writes itself (the normalized brief, the Build Packet, the Build Context, the Assembly Report or the doctor sidecar), is missing or not a readable regular file, when the source root and the target hold differing brief files and no --brief names one, when the Build Context lacks the intake products evaluating the brief needs, when the CampaignSpec material differs from the one the Assembly Report binds (run record spec first), or when the CampaignSpec's active pages changed (that needs intake)."
+    },
+    {
+      "command": "record",
+      "subcommand": "brief",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: record brief --dry-run",
+      "test_scope": "full",
+      "notes": "record brief --dry-run runs every check the real invocation runs and prints the outcome and the files it would write; it writes nothing (no packet, brief, Build Context, report or stale stamp), takes no target lock, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+    },
+    {
+      "command": "record",
+      "subcommand": "spec",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/input/*",
+          "when": "the refresh runs (outcome refreshed) and the brief re-derived from the brief file last saved by intake or `record brief` (or from the generated draft) differs from what is bound, or the normalized brief on disk no longer holds the re-derived brief's material — the normalized brief",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/build-context.json",
+          "when": "the refresh runs (outcome refreshed) — spec.hash, spec.material_hash and the active pages' labels; the brief summary and bindings when the re-derived brief is saved",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "the refresh runs (outcome refreshed) — identity.spec_hash and identity.spec_material_hash become the CampaignSpec's; each build, Polish and QA record made against other CampaignSpec or brief content becomes required, recording input_change and keeping the record it replaced in its history; evidence[] gains a line",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "a refresh runs (outcome refreshed) and a retained doctor sidecar exists — the write postdates the doctor snapshot, so it is stamped stale",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG — on every outcome, an unchanged or refused refresh included; only --dry-run, and a flag refused before the command runs (such as an unknown flag), append no entry",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: record spec",
+      "test_scope": "full",
+      "notes": "Destructive: build, Polish and QA records made against earlier CampaignSpec or brief content become owed again, each moving to that stage's history, which keeps the last five per stage and is never used as current proof. Waivers, warning accepts, the applied theme and deploy settings are kept. Idempotent: a repeat reads unchanged. When the bound CampaignSpec material is the spec's and no stage's recorded CampaignSpec or brief content differs from the current inputs it reads unchanged and writes nothing but the lifecycle entry. The Build Packet is read, not written; the brief is re-read from the brief file last saved by intake or `record brief`, never rediscovered. For a saved-Map or gateway packet it compares the copy intake fetched and sends nothing. Refused, writing nothing but the lifecycle entry, when the CampaignSpec cannot be read as a JSON object, names another campaign (local_spec_id or map_id) than the Build Packet or the Assembly Report binds, or its active pages (ids, order or routes) changed (that needs intake), or when that brief file is over 1 MiB or names more than 512 design_authority entries, names a file Campaigns OS writes itself, or is missing or not a readable regular file."
+    },
+    {
+      "command": "record",
+      "subcommand": "spec",
+      "flags": [
+        "--dry-run"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: record spec --dry-run",
+      "test_scope": "full",
+      "notes": "record spec --dry-run runs every check the real invocation runs and prints the outcome and the files it would write; it writes nothing (no brief, Build Context, report or stale stamp), takes no target lock, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+    },
+    {
+      "command": "record",
       "subcommand": "setup",
       "flags": [],
       "annotations": {
@@ -5775,7 +5964,7 @@
       "writes": [
         {
           "path": "{target}/.campaign-runtime/assembly-report.json",
-          "when": "the record passes every check — stages.assembly becomes completed with build_fingerprint set to doctor's derived.build_output_fingerprint.value, and stages.polish becomes required unless its evidence is bound to that exact output",
+          "when": "the record passes every check — stages.assembly becomes completed with build_fingerprint set to doctor's derived.build_output_fingerprint.value and the brief and CampaignSpec content it was made against, keeping the record it replaced in its history. When the replaced completed record was made against other brief or CampaignSpec content, the record writes input_change and stages.polish and stages.qa become required; otherwise stages.polish becomes required unless its evidence is bound to that exact output. Output identical to the build that change superseded keeps input_change, unless --deviation-reason records the operator's reason (status completed_with_warnings)",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -5807,7 +5996,7 @@
       "sends": [],
       "effect_test": "effects: record build",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.assembly and, when the output changed, resets stages.polish to required. The fingerprint is doctor's, never typed. Refused, writing nothing, when next answers prepare-build, when doctor cannot compute the fingerprint (no built output), when setup is still required or stages.setup is not terminal, or when the report would fail its schema. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.assembly (the replaced record is kept in its history) and, when the output changed, resets stages.polish to required. When it detects a brief or CampaignSpec change since the replaced record, it writes input_change and also makes Polish and QA required. Re-recording output identical to the build an input change superseded keeps the build owed unless --deviation-reason records the operator's reason. The fingerprint is doctor's, never typed. Refused, writing nothing but the lifecycle entry, when next answers prepare-build, when doctor cannot compute the fingerprint (no built output), when setup is still required or stages.setup is not terminal, or when the report would fail its schema. The Build Context is read, not written."
     },
     {
       "command": "record",
@@ -5842,7 +6031,7 @@
       "writes": [
         {
           "path": "{target}/.campaign-runtime/assembly-report.json",
-          "when": "the record passes every check — stages.polish becomes the file's status (completed, blocked with blockers, or skipped with skip_reason) and evidence, bound to doctor's current fingerprint; theme.repair_loop_defect when the file sets it",
+          "when": "the record passes every check — stages.polish becomes the file's status (completed, blocked with blockers, or skipped with skip_reason) and evidence, bound to doctor's current fingerprint and, for a completed status, the brief and CampaignSpec content it was made against, keeping the record it replaced in its history; theme.repair_loop_defect when the file sets it",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -5874,7 +6063,7 @@
       "sends": [],
       "effect_test": "effects: record polish",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.polish (the captured page_load is kept). Refused, writing nothing, when build is not recorded for the current output, when the --evidence file has a shape error (named by field), or, for a completed status, when the polish gate doctor evaluates would not pass on the report it would write. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.polish (the captured page_load is kept, and the replaced record is kept in its history). A completed record stamps the brief and CampaignSpec content it was made against; after an input change it stays owed until a new capture postdates that change. Refused, writing nothing but the lifecycle entry, when build is not recorded for the current output or build is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, when the --evidence file has a shape error (named by field), or, for a completed status, when the polish gate doctor evaluates would not pass on the report it would write. The Build Context is read, not written."
     },
     {
       "command": "record",
@@ -5941,7 +6130,7 @@
       "sends": [],
       "effect_test": "effects: record theme",
       "test_scope": "full",
-      "notes": "Destructive: it replaces report.theme's status, css_path, load_order, commerce_pages, evidence and waiver. Refused, writing nothing, when build is not recorded for the current output, when the campaign ships no commerce pages, when a built commerce page that loads next-core.css does not load brand-theme.css (or checkout-brand.css) after it, or links one that is not in the built output, or when no built commerce page loads next-core.css. The Build Context is read, not written."
+      "notes": "Destructive: it replaces report.theme's status, css_path, load_order, commerce_pages, evidence and waiver. Refused, writing nothing but the lifecycle entry, when build is not recorded for the current output or build is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, when the campaign ships no commerce pages, when a built commerce page that loads next-core.css does not load brand-theme.css (or checkout-brand.css) after it, or links one that is not in the built output, or when no built commerce page loads next-core.css. The Build Context is read, not written."
     },
     {
       "command": "record",
@@ -6033,7 +6222,7 @@
       ],
       "effect_test": "effects: record deploy",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.deploy and the packet's deploy.preview_url. The requests stay on this machine: --base-url must be a loopback origin. Refused, writing nothing, when the packet is not local-serve, the URL is not loopback or not the campaign's route root, a built page does not answer 2xx, polish is not recorded, the built output changed since build was recorded, or the theme gate is blocked. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.deploy and the packet's deploy.preview_url. The requests stay on this machine: --base-url must be a loopback origin. Refused, writing nothing but the lifecycle entry, when the packet is not local-serve, the URL is not loopback or not the campaign's route root, a built page does not answer 2xx, polish is not recorded, build or Polish is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, the built output changed since build was recorded, or the theme gate is blocked. The Build Context is read, not written."
     },
     {
       "command": "record",

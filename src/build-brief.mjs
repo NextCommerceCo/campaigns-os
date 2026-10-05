@@ -1,10 +1,27 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 
+import { cmd } from "./install-invocation.mjs";
+import { canonicalJson } from "./polish-capture.mjs";
 import { escapeRegExp } from "./repo-scan.mjs";
 
 export const BUILD_BRIEF_SCHEMA = "campaigns-os-build-brief/v1";
+// The brief value of a packet that carries no Campaign Build Brief, for both
+// material partitions and for every stage stamp made against it.
+export const BRIEF_ABSENT = "absent";
+// The fields the campaign intent summary prints, in its order. `<page>` stands
+// for each page id present in design_authority; _meta.field_sources keys use
+// the concrete id (design_authority.checkout.source).
+export const SUMMARY_FIELDS = Object.freeze(["campaign_intent.audience", "campaign_intent.conversion_goal", "campaign_intent.tone", "brand.commerce_palette_source", "brand.primary_accent", "brand.cta_style", "brand.avoid", "design_authority.<page>.source", "template_residue_policy.block_placeholders"]);
+const BRIEF_MODE_SOURCES = Object.freeze({ FIELD: "field", LEGACY_REPORT: "legacy_report", GENERATED: "generated" });
+// Codes of the errors normalization itself raises. They block in either mode;
+// evaluation gates block only a prepared brief.
+const NORMALIZATION_ERROR_CODES = Object.freeze(new Set(["build_brief.type", "build_brief.schema_version", "build_brief.brief_mode"]));
+// Top-level keys that never count as material: normalization and evaluation
+// output, and the declared mode. qa_policy.enforcement is fixed package text.
+const NON_MATERIAL_BRIEF_KEYS = Object.freeze(new Set(["_meta", "status", "questions", "gates", "confidence", "schema_version", "brief_mode"]));
 export const BUILD_BRIEF_NORMALIZED_REL_PATH = ".campaign-runtime/input/campaign-build-brief.normalized.json";
 export const BUILD_BRIEF_CANDIDATE_FILENAMES = Object.freeze([
   "campaign-build-brief.yaml",
@@ -169,6 +186,32 @@ export function loadCampaignBuildBriefFile(path) {
   return { path: resolvedPath, format, value: parsed };
 }
 
+// The mode a brief file declares, in rule order: brief_mode "prepared" or
+// "guided"; without brief_mode, prepared only when the report this write
+// replaces already recorded a prepared brief for the campaign (so it keeps the
+// blocking it was built under); otherwise guided. Any other brief_mode value
+// is a normalization error. The file's own _meta is never read.
+function briefModeFor(loaded, boundReportMode, errors) {
+  if (!loaded) return { mode: "guided_draft", source: BRIEF_MODE_SOURCES.GENERATED };
+  const declared = isObject(loaded.value) && Object.hasOwn(loaded.value, "brief_mode");
+  if (declared && loaded.value.brief_mode === "prepared") return { mode: "prepared", source: BRIEF_MODE_SOURCES.FIELD };
+  if (declared && loaded.value.brief_mode === "guided") return { mode: "guided_draft", source: BRIEF_MODE_SOURCES.FIELD };
+  if (declared) {
+    errors.push({
+      code: "build_brief.brief_mode",
+      field: "brief_mode",
+      message: `Campaign Build Brief brief_mode must be "prepared" or "guided" (got ${JSON.stringify(loaded.value.brief_mode)}); omit it for a guided brief.`,
+    });
+    return { mode: "guided_draft", source: BRIEF_MODE_SOURCES.FIELD };
+  }
+  if (boundReportMode === "prepared") return { mode: "prepared", source: BRIEF_MODE_SOURCES.LEGACY_REPORT };
+  return { mode: "guided_draft", source: BRIEF_MODE_SOURCES.GENERATED };
+}
+
+// `boundReportMode`: build_brief.mode on the Assembly Report this write
+// replaces, when that report belongs to the same campaign (mode rule 3).
+// `previousNormalizedBrief`: the normalized brief on disk before this write,
+// read for field provenance only.
 export function createCampaignBuildBriefArtifact({
   inputPath = null,
   inputSource = null,
@@ -178,19 +221,24 @@ export function createCampaignBuildBriefArtifact({
   templateFamily = null,
   sourceAssetCrawl = null,
   commerceZoneFindings = [],
+  boundReportMode = null,
+  previousNormalizedBrief = null,
 } = {}) {
   const loaded = inputPath ? loadCampaignBuildBriefFile(inputPath) : null;
-  const mode = loaded ? "prepared" : "guided_draft";
+  const errors = [];
+  const { mode, source: modeSource } = briefModeFor(loaded, boundReportMode, errors);
   const baseBrief = loaded
     ? cloneJsonOrEmpty(loaded.value)
     : draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFamily, sourceAssetCrawl });
 
-  const errors = [];
   const normalized = normalizeCampaignBuildBrief(baseBrief, {
     mode,
+    modeSource,
     inputPath: loaded?.path || null,
     inputFormat: loaded?.format || "generated",
     inputSource,
+    fileValue: loaded ? loaded.value : null,
+    previousNormalizedBrief,
     spec,
     activePages,
     pageMappings,
@@ -222,9 +270,11 @@ export function createCampaignBuildBriefArtifact({
   normalized.questions = evaluation.questions;
   normalized.gates = gates;
 
+  // A prepared brief blocks on every blocker gate; a guided one only on the
+  // gates its normalization errors produced (the first errors.length gates).
   const blocking = mode === "prepared"
     ? blockerGates
-    : [];
+    : gates.slice(0, errors.length);
 
   return {
     mode,
@@ -278,24 +328,26 @@ export function validateCampaignBuildBriefArtifact(brief, { spec = null, normali
     if (questions.length) {
       errors.push({
         code: "build_brief.questions_unanswered",
-        message: `Prepared Campaign Build Brief has ${questions.length} unresolved business question(s): ${describeOpenQuestions(questions)}. Set those fields in the brief file and re-run start or prepare-build.`,
+        message: `Prepared Campaign Build Brief has ${questions.length} unresolved business question(s): ${describeOpenQuestions(questions)}. Set those fields in the brief file and save it with ${cmd("record")} brief --packet <packet>.`,
       });
     }
   } else {
     if (questions.length) {
       // An answer given in conversation is not recorded until it is in a
-      // brief file that start/prepare-build reads: the guided draft is
-      // regenerated on every run, and a brief file replaces it whole.
+      // brief file saved with record brief: the guided draft is regenerated
+      // on every intake, and a brief file replaces it whole.
       warnings.push({
         code: "build_brief.guided_questions",
-        message: `Generated Campaign Build Brief draft has ${questions.length} high-impact business question(s) to confirm: ${describeOpenQuestions(questions)}. `
-          + `An answer counts only once it is in a brief file: copy ${normalizedPath} to campaign-build-brief.json in the target repo, set those fields, and re-run start or prepare-build with the same arguments `
+        message: `Guided Campaign Build Brief has ${questions.length} high-impact business question(s) to confirm: ${describeOpenQuestions(questions)}. `
+          + `An answer counts only once it is saved: copy ${normalizedPath} to campaign-build-brief.json in the target repo, set those fields, and run ${cmd("record")} brief --packet <packet> `
           + "(the file is found there automatically, or pass --brief <file>). The file replaces the draft, so start from the copy to keep the fields the draft already filled. "
-          + "Once a stage has recorded evidence, that re-run needs --force, which clears the evidence.",
+          + "Saving keeps every stage's recorded evidence unless the brief's content changes.",
       });
     }
+    // Input errors block in both modes; evaluation gates stay warnings here.
     for (const gate of blockerGates) {
-      warnings.push({ code: gate.code || "build_brief.blocker", message: gate.message || "Generated Campaign Build Brief draft has an unresolved blocker." });
+      const target = brief.status === "invalid" && NORMALIZATION_ERROR_CODES.has(gate.code) ? errors : warnings;
+      target.push({ code: gate.code || "build_brief.blocker", message: gate.message || "Guided Campaign Build Brief has an unresolved blocker." });
     }
   }
 
@@ -351,6 +403,7 @@ function normalizeCampaignBuildBrief(value, meta, errors) {
   brief._meta = {
     generated_at: new Date().toISOString(),
     mode: meta.mode,
+    mode_source: meta.modeSource,
     input_path: meta.inputPath || null,
     input_format: meta.inputFormat || null,
     input_source: meta.inputSource || null,
@@ -368,20 +421,119 @@ function normalizeCampaignBuildBrief(value, meta, errors) {
   brief.template_residue_policy = normalizeResiduePolicy(brief.template_residue_policy);
   brief.qa_policy = normalizeQaPolicy(brief.qa_policy);
   brief.confidence = objectOrEmpty(brief.confidence);
+  brief._meta.field_sources = summaryFieldSources(brief, meta);
 
   return brief;
 }
 
+// The concrete summary field paths of a normalized brief: one
+// design_authority.<page>.source per page the brief lists.
+function summaryFieldPaths(brief) {
+  return SUMMARY_FIELDS.flatMap((path) => (path === "design_authority.<page>.source"
+    ? Object.keys(objectOrEmpty(brief.design_authority)).map((page) => `design_authority.${page}.source`)
+    : [path]));
+}
+
+// The value at a dotted path, reading the segment after `design_authority`
+// as one page id (a page id may itself contain a dot).
+function valueAtPath(value, path) {
+  const parts = path.startsWith("design_authority.") && path.endsWith(".source")
+    ? ["design_authority", path.slice("design_authority.".length, -".source".length), "source"]
+    : path.split(".");
+  let node = value;
+  for (const part of parts) {
+    if (!isObject(node) || !Object.hasOwn(node, part)) return undefined;
+    node = node[part];
+  }
+  return node;
+}
+
+function valueFingerprint(value) {
+  return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
+}
+
+// Whether `path` is one of the answer_fields of a question still open in the
+// previous normalized brief (design_authority.<page_id>.source matches any page).
+function answersOpenQuestion(path, previous) {
+  const questions = Array.isArray(previous?.questions) ? previous.questions : [];
+  return questions.some((question) => {
+    const entry = REQUIRED_HIGH_IMPACT_FIELDS.find((candidate) => candidate.id === question?.id);
+    return (entry?.answer_fields || []).some((field) => field === path
+      || (field === "design_authority.<page_id>.source" && path.startsWith("design_authority.") && path.endsWith(".source")));
+  });
+}
+
+// _meta.field_sources: {kind, value_fingerprint} per summary field. A
+// generated draft stamps every non-null value `default` (no draft value is
+// copied verbatim from a structured source field). From a file: a value absent
+// or null in the file is `default` when normalization filled one; a value the
+// file sets is `stated` when it answers an open question of the previous
+// brief or differs from the previous value (or there is no previous brief),
+// and otherwise keeps the previous entry. A null value gets no entry.
+function summaryFieldSources(brief, meta) {
+  const previous = isObject(meta.previousNormalizedBrief) ? meta.previousNormalizedBrief : null;
+  const previousSources = isObject(previous?._meta?.field_sources) ? previous._meta.field_sources : {};
+  const fromFile = isObject(meta.fileValue);
+  const sources = {};
+  for (const path of summaryFieldPaths(brief)) {
+    const value = valueAtPath(brief, path);
+    if (value === undefined || value === null) continue;
+    const entry = (kind) => ({ kind, value_fingerprint: valueFingerprint(value) });
+    const inFile = fromFile ? valueAtPath(meta.fileValue, path) : undefined;
+    if (!fromFile || inFile === undefined || inFile === null) {
+      sources[path] = entry("default");
+    } else if (answersOpenQuestion(path, previous) || !previous || canonicalJson(valueAtPath(previous, path) ?? null) !== canonicalJson(value)) {
+      sources[path] = entry("stated");
+    } else if (Object.hasOwn(previousSources, path) && fieldSourceEntryMatches(previousSources[path], value)) {
+      sources[path] = { kind: previousSources[path].kind, value_fingerprint: previousSources[path].value_fingerprint };
+    }
+  }
+  return sources;
+}
+
+const FIELD_SOURCE_KINDS = Object.freeze(["stated", "source", "default"]);
+
+/**
+ * Whether a _meta.field_sources entry can be read for `value`: exactly
+ * {kind, value_fingerprint}, a known kind, and the fingerprint of `value`.
+ * Any other entry is ignored.
+ */
+export function fieldSourceEntryMatches(entry, value) {
+  return isObject(entry)
+    && Object.keys(entry).length === 2
+    && FIELD_SOURCE_KINDS.includes(entry.kind)
+    && entry.value_fingerprint === valueFingerprint(value);
+}
+
+// The brief's material content, from the normalized artifact: `qa_policy`
+// (without its fixed enforcement note) and `presentation`, every other
+// top-level key that is not normalization output or the declared mode,
+// including keys the operator added.
+export function briefMaterialProjection(normalized) {
+  const brief = isObject(normalized) ? normalized : {};
+  // Entry-wise copies, so an operator key named __proto__ stays data.
+  const presentation = Object.fromEntries(Object.entries(brief).filter(([key]) => !NON_MATERIAL_BRIEF_KEYS.has(key) && key !== "qa_policy"));
+  const qaPolicy = Object.fromEntries(Object.entries(objectOrEmpty(brief.qa_policy)).filter(([key]) => key !== "enforcement"));
+  return { presentation, qa_policy: qaPolicy };
+}
+
+// Each partition as "sha256:<hex>" of its canonical JSON: key order,
+// whitespace, an explicit default and _meta never change it.
+export function briefMaterialFingerprint(normalized) {
+  const projection = briefMaterialProjection(normalized);
+  return { presentation: valueFingerprint(projection.presentation), qa_policy: valueFingerprint(projection.qa_policy) };
+}
+
 function draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFamily, sourceAssetCrawl }) {
   const pageMap = new Map((pageMappings || []).map((page) => [page.page_id, page]));
-  const designAuthority = {};
-  for (const page of activePages || []) {
+  // Entry-wise, so a page id named __proto__ stays a page.
+  const designAuthority = Object.fromEntries((activePages || []).map((page) => {
     const mapped = pageMap.get(page.id);
-    designAuthority[page.id] = {
+    return [page.id, {
       source: mapped?.path ? "provided_design_export" : "template",
       reference: mapped?.path || mapped?.skip_reason || `${page.type || "page"} from selected template`,
-    };
-  }
+    }];
+  }));
 
   const variantSignals = collectVariantSignals(spec, sourceAssetCrawl);
   const paymentMethods = collectSpecPaymentMethods(spec);

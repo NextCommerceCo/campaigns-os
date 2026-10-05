@@ -2,3 +2,4 @@
 *.test.mjs
 qc-test-factories.mjs
 qa-tracking-params-fixtures.mjs
+input-test-factories.mjs

@@ -93,15 +93,24 @@ test("spec derive writes a bumped repo pin and the repo's GTM id into the spec o
     const after = JSON.parse(run(["doctor", "--packet", packet, "--json"], campaign, { allowFailure: true }).stdout);
     assert.equal(sdkGate(after).code, "page_kit.sdk_version.pass");
 
-    // The sidecars prepare-build bound to the old spec now carry the new one:
-    // QA and bundle check correlate on these.
+    // spec derive writes the spec alone: the sidecars keep the identity
+    // prepare-build bound until record spec binds the new one, which QA and
+    // bundle check then correlate on.
     const specRawHash = createHash("sha256").update(readFileSync(specPath)).digest("hex");
-    const report = JSON.parse(readFileSync(join(campaign, ".campaign-runtime/assembly-report.json"), "utf8"));
-    const context = JSON.parse(readFileSync(join(campaign, ".campaign-runtime/build-context.json"), "utf8"));
+    const readSidecars = () => ({
+      report: JSON.parse(readFileSync(join(campaign, ".campaign-runtime/assembly-report.json"), "utf8")),
+      context: JSON.parse(readFileSync(join(campaign, ".campaign-runtime/build-context.json"), "utf8")),
+    });
+    let { report, context } = readSidecars();
+    assert.notEqual(report.identity.spec_hash, specRawHash);
+    assert.notEqual(context.spec.hash, specRawHash);
+    assert.match(derive.stdout, /^Next: campaigns-os record spec --packet /m);
+    const bound = JSON.parse(run(["record", "spec", "--packet", packet, "--json"], campaign).stdout);
+    assert.equal(bound.outcome, "refreshed");
+    ({ report, context } = readSidecars());
     assert.equal(report.identity.spec_hash, specRawHash);
     assert.equal(context.spec.hash, specRawHash);
     assert.equal(report.identity.spec_material_hash, context.spec.material_hash);
-    assert.doesNotMatch(derive.stdout, /identity_not_rebound/);
 
     // The starter's page tree carries the family's pages, not the spec's:
     // every spec page it does state binds, the rest are reported by name.

@@ -174,6 +174,8 @@ import {
   createCampaignBuildBriefArtifact,
   inferBuildBriefPath,
 } from "./build-brief.mjs";
+import { briefIntakeBindings, currentPacketInputs, inputRefreshCommands, inputStamps, stageWriteInputs } from "./input-currency.mjs";
+import { prepareBuildStageStatus, priorBriefInputsForIntake } from "./input-refresh.mjs";
 import {
   DESIGN_SOURCE_PACKAGE_REL_PATH,
 } from "./design-source-package.mjs";
@@ -328,6 +330,8 @@ Usage:
   campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads through campaigns-os login gateway credentials (--store-token-source env:<VAR> explicitly selects the warned break-glass Admin path; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
+  campaigns-os record brief --packet <campaign-runtime.build.json> [--brief <yaml|json>] [--context <json>] [--report <json>] [--dry-run] [--json]
+  campaigns-os record spec --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]
   campaigns-os record setup --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # record setup complete once the campaign output directory exists: Build Context scaffold.required=false and stages.setup completed, validated against their schemas before either is written
   campaigns-os record build --packet <campaign-runtime.build.json> [--build-environment <development|production>] [--context <json>] [--report <json>] [--dry-run] [--json]   # after page-kit build (--build-environment records stages.assembly.evidence.build_environment; local proof mode records development): stages.assembly completed with build_fingerprint = doctor's derived.build_output_fingerprint.value (and the Design Source Package material fingerprint when the report has one); stages.polish becomes required unless its evidence is bound to this exact output
   campaigns-os record polish --packet <campaign-runtime.build.json> --evidence <polish-evidence.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after polish capture: stages.polish from the file's status (completed, completed_with_warnings, blocked with blockers, or skipped with skip_reason), evidence and optional repair_loop_defect, bound to doctor's current fingerprint; a completed status is refused, writing nothing, unless the polish gate doctor evaluates would pass. --dry-run runs every check and writes nothing
@@ -709,6 +713,10 @@ export function recordQaStageOutcome(args, result) {
     const failed = (Array.isArray(verdict.assertions) ? verdict.assertions : [])
       .filter((assertion) => assertion?.status === "fail")
       .map((assertion) => `${assertion.id}: ${assertion.actual || "assertion failed"}`);
+    // The QA stamps are the verdict's: the brief material qa run bound at run
+    // start and the spec material it judged, never the inputs at write time.
+    const qaStamps = inputStamps({ briefMaterial: verdict.source_brief_material, specMaterial: verdict.spec_hash });
+    const qaInputs = stageWriteInputs("qa", currentPacketInputs({ packet, packetPath }));
     const committed = commitAssemblyReport(workspace, (report) => {
       if (hasLocalIdentity && !specHashesMatch(verdict.spec_hash, report.identity?.spec_material_hash)) {
         throw new Error("Local-spec QA verdict belongs to a different material revision; report evidence was not changed.");
@@ -734,6 +742,8 @@ export function recordQaStageOutcome(args, result) {
         // summarizePurchaseProof). This is what lets `next` tell a real purchase
         // path from a `--test-order off` diagnostic.
         proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
+        stamps: qaStamps,
+        inputs: qaInputs,
       });
     }, {
       stage: "qa",
@@ -1438,8 +1448,7 @@ function createInitialAssemblyReportStages({ scaffoldRequired, blockers, outputs
   // (STAGE_TERMINAL_STATUS_PREFIXES): declared out-of-scope pages do not hold
   // the ladder, they are recorded on the stage so downstream consumers can see
   // exactly which pages assemble from the template family instead of source HTML.
-  const terminalStatus = declaredScopeSkips.length ? "completed_partial" : "completed";
-  stages.prepare_build = createStage("prepare_build", blockers.length ? "blocked" : terminalStatus, {
+  stages.prepare_build = createStage("prepare_build", prepareBuildStageStatus({ blockers, declaredScopeSkips }), {
     outputs,
     blockers,
     ...(declaredScopeSkips.length ? { declared_out_of_scope: declaredScopeSkips } : {}),
@@ -1790,6 +1799,10 @@ function prepareBuildUnderLock({
     sourceRoot,
     targetRepo,
   });
+  // The report and normalized brief this run replaces: the report's brief
+  // mode keeps an existing prepared campaign prepared (when it is this
+  // campaign's report), and the previous brief carries field provenance.
+  const priorBriefInputs = priorBriefInputsForIntake({ reportPath, briefPath, identity: { spec: { map_id: mapId, ...(localSpecId ? { local_spec_id: localSpecId } : {}) }, campaign: { public_route_slug: publicRouteSlug } } });
   const buildBrief = createCampaignBuildBriefArtifact({
     inputPath: briefDiscovery?.path || null,
     inputSource: briefDiscovery?.source || null,
@@ -1799,10 +1812,19 @@ function prepareBuildUnderLock({
     templateFamily,
     sourceAssetCrawl,
     commerceZoneFindings,
+    boundReportMode: priorBriefInputs.boundReportMode,
+    previousNormalizedBrief: priorBriefInputs.previousNormalizedBrief,
   });
   if (buildBrief.inputPath && buildBrief.artifact?._meta) {
     buildBrief.artifact._meta.input_path = relFromFile(briefPath, buildBrief.inputPath);
   }
+  const briefBindings = briefIntakeBindings(buildBrief);
+  // The packet settings this run writes, checked against the packet on disk
+  // before anything is published.
+  const deploySettings = {
+    target: optionalString(args["deploy-target"], "unknown"),
+    preview_url: optionalString(args["preview-url"]),
+  };
   const buildBriefPrompts = buildBrief.mode === "prepared" ? [] : buildBrief.questions.map((question) => ({
     code: `BUILD_BRIEF_${toConstantCase(question.id)}`,
     stage: "prepare_build",
@@ -1836,6 +1858,11 @@ function prepareBuildUnderLock({
       }))
     : [];
   const designSourcePackage = publication.package({
+    plannedPacket: {
+      campaign: { allowed_domains_confirmed: args["allowed-domains-confirmed"] === true },
+      deploy: { ...deploySettings, production_url: optionalString(args["production-url"]) },
+      qa: { proof_policy: { order_path_depth: orderPathDepthFlag || "common" } },
+    },
     activePages,
     mappings: matched.mappings,
     manifestResult,
@@ -1887,6 +1914,7 @@ function prepareBuildUnderLock({
       normalized_path: relFromFile(packetPath, briefPath),
       question_count: buildBrief.questions.length,
       gate_count: buildBrief.gates.length,
+      ...briefBindings,
     },
     assembly: {
       implementation: "next-campaigns-build",
@@ -1914,8 +1942,7 @@ function prepareBuildUnderLock({
       compatible_outputs: ["static-html", "campaign-cart-sdk"],
     },
     deploy: {
-      target: optionalString(args["deploy-target"], "unknown"),
-      preview_url: optionalString(args["preview-url"]),
+      ...deploySettings,
       production_url: optionalString(args["production-url"]),
       live_url_path: liveUrlPath,
     },
@@ -2002,6 +2029,7 @@ function prepareBuildUnderLock({
       gate_count: buildBrief.gates.length,
       questions: buildBrief.questions,
       gates: buildBrief.gates,
+      ...briefBindings,
     },
     page_map: matched.mappings.map((mapping) => ({
       page_id: mapping.page_id,
@@ -2055,7 +2083,8 @@ function prepareBuildUnderLock({
 
   // The top-level status/next/blockers are derived from the stages by the same
   // function every later commit of the report runs (stage-ledger.mjs), so
-  // prepare-build's first write and a producer's last write spell them alike.
+  // prepare-build's first write and a producer's last write spell them alike,
+  // against the brief and CampaignSpec material this run binds.
   const report = applyDerivedAssemblyReportSummary(createAssemblyReport({
     packetPath,
     contextPath,
@@ -2072,7 +2101,7 @@ function prepareBuildUnderLock({
     buildScopeReasonsInvalid,
     templateSelection,
     evidence: strippedSpecBytes == null ? [] : hostStripped.evidence,
-  }));
+  }), { briefMaterial: briefBindings.material, specMaterial: specMaterialHash(spec) });
 
   // Values a spec left as it is still holds that doctor blocks on. An
   // absolute http(s) page_url is not among them: projection takes its path.
@@ -2643,7 +2672,7 @@ export function commitWaiverToAssemblyReport(workspace, mutate, options, { dryRu
     // run's own "do not write" is this wrapper's null below, not the mutator's.
     if (!isPlainObject(mutated)) throw new TypeError("commitAssemblyReport mutate(report) must return an Assembly Report object.");
     if (!dryRun) return mutated;
-    applyDerivedAssemblyReportSummary(mutated);
+    applyDerivedAssemblyReportSummary(mutated, currentPacketInputs({ packet: workspace.packet, packetPath: workspace.packetPath }));
     return null;
   };
   // A preview writes nothing, so it does not take the target lock either: the
@@ -3550,7 +3579,6 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     store: storeFlags
       ? { subdomain: storeFlags.subdomain, admin_api: adminApiBaseForStore(storeFlags.subdomain), ...(storeFlags.token_env ? {} : { transport: "gateway", endpoint: "https://mcp.nextcommerce.com/admin/" }), token_source: storeFlags.token_env ? `env:${storeFlags.token_env}` : "gateway:login", store_read: null, pages_read: null, primary_domain: null }
       : null,
-    rebound: { build_context: null, assembly_report: null },
     errors: [],
     warnings: [],
     next: `${cmd("doctor")} --packet ${shellToken(packetPath)}`,
@@ -3784,17 +3812,15 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
       addIssue(result.warnings, "spec.derive.projection_stale", `A page route ${dryRun ? "would move" : "moved"}, and the packet's page-kit projection (source_html.pages[].page_kit) and the Build Context were prepared from the old routes. Re-run ${cmd("prepare-build")} (or start) before the next build so they describe the routes the spec carries.`);
     }
     if (stageIsTerminal(report?.stages?.assembly?.status)) {
-      addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec ${dryRun ? "this would rewrite" : "just rewritten"}. Re-run the build stage before polish, deploy or QA if a route or the pin moved; QA correlates its verdict against the spec identity the sidecars carry.`);
-      result.next = `${cmd("doctor")} --packet ${shellToken(packetPath)}, then rebuild: set stages.assembly.status back to "pending" on the Assembly Report and run ${cmd("next")} --packet ${shellToken(packetPath)}`;
+      addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec ${dryRun ? "this would rewrite" : "just rewritten"}. Bind the rewritten spec with ${cmd("record")} spec (it keeps stage history); next then routes back to the build, and Polish and QA are owed again.`);
     }
+    // spec derive writes the spec alone: the Build Context and the Assembly
+    // Report keep the identity they bound, so every recorded stage reads its
+    // stamps against the new content and `record spec` is what binds it.
+    if (report) result.next = `${cmd("record")} spec --packet ${shellToken(packetPath)} ${dryRun ? "after the write " : ""}to bind the derived spec (it keeps stage history), then ${cmd("next")} --packet ${shellToken(packetPath)}`;
   }
 
   if (plan.changes.length && !dryRun) {
-    // The identity the sidecars bound to the spec BEFORE this write, so the
-    // re-bind below can tell "bound to the spec being replaced" from "already
-    // drifted" and only ever moves the former.
-    const beforeRawHash = createHash("sha256").update(text).digest("hex");
-    const beforeMaterialHash = specMaterialHash(spec);
     // The plan already refused every path its containers cannot take, so a
     // throw here is a defect in this toolkit rather than in the spec; it is
     // still a structured error, never a crash past the --json contract.
@@ -3832,82 +3858,7 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
       rmSync(tmpPath, { force: true });
     }
     result.written = true;
-    // The Build Context and the Assembly Report carry the spec's identity
-    // (raw and material hashes) from prepare-build, and QA's verdict is
-    // correlated against the material hash by the bundle check. Each sidecar
-    // that was bound to the spec just replaced is re-bound to the new one;
-    // one that already carried another identity is left as it is and named.
-    const afterRawHash = createHash("sha256").update(serialized).digest("hex");
-    const afterMaterialHash = specMaterialHash(spec);
-    const boundToOld = (raw, material) => raw === beforeRawHash || material === beforeMaterialHash;
-    // A sidecar is re-bound only when it names the spec being written: two
-    // packets sharing a target repo can carry byte-identical spec exports,
-    // and a matching hash alone would let one packet's derive re-bind the
-    // other's sidecar to a spec it never used.
-    const namesThisSpec = (recorded) => {
-      if (!isNonEmptyString(recorded)) return false;
-      try {
-        return realpathSync(resolve(targetRepo, recorded)) === realSpecPath;
-      } catch {
-        return false;
-      }
-    };
-    const contextPath = workspace?.contextPath || null;
-    let context = null;
-    try {
-      context = contextPath ? readJsonIfExists(contextPath) : null;
-    } catch (error) {
-      result.rebound.build_context = false;
-      addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context could not be read (${singleLineDetail(error.message)}); its spec identity was not updated. Re-run prepare-build before QA so the bundle correlates.`);
-    }
-    if (isObject(context?.spec)) {
-      if (!namesThisSpec(context.spec.path)) {
-        result.rebound.build_context = false;
-        addIssue(result.warnings, "spec.derive.identity_not_rebound", "The Build Context names a different spec file than the one derive wrote (another packet's, or a moved export); it was left as it is. Re-run prepare-build before QA so the bundle correlates.");
-      } else if (boundToOld(context.spec.hash, context.spec.material_hash)) {
-        try {
-          writeJsonAtomic(contextPath, { ...context, spec: { ...context.spec, hash: afterRawHash, material_hash: afterMaterialHash } });
-          result.rebound.build_context = true;
-        } catch (error) {
-          result.rebound.build_context = false;
-          addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context's spec identity could not be updated (${singleLineDetail(error.message)}); re-run prepare-build before QA so the bundle correlates.`);
-        }
-      } else {
-        result.rebound.build_context = false;
-        addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Build Context's spec identity was already bound to a different spec than the one derive replaced; it was left as it is. Re-run prepare-build before QA so the bundle correlates.`);
-      }
-    }
-    if (report && isObject(report.identity) && workspace) {
-      if (!namesThisSpec(report.inputs?.spec_path)) {
-        result.rebound.assembly_report = false;
-        addIssue(result.warnings, "spec.derive.identity_not_rebound", "The Assembly Report names a different spec file than the one derive wrote (another packet's, or a moved export); it was left as it is. Re-run prepare-build before QA so the bundle correlates.");
-      } else if (boundToOld(report.identity.spec_hash, report.identity.spec_material_hash)) {
-        try {
-          // The identity is re-checked on the report as it is re-read for
-          // the commit, so a prepare-build that re-bound it in the meantime
-          // is left alone.
-          const committed = commitAssemblyReport(workspace, (current) => (
-            isObject(current.identity) && boundToOld(current.identity.spec_hash, current.identity.spec_material_hash)
-              ? { ...current, identity: { ...current.identity, spec_hash: afterRawHash, spec_material_hash: afterMaterialHash } }
-              : null
-          ), {
-            command: "spec derive",
-            staleReason: `spec derive rewrote the CampaignSpec after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
-          });
-          result.rebound.assembly_report = committed.written;
-          if (!committed.written) addIssue(result.warnings, "spec.derive.identity_not_rebound", "The Assembly Report's spec identity moved while spec derive was running; it was left as it is. Re-run prepare-build before QA so the bundle correlates.");
-        } catch (error) {
-          result.rebound.assembly_report = false;
-          addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Assembly Report's spec identity could not be updated (${singleLineDetail(error.message)}); re-run prepare-build before QA so the bundle correlates.`);
-        }
-      } else {
-        result.rebound.assembly_report = false;
-        addIssue(result.warnings, "spec.derive.identity_not_rebound", `The Assembly Report's spec identity was already bound to a different spec than the one derive replaced; it was left as it is. Re-run prepare-build before QA so the bundle correlates.`);
-      }
-    }
     // The retained doctor snapshot (if any) now predates the spec it judged.
-    // commitAssemblyReport stamps it when the report was re-bound; every
-    // other path stamps it here.
     try {
       markDoctorSidecarStale(targetRepo, {
         command: "spec derive",
@@ -4371,6 +4322,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     } });
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
+    if (doctor.derived?.input_currency) result.input_currency = doctor.derived.input_currency;
     result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
     // The QC handoff: read from data already loaded plus the
     // full QA verdict the QA stage names. It adds nothing to errors[],
@@ -4379,6 +4331,9 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     // one (from --report or the Build Context pointer), so it records there.
     const qc = readCurrentQcResults({ report, doctor, spec, targetRepo, packetPath, reportPath, qcStandIns, rederivers: qcRederivers });
     result.qc_handoff = buildQcHandoff({ results: qc.results, coverage: qc.coverage, accepts: report?.qc_accepts, packetPath, reportPath: explicitReportPath(reportPath, targetRepo) });
+    // One note per operator decision that kept the build output unchanged
+    // after an input change, quoting the operator's reason.
+    for (const issue of doctor.warnings) if (issue.code === "assembly.output_unchanged_by_operator_decision") (result.qc_handoff.notes ||= []).push(`Build output kept unchanged after an input change by the operator's decision: "${issue.detail.reason}"`);
     recordNextRecommendation(ambient, result);
     return result;
   };
@@ -4797,6 +4752,11 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     const inspect = divergenceInspectAction(divergences, packetPath);
     push(inspect.id, inspect.kind, asInvocation(inspect.command), inspect.description, { required: inspect.required });
     return actions;
+  }
+  for (const subcommand of inputRefreshCommands(result.input_currency)) {
+    push("refresh_inputs", "command", `${cmd("record")} ${subcommand} --packet ${shellToken(packetPath)} --json`, subcommand === "brief"
+      ? "A recorded stage was made against earlier Campaign Build Brief content: save the brief with record brief (keeps stage history), then re-run next."
+      : "A recorded stage was made against earlier CampaignSpec content: bind it with record spec (keeps stage history), then re-run next.");
   }
   if (result.stage === "doctor-blocked") {
     const checkpointGates = (result.gates || []).filter(

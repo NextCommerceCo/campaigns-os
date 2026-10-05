@@ -2,11 +2,31 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.52.0+agent.2] - 2026-10-05
+## [1.53.0+agent.1] - 2026-10-05
 
 ### Added
 
 - Polish now measures text readability on every built page at desktop and mobile widths and reports warnings, review and coverage results in the QC handoff. QA's primary-CTA check and the theme generator use the same unrounded WCAG 2.x measurement. Results change on some campaigns: ratios in [4.495, 4.5), translucent text or backgrounds, and child text now warn; large bold text at 3:1 and Tailwind v4 `oklch()` colours are measured correctly; gradients, unreadable colours, and opacity, filters, blend modes or masks on surrounding elements become manual review instead of a contrast result. QA's primary-CTA check no longer skips pages by page type: every page with an expected next route is checked, every route-matching CTA is measured (not only the most readable one), each piece of text inside a CTA is compared with the requirement for its own size, and a CTA measured before its text, the SDK, stylesheets or fonts are ready is reported for manual review, never as a pass. `polish capture` on a campaign with no mapped pages now measures readability and exits successfully, printing the page-load message as a warning. Polish media weight and readability results now read as stale when the built output changed without a new `record build`.
+
+## [1.53.0] - 2026-10-05
+
+### Added
+
+- Adds `record brief`, which saves Campaign Build Brief answers without re-running intake. A brief file is guided unless it sets `"brief_mode": "prepared"` (a campaign whose report already records a prepared brief stays prepared). An unchanged or reformatted save keeps all stage evidence and statuses. A material change marks build, Polish and QA (or QA alone for `qa_policy`) as owed again and keeps the last five superseded records per stage as history. `next` routes to the owed stage. Re-recording an unchanged build after an input change keeps the build owed unless the operator records a reason, including when a CampaignSpec change was never saved with `record spec`; an edit to the brief file is read only once it is saved with `record brief`. Intake now also refuses, without `--force`, to discard recorded waivers, warning accepts, stage history, an applied theme, or a recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation; with `--force`, it keeps stage history and archives the records it clears.
+- Adds `record spec`, a non-destructive refresh after a CampaignSpec change. Superseded build, Polish and QA records move to stage history, and `next`, progress, readback and the Assembly Report status now report the owed stage instead of recommending QA. Spec material changes are detected for saved-Map and gateway packets too (against the fetched copy; remote currency is reported as unconfirmed). `spec derive` no longer rebinds report identity on its own; run `record spec` after it. Re-recording an unchanged build or replaying a Polish record after an input change no longer makes them current, whether or not the change was saved with `record spec`.
+
+### Changed
+
+- `spec derive --json` no longer carries the `rebound` field, because `spec derive` no longer rebinds report identity.
+- A stage status outside the recognized list (`pending`, `blocked`, `required`, `completed`, `completed_with_warnings`, `completed_partial`, `skipped`) now reads as unknown and stops `next`, where earlier releases accepted any status beginning `completed` or `skipped`.
+- The effects contract declares the `record brief` and `record spec` rows (tier C) and their `--dry-run` rows (tier none, with no lifecycle entry). It corrects the intake rows: `start`, `prepare-build` and `build` are refused without `--force` when the report carries stage evidence, stage history or operator decisions, and their `--force` forms archive completed build, Polish and QA records into stage history, which is kept. It also states that `record build` writes `input_change` and makes Polish and QA owed when it detects a brief or CampaignSpec change, and that `record polish`, `record theme` and `record deploy` are refused while an earlier stage is owed again.
+
+### Migration
+
+**Migration.** Build, Polish and QA records made before this release do not record which brief and CampaignSpec content they used, so they read as unconfirmed. After upgrading, `next` routes each in-flight campaign back to build once: re-record build and Polish, and run QA again for a new verdict. Hand-written brief files without `brief_mode` are now guided for new campaigns; add `"brief_mode": "prepared"` if you want open questions to block.
+
+- Re-running `start`, `prepare-build` or `build` over a campaign with recorded waivers, warning accepts, stage history, an applied theme, or a recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation is now refused without `--force`. Save brief answers with `record brief` and a CampaignSpec change with `record spec` instead; pass `--force` only to clear that state on purpose.
+- Scripts that read `rebound` from `spec derive --json` must stop: run `record spec` after `spec derive` to bind the new CampaignSpec content.
 
 ## [1.52.0+agent.1] - 2026-10-05
 

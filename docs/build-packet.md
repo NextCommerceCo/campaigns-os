@@ -48,8 +48,10 @@ report writes, polish capture, progress, run closeout and QA compare that local
 identity. Material spec hashes still bind the current revision; a changed ID or
 content cannot reuse earlier proof. After a material revision, doctor and
 `next` warn `spec.material_stale` (the spec no longer has the material hash
-prepare-build bound on the Assembly Report, which QA refuses); follow `next` to
-refresh preparation and affected evidence. Keep the spec, source, dependency
+the Assembly Report binds, which QA refuses), and `next` routes to the build
+and names the refresh: run `campaigns-os record spec --packet <packet>` to bind
+the new content and keep stage history (see
+[Refreshing after a CampaignSpec change](#refreshing-after-a-campaignspec-change)). Keep the spec, source, dependency
 pins and canonical sidecars in Git. Use `readback` and `next` after a fresh
 checkout; identity survives the move, but proof freshness is assessed again.
 
@@ -523,16 +525,13 @@ writing it would declare an analytics contract QA then blocks on. A derived
 field the entry does not carry at all is listed under `not_in_target[]` and
 left as it is.
 
-After a write, the sidecars that carry the spec's identity are re-bound. The
+`spec derive` writes the spec alone and no longer rebinds identity: the
 Build Context's `spec.hash` / `spec.material_hash` and the Assembly Report's
-`identity.spec_hash` / `identity.spec_material_hash` move to the new spec
-when they were bound to the one derive replaced and name that spec file
-(`rebound` on the result; two packets sharing a target repo never re-bind
-each other's sidecars);
-QA's verdict and `bundle check` correlate against the material hash, so this
-is what keeps a derive-then-QA run conformant. A sidecar already carrying
-another identity is left alone with a `spec.derive.identity_not_rebound`
-warning naming `prepare-build`. A derived route change also warns
+`identity.spec_hash` / `identity.spec_material_hash` keep the spec they were
+bound to, so every build, Polish and QA record made against the earlier
+content reads owed again. Run `record spec` after it (the result's `next`
+names it) to bind the derived spec; QA's verdict and `bundle check` correlate
+against the bound material hash. A derived route change also warns
 `spec.derive.projection_stale`: the packet's page-kit projection
 (`source_html.pages[].page_kit`) and the Build Context page map were prepared
 from the old routes, and `prepare-build` (or `start`) regenerates them. A
@@ -552,8 +551,8 @@ the spec resolves to, which must lie inside the spec's own directory or the
 target repo (`spec.derive.spec_escapes_boundary` otherwise, so a symlinked
 `spec.local_path` cannot redirect the write); the retained doctor sidecar is
 marked stale after a write, and a terminal build gets a
-`spec.derive.build_stale` warning naming the rebuild (doctor does not
-fingerprint the spec itself; the re-bound sidecar identity is what QA reads). `--dry-run` prints the
+`spec.derive.build_stale` warning naming `record spec`, after which `next`
+routes back to the build. `--dry-run` prints the
 same diff and writes nothing; unknown flags and a valued `--dry-run` are
 rejected. Exit 2 with `spec.derive.*` error codes and nothing written when the
 packet cannot be read, `spec.local_path` is absent or not a file, the spec is
@@ -1058,8 +1057,13 @@ full.
 and auto-discover `campaign-build-brief.yaml`, `.yml`, or `.json` from the
 source root or target repo. When none is present, Campaigns OS creates a guided
 draft at `.campaign-runtime/input/campaign-build-brief.normalized.json`.
-See [Campaign Build Brief](./campaign-build-brief.md) for the schema and
-prepared/guided behavior.
+A brief file is guided unless it sets `"brief_mode": "prepared"` (a campaign
+whose Assembly Report already records a prepared brief stays prepared). Save
+answers later with `record brief`, which keeps stage evidence unless the brief's
+material content changes; a presentation change makes build, Polish and QA
+owed again, and a `qa_policy` change makes QA alone owed again. See
+[Campaign Build Brief](./campaign-build-brief.md) for the schema, the mode
+rule and the stage map.
 
 `start` / `prepare-build` also prepares the normalized Design Source Package at
 `.campaign-runtime/input/design-source-package.json`. When that path is absent,
@@ -1680,6 +1684,43 @@ agent calls `next` → gets { stage, prompt, picked_reason } → does the work �
 records it (`campaigns-os record setup|build|polish`; deploy and QA record their
 own stages) → calls `next` again → repeat until stage="done"
 ```
+
+### Refreshing after a CampaignSpec change
+
+When the CampaignSpec's material content changes, every build, Polish and QA record made against the earlier content stops counting as current, in local-spec, saved-Map and gateway packets alike. For a saved Map or gateway packet, Campaigns OS compares the copy intake fetched; it does not check whether that copy is the latest remote revision, and reports the remote as unconfirmed. Doctor warns `spec.material_stale`, and `next`, progress, readback, the Assembly Report's own status and the QA gate show the stages that are owed again; `next` routes to the first one. Run `campaigns-os record spec --packet <packet>` to bind the new content: it updates the build context and report identity, re-reads the brief file last saved (by intake or `record brief`), keeps waivers, warning accepts, the applied theme and deploy settings, and moves each superseded stage record into that stage's `history`, which is never used as current proof. `spec derive` no longer rebinds identity; run `record spec` after it. A change to the set, order or routes of active pages still needs intake. Re-recording an unchanged build after a spec change keeps the build owed, because the change has not reached the pages, unless the operator records a reason with `--deviation-reason`; this holds even when `record spec` was not run, and that `record build` also marks Polish and QA owed again. Polish stays owed until a new `polish capture`, and QA must produce a new verdict against the current content. Polish measurements of byte-identical output keep their values, but the Polish stage is owed again. These checks are tamper evidence, not proof: a hand-written record that copies the current values, or a packet pointed at an older copy of the spec, is not detected.
+
+The CampaignSpec's material content is the whole spec except `spec_identity`,
+`slug`, `map_id` and `saved_at`; a page `label` edit is material. A spec
+change affects the stages as follows:
+
+| Stage | After a spec material change |
+|---|---|
+| `prepare_build` | unchanged (`record spec` refuses a page-scope change, which needs intake) |
+| `doctor` | recomputed on every read |
+| `setup` | kept |
+| `assembly` | owed: `required`, `required_by: "spec"`, `required_for: ["polish", "qa"]` |
+| `polish` | owed: `required`, `required_by: "spec"`, `required_for: ["qa"]` |
+| `deploy` | kept |
+| `qa` | owed: `required`, `required_by: "spec"`, `required_for: []` |
+
+`record spec` refuses, writing nothing, in this order: `spec_unreadable` (the
+spec does not parse), `spec_identity_changed` (its map id or local spec id
+names another campaign than the packet or the report), `page_scope_changed`,
+then, for the brief file last saved (by intake or `record brief`), `brief_too_large`,
+`brief_source_is_package_artifact` and `brief_file_missing` (the recorded
+path is missing or is not a readable regular file: a directory, a pipe or
+socket, a symlink to nothing, or a file without read permission). When it must
+re-derive the brief, it also refuses `brief_inputs_unavailable` (the Build
+Context lacks an intake product re-deriving the brief needs). It reads
+`unchanged` and writes nothing when the bound material equals the spec and no
+stage's spec or brief stamp differs from the current content; a stage that
+does not record which content it was made against is named in a
+`binding_unknown` notice instead. Otherwise it refreshes, re-deriving the
+normalized brief from the brief file last saved, so an edit made to the
+normalized brief itself is replaced by what its source gives. A stage whose spec
+stamp already equals the new content (a build recorded after the edit) is not
+demoted. `record spec` does not write the Build Packet. `--dry-run` runs every
+check and writes nothing.
 
 ### Recording stage completion
 

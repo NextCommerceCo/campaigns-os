@@ -12,6 +12,7 @@ import {specMaterialHash} from './spec-identity.mjs';
 import {writeConsentConfig} from './consent.mjs';
 import {nextStage,recordQaStageOutcome} from './cli.mjs';
 import {computeBuildFingerprint} from './built-site-scope.mjs';
+import {absentBriefMaterial,assessInputCurrency} from './input-currency.mjs';
 const ROOT=new URL('..',import.meta.url).pathname;
 const fixture=JSON.parse(readFileSync(join(ROOT,'contracts/fixtures/progress/observation.v0.json'),'utf8'));
 const H=letter=>`sha256:${letter.repeat(64)}`;
@@ -25,10 +26,13 @@ function setup(dir){
  const workspace={packetPath:join(dir,'packet.json'),targetRepo:dir,contextPath:join(dir,'context.json'),reportPath:join(dir,'report.json'),packet:{spec:{map_id:'example-map',local_path:'spec.json'},deploy:{preview_url:'https://user:password@preview.test/?customer=private@example.test'}}};
  const local=specMaterialHash(spec);
  const context={packet_path:'packet.json',intake:{proxy_base:'https://bound.example.test',saved_map_revision:{map_id:'example-map',hash:H('a'),algorithm:'map-store-v1',local_spec_material_hash:local}}};
- const report={identity:{map_id:'example-map',spec_hash:H('f'),spec_material_hash:local},stages:Object.fromEntries(PROGRESS_STAGES.map(stage=>[stage,{status:'completed',commands:['private@example.test'],build_fingerprint:stage==='assembly'?H('c'):null}]))};
- const doctor={derived:{build_output_fingerprint:{status:'pass',value:H('c')},prepare_build_gate:null}};
+ // Each completed stage stamps the inputs it was recorded against (a packet
+ // without a brief, and this spec), and doctor reads them current.
+ const stamps={source_brief_material:absentBriefMaterial(),source_spec_material_hash:local};
+ const report={identity:{map_id:'example-map',spec_hash:H('f'),spec_material_hash:local},stages:Object.fromEntries(PROGRESS_STAGES.map(stage=>[stage,{status:'completed',commands:['private@example.test'],build_fingerprint:stage==='assembly'?H('c'):null,...stamps}]))};
+ const doctor={derived:{build_output_fingerprint:{status:'pass',value:H('c')},prepare_build_gate:null,input_currency:assessInputCurrency({report,briefMaterial:absentBriefMaterial(),specMaterial:local})}};
  const continuation={ok:true,stage:'qa',gates:[{id:'doctor',status:'pass',reason:'private@example.test'}],next_actions:[{id:'qa_run',command:'private@example.test'}]};
- return {spec,workspace,context,report,doctor,continuation,packageVersion:'1.36.0'};
+ return {spec,workspace,context,report,doctor,continuation,packageVersion:'1.36.0',stamps};
 }
 
 test('portable contract fixture, JSON schema and digest agree',async()=>{
@@ -75,7 +79,7 @@ test('blocked, divergent, stale, unsupported and QA exceptions remain independen
  let s=projectProgressObservation(input);assert.equal(s.continuation.blocked,true);assert.equal(s.continuation.divergent,true);assert.deepEqual(s.continuation.action_ids,['divergence_inspect']);
  input.doctor.derived.build_output_fingerprint={status:'stale',value:H('d')};s=projectProgressObservation(input);assert.equal(s.identity.build_fingerprint,H('d'));assert.equal(s.stages[2].build_binding,'unconfirmed');
  input.continuation={ok:true,stage:'done',gates:[{id:'private@example.test',status:'pass'}],next_actions:[{id:'private@example.test',command:'secret'}]};s=projectProgressObservation(input);assert.equal(s.continuation.blocked,true);assert.deepEqual(s.continuation.gates,[{id:'unknown',state:'unknown'}]);
- input.doctor.derived.build_output_fingerprint={status:'pass',value:H('c')};input.report.stages.qa={status:'completed_with_warnings',verdict_run_id:'qa_example',evidence:{source_build_fingerprint:H('c')}};
+ input.doctor.derived.build_output_fingerprint={status:'pass',value:H('c')};input.report.stages.qa={status:'completed_with_warnings',verdict_run_id:'qa_example',evidence:{source_build_fingerprint:H('c')},...input.stamps};
  input.qaResult={verdict:{run_id:'qa_example',disposition:'ready_with_exceptions',spec_hash:specMaterialHash(input.spec),assertions:[{order_id:'secret'}]},qa_verdict_publish:{state:'failed',error:'private@example.test'}};
  s=projectProgressObservation(input);assert.deepEqual(s.qa,{verdict_id:'qa_example',disposition:'ready_with_exceptions',binding:'matching',publish_state:'failed'});assert.equal(s.stages[5].status,'completed_with_warnings');
  input.context.packet_path='other.json';assert.equal(projectProgressObservation(input).identity.saved_revision_alignment,'unconfirmed');assert.equal(projectProgressObservation(input).qa.binding,'unconfirmed');

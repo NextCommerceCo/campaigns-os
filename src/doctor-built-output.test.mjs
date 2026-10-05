@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { currentBriefMaterial, currentSpecMaterial, deriveInputCurrency, inputStamps } from "./input-currency.mjs";
 import {
   collectPageKitAssetPathViolations,
   validateBuildOutputFingerprint,
@@ -516,32 +517,49 @@ test("H3.1 doctor: a recorded browser gate pass on the current build demotes the
     mkdirSync(target, { recursive: true });
     writeFileSync(join(target, "index.html"), "<p>Lorem ipsum dolor.</p>");
     const fingerprint = `sha256:${"a".repeat(64)}`;
+    // Records stamped with the campaign's current inputs, and the input
+    // currency doctor derives for them before the scan runs.
+    const stamps = inputStamps({ briefMaterial: currentBriefMaterial({ packet: PACKET }), specMaterial: currentSpecMaterial(ROUTING_SPEC) });
+    const derivedFor = (report) => ({ target_output_dir: target, input_currency: deriveInputCurrency({ packet: PACKET, packetPath: null, report, spec: ROUTING_SPEC }) });
     const reportFor = (seen) => ({
       stages: {
-        assembly: { status: "completed", build_fingerprint: fingerprint },
-        qa: { status: "completed", evidence: { source_build_fingerprint: seen, gates: { placeholder_text_residue: { status: "pass", pages_checked: 1, pages_failed: 0 } } } },
+        assembly: { status: "completed", build_fingerprint: fingerprint, ...stamps },
+        qa: { status: "completed", ...stamps, evidence: { source_build_fingerprint: seen, gates: { placeholder_text_residue: { status: "pass", pages_checked: 1, pages_failed: 0 } } } },
       },
     });
 
     const passed = { warnings: [], ready: [] };
-    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, passed.warnings, passed.ready, { target_output_dir: target }, { report: reportFor(fingerprint) });
+    const passedReport = reportFor(fingerprint);
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, passed.warnings, passed.ready, derivedFor(passedReport), { report: passedReport });
     assert.equal(codes(passed.warnings).includes("template_contract.placeholder_text_residue"), false);
     assert.ok(passed.ready.some((note) => note.includes("browser residue gate passed on this build")), JSON.stringify(passed.ready));
 
     // A rebuild changes the fingerprint: the pass no longer covers this build.
     const rebuilt = { warnings: [], ready: [] };
-    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, rebuilt.warnings, rebuilt.ready, { target_output_dir: target }, { report: reportFor(`sha256:${"b".repeat(64)}`) });
+    const rebuiltReport = reportFor(`sha256:${"b".repeat(64)}`);
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, rebuilt.warnings, rebuilt.ready, derivedFor(rebuiltReport), { report: rebuiltReport });
     assert.ok(codes(rebuilt.warnings).includes("template_contract.placeholder_text_residue"));
 
     // A failed gate, or a QA stage that never ran the gate, leaves the warning alone.
     const failed = { warnings: [], ready: [] };
     const failedReport = reportFor(fingerprint);
     failedReport.stages.qa.evidence.gates.placeholder_text_residue.status = "fail";
-    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, failed.warnings, failed.ready, { target_output_dir: target }, { report: failedReport });
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, failed.warnings, failed.ready, derivedFor(failedReport), { report: failedReport });
     assert.ok(codes(failed.warnings).includes("template_contract.placeholder_text_residue"));
     const silent = { warnings: [], ready: [] };
-    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, silent.warnings, silent.ready, { target_output_dir: target }, { report: { stages: { assembly: { build_fingerprint: fingerprint }, qa: { status: "completed" } } } });
+    const silentReport = { stages: { assembly: { build_fingerprint: fingerprint, ...stamps }, qa: { status: "completed", ...stamps } } };
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, silent.warnings, silent.ready, derivedFor(silentReport), { report: silentReport });
     assert.ok(codes(silent.warnings).includes("template_contract.placeholder_text_residue"));
+
+    // A pass recorded against other CampaignSpec content, or with no input
+    // stamps, does not cover this build either: QA is owed or unconfirmed.
+    for (const qaStamps of [{ source_spec_material_hash: `sha256:${"c".repeat(64)}` }, { source_brief_material: undefined, source_spec_material_hash: undefined }]) {
+      const staleReport = reportFor(fingerprint);
+      Object.assign(staleReport.stages.qa, qaStamps);
+      const stale = { warnings: [], ready: [] };
+      validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, stale.warnings, stale.ready, derivedFor(staleReport), { report: staleReport });
+      assert.ok(codes(stale.warnings).includes("template_contract.placeholder_text_residue"), JSON.stringify(qaStamps));
+    }
   });
 });
 

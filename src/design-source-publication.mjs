@@ -7,7 +7,11 @@ import { writeThemeArtifacts } from "./brand-theme.mjs";
 import { cloneJson, filesystemPathsMatch, isObject, isNonEmptyString, optionalString, readJson, resolveFromFile, sha256File } from "./cli-helpers.mjs";
 import { DESIGN_SOURCE_PACKAGE_REL_PATH, createDesignSourcePackageArtifactReference, hashSerializedDesignSourcePackage, serializeDesignSourcePackage, synthesizeHtmlFunnelDesignSourcePackage, validateDesignSourcePackage } from "./design-source-package.mjs";
 import { stampDoctorProducer } from "./doctor-sidecar.mjs";
+import { stageWriteInputs } from "./input-currency.mjs";
+import { cmd } from "./install-invocation.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS } from "./orchestration-stage-contract.mjs";
+import { HOST_STRIPPED_CODE } from "./source-html-intake.mjs";
+import { archiveForForceReset, stageHistoryPresent } from "./stage-ledger.mjs";
 import { targetLockPath, withTargetLock } from "./target-lock.mjs";
 import { resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
 
@@ -71,10 +75,91 @@ function guardAssemblyReportOverwrite(reportPath, args, { announced = null } = {
   const unannounced = announced ? stageKeys.filter((key) => !announced.includes(key)) : stageKeys;
   if (unannounced.length > 0) {
     console.warn(
-      `[campaigns-os prepare-build] --force: overwriting assembly report at ${reportPath}; clearing stage evidence for: ${unannounced.join(", ")}.`,
+      `[campaigns-os prepare-build] --force: overwriting assembly report at ${reportPath}; clearing stage evidence for: ${unannounced.join(", ")}. Completed build, Polish and QA records are archived into their stage history, which is kept.`,
     );
   }
   return stageKeys;
+}
+
+// Operator state on the report an intake would replace, one line per item:
+// recorded waivers and warning accepts, stage history, an applied theme, and
+// report evidence other than intake's own host-strip lines.
+function assemblyReportOperatorState(existingReport) {
+  if (!isObject(existingReport)) return [];
+  const items = [];
+  const count = (value) => (Array.isArray(value) ? value.length : 0);
+  if (count(existingReport.waivers)) items.push(`waivers (${count(existingReport.waivers)} recorded waiver${count(existingReport.waivers) === 1 ? "" : "s"})`);
+  if (count(existingReport.qc_accepts)) items.push(`qc_accepts (${count(existingReport.qc_accepts)} recorded warning accept${count(existingReport.qc_accepts) === 1 ? "" : "s"})`);
+  if (stageHistoryPresent(existingReport)) items.push("stage history (superseded build, Polish or QA records)");
+  if (existingReport.theme?.status === "applied") items.push("theme (status applied)");
+  const evidence = Array.isArray(existingReport.evidence) ? existingReport.evidence.filter((entry) => !(isObject(entry) && entry.code === HOST_STRIPPED_CODE)) : [];
+  if (evidence.length) items.push(`evidence (${evidence.length} recorded line${evidence.length === 1 ? "" : "s"})`);
+  return items;
+}
+
+// Packet settings recorded since the last intake that this run would
+// overwrite (every setting `qa policy set` records): each named with the
+// value on disk and the value this run writes.
+const INTAKE_PACKET_SETTINGS = Object.freeze([
+  ["deploy.target", (packet) => packet?.deploy?.target],
+  ["deploy.preview_url", (packet) => packet?.deploy?.preview_url],
+  ["deploy.production_url", (packet) => packet?.deploy?.production_url],
+  ["qa.proof_policy.order_path_depth", (packet) => packet?.qa?.proof_policy?.order_path_depth],
+  ["campaign.allowed_domains_confirmed", (packet) => packet?.campaign?.allowed_domains_confirmed],
+]);
+
+function packetSettingChanges(packetPath, planned) {
+  if (!isObject(planned) || !existsSync(packetPath)) return [];
+  let existing;
+  try {
+    existing = readJson(packetPath);
+  } catch {
+    return [];
+  }
+  const items = [];
+  for (const [field, read] of INTAKE_PACKET_SETTINGS) {
+    const onDisk = read(existing) ?? null;
+    const written = read(planned) ?? null;
+    if (onDisk !== written) items.push(`${field} (recorded ${JSON.stringify(onDisk)}; this run would write ${JSON.stringify(written)})`);
+  }
+  return items;
+}
+
+// Intake replaces the report and packet whole, so recorded operator state
+// would be lost silently. Without --force it refuses and names each item;
+// with --force it names each item as cleared (once).
+function guardIntakeOperatorState(reportPath, packetPath, { force, planned = null, announced = [] }) {
+  let existingReport = null;
+  try {
+    existingReport = existsSync(reportPath) ? readJson(reportPath) : null;
+  } catch {
+    existingReport = null;
+  }
+  const items = [...assemblyReportOperatorState(existingReport), ...packetSettingChanges(packetPath, planned)];
+  if (!items.length) return announced;
+  if (force !== true) {
+    throw new Error(
+      `Rerunning prepare-build/start/build would discard recorded operator state: ${items.join("; ")}. `
+      + `To save brief answers or a CampaignSpec change without discarding anything, run ${cmd("record")} brief or ${cmd("record")} spec instead. `
+      + "To rerun intake anyway, pass the original deploy and order-path flags, or --force to clear the listed state (destructive; completed build, Polish and QA records are archived into stage history). "
+      + `After --force, record a cleared packet setting again with ${cmd("qa")} policy set.`,
+    );
+  }
+  const unannounced = items.filter((item) => !announced.includes(item));
+  if (unannounced.length) {
+    console.warn(`[campaigns-os prepare-build] --force: clearing recorded operator state: ${unannounced.join("; ")}.`);
+  }
+  return [...announced, ...unannounced];
+}
+
+// The report this run replaces, read for the --force archive; null when there
+// is none or it cannot be read.
+function readReplacedReport(reportPath) {
+  try {
+    return existsSync(reportPath) ? readJson(reportPath) : null;
+  } catch {
+    return null;
+  }
 }
 
 function artifactRelativePath(artifactPath, targetPath) {
@@ -806,12 +891,20 @@ export async function withDesignSourcePublication({ targetRepo, outputs, force =
     // fetched, and a run waiting here cannot replace it meanwhile.
     publishSpec?.();
     let announcedStageEvidence = guardAssemblyReportOverwrite(reportPath, { force });
+    // Operator state is checked once the run knows the packet settings it
+    // would write, before the package.
+    let plannedPacketSettings = null;
+    let announcedOperatorState = null;
+    const checkOperatorState = () => {
+      announcedOperatorState = guardIntakeOperatorState(reportPath, packetPath, { force, planned: plannedPacketSettings, announced: announcedOperatorState || [] });
+    };
     // Stage producers commit the report without this lock, so evidence can land
     // while the run works. Re-check before each write that is not rolled back:
     // the theme artifacts, then the JSON outputs. --force names a stage once.
     const recheckStageEvidence = () => {
       const found = guardAssemblyReportOverwrite(reportPath, { force }, { announced: announcedStageEvidence });
       announcedStageEvidence = [...new Set([...announcedStageEvidence, ...found])];
+      checkOperatorState();
     };
     let completed = 0;
     const enter = (index, { once = false } = {}) => {
@@ -821,8 +914,13 @@ export async function withDesignSourcePublication({ targetRepo, outputs, force =
     let designSourcePackage = null;
     return fn(Object.freeze({
       paths,
-      package(inputs) {
+      // `plannedPacket`: the part of the packet this run would write that
+      // carries the settings INTAKE_PACKET_SETTINGS names, checked against
+      // the packet on disk.
+      package({ plannedPacket = null, ...inputs }) {
         enter(0, { once: true });
+        plannedPacketSettings = plannedPacket;
+        checkOperatorState();
         // Reject deterministic destination failures before publishing the fixed
         // DSP. The DSP intentionally precedes the theme and JSON artifacts that
         // reference it; a later I/O race may therefore leave a valid DSP for a
@@ -858,8 +956,17 @@ export async function withDesignSourcePublication({ targetRepo, outputs, force =
         completed = Math.max(completed, 2);
         return written;
       },
-      publish({ packet, brief, context, report }) {
+      publish({ packet, brief, context, report: reseeded }) {
         enter(2, { once: true });
+        // The records this run replaces stay visible: completed build, Polish
+        // and QA records go to their stage history (only --force reaches here
+        // with any), and each stage's history and input change carry over.
+        const now = new Date().toISOString();
+        const bound = { briefMaterial: reseeded?.build_brief?.material ?? null, specMaterial: reseeded?.identity?.spec_material_hash ?? null };
+        const report = archiveForForceReset(readReplacedReport(reportPath), reseeded, {
+          now,
+          detectChange: (key, record) => stageWriteInputs(key, bound).detectChange(record),
+        });
         // Before the report goes out, narrow the pending record to exactly what the
         // report will say: the package's own hash when it is synthesized, nothing
         // when it is adopted. A candidate this run or an earlier failed one never

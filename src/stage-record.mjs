@@ -46,7 +46,9 @@ import {
   evaluatePolishGate,
 } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
-import { applyDerivedAssemblyReportSummary, assemblyReportMatchesPacket, commitAssemblyReport } from "./stage-ledger.mjs";
+import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
+import { demoteStages, recordBrief, recordSpec } from "./input-refresh.mjs";
+import { applyDerivedAssemblyReportSummary, archiveStageRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor } from "./stage-ledger.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { commerceScopeFromScope } from "./theme-gate.mjs";
 
@@ -59,6 +61,11 @@ const RECORD_FLAGS = Object.freeze(["packet", "context", "report", "dry-run", "j
 const POLISH_RECORD_FLAGS = Object.freeze(["evidence"]);
 const DEPLOY_RECORD_FLAGS = Object.freeze(["base-url"]);
 const BUILD_RECORD_FLAGS = Object.freeze(["build-environment"]);
+// `record brief` saves a brief file: --brief names it (otherwise intake's
+// discovery finds it).
+const BRIEF_RECORD_FLAGS = Object.freeze(["brief"]);
+// `record spec` binds the CampaignSpec as it is now; it takes no extra flag.
+const RECORD_SUBCOMMANDS = Object.freeze([...RECORD_STAGES, "brief", "spec"]);
 // The page-kit environment the built output was rendered in, recorded on
 // stages.assembly.evidence.build_environment (local proof mode builds in
 // development; doctor and page-kit parity read it).
@@ -119,21 +126,21 @@ function typeName(value) {
 export const PACKAGE_OWNED_VISUAL_REVIEW_KEYS = Object.freeze(["page_load", "media_weight", "readability"]);
 export const PACKAGE_OWNED_KEY_REFUSAL = "package_owned_key";
 
-function refuseRecord(stage, problems) {
+export function refuseRecord(stage, problems) {
   return new Error(`record ${stage} refused; nothing was written:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
 }
 
 export function parseRecordArgs(args) {
   const stage = args._[1];
-  if (!RECORD_STAGES.includes(stage) || args._.length !== 2) {
-    throw refused(`Use: ${cmd("record")} <${RECORD_STAGES.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, record deploy --base-url <served url>, and record build [--build-environment <${BUILD_ENVIRONMENTS.join("|")}>].`);
+  if (!RECORD_SUBCOMMANDS.includes(stage) || args._.length !== 2) {
+    throw refused(`Use: ${cmd("record")} <${RECORD_SUBCOMMANDS.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, record deploy --base-url <served url>, record build [--build-environment <${BUILD_ENVIRONMENTS.join("|")}>], and record brief [--brief <yaml|json>].`);
   }
-  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : []), ...(stage === "build" ? BUILD_RECORD_FLAGS : [])]);
+  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : []), ...(stage === "build" ? BUILD_RECORD_FLAGS : []), ...(stage === "brief" ? BRIEF_RECORD_FLAGS : [])]);
   const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
   if (unknown.length) {
     throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for record ${stage}: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${[...known].map((key) => `--${key}`).join(", ")}.`);
   }
-  for (const flag of ["context", "report", "run-id", "lifecycle-journal", "deviation-reason"]) {
+  for (const flag of ["context", "report", "run-id", "lifecycle-journal", "deviation-reason", "brief"]) {
     if (Object.hasOwn(args, flag)) requireArg(args, flag);
   }
   if (Object.hasOwn(args, "dry-run") && args["dry-run"] !== true) {
@@ -151,6 +158,8 @@ export function parseRecordArgs(args) {
     baseUrl: stage === "deploy" ? requireArg(args, "base-url") : null,
     dryRun: args["dry-run"] === true,
     buildEnvironment,
+    briefPath: stage === "brief" && Object.hasOwn(args, "brief") ? resolve(args.brief) : null,
+    deviationReason: optionalString(args["deviation-reason"]),
   };
 }
 
@@ -268,30 +277,72 @@ function composeSetup(report, context, { now, recordedBy }) {
   return { report: nextReport, context: nextContext };
 }
 
-function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment = null }) {
+// The fields a record restates on every write: its input stamps, and the
+// operator decision that applies only to the record that carried it.
+const STAMP_FIELDS = Object.freeze(["source_brief_material", "source_spec_material_hash"]);
+// A replaced record in any of these statuses is checked for an input change.
+const REPLACED_COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial"]);
+
+// The stamps a completed record writes: the inputs current at this write
+// (the absent brief value for a packet without a brief). A value that cannot
+// be computed is left out, so the record reads unknown rather than current.
+function currentStamps(inputs) {
+  const stamps = inputStamps(inputs);
+  return Object.fromEntries(Object.entries(stamps).filter(([, value]) => value !== null));
+}
+
+function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment = null, inputs = {}, deviationReason = null }) {
   const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
   const previousAssembly = stageObject(report, "assembly");
-  const assembly = {
-    ...withoutKeys(previousAssembly, ["source_package_material_fingerprint"]),
+  const stamps = currentStamps(inputs);
+  // A replaced completed record whose stamps differ from the current inputs
+  // records the change now, if nothing recorded it before.
+  const writeInputs = stageWriteInputs("assembly", inputs);
+  const detected = REPLACED_COMPLETED_STATUSES.includes(previousAssembly.status) ? writeInputs.detectChange(previousAssembly) : null;
+  let assembly = {
+    ...withoutKeys(previousAssembly, ["source_package_material_fingerprint", "unchanged_output_reason", ...STAMP_FIELDS]),
     ...(buildEnvironment ? { evidence: { ...(isObject(previousAssembly.evidence) ? previousAssembly.evidence : {}), build_environment: buildEnvironment } } : {}),
     stage: "assembly",
     status: "completed",
     build_fingerprint: fingerprint,
     ...(sourcePackageFingerprint ? { source_package_material_fingerprint: sourcePackageFingerprint } : {}),
+    ...stamps,
     completed_at: now,
     recorded_by: recordedBy,
     blockers: [],
   };
-  // Polish evidence bound to this exact output stays; anything else is owed
-  // again. The evidence object is kept so `polish capture` has somewhere to
-  // attach page_load, and its stale identity fields are removed.
+  if (detected) assembly.input_change = inputChangeFor("assembly", previousAssembly, { at: now, reason: detected });
+  // Output identical to the build the input change superseded does not make
+  // the build current, unless the operator's --deviation-reason records that
+  // the change needs no output change (completed_with_warnings).
+  const replayed = isObject(assembly.input_change) && assembly.input_change.superseded_build_fingerprint === fingerprint;
+  if (replayed && deviationReason) {
+    assembly.status = "completed_with_warnings";
+    assembly.unchanged_output_reason = {
+      text: deviationReason,
+      for_inputs: { brief_material: stamps.source_brief_material ?? null, spec_material_hash: stamps.source_spec_material_hash ?? null },
+    };
+  }
+  if (!replayed || deviationReason) {
+    if (writeInputs.stampsCurrent(assembly)) delete assembly.input_change;
+  }
+  assembly = archiveStageRecord(assembly, previousAssembly, assembly, { by: "record build", reason: detected || "rerecorded", at: now, stageKey: "assembly" });
+  // A detected change makes Polish and QA owed through the dependency map.
+  // Otherwise Polish evidence bound to this exact output stays and anything
+  // else is owed again; the evidence object is kept so `polish capture` has
+  // somewhere to attach page_load, and its stale identity fields are removed.
+  if (detected) {
+    const cause = detected === "spec_material_changed" ? "spec" : "presentation";
+    const demoted = demoteStages({ ...report, stages: { ...report.stages, assembly } }, { causes: [cause], now, by: "record build", only: ["polish", "qa"] });
+    return { report: demoted.report, context: null };
+  }
   const previousPolish = stageObject(report, "polish");
   const polishStillCurrent = stageIsTerminal(String(previousPolish.status || ""))
     && optionalString(previousPolish.source_build_fingerprint) === fingerprint;
   const polish = polishStillCurrent
     ? previousPolish
     : {
-        ...withoutKeys(previousPolish, ["performed_by", "source_build_fingerprint", "source_package_material_fingerprint", "completed_at", "recorded_by"]),
+        ...withoutKeys(previousPolish, ["performed_by", "source_build_fingerprint", "source_package_material_fingerprint", "completed_at", "recorded_by", ...STAMP_FIELDS]),
         stage: "polish",
         status: "required",
         required_by: "build",
@@ -300,8 +351,11 @@ function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment =
   return { report: { ...report, stages: { ...report.stages, assembly, polish } }, context: null };
 }
 
-function composePolish(report, { now, recordedBy, fingerprint, input }) {
+function composePolish(report, { now, recordedBy, fingerprint, input, inputs = {} }) {
   const previous = stageObject(report, "polish");
+  const completed = POLISH_COMPLETED_STATUSES.includes(input.status);
+  const writeInputs = stageWriteInputs("polish", inputs);
+  const detected = REPLACED_COMPLETED_STATUSES.includes(previous.status) ? writeInputs.detectChange(previous) : null;
   const previousVisual = isObject(previous.evidence?.visual_review) ? previous.evidence.visual_review : {};
   // A blocked or skipped record given no evidence keeps what is there (the
   // capture's bounded evidence stays for diagnosis).
@@ -315,13 +369,16 @@ function composePolish(report, { now, recordedBy, fingerprint, input }) {
       }
     : previous.evidence;
   const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
-  const polish = {
-    ...withoutKeys(previous, ["source_package_material_fingerprint", "completed_at", "skip_reason", "evidence"]),
+  let polish = {
+    ...withoutKeys(previous, ["source_package_material_fingerprint", "completed_at", "skip_reason", "evidence", ...STAMP_FIELDS]),
     stage: "polish",
     status: input.status,
     performed_by: POLISH_PRODUCER,
     source_build_fingerprint: fingerprint,
     ...(sourcePackageFingerprint ? { source_package_material_fingerprint: sourcePackageFingerprint } : {}),
+    // Only a completed Polish is proof against inputs; a skip or a block
+    // carries no stamp.
+    ...(completed ? currentStamps(inputs) : {}),
     // A blocked Polish has not completed.
     ...(input.status === "blocked" ? {} : { completed_at: now }),
     recorded_by: recordedBy,
@@ -329,6 +386,15 @@ function composePolish(report, { now, recordedBy, fingerprint, input }) {
     ...(input.skipReason ? { skip_reason: input.skipReason } : {}),
     blockers: input.blockers,
   };
+  if (detected) polish.input_change = inputChangeFor("polish", previous, { at: now, reason: detected });
+  // The change is cleared only by a completed record stamped with the current
+  // inputs whose attached package capture postdates it; any other write
+  // (a skip included) carries it.
+  if (completed && isObject(polish.input_change) && writeInputs.stampsCurrent(polish)) {
+    const capturedAt = polish.evidence?.visual_review?.page_load?.captured_at;
+    if (typeof capturedAt === "string" && Date.parse(capturedAt) > Date.parse(polish.input_change.at)) delete polish.input_change;
+  }
+  polish = archiveStageRecord(polish, previous, polish, { by: "record polish", reason: detected || "rerecorded", at: now, stageKey: "polish" });
   const nextReport = { ...report, stages: { ...report.stages, polish } };
   // A null defect on a report with no theme block says nothing to record.
   if (input.hasRepairLoopDefect && (isObject(report.theme) || input.repairLoopDefect !== null)) {
@@ -618,10 +684,14 @@ function ladderProblems(stage, doctor, report) {
     // The rule next's stage picker reads: on the local preview a missing polish
     // is carried forward (local-preview-policy), and next moves on to deploy.
     if (earlier === "polish" && doctor.derived?.polish_gate?.status === CARRIED_FORWARD) continue;
+    // The effective status: a stage owed again by an input change reads
+    // required, and one whose inputs cannot be confirmed reads unknown.
     const key = reportKeyForCliStage(earlier);
     const status = String(report.stages[key]?.status || "");
-    if (!stageIsTerminal(status)) {
-      problems.push(`stages.${key}.status is "${status || "(unset)"}", so next answers ${earlier}; run ${cmd("record")} ${earlier} first.`);
+    const effective = effectiveStageStatus(key, report.stages[key], doctor.derived?.input_currency);
+    if (!effectiveStatusIsTerminal(effective)) {
+      const why = effective === status ? "" : ` (recorded "${status || "(unset)"}"; ${doctor.derived?.input_currency?.reasons?.[key] || "inputs not confirmed"})`;
+      problems.push(`stages.${key}.status is "${effective || "(unset)"}"${why}, so next answers ${earlier}; run ${cmd("record")} ${earlier} first.`);
     }
   }
   return problems;
@@ -709,7 +779,24 @@ function deployFacts(doctor, packet, probe) {
  * records through recordStageCommand.
  */
 export async function recordCommand(args, options = {}) {
-  const { stage, packetPath, baseUrl } = parseRecordArgs(args);
+  const { stage, packetPath, baseUrl, briefPath, dryRun } = parseRecordArgs(args);
+  if (stage === "brief") {
+    return recordBrief({
+      packetPath,
+      briefPath,
+      contextPath: args.context ? resolve(args.context) : undefined,
+      reportPath: args.report ? resolve(args.report) : undefined,
+      dryRun,
+    }, options.now ? { now: options.now } : {});
+  }
+  if (stage === "spec") {
+    return recordSpec({
+      packetPath,
+      contextPath: args.context ? resolve(args.context) : undefined,
+      reportPath: args.report ? resolve(args.report) : undefined,
+      dryRun,
+    }, options.now ? { now: options.now } : {});
+  }
   const probe = stage === "deploy" && existsSync(packetPath)
     ? await probeLocalPreview({ packetPath, baseUrl, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) })
     : null;
@@ -735,7 +822,7 @@ function readPacketFile(stage, packetPath) {
  * composed or written.
  */
 export function recordStageCommand(args, { now = () => new Date(), beforeLock = null, afterDoctorRead = null, probe = null } = {}) {
-  const { stage, packetPath, evidencePath, dryRun, buildEnvironment } = parseRecordArgs(args);
+  const { stage, packetPath, evidencePath, dryRun, buildEnvironment, deviationReason } = parseRecordArgs(args);
   if (!existsSync(packetPath)) throw new Error(`record ${stage}: Build Packet not found at ${packetPath}; run ${cmd("start")} or ${cmd("prepare-build")} first.`);
   if (stage === "deploy" && !probe) throw new Error("record deploy needs the served-route probe; run it through recordCommand.");
   // Operator input, not target state: no campaigns-os writer produces it.
@@ -756,7 +843,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   // A dry run writes nothing, so it takes no lock and creates no lock files
   // (the commitAssemblyReport preview convention); it reads in the same order.
   const run = () => recordUnderLock({
-    stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment,
+    stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment, deviationReason,
   });
   const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
   const { composed, facts, layer, reportPath, contextPath, after } = recorded;
@@ -806,7 +893,13 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
 // re-check, and the post-write doctor read for `next_stage`. No campaigns-os
 // writer can rebind, rewrite or republish any of them between the read and
 // the write.
-function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment = null }) {
+// The inputs current at this record, as doctor read them under the lock.
+function recordInputs(doctor) {
+  const currency = doctor.derived?.input_currency;
+  return { briefMaterial: currency?.brief?.current ?? null, specMaterial: currency?.spec?.current ?? null };
+}
+
+function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment = null, deviationReason = null }) {
   // The same workspace `next` resolves, so the record lands in the report
   // `next` reads now, not the one it read before the lock was free.
   const workspace = resolveCampaignWorkspace(packetPath, { ...sidecars, followContextPointer: true });
@@ -841,13 +934,13 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
-        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, buildEnvironment })
+        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, buildEnvironment, inputs: recordInputs(doctor), deviationReason })
         : stage === "theme"
           ? composeTheme(report, { now: timestamp, recordedBy, layer })
           : stage === "deploy"
             ? composeDeploy(report, packet, { now: timestamp, recordedBy, probe: input })
-            : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input });
-    applyDerivedAssemblyReportSummary(next.report);
+            : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor) });
+    applyDerivedAssemblyReportSummary(next.report, recordInputs(doctor));
     // The packet's one new value, deploy.preview_url, is checked by
     // localPreviewUrl; the rest of the packet is as the operator left it.
     validateRecord(stage, { report: next.report, context: next.context, packet, fingerprint: facts.fingerprint });

@@ -5876,9 +5876,186 @@
       "sequence": 225,
       "date": "2026-10-05",
       "kind": "release",
+      "surface_version": "1.53.0",
+      "changelog_section": "1.53.0",
+      "changelog_sha256": "b5e6bbfd3ab22a16b715fbd574128715ab5a9a70d76c1e09f8f91c1d25ce72f6",
+      "agent_impact": "Surface 1.53.0. Adds record brief, which saves Campaign Build Brief answers without re-running intake, and record spec, which binds a CampaignSpec change without discarding operator state; their --dry-run forms write nothing and append no lifecycle entry. A brief file is guided unless it sets \"brief_mode\": \"prepared\" (a campaign whose report already records a prepared brief stays prepared). An unchanged or reformatted save keeps every stage's evidence and status. A material brief or CampaignSpec change makes build, Polish and QA owed again (QA alone for a qa_policy change), keeps the last five superseded records per stage as history that is never current proof, and next, doctor, progress, readback and the Assembly Report status report the owed stage; next offers refresh_inputs (record brief or record spec) when a recorded stage was made against earlier content. Build, Polish and QA records now stamp the brief and CampaignSpec content they were made against; records without stamps read unconfirmed. Re-recording an unchanged build after an input change keeps the build owed unless the operator's --deviation-reason records that the change needs no output change; Polish stays owed until a new capture postdates the change. Intake refuses, without --force, to discard recorded waivers, warning accepts, stage history, an applied theme, or a recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation; --force archives the build, Polish and QA records it clears and keeps stage history. spec derive no longer rebinds report identity and its --json result no longer carries rebound; run record spec after it. Bundled skills carry revision 1.53.0+skills.1: an agent that loaded an earlier revision should start a fresh session. Install the 1.53.0 package with the documented local setup command.",
+      "compatibility": "breaking",
+      "migration": "After upgrading, next routes each in-flight campaign back to build once, because build, Polish and QA records made before 1.53.0 do not record which brief and CampaignSpec content they used: re-record build and Polish, and run QA again for a new verdict. Add \"brief_mode\": \"prepared\" to a hand-written brief file whose open questions should block. Save brief answers with record brief and CampaignSpec changes with record spec instead of re-running start, prepare-build or build, which now refuse without --force to discard recorded waivers, warning accepts, stage history, an applied theme, or a recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation. Run record spec after spec derive, and stop reading rebound from spec derive --json.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Advance the declared version to 1.53.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare the record brief and record spec rows (tier C) and their --dry-run rows (tier none); correct the start, prepare-build and build notes (refused without --force when the report carries stage evidence, stage history or operator decisions) and their --force notes (completed build, Polish and QA records are archived into stage history, which is kept); state that record build writes input_change and makes Polish and QA owed when it detects a brief or CampaignSpec change; and state that record polish, record theme and record deploy are refused while an earlier stage is owed again."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.53.0 and record the effects contract hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Describe CampaignSpec material changes for local-spec, saved-Map and gateway packets, record spec, spec derive no longer rebinding identity, and the brief and CampaignSpec dependency map."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Replace Answering The Questions with saving answers through record brief, the brief_mode rule, which changes make which stages owed again, stage history, --deviation-reason, and the one-time re-proof of records made before 1.53.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Describe what record brief and record spec write and refuse, their dry runs, and the intake refusal and --force archive."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the 1.53.0 package in the local setup install command."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate at surface 1.53.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Stage records carry each stage's effective status: a stage owed again by a brief or CampaignSpec change reads required, and one whose inputs cannot be confirmed reads unknown."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "The STAGES header prints the recorded and the effective report status, and a stage line whose effective status differs adds the recorded status and the reason."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate at surface 1.53.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.53.0+skills.1 bundle in executable examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.53.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.53.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.53.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "record",
+          "summary": "Add record brief and record spec to the usage text; intake binds the brief material and refuses to discard operator state without --force; QA records stamp their inputs; next carries input_currency, offers refresh_inputs and notes an operator's unchanged-output decision in the QC handoff; spec derive no longer rebinds report identity, drops the rebound result field and names record spec."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor reports input currency in derived.input_currency and warns spec.material_stale, spec.binding_unknown, build_brief.material_changed, build_brief.binding_unknown, build_brief.input_unsaved, assembly.output_unchanged_after_input_change and assembly.output_unchanged_by_operator_decision; a normalized brief that is not valid JSON, or not a JSON object, is the build_brief.normalized_path error, not a crash."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "next",
+          "summary": "The stage picker reads each stage's effective status, so a stage owed again by a brief or CampaignSpec change, or one whose inputs cannot be confirmed, is the stage next recommends."
+        }
+      ],
+      "entry_sha256": "85e37bd6392dcfa8415a654897eb8dbe8ab417fc9c92ec21732d2fff5a5f5f5b"
+    },
+    {
+      "id": "RL-0234",
+      "sequence": 226,
+      "date": "2026-10-05",
+      "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.52.0+agent.2",
-      "changelog_sha256": "261137c22943dc08862288566afac3f82147ae575d7c33f3af50835a040f7cc4",
+      "changelog_section": "1.53.0+agent.1",
+      "changelog_sha256": "48e638d7244fe2fa604e9b060312adb659e91f36708d688b9017a126f86a637d",
       "agent_impact": "polish capture now measures text readability on every built page at desktop and mobile widths and attaches it as stages.polish.evidence.visual_review.readability; next lists readability.contrast warnings, review and coverage results in its QC handoff, grouping each warning colour pair across pages and widths for one checkpoint accept. On a campaign whose every mapped page is template stock, polish capture measures readability, prints the page-load no_capturable_routes message as a warning, and exits 0 with status captured_with_warnings; record polish still refuses a completed Polish record there. Polish media weight and readability results read as stale when doctor reports the built output changed since record build. Readability results never block Polish or change readiness. QA's browser-primary-cta check now runs on every page with an expected_next_url, whatever its page type, and measures every visible route-matching CTA (not only the most readable one) and each piece of text inside it, unrounded, with the same measurement Polish uses, against the requirement for its own size; its evidence lists each candidate's elements[] with contrast_ratio_exact and required_ratio. A CTA observed incompletely (the SDK, stylesheets, fonts or its text not ready, a review trigger, or disabled controls) reads manual_review at severity warn, never pass. So browser-primary-cta results on existing campaigns can change in either direction: pages that were skipped are now checked, a second CTA or child text can now fail, large bold text at 3:1 can now pass, and incomplete observations read manual_review instead of pass or fail. The brand theme generator compares contrast unrounded, so a declared colour in [4.495, 4.5) now adds theme.foreground.low_contrast; generated CSS and colour choices are unchanged.",
       "compatibility": "additive",
       "migration": "none",
@@ -5902,7 +6079,7 @@
           "summary": "State that theme contrast uses the same unrounded measurement as Polish and QA, so a declared colour at 4.495:1 now warns, and that the generator's colour choices are unchanged."
         }
       ],
-      "entry_sha256": "69d1325344b7e76dee19ba14fd47df68e4490e191d9d12076bd5885e663cf3a0"
+      "entry_sha256": "52fb2af6abaad2b5fbc16990ed393f0d0e1963461f846cd1ac88226a35c008e6"
     }
   ]
 }
