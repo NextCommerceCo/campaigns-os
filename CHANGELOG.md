@@ -2,11 +2,33 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.51.0+agent.2] - 2026-10-04
+## [1.51.0+agent.5] - 2026-10-05
 
 ### Added
 
 - Doctor now reports built-page smoke warnings: missing in-page anchor targets, missing favicon and Open Graph tags, unresolved `og:image`, the Tailwind CDN script in production builds, `cdn.29next.store` asset references, and loopback URLs.
+
+## [1.51.0+agent.4] - 2026-10-05
+
+### Added
+
+- QA now checks at runtime that declared content parameters hide their content, comparing fresh contexts with and without `?<name>=n`.
+
+## [1.51.0+agent.3] - 2026-10-05
+
+### Added
+
+- QA browser test orders now report URL preservation and order attribution for synthetic tracking parameters as separate results. QA order evidence no longer stores query strings in `checkout_url`, `final_url` or request URLs.
+
+## [1.51.0+agent.2] - 2026-10-05
+
+### Added
+
+- Polish capture now records image geometry and redirect chains, and reports origin and weight warnings for video and large images served from the page's own origin, plus oversized images.
+
+### Changed
+
+- `polish capture` now records media weight beside page load evidence in the Assembly Report, so `next` reads the image weight and oversize results of a fresh capture.
 
 ## [1.51.0+agent.1] - 2026-10-04
 

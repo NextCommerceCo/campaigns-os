@@ -12,7 +12,9 @@ import {
 } from "./qa-analytics-errors.mjs";
 import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-parity.mjs";
 import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
-import { redactUrlQuery } from "./qa-url-privacy.mjs";
+import { redactPersisted, redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
+import { TRACKING_ADDED_BOUND_MS, TRACKING_OBSERVATION, createTrackingRun, trackingQaAssertion } from "./qa-tracking-params.mjs";
+import { runContentParamChecks } from "./qa-content-params.mjs";
 import {
   canonicalHttpUrl,
   commonTestOrderPaths,
@@ -118,10 +120,11 @@ const CART_CREATE_RESPONSE_PATTERN = /\/api\/v1\/carts\/?(?:[?#].*)?$/i;
 
 export async function runBrowserChecks(topologies, args = {}, options = {}) {
   const browser = await launchChromium(args);
-  const context = await browser.newContext({
+  const contextOptions = {
     viewport: viewportFromArgs(args),
     extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
-  });
+  };
+  const context = await browser.newContext(contextOptions);
 
   try {
     const assertions = [];
@@ -129,6 +132,20 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
       for (const page of topology.pages) {
         assertions.push(...await runPageBrowserChecks(context, page, args, options));
       }
+    }
+    // Content parameters (options.spec analytics.params.content), after the
+    // page checks: every load in its own fresh context with the same options,
+    // closed after the load. The rows go to options.qcResults; their verdict
+    // assertions join the page checks'.
+    if (Array.isArray(options.qcResults)) {
+      const contentParams = await runContentParamChecks({
+        topologies,
+        spec: options.spec,
+        newContext: () => browser.newContext(contextOptions),
+        withQueryParam,
+      });
+      options.qcResults.push(...contentParams.rows);
+      assertions.push(...contentParams.assertions);
     }
     return assertions;
   } finally {
@@ -165,6 +182,10 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   const orderPathPlan = isCommonTestOrderMode(args["test-order"]) ? commonOrderPathPlan(topologies, args) : null;
   if (orderPathPlan) (options.warn || ((line) => process.stderr.write(`${line}\n`)))(describeCommonOrderPathPlan(orderPathPlan));
   const creationBudget = createOrderCreationBudget({ plans, args });
+  // Synthetic tracking seeds for this run's attempts (options.spec carries
+  // analytics.params.tracking.preserve; trackingTestHooks is an in-process
+  // test seam only).
+  const tracking = createTrackingRun({ runId, spec: options.spec || null, hooks: options.trackingTestHooks || null });
 
   const browser = await launchChromium(args);
   const context = await browser.newContext({
@@ -181,13 +202,18 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       runId,
       // The topologies travel with the options so each attempt can resolve the
       // funnel's cart-entry page for the checkout it drives (campaigns-os#206).
-      options: { ...options, creationBudget, topologies, orderPathPlan },
+      options: { ...options, creationBudget, topologies, orderPathPlan, tracking },
     });
     return {
-      orders: dispatched.orders,
-      assertions: dispatched.assertions,
+      // The persisted exit: order URLs leave as origin+path. The in-memory
+      // orders stay raw, because recovery reloads the recorded receipt URL.
+      // Assertions and QC rows leave through the one persisted projection,
+      // so each qc.* assertion and its QC row stay identical.
+      orders: dispatched.orders.map(persistedTestOrder),
+      assertions: dispatched.assertions.map(redactPersisted),
       receiptAnalytics: dispatched.receiptAnalytics,
       journeyAnalytics: dispatched.journeyAnalytics,
+      qc_results: (dispatched.qcResults || []).map(redactPersisted),
     };
   } finally {
     await context.close().catch(() => {});
@@ -221,6 +247,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
 
   const assertions = [];
   const orders = [];
+  const qcResults = [];
   // The plan behind each entry in `orders`, index for index, so the upsell
   // coverage row can tell which funnel an order ran through.
   const orderPlans = [];
@@ -387,6 +414,19 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
       const dataLayerAssertion = purchaseDataLayerAssertion(pageForPlan, identifier, result.order);
       if (dataLayerAssertion) assertions.push(dataLayerAssertion);
+      // Tracking parameter rows for this plan. They never decide the order's
+      // own assertion, and a failure here never breaks the run.
+      try {
+        const trackingRows = options.tracking
+          ? options.tracking.rowsFor({ attempts: attemptsForPlan, recoveredAttempt: creationRecord?.action === "recovered" ? firstAttempt : null })
+          : [];
+        for (const row of trackingRows) {
+          qcResults.push(row);
+          assertions.push(trackingQaAssertion(row));
+        }
+      } catch {
+        // No row is recorded; the QC handoff lists the check as not captured.
+      }
     }
   } catch (error) {
     // Convert runner-level surprises into a blocker assertion so the run still
@@ -412,7 +452,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
   });
   if (coverage) assertions.push(coverage);
 
-  return { orders, assertions, receiptAnalytics, journeyAnalytics, creationBudget };
+  return { orders, assertions, receiptAnalytics, journeyAnalytics, creationBudget, qcResults };
 }
 
 // Analytics-parity leg: capture the live dataLayer event stream + GTM/pixel
@@ -3493,6 +3533,12 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
   let events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
   const email = testEmail(planArgs);
   const entryPage = resolveCartEntryPage(options.topologies, checkoutPage);
+  let tracking = null;
+  try {
+    tracking = options.tracking ? options.tracking.observe(planId(normalizedPlan)) : null;
+  } catch {
+    tracking = null;
+  }
   // Reserved immediately before the submit click, never reconciled afterwards:
   // an accounting check that runs after the purchase is not a budget. The same
   // call records that this attempt did submit, which is what lets a later
@@ -3567,6 +3613,13 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
       // hand. Everything the result carries onwards has been through
       // `sanitizedEvents`, which keeps the last 20 entries per stream.
       result.order_creates = summarizeOrderCreateActivity(events);
+      if (tracking) {
+        try {
+          result[TRACKING_OBSERVATION] = await tracking.finalize({ createActivity: result.order_creates });
+        } catch {
+          // The attempt gets no tracking rows; the order result is unchanged.
+        }
+      }
     }
     return stampTestOrderPlan(result, normalizedPlan);
   };
@@ -3588,7 +3641,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
       }
     }
     page.setDefaultTimeout(numberArg(planArgs["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
-    events = captureCheckoutEvents(page);
+    events = captureCheckoutEvents(page, tracking);
     // The outer race is the hard guarantee: whatever hangs inside the path,
     // this returns and the run writes a verdict instead of dying with nothing.
     orderDeadline = Date.now() + orderTimeoutMs;
@@ -3606,6 +3659,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
         deadline: orderDeadline,
         reserveOrderCreation,
         selectorProbeCache: options.selectorProbeCache,
+        tracking,
       }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
       `order-path:${planId(normalizedPlan)}`,
@@ -3684,7 +3738,7 @@ function stablePrivateCaptureError(value) {
   return projectAnalyticsCaptureError(value, { fallbackKind: "unreadable" });
 }
 
-async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null, selectorProbeCache = null }) {
+async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null, selectorProbeCache = null, tracking = null }) {
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
@@ -3704,7 +3758,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   // page the probe left there rather than loading the same URL a second time,
   // which would fire the SDK's page-view events twice into the same capture.
   const entry = await ladder.run(CART_ENTRY_STEP, () => enterCartViaLanding({
-    page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache,
+    page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache, tracking,
   }), { timeoutMs: budget() });
   const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
   // Responses captured from here on belong to the checkout the ladder drives.
@@ -3712,7 +3766,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   // made before the hand-off.
   const checkoutResponseOffset = events.responses.length;
 
-  await ladder.run("opened_checkout", () => openCheckoutForPath({ page, checkoutPage, entry, args }), { timeoutMs: budget() });
+  await ladder.run("opened_checkout", () => openCheckoutForPath({ page, checkoutPage, entry, args, tracking }), { timeoutMs: budget() });
   await ladder.run("selected_bundle", async () => {
     // The requested package was selected on the entry page, where the cards
     // live; checkout renders none, so re-running strict selection here would
@@ -3765,6 +3819,9 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       // runs BEFORE the reservation: nothing is clicked, nothing is spent, and
       // the classifier reads the failure as `not_created`.
       cartBeforeSubmit = await cartStateBeforeSubmit(page, events, { responseOffset: checkoutResponseOffset, budget });
+      // The checkout's declared tags and inline page script, read after the
+      // SDK is ready (bounded; never throws).
+      await tracking?.readDocument(page);
       if (cartBeforeSubmit.empty) {
         throw codedError(CART_ENTRY_CODES.CART_EMPTY_BEFORE_SUBMIT, cartEmptyMessage(cartBeforeSubmit));
       }
@@ -3994,7 +4051,7 @@ function createSelectorProbeCache() {
 // loaded it and found a selection surface; either way a second load of the
 // same URL is what is avoided. Anywhere else (a cached probe answer skipped the
 // load; a fresh page) the checkout is opened here, once.
-async function openCheckoutForPath({ page, checkoutPage, entry, args }) {
+async function openCheckoutForPath({ page, checkoutPage, entry, args, tracking = null }) {
   const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
   if (enteredViaLanding) {
     await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
@@ -4003,14 +4060,14 @@ async function openCheckoutForPath({ page, checkoutPage, entry, args }) {
   if (checkoutUrlPredicate(checkoutPage.url)(safePageUrl(page))) {
     return "already on checkout from the selector probe; not re-opened";
   }
-  await gotoAndSettle(page, checkoutPage.url, args);
+  await gotoAndSettle(page, checkoutPage.url, args, tracking);
   return null;
 }
 
 // The entry step body. Resolves to `{ skip }` when the checkout selects for
 // itself, to `{ entered: true, ... }` when the runner came in through the entry
 // page, and throws a coded error (never a bare timeout) when it cannot.
-async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache = null }) {
+async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache = null, tracking = null }) {
   // Probe the checkout first: whether it carries a selection surface is a fact
   // about the rendered page, not about the spec (the spec cannot say it yet —
   // that is the design half of #206). The probe's load is the checkout's only
@@ -4027,7 +4084,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   let probe = cached ? "reused" : "loaded";
   let probeError = null;
   if (!surface) {
-    await gotoAndSettle(page, checkoutPage.url, args);
+    await gotoAndSettle(page, checkoutPage.url, args, tracking);
     const probed = await page.evaluate(checkoutSelectionSurfaceScript())
       .then((value) => ({ value }), (error) => ({ value: null, error: error?.message || String(error) }));
     if (probed.value) {
@@ -4053,8 +4110,9 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
     );
   }
 
-  await gotoAndSettle(page, entryPage.url, args);
+  await gotoAndSettle(page, entryPage.url, args, tracking);
   const sdkReady = await waitForSdkReady(page, Math.min(budget(), DEFAULT_SETTLE_TIMEOUT_MS));
+  await tracking?.readDocument(page);
   const controls = await page.evaluate(cartEntryControlsScript(), { selector: CART_ENTRY_CONTROL_SELECTOR, checkoutUrl: checkoutPage.url }).catch(() => []);
   const choice = chooseCartEntryControl(controls, selectedPackages);
   if (!choice.control) {
@@ -4348,8 +4406,11 @@ function assessReceiptRendering(persistedLineCount, evidence = {}) {
   };
 }
 
-async function gotoAndSettle(page, url, args) {
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS) });
+// With a tracking observer, the load is a runner navigation: before the
+// attempt's first page-initiated hop it carries the run's synthetic seeds.
+async function gotoAndSettle(page, url, args, tracking = null) {
+  const target = tracking ? tracking.runnerUrl(url, withQueryParam) : url;
+  await page.goto(target, { waitUntil: "domcontentloaded", timeout: numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS) });
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
   await page.waitForTimeout(750);
 }
@@ -6216,7 +6277,7 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
         ...retry,
         ...creation,
         hosted_checkout_url: result.order?.hosted_checkout_url || null,
-        final_url: result.order?.final_url,
+        final_url: redactUrlQuery(result.order?.final_url),
         steps: result.order?.evidence?.steps,
         note: "Hosted checkout flow is platform-owned; verify the hosted completion manually.",
       },
@@ -6263,13 +6324,13 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
           ...recovery,
           ref_id: result.order.ref_id,
           order_number: result.order.next_order_id,
-          final_url: result.order.final_url,
+          final_url: redactUrlQuery(result.order.final_url),
           is_test: result.order.is_test,
           line_count: result.order.receipt_line_items.length,
           ...(receiptProofEvidence(result.order) ? { receipt_proof: receiptProofEvidence(result.order) } : {}),
           ...(path === "accept" ? { accepted_upsell_line_present: result.order.verification?.accepted_upsell_line_present } : {}),
           ...(upsellUnverified ? { upsell_unverified: upsellUnverified } : {}),
-          ...(result.order.upsell ? { upsell_clicked: result.order.upsell.clicked, upsell_final_url: result.order.upsell.final_url } : {}),
+          ...(result.order.upsell ? { upsell_clicked: result.order.upsell.clicked, upsell_final_url: redactUrlQuery(result.order.upsell.final_url) } : {}),
           ...(result.order.upsell_steps ? { upsell_steps: result.order.upsell_steps.map(summarizeUpsellStep) } : {}),
           ...(result.order.verification?.accepted_upsell_matches ? { accepted_upsell_matches: result.order.verification.accepted_upsell_matches } : {}),
           ...(result.order.verification?.coupon ? { coupon: result.order.verification.coupon } : {}),
@@ -6280,7 +6341,7 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
           ...retry,
           ...creation,
           ...recovery,
-          final_url: result.order?.final_url,
+          final_url: redactUrlQuery(result.order?.final_url),
           steps: result.order?.evidence?.steps,
           ...(receiptProofEvidence(result.order) ? { receipt_proof: receiptProofEvidence(result.order) } : {}),
           ...(result.order?.verification?.coupon ? { coupon: result.order.verification.coupon } : {}),
@@ -6357,11 +6418,20 @@ function responseRequestStartedAt(response) {
   }
 }
 
-function captureCheckoutEvents(page) {
+function captureCheckoutEvents(page, tracking = null) {
   const events = { requests: [], responses: [], failed: [], console: [], pageErrors: [], navigations: [] };
   const interesting = /\/api\/v1\/(?:orders|upsells|carts)\/?|\/transactions|spreedly|campaigns\.apps/i;
+  const isMainFrame = (frame) => typeof page.mainFrame !== "function" || frame === page.mainFrame();
   page.on("request", (request) => {
     if (!interesting.test(request.url())) return;
+    // Tracking equality reads the create body before it is summarized below.
+    if (tracking && ORDER_CREATE_RESPONSE_PATTERN.test(request.url()) && request.method() === "POST") {
+      try {
+        tracking.onCreateRequest(() => request.postData());
+      } catch {
+        // The order is never held up by a tracking read.
+      }
+    }
     events.requests.push({
       method: request.method(),
       url: request.url(),
@@ -6379,15 +6449,47 @@ function captureCheckoutEvents(page) {
     const request = responseRequest(response);
     let chainUrl = null;
     try { chainUrl = request?.url() ?? null; } catch { /* identity only */ }
+    // Tracking: a script the page received is scanned for page-script
+    // attribution calls, and an accepted create marks the post-order point.
+    let orderSource = null;
+    if (tracking) {
+      try {
+        const method = response.request().method();
+        if (response.request().resourceType() === "script") tracking.onScriptResponse(response);
+        if (method === "POST" && ORDER_CREATE_RESPONSE_PATTERN.test(response.url())) {
+          tracking.onCreateResponseStatus(response.status());
+          orderSource = "create_response";
+        } else if (method === "GET" && ORDER_DETAIL_RESPONSE_PATTERN.test(response.url())) {
+          orderSource = "readback";
+        }
+        if (orderSource && !(response.status() >= 200 && response.status() < 300)) orderSource = null;
+      } catch {
+        orderSource = null;
+        try { tracking.onListenerError("response"); } catch { /* never breaks the order */ }
+      }
+    }
     if (!interesting.test(response.url()) && !(chainUrl && interesting.test(chainUrl))) return;
     // Taken before the body read: an entry lands in the log when its body
     // finishes, so its position says nothing about when it was requested.
     const requestStartedAt = responseRequestStartedAt(response);
+    // Equality on the in-memory body, before summarizeResponseBody. For an
+    // order response the observer starts the read itself (through its
+    // observeRead) before anything awaits it, so a body still in flight when
+    // the attempt's observation is taken is a failed extractor there, never a
+    // pass. The log entry awaits that same read.
+    let bodyRead = null;
+    const readBody = () => {
+      bodyRead ??= readJsonResponseBodyWhenLoaded(response);
+      return bodyRead;
+    };
+    if (orderSource) {
+      try { tracking.orderResponseBody(orderSource, readBody); } catch { /* never breaks the order */ }
+    }
     const entry = {
       status: response.status(),
       url: response.url(),
       request_started_at: requestStartedAt,
-      body: await readJsonResponseBodyWhenLoaded(response),
+      body: await readBody(),
     };
     if (request) entry[REQUEST_IDENTITY] = request;
     events.responses.push(entry);
@@ -6404,11 +6506,99 @@ function captureCheckoutEvents(page) {
       // Navigation evidence is diagnostic only; never break the order path.
     }
   });
+  if (tracking) {
+    // Tracking hops: a second listener beside the one above. Whether a hop
+    // committed a new document is read only from the browser itself:
+    // Playwright's main frame emits "navigated" with `newDocument` for a
+    // document commit and without it for a same-document one, synchronously
+    // just before "framenavigated" (pinned against the installed Playwright
+    // in qa-tracking-params-hardening.test.mjs). It is an internal emitter;
+    // where a page has none, every hop reads history. The signal is only held
+    // here and handed to the observer with its hop.
+    let commit = null;
+    try {
+      const emitter = typeof page.mainFrame === "function" ? page.mainFrame()?._eventEmitter : null;
+      if (emitter && typeof emitter.on === "function") {
+        emitter.on("navigated", (event) => {
+          commit = event && !event.error ? { url: String(event.url), newDocument: Boolean(event.newDocument) } : null;
+        });
+      }
+    } catch {
+      // No signal: every hop reads history.
+    }
+    page.on("framenavigated", (frame) => {
+      try {
+        if (!isMainFrame(frame)) return;
+        const signal = commit;
+        commit = null;
+        tracking.onFrameNavigated(frame.url(), signal);
+      } catch {
+        // The observer records the missed hop as a gap.
+        try { tracking.onListenerError("hop"); } catch { /* never breaks the order */ }
+      }
+    });
+    page.on("domcontentloaded", () => {
+      try { tracking.readDocument(page, { awaited: false }); } catch { /* never breaks the order */ }
+    });
+    attachCreateResponseTap(page, tracking);
+  }
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) events.console.push({ type: message.type(), text: trim(message.text()) });
   });
   page.on("pageerror", (error) => events.pageErrors.push(trim(error.message)));
   return events;
+}
+
+// The order create's response body for the tracking echo, read in memory
+// before the page can leave it: the SDK navigates as soon as the create
+// answers, and a body read after that navigation finds nothing. Only order
+// responses are paused, at the response stage, and every one is continued
+// unchanged; no request is added and nothing is persisted from the body.
+// An accepted create is held at most TRACKING_ADDED_BOUND_MS, whatever the
+// body read does: the observer's read is itself bounded by the attempt's
+// remaining tracking budget (an overrun records the extractor as failed),
+// and the timer here continues the response even if that bound misbehaves.
+function attachCreateResponseTap(page, tracking) {
+  let session = null;
+  const onPaused = (event) => {
+    let continued = false;
+    let timer = null;
+    const proceed = () => {
+      if (continued) return;
+      continued = true;
+      clearTimeout(timer);
+      session.send("Fetch.continueRequest", { requestId: event.requestId }).catch(() => {});
+    };
+    try {
+      const status = Number(event.responseStatusCode);
+      const isAcceptedCreate = event.request?.method === "POST"
+        && ORDER_CREATE_RESPONSE_PATTERN.test(String(event.request?.url || ""))
+        && status >= 200 && status < 300;
+      if (!isAcceptedCreate) {
+        proceed();
+        return;
+      }
+      timer = setTimeout(proceed, TRACKING_ADDED_BOUND_MS);
+      const readBody = () => session.send("Fetch.getResponseBody", { requestId: event.requestId }).then((read) => {
+        const text = read?.base64Encoded ? Buffer.from(String(read.body || ""), "base64").toString("utf8") : read?.body;
+        return parseMaybeJson(redactSensitive(text));
+      });
+      Promise.resolve(tracking.tapCreateResponse(readBody)).catch(() => {}).finally(proceed);
+    } catch {
+      proceed();
+    }
+  };
+  // The session setup is itself a read the observer holds, like every other
+  // asynchronous step that feeds a tracking row.
+  try {
+    return tracking.attachTap(async () => {
+      session = await page.context().newCDPSession(page);
+      session.on("Fetch.requestPaused", onPaused);
+      await session.send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/orders*", requestStage: "Response" }] });
+    });
+  } catch {
+    return Promise.resolve();
+  }
 }
 
 // Playwright's response.text() waits for the body to finish loading. A page
@@ -6476,21 +6666,24 @@ function lastJsonResponse(events, pattern) {
   return null;
 }
 
+// A persisted exit: every URL is origin+path; bodies are summarized; then
+// every string and key goes through the persisted-value projection.
 function sanitizedEvents(events) {
-  return {
-    requests: events.requests.slice(-20),
+  return redactPersisted({
+    requests: events.requests.slice(-20).map((request) => ({ ...request, url: redactUrlQuery(request.url) })),
     responses: events.responses.slice(-20).map((response) => ({
       status: response.status,
-      url: response.url,
+      url: redactUrlQuery(response.url),
       body: summarizeResponseBody(response.body, { status: response.status }),
     })),
-    failed: events.failed.slice(-20),
-    console: events.console.slice(-20),
-    pageErrors: events.pageErrors.slice(-20),
+    failed: events.failed.slice(-20).map((failure) => ({ ...failure, url: redactUrlQuery(failure.url), failure: redactUrlQueriesInText(failure.failure) })),
+    // Console and page-error text can quote URLs; their queries are dropped.
+    console: events.console.slice(-20).map((entry) => ({ ...entry, text: redactUrlQueriesInText(entry.text) })),
+    pageErrors: events.pageErrors.slice(-20).map((text) => redactUrlQueriesInText(text)),
     navigations: (events.navigations || []).slice(-20).map((navigation) => ({
       url: redactUrlQuery(navigation.url),
     })),
-  };
+  });
 }
 
 function summarizeRequestPostData(value) {
@@ -6509,23 +6702,26 @@ function summarizeRequestPostData(value) {
   }
 }
 
+const RESPONSE_BODY_MARKER = "[redacted-response-body]";
+
 function summarizeResponseBody(body, { status = null } = {}) {
-  if (typeof body === "string") return trim(body).slice(0, 1000);
-  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  if (body === null || body === undefined) return null;
+  // Raw body content (text, an array, a bare scalar) is never persisted.
+  if (typeof body !== "object" || Array.isArray(body)) return RESPONSE_BODY_MARKER;
   return {
     ...(body.number ? { number: body.number } : {}),
     ...(body.ref_id ? { ref_id: body.ref_id } : {}),
     ...(body.is_test !== undefined ? { is_test: body.is_test } : {}),
     ...(body.total_incl_tax ? { total_incl_tax: body.total_incl_tax } : {}),
     ...(body.currency ? { currency: body.currency } : {}),
-    ...(body.checkout_url ? { checkout_url: body.checkout_url } : {}),
+    ...(body.checkout_url ? { checkout_url: redactUrlQuery(body.checkout_url) } : {}),
     ...(Array.isArray(body.lines) ? { lines: extractReceiptLines(body) } : {}),
-    ...(body.detail ? { detail: body.detail } : {}),
+    ...(body.detail ? { detail: redactPersisted(body.detail) } : {}),
     // A rejected request names its reason here (for example the
     // duplicate-order refusal). Kept only on an error response, so a
     // successful create never carries payment_details into evidence.
     ...(Number(status) >= 400 && typeof body.payment_details === "string"
-      ? { payment_details: trim(body.payment_details).slice(0, 300) }
+      ? { payment_details: redactUrlQueriesInText(trim(body.payment_details).slice(0, 300)) }
       : {}),
   };
 }
@@ -7644,7 +7840,7 @@ function summarizeUpsellStep(step) {
   return {
     path: step.path,
     clicked: step.clicked,
-    final_url: step.final_url,
+    final_url: redactUrlQuery(step.final_url),
     expected_items: step.expected_items,
     api_response_seen: step.api_response_seen,
     api_response_status: step.api_response_status,
@@ -7685,6 +7881,30 @@ function withQueryParam(value, key, paramValue) {
     const separator = String(value || "").includes("?") ? "&" : "?";
     return `${value}${separator}${encodeURIComponent(key)}=${encodeURIComponent(paramValue)}`;
   }
+}
+
+// A test order as it is persisted: its URLs as origin+path, an upsell's raw
+// response body as its summary, and no URL query in any string or key (the
+// one persisted-value projection, redactPersisted). The order events were
+// already summarized where they were captured.
+function persistedTestOrder(order) {
+  if (!order || typeof order !== "object") return order;
+  const projected = { ...order };
+  if (Object.hasOwn(order, "checkout_url")) projected.checkout_url = redactUrlQuery(order.checkout_url);
+  if (Object.hasOwn(order, "final_url")) projected.final_url = redactUrlQuery(order.final_url);
+  if (order.upsell && typeof order.upsell === "object") projected.upsell = persistedUpsellStep(order.upsell);
+  if (Array.isArray(order.upsell_steps)) projected.upsell_steps = order.upsell_steps.map(persistedUpsellStep);
+  return redactPersisted(projected);
+}
+
+function persistedUpsellStep(step) {
+  if (!step || typeof step !== "object") return step;
+  const projected = { ...step };
+  for (const field of ["offer_url", "final_url", "api_response_url"]) {
+    if (Object.hasOwn(step, field)) projected[field] = redactUrlQuery(step[field]);
+  }
+  if (Object.hasOwn(step, "api_response_order_body")) projected.api_response_order_body = summarizeResponseBody(step.api_response_order_body);
+  return projected;
 }
 
 function findPage(topologies, type) {
@@ -7895,6 +8115,10 @@ export const __qaBrowserTestHooks = Object.freeze({
   createOrderCreationBudget,
   dispatchTestOrderPlans,
   recoverCreatedOrder,
+  persistedTestOrder,
+  sanitizedEvents,
+  summarizeResponseBody,
+  attachCreateResponseTap,
   extractReceiptLines,
   EXIT_INTENT_SURFACE_SELECTORS,
   COUPON_INPUT_SELECTORS,
