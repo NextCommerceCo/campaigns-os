@@ -166,7 +166,7 @@ test("start, build, and prepare-build keep their doctor / agent-context modes", 
 });
 
 // ---------------------------------------------------------------------------
-// Increment 2, 2.1 intake guard (contract 2.1 "Intake guard (refusal only)"):
+// Intake guard (refusal only):
 // F2.1-B7, B8, B13, B19-B23, B26, B27. Without --force, intake also refuses
 // to discard recorded waivers, warning accepts, stage history, an applied
 // theme, non-host-strip report evidence, and deploy or order-path settings

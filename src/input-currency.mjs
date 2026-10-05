@@ -27,7 +27,7 @@ const APPLICABLE_BRIEF_PARTITIONS = Object.freeze({ assembly: ["presentation"], 
 
 export const INPUT_CHANGE_REASONS = Object.freeze(["brief_presentation_changed", "brief_qa_policy_changed", "spec_material_changed"]);
 
-// The frozen stage dependency map: for each changed input, the stages it makes
+// The fixed stage dependency map: for each changed input, the stages it makes
 // owed and what each owed stage is required by and for. prepare_build is
 // re-derived by the brief save itself, doctor is recomputed on every read, and
 // setup and deploy are kept.

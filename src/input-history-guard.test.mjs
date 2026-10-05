@@ -1,5 +1,5 @@
-// F2.1-W15 and F2.1-B6: the history-reader guard (contract 2.1 "Gates never
-// read history as proof"). The guard is this test code: it scans every
+// F2.1-W15 and F2.1-B6: the history-reader guard (gates never read history
+// as proof). The guard is this test code: it scans every
 // non-test `src/**/*.mjs` file (a name not ending in `.test.mjs`) and fails
 // when a file outside the closed allowlist contains a `.history` member read.
 // Existing tests that inspect history (src/stage-ledger.test.mjs) are outside

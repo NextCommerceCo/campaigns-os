@@ -5,7 +5,7 @@
 // The brief file is re-normalized and re-evaluated with the intake products
 // the Build Context recorded, through the same artifact function intake
 // calls. A save whose material content is unchanged keeps every stage status
-// and its evidence; a material change makes the stages the frozen dependency
+// and its evidence; a material change makes the stages the input dependency
 // map names owed again (status `required` with input_change), each superseded
 // record going whole into its stage's history first. `record spec` rebinds
 // the Build Context's and the Assembly Report's spec identity, re-derives the
@@ -271,7 +271,7 @@ function briefFileUnusable(path) {
   return null;
 }
 
-// The brief-file refusals both refreshes share, in their frozen order:
+// The brief-file refusals both refreshes share, in their fixed order:
 // too large, a package-owned artifact, then no readable file. Size and
 // realpath are read from regular files only. `missingDetail(file)` words the
 // last refusal: `file` is null when there is no candidate at all, otherwise
@@ -295,7 +295,7 @@ function briefFileRefusal(files, packageArtifacts, missingDetail) {
   return null;
 }
 
-// Every record brief refusal, in the frozen order; the first that holds is
+// Every record brief refusal, in the fixed order; the first that holds is
 // returned as [code, detail], or null when none holds.
 function briefRefusal({ candidates, packageArtifacts, context, spec, report }) {
   const fileRefusal = briefFileRefusal(candidates.files, packageArtifacts, (file) => (file
@@ -559,7 +559,7 @@ function recordedBriefFile(context, { targetRepo, previousNormalizedBrief }) {
   return { path: resolve(targetRepo, found), source: optionalString(previousNormalizedBrief?._meta?.input_source) || "target_repo" };
 }
 
-// Every record spec refusal, in the frozen order: the spec checks first (the
+// Every record spec refusal, in the fixed order: the spec checks first (the
 // page-scope comparison needs a readable spec of the bound identity), then
 // the recorded brief file. Returns [code, detail] or null.
 function specRefusal({ read, specPath, packet, report, context, briefFile, packageArtifacts }) {

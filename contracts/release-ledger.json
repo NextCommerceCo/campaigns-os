@@ -5870,6 +5870,183 @@
         }
       ],
       "entry_sha256": "e9063da2788630cb0017eedc0b2e77b717b290bae0e7cb5d6bcdbbb6e6b7368e"
+    },
+    {
+      "id": "RL-0233",
+      "sequence": 225,
+      "date": "2026-10-05",
+      "kind": "release",
+      "surface_version": "1.53.0",
+      "changelog_section": "1.53.0",
+      "changelog_sha256": "3283e3d2f0dfc9619d2da75c1e83dfecd5eb57afa1b54eb76c09e7b75bf2e030",
+      "agent_impact": "Surface 1.53.0. Adds record brief, which saves Campaign Build Brief answers without re-running intake, and record spec, which binds a CampaignSpec change without discarding operator state; their --dry-run forms write nothing and append no lifecycle entry. A brief file is guided unless it sets \"brief_mode\": \"prepared\" (a campaign whose report already records a prepared brief stays prepared). An unchanged or reformatted save keeps every stage's evidence and status. A material brief or CampaignSpec change makes build, Polish and QA owed again (QA alone for a qa_policy change), keeps the last five superseded records per stage as history that is never current proof, and next, doctor, progress, readback and the Assembly Report status report the owed stage; next offers refresh_inputs (record brief or record spec) when a recorded stage was made against earlier content. Build, Polish and QA records now stamp the brief and CampaignSpec content they were made against; records without stamps read unconfirmed. Re-recording an unchanged build after an input change keeps the build owed unless the operator's --deviation-reason records that the change needs no output change; Polish stays owed until a new capture postdates the change. Intake refuses, without --force, to discard recorded waivers, warning accepts, stage history, an applied theme, or deploy and order-path settings; --force archives the build, Polish and QA records it clears and keeps stage history. spec derive no longer rebinds report identity and its --json result no longer carries rebound; run record spec after it. Bundled skills carry revision 1.53.0+skills.1: an agent that loaded an earlier revision should start a fresh session. Install the 1.53.0 package with the documented local setup command.",
+      "compatibility": "breaking",
+      "migration": "After upgrading, next routes each in-flight campaign back to build once, because build, Polish and QA records made before 1.53.0 do not record which brief and CampaignSpec content they used: re-record build and Polish, and run QA again for a new verdict. Add \"brief_mode\": \"prepared\" to a hand-written brief file whose open questions should block. Save brief answers with record brief and CampaignSpec changes with record spec instead of re-running start, prepare-build or build, which now refuse without --force to discard recorded waivers, warning accepts, stage history, an applied theme, or deploy and order-path settings. Run record spec after spec derive, and stop reading rebound from spec derive --json.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Advance the declared version to 1.53.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare the record brief and record spec rows (tier C) and their --dry-run rows (tier none); correct the start, prepare-build and build notes (refused without --force when the report carries stage evidence, stage history or operator decisions) and their --force notes (completed build, Polish and QA records are archived into stage history, which is kept); state that record build writes input_change and makes Polish and QA owed when it detects a brief or CampaignSpec change; and state that record polish, record theme and record deploy are refused while an earlier stage is owed again."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.53.0 and record the effects contract hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Describe CampaignSpec material changes for local-spec, saved-Map and gateway packets, record spec, spec derive no longer rebinding identity, and the brief and CampaignSpec dependency map."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Replace Answering The Questions with saving answers through record brief, the brief_mode rule, which changes make which stages owed again, stage history, --deviation-reason, and the one-time re-proof of records made before 1.53.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Describe what record brief and record spec write and refuse, their dry runs, and the intake refusal and --force archive."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the 1.53.0 package in the local setup install command."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate at surface 1.53.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Stage records carry each stage's effective status: a stage owed again by a brief or CampaignSpec change reads required, and one whose inputs cannot be confirmed reads unknown."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "The STAGES header prints the recorded and the effective report status, and a stage line whose effective status differs adds the recorded status and the reason."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate at surface 1.53.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.53.0+skills.1 bundle in executable examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.53.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.53.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.53.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.53.0+skills.1 bundle revision."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "record",
+          "summary": "Add record brief and record spec to the usage text; intake binds the brief material and refuses to discard operator state without --force; QA records stamp their inputs; next carries input_currency, offers refresh_inputs and notes an operator's unchanged-output decision in the QC handoff; spec derive no longer rebinds report identity, drops the rebound result field and names record spec."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor reports input currency in derived.input_currency and warns spec.material_stale, spec.binding_unknown, build_brief.material_changed, build_brief.binding_unknown, build_brief.input_unsaved, assembly.output_unchanged_after_input_change and assembly.output_unchanged_by_operator_decision; a normalized brief that is not valid JSON is the build_brief.normalized_path error, not a crash."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "next",
+          "summary": "The stage picker reads each stage's effective status, so a stage owed again by a brief or CampaignSpec change, or one whose inputs cannot be confirmed, is the stage next recommends."
+        }
+      ],
+      "entry_sha256": "059c6ff215c0d010ad26ec2c2c822016afe335ff40a7488219abd6334054b29d"
     }
   ]
 }

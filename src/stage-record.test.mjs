@@ -36,9 +36,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 const POLISH_EVIDENCE = join(ROOT, "fixtures/stage-record/polish-evidence.json");
 // Rows that record Polish after an input change and then need Polish current
-// read the capture time stream D adds to page_load (captured_at). Until then
-// they carry the node:test `todo` option "closes after D".
-const CLOSES_AFTER_D = { todo: "closes after D" };
+// read the capture time on page_load (captured_at), which polish capture does
+// not write yet. Until it does they carry the node:test `todo` option.
+const CLOSES_AFTER_D = { todo: "needs page_load.captured_at from polish capture" };
 
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 function writeJson(path, value) {
@@ -871,8 +871,8 @@ test("doctor names a saved-Map campaign's cached CampaignSpec edited materially 
 });
 
 // ---------------------------------------------------------------------------
-// Increment 2, stream A frozen rows over this lifecycle: 2.1 Brief answers
-// persist (F2.1-*) and 2.2 Spec refresh (F2.2-*), leg C, plus the node rows
+// Rows over this lifecycle: Brief answers
+// persist (F2.1-*) and Spec refresh (F2.2-*) through the CLI, plus the node rows
 // whose setup needs a recorded campaign (F2.1-W28, B15, B25, I17; F2.2-B8).
 //
 // Each row runs under withNetworkGuard (src/input-test-factories.mjs): every
@@ -883,20 +883,20 @@ test("doctor names a saved-Map campaign's cached CampaignSpec edited materially 
 // file did not already import are imported inside the row that needs them,
 // so a missing module or export fails that row alone.
 //
-// API assumptions (contract 2.1 and 2.2 surfaces):
+// API assumptions:
 // - `record brief|spec --json` prints one JSON object whose `outcome` is the
 //   outcome name (unchanged | saved | saved_with_invalidation | refreshed);
 //   with --dry-run the object also carries `dry_run: true`.
 // - The `binding_unknown` notice is an entry of that object's `notices`
 //   array: {code: "binding_unknown", stages: [<stage to re-record>, ...]}.
 // - `input_currency` is read from `doctor --no-live-refs --json`
-//   `derived.input_currency` (contract 2.1 Surfaces).
+//   `derived.input_currency`.
 // - The QA stage write is recordQaStageOutcome (src/cli.mjs:690), fed the
 //   verdict `qa run` produces; its qa brief stamp is the verdict's
 //   `source_brief_material` and its spec stamp the verdict's `spec_hash`.
 // - Refusals: assertRecordRefusal (src/input-test-factories.mjs).
-// - What a refusal or an `unchanged` outcome writes (contract outcome tables:
-//   "Nothing"): every file under the fixture directory (the target, which
+// - What a refusal or an `unchanged` outcome writes (nothing): every file
+//   under the fixture directory (the target, which
 //   holds the packet, context, report, normalized brief, doctor sidecar and
 //   progress snapshots; the source; the spec; the brief file) is byte-compared
 //   before and after. A refused record brief|spec also runs with a lifecycle
@@ -948,7 +948,7 @@ function recordInput(f, kind, extra = [], env = {}) {
   return runCli(["record", kind, "--packet", f.packetPath, ...extra, "--json"], f.dir, env);
 }
 
-// An `unchanged` outcome writes nothing (contract outcome tables), so every
+// An `unchanged` outcome writes nothing, so every
 // stage status is kept and no file under the fixture directory changes.
 function recordInputOk(f, kind, outcome, extra = []) {
   const before = outcome === "unchanged" ? { files: treeDigest(f.dir), statuses: stageStatuses(f) } : null;
@@ -1092,7 +1092,7 @@ async function recordQa(f, { runId = "qa-synthetic-run-0001", qcResults = [], as
     campaign_slug: identifier,
     ...(localId ? { local_spec_id: localId } : {}),
     spec_hash: specMaterialHash(readJson(specPathOf(f))),
-    // What qa run records at run start (2.1 Bindings): the bound brief material.
+    // What qa run records at run start: the bound brief material.
     source_brief_material: structuredClone(briefMaterial ?? report.build_brief?.material),
     started_at: at,
     completed_at: at,
@@ -1119,7 +1119,7 @@ async function recordQa(f, { runId = "qa-synthetic-run-0001", qcResults = [], as
   return verdict;
 }
 
-// ----- 2.1 rows --------------------------------------------------------------
+// ----- F2.1 rows -------------------------------------------------------------
 
 // F2.1-W1: guided intake, the draft copied with brand.cta_style set, saved.
 function saveCtaAnswer(f) {
@@ -1378,7 +1378,7 @@ test("F2.1-W14: a report recording build_brief.mode prepared and a brief file wi
   });
 });
 
-// Positive control for F2.1-W16's trace (not a frozen row): a child that does
+// Positive control for F2.1-W16's trace (not a numbered row): a child that does
 // connect (to the loopback discard port) is seen in the NODE_DEBUG=net trace.
 test("network trace control: the NODE_DEBUG=net trace records a loopback connection", () => {
   const control = spawnSync(process.execPath, ["-e", "require('node:net').connect(9, '127.0.0.1').on('error', () => {})"], {
@@ -1692,7 +1692,7 @@ test("F2.1-W28: a second QA verdict recorded with unchanged inputs, archiving th
   });
 });
 
-test("F2.1-B15: stamps copied by hand from report.build_brief.material and identity.spec_material_hash read assembly current (A1 residual)", async () => {
+test("F2.1-B15: stamps copied by hand from report.build_brief.material and identity.spec_material_hash read assembly current", async () => {
   await guardedLifecycle(async (f) => {
     await import("./input-currency.mjs");
     saveBrief(f, readJson(normalizedOf(f)), "saved");
@@ -1729,7 +1729,7 @@ test("F2.1-B25: a QA write whose verdict recorded the brief material at run star
   });
 });
 
-// ----- 2.2 rows --------------------------------------------------------------
+// ----- F2.2 rows -------------------------------------------------------------
 
 test("F2.2-W1: a local-spec checkout qty +1 with the brief unchanged gives doctor input warnings {spec.material_stale}", async () => {
   await guardedLifecycle((f) => {
@@ -2121,7 +2121,7 @@ for (const [id, label, write] of [
   });
 }
 
-// F2.2-B8: the eight effective-status readers of the contract's closed list,
+// F2.2-B8: the closed list of eight effective-status readers,
 // each judged by its own reading of assembly, polish and qa. The completed
 // records carry real completion evidence (a recorded build, a package Polish
 // capture, QA with QC results that reproduce, a passing QA gate and purchase

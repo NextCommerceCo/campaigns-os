@@ -1,5 +1,5 @@
-// Synthetic helpers for the Increment 2 stream A row tests (2.1 Brief answers
-// persist, 2.2 Spec refresh: the F2.1-* and F2.2-* rows in src/input-*.test.mjs,
+// Synthetic helpers for the brief and spec row tests (Brief answers
+// persist, Spec refresh: the F2.1-* and F2.2-* rows in src/input-*.test.mjs,
 // src/stage-record.test.mjs, src/build-brief.test.mjs and
 // src/prepare-build-report-guard.test.mjs). Imported only by those tests and
 // never shipped (src/.npmignore). Every value here is synthetic. This module
@@ -160,8 +160,8 @@ export function assertNothingWritten(root, before, what) {
 // The closed stage list (src/orchestration-stage-contract.mjs:1-9).
 export const STAGE_KEYS = Object.freeze(["prepare_build", "doctor", "setup", "assembly", "polish", "deploy", "qa"]);
 
-// The closed refusal lists, in the contract's evaluation order (2.1 record
-// brief outcomes; 2.2 record spec outcomes).
+// The closed refusal lists, in evaluation order (record brief outcomes;
+// record spec outcomes).
 export const RECORD_BRIEF_REFUSALS = Object.freeze([
   "brief_too_large",
   "brief_source_is_package_artifact",
@@ -181,7 +181,7 @@ export const RECORD_SPEC_REFUSALS = Object.freeze([
 ]);
 const ALL_REFUSALS = Object.freeze([...new Set([...RECORD_BRIEF_REFUSALS, ...RECORD_SPEC_REFUSALS])]);
 
-// The doctor warnings 2.1 and 2.2 add or extend (the input warnings).
+// The doctor input warnings for brief and spec currency.
 export const INPUT_WARNING_CODES = Object.freeze([
   "spec.material_stale",
   "spec.binding_unknown",

@@ -483,7 +483,7 @@ test("doctor blocks an incomplete prepared Build Brief", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Increment 2, 2.1 Brief answers persist: F2.1-W8 and F2.1-B2. Every command
+// Brief answers persist: F2.1-W8 and F2.1-B2. Every command
 // runs under the no-network guard (src/input-test-factories.mjs), which also
 // reaches the child CLI processes; new exports are imported inside each test.
 

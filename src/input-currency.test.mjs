@@ -1,9 +1,9 @@
-// Increment 2, stream A node rows (leg N) for read-time input currency (2.1),
+// Node rows for read-time input currency (Brief answers persist),
 // the brief material fingerprint, the stage history archive, and two of the
-// 2.2 effective-status readers: F2.1-W4, W11, W19, W26, W27, B16, B24, I1,
+// Spec refresh effective-status readers: F2.1-W4, W11, W19, W26, W27, B16, B24, I1,
 // I4, I11, I16, I18; F2.2-B14, B15, I1, I3.
 //
-// Interfaces are the contract's proposed names, imported inside each test so
+// The interfaces below are imported inside each test so
 // a missing module or export fails that row alone:
 //   assessInputCurrency({report, briefMaterial, specMaterial}) from
 //     src/input-currency.mjs, returning the derived.input_currency shape
@@ -169,7 +169,7 @@ function assemblyRecord(index) {
   };
 }
 
-// The closed history entry field list (contract 2.1 History), without the
+// The closed history entry field list, without the
 // three archive fields.
 const ENTRY_RECORD_FIELDS = Object.freeze([
   "status", "completed_at", "recorded_by", "performed_by",
@@ -389,10 +389,9 @@ test("F2.2-I3: a QA stage without source_spec_material_hash, with report identit
 });
 
 // API assumption (F2.2-B14, reader 7): qaGatePassedForCurrentBuild takes the
-// QA currency as `qaCurrency` beside `buildFingerprint` (A2 card,
-// "qaGatePassedForCurrentBuild takes the QA currency"). The setup's spec edit
+// QA currency as `qaCurrency` beside `buildFingerprint`. The setup's spec edit
 // makes the QA spec stamp differ from the current spec, which reads `owed`
-// (2.1 read-time rule 4); that currency is passed.
+// by the read-time input currency rules; that currency is passed.
 test("F2.2-B14: a QA gate passing for the current build reads qaGatePassedForCurrentBuild false once the spec is edited", async () => {
   await withNetworkGuard(async () => {
     const { QA_GATE_PLACEHOLDER_TEXT_RESIDUE, qaGateEvidence, qaGatePassedForCurrentBuild } = await import("./stage-ledger.mjs");
@@ -409,8 +408,8 @@ test("F2.2-B14: a QA gate passing for the current build reads qaGatePassedForCur
 });
 
 // API assumption (F2.2-B15, reader 8): readQaResults takes `qaCurrency`
-// (contract 2.2 Code plan); the setup's spec edit reads QA `owed`, which is
-// passed. Omitted, it keeps the BASE behaviour (A2 card CONTRACT SILENT 2).
+// beside `currentBuild`; the setup's spec edit reads QA `owed`, which is
+// passed. Omitted, rows bind by the build fingerprint alone.
 test("F2.2-B15: QA rows bound to the current build read the reason-code set {stale_binding} once the spec is edited", async () => {
   await withNetworkGuard(async () => {
     const { readQaResults } = await import("./qc-results.mjs");
