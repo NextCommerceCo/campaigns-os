@@ -5681,6 +5681,27 @@
         }
       ],
       "entry_sha256": "45f3af2c0db67bb642a1c41f64e01034b031651883ce66cc791ddd38d931ccdb"
+    },
+    {
+      "id": "RL-0229",
+      "sequence": 222,
+      "date": "2026-10-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.51.0+agent.4",
+      "changelog_sha256": "1330ace51c2b5f767c15601d8ec1e75d140ec943f30dafe7d2dd05e21d454152",
+      "agent_impact": "qa run --browser now checks each analytics.params.content entry at runtime: for each applicable page it loads the page in two fresh browser contexts, without the parameter and with ?<name>=n, and reports content_param QC results in the verdict and the next QC handoff. A result passes only when both loads served the requested document and finished the SDK display pass before the 60 s budget ended, every element whose data-next-hide or data-next-show refers to param.<name> is the same stable element in both loads, visible without the parameter and hidden with it, and no reference needs review. A parameter whose handlers cannot hide anything with n is a warning; compound or unreliably parsed conditions, content hidden at baseline, changed targets, failed loads and pairs beyond the eighth or past the budget are review or unexercised results, never blockers. Runs without --browser list the checks as not requested. The verdict stores a hash of each condition, never its text or a query value.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe the content parameter results: how QA compares the two loads, what reads as a warning, and what never passes."
+        }
+      ],
+      "entry_sha256": "ceb20731f07feccbedea6abe1376b91c8b830036ee1657fcb0f984c55dfc2b53"
     }
   ]
 }

@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.51.0+agent.4] - 2026-10-05
+
+### Added
+
+- QA now checks at runtime that declared content parameters hide their content, comparing fresh contexts with and without `?<name>=n`.
+
 ## [1.51.0+agent.3] - 2026-10-05
 
 ### Added
