@@ -35,6 +35,7 @@ import { isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalytics
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { trackingQaAssertion, trackingRunScopeRows } from "./qa-tracking-params.mjs";
 import { contentParamNotRequestedRows, contentParamQaAssertion } from "./qa-content-params.mjs";
+import { policyLinkNotRequestedRows, policyLinkQaAssertion } from "./qa-policy-links.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
@@ -2358,6 +2359,11 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
     const rows = contentParamNotRequestedRows(resolved.spec, resolved.topologies);
     qcResults.push(...rows);
     assertions.push(...rows.map(contentParamQaAssertion));
+    // Each configured policy link field likewise lists its presence and
+    // availability rows as excluded; no probe is sent.
+    const policyRows = policyLinkNotRequestedRows(resolved.spec, resolved.topologies);
+    qcResults.push(...policyRows);
+    assertions.push(...policyRows.map(policyLinkQaAssertion));
   }
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });

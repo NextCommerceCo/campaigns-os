@@ -379,7 +379,7 @@
       "sends": [],
       "effect_test": "effects: checkpoint accept --dry-run (preflight)",
       "test_scope": "preflight",
-      "notes": "checkpoint accept --dry-run runs every check the real invocation runs and prints the accepts it would record; it writes nothing under the target, does not mark the doctor sidecar stale, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout. PREFLIGHT-PROVED: no check this version ships produces an accept-eligible warning yet, so the offline fixture cannot reach an accept that passes its checks; the case proves the refused dry run writes nothing and contacts nothing.",
+      "notes": "checkpoint accept --dry-run runs every check the real invocation runs and prints the accepts it would record; it writes nothing under the target, does not mark the doctor sidecar stale, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout. PREFLIGHT-PROVED: doctor, Polish and QA checks produce accept-eligible warnings, but the offline fixture names a synthetic result ref that matches no current result, so its dry run is refused (changed_since_handoff) before it reaches an accept that passes its checks; the case proves the refused dry run writes nothing and contacts nothing.",
       "preflight": {
         "may_write": [],
         "may_contact": []
@@ -2761,12 +2761,12 @@
           "when": "--browser runs the page checks and the CampaignSpec configures at least one http(s) store policy URL",
           "requires_consent": false,
           "observed_in": [],
-          "not_observed_reason": "declared ahead of the policy-links browser check that a following release adds; QA does not send these requests at this version, and offline the browser run is blocked at the gate before any page is checked"
+          "not_observed_reason": "the offline fixture's browser run is blocked at the gate before any page is checked, so no store policy URL is requested"
         }
       ],
       "effect_test": "effects: qa run --browser (preflight)",
       "test_scope": "preflight",
-      "notes": "PREFLIGHT-PROVED: --browser needs an installed Chromium and a reachable campaign, neither of which exists offline. The case proves the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row). The header-only GETs to the configured store policy URLs are declared ahead of the check that sends them; QA does not send them at this version.",
+      "notes": "PREFLIGHT-PROVED: --browser needs an installed Chromium and a reachable campaign, neither of which exists offline. The case proves the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row). Once the page checks run, it also sends the header-only GETs to the configured http(s) store policy URLs (their own row) to check the served pages' policy links; offline the run is blocked at the gate before any page is checked, so none is sent.",
       "preflight": {
         "may_write": [
           "{target}/qa-output/**",
@@ -3395,12 +3395,12 @@
           "when": "--browser runs the page checks and the CampaignSpec configures at least one http(s) store policy URL",
           "requires_consent": false,
           "observed_in": [],
-          "not_observed_reason": "declared ahead of the policy-links browser check that a following release adds; QA does not send these requests at this version, and offline the browser run is blocked at the gate before any page is checked"
+          "not_observed_reason": "the offline fixture's browser run is blocked at the gate before any page is checked, so no store policy URL is requested"
         }
       ],
       "effect_test": "effects: qa run --browser --no-live-refs (preflight)",
       "test_scope": "preflight",
-      "notes": "PREFLIGHT-PROVED like `qa run --browser`: no installed Chromium or reachable campaign offline. The `qa run --browser` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs. The header-only GETs to the configured store policy URLs are declared ahead of the check that sends them; QA does not send them at this version.",
+      "notes": "PREFLIGHT-PROVED like `qa run --browser`: no installed Chromium or reachable campaign offline. The `qa run --browser` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs. The header-only GETs to the configured http(s) store policy URLs are sent as in the `qa run --browser` row, and offline none is sent.",
       "preflight": {
         "may_write": [
           "{target}/qa-output/**",
@@ -4131,25 +4131,25 @@
           "path": "{target}/.campaign-runtime/assembly-report.json",
           "when": "an accept is recorded — every listed result is a current accept-eligible warning that was on record before the command; the accepts are appended to qc_accepts[] and evidence[], and nothing already there is replaced",
           "observed_in": [],
-          "not_observed_reason": "no check this version ships produces an accept-eligible warning yet, so the offline fixture's accept is refused (changed_since_handoff) before the one write; the case proves the refusal writes nothing"
+          "not_observed_reason": "the offline fixture names a synthetic result ref that matches no current result, so its accept is refused (changed_since_handoff) before the one write; the case proves the refusal writes nothing"
         },
         {
           "path": "{target}/.campaign-runtime/doctor-output.json",
           "when": "an accept is recorded; it marks the retained doctor sidecar stale",
           "observed_in": [],
-          "not_observed_reason": "no check this version ships produces an accept-eligible warning yet, so the offline fixture's accept is refused (changed_since_handoff) before the one write; the case proves the refusal writes nothing"
+          "not_observed_reason": "the offline fixture names a synthetic result ref that matches no current result, so its accept is refused (changed_since_handoff) before the one write; the case proves the refusal writes nothing"
         },
         {
           "path": "{lifecycle-journal}",
           "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG; the entry records the attempt and its exit status, whether the accept was recorded or the handler failed (such as on malformed packet JSON). A refused invocation journals nothing: a typed accept refusal (any refusal_code), or any other refusal the command raises — a missing, repeated or malformed flag, a missing assembly report, or a qc_accepts or evidence value that is not an array",
           "observed_in": [],
-          "not_observed_reason": "the offline fixture reaches neither a recorded accept nor a handler failure: no check this version ships produces an accept-eligible warning yet, so its accept is refused (changed_since_handoff), and the case proves that refusal journals nothing"
+          "not_observed_reason": "the offline fixture reaches neither a recorded accept nor a handler failure: it names a synthetic result ref that matches no current result, so its accept is refused (changed_since_handoff), and the case proves that refusal journals nothing"
         }
       ],
       "sends": [],
       "effect_test": "effects: checkpoint accept (preflight)",
       "test_scope": "preflight",
-      "notes": "Tier B, not C: tier C means the invocation overwrites, clears or discards state that was already there, and `checkpoint waive` is tier C because a waiver overrides a blocking gate. An accept appends, overrides no gate and changes no readiness, and the doctor-sidecar stale stamp is the same write `theme generate` makes at tier B. Not idempotent: a repeat appends another record. It reads only what is already on disk and sends nothing. PREFLIGHT-PROVED: no check this version ships produces an accept-eligible warning yet, so the offline fixture cannot reach the write; the case proves the refused accept writes nothing — no report, no stale stamp, no journal entry — and contacts nothing.",
+      "notes": "Tier B, not C: tier C means the invocation overwrites, clears or discards state that was already there, and `checkpoint waive` is tier C because a waiver overrides a blocking gate. An accept appends, overrides no gate and changes no readiness, and the doctor-sidecar stale stamp is the same write `theme generate` makes at tier B. Not idempotent: a repeat appends another record. It reads only what is already on disk and sends nothing. PREFLIGHT-PROVED: doctor, Polish and QA checks produce accept-eligible warnings, but the offline fixture names a synthetic result ref that matches no current result, so its accept is refused (changed_since_handoff) before the write; the case proves the refused accept writes nothing — no report, no stale stamp, no journal entry — and contacts nothing.",
       "preflight": {
         "may_write": [],
         "may_contact": []

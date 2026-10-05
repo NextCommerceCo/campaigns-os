@@ -2,11 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.51.0+agent.5] - 2026-10-05
+## [1.52.0+agent.1] - 2026-10-05
 
 ### Added
 
 - Doctor now reports built-page smoke warnings: missing in-page anchor targets, missing favicon and Open Graph tags, unresolved `og:image`, the Tailwind CDN script in production builds, `cdn.29next.store` asset references, and loopback URLs.
+
+## [1.52.0] - 2026-10-05
+
+### Added
+
+- QA now checks that configured store policy links are rendered and reachable, recording link presence and availability separately. QA now sends bounded header-only requests to the configured policy URLs; the effects contract declares them.
+
+### Changed
+
+- The effects contract now states that `qa run --browser` sends the header-only GET requests to the configured store policy URLs, rather than declaring them ahead of the check that sends them.
 
 ## [1.51.0+agent.4] - 2026-10-05
 

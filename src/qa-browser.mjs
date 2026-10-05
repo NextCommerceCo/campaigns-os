@@ -15,6 +15,7 @@ import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
 import { redactPersisted, redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
 import { TRACKING_ADDED_BOUND_MS, TRACKING_OBSERVATION, createTrackingRun, trackingQaAssertion } from "./qa-tracking-params.mjs";
 import { runContentParamChecks } from "./qa-content-params.mjs";
+import { createPolicyLinkBudget, hasPolicyLinkFields, readPageAnchors, runPolicyLinkChecks } from "./qa-policy-links.mjs";
 import {
   canonicalHttpUrl,
   commonTestOrderPaths,
@@ -128,9 +129,13 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
 
   try {
     const assertions = [];
+    // Policy links (options.spec campaign.store_*): one {read, anchors} entry
+    // per page visit, filled by the page checks, and the one run budget every
+    // anchor read and the probes draw on.
+    const policyLinks = Array.isArray(options.qcResults) && hasPolicyLinkFields(options.spec) ? { pages: [], budget: createPolicyLinkBudget() } : null;
     for (const topology of topologies) {
       for (const page of topology.pages) {
-        assertions.push(...await runPageBrowserChecks(context, page, args, options));
+        assertions.push(...await runPageBrowserChecks(context, page, args, options, policyLinks));
       }
     }
     // Content parameters (options.spec analytics.params.content), after the
@@ -146,6 +151,14 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
       });
       options.qcResults.push(...contentParams.rows);
       assertions.push(...contentParams.assertions);
+    }
+    // Policy links, after the page checks: presence from the anchors each
+    // visit read, availability from one header-only probe per distinct
+    // configured URL.
+    if (policyLinks) {
+      const policyLinkResults = await runPolicyLinkChecks({ spec: options.spec, pages: policyLinks.pages, budget: policyLinks.budget });
+      options.qcResults.push(...policyLinkResults.rows);
+      assertions.push(...policyLinkResults.assertions);
     }
     return assertions;
   } finally {
@@ -970,8 +983,11 @@ export async function captureAnalyticsForUrls(urls = {}, args = {}) {
   }
 }
 
-async function runPageBrowserChecks(context, page, args, options = {}) {
+async function runPageBrowserChecks(context, page, args, options = {}, policyLinks = null) {
   const assertions = [];
+  // This visit's policy link read; it stays unread unless its anchors are read.
+  const policyLinkRead = { read: false, anchors: null };
+  policyLinks?.pages.push(policyLinkRead);
   if (!page.url) {
     assertions.push(assertion({
       id: `browser-load:${page.page_id}`,
@@ -1023,6 +1039,12 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
     await browserPage.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
     observation.settle_ms = elapsedMilliseconds(settleStarted);
     const status = response?.status() ?? null;
+    // One read of the rendered anchors, from an isolated world. A page that
+    // was not served is not read.
+    if (policyLinks && !(status && status >= 400)) {
+      const anchors = await readPageAnchors(context, browserPage, { spec: options.spec, budget: policyLinks.budget });
+      if (anchors) Object.assign(policyLinkRead, { read: true, anchors });
+    }
     const title = await browserPage.title().catch(() => "");
     const bodyPresent = await browserPage.locator("body").count().then((count) => count > 0).catch(() => false);
 
