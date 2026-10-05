@@ -413,23 +413,43 @@ const inVocabulary = (vocabulary, field, value) => Array.isArray(vocabulary?.[fi
 const isPair = (value) => Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0);
 
 // The subjects a cell lists whatever happens to it: one weight result per
-// resource, one per unfetched <video>, one oversize result per <img>.
+// resource, one per unfetched <video>, one per probed <img> whose currentSrc
+// binds to no resource (mediaChainBinder: "img:<element_path>"), one oversize result per
+// <img>, and one oversize result keyed "cell" for a cell that lists no <img>
+// (so an image-free page is never silent).
 function cellSubjects(cell) {
   const route = cell?.route ?? null;
   const viewport = cell?.viewport ?? null;
   const subjects = [];
-  for (const resource of Array.isArray(cell?.resources) ? cell.resources : []) {
+  const resources = Array.isArray(cell?.resources) ? cell.resources : [];
+  const images = Array.isArray(cell?.images) ? cell.images : [];
+  for (const resource of resources) {
     subjects.push({ check: "media.weight", page: route, viewport, key: resource?.resource_id ?? null });
   }
   for (const video of Array.isArray(cell?.videos) ? cell.videos : []) {
     if (Array.isArray(video?.resource_ids) && video.resource_ids.length) continue;
     subjects.push({ check: "media.weight", page: route, viewport, key: `video:${video?.element_index}` });
   }
-  for (const image of Array.isArray(cell?.images) ? cell.images : []) {
+  const bind = mediaChainBinder(resources);
+  const unledgered = new Set();
+  for (const image of images) {
+    if (bind(image?.resource_id).status !== "absent") continue;
+    const key = `img:${image?.element_path}`;
+    if (unledgered.has(key)) continue;
+    unledgered.add(key);
+    subjects.push({ check: "media.weight", page: route, viewport, key });
+  }
+  for (const image of images) {
     subjects.push({ check: "media.oversize", page: route, viewport, key: `${image?.resource_id}:${image?.element_path}` });
   }
+  if (!images.length) subjects.push({ check: "media.oversize", page: route, viewport, key: "cell" });
   return subjects;
 }
+
+// A value the image probe observed, or null where the cell's probe did not
+// complete and so observed nothing (dpr and image geometry have no raw
+// counterpart; only their vocabulary is checked).
+const observedOrNull = (cell, value, check) => check(value) || (cell.probe_status !== "complete" && value === null);
 
 function recordVocabularyOk(record, vocabulary) {
   return record.cells.every((cell) => isPlainObject(cell)
@@ -437,7 +457,7 @@ function recordVocabularyOk(record, vocabulary) {
     && isNonEmptyString(cell.viewport)
     && Array.isArray(record.subject?.routes) && record.subject.routes.includes(cell.route)
     && Array.isArray(record.subject?.viewports) && record.subject.viewports.includes(cell.viewport)
-    && typeof cell.dpr === "number" && cell.dpr > 0
+    && observedOrNull(cell, cell.dpr, (dpr) => typeof dpr === "number" && dpr > 0)
     && isNonEmptyString(cell.page_load_integrity)
     && inVocabulary(vocabulary, "capture_status", cell.capture_status)
     && inVocabulary(vocabulary, "probe_status", cell.probe_status)
@@ -452,11 +472,11 @@ function recordVocabularyOk(record, vocabulary) {
     && Array.isArray(cell.images) && cell.images.every((image) => isPlainObject(image)
       && (image.resource_id === null || isNonEmptyString(image.resource_id))
       && isNonEmptyString(image.element_path)
-      && typeof image.complete === "boolean"
-      && typeof image.hidden === "boolean"
-      && isPair(image.natural)
-      && isPair(image.rendered)
-      && inVocabulary(vocabulary, "object_fit", image.object_fit)
+      && observedOrNull(cell, image.complete, (value) => typeof value === "boolean")
+      && observedOrNull(cell, image.hidden, (value) => typeof value === "boolean")
+      && observedOrNull(cell, image.natural, isPair)
+      && observedOrNull(cell, image.rendered, isPair)
+      && observedOrNull(cell, image.object_fit, (value) => inVocabulary(vocabulary, "object_fit", value))
       && inVocabulary(vocabulary, "loading", image.loading))
     && Array.isArray(cell.videos) && cell.videos.every((video) => isPlainObject(video)
       && Number.isInteger(video.element_index)
@@ -522,11 +542,13 @@ function mediaElementOk(element) {
 }
 
 // A cell resource's own URL and type, and each chain hop's identity, URL and
-// status, which the cell checks compare with the ledger.
+// status, which the cell checks compare with the ledger. A null status is
+// left to the chain check, which allows it only on a final hop that failed
+// with no HTTP response.
 function cellResourceShapeOk(resource) {
   return isNonEmptyString(resource.url)
     && isNonEmptyString(resource.type)
-    && resource.chain.every((hop) => isNonEmptyString(hop.resource_id) && isNonEmptyString(hop.url) && Number.isInteger(hop.status));
+    && resource.chain.every((hop) => isNonEmptyString(hop.resource_id) && isNonEmptyString(hop.url) && (Number.isInteger(hop.status) || hop.status === null));
 }
 
 function ledgerMeasurement(entry) {
@@ -540,39 +562,91 @@ function ledgerMeasurement(entry) {
 // (a 2xx, a 304, an error) ends the chain.
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const isRedirectEntry = (entry) => Array.isArray(entry.statuses) && entry.statuses.length > 0 && entry.statuses.every((status) => REDIRECT_STATUSES.has(status));
+const mixesRedirect = (entry) => Array.isArray(entry.statuses) && entry.statuses.some((status) => REDIRECT_STATUSES.has(status)) && !isRedirectEntry(entry);
 
-// The chain the ledger implies for a requested href, never the record's: the
-// final hop is the one entry that names the requested href in its
-// match_resource_ids and answered with a non-redirect status (the requested
-// entry itself when it was not redirected), and the hops are that final entry
-// plus every redirect entry it names. Null when the ledger does not single out
-// one final hop. The ledger keeps no Location, so it fixes the hop set and
-// both ends; it cannot order intermediate hops.
-function ledgerChain(requestedId, entries, byId) {
+// The one binding of a requested href (the identity an element used) to a
+// request chain, read from the page_load ledger alone, so it is the same
+// whatever order the requests came in. The producer builds every resource's
+// chain with it and the reader checks every resource's chain against it.
+// - "bound": the ledger singles out one chain. Its final hop is the one entry
+//   that names the requested href in its match_resource_ids and answered
+//   with a non-redirect status (the requested entry itself when it was not
+//   redirected); its hops are that final entry plus every redirect entry it
+//   names. The ledger keeps no Location, so it fixes the hop set and both
+//   ends; it cannot order intermediate hops.
+// - "ambiguous": the href stands for more than one chain, or a hop of its
+//   chain also belongs to another chain. No result may be read from any one
+//   of those chains. That is the case when:
+//   - any entry of the chain, or any entry its final hop names, mixes a
+//     redirect and a non-redirect status (one request through that URL was
+//     answered, another redirected);
+//   - it only redirected and no single final hop names it;
+//   - it was answered directly and a redirect entry names it too (it is one
+//     chain's final hop and another chain's start);
+//   - a hop answered more requests than the requested href did (that hop
+//     also started a chain of its own).
+// - "absent": no ledger entry has that id.
+export function bindLedgerChain(requestedId, entries, byId = new Map(entries.map((entry) => [entry?.resource_id, entry]))) {
   const requested = byId.get(requestedId);
-  if (!requested) return null;
+  if (!requested) return { status: "absent" };
+  if (mixesRedirect(requested)) return { status: "ambiguous" };
   let final = requested;
   if (isRedirectEntry(requested)) {
     const finals = entries.filter((entry) => !isRedirectEntry(entry) && Array.isArray(entry.match_resource_ids) && entry.match_resource_ids.includes(requestedId));
-    if (finals.length !== 1) return null;
+    if (finals.length !== 1) return { status: "ambiguous" };
     [final] = finals;
   }
-  if (!Array.isArray(final.match_resource_ids)) return null;
+  if (!Array.isArray(final.match_resource_ids)) return { status: "ambiguous" };
   const hops = new Set([final.resource_id, requestedId]);
   for (const id of final.match_resource_ids) {
     const entry = byId.get(id);
+    if (entry && mixesRedirect(entry)) return { status: "ambiguous" };
     if (entry && entry !== final && isRedirectEntry(entry)) hops.add(id);
   }
-  return { final, hops };
+  if (final === requested && hops.size > 1) return { status: "ambiguous" };
+  if ([...hops].some((id) => byId.get(id)?.request_count !== requested.request_count)) return { status: "ambiguous" };
+  return { status: "bound", final, hops };
 }
+
+// The one binding of a cell's elements to its resources, read from the
+// record: an element identity (an <img>'s currentSrc id, a <video>'s fetched
+// ledger ids) binds to the resource whose chain holds it. The 1.3 rules
+// (src/polish-media-weight.mjs) and the reader's subject list both bind
+// through it. Returns { status: "bound", resource } when exactly one
+// resource's chain holds the id, { status: "ambiguous" } when more than one
+// does, and { status: "absent" } when none does.
+export function mediaChainBinder(resources) {
+  const holders = new Map();
+  for (const resource of Array.isArray(resources) ? resources : []) {
+    for (const hop of Array.isArray(resource?.chain) ? resource.chain : []) {
+      const id = hop?.resource_id;
+      if (!holders.has(id)) holders.set(id, new Set());
+      holders.get(id).add(resource);
+    }
+  }
+  return (id) => {
+    const found = id === null || id === undefined ? undefined : holders.get(id);
+    if (!found) return { status: "absent" };
+    return found.size === 1 ? { status: "bound", resource: [...found][0] } : { status: "ambiguous" };
+  };
+}
+
+// The ledger types an <img> request can be recorded under: its own (image),
+// a type merged with another load of the same URL (unknown), or a hint that
+// fetched it first (other, prefetch). An <img> bound to a document, script,
+// stylesheet or any other entry did not load from it.
+const IMAGE_REQUEST_TYPES = new Set(["image", "other", "prefetch", "unknown"]);
 
 // Every field of a cell that has a raw counterpart, checked against the
 // page_load capture for the same route and viewport. True when it re-derives.
 // Every set the reader consumes is derived from the capture and required to
-// match exactly: each resource's hop set and final hop (ledgerChain), the
-// cell's resource set (the chains partition the capture's ledger: every entry
-// in exactly one resource's chain), and the cell's video set (every <video>
-// media element). A truncated chain, a dropped resource or a dropped video
+// match exactly: each resource's hop set and final hop (bindLedgerChain; a
+// requested href the ledger binds to more than one chain, or whose chain
+// shares a hop with another chain, does not re-derive, whatever the request
+// order), the cell's resource set (the chains partition
+// the capture's ledger: every entry in exactly one resource's chain), each
+// <img> identity (null, or one resource's requested href), and the cell's
+// video set (every <video> media element). A truncated chain, a dropped resource or a dropped video
 // does not re-derive. Every raw field read is first required present and well
 // typed (ledgerEntryOk, mediaElementOk): a ledger, media list, counter, byte
 // count, status list, origin or identity set that is missing or ill typed
@@ -596,8 +670,8 @@ function cellReproduces(cell, capture) {
     if (!cellResourceShapeOk(resource)) return false;
     const { chain } = resource;
     if (chain[0].resource_id !== resource.resource_id || chain[0].url !== resource.url) return false;
-    const expected = ledgerChain(resource.resource_id, entries, byId);
-    if (!expected) return false;
+    const expected = bindLedgerChain(resource.resource_id, entries, byId);
+    if (expected.status !== "bound") return false;
     const { final } = expected;
     const chainIds = chain.map((hop) => hop.resource_id);
     if (chain.at(-1).resource_id !== final.resource_id
@@ -606,7 +680,10 @@ function cellReproduces(cell, capture) {
       || !chainIds.every((id) => expected.hops.has(id))) return false;
     for (const [index, hop] of chain.entries()) {
       const entry = byId.get(hop.resource_id);
-      if (!entry || hop.url !== entry.url || !Array.isArray(entry.statuses) || !entry.statuses.includes(hop.status)) return false;
+      if (!entry || hop.url !== entry.url || !Array.isArray(entry.statuses)) return false;
+      // A final hop whose request failed with no HTTP response carries no status.
+      const noResponse = index === chain.length - 1 && entry.statuses.length === 0 && entry.failed_request_count > 0 && hop.status === null;
+      if (!noResponse && !entry.statuses.includes(hop.status)) return false;
       if (!final.match_resource_ids.includes(hop.resource_id)) return false;
       // Every hop but the last answered with a redirect; the last did not.
       if (REDIRECT_STATUSES.has(hop.status) !== (index < chain.length - 1)) return false;
@@ -621,6 +698,16 @@ function cellReproduces(cell, capture) {
       || resource.final_origin_equal !== (final.cross_origin_request_count === 0)) return false;
   }
   if (covered.size !== byId.size) return false;
+  // Every <img> identity is null (its currentSrc has no ledger entry: weight
+  // not_in_ledger) or exactly the requested href of one resource, whose chain
+  // the ledger binds (above) and whose entry an <img> request can produce. A
+  // re-cased or unknown id, a redirect or final hop, or a document or script
+  // entry does not re-derive.
+  const heads = new Set(cell.resources.map((resource) => resource.resource_id));
+  for (const image of cell.images) {
+    if (image.resource_id === null) continue;
+    if (!heads.has(image.resource_id) || !IMAGE_REQUEST_TYPES.has(byId.get(image.resource_id).resource_type)) return false;
+  }
   const videoIndexes = media.filter((element) => element.tag_name === "video").map((element) => element.element_index).sort((a, b) => a - b);
   const listedIndexes = cell.videos.map((video) => video.element_index).sort((a, b) => a - b);
   if (!sameJson(listedIndexes, videoIndexes)) return false;
@@ -645,6 +732,34 @@ const unbound = (subject) => {
   return rest;
 };
 const hasExactly = (object, fields) => isPlainObject(object) && sameJson(Object.keys(unbound(object)).sort(), [...fields].sort());
+
+// The routes of spec pages the run did not capture (no source mapping),
+// listed in the record as uncaptured_routes (absent reads as none). The
+// page_load capture records that pages were skipped only as route_scope
+// "selected", so a list is accepted only then, and only of routes it did not
+// capture. Null when the list is malformed.
+function uncapturedRoutesOf(record) {
+  if (!Object.hasOwn(record, "uncaptured_routes")) return [];
+  const routes = record.uncaptured_routes;
+  if (!Array.isArray(routes)) return null;
+  if (!routes.length) return routes;
+  return uniqueStrings(routes)
+    && record.subject.route_scope === "selected"
+    && routes.every((route) => route.startsWith("/") && !record.subject.routes.includes(route))
+    ? routes
+    : null;
+}
+
+// The page ids of skipped spec pages whose public route the run could not
+// resolve, listed as uncaptured_page_ids (absent reads as none); accepted, like
+// uncaptured_routes, only under route_scope "selected". Null when malformed.
+function uncapturedPageIdsOf(record) {
+  if (!Object.hasOwn(record, "uncaptured_page_ids")) return [];
+  const pageIds = record.uncaptured_page_ids;
+  if (!Array.isArray(pageIds)) return null;
+  if (!pageIds.length) return pageIds;
+  return uniqueStrings(pageIds) && record.subject.route_scope === "selected" ? pageIds : null;
+}
 
 // The record's declared subject: exactly the page_load subject fields, each
 // well formed. Its routes × viewports is the declared cell grid.
@@ -691,6 +806,8 @@ function captureBindingProblem(capture, subject, currentBuild) {
     || !subject.viewports.includes(own.viewport)) return "fail";
   return isNonEmptyString(currentBuild) && own.build_fingerprint === currentBuild ? null : "stale";
 }
+
+const PAGE_NOT_CAPTURED = "page_not_captured";
 
 export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStandIns = null, rederivers = null } = {}) {
   if (record === undefined || record === null) return [];
@@ -750,7 +867,9 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
     || !measurementSummaryOk(pageLoad.measurement, declaredGrid(record.subject), pageLoad.captures.length)
     || !Array.isArray(record.cells)
     || cells.length !== record.cells.length
-    || !recordVocabularyOk(record, rules.vocabulary)) return failAll();
+    || !recordVocabularyOk(record, rules.vocabulary)
+    || uncapturedRoutesOf(record) === null
+    || uncapturedPageIdsOf(record) === null) return failAll();
 
   // The declared grid (routes × viewports) is the capture set and the cell
   // set: exactly one page_load capture and one cell per declared route and
@@ -774,6 +893,22 @@ export function readMediaWeight({ record, pageLoad, currentBuild = null, qcStand
     && record.subject.build_fingerprint === currentBuild
     && pageLoad.subject.build_fingerprint === currentBuild;
   const results = [];
+  // A spec page with no source mapping: one result per 1.3 check and viewport,
+  // unexercised / page_not_captured; keyed "cell" on its public route, or
+  // "page:<page_id>" with no page when it has no resolvable route.
+  const uncaptured = [
+    ...uncapturedRoutesOf(record).map((route) => ({ page: route, key: "cell" })),
+    ...uncapturedPageIdsOf(record).map((pageId) => ({ page: null, key: `page:${pageId}` })),
+  ];
+  for (const { page, key } of uncaptured) {
+    for (const viewport of record.subject.viewports) {
+      for (const check of POLISH_CHECKS) {
+        const subject = { check, page, viewport, key };
+        const row = unreproducedRow({ subject, check }, PAGE_NOT_CAPTURED, { leg: "polish", measuredAt });
+        results.push(recordBound ? row : staleRow(row));
+      }
+    }
+  }
   for (const cell of cells) {
     const capture = captureByKey.get(cellKey(cell.route, cell.viewport));
     const binding = captureBindingProblem(capture, record.subject, currentBuild);

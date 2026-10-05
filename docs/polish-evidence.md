@@ -109,6 +109,16 @@ Run it only after `npm run qa:install-browser` in an environment that permits a
 loopback HTTP listener and Chromium. It is deliberately opt-in and is not part
 of `npm run check` or CI.
 
+**Media weight and origin.** Polish capture records, for each captured route and viewport:
+
+- which resources came from the page's own origin after redirects, with the redirect chain;
+- their measured transfer bytes, which include response headers;
+- for each image, its natural size, rendered size, `object-fit`, and the pixel ratio of the capture.
+
+It warns when a video, or an image over 500,000 transfer bytes, comes from the page's own origin. It also warns when an image has at least twice the pixels needed at its rendered size and the captured pixel ratio (currently 1), for images of at least 250,000 natural pixels; `object-fit: cover` cropping is allowed for. Captures with cached or unmeasured transfers, partial transfers that cannot decide the result, image probes that were cut short, and never-loaded media are unexercised, never small. Another origin is reported as another origin: this check does not decide whether it is a CDN or what hosting costs. Pages Polish does not capture are listed as unexercised. The image probe runs after network observation ends and adds no requests. The record is checked against the page-load capture it came from on every read.
+
+The size check covers `<img>` elements in the page, including those inside open and closed shadow roots; images inside an iframe, `<input type=image>`, `<object>`, SVG `<image>` and CSS background images are not checked for size, and only their transfer bytes are weighed.
+
 ### Collector response records (the producer's wire form)
 
 Inside the producer, the browser adapter's CDP collector emits one

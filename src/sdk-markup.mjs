@@ -86,7 +86,7 @@ export const SDK_MARKUP_CODES = Object.freeze({
 
 // Attributes whose value names a <template> by id. The SDK reads the template
 // they point at, so that template is SDK-owned wherever it sits.
-const TEMPLATE_ID_ATTRIBUTES = /^data-(?:next-)?[a-z0-9-]*template-id$/;
+export const TEMPLATE_ID_ATTRIBUTES = /^data-(?:next-)?[a-z0-9-]*template-id$/;
 
 // Containers whose DIRECT <template> child the SDK clones (each does a
 // `:scope > template` lookup at v0.4.38: cart-summary and its
@@ -98,7 +98,7 @@ const TEMPLATE_ID_ATTRIBUTES = /^data-(?:next-)?[a-z0-9-]*template-id$/;
 // package-toggle).
 // Only the direct child: a vendor template nested deeper inside SDK chrome is
 // never read, so it may use any syntax.
-const TEMPLATE_CONTAINER_ATTRIBUTES = [
+export const TEMPLATE_CONTAINER_ATTRIBUTES = [
   "data-next-cart-summary",
   "data-summary-lines",
   "data-next-discounts",

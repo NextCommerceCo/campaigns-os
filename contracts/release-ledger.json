@@ -5608,13 +5608,67 @@
       "entry_sha256": "9702dae850ed7d8c2401f71939cb37eed3b63f09b3b7607f08ad94eccc8338da"
     },
     {
-      "id": "RL-0227",
+      "id": "RL-0228",
       "sequence": 219,
-      "date": "2026-10-05",
+      "date": "2026-10-04",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.51.0+agent.1",
-      "changelog_sha256": "fd57888cbca893b522c3e7215cc441858fd8a0f70507d0db415404ed1c573206",
+      "changelog_sha256": "d01e35ae07379f131e9a57ce7651061b0e93644b5f18a4a5cd39aa3b4d7f9478",
+      "agent_impact": "Doctor (the packet path and doctor --built) now runs built_output.cart_placeholders on every built page. A known SDK placeholder such as {item.name}, {subtotal} or {package.name} in live built HTML text, or in an alt, title, placeholder, aria-label or button value attribute outside every SDK-owned scope, is a warning (built_output.cart_placeholders.live_token) that next lists in its QC handoff; unknown brace strings and placeholders on a page whose item template selector is not an #id are review results. Move the placeholder into the SDK-owned <template> or item list that renders it, or remove it, and rebuild. A page passes only when its campaign-cart loader names an exact version in the verified list; otherwise, and on a page over a size, candidate, result or page cap or one that cannot be read, the page reads unexercised, never pass. These results are never blockers and never checkpoint gates, so checkpoint waive does not see them.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Describe the raw cart placeholder check: what it warns on, what is expected, and when a page reads unexercised."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor runs the raw cart placeholder check after the script syntax gate on the packet path and records its results in derived.qc_results, with warning and review results in warnings[]."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor --built runs the raw cart placeholder check after the script-syntax check and records its results with the other QC results."
+        }
+      ],
+      "entry_sha256": "925f8d9ad8f524dc8551be91a521d1f29555ce756d2a41c90b95dec16f5bce1f"
+    },
+    {
+      "id": "RL-0231",
+      "sequence": 220,
+      "date": "2026-10-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.51.0+agent.2",
+      "changelog_sha256": "2dbc67b81e660db15be54ec9939a05cab736eed325f84611252272955b525b31",
+      "agent_impact": "After polish capture, the Assembly Report carries media_weight beside page_load from the same capture, and next reads its image weight and oversize results instead of reporting them as not captured by this version. Run polish capture again to replace page_load evidence captured before this change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "polish",
+          "summary": "polish capture attaches the media_weight record its capture produced beside page_load in the same report write, and refuses one that is not package-produced or not bound to that page_load."
+        }
+      ],
+      "entry_sha256": "6c7e9fea48195b6c141beec753d619710e4d5c91eb6f1c027bcb814e30366bf4"
+    },
+    {
+      "id": "RL-0227",
+      "sequence": 221,
+      "date": "2026-10-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.51.0+agent.3",
+      "changelog_sha256": "c2479b7e88ca58ae09277242c2b9a617e934bd514d3892800f888038924b5b01",
       "agent_impact": "qa run with a browser test order now seeds synthetic tracking values (utm_*, affid, sub1, subaffiliate2 and up to eight names from analytics.params.tracking.preserve) and reports tracking.url (whether each value survives every observed page navigation through the navigation after the order), tracking.order (whether the matching attribution reached the request of an order the store accepted) and tracking.tag (whether os-tracking-tag literals match order metadata) as QC results in the verdict and the next QC handoff. They are warnings or review results, never blockers. A result passes only when every read it depends on completed: an unobserved step, a reload by QA, an attempt that ended early or a hop the browser did not report as a new-document commit ends the measurement without a pass. Click ids and funnel are not seeded. The persisted verdict never holds a query value: every stored string is cut at its first literal or percent-decoded query.",
       "compatibility": "additive",
       "migration": "none",
@@ -5626,7 +5680,7 @@
           "summary": "Describe the tracking parameter results: which values QA seeds, what URL preservation and order attribution report, and what is stored."
         }
       ],
-      "entry_sha256": "4b2c6657fad81b9af4d7d81a92f357ab1730a98ee1330843867ced4ed7ecb1ef"
+      "entry_sha256": "45f3af2c0db67bb642a1c41f64e01034b031651883ce66cc791ddd38d931ccdb"
     }
   ]
 }

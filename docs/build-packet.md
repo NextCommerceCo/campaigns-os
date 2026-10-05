@@ -953,6 +953,10 @@ canonical rendered output of every certified starter family
 it reads for credential declarations (`script-parse:<page_id>`; see
 [QA and test orders](qa-and-test-orders.md)).
 
+### Built-output cart placeholder check (`built_output.cart_placeholders`)
+
+**Raw cart placeholders (`built_output.cart_placeholders`).** Doctor warns when a known SDK placeholder, such as `{item.name}`, `{subtotal}` or `{package.name}`, appears in live built HTML text or in a text attribute (`alt`, `title`, `placeholder`, `aria-label`, button `value`), where it prints as raw text. Placeholders inside `<template>`, inside `data-next-cart-items`/`data-next-order-items` rows and their declared row templates, and SDK-substituted quantity text are expected. Brace strings that are not known SDK placeholders, including `{tax}`, are review results. The placeholder list is vendored from the SDK version pinned in `src/sdk-attribute-index.mjs`. Pages whose SDK loader does not name an exact version, or names a version the list was not verified against, are reported as unexercised rather than passing. These are warnings, never blockers.
+
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
 ## Artifact Locations
