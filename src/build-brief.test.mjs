@@ -476,3 +476,55 @@ test("doctor blocks an incomplete prepared Build Brief", () => {
     assert.ok(doctor.errors.some((issue) => issue.code === "build_brief.questions_unanswered"));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Increment 2, 2.1 Brief answers persist: F2.1-W8 and F2.1-B2. Every command
+// runs under the no-network guard (src/input-test-factories.mjs), which also
+// reaches the child CLI processes; new exports are imported inside each test.
+
+test("F2.1-W8: a new hand-written complete brief file with no brief_mode and no prior report reads mode guided_draft", async () => {
+  const { withNetworkGuard } = await import("./input-test-factories.mjs");
+  await withNetworkGuard(() => withBriefFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    // The :409-440 input: the guided draft with its two open questions
+    // answered, written by hand to a brief file (no brief_mode, no _meta).
+    const intake = runCliJson(["prepare-build", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--no-run-session", "--json"]);
+    assert.equal(intake.packet.build_brief.mode, "guided_draft", "setup: the draft comes from a guided intake");
+    const brief = readJson(resolve(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH));
+    brief.brand.cta_style = "solid dark button";
+    brief.offer_presentation.bundle_cards.primary_price = "discounted_unit_price";
+    delete brief._meta;
+    delete brief.brief_mode;
+    const handWritten = resolve(dir, "hand-written-brief.json");
+    writeJson(handWritten, brief);
+    const context = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
+    const spec = readJson(specPath);
+
+    // No previous report is passed: this is a new campaign.
+    const result = createCampaignBuildBriefArtifact({
+      inputPath: handWritten,
+      inputSource: "operator_flag",
+      spec,
+      activePages: context.spec.active_pages,
+      pageMappings: intake.packet.source_html.pages,
+      templateFamily: "olympus",
+      sourceAssetCrawl: context.source.asset_crawl,
+      commerceZoneFindings: context.commerce_zone_findings,
+    });
+    assert.deepEqual(result.errors, [], "setup: the hand-written file normalizes without errors");
+    assert.equal(result.artifact.status, "complete", "setup: the hand-written file answers every question");
+    assert.equal(result.mode, "guided_draft");
+  }));
+});
+
+test("F2.1-B2: a brief file with brief_mode \"maybe\" makes doctor report the error build_brief.brief_mode", async () => {
+  const { withNetworkGuard } = await import("./input-test-factories.mjs");
+  await withNetworkGuard(() => withBriefFixture(({ dir, sourceRoot, targetRepo, specPath }) => {
+    const briefFile = resolve(dir, "campaign-build-brief.json");
+    writeJson(briefFile, { ...completePreparedBrief(), brief_mode: "maybe" });
+    const intake = runCliJson(["prepare-build", "--spec", specPath, "--source", sourceRoot, "--target", targetRepo, "--template-family", "olympus", "--brief", briefFile, "--no-run-session", "--json"]);
+    assert.ok(intake.packet?.build_brief, "setup: intake read the brief file and wrote the packet");
+    const doctor = runCliJson(["doctor", "--packet", resolve(targetRepo, "campaign-runtime.build.json"), "--no-live-refs", "--json"], { allowFailure: true });
+    assert.ok(Array.isArray(doctor.errors), "setup: doctor printed its result");
+    assert.equal(doctor.errors.some((issue) => issue.code === "build_brief.brief_mode"), true, `doctor errors: ${JSON.stringify(doctor.errors.map((issue) => issue.code))}`);
+  }));
+});

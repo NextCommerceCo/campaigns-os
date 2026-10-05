@@ -16,6 +16,21 @@ import { parseArgs, polishCaptureCommand } from "./cli.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
+import { readdirSync } from "node:fs";
+import {
+  INPUT_WARNING_CODES,
+  STAGE_KEYS,
+  SHA256_PATTERN,
+  assertNothingWritten,
+  assertRecordRefusal,
+  briefJsonOfSize,
+  briefWithDesignAuthorityEntries,
+  connectedHosts,
+  reverseKeys,
+  sha256File,
+  treeDigest,
+  withNetworkGuard,
+} from "./input-test-factories.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -824,5 +839,1569 @@ test("doctor and next name a CampaignSpec edited materially after prepare-build,
       spec.spec_identity = { local_spec_id: "record-local-demo", public_route_slug: spec.spec_identity.public_route_slug };
       delete spec.map_id;
     },
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Increment 2, stream A frozen rows over this lifecycle: 2.1 Brief answers
+// persist (F2.1-*) and 2.2 Spec refresh (F2.2-*), leg C, plus the node rows
+// whose setup needs a recorded campaign (F2.1-W28, B15, B25, I17; F2.2-B8).
+//
+// Each row runs under withNetworkGuard (src/input-test-factories.mjs): every
+// child CLI process gets the guard through NODE_OPTIONS before any Campaigns
+// OS module loads in it, and the in-process calls (polish capture with its
+// stand-in browser, record deploy with a stand-in fetch, the QA stage write)
+// run under the in-process guard; any attempt fails the row. Modules this
+// file did not already import are imported inside the row that needs them,
+// so a missing module or export fails that row alone.
+//
+// API assumptions (contract 2.1 and 2.2 surfaces):
+// - `record brief|spec --json` prints one JSON object whose `outcome` is the
+//   outcome name (unchanged | saved | saved_with_invalidation | refreshed);
+//   with --dry-run the object also carries `dry_run: true`.
+// - The `binding_unknown` notice is an entry of that object's `notices`
+//   array: {code: "binding_unknown", stages: [<stage to re-record>, ...]}.
+// - `input_currency` is read from `doctor --no-live-refs --json`
+//   `derived.input_currency` (contract 2.1 Surfaces).
+// - The QA stage write is recordQaStageOutcome (src/cli.mjs:690), fed the
+//   verdict `qa run` produces; its qa brief stamp is the verdict's
+//   `source_brief_material` and its spec stamp the verdict's `spec_hash`.
+// - Refusals: assertRecordRefusal (src/input-test-factories.mjs).
+// - What a refusal or an `unchanged` outcome writes (contract outcome tables:
+//   "Nothing"): every file under the fixture directory (the target, which
+//   holds the packet, context, report, normalized brief, doctor sidecar and
+//   progress snapshots; the source; the spec; the brief file) is byte-compared
+//   before and after. A refused record brief|spec also runs with a lifecycle
+//   journal selected inside that directory, so a journal line is seen too.
+//   The existing ladder refusal of `record polish` (F2.1-B3) appends its
+//   lifecycle entry to a selected journal, as every `record` handler refusal
+//   does, so no journal is selected there.
+
+const LOCAL_SPEC = Object.freeze({
+  // A local-spec campaign, as in the #591 test above.
+  mutateSpec(spec) {
+    spec.spec_identity = { local_spec_id: "record-local-demo", public_route_slug: spec.spec_identity.public_route_slug };
+    delete spec.map_id;
+  },
+});
+const OPERATOR_DECISION = "operator: the change needs no markup change";
+const SKIPPED_POLISH = Object.freeze({ status: "skipped", skip_reason: "operator: no Polish pass for this change" });
+const TERMINAL_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial", "skipped"]);
+
+const guardedLifecycle = (run, options) => withNetworkGuard(() => withLifecycle(run, options));
+const specPathOf = (f) => join(f.dir, "campaignspec.json");
+const briefFileOf = (f, root = f.target) => join(root, "campaign-build-brief.json");
+const normalizedOf = (f) => join(f.target, ".campaign-runtime/input/campaign-build-brief.normalized.json");
+
+function stageStatuses(f, keys = STAGE_KEYS) {
+  const { stages } = readJson(f.reportPath);
+  return Object.fromEntries(keys.map((key) => [key, stages[key]?.status]));
+}
+
+function mutateJson(path, mutate) {
+  const value = readJson(path);
+  mutate(value);
+  writeJson(path, value);
+  return value;
+}
+
+// The guided draft intake wrote, with its two open questions answered. The
+// template_residue_policy.block_placeholders default is left out, so a later
+// save can write it explicitly (F2.1-W22).
+function answeredDraft(f) {
+  const brief = readJson(normalizedOf(f));
+  brief.brand.cta_style = "solid dark button";
+  brief.offer_presentation.bundle_cards.primary_price = "discounted_unit_price";
+  delete brief.template_residue_policy.block_placeholders;
+  return brief;
+}
+
+function recordInput(f, kind, extra = [], env = {}) {
+  return runCli(["record", kind, "--packet", f.packetPath, ...extra, "--json"], f.dir, env);
+}
+
+// An `unchanged` outcome writes nothing (contract outcome tables), so every
+// stage status is kept and no file under the fixture directory changes.
+function recordInputOk(f, kind, outcome, extra = []) {
+  const before = outcome === "unchanged" ? { files: treeDigest(f.dir), statuses: stageStatuses(f) } : null;
+  const result = recordInput(f, kind, extra);
+  assert.equal(result.status, 0, `record ${kind} exits 0: ${result.stderr.slice(0, 600)}`);
+  const json = JSON.parse(result.stdout);
+  assert.equal(json.outcome, outcome, `record ${kind} outcome: ${result.stdout.slice(0, 600)}`);
+  if (before) {
+    assert.deepEqual(stageStatuses(f), before.statuses, `record ${kind} reading unchanged keeps every stage status`);
+    assertNothingWritten(f.dir, before.files, `record ${kind} reading unchanged`);
+  }
+  return json;
+}
+
+// A refused record brief|spec: the exact refusal code, and no file under the
+// fixture directory written. No lifecycle journal is selected: the journal line
+// belongs to the standard invocation wrapper, as for every other refusal.
+function assertRefusedWritingNothing(f, kind, code, extra = []) {
+  const before = treeDigest(f.dir);
+  assertRecordRefusal(recordInput(f, kind, extra), kind, code);
+  assertNothingWritten(f.dir, before, `the refused record ${kind}`);
+}
+
+// Writes `brief` as the target's campaign-build-brief.json, then saves it.
+function saveBrief(f, brief, outcome = "saved_with_invalidation") {
+  writeJson(briefFileOf(f), brief);
+  return recordInputOk(f, "brief", outcome);
+}
+
+function doctorOk(f, extra = []) {
+  const result = runJson(["doctor", "--packet", f.packetPath, "--no-live-refs", ...extra], f.dir);
+  assert.ok(result.json && typeof result.json === "object", `doctor --json printed its result: ${result.stderr.slice(0, 400)}`);
+  return result.json;
+}
+
+function nextOk(f, extra = ["--no-write"]) {
+  const result = runJson(["next", "--packet", f.packetPath, ...extra], f.dir);
+  assert.ok(result.json && typeof result.json === "object", `next --json printed its result: ${result.stderr.slice(0, 400)}`);
+  return result.json;
+}
+
+function inputCurrency(f) {
+  const currency = doctorOk(f).derived?.input_currency;
+  assert.ok(currency && typeof currency === "object" && !Array.isArray(currency), "doctor --json reports derived.input_currency");
+  return currency;
+}
+
+const inputWarnings = (doctorJson) => [...new Set((doctorJson.warnings || []).map((issue) => issue.code).filter((code) => INPUT_WARNING_CODES.includes(code)))].sort();
+
+function editSpec(f, mutate) {
+  return mutateJson(specPathOf(f), mutate);
+}
+
+function bumpCheckoutQty(spec) {
+  const checkout = spec.funnels.flatMap((funnel) => funnel.pages).find((page) => page.type === "checkout");
+  assert.ok(checkout?.packages?.[0] != null, "setup: the example spec has a checkout package");
+  checkout.packages[0].qty = Number(checkout.packages[0].qty ?? 1) + 1;
+}
+
+// Intake re-run with withLifecycle's arguments (plus `extra`), then the
+// prepare-build gate cleared exactly as withLifecycle clears it.
+function reintake(f, extra = []) {
+  const result = runCli([
+    "prepare-build", "--spec", specPathOf(f), "--source", join(f.dir, "source"), "--target", f.target,
+    "--template-family", "olympus", "--no-run-session", ...extra, "--json",
+  ], f.dir);
+  assert.equal(result.status, 0, `setup: intake re-run succeeds: ${result.stderr.slice(0, 600)}`);
+  mutateJson(f.reportPath, (report) => {
+    report.stages.prepare_build.status = "completed";
+    report.stages.prepare_build.blockers = [];
+    report.blockers = [];
+    report.status = "prepared";
+  });
+  return result;
+}
+
+// Intake re-run with a brief file in the target, so the context records the
+// brief path record spec re-derives from.
+function reintakeWithBrief(f) {
+  writeJson(briefFileOf(f), answeredDraft(f));
+  reintake(f);
+  const recorded = readJson(f.contextPath).build_brief?.input_path;
+  assert.ok(recorded, "setup: the Build Context records the brief path intake used");
+  assert.equal(resolve(f.target, recorded), resolve(briefFileOf(f)), "setup: the recorded brief path is the brief file");
+}
+
+function writeEvidence(f, name, value) {
+  const path = join(f.dir, name);
+  writeJson(path, value);
+  return path;
+}
+
+// setup, build and Polish recorded, the way the record tests above do it.
+async function recordThroughPolish(f) {
+  scaffold(f);
+  recordOk(f, "setup");
+  buildSite(f);
+  recordOk(f, "build");
+  await capture(f);
+  recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+  assert.deepEqual(stageStatuses(f, ["setup", "assembly", "polish"]), { setup: "completed", assembly: "completed", polish: "completed" }, "setup: setup, build and Polish are recorded");
+}
+
+function recordThroughBuild(f) {
+  scaffold(f);
+  recordOk(f, "setup");
+  buildSite(f);
+  recordOk(f, "build");
+  assert.deepEqual(stageStatuses(f, ["setup", "assembly"]), { setup: "completed", assembly: "completed" }, "setup: setup and build are recorded");
+}
+
+// record deploy on the local preview, with a stand-in fetch answering every
+// built page 200, so the probe never leaves the process.
+async function recordDeploy(f) {
+  mutateJson(f.packetPath, (packet) => {
+    packet.deploy = { ...packet.deploy, target: "local-serve" };
+  });
+  await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, {
+    fetchImpl: async () => ({ status: 200, headers: { get: () => null }, body: null }),
+  });
+  assert.equal(readJson(f.reportPath).stages.deploy.status, "completed", "setup: deploy is recorded");
+}
+
+// The QA stage write `qa run` makes, from a synthetic verdict: the current
+// spec material, the brief material bound at run start (or `briefMaterial`),
+// one executed test order, `qcResults` and the verdict `assertions` they pair
+// with, all at `at`. `selfReferential` names the Assembly Report as the
+// stage's full verdict.
+async function recordQa(f, { runId = "qa-synthetic-run-0001", qcResults = [], assertions = [], at = new Date().toISOString(), briefMaterial, selfReferential = false } = {}) {
+  const { recordQaStageOutcome } = await import("./cli.mjs");
+  const { specMaterialHash } = await import("./spec-identity.mjs");
+  const { localQaIdentifier } = await import("./spec-source-identity.mjs");
+  const { QA_SCHEMA_VERSION } = await import("./qa-verdict.mjs");
+  const packet = readJson(f.packetPath);
+  const report = readJson(f.reportPath);
+  const localId = packet.spec?.local_spec_id ?? null;
+  const identifier = localId ? localQaIdentifier(localId) : packet.spec.map_id;
+  const verdict = {
+    schema_version: QA_SCHEMA_VERSION,
+    run_id: runId,
+    campaign_slug: identifier,
+    ...(localId ? { local_spec_id: localId } : {}),
+    spec_hash: specMaterialHash(readJson(specPathOf(f))),
+    // What qa run records at run start (2.1 Bindings): the bound brief material.
+    source_brief_material: structuredClone(briefMaterial ?? report.build_brief?.material),
+    started_at: at,
+    completed_at: at,
+    runtime: `campaigns-os-node-qa@${readJson(join(ROOT, "package.json")).version}`,
+    disposition: "ready",
+    assertions,
+    exceptions: [],
+    test_orders: [{ next_order_id: `${runId}-order-1`, is_test: true, verification: { verified: true } }],
+  };
+  const verdictPath = join(f.target, "qa-output", identifier, `${runId}.json`);
+  writeJson(verdictPath, verdict);
+  const sidecarPath = join(f.target, ".campaign-runtime/qa-verdict.json");
+  writeJson(sidecarPath, { schema_version: "campaigns-os-qa-verdict-sidecar/v0", run_id: runId, disposition: "ready", assertions: [] });
+  const written = recordQaStageOutcome({ packet: f.packetPath }, {
+    verdict,
+    local_path: selfReferential ? f.reportPath : verdictPath,
+    qa_sidecar: { path: sidecarPath },
+    qc_results: qcResults,
+  });
+  assert.equal(written, true, "setup: the QA stage write recorded the verdict");
+  const qa = readJson(f.reportPath).stages.qa;
+  assert.equal(qa.status, "completed", "setup: QA is completed");
+  assert.equal(qa.verdict_run_id, runId, "setup: QA records this verdict");
+  return verdict;
+}
+
+// ----- 2.1 rows --------------------------------------------------------------
+
+// F2.1-W1: guided intake, the draft copied with brand.cta_style set, saved.
+function saveCtaAnswer(f) {
+  const draft = readJson(normalizedOf(f));
+  assert.deepEqual(draft.questions.map((question) => question.id), ["brand_palette_cta", "bundle_pricing_presentation"], "setup: guided intake left two questions");
+  draft.brand.cta_style = "solid accent pill";
+  saveBrief(f, draft);
+}
+
+test("F2.1-W1: an answer saved with record brief is read back by a new process from the normalized brief", async () => {
+  await guardedLifecycle((f) => {
+    saveCtaAnswer(f);
+    // A new node process, started after the save, reads the normalized brief.
+    const read = spawnSync(process.execPath, [
+      "--input-type=module", "-e",
+      "import { readFileSync } from \"node:fs\"; process.stdout.write(JSON.stringify(JSON.parse(readFileSync(process.argv[1], \"utf8\")).brand.cta_style));",
+      normalizedOf(f),
+    ], { encoding: "utf8", env: process.env });
+    assert.equal(read.status, 0, `setup: the new process read the normalized brief: ${String(read.stderr).slice(0, 400)}`);
+    assert.equal(JSON.parse(read.stdout), "solid accent pill");
+  });
+});
+
+test("F2.1-W2: after the saved answer, doctor's build_brief.guided_questions is a warning naming only bundle_pricing_presentation", async () => {
+  await guardedLifecycle((f) => {
+    saveCtaAnswer(f);
+    const doctorJson = doctorOk(f);
+    const guided = doctorJson.warnings.filter((issue) => issue.code === "build_brief.guided_questions");
+    assert.equal(guided.length, 1, `one guided-questions warning: ${JSON.stringify(doctorJson.warnings.map((issue) => issue.code))}`);
+    assert.equal(doctorJson.errors.some((issue) => issue.code === "build_brief.guided_questions"), false, "it is not an error");
+    const named = ["brand_palette_cta", "bundle_pricing_presentation"].filter((id) => new RegExp(`\\b${id}\\b`).test(guided[0].message));
+    assert.deepEqual(named, ["bundle_pricing_presentation"]);
+  });
+});
+
+test("F2.1-W13: after the saved answer, doctor reports no error whose code starts with build_brief.", async () => {
+  await guardedLifecycle((f) => {
+    saveCtaAnswer(f);
+    const doctorJson = doctorOk(f);
+    assert.ok(Array.isArray(doctorJson.errors), "setup: doctor printed its errors");
+    assert.ok(doctorJson.warnings.some((issue) => issue.code === "build_brief.guided_questions"), "setup: doctor read the saved brief (it reports its open question)");
+    assert.equal(doctorJson.errors.filter((issue) => String(issue.code).startsWith("build_brief.")).length, 0, JSON.stringify(doctorJson.errors.map((issue) => issue.code)));
+  });
+});
+
+// F2.1-W3: a complete guided-file brief saved, then setup, build and Polish.
+async function completeBriefThroughPolish(f) {
+  saveBrief(f, answeredDraft(f));
+  await recordThroughPolish(f);
+}
+
+test("F2.1-W3: rewriting the brief file with identical bytes and saving leaves the Assembly Report sha256 unchanged", async () => {
+  await guardedLifecycle(async (f) => {
+    await completeBriefThroughPolish(f);
+    writeFileSync(briefFileOf(f), readFileSync(briefFileOf(f)));
+    const before = sha256File(f.reportPath);
+    recordInputOk(f, "brief", "unchanged");
+    assert.equal(sha256File(f.reportPath), before);
+  });
+});
+
+// F2.1-W5: as W3, plus deploy and a QA verdict recorded, then brand.cta_style
+// changed and saved. `beforeSave` sees the report just before the save.
+async function presentationChangeAfterQa(f, beforeSave = () => {}) {
+  await completeBriefThroughPolish(f);
+  await recordDeploy(f);
+  await recordQa(f);
+  beforeSave(readJson(f.reportPath));
+  const brief = readJson(briefFileOf(f));
+  brief.brand.cta_style = "solid accent pill";
+  saveBrief(f, brief);
+}
+
+test("F2.1-W5: a material presentation change saved with record brief makes build, Polish and QA owed and keeps setup and deploy", async () => {
+  await guardedLifecycle(async (f) => {
+    await presentationChangeAfterQa(f);
+    assert.deepEqual(stageStatuses(f, ["setup", "assembly", "polish", "deploy", "qa"]), { setup: "completed", assembly: "required", polish: "required", deploy: "completed", qa: "required" });
+  });
+});
+
+test("F2.1-W9: after the W5 save, stages.assembly.history[-1].reason_code is brief_presentation_changed", async () => {
+  await guardedLifecycle(async (f) => {
+    await presentationChangeAfterQa(f);
+    const history = readJson(f.reportPath).stages.assembly.history;
+    assert.ok(Array.isArray(history) && history.length > 0, "stages.assembly.history[] holds the superseded record");
+    assert.equal(history.at(-1).reason_code, "brief_presentation_changed");
+  });
+});
+
+test("F2.1-W17: the superseded QA record in history keeps the pre-save purchase_proof", async () => {
+  await guardedLifecycle(async (f) => {
+    let before = null;
+    await presentationChangeAfterQa(f, (report) => {
+      before = report.stages.qa.purchase_proof;
+    });
+    assert.ok(before && typeof before === "object" && before.order_paths_executed === 1, "setup: stages.qa.purchase_proof is set before the save");
+    const history = readJson(f.reportPath).stages.qa.history;
+    assert.ok(Array.isArray(history) && history.length > 0, "stages.qa.history[] holds the superseded record");
+    assert.deepEqual(history.at(-1).purchase_proof, before);
+  });
+});
+
+test("F2.1-W18: the superseded Polish record in history keeps the pre-save package page_load capture", async () => {
+  await guardedLifecycle(async (f) => {
+    let before = null;
+    await presentationChangeAfterQa(f, (report) => {
+      before = report.stages.polish.evidence?.visual_review?.page_load;
+    });
+    assert.equal(before?.performed_by, "campaigns-os polish capture", "setup: polish carries a package page_load capture before the save");
+    const history = readJson(f.reportPath).stages.polish.history;
+    assert.ok(Array.isArray(history) && history.length > 0, "stages.polish.history[] holds the superseded record");
+    assert.deepEqual(history.at(-1).evidence?.visual_review?.page_load, before);
+  });
+});
+
+test("F2.1-B3: after the W5 save, record polish with a valid evidence file exits 1", async () => {
+  await guardedLifecycle(async (f) => {
+    await presentationChangeAfterQa(f);
+    const before = treeDigest(f.dir);
+    const result = record(f, "polish", ["--evidence", POLISH_EVIDENCE, "--json"]);
+    assert.equal(result.status, 1, result.stderr.slice(0, 400));
+    assertNothingWritten(f.dir, before, "the refused record polish");
+  });
+});
+
+test("F2.1-B10: after the W5 save, record build over the unchanged _site leaves assembly owed", async () => {
+  await guardedLifecycle(async (f) => {
+    await presentationChangeAfterQa(f);
+    recordOk(f, "build");
+    assert.equal(inputCurrency(f).stages.assembly, "owed");
+  });
+});
+
+// F2.1-W24: after W5, record build with the operator's --deviation-reason
+// over the unchanged _site.
+async function operatorKeepsOutput(f) {
+  await presentationChangeAfterQa(f);
+  recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
+}
+
+test("F2.1-W24: after W5, record build --deviation-reason over the unchanged _site makes assembly current", async () => {
+  await guardedLifecycle(async (f) => {
+    await operatorKeepsOutput(f);
+    assert.equal(inputCurrency(f).stages.assembly, "current");
+  });
+});
+
+test("F2.1-W25: on a legacy packet without build_brief, record build makes assembly current", async () => {
+  await guardedLifecycle((f) => {
+    mutateJson(f.packetPath, (packet) => {
+      delete packet.build_brief;
+    });
+    assert.equal(Object.hasOwn(readJson(f.packetPath), "build_brief"), false, "setup: the packet has no build_brief");
+    recordThroughBuild(f);
+    assert.equal(inputCurrency(f).stages.assembly, "current");
+  });
+});
+
+test("F2.1-W29: after W24, record polish skipped with a skip_reason reads polish not_applicable", async () => {
+  await guardedLifecycle(async (f) => {
+    await operatorKeepsOutput(f);
+    recordOk(f, "polish", ["--evidence", writeEvidence(f, "polish-skipped.json", SKIPPED_POLISH)]);
+    assert.equal(readJson(f.reportPath).stages.polish.status, "skipped", "setup: Polish is recorded skipped");
+    const currency = inputCurrency(f);
+    assert.equal(currency.stages.polish, "not_applicable");
+    assert.equal(currency.stages.assembly, "current", "the operator's --deviation-reason build stays current (rule 5(ii))");
+  });
+});
+
+test("F2.1-W6: a change to qa_policy.require_checkout_flow alone makes only QA owed", async () => {
+  await guardedLifecycle(async (f) => {
+    await completeBriefThroughPolish(f);
+    await recordQa(f);
+    const brief = readJson(briefFileOf(f));
+    brief.qa_policy.require_checkout_flow = !brief.qa_policy.require_checkout_flow;
+    saveBrief(f, brief);
+    assert.deepEqual(stageStatuses(f, ["assembly", "polish", "qa"]), { assembly: "completed", polish: "completed", qa: "required" });
+  });
+});
+
+test("F2.1-W7: a brief_mode prepared file with one open question, bundle_pricing_presentation, saved, blocks prepare_build", async () => {
+  await guardedLifecycle((f) => {
+    const brief = readJson(normalizedOf(f));
+    brief.brand.cta_style = "solid dark button";
+    brief.brief_mode = "prepared";
+    assert.equal(brief.offer_presentation.bundle_cards.primary_price, null, "setup: bundle pricing stays unanswered");
+    saveBrief(f, brief);
+    assert.deepEqual(readJson(normalizedOf(f)).questions.map((question) => question.id), ["bundle_pricing_presentation"], "setup: exactly that question is open");
+    assert.equal(readJson(f.reportPath).stages.prepare_build.status, "blocked");
+  });
+});
+
+test("F2.1-W10: a fresh intake binds report.build_brief.material.presentation as a sha256 fingerprint", async () => {
+  await guardedLifecycle((f) => {
+    assert.match(String(readJson(f.reportPath).build_brief?.material?.presentation), SHA256_PATTERN);
+  });
+});
+
+test("F2.1-W12: the same brief file through intake and through record brief gives equal normalized artifacts, ignoring _meta.generated_at", async () => {
+  // One target and one brief file at one path. The target is saved with the
+  // file in place, intake reads the file, the target is restored, and
+  // record brief reads the same file from the same starting state.
+  await guardedLifecycle((f) => {
+    const strip = (artifact) => ({ ...artifact, _meta: { ...artifact._meta, generated_at: undefined } });
+    writeJson(briefFileOf(f), answeredDraft(f));
+    const briefBytes = readFileSync(briefFileOf(f));
+    const saved = join(f.dir, "target-before");
+    cpSync(f.target, saved, { recursive: true });
+    const restore = () => {
+      rmSync(f.target, { recursive: true, force: true });
+      cpSync(saved, f.target, { recursive: true });
+    };
+
+    reintake(f);
+    assert.equal(resolve(f.target, readJson(f.contextPath).build_brief.input_path), resolve(briefFileOf(f)), "setup: intake read the brief file");
+    const viaIntake = readJson(normalizedOf(f));
+
+    restore();
+    assert.ok(readFileSync(briefFileOf(f)).equals(briefBytes), "setup: the same brief file, byte for byte, at the same path");
+    recordInputOk(f, "brief", "saved_with_invalidation");
+    const viaRecord = readJson(normalizedOf(f));
+
+    assert.deepEqual(strip(viaRecord), strip(viaIntake));
+  });
+});
+
+test("F2.1-W14: a report recording build_brief.mode prepared and a brief file without brief_mode save with _meta.mode_source legacy_report", async () => {
+  await guardedLifecycle((f) => {
+    for (const path of [f.reportPath, f.contextPath]) {
+      mutateJson(path, (artifact) => {
+        artifact.build_brief.mode = "prepared";
+        delete artifact.build_brief.material;
+        delete artifact.build_brief.input_sha256;
+      });
+    }
+    const brief = answeredDraft(f);
+    assert.equal(Object.hasOwn(brief, "brief_mode"), false, "setup: the file has no brief_mode");
+    saveBrief(f, brief, "saved");
+    assert.equal(readJson(normalizedOf(f))._meta.mode_source, "legacy_report");
+  });
+});
+
+// Positive control for F2.1-W16's trace (not a frozen row): a child that does
+// connect (to the loopback discard port) is seen in the NODE_DEBUG=net trace.
+test("network trace control: the NODE_DEBUG=net trace records a loopback connection", () => {
+  const control = spawnSync(process.execPath, ["-e", "require('node:net').connect(9, '127.0.0.1').on('error', () => {})"], {
+    encoding: "utf8",
+    env: { ...process.env, NODE_OPTIONS: "", NODE_DEBUG: "net", CAMPAIGNS_OS_TELEMETRY: "off" },
+  });
+  assert.deepEqual(connectedHosts(String(control.stderr)), ["127.0.0.1"], "the NODE_DEBUG=net trace records a connection");
+});
+
+test("F2.1-W16: a material brief change saved with record brief opens no outbound connection", async () => {
+  await guardedLifecycle((f) => {
+    writeJson(briefFileOf(f), answeredDraft(f));
+    const result = recordInput(f, "brief", [], { NODE_DEBUG: "net" });
+    assert.equal(result.status, 0, `setup: record brief ran: ${result.stderr.slice(0, 600)}`);
+    assert.equal(JSON.parse(result.stdout).outcome, "saved_with_invalidation", "setup: the save is a material change");
+    assert.equal(connectedHosts(result.stderr).length, 0, `outbound connections: ${JSON.stringify(connectedHosts(result.stderr))}`);
+  });
+});
+
+// F2.1-W20..W23: an unchanged-material resave of the W3 brief file.
+async function resaveKeepsStatuses(f, rewrite) {
+  await completeBriefThroughPolish(f);
+  const before = stageStatuses(f);
+  rewrite(readJson(briefFileOf(f)));
+  recordInputOk(f, "brief", "saved");
+  assert.deepEqual(stageStatuses(f), before);
+}
+
+test("F2.1-W20: resaving the brief with reversed key order keeps every stage status", async () => {
+  await guardedLifecycle((f) => resaveKeepsStatuses(f, (brief) => {
+    writeFileSync(briefFileOf(f), `${JSON.stringify(reverseKeys(brief), null, 2)}\n`);
+  }));
+});
+
+test("F2.1-W21: resaving the brief with tab indentation and a trailing newline keeps every stage status", async () => {
+  await guardedLifecycle((f) => resaveKeepsStatuses(f, (brief) => {
+    writeFileSync(briefFileOf(f), `${JSON.stringify(brief, null, "\t")}\n\n`);
+  }));
+});
+
+test("F2.1-W22: resaving the brief with template_residue_policy.block_placeholders: true written explicitly keeps every stage status", async () => {
+  await guardedLifecycle((f) => resaveKeepsStatuses(f, (brief) => {
+    assert.equal(Object.hasOwn(brief.template_residue_policy, "block_placeholders"), false, "setup: the saved file omitted the default");
+    brief.template_residue_policy.block_placeholders = true;
+    writeJson(briefFileOf(f), brief);
+  }));
+});
+
+test("F2.1-W23: resaving the brief with only its _meta changed (generated_at and mode) keeps every stage status", async () => {
+  await guardedLifecycle((f) => resaveKeepsStatuses(f, (brief) => {
+    brief._meta = { ...brief._meta, generated_at: "2026-01-01T00:00:00.000Z", mode: "prepared" };
+    writeJson(briefFileOf(f), brief);
+  }));
+});
+
+test("F2.1-B1: after W1, a stamped completed assembly reads next build once the normalized brief's brand.cta_style is hand-edited", async () => {
+  await guardedLifecycle((f) => {
+    saveCtaAnswer(f);
+    recordThroughBuild(f);
+    assert.equal(nextOk(f).stage, "polish", "setup: assembly is current, so next moves to polish");
+    mutateJson(normalizedOf(f), (brief) => {
+      brief.brand.cta_style = "outlined ghost button";
+    });
+    assert.equal(nextOk(f).stage, "build");
+  });
+});
+
+test("F2.1-B4: with a brief file in the target and the spec's package qty edited, record brief refuses spec_changed_run_record_spec", async () => {
+  await guardedLifecycle((f) => {
+    writeJson(briefFileOf(f), answeredDraft(f));
+    assert.equal(existsSync(briefFileOf(f, join(f.dir, "source"))), false, "setup: no brief file in the source root");
+    editSpec(f, bumpCheckoutQty);
+    assertRefusedWritingNothing(f, "brief", "spec_changed_run_record_spec");
+  });
+});
+
+test("F2.1-B5: a required assembly whose history[0].build_fingerprint equals the current output reads next build", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    const current = doctorOk(f).derived.build_output_fingerprint;
+    assert.equal(current.status, "pass", "setup: the recorded build is the current output");
+    mutateJson(f.reportPath, (report) => {
+      const completed = report.stages.assembly;
+      report.stages.assembly = {
+        stage: "assembly",
+        status: "required",
+        required_by: "brief",
+        required_for: ["polish", "qa"],
+        build_fingerprint: completed.build_fingerprint,
+        history: [{ archived_at: new Date().toISOString(), archived_by: "record brief", reason_code: "brief_presentation_changed", ...completed }],
+      };
+    });
+    assert.equal(readJson(f.reportPath).stages.assembly.history[0].build_fingerprint, current.value, "setup: history[0] is bound to the current output");
+    assert.equal(nextOk(f).stage, "build");
+  });
+});
+
+test("F2.1-B9: different brief files in the source root and the target, with no --brief, refuse brief_path_ambiguous", async () => {
+  await guardedLifecycle((f) => {
+    const brief = answeredDraft(f);
+    writeJson(briefFileOf(f, join(f.dir, "source")), brief);
+    writeJson(briefFileOf(f), { ...brief, brand: { ...brief.brand, cta_style: "outlined ghost button" } });
+    assert.notEqual(readFileSync(briefFileOf(f, join(f.dir, "source")), "utf8"), readFileSync(briefFileOf(f), "utf8"), "setup: the two files differ");
+    assertRefusedWritingNothing(f, "brief", "brief_path_ambiguous");
+  });
+});
+
+test("F2.1-B11: a brief file of 1 MiB + 1 byte refuses brief_too_large", async () => {
+  await guardedLifecycle((f) => {
+    writeFileSync(briefFileOf(f), briefJsonOfSize(answeredDraft(f), 1_048_577));
+    assert.equal(statSync(briefFileOf(f)).size, 1_048_577, "setup: the file is 1 MiB + 1 byte");
+    assertRefusedWritingNothing(f, "brief", "brief_too_large");
+  });
+});
+
+test("F2.1-B12: a brief file with 513 design_authority entries refuses brief_too_large", async () => {
+  await guardedLifecycle((f) => {
+    const brief = briefWithDesignAuthorityEntries(answeredDraft(f), 513);
+    writeJson(briefFileOf(f), brief);
+    assert.equal(Object.keys(readJson(briefFileOf(f)).design_authority).length, 513, "setup: 513 design_authority entries");
+    assert.ok(statSync(briefFileOf(f)).size < 1_048_576, "setup: the file is under 1 MiB, so only the entry count can refuse it");
+    assertRefusedWritingNothing(f, "brief", "brief_too_large");
+  });
+});
+
+test("F2.1-B14: build and Polish recorded, spec edited, prepare-build --force, record setup, then record build over unchanged _site leaves assembly owed", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    editSpec(f, bumpCheckoutQty);
+    reintake(f, ["--force"]);
+    recordOk(f, "setup");
+    recordOk(f, "build");
+    assert.equal(readJson(f.reportPath).stages.assembly.status, "completed", "setup: record build recorded the replay");
+    assert.equal(inputCurrency(f).stages.assembly, "owed");
+  });
+});
+
+test("F2.1-B17: record brief --brief <the normalized brief> refuses brief_source_is_package_artifact", async () => {
+  await guardedLifecycle((f) => {
+    assert.equal(existsSync(normalizedOf(f)), true, "setup: the normalized brief exists");
+    assertRefusedWritingNothing(f, "brief", "brief_source_is_package_artifact", ["--brief", normalizedOf(f)]);
+  });
+});
+
+test("F2.1-B18: with the spec unchanged and context.spec.active_pages reordered by hand, record brief refuses page_scope_changed", async () => {
+  await guardedLifecycle((f) => {
+    writeJson(briefFileOf(f), answeredDraft(f));
+    mutateJson(f.contextPath, (context) => {
+      const [first, second, ...rest] = context.spec.active_pages;
+      assert.ok(first && second, "setup: at least two active pages");
+      context.spec.active_pages = [second, first, ...rest];
+    });
+    assertRefusedWritingNothing(f, "brief", "page_scope_changed");
+  });
+});
+
+test("F2.1-I2: with the normalized brief file deleted, next answers doctor-blocked", async () => {
+  await guardedLifecycle((f) => {
+    rmSync(normalizedOf(f));
+    assert.equal(existsSync(normalizedOf(f)), false, "setup: the normalized brief is gone");
+    assert.equal(nextOk(f).stage, "doctor-blocked");
+  });
+});
+
+for (const [id, label, drop] of [
+  ["F2.1-I3", "commerce_zone_findings", (context) => { delete context.commerce_zone_findings; }],
+  ["F2.1-I13", "spec.active_pages", (context) => { delete context.spec.active_pages; }],
+  ["F2.1-I14", "page_map", (context) => { delete context.page_map; }],
+  ["F2.1-I15", "source.asset_crawl", (context) => { delete context.source.asset_crawl; }],
+]) {
+  test(`${id}: with a brief file in the target and a Build Context without ${label}, record brief refuses brief_inputs_unavailable`, async () => {
+    await guardedLifecycle((f) => {
+      writeJson(briefFileOf(f), answeredDraft(f));
+      mutateJson(f.contextPath, drop);
+      assertRefusedWritingNothing(f, "brief", "brief_inputs_unavailable");
+    });
+  });
+}
+
+test("F2.1-I5: record brief --dry-run on a changed brief leaves the report sha256 unchanged", async () => {
+  await guardedLifecycle((f) => {
+    writeJson(briefFileOf(f), answeredDraft(f));
+    const before = sha256File(f.reportPath);
+    const dry = recordInputOk(f, "brief", "saved_with_invalidation", ["--dry-run"]);
+    assert.equal(dry.dry_run, true, "setup: the dry run ran");
+    assert.equal(sha256File(f.reportPath), before);
+  });
+});
+
+test("F2.1-I6: a skipped Polish stays skipped through a presentation change saved with record brief", async () => {
+  await guardedLifecycle((f) => {
+    saveBrief(f, answeredDraft(f));
+    recordThroughBuild(f);
+    recordOk(f, "polish", ["--evidence", writeEvidence(f, "polish-skipped.json", SKIPPED_POLISH)]);
+    assert.equal(readJson(f.reportPath).stages.polish.status, "skipped", "setup: Polish is skipped");
+    const brief = readJson(briefFileOf(f));
+    brief.brand.cta_style = "solid accent pill";
+    saveBrief(f, brief);
+    assert.equal(readJson(f.reportPath).stages.polish.status, "skipped");
+  });
+});
+
+const journalLines = (path) => (existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean).length : 0);
+
+test("F2.1-I7: record brief --dry-run --lifecycle-journal on a changed brief adds no journal line", async () => {
+  await guardedLifecycle((f) => {
+    const journal = join(f.dir, "lifecycle.jsonl");
+    scaffold(f);
+    recordOk(f, "setup", ["--lifecycle-journal", journal]);
+    const before = journalLines(journal);
+    assert.ok(before > 0, "setup: a recorded command journals to this file");
+    writeJson(briefFileOf(f), answeredDraft(f));
+    const dry = recordInputOk(f, "brief", "saved_with_invalidation", ["--dry-run", "--lifecycle-journal", journal]);
+    assert.equal(dry.dry_run, true, "setup: the dry run ran");
+    assert.equal(journalLines(journal), before);
+  });
+});
+
+// A legacy report: the completed assembly carries no stamps and the report
+// no brief binding, as records made before this release.
+function legacyAssembly(f) {
+  for (const path of [f.reportPath, f.contextPath]) {
+    mutateJson(path, (artifact) => {
+      delete artifact.build_brief.material;
+      delete artifact.build_brief.input_sha256;
+    });
+  }
+  mutateJson(f.reportPath, (report) => {
+    for (const key of ["assembly", "polish", "qa"]) {
+      delete report.stages[key].source_brief_material;
+      delete report.stages[key].source_spec_material_hash;
+    }
+  });
+}
+
+test("F2.1-I8: a legacy report with an unstamped completed assembly makes doctor warn build_brief.binding_unknown", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    legacyAssembly(f);
+    const doctorJson = doctorOk(f);
+    assert.equal(doctorJson.warnings.some((issue) => issue.code === "build_brief.binding_unknown"), true, JSON.stringify(doctorJson.warnings.map((issue) => issue.code)));
+  });
+});
+
+test("F2.1-I9: a legacy report with an unstamped completed assembly reads next build", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    assert.equal(nextOk(f).stage, "polish", "setup: the recorded build moves next to polish");
+    legacyAssembly(f);
+    assert.equal(nextOk(f).stage, "build");
+  });
+});
+
+test("F2.1-I10: with the bound material equal to the file and the assembly brief stamp missing, record brief reads unchanged", async () => {
+  await guardedLifecycle((f) => {
+    saveBrief(f, answeredDraft(f));
+    recordThroughBuild(f);
+    mutateJson(f.reportPath, (report) => {
+      delete report.stages.assembly.source_brief_material;
+    });
+    recordInputOk(f, "brief", "unchanged");
+  });
+});
+
+test("F2.1-I12: with no brief file in the source root or the target and no --brief, record brief refuses brief_file_missing", async () => {
+  await guardedLifecycle((f) => {
+    for (const root of [join(f.dir, "source"), f.target]) {
+      for (const name of ["campaign-build-brief.yaml", "campaign-build-brief.yml", "campaign-build-brief.json"]) {
+        assert.equal(existsSync(join(root, name)), false, `setup: no ${name} in ${root}`);
+      }
+    }
+    assertRefusedWritingNothing(f, "brief", "brief_file_missing");
+  });
+});
+
+test("F2.1-I17: every ladder stage terminal except stages.deploy.status completed_x makes the picker answer deploy", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    assert.equal(nextOk(f).stage, "deploy", "setup: build and Polish are current, so the ladder reaches deploy");
+    mutateJson(f.reportPath, (report) => {
+      report.stages.deploy = { ...report.stages.deploy, status: "completed_x" };
+      report.stages.qa = { ...report.stages.qa, status: "completed", completed_at: new Date().toISOString() };
+    });
+    // Doctor's `next` block is pickNextStage's projection (src/doctor/next-step.mjs buildNextStep).
+    assert.equal(doctorOk(f).next.stage, "deploy");
+  });
+});
+
+// Node rows whose setup needs a recorded campaign. src/input-currency.mjs is
+// imported first, so a missing module fails these rows before any setup.
+async function currencyNow(f) {
+  const { assessInputCurrency } = await import("./input-currency.mjs");
+  const { briefMaterialFingerprint } = await import("./build-brief.mjs");
+  const { specMaterialHash } = await import("./spec-identity.mjs");
+  assert.equal(typeof briefMaterialFingerprint, "function", "src/build-brief.mjs exports briefMaterialFingerprint");
+  return assessInputCurrency({
+    report: readJson(f.reportPath),
+    briefMaterial: briefMaterialFingerprint(readJson(normalizedOf(f))),
+    specMaterial: specMaterialHash(readJson(specPathOf(f))),
+  });
+}
+
+test("F2.1-W28: a second QA verdict recorded with unchanged inputs, archiving the first, reads QA current", async () => {
+  await guardedLifecycle(async (f) => {
+    await import("./input-currency.mjs");
+    await recordQa(f, { runId: "qa-synthetic-run-0001" });
+    await recordQa(f, { runId: "qa-synthetic-run-0002" });
+    const qa = readJson(f.reportPath).stages.qa;
+    assert.deepEqual((qa.history || []).map((entry) => entry.verdict_run_id), ["qa-synthetic-run-0001"], "setup: the first verdict was archived");
+    assert.equal((await currencyNow(f)).stages.qa, "current");
+  });
+});
+
+test("F2.1-B15: stamps copied by hand from report.build_brief.material and identity.spec_material_hash read assembly current (A1 residual)", async () => {
+  await guardedLifecycle(async (f) => {
+    await import("./input-currency.mjs");
+    saveBrief(f, readJson(normalizedOf(f)), "saved");
+    recordThroughBuild(f);
+    // The completed assembly carries no stamps.
+    mutateJson(f.reportPath, (report) => {
+      delete report.stages.assembly.source_brief_material;
+      delete report.stages.assembly.source_spec_material_hash;
+    });
+    const unstamped = readJson(f.reportPath).stages.assembly;
+    assert.equal(unstamped.status, "completed", "setup: assembly is completed");
+    assert.deepEqual(["source_brief_material", "source_spec_material_hash"].filter((field) => Object.hasOwn(unstamped, field)), [], "setup: the completed assembly has no stamps");
+    // The stamps copied by hand from the current bindings.
+    mutateJson(f.reportPath, (report) => {
+      assert.ok(report.build_brief.material, "setup: the saved brief bound its material");
+      report.stages.assembly.source_brief_material = structuredClone(report.build_brief.material);
+      report.stages.assembly.source_spec_material_hash = report.identity.spec_material_hash;
+    });
+    assert.equal((await currencyNow(f)).stages.assembly, "current");
+  });
+});
+
+test("F2.1-B25: a QA write whose verdict recorded the brief material at run start, before a qa_policy-only save, reads QA owed", async () => {
+  await guardedLifecycle(async (f) => {
+    await import("./input-currency.mjs");
+    saveBrief(f, answeredDraft(f));
+    const runStart = structuredClone(readJson(f.reportPath).build_brief.material);
+    assert.ok(runStart, "setup: the brief material bound when qa run starts");
+    const brief = readJson(briefFileOf(f));
+    brief.qa_policy.require_checkout_flow = !brief.qa_policy.require_checkout_flow;
+    saveBrief(f, brief);
+    await recordQa(f, { briefMaterial: runStart });
+    assert.equal((await currencyNow(f)).stages.qa, "owed");
+  });
+});
+
+// ----- 2.2 rows --------------------------------------------------------------
+
+test("F2.2-W1: a local-spec checkout qty +1 with the brief unchanged gives doctor input warnings {spec.material_stale}", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    assert.deepEqual(inputWarnings(doctorOk(f)), [], "setup: no input warning before the edit");
+    editSpec(f, bumpCheckoutQty);
+    assert.deepEqual(inputWarnings(doctorOk(f)), ["spec.material_stale"]);
+  }, LOCAL_SPEC);
+});
+
+// F2.2-W2: a local-spec lifecycle with deploy and a QA verdict recorded before
+// the W1 edit, then record spec. `beforeRefresh` runs just before record spec.
+async function specRefreshAfterQa(f, beforeRefresh = () => {}) {
+  await recordThroughPolish(f);
+  await recordDeploy(f);
+  await recordQa(f);
+  editSpec(f, bumpCheckoutQty);
+  beforeRefresh();
+  recordInputOk(f, "spec", "refreshed");
+}
+
+test("F2.2-W2: record spec after a material spec edit makes build, Polish and QA owed and keeps setup and deploy", async () => {
+  await guardedLifecycle(async (f) => {
+    await specRefreshAfterQa(f);
+    assert.deepEqual(stageStatuses(f, ["setup", "assembly", "polish", "deploy", "qa"]), { setup: "completed", assembly: "required", polish: "required", deploy: "completed", qa: "required" });
+  }, LOCAL_SPEC);
+});
+
+test("F2.2-W3: after the W2 refresh, stages.qa.history[-1].reason_code is spec_material_changed", async () => {
+  await guardedLifecycle(async (f) => {
+    await specRefreshAfterQa(f);
+    const history = readJson(f.reportPath).stages.qa.history;
+    assert.ok(Array.isArray(history) && history.length > 0, "stages.qa.history[] holds the superseded record");
+    assert.equal(history.at(-1).reason_code, "spec_material_changed");
+  }, LOCAL_SPEC);
+});
+
+test("F2.2-W7: the W2 refresh leaves waivers, qc_accepts, theme and packet.deploy byte-equal to before", async () => {
+  await guardedLifecycle(async (f) => {
+    let before = null;
+    const capture = () => {
+      const report = readJson(f.reportPath);
+      return [report.waivers, report.qc_accepts, report.theme, readJson(f.packetPath).deploy].map((value) => JSON.stringify(value));
+    };
+    await specRefreshAfterQa(f, () => {
+      mutateJson(f.reportPath, (report) => {
+        report.waivers = [{ scope: "polish.synthetic_scope", reason: "synthetic waiver kept across record spec", applies_to: [], waived_by: "Jordan Lee", waived_at: "2026-10-01T10:00:00.000Z", evidence_refs: [] }];
+        report.qc_accepts = [{
+          schema: "campaigns-os-qc-accept/v0", scope: "qc_accept", result_id: "policy.availability:campaign:store_terms",
+          check: "policy.availability", leg: "qa", subject: { check: "policy.availability", page: "campaign", key: "store_terms" },
+          state_fingerprint: `sha256:${"a".repeat(64)}`, result_at_accept: "warning", measured_at: "2026-10-01T10:00:00.000Z",
+          measured_source: "qa_verdict", reason: "synthetic accept kept across record spec", accepted_by: "Jordan Lee",
+          accepted_at: "2026-10-01T10:05:00.000Z", recorded_by: "campaigns-os checkpoint accept",
+        }];
+      });
+      before = capture();
+      assert.ok(before.every((value) => value !== undefined && value !== "null"), "setup: each of the four values is present");
+    });
+    assert.deepEqual(capture(), before);
+  }, LOCAL_SPEC);
+});
+
+test("F2.2-W4: a spec re-serialized (key order, tabs) with saved_at changed reads record spec unchanged", async () => {
+  await guardedLifecycle((f) => {
+    const spec = readJson(specPathOf(f));
+    const before = readFileSync(specPathOf(f), "utf8");
+    writeFileSync(specPathOf(f), `${JSON.stringify(reverseKeys({ ...spec, saved_at: "2026-10-05T12:00:00.000Z" }), null, "\t")}\n`);
+    assert.notEqual(readFileSync(specPathOf(f), "utf8"), before, "setup: the spec file bytes changed");
+    recordInputOk(f, "spec", "unchanged");
+  }, { mutateSpec: (spec) => { spec.saved_at = "2026-10-01T00:00:00.000Z"; } });
+});
+
+test("F2.2-W5: on a saved-Map-shaped packet, a stamped completed assembly reads next build once the cached spec's qty is edited", async () => {
+  await guardedLifecycle((f) => {
+    assert.ok(readJson(f.packetPath).spec.map_id, "setup: a saved-Map packet");
+    recordThroughBuild(f);
+    assert.equal(nextOk(f).stage, "polish", "setup: assembly is current, so next moves to polish");
+    editSpec(f, bumpCheckoutQty);
+    assert.equal(nextOk(f).stage, "build");
+  });
+});
+
+test("F2.2-W6: a qty edit, a rebuild that changes the output, record build, then record spec keeps assembly completed", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    editSpec(f, bumpCheckoutQty);
+    buildSite(f, " (rebuilt for the qty change)");
+    assert.equal(doctorOk(f).derived.build_output_fingerprint.status, "stale", "setup: the output bytes differ from the recorded build");
+    recordOk(f, "build");
+    recordInputOk(f, "spec", "refreshed");
+    assert.equal(readJson(f.reportPath).stages.assembly.status, "completed");
+    assert.equal(inputCurrency(f).stages.assembly, "current", "the rebuild changed the output, so the build is current (rule 5(i))");
+  });
+});
+
+// F2.2-W8: a hosted preview packet (not the local-preview carry-forward),
+// Polish recorded, a spec-only change, record spec, then the operator's
+// --deviation-reason build over the unchanged _site. `afterPolish` runs once
+// Polish is recorded. The row names deploy.target "preview", which doctor
+// refuses as an unknown target (src/doctor/checks.mjs:200-208, :574-575), so
+// next would be doctor-blocked whatever the row tests; "netlify" is a known
+// hosted target that keeps the row's purpose (no local-preview carry-forward).
+async function hostedSpecChangeKeepsOutput(f, afterPolish = () => {}) {
+  mutateJson(f.packetPath, (packet) => {
+    packet.deploy = { ...packet.deploy, target: "netlify", preview_url: `https://preview.example.invalid/${f.slug}/` };
+  });
+  await recordThroughPolish(f);
+  assert.equal(nextOk(f).stage, "deploy", "setup: build and Polish are recorded on a hosted preview packet");
+  await afterPolish();
+  editSpec(f, bumpCheckoutQty);
+  recordInputOk(f, "spec", "refreshed");
+  recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
+}
+
+test("F2.2-W8: on a hosted preview packet, record spec then record build --deviation-reason over the unchanged _site reads next polish", async () => {
+  await guardedLifecycle(async (f) => {
+    await hostedSpecChangeKeepsOutput(f);
+    assert.equal(nextOk(f).stage, "polish");
+    assert.equal(inputCurrency(f).stages.assembly, "current", "the operator's --deviation-reason build is current (rule 5(ii))");
+  });
+});
+
+test("F2.2-W9: as W8, the media.weight QC rows' (id, result) pairs captured before the change are unchanged", async () => {
+  await guardedLifecycle(async (f) => {
+    const { mediaWeightFixture, polishStandIn, ROUTES } = await import("./qc-test-factories.mjs");
+    const { readMediaWeight } = await import("./qc-results.mjs");
+    const pairs = () => {
+      const report = readJson(f.reportPath);
+      const visual = report.stages.polish.evidence.visual_review;
+      const read = readMediaWeight({ record: visual.media_weight, pageLoad: visual.page_load, currentBuild: report.stages.assembly.build_fingerprint, qcStandIns: { polish: polishStandIn() } });
+      return (Array.isArray(read) ? read : read.results).map((row) => [row.id, row.result]).sort((a, b) => a[0].localeCompare(b[0]));
+    };
+    let before = null;
+    await hostedSpecChangeKeepsOutput(f, () => {
+      const buildFingerprint = readJson(f.reportPath).stages.assembly.build_fingerprint;
+      const { pageLoad, record: mediaWeight } = mediaWeightFixture({
+        buildFingerprint,
+        cells: [
+          { route: ROUTES[0], resources: [{ path: `/${f.slug}/img/hero.jpg`, bytes: 600_000 }] },
+          { route: ROUTES[1], resources: [{ path: `/${f.slug}/img/badge.png`, bytes: 40_000 }] },
+        ],
+      });
+      mutateJson(f.reportPath, (report) => {
+        report.stages.polish.evidence.visual_review = { ...report.stages.polish.evidence.visual_review, page_load: pageLoad, media_weight: mediaWeight };
+      });
+      before = pairs();
+      assert.ok(before.length > 0, "setup: the media_weight record yields media.weight rows before the change");
+    });
+    assert.deepEqual(pairs(), before);
+    assert.equal(inputCurrency(f).stages.assembly, "current", "the operator's --deviation-reason build is current (rule 5(ii))");
+  });
+});
+
+test("F2.2-W10: with the spec edited and no record spec, the progress snapshot next writes has no unknown continuation action", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    editSpec(f, bumpCheckoutQty);
+    const next = nextOk(f, ["--no-remit"]);
+    assert.equal((next.next_actions || []).some((action) => action.id === "refresh_inputs"), true, `setup: next_actions includes refresh_inputs: ${JSON.stringify((next.next_actions || []).map((action) => action.id))}`);
+    const progressRoot = join(f.target, ".campaign-runtime/progress");
+    const latest = readdirSync(progressRoot).map((scope) => join(progressRoot, scope, "latest.json")).filter((path) => existsSync(path));
+    assert.equal(latest.length, 1, "setup: next wrote one progress snapshot");
+    const snapshot = readJson(latest[0]);
+    assert.ok(Array.isArray(snapshot.continuation?.action_ids), "setup: the snapshot carries continuation.action_ids");
+    // The next actions (refresh_inputs among them) are projected, so the
+    // list read below is not empty.
+    assert.ok(snapshot.continuation.action_ids.length > 0, "setup: continuation.action_ids holds the projected next actions");
+    assert.equal(snapshot.continuation.action_ids.includes("unknown"), false, JSON.stringify(snapshot.continuation.action_ids));
+  });
+});
+
+// F2.2-W11: Polish recorded, the spec edited (no record spec), then the
+// operator's --deviation-reason build over the byte-identical _site.
+async function specEditKeepsOutput(f) {
+  await recordThroughPolish(f);
+  editSpec(f, bumpCheckoutQty);
+  recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
+}
+
+test("F2.2-W11: with the spec edited and no record spec, record build --deviation-reason over the byte-identical _site makes assembly current", async () => {
+  await guardedLifecycle(async (f) => {
+    await specEditKeepsOutput(f);
+    assert.equal(inputCurrency(f).stages.assembly, "current");
+  });
+});
+
+test("F2.2-B22: as W11, Polish is required", async () => {
+  await guardedLifecycle(async (f) => {
+    await specEditKeepsOutput(f);
+    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
+    assert.equal(inputCurrency(f).stages.assembly, "current", "the operator's --deviation-reason build is current (rule 5(ii))");
+  });
+});
+
+test("F2.2-B23: after W11, a second spec edit and record build without --deviation-reason over the byte-identical _site leave assembly owed", async () => {
+  await guardedLifecycle(async (f) => {
+    await specEditKeepsOutput(f);
+    editSpec(f, bumpCheckoutQty);
+    recordOk(f, "build");
+    assert.equal(inputCurrency(f).stages.assembly, "owed");
+  });
+});
+
+test("F2.2-W12: on an all-stock packet, record spec, a changed rebuild, record build, then Polish recorded skipped reads polish not_applicable", async () => {
+  await guardedLifecycle((f) => {
+    mutateJson(f.packetPath, (packet) => {
+      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock: no design source" }));
+    });
+    recordThroughBuild(f);
+    editSpec(f, bumpCheckoutQty);
+    recordInputOk(f, "spec", "refreshed");
+    buildSite(f, " (rebuilt for the qty change)");
+    recordOk(f, "build");
+    recordOk(f, "polish", ["--evidence", writeEvidence(f, "polish-skipped.json", SKIPPED_POLISH)]);
+    assert.equal(readJson(f.reportPath).stages.polish.status, "skipped", "setup: Polish is recorded skipped");
+    const currency = inputCurrency(f);
+    assert.equal(currency.stages.polish, "not_applicable");
+    assert.equal(currency.stages.assembly, "current", "the rebuild changed the output, so the build is current (rule 5(i))");
+  });
+});
+
+test("F2.2-B1: when the target's SDK pin moves, spec derive leaves report.identity.spec_material_hash unchanged", async () => {
+  await guardedLifecycle((f) => {
+    scaffold(f);
+    const before = readJson(f.reportPath).identity.spec_material_hash;
+    const campaigns = join(f.target, "_data/campaigns.json");
+    const pinned = readJson(campaigns)[f.spec.campaign.slug].sdk_version;
+    mutateJson(campaigns, (entries) => {
+      entries[f.spec.campaign.slug].sdk_version = "0.4.40";
+    });
+    assert.notEqual(pinned, "0.4.40", "setup: the target pin moves");
+    const derived = runJson(["spec", "derive", "--packet", f.packetPath], f.dir);
+    assert.equal(derived.status, 0, `setup: spec derive succeeds: ${derived.stderr.slice(0, 400)}`);
+    assert.equal(readJson(specPathOf(f)).global_config.sdk_version, "0.4.40", "setup: spec derive wrote the moved pin into the spec");
+    assert.equal(readJson(f.reportPath).identity.spec_material_hash, before);
+  });
+});
+
+test("F2.2-B2: report.identity.spec_material_hash hand-set to the edited spec's value, with old stamps, reads next build", async () => {
+  await guardedLifecycle(async (f) => {
+    const { specMaterialHash } = await import("./spec-identity.mjs");
+    recordThroughBuild(f);
+    assert.equal(nextOk(f).stage, "polish", "setup: assembly is current, so next moves to polish");
+    const edited = editSpec(f, bumpCheckoutQty);
+    mutateJson(f.reportPath, (report) => {
+      report.identity.spec_material_hash = specMaterialHash(edited);
+    });
+    assert.equal(nextOk(f).stage, "build");
+  });
+});
+
+test("F2.2-B3: after W2, record build over the unchanged _site leaves QA required", async () => {
+  await guardedLifecycle(async (f) => {
+    await specRefreshAfterQa(f);
+    recordOk(f, "build");
+    assert.equal(readJson(f.reportPath).stages.qa.status, "required");
+    assert.equal(inputCurrency(f).stages.assembly, "owed", "a replay over the unchanged output leaves the build owed (rule 5)");
+  }, LOCAL_SPEC);
+});
+
+// Every stage recorded, the doctor stage by doctor --write: next answers done
+// and the report summary reads completed.
+async function recordThroughQa(f, qa = {}) {
+  await recordThroughPolish(f);
+  await recordDeploy(f);
+  await recordQa(f, qa);
+  doctorOk(f, ["--write"]);
+  assert.equal(nextOk(f).stage, "done", "setup: every stage is recorded and next answers done");
+  assert.equal(readJson(f.reportPath).status, "completed", "setup: the report records completed");
+}
+
+// The readback STAGES section's stage lines, as {stage: printed status}.
+function readbackStages(stdout) {
+  const lines = stdout.split("\n");
+  const start = lines.findIndex((line) => line.startsWith("STAGES"));
+  assert.ok(start >= 0, "setup: readback printed the STAGES section");
+  const stages = {};
+  for (const line of lines.slice(start + 1)) {
+    if (!line.startsWith("  ")) break;
+    const match = /^  ([a-z_]+)\s+(\S+)/.exec(line);
+    if (match && STAGE_KEYS.includes(match[1])) stages[match[1]] = match[2];
+  }
+  return stages;
+}
+
+test("F2.2-B4: with every stage completed (done), a spec edit reads next build", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    editSpec(f, bumpCheckoutQty);
+    assert.equal(nextOk(f).stage, "build");
+  });
+});
+
+test("F2.2-B12: with every stage completed and the spec edited (no record spec), doctor --write writes report.status prepared", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    editSpec(f, bumpCheckoutQty);
+    const sidecar = join(f.target, ".campaign-runtime/doctor-output.json");
+    const sidecarBefore = existsSync(sidecar) ? readFileSync(sidecar, "utf8") : null;
+    doctorOk(f, ["--write"]);
+    assert.notEqual(existsSync(sidecar) ? readFileSync(sidecar, "utf8") : null, sidecarBefore, "setup: doctor --write wrote its output");
+    assert.equal(readJson(f.reportPath).status, "prepared");
+  });
+});
+
+test("F2.2-B13: with every stage completed and the spec edited (no write), the readback STAGES header shows effective report status prepared", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    editSpec(f, bumpCheckoutQty);
+    assert.equal(readJson(f.reportPath).status, "completed", "setup: the report still records completed");
+    const readback = runCli(["readback", f.target, "--packet", f.packetPath], f.dir);
+    assert.equal(readback.status, 0, `setup: readback ran: ${readback.stderr.slice(0, 400)}`);
+    const header = readback.stdout.split("\n").find((line) => line.startsWith("STAGES"));
+    assert.ok(header, "setup: readback printed the STAGES section");
+    assert.equal(/;\s*effective:\s*([a-z_]+)\]/.exec(header)?.[1], "prepared", header);
+  });
+});
+
+test("F2.2-B5: a page label-only edit refreshed with record spec makes assembly required", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    editSpec(f, (spec) => {
+      const landing = spec.funnels.flatMap((funnel) => funnel.pages).find((page) => page.id === "landing");
+      assert.ok(landing, "setup: the example spec has a landing page");
+      landing.label = `${landing.label || "Landing"} (edited)`;
+    });
+    recordInputOk(f, "spec", "refreshed");
+    assert.equal(readJson(f.reportPath).stages.assembly.status, "required");
+  });
+});
+
+// The active-page edits record spec must refuse as page_scope_changed.
+function pagesOf(spec) {
+  return spec.funnels.flatMap((funnel) => funnel.pages);
+}
+for (const [id, label, edit] of [
+  ["F2.2-B6", "an active page added", (spec) => {
+    const funnel = spec.funnels.find((candidate) => candidate.pages.some((page) => page.id === "landing"));
+    const landing = funnel.pages.find((page) => page.id === "landing");
+    funnel.pages.push({ ...structuredClone(landing), id: "landing-extra", label: "Landing extra", page_url: "landing-extra/" });
+  }],
+  ["F2.2-B16", "two active pages swapped in order", (spec) => {
+    const funnel = spec.funnels.find((candidate) => candidate.pages.length >= 2);
+    assert.ok(funnel, "setup: a funnel with two pages");
+    [funnel.pages[0], funnel.pages[1]] = [funnel.pages[1], funnel.pages[0]];
+  }],
+  ["F2.2-B17", "one active page's route changed", (spec) => {
+    const upsell = pagesOf(spec).find((page) => page.id === "upsell");
+    assert.ok(upsell, "setup: the example spec has an upsell page");
+    upsell.page_url = "upsell-moved/";
+  }],
+]) {
+  test(`${id}: with the brief file at the recorded brief path and ${label}, record spec refuses page_scope_changed`, async () => {
+    await guardedLifecycle((f) => {
+      reintakeWithBrief(f);
+      editSpec(f, edit);
+      assertRefusedWritingNothing(f, "spec", "page_scope_changed");
+    });
+  });
+}
+
+test("F2.2-B7: with the brief file at the recorded brief path and local_spec_id changed, record spec refuses spec_identity_changed", async () => {
+  await guardedLifecycle((f) => {
+    reintakeWithBrief(f);
+    editSpec(f, (spec) => {
+      spec.spec_identity = { ...spec.spec_identity, local_spec_id: "record-local-demo-two" };
+    });
+    assertRefusedWritingNothing(f, "spec", "spec_identity_changed");
+  }, LOCAL_SPEC);
+});
+
+for (const [id, label, write] of [
+  ["F2.2-B18", "a brief file of 1 MiB + 1 byte", (f) => {
+    writeFileSync(briefFileOf(f), briefJsonOfSize(answeredDraft(f), 1_048_577));
+    assert.equal(statSync(briefFileOf(f)).size, 1_048_577, "setup: the file is 1 MiB + 1 byte");
+  }],
+  ["F2.2-B19", "a brief file with 513 design_authority entries", (f) => {
+    writeJson(briefFileOf(f), briefWithDesignAuthorityEntries(answeredDraft(f), 513));
+    assert.ok(statSync(briefFileOf(f)).size < 1_048_576, "setup: under 1 MiB, so only the entry count can refuse it");
+  }],
+]) {
+  test(`${id}: a spec material edit with ${label} at the recorded brief path refuses brief_too_large`, async () => {
+    await guardedLifecycle((f) => {
+      reintakeWithBrief(f);
+      write(f);
+      editSpec(f, bumpCheckoutQty);
+      assertRefusedWritingNothing(f, "spec", "brief_too_large");
+    });
+  });
+}
+
+// F2.2-B8: the eight effective-status readers of the contract's closed list,
+// each judged by its own reading of assembly, polish and qa. The completed
+// records carry real completion evidence (a recorded build, a package Polish
+// capture, QA with QC results that reproduce, a passing QA gate and purchase
+// proof). Each reader first reads them in place (the control: every reader
+// reads them current), then reads them again after they move to history[-1]
+// behind a `required` stage, where a reader that took completion from
+// history would read them current again.
+const ARCHIVED_STAGES = Object.freeze(["assembly", "polish", "qa"]);
+const LATER_THAN_BUILD = Object.freeze(["polish", "deploy", "qa", "done"]);
+const CLOSEOUT_ACTION_IDS = Object.freeze(["run_end", "run_record_closeout", "run_record_present", "run_record_remit_recovery"]);
+
+// [reader, reads any of assembly, polish, qa as current] for each reader, read
+// from the report on disk. A ladder refusal reads not-current only when it is
+// the refusal of the assembly prerequisite; any other outcome counts as current.
+async function effectiveStatusReadings(f, { qaCurrency, fullVerdict }) {
+  const { QA_GATE_PLACEHOLDER_TEXT_RESIDUE, qaGatePassedForCurrentBuild } = await import("./stage-ledger.mjs");
+  const { readQaResults } = await import("./qc-results.mjs");
+  const { qaStandIns } = await import("./qc-test-factories.mjs");
+  const readings = [];
+  // 1. pickNextStage: assembly not current routes next to build.
+  const next = nextOk(f);
+  assert.ok(!String(next.stage).startsWith("doctor-blocked"), `setup: next answered a ladder stage: ${JSON.stringify(next.errors || [])}`);
+  readings.push(["pickNextStage", LATER_THAN_BUILD.includes(next.stage)]);
+  // 4. Run Record closeout's completion reader: the done branch of next's actions.
+  readings.push(["run record closeout", next.stage === "done" || (next.next_actions || []).some((action) => CLOSEOUT_ACTION_IDS.includes(action.id))]);
+  // 2. ladderProblems, through record polish and record deploy dry runs.
+  const polishRun = record(f, "polish", ["--evidence", POLISH_EVIDENCE, "--dry-run", "--json"]);
+  const polishLadder = polishRun.status === 1 && polishRun.stderr.includes("record polish refused") && polishRun.stderr.includes("stages.assembly.status");
+  readings.push(["ladderProblems (record polish)", !polishLadder]);
+  let deployLadder = false;
+  try {
+    await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/`, "dry-run": true }, {
+      fetchImpl: async () => ({ status: 200, headers: { get: () => null }, body: null }),
+    });
+  } catch (error) {
+    deployLadder = String(error?.message).includes("record deploy refused") && String(error?.message).includes("stages.assembly.status");
+  }
+  readings.push(["ladderProblems (record deploy)", !deployLadder]);
+  // 5. Progress: the snapshot next writes, one stage entry per archived stage.
+  nextOk(f, ["--no-remit"]);
+  const progressRoot = join(f.target, ".campaign-runtime/progress");
+  const latest = readdirSync(progressRoot).map((scope) => join(progressRoot, scope, "latest.json")).filter((path) => existsSync(path));
+  assert.equal(latest.length, 1, "setup: next wrote one progress snapshot");
+  const progressStages = readJson(latest[0]).stages.filter((entry) => ARCHIVED_STAGES.includes(entry.stage));
+  assert.deepEqual(progressStages.map((entry) => entry.stage).sort(), [...ARCHIVED_STAGES], "setup: the progress snapshot has an entry for each archived stage");
+  readings.push(["progress", progressStages.some((entry) => TERMINAL_STATUSES.includes(entry.status))]);
+  // 6. Readback: the STAGES lines of the three stages.
+  const readback = runCli(["readback", f.target, "--packet", f.packetPath], f.dir);
+  assert.equal(readback.status, 0, `setup: readback ran: ${readback.stderr.slice(0, 400)}`);
+  const printed = readbackStages(readback.stdout);
+  assert.deepEqual(Object.keys(printed).filter((key) => ARCHIVED_STAGES.includes(key)).sort(), [...ARCHIVED_STAGES], "setup: readback printed the three stage lines");
+  readings.push(["readback", ARCHIVED_STAGES.some((key) => TERMINAL_STATUSES.includes(printed[key]))]);
+  // 3. deriveAssemblyReportSummary, through doctor --write: anything but
+  // `prepared` (the report keeps `completed` until the summary is derived).
+  doctorOk(f, ["--write"]);
+  const report = readJson(f.reportPath);
+  readings.push(["deriveAssemblyReportSummary", report.status !== "prepared"]);
+  // 7. and 8., in process, from the report on disk.
+  const build = report.stages.assembly.build_fingerprint;
+  readings.push(["qaGatePassedForCurrentBuild", qaGatePassedForCurrentBuild(report, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: build, qaCurrency }) !== false]);
+  // A QA row with any result but `unexercised` is a current QA result. QA
+  // results whose evidence moved to history have no current result.
+  const read = readQaResults({ stageEvidence: report.stages.qa.evidence, stage: report.stages.qa, fullVerdict, currentBuild: build, qcStandIns: { qa: qaStandIns() }, qaCurrency });
+  const qaRows = Array.isArray(read) ? read : read.results;
+  readings.push(["readQaResults", qaRows.some((row) => row.result !== "unexercised")]);
+  assert.equal(new Set(readings.map(([name]) => name.replace(/ \(.*\)$/, ""))).size, 8, "setup: all eight listed readers were read");
+  return { readings, qaRows };
+}
+
+test("F2.2-B8: with assembly, polish and qa required and each history[-1] a completed record stamped with the current inputs, none of the eight readers reports them current", async () => {
+  await guardedLifecycle(async (f) => {
+    const { QA_GATE_PLACEHOLDER_TEXT_RESIDUE } = await import("./stage-ledger.mjs");
+    const { qaAssertionFor, qaObservation, qaRowFor } = await import("./qc-test-factories.mjs");
+    const at = new Date(Date.now() - 60_000).toISOString();
+    const qcResults = [
+      qaRowFor(qaObservation({ check: "policy.presence", key: "store_privacy", outcome: "reachable" }), { measured_at: at }),
+      qaRowFor(qaObservation({ check: "policy.availability", key: "store_terms", outcome: "reachable" }), { measured_at: at }),
+    ];
+    await recordThroughQa(f, { qcResults, assertions: qcResults.map((row) => qaAssertionFor(row)), at });
+    // The QA gate pass for the current build, as qa run records it, and the
+    // verdict identity in the shape the QA QC reader pairs the full verdict by
+    // (stage.identity.verdict_run_id, as src/qc-test-factories.mjs
+    // installQaStage writes it).
+    mutateJson(f.reportPath, (report) => {
+      const qa = report.stages.qa;
+      qa.identity = { verdict_run_id: qa.verdict_run_id };
+      qa.evidence = { ...qa.evidence, source_build_fingerprint: report.stages.assembly.build_fingerprint, gates: { [QA_GATE_PLACEHOLDER_TEXT_RESIDUE]: { status: "pass" } } };
+    });
+    const completed = readJson(f.reportPath);
+    const fullVerdict = readJson(completed.stages.qa.outputs[0]);
+
+    // Control: in place, the completed records read current in every reader.
+    const control = await effectiveStatusReadings(f, { qaCurrency: "current", fullVerdict });
+    assert.deepEqual(control.qaRows.map((row) => row.result), ["pass", "pass"], `control: the QA results reproduce and read current in place: ${JSON.stringify(control.qaRows.map((row) => [row.id, row.result, row.reason_code]))}`);
+    assert.deepEqual(control.readings.filter(([, reportsCurrent]) => !reportsCurrent), [], "control: every reader reads the completed records current in place");
+
+    // The same records moved to history[-1], stamped with the current inputs.
+    const archivedAt = new Date().toISOString();
+    mutateJson(f.reportPath, (report) => {
+      const stamps = { source_brief_material: structuredClone(report.build_brief?.material), source_spec_material_hash: report.identity.spec_material_hash };
+      const entry = ({ history: _history, ...record }) => ({ archived_at: archivedAt, archived_by: "record spec", reason_code: "spec_material_changed", ...record, ...stamps });
+      report.stages.assembly = { stage: "assembly", status: "required", required_by: "spec", required_for: ["polish", "qa"], build_fingerprint: report.stages.assembly.build_fingerprint, history: [entry(report.stages.assembly)] };
+      report.stages.polish = { stage: "polish", status: "required", required_by: "spec", required_for: ["qa"], history: [entry(report.stages.polish)] };
+      report.stages.qa = { stage: "qa", status: "required", required_by: "spec", required_for: [], history: [entry(report.stages.qa)] };
+    });
+    const report = readJson(f.reportPath);
+    for (const key of ARCHIVED_STAGES) {
+      assert.equal(report.stages[key].status, "required", `setup: ${key} is required`);
+      assert.equal(report.stages[key].history.at(-1).status, "completed", `setup: ${key} history[-1] is a completed record`);
+    }
+    assert.equal(report.stages.assembly.history.at(-1).build_fingerprint, report.stages.assembly.build_fingerprint, "setup: the archived build is the current output");
+    assert.equal(report.stages.polish.history.at(-1).evidence?.visual_review?.page_load?.performed_by, "campaigns-os polish capture", "setup: the archived Polish carries its package capture");
+    assert.deepEqual(report.stages.qa.history.at(-1).evidence?.qc_results, completed.stages.qa.evidence.qc_results, "setup: the archived QA carries its QC results");
+    assert.equal(report.stages.qa.history.at(-1).evidence.qc_results.length, 2, "setup: the archived QC results are not empty");
+    assert.deepEqual(report.stages.qa.history.at(-1).evidence.gates, { [QA_GATE_PLACEHOLDER_TEXT_RESIDUE]: { status: "pass" } }, "setup: the archived QA carries its gate pass");
+    assert.equal(report.stages.qa.history.at(-1).purchase_proof?.order_paths_executed, 1, "setup: the archived QA carries its purchase proof");
+
+    const { readings } = await effectiveStatusReadings(f, { qaCurrency: "not_applicable", fullVerdict });
+    assert.equal(readings.filter(([, reportsCurrent]) => reportsCurrent).length, 0, JSON.stringify(readings));
+  });
+});
+
+test("F2.2-B9: with QA stamps current and the QA stage naming the Assembly Report as its full verdict, the QA rows read {evidence_not_reproducible}", async () => {
+  await guardedLifecycle(async (f) => {
+    const { qaObservation, qaRowFor } = await import("./qc-test-factories.mjs");
+    const { readCurrentQcResults } = await import("./qc-results.mjs");
+    const measuredAt = new Date(Date.now() - 60_000).toISOString();
+    const rows = [
+      qaRowFor(qaObservation({ check: "policy.availability", key: "store_terms", outcome: "unreachable" }), { measured_at: measuredAt }),
+      qaRowFor(qaObservation({ check: "policy.presence", key: "store_privacy", outcome: "reachable" }), { measured_at: measuredAt }),
+    ];
+    await recordQa(f, { qcResults: rows, selfReferential: true });
+    const report = readJson(f.reportPath);
+    assert.equal(report.stages.qa.outputs[0], f.reportPath, "setup: the QA stage names the Assembly Report as its full verdict");
+    const { results } = readCurrentQcResults({ report, doctor: { derived: { qc_results: [] } }, targetRepo: f.target, packetPath: f.packetPath, reportPath: f.reportPath });
+    const qaRows = results.filter((row) => row.leg === "qa");
+    assert.equal(qaRows.length, 2, "setup: both QA rows are read");
+    assert.deepEqual([...new Set(qaRows.map((row) => row.reason_code))], ["evidence_not_reproducible"]);
+  });
+});
+
+test("F2.2-B10: on a gateway-fetched packet whose cached spec qty is edited, doctor warns spec.material_stale", async () => {
+  await guardedLifecycle((f) => {
+    const packet = readJson(f.packetPath);
+    assert.ok(packet.spec.map_id, "setup: a Map packet");
+    const cached = join(f.target, ".campaign-runtime/fetched-specs", `${packet.spec.map_id}.json`);
+    mkdirSync(dirname(cached), { recursive: true });
+    cpSync(specPathOf(f), cached);
+    mutateJson(f.packetPath, (value) => {
+      value.spec.local_path = ".campaign-runtime/fetched-specs/" + `${packet.spec.map_id}.json`;
+    });
+    assert.equal(doctorOk(f).warnings.some((issue) => issue.code === "spec.material_stale"), false, "setup: the cached copy matches the bound material");
+    mutateJson(cached, bumpCheckoutQty);
+    const doctorJson = doctorOk(f);
+    assert.equal(doctorJson.warnings.some((issue) => issue.code === "spec.material_stale"), true, JSON.stringify(doctorJson.warnings.map((issue) => issue.code)));
+  });
+});
+
+test("F2.2-B11: after F2.1-W24, record polish with the pre-change evidence file, the old page_load still binding the same build, leaves polish owed", async () => {
+  await guardedLifecycle(async (f) => {
+    let before = null;
+    await presentationChangeAfterQa(f, (report) => {
+      before = { pageLoad: report.stages.polish.evidence.visual_review.page_load, build: report.stages.assembly.build_fingerprint };
+    });
+    recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    const report = readJson(f.reportPath);
+    assert.equal(report.stages.polish.status, "completed", "setup: record polish recorded Polish");
+    assert.equal(report.stages.assembly.build_fingerprint, before.build, "setup: the build is the one the old capture bound");
+    assert.deepEqual(report.stages.polish.evidence.visual_review.page_load, before.pageLoad, "setup: the old package page_load is still attached");
+    const currency = inputCurrency(f);
+    assert.equal(currency.stages.polish, "owed");
+    assert.equal(currency.stages.assembly, "current", "the operator's --deviation-reason build is current (rule 5(ii))");
+  });
+});
+
+// F2.2-B20: Polish recorded, the spec edited (no record spec), then record
+// build over the byte-identical _site.
+async function specEditReplaysBuild(f) {
+  await recordThroughPolish(f);
+  editSpec(f, bumpCheckoutQty);
+  recordOk(f, "build");
+}
+
+test("F2.2-B20: with the spec edited and no record spec, record build over the byte-identical _site reads reason output_unchanged_after_input_change", async () => {
+  await guardedLifecycle(async (f) => {
+    await specEditReplaysBuild(f);
+    const currency = inputCurrency(f);
+    assert.equal(currency.reasons.assembly, "output_unchanged_after_input_change");
+    assert.equal(currency.stages.assembly, "owed", "a replay over the byte-identical output leaves the build owed (rule 5)");
+  });
+});
+
+test("F2.2-B21: as B20, Polish is required", async () => {
+  await guardedLifecycle(async (f) => {
+    await specEditReplaysBuild(f);
+    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
+    assert.equal(inputCurrency(f).stages.assembly, "owed", "a replay over the byte-identical output leaves the build owed (rule 5)");
+  });
+});
+
+test("F2.2-B24: after W2, a changed rebuild, a capture, a second spec edit, an operator --deviation-reason build and record polish with that capture leave polish owed", async () => {
+  await guardedLifecycle(async (f) => {
+    await specRefreshAfterQa(f);
+    buildSite(f, " (rebuilt for the qty change)");
+    recordOk(f, "build");
+    await capture(f);
+    editSpec(f, bumpCheckoutQty);
+    recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.equal(readJson(f.reportPath).stages.polish.status, "completed", "setup: record polish recorded Polish with the capture");
+    const currency = inputCurrency(f);
+    assert.equal(currency.stages.polish, "owed");
+    assert.equal(currency.stages.assembly, "current", "the operator's --deviation-reason build is current (rule 5(ii))");
+  }, LOCAL_SPEC);
+});
+
+test("F2.2-I2: with the spec file truncated (invalid JSON), next answers doctor-blocked", async () => {
+  await guardedLifecycle((f) => {
+    const text = readFileSync(specPathOf(f), "utf8");
+    writeFileSync(specPathOf(f), text.slice(0, Math.floor(text.length / 2)));
+    assert.throws(() => JSON.parse(readFileSync(specPathOf(f), "utf8")), "setup: the spec no longer parses");
+    assert.equal(nextOk(f).stage, "doctor-blocked");
+  });
+});
+
+test("F2.2-I4: record spec --dry-run after a material edit leaves the report sha256 unchanged", async () => {
+  await guardedLifecycle((f) => {
+    editSpec(f, bumpCheckoutQty);
+    const before = sha256File(f.reportPath);
+    const dry = recordInputOk(f, "spec", "refreshed", ["--dry-run"]);
+    assert.equal(dry.dry_run, true, "setup: the dry run ran");
+    assert.equal(sha256File(f.reportPath), before);
+  });
+});
+
+test("F2.2-I5: on a guided draft (no brief file), a spec payment-methods change refreshed with record spec archives assembly as spec_material_changed", async () => {
+  await guardedLifecycle((f) => {
+    assert.equal(readJson(f.contextPath).build_brief.input_path, null, "setup: the brief is the generated guided draft");
+    recordThroughBuild(f);
+    editSpec(f, (spec) => {
+      const methods = spec.campaign.available_payment_methods;
+      assert.ok(Array.isArray(methods) && methods.length > 0, "setup: the spec declares payment methods");
+      spec.campaign.available_payment_methods = methods.length > 1 ? methods.slice(1) : [...methods, "paypal"];
+    });
+    recordInputOk(f, "spec", "refreshed");
+    const history = readJson(f.reportPath).stages.assembly.history;
+    assert.ok(Array.isArray(history) && history.length > 0, "stages.assembly.history[] holds the superseded record");
+    assert.equal(history.at(-1).reason_code, "spec_material_changed");
+  });
+});
+
+test("F2.2-I6: on a saved-Map packet with a readable cache, input_currency.spec.remote_currency is unconfirmed", async () => {
+  await guardedLifecycle((f) => {
+    assert.ok(readJson(f.packetPath).spec.map_id, "setup: a saved-Map packet");
+    assert.ok(existsSync(specPathOf(f)), "setup: the cached spec is readable");
+    assert.equal(inputCurrency(f).spec?.remote_currency, "unconfirmed");
+  });
+});
+
+// F2.2-I7: material equal to the bound identity, the assembly spec stamp removed.
+function specStampMissing(f) {
+  recordThroughBuild(f);
+  mutateJson(f.reportPath, (report) => {
+    delete report.stages.assembly.source_spec_material_hash;
+  });
+  return recordInputOk(f, "spec", "unchanged");
+}
+
+test("F2.2-I7: with the material equal to the bound identity and the assembly spec stamp missing, record spec reads unchanged", async () => {
+  await guardedLifecycle((f) => {
+    specStampMissing(f);
+  });
+});
+
+test("F2.2-I8: as I7, the binding_unknown notice names exactly [\"assembly\"]", async () => {
+  await guardedLifecycle((f) => {
+    const result = specStampMissing(f);
+    const notices = (result.notices || []).filter((notice) => notice.code === "binding_unknown");
+    assert.equal(notices.length, 1, `one binding_unknown notice: ${JSON.stringify(result.notices)}`);
+    assert.deepEqual(notices[0].stages, ["assembly"]);
+  });
+});
+
+test("F2.2-I9: record spec --dry-run --lifecycle-journal after a material edit adds no journal line", async () => {
+  await guardedLifecycle((f) => {
+    const journal = join(f.dir, "lifecycle.jsonl");
+    scaffold(f);
+    recordOk(f, "setup", ["--lifecycle-journal", journal]);
+    const before = journalLines(journal);
+    assert.ok(before > 0, "setup: a recorded command journals to this file");
+    editSpec(f, bumpCheckoutQty);
+    const dry = recordInputOk(f, "spec", "refreshed", ["--dry-run", "--lifecycle-journal", journal]);
+    assert.equal(dry.dry_run, true, "setup: the dry run ran");
+    assert.equal(journalLines(journal), before);
+  });
+});
+
+test("F2.2-I10: a legacy report with unstamped completed stages makes doctor warn spec.binding_unknown", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    legacyAssembly(f);
+    const doctorJson = doctorOk(f);
+    assert.equal(doctorJson.warnings.some((issue) => issue.code === "spec.binding_unknown"), true, JSON.stringify(doctorJson.warnings.map((issue) => issue.code)));
+  });
+});
+
+test("F2.2-I11: with the brief file at the recorded brief path and the spec truncated (invalid JSON), record spec refuses spec_unreadable", async () => {
+  await guardedLifecycle((f) => {
+    reintakeWithBrief(f);
+    const text = readFileSync(specPathOf(f), "utf8");
+    writeFileSync(specPathOf(f), text.slice(0, Math.floor(text.length / 2)));
+    assertRefusedWritingNothing(f, "spec", "spec_unreadable");
+  });
+});
+
+test("F2.2-I12: intake ran with --brief <file>, the file is deleted and the spec edited: record spec refuses brief_file_missing", async () => {
+  await guardedLifecycle((f) => {
+    const explicit = join(f.dir, "explicit-brief.json");
+    writeJson(explicit, answeredDraft(f));
+    reintake(f, ["--brief", explicit]);
+    assert.ok(readJson(f.contextPath).intake.brief_path, "setup: the Build Context records the --brief path");
+    rmSync(explicit);
+    editSpec(f, bumpCheckoutQty);
+    assertRefusedWritingNothing(f, "spec", "brief_file_missing");
   });
 });
