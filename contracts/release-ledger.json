@@ -6253,8 +6253,29 @@
       "entry_sha256": "b6af3f03f0bc8e03b7a24d10c65c2cc889ede6e04ce7828b4e78c2562414564b"
     },
     {
-      "id": "RL-0240",
+      "id": "RL-0238",
       "sequence": 230,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.5",
+      "changelog_sha256": "69caf644546b719adf09b72227b50230250b586e6043de066dfe4b79c70c22df",
+      "agent_impact": "qa run --test-order now types the test card on Campaign Cart SDK 0.4.41 checkouts. 0.4.41 mounts the card number and CVV as iframe[id^=spreedly-hosted-number] and iframe[id^=spreedly-hosted-cvv] (Spreedly Checkout SDK fields loaded by payments.29next.com/js/v1/payment.js) instead of the iFrame v1 spreedly-number-frame / spreedly-cvv-frame ids, and the runner matched only the old ids, so the typed-card step timed out before submit on 0.4.41. The runner now matches either generation. Before typing, card_fields_filled waits up to 15s until no element carries next-loading-spreedly (the SDK sets it from before the card iframes mount until the fields are ready, 0.4.38 to 0.4.41), because digits typed into a 0.4.41 field before then can be dropped, and the SDK then refuses the short number without tokenizing, so order_submitted timed out with no order. After typing, it reads both fields back and retypes, up to 3 attempts in all. The step gains evidence {generation: spreedly-hosted | spreedly-iframe-v1, number_frame_id, cvv_frame_id, ready_wait_ms, attempts}; its detail is unchanged. card_fields_filled now fails by name, with no order submitted, in three cases: when more than one number or CVV iframe matches or the two generations mix (Playwright previously raised a strict-mode violation); when next-loading-spreedly is still set after 15s, meaning the card script never finished loading; and when the fields still do not hold the typed card after 3 attempts (the error gives the digit counts and last four of the number). No verdict field or flag changes; spreedly_tokenized still reads the core.spreedly.com payment_methods request, which 0.4.41 still makes. Pages pinned to 0.4.40 or earlier run as before, plus the readiness wait and the read-back.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The typed-card step names both card-field generations (Spreedly iFrame fields on SDK 0.4.40 and earlier, the Spreedly-hosted fields NEXT payments.29next.com script mounts on 0.4.41 and later), waits for next-loading-spreedly to clear before typing, and reads both fields back, retyping up to three attempts in all."
+        }
+      ],
+      "entry_sha256": "edc4fd10bfe974dd3cfd9e6a6d5f3337a483db0525f6231bf68d3e79e22ac51f"
+    },
+    {
+      "id": "RL-0240",
+      "sequence": 231,
       "date": "2026-10-06",
       "kind": "release",
       "surface_version": null,
@@ -6283,7 +6304,7 @@
           "summary": "State that doctor --built reads local files only, that --base-url is not fetched, how to check served pages, and that the minimal packet does not drive packet QA."
         }
       ],
-      "entry_sha256": "081a8616b37812c2f18f66fd59873b4f6bd758e10db35785fbb87af47a778bf2"
+      "entry_sha256": "6382a67f50d12ae1999b352595ff6faa13fca3e122617e9ba43ce4cc8c77e659"
     }
   ]
 }

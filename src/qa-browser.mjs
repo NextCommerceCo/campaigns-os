@@ -77,6 +77,22 @@ const DEFAULT_TEST_CARD = "6011111111111117";
 const DEFAULT_TEST_CVV = "123";
 const DEFAULT_TEST_EXP_MONTH = "12";
 const DEFAULT_TEST_EXP_YEAR = "2030";
+// The card number and CVV iframes, matched by id prefix because each id ends
+// in a per-load suffix. SDK 0.4.40 and earlier mount Spreedly's iFrame v1
+// (spreedly-number-frame-1234); 0.4.41 mounts the Spreedly Checkout SDK fields
+// that NEXT's payments.29next.com/js/v1/payment.js loads
+// (spreedly-hosted-number-oujmii2uzjk). A page carries one generation or the
+// other, and each frame holds a single text input. fillPaymentFields refuses
+// by name unless exactly one number frame and one CVV frame match, so a page
+// mounting both generations, or two forms, fails at the card step instead of
+// on whichever frame happens to come first.
+const CARD_NUMBER_FRAME = 'iframe[id^="spreedly-number-frame"], iframe[id^="spreedly-hosted-number"]';
+const CARD_CVV_FRAME = 'iframe[id^="spreedly-cvv-frame"], iframe[id^="spreedly-hosted-cvv"]';
+// Typing the card is read back and retried this many times in all before the
+// card step fails by name.
+const CARD_TYPE_ATTEMPTS = 3;
+// How long the card step waits for the SDK to report the card fields ready.
+const CARD_READY_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_TEST_ORDERS = 6;
 // Planned-path ids listed in a refused --max-test-orders message before the
 // remainder is counted rather than printed.
@@ -3868,7 +3884,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     }, { timeoutMs: budget() });
     await ladder.run("card_fields_filled", async () => {
       ensurePageFillable(page, checkoutPage.url);
-      await fillPaymentFields(page, args);
+      return fillPaymentFields(page, args);
     }, { timeoutMs: budget() });
     await ladder.run("cart_created", async () => {
       const cart = cartCreationEvidence(events);
@@ -5083,14 +5099,69 @@ async function fillPaymentFields(page, args) {
 
   const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
   const cvv = stringArg(args["test-cvv"]) || DEFAULT_TEST_CVV;
-  const numberInput = page.frameLocator('iframe[id^="spreedly-number-frame"]').locator("input").first();
-  const cvvInput = page.frameLocator('iframe[id^="spreedly-cvv-frame"]').locator("input").first();
-  await numberInput.click();
-  await numberInput.pressSequentially(card, { delay: 20 });
-  await cvvInput.click();
-  await cvvInput.pressSequentially(cvv, { delay: 20 });
-  await page.locator("body").click({ position: { x: 20, y: 20 } }).catch(() => {});
-  await page.waitForTimeout(500);
+  const frames = await cardFrames(page);
+  const readyWaitMs = await waitForCardFieldsReady(page);
+  const numberInput = page.frameLocator(CARD_NUMBER_FRAME).locator("input").first();
+  const cvvInput = page.frameLocator(CARD_CVV_FRAME).locator("input").first();
+  const typed = async (input) => normalizeCard(await input.inputValue());
+  let attempts = 0;
+  let held = null;
+  while (attempts < CARD_TYPE_ATTEMPTS) {
+    attempts++;
+    if (attempts > 1) {
+      await numberInput.fill("");
+      await cvvInput.fill("");
+    }
+    await numberInput.click();
+    await numberInput.pressSequentially(card, { delay: 20 });
+    await cvvInput.click();
+    await cvvInput.pressSequentially(cvv, { delay: 20 });
+    await page.locator("body").click({ position: { x: 20, y: 20 } }).catch(() => {});
+    await page.waitForTimeout(500);
+    held = { number: await typed(numberInput), cvv: await typed(cvvInput) };
+    if (held.number === card && held.cvv === normalizeCard(cvv)) {
+      return { evidence: { ...frames, ready_wait_ms: readyWaitMs, attempts } };
+    }
+  }
+  throw new Error(`card fields did not keep the typed card after ${attempts} attempts: number field holds ${held.number.length} digit(s) ending ${held.number.slice(-4) || "(empty)"} (typed ${card.length} ending ${card.slice(-4)}), CVV field holds ${held.cvv.length} digit(s)`);
+}
+
+// Typing into the card fields before the SDK reports them ready can lose
+// keystrokes: on SDK 0.4.41 the Spreedly-hosted number input exists before
+// its script has loaded, and digits typed in that window are dropped (seen
+// as a number missing its leading digits, which the SDK then refuses without
+// tokenizing, so the order never posts). The checkout form carries
+// next-loading-spreedly from before the card iframes mount until the fields
+// are ready, in 0.4.38 through 0.4.41, so wait for it to clear. A page whose
+// SDK never set it is ready at once. The SDK also clears it when the card
+// script fails to load, so a class still set after the wait means the card
+// script never answered; the step refuses by name rather than type into
+// fields that may drop the number.
+async function waitForCardFieldsReady(page) {
+  const started = Date.now();
+  await page.waitForFunction(() => !document.querySelector(".next-loading-spreedly"), null, { timeout: CARD_READY_TIMEOUT_MS }).catch((error) => {
+    if (error?.name !== "TimeoutError") throw error;
+    throw new Error(`card fields did not report ready within ${CARD_READY_TIMEOUT_MS / 1000}s: the checkout form still carries next-loading-spreedly, so the card script never finished loading`);
+  });
+  return Date.now() - started;
+}
+
+// The card iframes the step is about to type into, once the SDK has mounted
+// them. Exactly one of each, of one generation, or the step fails by name.
+async function cardFrames(page) {
+  await page.locator(CARD_NUMBER_FRAME).first().waitFor({ state: "attached" });
+  await page.locator(CARD_CVV_FRAME).first().waitFor({ state: "attached" });
+  const ids = async (selector) => page.locator(selector).evaluateAll((nodes) => nodes.map((node) => node.id));
+  const number = await ids(CARD_NUMBER_FRAME);
+  const cvv = await ids(CARD_CVV_FRAME);
+  const all = [...number, ...cvv];
+  const generation = all.every((id) => id.startsWith("spreedly-hosted-"))
+    ? "spreedly-hosted"
+    : all.every((id) => /^spreedly-(number|cvv)-frame/.test(id)) ? "spreedly-iframe-v1" : "mixed";
+  if (number.length !== 1 || cvv.length !== 1 || generation === "mixed") {
+    throw new Error(`expected one card number iframe and one CVV iframe of one generation; found number=[${number.join(", ")}] cvv=[${cvv.join(", ")}]`);
+  }
+  return { generation, number_frame_id: number[0], cvv_frame_id: cvv[0] };
 }
 
 async function clickCreditPaymentMethod(page) {

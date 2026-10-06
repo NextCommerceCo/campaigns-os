@@ -8,6 +8,13 @@ Notable supported-surface changes are recorded here.
 
 `doctor --built --base-url <url>` now says that it checked the local built files only. The URL is not fetched: it fills `deploy.preview_url` in the minimal Build Packet. The output names `qa run --site <repo> --base-url <url> --family <family> --browser` as the command that loads the served pages, and `--json` carries `derived.base_url` with `fetched: false`. The checks themselves are unchanged.
 
+## [1.53.0+agent.5] - 2026-10-06
+
+### Fixed
+
+- `qa run --test-order` types the test card on pages running Campaign Cart SDK 0.4.41. That release draws the card number and CVV with the fields NEXT's `payments.29next.com` script mounts, whose iframes are named `spreedly-hosted-number-…` and `spreedly-hosted-cvv-…`; the runner looked only for the `spreedly-number-frame-…` and `spreedly-cvv-frame-…` iframes of 0.4.40 and earlier, so on a 0.4.41 checkout it timed out before submitting. It now finds either, and nothing changes on pages pinned to 0.4.40 or earlier. A checkout carrying both kinds of card iframe, or two of either, fails at `card_fields_filled` with the iframe ids it found instead of typing into whichever comes first, and the step's evidence records which iframes it typed into.
+- `qa run --test-order` no longer loses card digits typed before the card fields are ready. On SDK 0.4.41 the hosted number input appears before its script has loaded, and digits typed in that window are dropped. The SDK then refuses the shortened number without tokenizing, so the run timed out at `order_submitted` 45 seconds later with no order created. This happened about once in 33 live runs, usually when the card fields loaded slowly. The runner now waits up to 15 seconds for the checkout form to drop its `next-loading-spreedly` class (SDK 0.4.38 to 0.4.41 set it until the card fields are ready); if it is still there, `card_fields_filled` fails and says the card script never finished loading. It then reads the card number and CVV back, and retypes up to three attempts in all. If the fields still don't hold the card, `card_fields_filled` fails and names what the fields held, instead of the run timing out at submit.
+
 ## [1.53.0+agent.4] - 2026-10-06
 
 ### Fixed

@@ -1810,7 +1810,12 @@ The browser driver intentionally behaves like a user:
   proven against the persisted-order voucher read-back
 - checkout is advanced through the visible cart/checkout button
 - address autocomplete is settled or closed before submit
-- Spreedly card and CVV iframes are filled with sequential keystrokes
+- the card and CVV iframes are filled with sequential keystrokes: Spreedly's
+  iFrame fields on SDK 0.4.40 and earlier, and on 0.4.41 and later the
+  Spreedly-hosted fields that NEXT's `payments.29next.com` script mounts.
+  Typing starts once the checkout form drops `next-loading-spreedly` (the
+  fields are ready), and both fields are read back and retyped, up to three
+  attempts in all, before `card_fields_filled` passes
 - the real submit button is clicked without fabricating SDK state
 
 The intended QA order matrix is:

@@ -16,6 +16,11 @@
 //     | grep -oE '`data-[a-z0-9-]+(\s*/\s*data-[a-z0-9-]+)*`' \
 //     | tr -d '`' | tr '/' '\n' | tr -d ' ' | grep '^data-next-' | sort -u
 //
+// The recipe works up to v0.4.40 only. v0.4.41 deleted docs/attribute-index.md;
+// its attributes are now split between docs/sdk-attributes.md (the SDK's own)
+// and docs/guides/reference/data-attributes.md (each feature's). Moving this
+// pin past v0.4.40 means rewriting the recipe against those two files.
+//
 // A name ending in "-" (data-next-class-) is a prefix the SDK reads with any
 // suffix.
 
