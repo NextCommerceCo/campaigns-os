@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.53.0+agent.3] - 2026-10-06
+
+### Changed
+
+`doctor --built --base-url <url>` now says that it checked the local built files only. The URL is not fetched: it fills `deploy.preview_url` in the minimal Build Packet. The output names `qa run --site <repo> --base-url <url> --family <family> --browser` as the command that loads the served pages, and `--json` carries `derived.base_url` with `fetched: false`. The checks themselves are unchanged.
+
 ## [1.53.0+agent.2] - 2026-10-05
 
 ### Changed

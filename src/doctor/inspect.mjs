@@ -5,6 +5,7 @@ import { withHtmlScanSnapshot } from "../html-scan.mjs";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { shellToken } from "../shell-token.mjs";
+import { cmd } from "../install-invocation.mjs";
 import { commitAssemblyReport, recordProducerStageOutcome } from "../stage-ledger.mjs";
 import { annotateDoctorIssueCauses } from "../finding-cause.mjs";
 import { DOCTOR_SIDECAR_SCHEMA } from "../doctor-sidecar.mjs";
@@ -244,6 +245,13 @@ export function doctorBuiltOutput(args) {
     qc_results: [],
   };
   ready.push(`Resolved ${scope.html_count} built page(s) from ${relFromDir(targetRepo, scope.campaign_dir)} (slug "${scope.slug || "(site root)"}")`);
+  // #583: --base-url reads like a check of the deployed site, but these checks
+  // read only the local built files. Say so wherever the URL is given, and
+  // name the command that does load the served pages.
+  if (baseUrl) {
+    derived.base_url = { value: baseUrl, fetched: false, recorded_as: "deploy.preview_url" };
+    ready.push(`Checked the local built files only: --base-url ${baseUrl} was not fetched; it only fills deploy.preview_url in the minimal Build Packet. To check the served pages, run ${cmd("qa", `run --site ${shellToken(String(args.built || args.site))} --base-url ${shellToken(baseUrl)} --family ${family ? shellToken(family) : "<family>"} --browser`)}.`);
+  }
 
   const resolution = resolveBrandContractOnce(derived, family);
   let brandContract = null;
