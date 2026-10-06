@@ -27,6 +27,7 @@ import {
   listCampaignCartSourceFiles,
   loadSdkSupportPolicy,
 } from "./campaign-ecosystem.mjs";
+import { refused } from "./lifecycle.mjs";
 import { compareVersions, relPath, unique } from "./repo-scan.mjs";
 
 export const SDK_REPIN_SCHEMA = "campaigns-os-sdk-repin/v0";
@@ -47,18 +48,25 @@ export const isRepinTargetVersion = (value) => isReleasedSdkVersion(String(value
 /**
  * Plan the rewrite without touching the target. `targetSdk` is an x.y.z (a
  * leading v is accepted); when absent the policy's preferred_minimum is the
- * target, the same policy the ecosystem scan evaluates pins against.
+ * target, the same policy the ecosystem scan evaluates pins against. A target
+ * that is not a directory, or a target version that is not a released SDK
+ * version, is refused (a tagged refusal: one line, nothing journaled).
  */
-export function planSdkRepin({ targetRepo, targetSdk = null, sdkSupportPolicy = null } = {}) {
+export function planSdkRepin(options = {}) {
+  return planWithSpans(options).plan;
+}
+
+// The plan plus the internal rewrite spans (file offsets) runSdkRepin needs;
+// the spans never leave this module.
+function planWithSpans({ targetRepo, targetSdk = null, sdkSupportPolicy = null } = {}) {
   const target = resolve(targetRepo);
-  if (!existsSync(target) || !statSync(target).isDirectory()) {
-    throw new Error(`sdk repin: --target ${targetRepo} is not a directory.`);
-  }
+  if (!existsSync(target)) throw refused(`sdk repin: --target ${targetRepo} does not exist.`);
+  if (!statSync(target).isDirectory()) throw refused(`sdk repin: --target ${targetRepo} is not a directory.`);
   const policy = loadSdkSupportPolicy(sdkSupportPolicy);
   const explicit = targetSdk !== null && targetSdk !== undefined;
   const toVersion = explicit ? String(targetSdk).trim().replace(/^v/, "") : policy.preferred_minimum;
   if (!isReleasedSdkVersion(toVersion)) {
-    throw new Error(explicit
+    throw refused(explicit
       ? `sdk repin: --target-sdk ${targetSdk} is not a released SDK version (x.y.z).`
       : `sdk repin: the SDK support policy (${policy.source}) names no usable preferred_minimum; pass --target-sdk <x.y.z>.`);
   }
@@ -72,7 +80,7 @@ export function planSdkRepin({ targetRepo, targetSdk = null, sdkSupportPolicy = 
 
   const pageKitData = findPageKitCampaignData(target);
   if (pageKitData.length) {
-    return {
+    return { spans: [], plan: {
       ...base,
       ok: false,
       status: "refused_page_kit",
@@ -82,7 +90,7 @@ export function planSdkRepin({ targetRepo, targetSdk = null, sdkSupportPolicy = 
       rewrites: [],
       left_alone: { not_semver: [], at_target: [], newer_than_target: [] },
       files: [],
-    };
+    } };
   }
 
   const references = [];
@@ -121,7 +129,8 @@ export function planSdkRepin({ targetRepo, targetSdk = null, sdkSupportPolicy = 
   const status = !references.length
     ? "no_references"
     : rewrites.length ? "changes" : "nothing_to_change";
-  return {
+  const spans = rewrites.map(({ path, ref_start, ref_end, ref, new_ref }) => ({ path, ref_start, ref_end, ref, new_ref }));
+  return { spans, plan: {
     ...base,
     ok: true,
     status,
@@ -134,8 +143,7 @@ export function planSdkRepin({ targetRepo, targetSdk = null, sdkSupportPolicy = 
       newer_than_target: references.filter((entry) => entry.action === "newer_than_target").map(publicReference),
     },
     files: unique(rewrites.map((entry) => entry.path)),
-    _spans: rewrites.map(({ path, ref_start, ref_end, ref, new_ref }) => ({ path, ref_start, ref_end, ref, new_ref })),
-  };
+  } };
 }
 
 /**
@@ -144,8 +152,8 @@ export function planSdkRepin({ targetRepo, targetSdk = null, sdkSupportPolicy = 
  * reference below the target is left.
  */
 export function runSdkRepin({ targetRepo, targetSdk = null, apply = false, sdkSupportPolicy = null, now = () => new Date() } = {}) {
-  const plan = planSdkRepin({ targetRepo, targetSdk, sdkSupportPolicy });
-  const { _spans: spans = [], ...result } = plan;
+  const { plan, spans } = planWithSpans({ targetRepo, targetSdk, sdkSupportPolicy });
+  const result = { ...plan };
   result.mode = apply ? "apply" : "preview";
   result.applied = false;
   result.change_record = { path: SDK_REPIN_RECORD_REL_PATH, written: false, sha256: null, record: null };
@@ -160,18 +168,22 @@ export function runSdkRepin({ targetRepo, targetSdk = null, apply = false, sdkSu
     if (!byFile.has(span.path)) byFile.set(span.path, []);
     byFile.get(span.path).push(span);
   }
+  // Every file is re-read and every span checked BEFORE any file is written,
+  // so a file that changed since the plan aborts the run with nothing written.
+  const updates = [];
   for (const [path, fileSpans] of byFile) {
     const file = join(plan.target_repo, path);
     let text = readFileSync(file, "utf8");
     // Right to left, so earlier offsets stay valid.
     for (const span of [...fileSpans].sort((a, b) => b.ref_start - a.ref_start)) {
       if (text.slice(span.ref_start, span.ref_end) !== span.ref) {
-        throw new Error(`sdk repin: ${path} changed while it was being rewritten; re-run the preview.`);
+        throw refused(`sdk repin: ${path} changed between the scan and the write (a pinned reference is no longer where the scan found it); no file was written and no change record was made. Re-run sdk repin to plan against the current files.`);
       }
       text = `${text.slice(0, span.ref_start)}${span.new_ref}${text.slice(span.ref_end)}`;
     }
-    writeFileSync(file, text);
+    updates.push({ file, text });
   }
+  for (const { file, text } of updates) writeFileSync(file, text);
   const recordPath = join(plan.target_repo, SDK_REPIN_RECORD_REL_PATH);
   mkdirSync(dirname(recordPath), { recursive: true });
   const body = `${JSON.stringify(record, null, 2)}\n`;

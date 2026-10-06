@@ -168,6 +168,9 @@ test("sdk repin: the target defaults to the support policy's preferred_minimum",
   write(join(dir, "index.html"), page(loader("v0.4.0")));
   const result = planSdkRepin({ targetRepo: dir });
   assert.equal(result.to_version, loadSdkSupportPolicy().preferred_minimum);
+  // The public plan carries no internal rewrite offsets.
+  assert.deepEqual(Object.keys(result).filter((key) => /span/i.test(key)), []);
+  for (const entry of result.rewrites) assert.equal("ref_start" in entry, false);
   assert.equal(result.to_version_source, "policy.preferred_minimum");
 }));
 
@@ -219,7 +222,25 @@ test("sdk repin CLI: preview, --apply and --json, exit codes and refusals", () =
   const badVersion = cli(["sdk", "repin", "--target", repo, "--target-sdk", "latest"], dir);
   assert.equal(badVersion.status, 1);
   assert.match(badVersion.stderr, /not a released SDK version/);
+  assert.doesNotMatch(badVersion.stderr, /\n\s+at /, "no stack trace");
   const badFlag = cli(["sdk", "repin", "--target", repo, "--write"], dir);
   assert.equal(badFlag.status, 1);
   assert.match(badFlag.stderr, /Unknown SDK repin flag: --write/);
+}));
+
+test("sdk repin: a missing or non-directory target is refused in one line", () => withTempDir((dir) => {
+  const missing = join(dir, "no-such-repo");
+  assert.throws(() => planSdkRepin({ targetRepo: missing }), (error) => error.code === "refused_invocation" && /does not exist/.test(error.message));
+  const file = join(dir, "index.html");
+  write(file, page(loader("v0.4.20")));
+  assert.throws(() => runSdkRepin({ targetRepo: file, apply: true }), (error) => error.code === "refused_invocation" && /is not a directory/.test(error.message));
+
+  for (const [target, pattern] of [[missing, /does not exist/], [file, /is not a directory/]]) {
+    const run = cli(["sdk", "repin", "--target", target, "--apply"], dir);
+    assert.equal(run.status, 1, run.stderr);
+    assert.match(run.stderr, pattern);
+    assert.doesNotMatch(run.stderr, /\n\s+at /, "no stack trace");
+    assert.equal(run.stderr.trim().split("\n").length, 1, run.stderr);
+  }
+  assert.equal(readFileSync(file, "utf8"), page(loader("v0.4.20")));
 }));
