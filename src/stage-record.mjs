@@ -123,7 +123,7 @@ function typeName(value) {
 
 // visual_review keys only `polish capture` writes. `record polish --evidence`
 // refuses them by name and carries the captured values forward.
-export const PACKAGE_OWNED_VISUAL_REVIEW_KEYS = Object.freeze(["page_load", "media_weight"]);
+export const PACKAGE_OWNED_VISUAL_REVIEW_KEYS = Object.freeze(["page_load", "media_weight", "readability"]);
 export const PACKAGE_OWNED_KEY_REFUSAL = "package_owned_key";
 
 export function refuseRecord(stage, problems) {

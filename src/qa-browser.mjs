@@ -6,6 +6,8 @@ const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(im
 import { createHash } from "node:crypto";
 import { runWithDeadline } from "./deadline.mjs";
 import { PLACEHOLDER_TEXT_ASSERTION_SUFFIX, SEVERITY, STATUS } from "./qa-verdict.mjs";
+import { contrastToolkit } from "./contrast.mjs";
+import { generatedTextRenders } from "./polish-readability.mjs";
 import {
   analyticsCaptureError,
   projectAnalyticsCaptureError,
@@ -1300,9 +1302,7 @@ async function primaryCtaVisualAssertions(browserPage, page) {
 }
 
 function primaryCtaCheckEligible(page) {
-  if (!page?.expected_next_url) return false;
-  const pageType = String(page.page_type || "").toLowerCase();
-  return !["checkout", "upsell", "downsell", "thankyou", "receipt"].includes(pageType);
+  return Boolean(page?.expected_next_url);
 }
 
 // Candidate CTAs: anything clickable, plus every SDK action control and the
@@ -1314,10 +1314,12 @@ const PRIMARY_CTA_SELECTOR = ["a[href]", "button", "[role='button']", "[data-nex
 
 // The in-page half of the primary-CTA inspection, as the source text the
 // page evaluates. The route rule it needs (cartEntryHrefFor, unit-tested in
-// qa-cart-entry) is handed in as a function value rather than closed over, so
-// both function bodies must stay free of module-scope references: the text is
-// run in a fresh context by a test (primary-CTA inspection script is
-// self-contained) that would surface a leaked identifier as a ReferenceError.
+// qa-cart-entry), the shared contrast helper (contrastToolkit) and the
+// generated-text rule Polish reads (generatedTextRenders) are handed in as
+// function values rather than closed over, so every function body must
+// stay free of module-scope references: the text is run in a fresh context by
+// a test (primary-CTA inspection script is self-contained) that would surface
+// a leaked identifier as a ReferenceError.
 function primaryCtaInspectionScript(expectedUrl) {
   const args = {
     routeUrl: expectedUrl,
@@ -1326,7 +1328,7 @@ function primaryCtaInspectionScript(expectedUrl) {
     cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE,
     ignoredRouteAttributes: [...UNDECLARED_ROUTE_ATTRIBUTES],
   };
-  return `(${inspectPrimaryCtaScript.toString()})(${JSON.stringify(args)}, ${cartEntryHrefFor.toString()})`;
+  return `(${inspectPrimaryCtaScript.toString()})(${JSON.stringify(args)}, ${cartEntryHrefFor.toString()}, ${contrastToolkit.toString()}, ${generatedTextRenders.toString()})`;
 }
 
 async function inspectPrimaryCta(browserPage, expectedUrl) {
@@ -1340,8 +1342,9 @@ async function inspectPrimaryCta(browserPage, expectedUrl) {
   }));
 }
 
-function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute, ignoredRouteAttributes }, hrefForImpl) {
+function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute, ignoredRouteAttributes }, hrefForImpl, contrastToolkitImpl, generatedTextImpl) {
   const CTA_SELECTOR = ctaSelector;
+  const toolkit = contrastToolkitImpl();
 
   const trim = (value) => String(value || "").replace(/\s+/g, " ").trim();
   const compactPath = (value) => String(value || "").replace(/\/+$/, "") || "/";
@@ -1352,42 +1355,6 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
       return null;
     }
   })();
-  const parseColor = (value) => {
-    const raw = String(value || "").trim().toLowerCase();
-    if (!raw || raw === "transparent") return null;
-    const rgb = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(\d?(?:\.\d+)?|1(?:\.0+)?))?\s*\)$/);
-    if (!rgb) return null;
-    const parts = rgb.slice(1, 4).map((part) => Number(part));
-    if (parts.some((part) => !Number.isFinite(part) || part < 0 || part > 255)) return null;
-    const alpha = rgb[4] === undefined ? 1 : Number(rgb[4]);
-    return { r: parts[0], g: parts[1], b: parts[2], a: Number.isFinite(alpha) ? alpha : 1 };
-  };
-  const hex = (color) => color ? `#${[color.r, color.g, color.b].map((part) => Math.round(part).toString(16).padStart(2, "0")).join("")}` : null;
-  const luminance = (color) => {
-    const channel = (value) => {
-      const normalized = value / 255;
-      return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
-    };
-    return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
-  };
-  const contrast = (a, b) => {
-    if (!a || !b) return null;
-    const light = Math.max(luminance(a), luminance(b));
-    const dark = Math.min(luminance(a), luminance(b));
-    return Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
-  };
-  const effectiveBackground = (element) => {
-    let current = element;
-    while (current && current.nodeType === Node.ELEMENT_NODE) {
-      const style = getComputedStyle(current);
-      const color = parseColor(style.backgroundColor);
-      if (color && color.a > 0.05) {
-        return { color, source: current === element ? "element" : current.tagName.toLowerCase() };
-      }
-      current = current.parentElement;
-    }
-    return { color: { r: 255, g: 255, b: 255, a: 1 }, source: "assumed_canvas" };
-  };
   const isVisible = (element) => {
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
@@ -1440,56 +1407,124 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
   // per-element detail for the listed candidates only.
   const ignoredAttributes = Array.from(new Set(visibleElements.flatMap(ignoredAttributesOn))).sort();
 
-  const candidates = visibleElements
+  // A route candidate's text, read through the shared contrast helper: each
+  // text-bearing element inside it is compared, unrounded, with the
+  // requirement for its own size. An element with a review trigger (or with
+  // no ratio to compare) is a review member and is not compared; an element
+  // whose control is disabled or loading has no colours read. Text whose
+  // control is disabled is inactive: it is not rendered text the check can
+  // read, so it never counts toward text_rendered or toward a pass. A
+  // disabled candidate is not measured at all, whatever text it generates,
+  // and never counts toward a pass. In an enabled candidate, text an element
+  // inside it generates through ::before or ::after (generatedTextImpl) is
+  // never measured, so the candidate is reviewed, never passed on its other
+  // text.
+  const measureCandidate = (element) => {
+    if (element.matches(":disabled, [aria-disabled=\"true\"]")) {
+      return { disabled: true, text_rendered: null, control_loading: null, contrast_ratio: null, elements: [], below: false, review: false, measured: false, inactive: false };
+    }
+    // Every element the page renders inside the candidate: its own subtree,
+    // open shadow roots included.
+    const subtree = toolkit.flatSubtree(element);
+    const reads = subtree
+      .filter((node) => toolkit.isTextBearing(node, window))
+      .map((node) => toolkit.measureTextElement(node, window));
+    const compared = [];
+    let review = subtree.some((node) => generatedTextImpl(node, window));
+    for (const read of reads) {
+      if (read.disabled || read.control_loading) continue;
+      if (read.review_reason !== null || typeof read.ratio !== "number") review = true;
+      else compared.push(read);
+    }
+    const ratios = compared.map((read) => read.ratio);
+    return {
+      disabled: false,
+      text_rendered: reads.some((read) => !read.disabled),
+      control_loading: reads.some((read) => read.control_loading),
+      contrast_ratio: ratios.length ? toolkit.displayRatio(Math.min(...ratios)) : null,
+      elements: reads.map((read) => ({
+        selector_path: read.selector_path,
+        contrast_ratio_exact: read.ratio,
+        required_ratio: read.required,
+        size_class: read.size_class,
+        review_reason: read.review_reason,
+      })),
+      below: compared.some((read) => !toolkit.meetsRequirement(read.ratio, read.required)),
+      review,
+      measured: compared.length > 0,
+      inactive: reads.some((read) => read.disabled),
+    };
+  };
+
+  // Route candidates carry their measurement; other rows are listed for the
+  // route-recognition view only and are not measured.
+  const verdicts = new Map();
+  const rows = visibleElements
     .map((element) => {
       const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      const fg = parseColor(style.color);
-      const bg = effectiveBackground(element);
-      const ratio = contrast(fg, bg.color);
       const href = hrefFor(element);
       const label = trim(element.innerText || element.textContent || element.getAttribute("aria-label"));
       return {
-        selector: selectorFor(element),
-        text: label.slice(0, 120),
-        href,
-        route_matches: routeMatches(href),
-        ignored_attributes: ignoredAttributesOn(element),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-        foreground: hex(fg),
-        background: hex(bg.color),
-        background_source: bg.source,
-        contrast_ratio: ratio,
-        readable: typeof ratio === "number" && ratio >= 4.5,
-        size_ok: rect.width >= 40 && rect.height >= 20,
+        element,
+        row: {
+          selector: selectorFor(element),
+          text: label.slice(0, 120),
+          href,
+          route_matches: routeMatches(href),
+          ignored_attributes: ignoredAttributesOn(element),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          size_ok: rect.width >= 40 && rect.height >= 20,
+        },
       };
     })
-    .filter((candidate) => candidate.text || candidate.href);
-
-  const routeCandidates = candidates
-    .filter((candidate) => candidate.route_matches)
-    .sort((a, b) => {
-      if (a.readable !== b.readable) return a.readable ? -1 : 1;
-      if (a.size_ok !== b.size_ok) return a.size_ok ? -1 : 1;
-      return (b.contrast_ratio || 0) - (a.contrast_ratio || 0);
+    .filter(({ row }) => row.text || row.href)
+    .map(({ element, row }) => {
+      if (!row.route_matches) return { ...row, disabled: null, text_rendered: null, control_loading: null, contrast_ratio: null, elements: null };
+      const { below, review, measured, inactive, ...read } = measureCandidate(element);
+      const candidate = { ...row, ...read };
+      verdicts.set(candidate, { below, review, measured, inactive });
+      return candidate;
     });
-  const primary = routeCandidates[0] || null;
-  const ok = Boolean(primary?.readable && primary?.size_ok);
-  const reason = ok
-    ? "ok"
-    : !routeCandidates.length
-      ? "missing_route_cta"
-      : primary?.size_ok === false
-        ? "cta_too_small"
-        : "low_contrast";
+
+  // Every route candidate counts, in document order; none is preferred.
+  // The page outcome is the first that applies. An enabled candidate whose
+  // only text is inactive (its control is disabled) has no rendered text;
+  // cta_disabled is only for every candidate disabled. The page passes only
+  // when every enabled candidate had at least one element compared, so text
+  // that was skipped never stands in for a measurement.
+  const routeCandidates = rows.filter((candidate) => candidate.route_matches);
+  const enabled = routeCandidates.filter((candidate) => !candidate.disabled);
+  const measurability = routeCandidates.length ? toolkit.documentMeasurability(document) : { measurable: true };
+  const reason = !routeCandidates.length
+    ? "missing_route_cta"
+    : !measurability.measurable
+      ? measurability.reason
+      : enabled.some((candidate) => verdicts.get(candidate).below)
+        ? "low_contrast"
+        : !routeCandidates.some((candidate) => candidate.size_ok)
+          ? "cta_too_small"
+          : enabled.some((candidate) => !candidate.text_rendered)
+            ? "text_not_rendered"
+            : enabled.some((candidate) => candidate.control_loading)
+              ? "control_loading"
+              : enabled.some((candidate) => verdicts.get(candidate).review)
+                ? "contrast_review"
+                : !enabled.length || enabled.some((candidate) => !verdicts.get(candidate).measured)
+                  ? "cta_disabled"
+                  : "ok";
+
+  // Rows are capped at eight, except that every route candidate is listed.
+  const listed = [];
+  for (const row of rows) if (row.route_matches || listed.length < 8) listed.push(row);
 
   return {
-    ok,
+    ok: reason === "ok",
     reason,
     expected_url: routeUrl,
-    primary,
-    candidates: candidates.slice(0, 8),
+    // The first route candidate in document order, for display only.
+    primary: routeCandidates[0] || null,
+    candidates: listed,
     // Every route-shaped attribute seen on a visible CTA-shaped element and
     // not consulted (see above), so a missing-route verdict on a page spelled
     // that way reads as a vocabulary gap, not as a removed CTA.
@@ -1497,8 +1532,20 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
   };
 }
 
+// The outcomes the page itself earns as a failure. Every other outcome that
+// is not a pass could not be observed completely (the page was not
+// measurable, text or a control was not ready, a review trigger, every CTA
+// disabled, or an inspection the page rejected): manual review, never a pass
+// and never a contrast failure.
+const PRIMARY_CTA_FAIL_REASONS = Object.freeze([
+  "missing_route_cta",
+  "low_contrast",
+  "cta_too_small",
+]);
+
 function primaryCtaAssertionFromEvidence(page, evidence) {
   const ok = evidence?.ok === true;
+  const review = !ok && !PRIMARY_CTA_FAIL_REASONS.includes(evidence?.reason);
   const ignored = Array.isArray(evidence?.ignored_attributes) ? evidence.ignored_attributes.filter(Boolean) : [];
   // Named on every verdict the page earns, passing or not: a passing page
   // spelled with an undeclared route attribute is still one an operator
@@ -1509,7 +1556,7 @@ function primaryCtaAssertionFromEvidence(page, evidence) {
     id: `browser-primary-cta:${page.page_id}`,
     family: "browser-runtime",
     page,
-    status: ok ? STATUS.PASS : STATUS.FAIL,
+    status: ok ? STATUS.PASS : review ? STATUS.MANUAL_REVIEW : STATUS.FAIL,
     severity: ok ? undefined : SEVERITY.WARN,
     expected: "visible readable primary CTA linked to the expected next route",
     actual: ok

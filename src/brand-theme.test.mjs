@@ -1016,3 +1016,64 @@ test("a theme write error copied onto the Assembly Report validates against them
   // The shape prepare-build used to write is the one the schema rejects.
   assert.equal(validIssue({ code: "theme.generate.not_ready", message: "not ready", detail: null }), false);
 });
+
+// ---------------------------------------------------------------------------
+// F2.4 frozen fixture rows (contract 2.4 Surfaces "Theme report"): the theme
+// generator's luminance and ratio move onto the shared contrast helper and
+// compare unrounded, and nothing else about its output moves.
+
+// The BASE_SHA output for every packet this file builds through
+// inspectBrandTheme, captured once from 2a94726d (see the fixture's
+// description). Each case is replayed in a fresh directory.
+const BASE_THEME_GOLDEN = readJson(join(root, "fixtures/readability/brand-theme-css-base.json"));
+
+test("F2.4-W16 every src/brand-theme.test.mjs packet: generated CSS bytes equal BASE_SHA output", () => {
+  // (setup, not the row's assertion) the golden lists the packets.
+  assert.ok(BASE_THEME_GOLDEN.cases.length > 0, "setup: the BASE_SHA golden holds the packets");
+  const drifted = [];
+  BASE_THEME_GOLDEN.cases.forEach((entry, index) => {
+    withTempDir((dir) => {
+      for (const [path, content] of Object.entries(entry.files)) {
+        mkdirSync(resolve(join(dir, path), ".."), { recursive: true });
+        writeFileSync(join(dir, path), content);
+      }
+      const result = inspectBrandTheme({ packet: entry.packet, packetPath: join(dir, entry.packet_path), ...entry.options });
+      const expected = entry.css.split("{root}").join(dir);
+      if (result.css !== expected) drifted.push(index);
+    });
+  });
+  assert.deepEqual(drifted, [], "the generated CSS of every packet equals the BASE_SHA bytes");
+});
+
+test("F2.4-B19 theme T3, declared white label on #0080aa (4.4986): theme warnings include theme.foreground.low_contrast", () => {
+  withTempDir((dir) => {
+    const { result, byTarget } = inspectCtaSource(dir, `:root {
+  --brand-primary: #0080aa;
+  --brand-cta: #0080aa;
+  --surface-bg: #ffffff;
+  --text-primary: #111111;
+  --text-inverse: #ffffff;
+}
+`);
+    // (setup) the declared white label is the CTA foreground the generator
+    // judges: it clears 3:1, so it is kept as declared.
+    assert.equal(byTarget.get("--brand--color--cta-primary").value, "#0080aa", "setup: the CTA is #0080aa");
+    assert.equal(byTarget.get("--brand--color--text-inverse").value, "#ffffff", "setup: the declared white label is used");
+    assert.equal(byTarget.get("--brand--color--text-inverse").derivation.method, "declared-cta-foreground", "setup: as the declared CTA foreground");
+    assert.equal(result.warnings.some((warning) => warning.code === "theme.foreground.low_contrast"), true, `theme warnings include theme.foreground.low_contrast: ${JSON.stringify(result.warnings)}`);
+  });
+});
+
+test("F2.4-I18 theme parser unchanged, theme packet with an oklch() CTA token (T1b): theme warnings equal BASE_SHA ([])", () => {
+  withTempDir((dir) => {
+    const { result, byTarget } = inspectCtaSource(dir, `:root {
+  --brand-primary: #2c3d43;
+  --brand-cta: oklch(0.55 0.2 260);
+  --surface-bg: #ffffff;
+  --text-primary: #111111;
+}
+`);
+    assert.equal(byTarget.get("--brand--color--cta-primary").value, "oklch(0.55 0.2 260)", "setup: the CTA token is the oklch() value");
+    assert.deepEqual(result.warnings, [], "theme warnings equal the BASE_SHA value, []");
+  });
+});
