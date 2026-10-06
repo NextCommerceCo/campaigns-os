@@ -250,7 +250,12 @@ export function doctorBuiltOutput(args) {
   // name the command that does load the served pages.
   if (baseUrl) {
     derived.base_url = { value: baseUrl, fetched: false, recorded_as: "deploy.preview_url" };
-    ready.push(`Checked the local built files only: --base-url ${baseUrl} was not fetched; it only fills deploy.preview_url in the minimal Build Packet. To check the served pages, run ${cmd("qa", `run --site ${shellToken(String(args.built || args.site))} --base-url ${shellToken(baseUrl)} --family ${family ? shellToken(family) : "<family>"} --browser`)}.`);
+    // Without --family there is no value to print that the CLI would accept,
+    // so the command is printed only when it is runnable as shown.
+    const servedCheck = family
+      ? `To check the served pages, run ${cmd("qa", `run --site ${shellToken(String(args.built || args.site))} --base-url ${shellToken(baseUrl)} --family ${shellToken(family)} --browser`)}.`
+      : `To check the served pages, run ${cmd("qa")} run --site with this --base-url and the campaign's --family, plus --browser.`;
+    ready.push(`Checked the local built files only: --base-url ${baseUrl} was not fetched; it only fills deploy.preview_url in the minimal Build Packet. ${servedCheck}`);
   }
 
   const resolution = resolveBrandContractOnce(derived, family);
