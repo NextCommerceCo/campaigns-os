@@ -14,6 +14,9 @@
 //   4. The checkout submit posts `/api/v1/orders/` and lands on the receipt —
 //      and, like the SDK, does nothing at all when the cart is empty. The
 //      receipt reads the order back by ref_id.
+//   5. Like the SDK, the submit also does nothing when the card number frame
+//      holds fewer than 13 digits: a number that lost digits is refused
+//      before anything is tokenized, so no order posts.
 //
 // The cart persists in localStorage so it survives the SDK-driven navigation.
 (function () {
@@ -88,12 +91,19 @@
     });
   }
 
+  function cardNumberDigits() {
+    var frame = document.querySelector('iframe[id^="spreedly-number-frame"], iframe[id^="spreedly-hosted-number"]');
+    var input = frame && frame.contentDocument && frame.contentDocument.querySelector("input");
+    return input ? input.value.replace(/\D/g, "").length : null;
+  }
+
   var form = document.querySelector("form[data-fixture-checkout]");
   if (form) {
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var items = read();
       if (!items.length) return; // the SDK posts nothing for an empty cart
+      if (cardNumberDigits() !== null && cardNumberDigits() < 13) return; // nor for a short card number
       fetch("/api/v1/orders/", {
         method: "POST",
         headers: { "content-type": "application/json" },
