@@ -337,6 +337,33 @@ test("Page Kit campaigns.json pins outside the canonical released form are unkno
   }
 });
 
+test("a bundled dependency feeds the field-name gate only through a certain floor", () => {
+  // [package.json spec, sdk_version the binding is judged against, first_name classification]
+  for (const [spec, version, classification] of [
+    ["0.4.39", "0.4.39", "supported"],
+    ["=0.4.39", "0.4.39", "supported"],
+    ["^0.4.39", "0.4.39", "supported"],
+    ["~0.4.41", "0.4.41", "supported"],
+    [">=0.4.39", "0.4.39", "supported"],
+    ["^0.4.38", "0.4.38", "stale_alias"],
+    ["<0.4.39", null, "stale_alias"],
+    ["<=0.4.41", null, "stale_alias"],
+    ["0.4.41 || 0.4.38", null, "stale_alias"],
+    ["0.4.39 - 0.4.41", null, "stale_alias"],
+    ["0.4.x", null, "stale_alias"],
+    ["^0.4.39-beta.1", null, "stale_alias"],
+    ["latest", null, "stale_alias"],
+  ]) {
+    withTempDir((dir) => {
+      write(join(dir, "package.json"), JSON.stringify({ dependencies: { "campaign-cart": spec }, devDependencies: { vite: "^5.4.0" } }));
+      write(join(dir, "public", "checkout", "index.html"), '<meta name="next-campaign-id" content="1"><script>window.nextConfig = {}</script><form><input data-next-checkout-field="first_name"></form>');
+      const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+      const [binding] = root.checkout_fields.bindings;
+      assert.deepEqual([binding.sdk_version, binding.classification], [version, classification], spec);
+    });
+  }
+});
+
 test("version-gated field names on an unpinned loader are judged as an earlier SDK", () => {
   withTempDir((dir) => {
     writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.41", provinceField: "province", postalField: "postal" });

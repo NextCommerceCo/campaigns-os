@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
 import { sdkVersionAtLeast } from "./sdk-attribute-index.mjs";
 import { shellToken } from "./shell-token.mjs";
 import {
@@ -212,7 +213,7 @@ export function scanCampaignCartAppRoot({
     }));
   }
   const checkoutFields = inspectCheckoutFields(root, htmlFiles, contract, findings, {
-    sdkVersionForFile: loaderSdkVersionResolver(loader, versionEntries),
+    sdkVersionForFile: loaderSdkVersionResolver(loader, bundled),
   });
   const payment = inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings);
   const dataNext = inspectDataNext(root, htmlFiles);
@@ -335,25 +336,38 @@ function collectLoaderReferences(root, files) {
 // version-gated field aliases. A file that loads the SDK itself uses its own
 // loader pin: one exact version, or unknown when its refs are unpinned or
 // disagree. Any other file (a partial, a page whose loader is injected) uses
-// the campaign's version: the lowest discovered pin, or unknown when any
-// loader ref is unpinned or none is discovered. Unknown is judged as an
-// earlier SDK (see inspectCheckoutFields).
-function loaderSdkVersionResolver(loader, versionEntries) {
+// the campaign's version: the lowest of the loader pins and the bundled
+// dependency's floor, or unknown when any loader ref is unpinned, the bundled
+// dependency has no certain floor, or nothing is discovered. Unknown is judged
+// as an earlier SDK (see inspectCheckoutFields).
+function loaderSdkVersionResolver(loader, bundled) {
   const byFile = new Map();
   for (const ref of loader.references) {
     if (!byFile.has(ref.path)) byFile.set(ref.path, []);
     byFile.get(ref.path).push(ref.version);
   }
-  const lowest = (versions) => [...versions].sort(compareVersions)[0];
-  const campaign = loader.references.some((ref) => !ref.version) || !versionEntries.length
+  const floor = bundled ? bundledSdkFloor(bundled.version) : null;
+  const versions = [...loader.versions, ...(floor ? [floor] : [])];
+  const campaign = loader.references.some((ref) => !ref.version) || (bundled && !floor) || !versions.length
     ? null
-    : { version: lowest(versionEntries.map((entry) => entry.version)), source: "campaign" };
+    : { version: [...versions].sort(compareVersions)[0], source: "campaign" };
   return (path) => {
     const own = byFile.get(path);
     if (!own) return campaign;
     const versions = unique(own);
     return own.every(Boolean) && versions.length === 1 ? { version: versions[0], source: "loader" } : null;
   };
+}
+
+// The lowest SDK version a bundled dependency spec allows, when the spec makes
+// it certain: an exact pin (0.4.39, =0.4.39, v0.4.39) or one lower-bounded
+// comparator (^0.4.39, ~0.4.39, >=0.4.39), each on a released version. Any
+// other spec (<0.4.39, a ||, hyphen or x-range, a tag, a prerelease) gives
+// null: the version extracted from it is not a version every install meets,
+// so a field-name gate must not accept a newer name on it.
+function bundledSdkFloor(spec) {
+  const match = /^\s*(?:\^|~|>=|=)?\s*v?(\S+)\s*$/.exec(String(spec ?? ""));
+  return match && isReleasedSdkVersion(match[1]) ? match[1] : null;
 }
 
 export function evaluateVersionPolicy(versionEntries, policy, findings) {

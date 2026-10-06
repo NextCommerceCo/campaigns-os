@@ -177,8 +177,10 @@ version is an exact release at or after that version; otherwise it is
 classified as on an earlier SDK (`first_name` and `last_name` as stale aliases,
 `phone_number` as unknown). Each binding records the `sdk_version` it was
 judged against and its `sdk_version_source`: `loader` (the file's own exact
-loader pin), `campaign` (for a file with no loader of its own, the lowest exact
-pin the root declares in its loaders or a bundled dependency), or
+loader pin), `campaign` (for a file with no loader of its own, the lowest of
+the root's exact loader pins and its bundled dependency's floor: an exact pin,
+or `^`, `~` or `>=` on a released version; any other range leaves the version
+unknown), or
 `campaigns_json` (a Page Kit campaign's `sdk_version`; a shared file takes the
 lowest across campaigns). An unpinned loader or a missing pin leaves
 `sdk_version` null, judged as an earlier SDK, because `fname`, `lname` and

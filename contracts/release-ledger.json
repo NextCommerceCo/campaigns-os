@@ -6205,8 +6205,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.53.0+agent.3",
-      "changelog_sha256": "1b462e0e433ac07ff49a2d7bf3d9ea0f04d40c4ff9a9351259784c695606f0aa",
-      "agent_impact": "doctor built_output.sdk_markup WRONG_FIELD_NAME and the standardize checkout field contract now judge first_name and last_name (mapped from Campaign Cart SDK 0.4.39) and phone_number (from 0.4.41) against the SDK version of the page: doctor reads the page's own exact loader pin, then the campaign's _data/campaigns.json sdk_version; standardize reads the file's own exact loader pin, then the lowest exact pin the campaign root declares (loaders, bundled dependency, or for Page Kit roots the campaign's campaigns.json sdk_version). On a version at or after the name's since-version the name passes, so pages written to the SDK 0.4.41 field names stop blocking. Below it, or when no exact released version can be read, results are unchanged: first_name and last_name block (WRONG_FIELD_NAME; checkout.unsupported_field_binding) and phone_number blocks in doctor and warns as checkout.unknown_field_binding in standardize; fname, lname and phone pass on every version. WRONG_FIELD_NAME details gain sdk_version and sdk_version_source (loader or campaigns_json) and, for these three names, since; the gate gains campaign_sdk_version. standardize checkout_fields.bindings[] gain since, sdk_version and sdk_version_source (loader, campaign or campaigns_json), and stale-alias and unknown-field evidence for these names carries since and sdk_version.",
+      "changelog_sha256": "d5dfd8f9bafa2a619514cf2e0f1d39e6bb9d01cf713566b8140718f2b5297a3f",
+      "agent_impact": "doctor built_output.sdk_markup WRONG_FIELD_NAME and the standardize checkout field contract now judge first_name and last_name (mapped from Campaign Cart SDK 0.4.39) and phone_number (from 0.4.41) against the SDK version of the page: doctor reads the page's own exact loader pin, then the campaign's _data/campaigns.json sdk_version; standardize reads the file's own exact loader pin, then the lowest exact pin the campaign root declares (exact loader pins; a bundled campaign-cart dependency's exact pin or the floor of a ^, ~ or >= range, any other range reading as unknown; or for Page Kit roots the campaign's campaigns.json sdk_version). On a version at or after the name's since-version the name passes, so pages written to the SDK 0.4.41 field names stop blocking. Below it, or when no exact released version can be read, results are unchanged: first_name and last_name block (WRONG_FIELD_NAME; checkout.unsupported_field_binding) and phone_number blocks in doctor and warns as checkout.unknown_field_binding in standardize; fname, lname and phone pass on every version. WRONG_FIELD_NAME details gain sdk_version and sdk_version_source (loader or campaigns_json) and, for these three names, since; the gate gains campaign_sdk_version. standardize checkout_fields.bindings[] gain since, sdk_version and sdk_version_source (loader, campaign or campaigns_json), and stale-alias and unknown-field evidence for these names carries since and sdk_version.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -6226,10 +6226,10 @@
           "class": "named_surface",
           "path": "docs/campaign-standardization-report.md",
           "surface_entry": "docs/campaign-standardization-report.md",
-          "summary": "Describe the field contract version_gated_aliases and the sdk_version and sdk_version_source each checkout binding records."
+          "summary": "Describe the field contract version_gated_aliases and the sdk_version and sdk_version_source each checkout binding records. A bundled dependency counts only through an exact pin or a ^, ~ or >= floor."
         }
       ],
-      "entry_sha256": "2862431411f3d70ccb68ced0a6b8d293add5d7a03a0b5377c48dec04394f023a"
+      "entry_sha256": "b9f4da5a74452feca528b7dfda2e3a02d69de73f078a2d44670e04c076bbbf74"
     }
   ]
 }
