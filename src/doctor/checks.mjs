@@ -108,7 +108,7 @@ import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-k
 // `npm run build:spec` (tsc -> campaign-spec/dist) so the package runs on the
 // node engine in package.json without type-stripping. build runs on `prepare`,
 // so a fresh install (including the git-ref consumer) always has dist.
-import { normalize as normalizeCampaignSpec, runRules, specOnlyRules } from "../../campaign-spec/dist/index.js";
+import { isReleasedSdkVersion, normalize as normalizeCampaignSpec, runRules, specOnlyRules } from "../../campaign-spec/dist/index.js";
 import { cmd, asInvocation } from "../install-invocation.mjs";
 import { specHashesMatch, specMaterialHash } from "../spec-identity.mjs";
 import {
@@ -2522,7 +2522,7 @@ function recordSmokeQc({ subject, targetRepo, pages, environment, deployBase, wa
 }
 
 function recordSdkMarkupGate({ subject, pages, errors, warnings, ready, derived }) {
-  const gate = evaluateSdkMarkup({ subject, pages });
+  const gate = evaluateSdkMarkup({ subject, pages, sdkVersion: campaignSdkPin(derived?.target_repo, subject?.public_route_slug) });
   if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(gate);
 
   if (gate.status === "not_applicable") {
@@ -2551,6 +2551,16 @@ function recordSdkMarkupGate({ subject, pages, errors, warnings, ready, derived 
   if (gate.status === "blocked") return gate;
   ready.push(`SDK markup checks passed on ${gate.pages_scanned} built page(s)${gate.warned.length ? ` with ${gate.warned.length} advisory finding(s)` : ""}`);
   return gate;
+}
+
+// The campaign's SDK pin from the target's campaigns.json entry, when it is an
+// exact released version; else null. The SDK markup check reads a page's own
+// loader pin first and falls back to this one.
+function campaignSdkPin(targetRepo, publicRouteSlug) {
+  if (!targetRepo || !publicRouteSlug) return null;
+  const load = loadPageKitCampaignEntry({ targetRepo, publicRouteSlug });
+  const version = load.status === "ok" ? load.entry?.sdk_version : null;
+  return isReleasedSdkVersion(version) ? version : null;
 }
 
 // Route drift: a CampaignSpec page whose declared route has no built page at

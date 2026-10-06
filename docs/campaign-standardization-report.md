@@ -170,6 +170,22 @@ version discovery), `checkout_fields` (every
 script evidence, and `proof_state`), `runtime_contract`, `findings`, and
 `remediation`.
 
+Three names in the field contract depend on the SDK version
+(`version_gated_aliases`): `first_name` and `last_name` from 0.4.39 and
+`phone_number` from 0.4.41. Each is `supported` only when the binding's SDK
+version is an exact release at or after that version; otherwise it is
+classified as on an earlier SDK (`first_name` and `last_name` as stale aliases,
+`phone_number` as unknown). Each binding records the `sdk_version` it was
+judged against and its `sdk_version_source`: `loader` (the file's own exact
+loader pin), `campaign` (for a file with no loader of its own, the lowest of
+the root's exact loader pins and its bundled dependency's floor: an exact pin,
+or `^`, `~` or `>=` on a released version; any other range leaves the version
+unknown), or
+`campaigns_json` (a Page Kit campaign's `sdk_version`; a shared file takes the
+lowest across campaigns). An unpinned loader or a missing pin leaves
+`sdk_version` null, judged as an earlier SDK, because `fname`, `lname` and
+`phone` work on every version.
+
 `sdk_loader.references` records pinned and unpinned loader refs alike
 (`version` is null for `@latest`/branch/commit pins, which raise
 `version.sdk_loader_unpinned` instead of a policy evaluation). Only URLs that
@@ -215,6 +231,16 @@ The checkout field contract runs wherever inline checkout bindings exist; a
 Page Kit root that inlines them gets the same `checkout_fields` block and the
 same `checkout.unsupported_field_binding` / `checkout.unknown_field_binding`
 findings as an application root.
+
+A bundled dependency is judged by its floor, the lowest version its
+`package.json` spec lets npm install, recorded as
+`sdk_loader.bundled_dependency.floor_version`. Only an exact pin (`0.4.30`,
+`=0.4.30`, `v0.4.30`) or one `^`, `~` or `>=` range on a released version has
+a certain floor; `^0.4.25` is evaluated as `0.4.25`. Any other spec (`<0.4.39`,
+an `||`, hyphen or x-range, a tag) has none, so it gets no evaluation and
+raises the warning `version.sdk_dependency_floor_unknown` instead; a
+prerelease pin raises `version.sdk_prerelease_pin`. `resolved_version` stays
+the version text extracted from the spec, for reference.
 
 Both are also injectable from the CLI: pass
 `--sdk-support-policy <path-to-json>` and/or `--field-contract <path-to-json>`

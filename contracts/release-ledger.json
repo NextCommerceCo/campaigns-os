@@ -6199,13 +6199,67 @@
       "entry_sha256": "197929e76610b701b015cac7ee37f1f8a75b18e350a8268b679b8ca51a9b7f14"
     },
     {
-      "id": "RL-0236",
+      "id": "RL-0237",
       "sequence": 228,
       "date": "2026-10-06",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.53.0+agent.3",
-      "changelog_sha256": "968a984d3bf638e5d99ca031b3a1e13db4ff07a5ad5501bc50519dedd04d1696",
+      "changelog_sha256": "d93e2a6e96de6d7e17d3f1235ff2c9ca6984890fe1026df284c38eacdbcb5557",
+      "agent_impact": "standardize evaluates a campaign_cart_app root's bundled campaign-cart dependency against the SDK support policy by the lowest version its package.json spec allows, recorded as sdk_loader.bundled_dependency.floor_version. An exact pin (0.4.30, =0.4.30, v0.4.30) or one ^, ~ or >= range on a released version is evaluated by that version, unchanged from before. Any other spec (<0.4.39, an ||, hyphen or x-range, a tag) now gets no version_policy evaluation and raises the new warning version.sdk_dependency_floor_unknown; earlier releases evaluated the version written in the spec, so such a range could pass or fail the minimum on a version npm might not install. Prerelease pins still raise version.sdk_prerelease_pin only. resolved_version is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Describe judging a bundled dependency by its floor_version, which specs have a certain floor, and the version.sdk_dependency_floor_unknown warning for those that do not."
+        }
+      ],
+      "entry_sha256": "d98fbc7e8865f4ab5bb35bb7510a787af576ef23dfe5b50377fb2f744af8bf0b"
+    },
+    {
+      "id": "RL-0236",
+      "sequence": 229,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.4",
+      "changelog_sha256": "b1de69de9257b9151d0fb38eeb0c23f92bc8a3a405f0c0f6e6d7427b44564c75",
+      "agent_impact": "doctor built_output.sdk_markup WRONG_FIELD_NAME and the standardize checkout field contract now judge first_name and last_name (mapped from Campaign Cart SDK 0.4.39) and phone_number (from 0.4.41) against the SDK version of the page: doctor reads the page's own exact loader pin, then the campaign's _data/campaigns.json sdk_version; standardize reads the file's own exact loader pin, then the lowest exact pin the campaign root declares (exact loader pins; a bundled campaign-cart dependency's exact pin or the floor of a ^, ~ or >= range, any other range reading as unknown; or for Page Kit roots the campaign's campaigns.json sdk_version). On a version at or after the name's since-version the name passes, so pages written to the SDK 0.4.41 field names stop blocking. Below it, or when no exact released version can be read, results are unchanged: first_name and last_name block (WRONG_FIELD_NAME; checkout.unsupported_field_binding) and phone_number blocks in doctor and warns as checkout.unknown_field_binding in standardize; fname, lname and phone pass on every version. WRONG_FIELD_NAME details gain sdk_version and sdk_version_source (loader or campaigns_json) and, for these three names, since; the gate gains campaign_sdk_version. standardize checkout_fields.bindings[] gain since, sdk_version and sdk_version_source (loader, campaign or campaigns_json), and stale-alias and unknown-field evidence for these names carries since and sdk_version.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "The SDK markup gate passes the campaign's campaigns.json sdk_version to the field-name check as the fallback for a page with no exact loader pin, and records it as campaign_sdk_version."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "WRONG_FIELD_NAME: first_name and last_name are mapped from SDK 0.4.39 and phone_number from 0.4.41, judged against the page loader pin, then campaigns.json; unknown is judged as an earlier SDK."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Describe the field contract version_gated_aliases and the sdk_version and sdk_version_source each checkout binding records. A bundled dependency counts only through an exact pin or a ^, ~ or >= floor."
+        }
+      ],
+      "entry_sha256": "b6af3f03f0bc8e03b7a24d10c65c2cc889ede6e04ce7828b4e78c2562414564b"
+    },
+    {
+      "id": "RL-0240",
+      "sequence": 230,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.7",
+      "changelog_sha256": "f91240db8674ccb5f7a94f042c93b059aa4f0a138124927b391554f554cafddc",
       "agent_impact": "doctor --built with --base-url adds a ready line saying the local built files were checked and the URL was not fetched (it only fills deploy.preview_url in the minimal Build Packet), names qa run --site <repo> --base-url <url> --family <family> --browser for the served pages, and sets derived.base_url { value, fetched: false, recorded_as: deploy.preview_url } in JSON. Do not report a doctor --built result as a check of a preview or production site.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6229,7 +6283,7 @@
           "summary": "State that doctor --built reads local files only, that --base-url is not fetched, how to check served pages, and that the minimal packet does not drive packet QA."
         }
       ],
-      "entry_sha256": "5985fb038a26a1d86070832e5ad9b89e2d8164adec2e3403e7304a6bab9919f2"
+      "entry_sha256": "081a8616b37812c2f18f66fd59873b4f6bd758e10db35785fbb87af47a778bf2"
     }
   ]
 }
