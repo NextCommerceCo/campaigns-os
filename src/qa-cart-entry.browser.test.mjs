@@ -44,8 +44,20 @@ function withNextPaymentCardFields(html) {
     .replace(/&lt;input aria-label=&quot;CVV&quot;&gt;/g, "&lt;input id=&quot;spreedly-hosted-cvv-input&quot; type=&quot;text&quot;&gt;");
 }
 
+// Both generations on one checkout: the iFrame v1 pair stays and the 0.4.41
+// pair is added beside it, the page the runner must refuse rather than type
+// into whichever frame comes first.
+function withBothCardFieldGenerations(html) {
+  return html.replace(/(<iframe id="spreedly-cvv-frame-1"[^>]*><\/iframe>)/, (cvv) => `${cvv}
+      <iframe id="spreedly-hosted-number-k3x9q2" srcdoc="&lt;input id=&quot;spreedly-hosted-number-input&quot;&gt;"></iframe>
+      <iframe id="spreedly-hosted-cvv-k3x9q2" srcdoc="&lt;input id=&quot;spreedly-hosted-cvv-input&quot;&gt;"></iframe>`);
+}
+
+const CARD_FIELD_REWRITES = { "next-payment": withNextPaymentCardFields, both: withBothCardFieldGenerations };
+
 // Serves one fixture under /x/ plus the shim and a fake orders API.
-// cardFields "next-payment" serves checkout with SDK 0.4.41's card iframes.
+// cardFields "next-payment" serves checkout with SDK 0.4.41's card iframes;
+// "both" serves the iFrame v1 and 0.4.41 pairs together.
 async function serveFixture(name, { cardFields = "iframe-v1" } = {}) {
   const dir = join(FIXTURES, name);
   const orders = [];
@@ -85,7 +97,8 @@ async function serveFixture(name, { cardFields = "iframe-v1" } = {}) {
       pageLoads[page[1]] += 1;
       try {
         const html = await readFile(join(dir, `${page[1]}.html`), "utf8");
-        return send(200, cardFields === "next-payment" && page[1] === "checkout" ? withNextPaymentCardFields(html) : html);
+        const rewrite = page[1] === "checkout" ? CARD_FIELD_REWRITES[cardFields] : null;
+        return send(200, rewrite ? rewrite(html) : html);
       } catch {
         return send(404, "not found");
       }
@@ -120,9 +133,11 @@ const ARGS = Object.freeze({
   "browser-timeout": 10000,
 });
 
-async function runFixture(name, { withLanding = true, cardFields } = {}) {
+// beforeRun reads the served pages through the same server the run drives.
+async function runFixture(name, { withLanding = true, cardFields, beforeRun = null } = {}) {
   const server = await serveFixture(name, { cardFields });
   try {
+    if (beforeRun) await beforeRun(server);
     const result = await runBrowserTestOrders(topologies(server.base, { withLanding }), { ...ARGS }, `qa-cart-entry-${name}`);
     const order = result.orders[0];
     const attemptAssertion = result.assertions.find((entry) => entry.id === "browser-test-order:checkout");
@@ -157,6 +172,11 @@ browserTest("landing-entry: the runner enters through the landing page, the SDK 
 
   assert.equal(byName.opened_checkout.status, "ok");
   assert.match(byName.opened_checkout.detail, /arrived from the entry page via SDK navigation; not re-opened/);
+  assert.deepEqual(byName.card_fields_filled.evidence, {
+    generation: "spreedly-iframe-v1",
+    number_frame_id: "spreedly-number-frame-1",
+    cvv_frame_id: "spreedly-cvv-frame-1",
+  });
   assert.equal(byName.order_submitted.status, "ok");
   assert.deepEqual(byName.order_submitted.evidence.cart_before_submit, {
     empty: false, source: "window.next", count: 1, line_count: 1, package_ids: ["1"],
@@ -169,20 +189,37 @@ browserTest("landing-entry: the runner enters through the landing page, the SDK 
 });
 
 browserTest("landing-entry on SDK 0.4.41 card fields: the runner types into the spreedly-hosted iframes and submits the same order", async () => {
-  const server = await serveFixture("landing-entry", { cardFields: "next-payment" });
-  try {
-    const checkout = await (await fetch(`${server.base}/x/checkout/`)).text();
-    assert.match(checkout, /id="spreedly-hosted-number-k3x9q2"/, "the served checkout carries the 0.4.41 number iframe");
-    assert.doesNotMatch(checkout, /spreedly-number-frame/, "and no iFrame v1 frame the old selector could still find");
-  } finally {
-    await server.close();
-  }
-
-  const { steps, assertion, server: run } = await runFixture("landing-entry", { cardFields: "next-payment" });
+  const { steps, assertion, server } = await runFixture("landing-entry", {
+    cardFields: "next-payment",
+    beforeRun: async ({ base }) => {
+      const checkout = await (await fetch(`${base}/x/checkout/`)).text();
+      assert.match(checkout, /id="spreedly-hosted-number-k3x9q2"/, "the served checkout carries the 0.4.41 number iframe");
+      assert.doesNotMatch(checkout, /spreedly-(number|cvv)-frame/, "and no iFrame v1 frame the old selector could still find");
+    },
+  });
   const byName = stepsByName(steps);
+  assert.equal(byName.card_fields_filled.status, "ok", byName.card_fields_filled.error);
+  assert.deepEqual(byName.card_fields_filled.evidence, {
+    generation: "spreedly-hosted",
+    number_frame_id: "spreedly-hosted-number-k3x9q2",
+    cvv_frame_id: "spreedly-hosted-cvv-k3x9q2",
+  }, "the card step typed into the 0.4.41 frames, not an iFrame v1 fallback");
   assert.equal(byName.order_submitted.status, "ok", byName.order_submitted.detail);
-  assert.equal(run.orders.length, 1, "exactly one order was posted");
+  assert.equal(server.orders.length, 1, "exactly one order was posted");
   assert.equal(assertion.status, "pass", assertion.actual);
+});
+
+browserTest("landing-entry with both card-field generations: the card step fails by name and nothing is submitted", async () => {
+  const { steps, assertion, server } = await runFixture("landing-entry", { cardFields: "both" });
+  const byName = stepsByName(steps);
+  assert.equal(byName.card_fields_filled.status, "failed");
+  assert.match(
+    byName.card_fields_filled.error,
+    /expected one card number iframe and one CVV iframe of one generation; found number=\[spreedly-number-frame-1, spreedly-hosted-number-k3x9q2\]/,
+  );
+  assert.equal(byName.order_submitted, undefined, "the ladder stops at the card step");
+  assert.equal(server.orders.length, 0, "no order was posted");
+  assert.notEqual(assertion.status, "pass");
 });
 
 browserTest("landing-link-entry: a forcePackageId link is a cart entry; the visible link is the one clicked, by index, past a decoy and a hidden twin", async () => {

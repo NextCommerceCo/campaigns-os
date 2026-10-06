@@ -82,7 +82,10 @@ const DEFAULT_TEST_EXP_YEAR = "2030";
 // (spreedly-number-frame-1234); 0.4.41 mounts the Spreedly Checkout SDK fields
 // that NEXT's payments.29next.com/js/v1/payment.js loads
 // (spreedly-hosted-number-oujmii2uzjk). A page carries one generation or the
-// other, and each frame holds a single text input.
+// other, and each frame holds a single text input. fillPaymentFields refuses
+// by name unless exactly one number frame and one CVV frame match, so a page
+// mounting both generations, or two forms, fails at the card step instead of
+// on whichever frame happens to come first.
 const CARD_NUMBER_FRAME = 'iframe[id^="spreedly-number-frame"], iframe[id^="spreedly-hosted-number"]';
 const CARD_CVV_FRAME = 'iframe[id^="spreedly-cvv-frame"], iframe[id^="spreedly-hosted-cvv"]';
 const DEFAULT_MAX_TEST_ORDERS = 6;
@@ -3876,7 +3879,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     }, { timeoutMs: budget() });
     await ladder.run("card_fields_filled", async () => {
       ensurePageFillable(page, checkoutPage.url);
-      await fillPaymentFields(page, args);
+      return fillPaymentFields(page, args);
     }, { timeoutMs: budget() });
     await ladder.run("cart_created", async () => {
       const cart = cartCreationEvidence(events);
@@ -5091,6 +5094,7 @@ async function fillPaymentFields(page, args) {
 
   const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
   const cvv = stringArg(args["test-cvv"]) || DEFAULT_TEST_CVV;
+  const frames = await cardFrames(page);
   const numberInput = page.frameLocator(CARD_NUMBER_FRAME).locator("input").first();
   const cvvInput = page.frameLocator(CARD_CVV_FRAME).locator("input").first();
   await numberInput.click();
@@ -5099,6 +5103,25 @@ async function fillPaymentFields(page, args) {
   await cvvInput.pressSequentially(cvv, { delay: 20 });
   await page.locator("body").click({ position: { x: 20, y: 20 } }).catch(() => {});
   await page.waitForTimeout(500);
+  return { evidence: frames };
+}
+
+// The card iframes the step is about to type into, once the SDK has mounted
+// them. Exactly one of each, of one generation, or the step fails by name.
+async function cardFrames(page) {
+  await page.locator(CARD_NUMBER_FRAME).first().waitFor({ state: "attached" });
+  await page.locator(CARD_CVV_FRAME).first().waitFor({ state: "attached" });
+  const ids = async (selector) => page.locator(selector).evaluateAll((nodes) => nodes.map((node) => node.id));
+  const number = await ids(CARD_NUMBER_FRAME);
+  const cvv = await ids(CARD_CVV_FRAME);
+  const all = [...number, ...cvv];
+  const generation = all.every((id) => id.startsWith("spreedly-hosted-"))
+    ? "spreedly-hosted"
+    : all.every((id) => /^spreedly-(number|cvv)-frame/.test(id)) ? "spreedly-iframe-v1" : "mixed";
+  if (number.length !== 1 || cvv.length !== 1 || generation === "mixed") {
+    throw new Error(`expected one card number iframe and one CVV iframe of one generation; found number=[${number.join(", ")}] cvv=[${cvv.join(", ")}]`);
+  }
+  return { generation, number_frame_id: number[0], cvv_frame_id: cvv[0] };
 }
 
 async function clickCreditPaymentMethod(page) {
