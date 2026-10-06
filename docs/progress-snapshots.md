@@ -65,7 +65,9 @@ rename; a live process is never evicted. A lock directory with no owner record
 a second. If one is found, or if recovery itself is interrupted, capture fails
 closed and the warning names the affected `.allocation-lock` directory: stop
 all Campaigns OS writers for that target, then remove that directory before
-retrying `next`. Do not remove a lock while a writer is active. Do not run an
+retrying `next`. A file or other non-lock entry at the lock path is named in
+the warning and never removed: move it out of the way. Do not remove a lock
+while a writer is active. Do not run an
 older Campaigns OS release against the same target at the same time.
 
 An unchanged projection reuses its ID, timestamp and sequence. Identity

@@ -912,6 +912,24 @@ test("a stage writer names an ownerless target lock and how to clear it", async 
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a stage writer names a non-lock obstruction at the target lock path and leaves it (#514)", async () => {
+  const { targetLockPath } = await import("./target-lock.mjs");
+  const { dir, workspace } = workspaceFixture();
+  const lock = targetLockPath(workspace.targetRepo);
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, "notes.txt"), "not a lock");
+  assert.throws(
+    () => commitAssemblyReport(workspace, (report) => ({ ...report, note: "edited" }), { command: "unit waive", staleReason: "unit reason" }),
+    (error) => {
+      assert.match(error.message, /^unit waive: the target lock path .*\.design-source-package\.json\.lock is occupied by a directory that is not a lock \(no owner\.json; it holds notes\.txt\)/);
+      assert.match(error.message, /never removed automatically/);
+      return true;
+    },
+  );
+  assert.equal(readFileSync(join(lock, "notes.txt"), "utf8"), "not a lock", "the obstruction is left in place");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("deriveAssemblyReportSummary reads stages at their effective status: a stage owed again or unconfirmed is never done", () => {
   const done = deriveAssemblyReportSummary(ladderReport(), FIXTURE_INPUTS);
   assert.deepEqual([done.status, done.next.stage], ["completed", "done"], "control: stamped with the current inputs, the ladder is done");

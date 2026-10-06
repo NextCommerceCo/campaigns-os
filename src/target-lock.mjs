@@ -21,9 +21,17 @@ export function targetLockPath(targetRepo) {
 // `command` names the waiting command. The lock does not record which command
 // holds it, only a pid, so the holder is described generically. A lock with
 // no owner record is called out on its own: it is never taken over, and the
-// operator needs to know it will not clear by waiting.
+// operator needs to know it will not clear by waiting. So is anything at the
+// lock path that is not a lock at all, named by what it is (#514).
 function unavailable(targetRepo, lockPath, command) {
   return (error) => {
+    if (error?.code === "ENOTLOCK") {
+      return new Error(
+        `${command}: the target lock path ${lockPath} is occupied by ${error.obstruction}, not a campaigns-os lock. `
+        + "It is never removed automatically. Move it out of the way, then retry.",
+        { cause: error },
+      );
+    }
     if (error?.code !== "EEXIST") {
       return new Error(`${command} could not take the target lock at ${lockPath}${error?.code ? ` (${error.code})` : ""}: ${error?.message}`, { cause: error });
     }
