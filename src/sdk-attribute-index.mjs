@@ -19,6 +19,8 @@
 // A name ending in "-" (data-next-class-) is a prefix the SDK reads with any
 // suffix.
 
+import { RELEASED_SDK_VERSION_PATTERN } from "../campaign-spec/dist/index.js";
+
 export const SDK_ATTRIBUTE_INDEX_VERSION = "0.4.38";
 
 export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
@@ -197,6 +199,53 @@ export const SDK_CHECKOUT_FIELD_NAMES = Object.freeze([
 
 export const SDK_CHECKOUT_FIELD_PREFIXES = Object.freeze(["billing-"]);
 
+// Field names a later SDK added, each with the first version that maps it.
+// They are the orders API's own names, which the SDK reads as another
+// spelling of its older one (src/utils/checkout-field-names.ts, SDK_NAME):
+// first_name and last_name from v0.4.39 (v0.4.40 is the same SDK), and
+// phone_number from v0.4.41, whose data-attributes reference ("Field names")
+// makes these the names to write and says fname/lname/phone still work. The
+// older names stay in SDK_CHECKOUT_FIELD_NAMES and are valid on every
+// version. A page whose SDK version is unknown is judged as an earlier SDK:
+// the older name works on every version, so asking for it is always safe,
+// and accepting the newer name there could pass a field that never reaches
+// the order. Kept in step with version_gated_aliases in
+// contracts/campaign-cart-checkout-field-contract.v0.json (a test holds the
+// two equal).
+export const SDK_CHECKOUT_FIELD_NAMES_SINCE = Object.freeze({
+  first_name: Object.freeze({ since: "0.4.39", sdk_name: "fname" }),
+  last_name: Object.freeze({ since: "0.4.39", sdk_name: "lname" }),
+  phone_number: Object.freeze({ since: "0.4.41", sdk_name: "phone" }),
+});
+
+// Whether `version` is an exact released SDK version at or after `since`.
+// "Exact released" is campaign-spec's RELEASED_SDK_VERSION_PATTERN, the one
+// doctor's campaigns.json pin check uses, so doctor and standardize agree.
+// Anything else (null, a range, a prerelease, @latest, a v prefix) is not: a
+// prerelease sorts before its release, so 0.4.39-beta.1 does not carry
+// 0.4.39's names.
+export function sdkVersionAtLeast(version, since) {
+  const have = typeof version === "string" ? RELEASED_SDK_VERSION_PATTERN.exec(version) : null;
+  const need = typeof since === "string" ? RELEASED_SDK_VERSION_PATTERN.exec(since) : null;
+  if (!have || !need) return false;
+  for (let index = 1; index <= 3; index += 1) {
+    const diff = Number(have[index]) - Number(need[index]);
+    if (diff !== 0) return diff > 0;
+  }
+  return true;
+}
+
+// The version-gated entry for a field name, billing- prefix included
+// ("billing-first_name" → first_name's entry), or null.
+export function checkoutFieldNameSince(value) {
+  let name = String(value ?? "");
+  const prefix = SDK_CHECKOUT_FIELD_PREFIXES.find((candidate) => name.startsWith(candidate));
+  if (prefix) name = name.slice(prefix.length);
+  if (!Object.hasOwn(SDK_CHECKOUT_FIELD_NAMES_SINCE, name)) return null;
+  const entry = SDK_CHECKOUT_FIELD_NAMES_SINCE[name];
+  return { name, since: entry.since, sdk_name: `${prefix || ""}${entry.sdk_name}` };
+}
+
 const exact = new Set(SDK_DATA_NEXT_ATTRIBUTES.filter((name) => !name.endsWith("-")));
 const prefixes = SDK_DATA_NEXT_ATTRIBUTES.filter((name) => name.endsWith("-"));
 
@@ -205,10 +254,15 @@ export function isIndexedSdkAttribute(name) {
   return exact.has(value) || prefixes.some((prefix) => value.startsWith(prefix) && value.length > prefix.length);
 }
 
-export function isKnownCheckoutFieldName(value) {
+// Whether the SDK maps `value`. `sdkVersion` is the page's exact SDK
+// version; without one, a version-gated name is not known (see
+// SDK_CHECKOUT_FIELD_NAMES_SINCE).
+export function isKnownCheckoutFieldName(value, sdkVersion = null) {
   const name = String(value ?? "");
-  return SDK_CHECKOUT_FIELD_NAMES.includes(name)
-    || SDK_CHECKOUT_FIELD_PREFIXES.some((prefix) => name.startsWith(prefix) && name.length > prefix.length);
+  if (SDK_CHECKOUT_FIELD_NAMES.includes(name)
+    || SDK_CHECKOUT_FIELD_PREFIXES.some((prefix) => name.startsWith(prefix) && name.length > prefix.length)) return true;
+  const gated = checkoutFieldNameSince(name);
+  return Boolean(gated) && sdkVersionAtLeast(sdkVersion, gated.since);
 }
 
 // The Campaign Cart template placeholders, for the raw cart placeholder check

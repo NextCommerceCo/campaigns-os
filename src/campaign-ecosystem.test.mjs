@@ -267,6 +267,154 @@ test("a genuinely unknown checkout field still produces an unknown-field warning
   });
 });
 
+// first_name/last_name are SDK names from 0.4.39 (0.4.40 is the same SDK),
+// phone_number from 0.4.41; fname/lname/phone stay valid on every version.
+// Each row: loader pin → [classification of first_name, last_name, phone_number].
+const VERSION_GATED_FIELDS = ["first_name", "last_name", "phone_number"];
+for (const [sdkVersion, expected] of [
+  ["0.4.38", ["stale_alias", "stale_alias", "unknown"]],
+  ["0.4.39", ["supported", "supported", "unknown"]],
+  ["0.4.40", ["supported", "supported", "unknown"]],
+  ["0.4.41", ["supported", "supported", "supported"]],
+]) {
+  test(`version-gated checkout field names on a page that loads SDK ${sdkVersion}`, () => {
+    withTempDir((dir) => {
+      writeCampaignCartAppFixture(dir, { sdkVersion, provinceField: "province", postalField: "postal" });
+      appendCheckoutFields(dir, [...VERSION_GATED_FIELDS, "phone", "billing-first_name"]);
+
+      const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+      const byValue = new Map(root.checkout_fields.bindings.map((entry) => [entry.value, entry]));
+      assert.deepEqual(VERSION_GATED_FIELDS.map((field) => byValue.get(field).classification), expected);
+      for (const field of ["fname", "lname", "phone"]) assert.equal(byValue.get(field).supported, true, field);
+      assert.equal(byValue.get("first_name").sdk_version, sdkVersion);
+      assert.equal(byValue.get("first_name").sdk_version_source, "loader");
+      assert.equal(byValue.get("billing-first_name").classification, expected[0], "the billing- prefix follows its base name");
+
+      const stale = findingByCode(root, "checkout.unsupported_field_binding");
+      const unknown = findingByCode(root, "checkout.unknown_field_binding");
+      if (expected[0] === "stale_alias") {
+        assert.equal(stale.severity, "blocker");
+        const first = stale.evidence.find((entry) => entry.value === "first_name");
+        assert.deepEqual([first.canonical, first.since, first.sdk_version], ["fname", "0.4.39", sdkVersion]);
+        assert.match(stale.message, /consumes first_name only from 0\.4\.39.*run on SDK 0\.4\.38/);
+        assert.match(stale.next_action, /for an alias with a since-version in the evidence, pinning the SDK at or after that version also works/);
+      } else {
+        assert.equal(stale, undefined, `no stale-alias blocker on ${sdkVersion}`);
+      }
+      if (expected[2] === "unknown") {
+        assert.deepEqual(unknown.evidence.map((entry) => [entry.value, entry.since]), [["phone_number", "0.4.41"]]);
+      } else {
+        assert.equal(unknown, undefined, `no unknown-field warning on ${sdkVersion}`);
+      }
+    });
+  });
+}
+
+test("a stale-alias blocker mixing a version-gated alias with a plain one names both repairs", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.38", provinceField: "province", postalField: "zip" });
+    appendCheckoutFields(dir, ["first_name"]);
+
+    const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+    const stale = findingByCode(root, "checkout.unsupported_field_binding");
+    const evidence = new Map(stale.evidence.map((entry) => [entry.value, entry]));
+    assert.equal(evidence.get("first_name").since, "0.4.39");
+    assert.equal("since" in evidence.get("zip"), false, "a plain stale alias carries no since-version");
+    assert.match(stale.next_action, /^Rewrite each stale alias to its canonical Campaign Cart field name \(for an alias with a since-version/);
+  });
+});
+
+test("Page Kit campaigns.json pins outside the canonical released form are unknown, as doctor reads them", () => {
+  for (const pin of ["v0.4.41", "0.04.41", "0.4.41-rc.1"]) {
+    withTempDir((dir) => {
+      write(join(dir, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "^0.1.1" } }));
+      write(join(dir, "_data", "campaigns.json"), JSON.stringify({ acme: { name: "Acme", sdk_version: pin } }));
+      write(join(dir, "src", "acme", "checkout.html"), '<form data-next-checkout="form"><input data-next-checkout-field="first_name"></form>');
+      const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+      const [binding] = root.checkout_fields.bindings;
+      assert.deepEqual([binding.sdk_version, binding.classification], [null, "stale_alias"], pin);
+    });
+  }
+});
+
+test("a bundled dependency feeds the field-name gate only through a certain floor", () => {
+  // [package.json spec, sdk_version the binding is judged against, first_name classification]
+  for (const [spec, version, classification] of [
+    ["0.4.39", "0.4.39", "supported"],
+    ["=0.4.39", "0.4.39", "supported"],
+    ["^0.4.39", "0.4.39", "supported"],
+    ["~0.4.41", "0.4.41", "supported"],
+    [">=0.4.39", "0.4.39", "supported"],
+    ["^0.4.38", "0.4.38", "stale_alias"],
+    ["<0.4.39", null, "stale_alias"],
+    ["<=0.4.41", null, "stale_alias"],
+    ["0.4.41 || 0.4.38", null, "stale_alias"],
+    ["0.4.39 - 0.4.41", null, "stale_alias"],
+    ["0.4.x", null, "stale_alias"],
+    ["^0.4.39-beta.1", null, "stale_alias"],
+    ["latest", null, "stale_alias"],
+  ]) {
+    withTempDir((dir) => {
+      write(join(dir, "package.json"), JSON.stringify({ dependencies: { "campaign-cart": spec }, devDependencies: { vite: "^5.4.0" } }));
+      write(join(dir, "public", "checkout", "index.html"), '<meta name="next-campaign-id" content="1"><script>window.nextConfig = {}</script><form><input data-next-checkout-field="first_name"></form>');
+      const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+      const [binding] = root.checkout_fields.bindings;
+      assert.deepEqual([binding.sdk_version, binding.classification], [version, classification], spec);
+    });
+  }
+});
+
+test("version-gated field names on an unpinned loader are judged as an earlier SDK", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.41", provinceField: "province", postalField: "postal" });
+    const checkout = join(dir, "client", "public", "checkout", "index.html");
+    write(checkout, readFileSync(checkout, "utf8").replace("campaign-cart@v0.4.41", "campaign-cart@latest"));
+    appendCheckoutFields(dir, VERSION_GATED_FIELDS);
+
+    const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+    const byValue = new Map(root.checkout_fields.bindings.map((entry) => [entry.value, entry]));
+    assert.deepEqual(VERSION_GATED_FIELDS.map((field) => byValue.get(field).classification), ["stale_alias", "stale_alias", "unknown"]);
+    assert.equal(byValue.get("first_name").sdk_version, null);
+    assert.match(findingByCode(root, "checkout.unsupported_field_binding").message, /of unknown version \(judged as an earlier SDK\)/);
+  });
+});
+
+test("a file without its own loader takes the campaign's lowest pin; a file with its own loader keeps it", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.41", provinceField: "province", postalField: "postal" });
+    write(join(dir, "client", "public", "partials", "fields.html"), '<input data-next-checkout-field="phone_number">');
+    write(join(dir, "client", "public", "legacy", "index.html"), '<script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.39/dist/loader.js"></script><input data-next-checkout-field="last_name">');
+
+    const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+    const byPath = new Map(root.checkout_fields.bindings.map((entry) => [`${entry.path}#${entry.value}`, entry]));
+    const partial = byPath.get("client/public/partials/fields.html#phone_number");
+    assert.deepEqual([partial.sdk_version, partial.sdk_version_source, partial.classification], ["0.4.39", "campaign", "unknown"]);
+    const legacy = byPath.get("client/public/legacy/index.html#last_name");
+    assert.deepEqual([legacy.sdk_version, legacy.sdk_version_source, legacy.classification], ["0.4.39", "loader", "supported"]);
+  });
+});
+
+test("Page Kit source bindings are judged against their campaign's campaigns.json sdk_version", () => {
+  withTempDir((dir) => {
+    write(join(dir, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "^0.1.1" } }));
+    write(join(dir, "_data", "campaigns.json"), JSON.stringify({
+      older: { name: "Older", sdk_version: "0.4.38" },
+      newer: { name: "Newer", sdk_version: "0.4.41" },
+    }));
+    for (const slug of ["older", "newer"]) {
+      write(join(dir, "src", slug, "checkout.html"), '<form data-next-checkout="form"><input data-next-checkout-field="first_name"><input data-next-checkout-field="phone_number"></form>');
+    }
+
+    const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+    const by = (path, value) => root.checkout_fields.bindings.find((entry) => entry.path === path && entry.value === value);
+    assert.equal(by("src/newer/checkout.html", "first_name").classification, "supported");
+    assert.equal(by("src/newer/checkout.html", "phone_number").classification, "supported");
+    assert.equal(by("src/newer/checkout.html", "phone_number").sdk_version_source, "campaigns_json");
+    assert.equal(by("src/older/checkout.html", "first_name").classification, "stale_alias");
+    assert.equal(by("src/older/checkout.html", "phone_number").classification, "unknown");
+  });
+});
+
 test("original funnel: custom payment controls need behavioral proof, not a static failure claim", () => {
   withTempDir((dir) => {
     writeCampaignCartAppFixture(dir, { paymentSyncScript: false });

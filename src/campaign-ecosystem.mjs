@@ -3,6 +3,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 import { fileURLToPath } from "node:url";
 
 import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
+import { sdkVersionAtLeast } from "./sdk-attribute-index.mjs";
 import { shellToken } from "./shell-token.mjs";
 import {
   compareVersions,
@@ -222,7 +223,9 @@ export function scanCampaignCartAppRoot({
       next_action: "Pin the bundled campaign-cart dependency exactly, or to a ^, ~ or >= range on a supported release, so version policy can be evaluated.",
     }));
   }
-  const checkoutFields = inspectCheckoutFields(root, htmlFiles, contract, findings);
+  const checkoutFields = inspectCheckoutFields(root, htmlFiles, contract, findings, {
+    sdkVersionForFile: loaderSdkVersionResolver(loader, bundled),
+  });
   const payment = inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings);
   const dataNext = inspectDataNext(root, htmlFiles);
   const runtime = inspectRuntimeArtifacts(root, target, findings);
@@ -353,6 +356,33 @@ function collectLoaderReferences(root, files) {
   };
 }
 
+// The SDK version each HTML file's checkout bindings run against, for the
+// version-gated field aliases. A file that loads the SDK itself uses its own
+// loader pin: one exact version, or unknown when its refs are unpinned or
+// disagree. Any other file (a partial, a page whose loader is injected) uses
+// the campaign's version: the lowest of the loader pins and the bundled
+// dependency's floor, or unknown when any loader ref is unpinned, the bundled
+// dependency has no certain floor, or nothing is discovered. Unknown is judged
+// as an earlier SDK (see inspectCheckoutFields).
+function loaderSdkVersionResolver(loader, bundled) {
+  const byFile = new Map();
+  for (const ref of loader.references) {
+    if (!byFile.has(ref.path)) byFile.set(ref.path, []);
+    byFile.get(ref.path).push(ref.version);
+  }
+  const floor = bundled?.floor_version || null;
+  const versions = [...loader.versions, ...(floor ? [floor] : [])];
+  const campaign = loader.references.some((ref) => !ref.version) || (bundled && !floor) || !versions.length
+    ? null
+    : { version: [...versions].sort(compareVersions)[0], source: "campaign" };
+  return (path) => {
+    const own = byFile.get(path);
+    if (!own) return campaign;
+    const versions = unique(own);
+    return own.every(Boolean) && versions.length === 1 ? { version: versions[0], source: "loader" } : null;
+  };
+}
+
 export function evaluateVersionPolicy(versionEntries, policy, findings) {
   const evaluations = versionEntries.map(({ version, source }) => ({
     version,
@@ -389,7 +419,15 @@ export function evaluateVersionPolicy(versionEntries, policy, findings) {
   };
 }
 
-export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
+// `sdkVersionForFile(relativePath)` returns the { version, source } a file's
+// bindings run against, or null when it is unknown. A version-gated alias
+// (contract version_gated_aliases) is supported only on an exact SDK release
+// at or after its since-version; on an earlier or unknown version it is
+// classified as the contract classifies it without the gate (a stale alias,
+// or unknown). Unknown is the conservative side: the canonical name works on
+// every version, and accepting the alias there could pass a field that never
+// reaches the order.
+export function inspectCheckoutFields(root, htmlFiles, contract, findings, { sdkVersionForFile = null } = {}) {
   const bindings = [];
   const attributes = contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"];
   const attributePattern = new RegExp(`\\b(${attributes.map(escapeRegExp).join("|")})\\s*=\\s*(["'])([^"']*)\\2`, "g");
@@ -397,17 +435,22 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
     const raw = safeReadText(file);
     if (raw === null) continue;
     const content = maskHtmlComments(raw);
+    const path = relPath(root, file);
+    const sdk = (typeof sdkVersionForFile === "function" ? sdkVersionForFile(path) : null) || { version: null, source: null };
     for (const match of content.matchAll(attributePattern)) {
       const value = match[3].trim();
-      const verdict = classifyFieldBinding(value, contract);
+      const verdict = classifyFieldBinding(value, contract, sdk.version);
       bindings.push({
         attribute: match[1],
         value,
-        path: relPath(root, file),
+        path,
         line: lineOf(content, match.index || 0),
         supported: verdict.classification === "supported",
         classification: verdict.classification,
         canonical: verdict.canonical,
+        since: verdict.since,
+        sdk_version: sdk.version,
+        sdk_version_source: sdk.source,
       });
     }
   }
@@ -416,16 +459,28 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
   const unknown = bindings.filter((entry) => entry.classification === "unknown");
 
   if (unsupported.length) {
+    const gated = unsupported.filter((entry) => entry.since);
+    const gatedNote = gated.length
+      ? ` The SDK consumes ${unique(gated.map((entry) => `${entry.value} only from ${entry.since}`)).join(", ")}; these bindings run on SDK ${unique(gated.map((entry) => entry.sdk_version || "of unknown version (judged as an earlier SDK)")).join(", ")}.`
+      : "";
     findings.push(finding({
       severity: "blocker",
       category: "standardization_blocker",
       code: "checkout.unsupported_field_binding",
-      message: `${unsupported.length} checkout field binding(s) use stale aliases the Campaign Cart SDK does not consume (contract: ${contract?.schema_version || "unknown"}).`,
+      message: `${unsupported.length} checkout field binding(s) use stale aliases the Campaign Cart SDK does not consume (contract: ${contract?.schema_version || "unknown"}).${gatedNote}`,
       confidence: "static_contract",
       evidence: dedupeBy(unsupported, (entry) => entry.value)
-        .map((entry) => ({ value: entry.value, canonical: entry.canonical, path: entry.path, line: entry.line }))
+        .map((entry) => ({
+          value: entry.value,
+          canonical: entry.canonical,
+          path: entry.path,
+          line: entry.line,
+          ...(entry.since ? { since: entry.since, sdk_version: entry.sdk_version } : {}),
+        }))
         .slice(0, MAX_SAMPLE_COUNT),
-      next_action: "Rewrite each stale alias to its canonical Campaign Cart field name, then prove checkout binding in browser QA.",
+      next_action: gated.length
+        ? "Rewrite each stale alias to its canonical Campaign Cart field name (for an alias with a since-version in the evidence, pinning the SDK at or after that version also works), then prove checkout binding in browser QA."
+        : "Rewrite each stale alias to its canonical Campaign Cart field name, then prove checkout binding in browser QA.",
     }));
   }
   if (unknown.length) {
@@ -436,7 +491,7 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
       message: `${unknown.length} checkout field binding(s) are outside the known Campaign Cart field contract.`,
       confidence: "static_inference",
       evidence: dedupeBy(unknown, (entry) => entry.value)
-        .map((entry) => ({ value: entry.value, path: entry.path, line: entry.line }))
+        .map((entry) => ({ value: entry.value, path: entry.path, line: entry.line, ...(entry.since ? { since: entry.since, sdk_version: entry.sdk_version } : {}) }))
         .slice(0, MAX_SAMPLE_COUNT),
       next_action: "Confirm the field against the Campaign Cart SDK before treating it as supported or repairing it.",
     }));
@@ -450,10 +505,11 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
   };
 }
 
-function classifyFieldBinding(value, contract) {
-  if (!value) return { classification: "unknown", canonical: null };
+function classifyFieldBinding(value, contract, sdkVersion = null) {
+  if (!value) return { classification: "unknown", canonical: null, since: null };
   const canonicalFields = new Set(contract?.canonical_fields || []);
   const acceptedAliases = contract?.accepted_aliases || {};
+  const gatedAliases = contract?.version_gated_aliases || {};
   const staleAliases = contract?.stale_aliases || {};
   const prefixes = contract?.prefixes || [];
 
@@ -466,12 +522,15 @@ function classifyFieldBinding(value, contract) {
       break;
     }
   }
-  if (canonicalFields.has(base)) return { classification: "supported", canonical: null };
-  if (typeof acceptedAliases[base] === "string") return { classification: "supported", canonical: null };
+  if (canonicalFields.has(base)) return { classification: "supported", canonical: null, since: null };
+  if (typeof acceptedAliases[base] === "string") return { classification: "supported", canonical: null, since: null };
+  const gated = Object.hasOwn(gatedAliases, base) ? gatedAliases[base] : null;
+  const since = typeof gated?.since === "string" ? gated.since : null;
+  if (since && sdkVersionAtLeast(sdkVersion, since)) return { classification: "supported", canonical: null, since };
   if (typeof staleAliases[base] === "string") {
-    return { classification: "stale_alias", canonical: `${prefix}${staleAliases[base]}` };
+    return { classification: "stale_alias", canonical: `${prefix}${staleAliases[base]}`, since };
   }
-  return { classification: "unknown", canonical: null };
+  return { classification: "unknown", canonical: null, since };
 }
 
 function inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings) {
