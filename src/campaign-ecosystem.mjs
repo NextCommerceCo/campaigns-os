@@ -2,6 +2,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
+import { sdkVersionAtLeast } from "./sdk-attribute-index.mjs";
 import { shellToken } from "./shell-token.mjs";
 import {
   compareVersions,
@@ -180,18 +182,19 @@ export function scanCampaignCartAppRoot({
   const loader = collectLoaderReferences(root, [...htmlFiles, ...scriptFiles]);
   // Delivery can be a hosted loader URL OR a bundled npm dependency. When the
   // SDK ships as a dependency there is no loader ref to discover, but the pin
-  // is still a real version signal — record it and feed a resolved semver into
-  // version policy like a discovered version (source-distinguishable below).
+  // is still a real version signal — record it and feed its floor (the lowest
+  // version the spec lets npm install) into version policy like a discovered
+  // version (source-distinguishable below).
   const bundled = detectBundledSdkDependency(root);
   loader.bundled_dependency = bundled
-    ? { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version }
+    ? { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version, floor_version: bundled.floor_version }
     : null;
-  // A prerelease pin sorts strictly before its GA release, so it is never fed
-  // into version policy as a clean semver — the numeric triple would wrongly
-  // pass the release gate. It is recorded on sdk_loader and flagged instead.
-  const bundledPolicyVersion = bundled?.resolved_version && !bundled.prerelease
-    ? bundled.resolved_version
-    : null;
+  // Policy asks whether every install meets the minimum, so only a floor the
+  // spec makes certain is evaluated. A prerelease pin sorts strictly before
+  // its GA release and has no released floor; nor does a range like <0.4.39
+  // or 0.4.41 || 0.4.18, whose extracted triple is not a version every
+  // install meets. Each is recorded on sdk_loader and flagged instead.
+  const bundledPolicyVersion = bundled?.floor_version || null;
   const versionEntries = [
     ...loader.versions.map((version) => ({ version, source: "loader" })),
     ...(bundledPolicyVersion && !loader.versions.includes(bundledPolicyVersion)
@@ -209,8 +212,20 @@ export function scanCampaignCartAppRoot({
       evidence: { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version },
       next_action: "Pin the bundled campaign-cart dependency to a released version so version policy can be evaluated.",
     }));
+  } else if (bundled && !bundled.floor_version) {
+    findings.push(finding({
+      severity: "warning",
+      category: "standardization_warning",
+      code: "version.sdk_dependency_floor_unknown",
+      message: `Bundled Campaign Cart dependency ${bundled.name}@${bundled.version} does not fix a lowest version (an exact pin, or one ^, ~ or >= range on a released version); version policy cannot be evaluated against it.`,
+      confidence: "static_contract",
+      evidence: { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version },
+      next_action: "Pin the bundled campaign-cart dependency exactly, or to a ^, ~ or >= range on a supported release, so version policy can be evaluated.",
+    }));
   }
-  const checkoutFields = inspectCheckoutFields(root, htmlFiles, contract, findings);
+  const checkoutFields = inspectCheckoutFields(root, htmlFiles, contract, findings, {
+    sdkVersionForFile: loaderSdkVersionResolver(loader, bundled),
+  });
   const payment = inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings);
   const dataNext = inspectDataNext(root, htmlFiles);
   const runtime = inspectRuntimeArtifacts(root, target, findings);
@@ -280,6 +295,8 @@ export function scanCampaignCartAppRoot({
 // when no such dependency is declared. A prerelease pin sorts strictly BEFORE
 // its GA release in semver, so `prerelease: true` tells the caller the pin
 // must NOT be evaluated against the release policy as if it were the release.
+// `floor_version` is the lowest version the spec allows when that is certain
+// (bundledSdkFloor), else null; it is the version policy evaluates.
 function detectBundledSdkDependency(root) {
   const pkg = readJson(join(root, "package.json"));
   const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
@@ -291,10 +308,21 @@ function detectBundledSdkDependency(root) {
       name,
       version: spec,
       resolved_version: semver ? `${semver[1]}${semver[2] || ""}` : null,
+      floor_version: bundledSdkFloor(spec),
       prerelease: Boolean(semver && semver[2]),
     };
   }
   return null;
+}
+
+// The lowest SDK version a bundled dependency spec allows, when the spec makes
+// it certain: an exact pin (0.4.39, =0.4.39, v0.4.39) or one lower-bounded
+// comparator (^0.4.39, ~0.4.39, >=0.4.39), each on a released version. Any
+// other spec (<0.4.39, a ||, hyphen or x-range, a tag, a prerelease) gives
+// null: the version extracted from it is not a version every install meets.
+function bundledSdkFloor(spec) {
+  const match = /^\s*(?:\^|~|>=|=)?\s*v?(\S+)\s*$/.exec(String(spec ?? ""));
+  return match && isReleasedSdkVersion(match[1]) ? match[1] : null;
 }
 
 export function detectFrameworks(root) {
@@ -325,6 +353,33 @@ function collectLoaderReferences(root, files) {
   return {
     references,
     versions: unique(references.map((entry) => entry.version)),
+  };
+}
+
+// The SDK version each HTML file's checkout bindings run against, for the
+// version-gated field aliases. A file that loads the SDK itself uses its own
+// loader pin: one exact version, or unknown when its refs are unpinned or
+// disagree. Any other file (a partial, a page whose loader is injected) uses
+// the campaign's version: the lowest of the loader pins and the bundled
+// dependency's floor, or unknown when any loader ref is unpinned, the bundled
+// dependency has no certain floor, or nothing is discovered. Unknown is judged
+// as an earlier SDK (see inspectCheckoutFields).
+function loaderSdkVersionResolver(loader, bundled) {
+  const byFile = new Map();
+  for (const ref of loader.references) {
+    if (!byFile.has(ref.path)) byFile.set(ref.path, []);
+    byFile.get(ref.path).push(ref.version);
+  }
+  const floor = bundled?.floor_version || null;
+  const versions = [...loader.versions, ...(floor ? [floor] : [])];
+  const campaign = loader.references.some((ref) => !ref.version) || (bundled && !floor) || !versions.length
+    ? null
+    : { version: [...versions].sort(compareVersions)[0], source: "campaign" };
+  return (path) => {
+    const own = byFile.get(path);
+    if (!own) return campaign;
+    const versions = unique(own);
+    return own.every(Boolean) && versions.length === 1 ? { version: versions[0], source: "loader" } : null;
   };
 }
 
@@ -364,7 +419,15 @@ export function evaluateVersionPolicy(versionEntries, policy, findings) {
   };
 }
 
-export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
+// `sdkVersionForFile(relativePath)` returns the { version, source } a file's
+// bindings run against, or null when it is unknown. A version-gated alias
+// (contract version_gated_aliases) is supported only on an exact SDK release
+// at or after its since-version; on an earlier or unknown version it is
+// classified as the contract classifies it without the gate (a stale alias,
+// or unknown). Unknown is the conservative side: the canonical name works on
+// every version, and accepting the alias there could pass a field that never
+// reaches the order.
+export function inspectCheckoutFields(root, htmlFiles, contract, findings, { sdkVersionForFile = null } = {}) {
   const bindings = [];
   const attributes = contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"];
   const attributePattern = new RegExp(`\\b(${attributes.map(escapeRegExp).join("|")})\\s*=\\s*(["'])([^"']*)\\2`, "g");
@@ -372,17 +435,22 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
     const raw = safeReadText(file);
     if (raw === null) continue;
     const content = maskHtmlComments(raw);
+    const path = relPath(root, file);
+    const sdk = (typeof sdkVersionForFile === "function" ? sdkVersionForFile(path) : null) || { version: null, source: null };
     for (const match of content.matchAll(attributePattern)) {
       const value = match[3].trim();
-      const verdict = classifyFieldBinding(value, contract);
+      const verdict = classifyFieldBinding(value, contract, sdk.version);
       bindings.push({
         attribute: match[1],
         value,
-        path: relPath(root, file),
+        path,
         line: lineOf(content, match.index || 0),
         supported: verdict.classification === "supported",
         classification: verdict.classification,
         canonical: verdict.canonical,
+        since: verdict.since,
+        sdk_version: sdk.version,
+        sdk_version_source: sdk.source,
       });
     }
   }
@@ -391,16 +459,28 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
   const unknown = bindings.filter((entry) => entry.classification === "unknown");
 
   if (unsupported.length) {
+    const gated = unsupported.filter((entry) => entry.since);
+    const gatedNote = gated.length
+      ? ` The SDK consumes ${unique(gated.map((entry) => `${entry.value} only from ${entry.since}`)).join(", ")}; these bindings run on SDK ${unique(gated.map((entry) => entry.sdk_version || "of unknown version (judged as an earlier SDK)")).join(", ")}.`
+      : "";
     findings.push(finding({
       severity: "blocker",
       category: "standardization_blocker",
       code: "checkout.unsupported_field_binding",
-      message: `${unsupported.length} checkout field binding(s) use stale aliases the Campaign Cart SDK does not consume (contract: ${contract?.schema_version || "unknown"}).`,
+      message: `${unsupported.length} checkout field binding(s) use stale aliases the Campaign Cart SDK does not consume (contract: ${contract?.schema_version || "unknown"}).${gatedNote}`,
       confidence: "static_contract",
       evidence: dedupeBy(unsupported, (entry) => entry.value)
-        .map((entry) => ({ value: entry.value, canonical: entry.canonical, path: entry.path, line: entry.line }))
+        .map((entry) => ({
+          value: entry.value,
+          canonical: entry.canonical,
+          path: entry.path,
+          line: entry.line,
+          ...(entry.since ? { since: entry.since, sdk_version: entry.sdk_version } : {}),
+        }))
         .slice(0, MAX_SAMPLE_COUNT),
-      next_action: "Rewrite each stale alias to its canonical Campaign Cart field name, then prove checkout binding in browser QA.",
+      next_action: gated.length
+        ? "Rewrite each stale alias to its canonical Campaign Cart field name (for an alias with a since-version in the evidence, pinning the SDK at or after that version also works), then prove checkout binding in browser QA."
+        : "Rewrite each stale alias to its canonical Campaign Cart field name, then prove checkout binding in browser QA.",
     }));
   }
   if (unknown.length) {
@@ -411,7 +491,7 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
       message: `${unknown.length} checkout field binding(s) are outside the known Campaign Cart field contract.`,
       confidence: "static_inference",
       evidence: dedupeBy(unknown, (entry) => entry.value)
-        .map((entry) => ({ value: entry.value, path: entry.path, line: entry.line }))
+        .map((entry) => ({ value: entry.value, path: entry.path, line: entry.line, ...(entry.since ? { since: entry.since, sdk_version: entry.sdk_version } : {}) }))
         .slice(0, MAX_SAMPLE_COUNT),
       next_action: "Confirm the field against the Campaign Cart SDK before treating it as supported or repairing it.",
     }));
@@ -425,10 +505,11 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
   };
 }
 
-function classifyFieldBinding(value, contract) {
-  if (!value) return { classification: "unknown", canonical: null };
+function classifyFieldBinding(value, contract, sdkVersion = null) {
+  if (!value) return { classification: "unknown", canonical: null, since: null };
   const canonicalFields = new Set(contract?.canonical_fields || []);
   const acceptedAliases = contract?.accepted_aliases || {};
+  const gatedAliases = contract?.version_gated_aliases || {};
   const staleAliases = contract?.stale_aliases || {};
   const prefixes = contract?.prefixes || [];
 
@@ -441,12 +522,15 @@ function classifyFieldBinding(value, contract) {
       break;
     }
   }
-  if (canonicalFields.has(base)) return { classification: "supported", canonical: null };
-  if (typeof acceptedAliases[base] === "string") return { classification: "supported", canonical: null };
+  if (canonicalFields.has(base)) return { classification: "supported", canonical: null, since: null };
+  if (typeof acceptedAliases[base] === "string") return { classification: "supported", canonical: null, since: null };
+  const gated = Object.hasOwn(gatedAliases, base) ? gatedAliases[base] : null;
+  const since = typeof gated?.since === "string" ? gated.since : null;
+  if (since && sdkVersionAtLeast(sdkVersion, since)) return { classification: "supported", canonical: null, since };
   if (typeof staleAliases[base] === "string") {
-    return { classification: "stale_alias", canonical: `${prefix}${staleAliases[base]}` };
+    return { classification: "stale_alias", canonical: `${prefix}${staleAliases[base]}`, since };
   }
-  return { classification: "unknown", canonical: null };
+  return { classification: "unknown", canonical: null, since };
 }
 
 function inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings) {

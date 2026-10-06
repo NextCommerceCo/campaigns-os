@@ -2,11 +2,23 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.53.0+agent.3] - 2026-10-06
+## [1.53.0+agent.6] - 2026-10-06
 
 ### Changed
 
 `qa run` no longer publishes a verdict to the QA portal by default when the base URL is a local address (`localhost`, `127.0.0.1` or `[::1]`), whether the spec came from a saved Map or a local file. The verdict stays local, and the output names the destination plus `qa publish` and `--post-verdict`. Pass `--post-verdict` to publish a local-address run. `publish_decision.reason` reads `loopback_base_url` when this default applied. Runs against a remote base URL publish exactly as before.
+
+## [1.53.0+agent.4] - 2026-10-06
+
+### Fixed
+
+- The checkout field-name checks now read the SDK version of the page they judge. `first_name` and `last_name` pass on Campaign Cart SDK 0.4.39 and later, and `phone_number` passes on 0.4.41 and later; `fname`, `lname` and `phone` still pass on every version. Earlier releases blocked `first_name` and `last_name` (`built_output.sdk_markup` `WRONG_FIELD_NAME`, and `checkout.unsupported_field_binding` in `standardize`) and flagged `phone_number` on every SDK, so a page written to the 0.4.41 field names failed doctor although the SDK maps them. Doctor reads the page's own exact loader pin, then the campaign's `sdk_version` in `_data/campaigns.json`. `standardize` reads the file's own loader pin, then the lowest exact pin the campaign declares (for a bundled `campaign-cart` dependency, an exact pin or the floor of a `^`, `~` or `>=` range). When neither gives an exact released version, the checks keep their earlier behaviour, because `fname`, `lname` and `phone` work on every version. Below a name's version the result is also unchanged, and the message names the version the name needs. Findings and bindings now record the SDK version they were judged against.
+
+## [1.53.0+agent.3] - 2026-10-06
+
+### Fixed
+
+- `standardize` now judges a bundled `campaign-cart` dependency against the SDK support policy by the lowest version its `package.json` spec allows. Earlier releases took the version written in the spec, so `<0.4.39` was evaluated as 0.4.39 and `0.4.41 || 0.4.10` as 0.4.41, and both could pass the minimum although npm may install an older SDK. An exact pin or one `^`, `~` or `>=` range on a released version is evaluated by that version, as before. Any other spec gets no policy evaluation and raises the new warning `version.sdk_dependency_floor_unknown`. The lowest version is recorded as `sdk_loader.bundled_dependency.floor_version`.
 
 ## [1.53.0+agent.2] - 2026-10-05
 

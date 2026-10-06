@@ -832,7 +832,14 @@ Blockers (not waivable — the markup provably does not do what it says):
   `payment-method`, `accepts_marketing`, `cc-number`, `cc-month`, `cc-year`,
   `exp-month`, `exp-year`, `cvv`, the legacy `card-*` spellings, and any
   `billing-` prefixed name). The message names the SDK spelling for the usual
-  offenders (`firstName` → `fname`, `zip` → `postal`).
+  offenders (`firstName` → `fname`, `zip` → `postal`). Three names depend on
+  the page's SDK version: `first_name` and `last_name` are mapped from v0.4.39
+  and `phone_number` from v0.4.41. The version is the page's own exact loader
+  pin, else the campaign's `sdk_version` in `_data/campaigns.json`. Below the
+  name's version, or when neither gives an exact released version, the name
+  blocks, and the message names `fname`, `lname` or `phone`, which every
+  version maps. Each finding carries `sdk_version` and `sdk_version_source`
+  (`loader` or `campaigns_json`) in its detail.
 - `MISSING_SELECTOR_ID_MATCH` — an `add-to-cart` button whose
   `data-next-selector-id` names no selector on the page (an element that is a
   bundle, package, cart or upsell selector; another element echoing the id

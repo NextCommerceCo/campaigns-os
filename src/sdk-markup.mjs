@@ -22,7 +22,12 @@
 //   WRONG_FIELD_NAME           data-next-checkout-field with a value the SDK
 //                              does not map (firstName, lastName, zip …). The
 //                              input renders, the value never reaches the
-//                              order.
+//                              order. first_name, last_name and phone_number
+//                              are judged against the page's SDK version
+//                              (SDK_CHECKOUT_FIELD_NAMES_SINCE): the page's
+//                              own exact loader pin, else the campaign's
+//                              campaigns.json sdk_version, else unknown, which
+//                              is judged as an earlier SDK.
 //   MISSING_SELECTOR_ID_MATCH  an add-to-cart button whose data-next-selector-id
 //                              names no selector on the page. The button waits
 //                              for a selection that can never arrive.
@@ -64,8 +69,13 @@
 
 import { parse } from "parse5";
 
+// cart-placeholders.mjs imports this module's template constants as well;
+// both sides read the other's bindings only inside functions, so the cycle
+// is safe at load.
+import { readLoaderPin } from "./cart-placeholders.mjs";
 import {
   SDK_ATTRIBUTE_INDEX_VERSION,
+  checkoutFieldNameSince,
   isIndexedSdkAttribute,
   isKnownCheckoutFieldName,
 } from "./sdk-attribute-index.mjs";
@@ -158,10 +168,13 @@ function describe(entry) {
 /**
  * Scan one built page. Returns findings with { code_name, code, severity,
  * page_id, file, message, detail } and the set of unknown data-next-* names.
+ * `sdk_version` is the campaign's SDK pin, used when the page carries no
+ * exact loader pin of its own.
  */
-export function scanPageMarkup({ page_id, file = null, content = "" }) {
+export function scanPageMarkup({ page_id, file = null, content = "", sdk_version = null }) {
   const document = parse(String(content || ""));
   const where = file || page_id;
+  const sdk = resolvePageSdkVersion(document, sdk_version);
   const findings = [];
   const unknown = new Set();
 
@@ -187,10 +200,8 @@ export function scanPageMarkup({ page_id, file = null, content = "" }) {
 
     if (a.has("data-next-checkout-field")) {
       const value = a.get("data-next-checkout-field") ?? "";
-      if (!isKnownCheckoutFieldName(value)) {
-        findings.push(finding("WRONG_FIELD_NAME", page_id, where,
-          `data-next-checkout-field="${value}" on ${where} is not a field name the SDK ${SDK_ATTRIBUTE_INDEX_VERSION} maps (${suggestFieldName(value)}). The input renders and the value never reaches the order.`,
-          { value, suggestion: suggestFieldName(value, true) }));
+      if (!isKnownCheckoutFieldName(value, sdk.version)) {
+        findings.push(wrongFieldName(page_id, where, value, sdk));
       }
     }
 
@@ -291,6 +302,32 @@ export function scanPageMarkup({ page_id, file = null, content = "" }) {
   return { page_id, file, findings, unknown_attributes: [...unknown].sort() };
 }
 
+// The SDK version a page runs: its own exact loader pin, else the campaign
+// pin handed in, else null (unknown).
+function resolvePageSdkVersion(document, campaignVersion) {
+  const page = readLoaderPin(document);
+  if (page) return { version: page, source: "loader" };
+  const campaign = typeof campaignVersion === "string" && campaignVersion.trim() ? campaignVersion.trim() : null;
+  if (campaign) return { version: campaign, source: "campaigns_json" };
+  return { version: null, source: null };
+}
+
+function wrongFieldName(page_id, where, value, sdk) {
+  const gated = checkoutFieldNameSince(value);
+  const versionDetail = { sdk_version: sdk.version, sdk_version_source: sdk.source };
+  if (!gated) {
+    return finding("WRONG_FIELD_NAME", page_id, where,
+      `data-next-checkout-field="${value}" on ${where} is not a field name the SDK ${SDK_ATTRIBUTE_INDEX_VERSION} maps (${suggestFieldName(value)}). The input renders and the value never reaches the order.`,
+      { value, suggestion: suggestFieldName(value, true), ...versionDetail });
+  }
+  const running = sdk.version
+    ? `this page loads SDK ${sdk.version} (${sdk.source === "loader" ? "its loader pin" : "the campaigns.json sdk_version"})`
+    : "this page's SDK version could not be read (no exact loader pin on the page and no sdk_version in campaigns.json), so it is judged as an earlier SDK";
+  return finding("WRONG_FIELD_NAME", page_id, where,
+    `data-next-checkout-field="${value}" on ${where} is a field name the SDK maps only from ${gated.since}, and ${running}. The input renders and the value never reaches the order. Use "${gated.sdk_name}", which every SDK version maps, or pin the SDK to ${gated.since} or later.`,
+    { value, suggestion: gated.sdk_name, since: gated.since, ...versionDetail });
+}
+
 function finding(codeName, page_id, file, message, detail = {}) {
   const { code, severity } = SDK_MARKUP_CODES[codeName];
   return { code_name: codeName, code, severity, page_id, file, message: `${codeName}: ${message}`, detail };
@@ -318,11 +355,13 @@ function suggestFieldName(value, bare = false) {
 /**
  * Evaluate the SDK markup family over built pages.
  *
- * @param {{ subject: object, pages: Array<{ page_id: string, file?: string|null, content: string }> }} input
+ * @param {{ subject: object, pages: Array<{ page_id: string, file?: string|null, content: string }>, sdkVersion?: string|null }} input
+ *   `sdkVersion` is the campaign's SDK pin (campaigns.json sdk_version), the
+ *   fallback for a page with no exact loader pin of its own.
  */
-export function evaluateSdkMarkup({ subject, pages = [] } = {}) {
+export function evaluateSdkMarkup({ subject, pages = [], sdkVersion = null } = {}) {
   const resolvedSubject = subject && typeof subject === "object" ? subject : {};
-  const base = { id: SDK_MARKUP, scope: SDK_MARKUP, waivable: false, subject: resolvedSubject, waiver: null, sdk_attribute_index_version: SDK_ATTRIBUTE_INDEX_VERSION };
+  const base = { id: SDK_MARKUP, scope: SDK_MARKUP, waivable: false, subject: resolvedSubject, waiver: null, sdk_attribute_index_version: SDK_ATTRIBUTE_INDEX_VERSION, campaign_sdk_version: typeof sdkVersion === "string" && sdkVersion.trim() ? sdkVersion.trim() : null };
   const list = Array.isArray(pages) ? pages : [];
 
   if (list.length === 0) {
@@ -333,7 +372,7 @@ export function evaluateSdkMarkup({ subject, pages = [] } = {}) {
   const warned = [];
   const unknown = new Map();
   for (const page of list) {
-    const scan = scanPageMarkup(page);
+    const scan = scanPageMarkup({ ...page, sdk_version: page?.sdk_version ?? sdkVersion });
     for (const item of scan.findings) (item.severity === "error" ? findings : warned).push(item);
     for (const name of scan.unknown_attributes) {
       if (!unknown.has(name)) unknown.set(name, []);
