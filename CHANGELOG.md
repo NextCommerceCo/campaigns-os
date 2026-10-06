@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.53.0+agent.6] - 2026-10-06
+## [1.53.0+agent.8] - 2026-10-06
 
 ### Changed
 
 `qa run` no longer publishes a verdict to the QA portal by default when the base URL is a local address (`localhost` or any `*.localhost` name, any `127.x.x.x` address, `0.0.0.0`, `[::1]` or an IPv4-mapped loopback), whether the spec came from a saved Map or a local file. The verdict stays local, and the output names the destination plus `qa publish` and `--post-verdict`. Pass `--post-verdict` to publish a local-address run. `publish_decision.reason` reads `loopback_base_url` when this default applied. Runs against a remote base URL publish exactly as before.
+
+## [1.53.0+agent.7] - 2026-10-06
+
+### Changed
+
+`doctor --built --base-url <url>` now says that it checked the local built files only. The URL is not fetched: it fills `deploy.preview_url` in the minimal Build Packet. The output names `qa run --site <repo> --base-url <url> --family <family> --browser` as the command that loads the served pages, and `--json` carries `derived.base_url` with `fetched: false`. The checks themselves are unchanged.
 
 ## [1.53.0+agent.5] - 2026-10-06
 

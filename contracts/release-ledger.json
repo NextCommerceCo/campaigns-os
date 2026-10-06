@@ -6274,13 +6274,46 @@
       "entry_sha256": "edc4fd10bfe974dd3cfd9e6a6d5f3337a483db0525f6231bf68d3e79e22ac51f"
     },
     {
-      "id": "RL-0239",
+      "id": "RL-0240",
       "sequence": 231,
       "date": "2026-10-06",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.53.0+agent.6",
-      "changelog_sha256": "fba1b2e9dd26ebbce3022f18feda9fb2e0dd42926b9ccb9bbfcf3eb0d5bbf164",
+      "changelog_section": "1.53.0+agent.7",
+      "changelog_sha256": "f91240db8674ccb5f7a94f042c93b059aa4f0a138124927b391554f554cafddc",
+      "agent_impact": "doctor --built with --base-url adds a ready line saying the local built files were checked and the URL was not fetched (it only fills deploy.preview_url in the minimal Build Packet), names qa run --site <repo> --base-url <url> --family <family> --browser for the served pages, and sets derived.base_url { value, fetched: false, recorded_as: deploy.preview_url } in JSON. Do not report a doctor --built result as a check of a preview or production site.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "The doctor --built usage line says --base-url is not fetched and fills deploy.preview_url in the minimal packet."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor --built with --base-url reports that only local files were checked, names qa run --site for served pages, and sets derived.base_url.fetched false."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "State that doctor --built reads local files only, that --base-url is not fetched, how to check served pages, and that the minimal packet does not drive packet QA."
+        }
+      ],
+      "entry_sha256": "6382a67f50d12ae1999b352595ff6faa13fca3e122617e9ba43ce4cc8c77e659"
+    },
+    {
+      "id": "RL-0239",
+      "sequence": 232,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.8",
+      "changelog_sha256": "acc07a0cda4cd7409ffc9fe9a7429580619acc1886bee790c34f3ee3673564dc",
       "agent_impact": "qa run keeps the verdict local by default when the base URL (from --base-url or the packet's deploy.preview_url) is a local address (localhost or *.localhost, any 127.x.x.x, 0.0.0.0, [::1] or an IPv4-mapped loopback), for saved-Map and local-spec runs alike; publish_decision.reason reads loopback_base_url and the output names qa publish and --post-verdict. An agent that wants a local-address verdict on the Map's QA tab passes --post-verdict or runs qa publish afterwards. Remote base URLs publish as before.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6292,7 +6325,7 @@
           "summary": "Describe the local-address default and how to publish such a verdict."
         }
       ],
-      "entry_sha256": "a89ea9bf39d8f79b232fd4bd7e9bc6c2e7fd7e16c2638e5c69fb14eae9b4bbe9"
+      "entry_sha256": "ca9128f30cff6a04711afb1617a80ad0271bf0af668479c522ffe607087c26d0"
     }
   ]
 }
