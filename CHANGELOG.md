@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.53.0+agent.3] - 2026-10-06
+
+### Fixed
+
+- The checkout field-name checks now read the SDK version of the page they judge. `first_name` and `last_name` pass on Campaign Cart SDK 0.4.39 and later, and `phone_number` passes on 0.4.41 and later; `fname`, `lname` and `phone` still pass on every version. Earlier releases blocked `first_name` and `last_name` (`built_output.sdk_markup` `WRONG_FIELD_NAME`, and `checkout.unsupported_field_binding` in `standardize`) and flagged `phone_number` on every SDK, so a page written to the 0.4.41 field names failed doctor although the SDK maps them. Doctor reads the page's own exact loader pin, then the campaign's `sdk_version` in `_data/campaigns.json`. `standardize` reads the file's own loader pin, then the lowest exact pin the campaign declares. When neither gives an exact released version, the checks keep their earlier behaviour, because `fname`, `lname` and `phone` work on every version. Below a name's version the result is also unchanged, and the message names the version the name needs. Findings and bindings now record the SDK version they were judged against.
+
 ## [1.53.0+agent.2] - 2026-10-05
 
 ### Changed

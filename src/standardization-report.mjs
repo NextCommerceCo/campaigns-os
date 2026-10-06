@@ -375,7 +375,9 @@ function scanPageKitRoot({
   const bindingFiles = sourceScan.binding_files;
   let checkoutFields = null;
   if (bindingFiles.length) {
-    checkoutFields = inspectCheckoutFields(rootPath, bindingFiles, contract, contractFindings);
+    checkoutFields = inspectCheckoutFields(rootPath, bindingFiles, contract, contractFindings, {
+      sdkVersionForFile: campaignsSdkVersionResolver(campaigns.slugs),
+    });
     capabilities.push("checkout_field_contract");
   }
   const root = {
@@ -502,6 +504,28 @@ function isPageKitRoot(dir) {
   const pkg = readJsonFile(join(dir, "package.json"));
   if (!pkg.ok) return false;
   return Boolean(findPageKitDependency(pkg.value));
+}
+
+// The SDK version a Page Kit source file's checkout bindings run against: its
+// campaign's campaigns.json sdk_version (src/<slug>/...), else, for a file no
+// one campaign owns, the lowest pin across campaigns. Unknown (null) when that
+// pin is missing or not an exact release, or when any campaign lacks one; the
+// field contract judges unknown as an earlier SDK.
+function campaignsSdkVersionResolver(slugs) {
+  const EXACT = /^v?\d+\.\d+\.\d+$/;
+  const exact = new Map(slugs.map((entry) => [entry.slug, EXACT.test(entry.sdk_version || "") ? entry.sdk_version : null]));
+  const pins = [...exact.values()];
+  const lowest = pins.length && pins.every(Boolean)
+    ? { version: [...pins].sort(compareVersions)[0], source: "campaigns_json" }
+    : null;
+  return (path) => {
+    const [top, slug] = String(path).split("/");
+    if (top === "src" && exact.has(slug)) {
+      const version = exact.get(slug);
+      return version ? { version, source: "campaigns_json" } : null;
+    }
+    return lowest;
+  };
 }
 
 function readCampaigns(rootPath) {
