@@ -6305,6 +6305,57 @@
         }
       ],
       "entry_sha256": "6382a67f50d12ae1999b352595ff6faa13fca3e122617e9ba43ce4cc8c77e659"
+    },
+    {
+      "id": "RL-0242",
+      "sequence": 232,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.10",
+      "changelog_sha256": "61f4cf36e4f7a51e4ffc46dae7f8cb3970fd37d5de0b6d2e41b886e439a0cc0a",
+      "agent_impact": "New subcommand sdk repin --target <static-repo> [--target-sdk <x.y.z>] [--apply] [--json] replaces the hand-run sed step when bumping the Campaign Cart SDK in a static campaign repo (no _data/campaigns.json). It rewrites only the version segment of semver-pinned (@vX.Y.Z or @X.Y.Z) loader.js and campaign-cart.css URLs below the target, the same references standardize lists under sdk_loader.references; @latest, @main, commit and prerelease refs and pins at or above the target are reported in left_alone and never rewritten. The target defaults to the SDK support policy's preferred_minimum. Preview is the default and writes nothing; --apply writes the files and the change record .campaign-runtime/sdk-repin.json (schema campaigns-os-sdk-repin/v0: files_touched, reference_count, from_versions, to_version, rewrites, left_alone), whose path and sha256 the --json result gives for a Run Record to cite. A second run reports nothing_to_change and writes nothing. A page-kit repo is refused with exit 2 (status refused_page_kit); use page-kit sync there. After --apply, run browser QA against the new pin: repin does not prove the SDK works.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "sdk",
+          "summary": "Add the sdk repin subcommand and its usage line: rewrite semver-pinned Campaign Cart loader and stylesheet URLs below the target in a static repo, preview by default, --apply writes the files and the campaigns-os-sdk-repin/v0 change record, --target-sdk overrides the policy target, a page-kit repo is refused with exit 2."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare sdk repin (tier none) and sdk repin --apply (tier B: the rewritten files, the change record and the lifecycle journal), and add --apply to the effect-changing flags."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Add the sdk repin row."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Document sdk repin as the pin-rewrite step after the storage check for static repos: which references it rewrites and leaves alone, the preview and --apply modes, the change record, and the page-kit refusal."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "List the sdk repin preview among the read-only invocations and --apply among the effect-changing flags."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Point from sdk_loader.references to sdk repin for static repos."
+        }
+      ],
+      "entry_sha256": "4c9794959d74564f64e246b2ad329a9df9a246165fa2a46f54d3ff4a001bcde0"
     }
   ]
 }

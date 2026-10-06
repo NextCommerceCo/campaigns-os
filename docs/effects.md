@@ -42,6 +42,7 @@ CLI exempts from lifecycle capture (the converse does not hold: `demo` and the
 `doctor` inspection and `doctor --no-write` skip it and write nothing but may
 send the one live campaign read): `help`, `readback`,
 `run status`, `doctor --no-live-refs` inspection, `sdk storage-check`,
+the `sdk repin` preview (without `--apply`),
 `tooling diagnose`, a refused invocation, `run-record --no-write`, and every
 `--dry-run` form on the commands that implement the flag. Everything else
 appends an entry when a journal is selected — an active run session,
@@ -160,7 +161,7 @@ Both rows are tier C, because a change makes recorded stages owed again, and eac
 
 There is **one row per command and per effect-changing flag combination**. The
 flags that change what the invocation does to the world are listed once, in
-`vocabulary.effect_changing_flags`: `--browser`, `--built`, `--dry-run`,
+`vocabulary.effect_changing_flags`: `--apply`, `--browser`, `--built`, `--dry-run`,
 `--emit-packet`, `--example`, `--force`, `--from-store`, `--list`,
 `--no-live-refs`, `--no-post-verdict`, `--no-probe`, `--no-remit`, `--no-run-session`,
 `--no-write`, `--republish`, `--test-order`, `--write`, `--write-map`. Flags

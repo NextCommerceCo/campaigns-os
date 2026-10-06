@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.53.0+agent.10] - 2026-10-06
+
+### Added
+
+`campaigns-os sdk repin --target <repo> [--target-sdk <x.y.z>] [--apply] [--json]` updates the Campaign Cart SDK pins written into a static campaign repo's HTML, the `loader.js` and `campaign-cart.css` URLs that `standardize` already lists with path and line. It rewrites only a semver pin (`@vX.Y.Z` or `@X.Y.Z`) below the target version, and only the version part of the URL. `@latest`, `@main`, commit and prerelease refs, and pins already at or above the target, are listed and left alone. Without `--target-sdk` the target is the SDK support policy's `preferred_minimum`. By default it only previews, printing each path and line with the old and new URL. `--apply` writes the files and a change record at `.campaign-runtime/sdk-repin.json` with the files touched, the reference count and the from and to versions, which a Run Record can cite. A second run finds nothing to change and writes nothing. A repo with `_data/campaigns.json` is refused with exit 2, because page-kit owns that pin; use `page-kit sync` there. This replaces the hand-run `sed` step in the SDK bump for static repos.
+
 ## [1.53.0+agent.7] - 2026-10-06
 
 ### Changed

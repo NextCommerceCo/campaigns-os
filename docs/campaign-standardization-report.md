@@ -192,6 +192,12 @@ lowest across campaigns). An unpinned loader or a missing pin leaves
 point at a loader/dist artifact count; incidental `campaign-cart@x.y.z`
 strings elsewhere in source are ignored.
 
+In a static repo (no `_data/campaigns.json`), `campaigns-os sdk repin --target
+<repo> [--target-sdk <x.y.z>] [--apply]` rewrites the semver-pinned references
+in this list that are below the target version, changing only the version
+segment of each URL. It previews by default and leaves the unpinned refs
+alone. See `sdk-storage-compatibility.md`.
+
 `payment.proof_state` is one of `runtime_proof_required` (custom-control
 evidence found), `undetermined` (radios exist; static scanning cannot exclude
 externally-styled custom controls), or `not_applicable` (no `payment_method`

@@ -54,7 +54,7 @@ const COMMANDS = frozen({
   logout: { class: "auth" },
   demo: { class: "inline" },
   tooling: { subcommands: ["diagnose", "setup", "status"] },
-  sdk: { subcommands: ["storage-check"] },
+  sdk: { subcommands: ["repin", "storage-check"] },
   readback: { class: "projection" },
   start: { sweepRoot: "target" },
   "prepare-build": { sweepRoot: "target" },
@@ -86,6 +86,8 @@ const SUBCOMMAND_OVERRIDES = frozen({
   "tooling diagnose": { class: "inline" },
   "tooling setup": { class: "inline" },
   "sdk storage-check": { class: "inspection" },
+  // Preview by default: only --apply writes, so only --apply journals.
+  "sdk repin": { journalExemptWhen: { given: "target", unlessBare: "apply" } },
   "theme waive": { dryRun: true },
   "checkpoint accept": { dryRun: true },
   "checkpoint waive": { dryRun: true },
