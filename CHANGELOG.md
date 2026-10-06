@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.53.0+agent.3] - 2026-10-06
+
+### Changed
+
+`qa run` no longer publishes a verdict to the QA portal by default when the base URL is a local address (`localhost`, `127.0.0.1` or `[::1]`), whether the spec came from a saved Map or a local file. The verdict stays local, and the output names the destination plus `qa publish` and `--post-verdict`. Pass `--post-verdict` to publish a local-address run. `publish_decision.reason` reads `loopback_base_url` when this default applied. Runs against a remote base URL publish exactly as before.
+
 ## [1.53.0+agent.2] - 2026-10-05
 
 ### Changed

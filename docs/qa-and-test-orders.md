@@ -726,6 +726,15 @@ spec resolved from the portal for the run — keep publish-by-default regardless
 of consent: those verdicts are the QA tab's product surface, not telemetry.
 Explicit flags always win in both directions for saved-Map QA.
 
+A run whose base URL is a local address (`localhost`, `127.0.0.1` or `[::1]`,
+from `--base-url` or the packet's `deploy.preview_url`) keeps its verdict local
+by default, whatever the spec source. Those runs are checks on your own
+machine, and people watching the Map's QA tab should not see them. The output
+names the destination and how to publish: `qa publish` for the stored verdict,
+or `--post-verdict` on the next run. `--post-verdict` publishes a local-address
+run, and `publish_decision.reason` reads `loopback_base_url` when the default
+kept it local.
+
 A packet with `local_spec_id` always keeps its verdict and progress local.
 `qa run` suppresses portal publication even with `--post-verdict`; the flag
 does not turn a local ID into a Map destination. `qa publish` refuses such a

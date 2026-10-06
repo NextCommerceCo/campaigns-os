@@ -6197,6 +6197,27 @@
         }
       ],
       "entry_sha256": "197929e76610b701b015cac7ee37f1f8a75b18e350a8268b679b8ca51a9b7f14"
+    },
+    {
+      "id": "RL-0236",
+      "sequence": 228,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.3",
+      "changelog_sha256": "64c43a03b4ea0a8fe716b9350b59e3b4911b2a836c1e977ff4577c339aad813c",
+      "agent_impact": "qa run keeps the verdict local by default when the base URL (from --base-url or the packet's deploy.preview_url) is localhost, 127.0.0.1 or [::1], for saved-Map and local-spec runs alike; publish_decision.reason reads loopback_base_url and the output names qa publish and --post-verdict. An agent that wants a local-address verdict on the Map's QA tab passes --post-verdict or runs qa publish afterwards. Remote base URLs publish as before.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe the local-address default and how to publish such a verdict."
+        }
+      ],
+      "entry_sha256": "3843b9d6961b027db738b901f679be1c416b710d8f615da837aa7e6c9d650e6d"
     }
   ]
 }
