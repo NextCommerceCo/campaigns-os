@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
 import { shellToken } from "./shell-token.mjs";
 import {
   compareVersions,
@@ -180,18 +181,19 @@ export function scanCampaignCartAppRoot({
   const loader = collectLoaderReferences(root, [...htmlFiles, ...scriptFiles]);
   // Delivery can be a hosted loader URL OR a bundled npm dependency. When the
   // SDK ships as a dependency there is no loader ref to discover, but the pin
-  // is still a real version signal — record it and feed a resolved semver into
-  // version policy like a discovered version (source-distinguishable below).
+  // is still a real version signal — record it and feed its floor (the lowest
+  // version the spec lets npm install) into version policy like a discovered
+  // version (source-distinguishable below).
   const bundled = detectBundledSdkDependency(root);
   loader.bundled_dependency = bundled
-    ? { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version }
+    ? { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version, floor_version: bundled.floor_version }
     : null;
-  // A prerelease pin sorts strictly before its GA release, so it is never fed
-  // into version policy as a clean semver — the numeric triple would wrongly
-  // pass the release gate. It is recorded on sdk_loader and flagged instead.
-  const bundledPolicyVersion = bundled?.resolved_version && !bundled.prerelease
-    ? bundled.resolved_version
-    : null;
+  // Policy asks whether every install meets the minimum, so only a floor the
+  // spec makes certain is evaluated. A prerelease pin sorts strictly before
+  // its GA release and has no released floor; nor does a range like <0.4.39
+  // or 0.4.41 || 0.4.18, whose extracted triple is not a version every
+  // install meets. Each is recorded on sdk_loader and flagged instead.
+  const bundledPolicyVersion = bundled?.floor_version || null;
   const versionEntries = [
     ...loader.versions.map((version) => ({ version, source: "loader" })),
     ...(bundledPolicyVersion && !loader.versions.includes(bundledPolicyVersion)
@@ -208,6 +210,16 @@ export function scanCampaignCartAppRoot({
       confidence: "static_contract",
       evidence: { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version },
       next_action: "Pin the bundled campaign-cart dependency to a released version so version policy can be evaluated.",
+    }));
+  } else if (bundled && !bundled.floor_version) {
+    findings.push(finding({
+      severity: "warning",
+      category: "standardization_warning",
+      code: "version.sdk_dependency_floor_unknown",
+      message: `Bundled Campaign Cart dependency ${bundled.name}@${bundled.version} does not fix a lowest version (an exact pin, or one ^, ~ or >= range on a released version); version policy cannot be evaluated against it.`,
+      confidence: "static_contract",
+      evidence: { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version },
+      next_action: "Pin the bundled campaign-cart dependency exactly, or to a ^, ~ or >= range on a supported release, so version policy can be evaluated.",
     }));
   }
   const checkoutFields = inspectCheckoutFields(root, htmlFiles, contract, findings);
@@ -280,6 +292,8 @@ export function scanCampaignCartAppRoot({
 // when no such dependency is declared. A prerelease pin sorts strictly BEFORE
 // its GA release in semver, so `prerelease: true` tells the caller the pin
 // must NOT be evaluated against the release policy as if it were the release.
+// `floor_version` is the lowest version the spec allows when that is certain
+// (bundledSdkFloor), else null; it is the version policy evaluates.
 function detectBundledSdkDependency(root) {
   const pkg = readJson(join(root, "package.json"));
   const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
@@ -291,10 +305,21 @@ function detectBundledSdkDependency(root) {
       name,
       version: spec,
       resolved_version: semver ? `${semver[1]}${semver[2] || ""}` : null,
+      floor_version: bundledSdkFloor(spec),
       prerelease: Boolean(semver && semver[2]),
     };
   }
   return null;
+}
+
+// The lowest SDK version a bundled dependency spec allows, when the spec makes
+// it certain: an exact pin (0.4.39, =0.4.39, v0.4.39) or one lower-bounded
+// comparator (^0.4.39, ~0.4.39, >=0.4.39), each on a released version. Any
+// other spec (<0.4.39, a ||, hyphen or x-range, a tag, a prerelease) gives
+// null: the version extracted from it is not a version every install meets.
+function bundledSdkFloor(spec) {
+  const match = /^\s*(?:\^|~|>=|=)?\s*v?(\S+)\s*$/.exec(String(spec ?? ""));
+  return match && isReleasedSdkVersion(match[1]) ? match[1] : null;
 }
 
 export function detectFrameworks(root) {

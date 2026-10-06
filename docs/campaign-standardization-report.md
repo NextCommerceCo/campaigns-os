@@ -216,6 +216,16 @@ Page Kit root that inlines them gets the same `checkout_fields` block and the
 same `checkout.unsupported_field_binding` / `checkout.unknown_field_binding`
 findings as an application root.
 
+A bundled dependency is judged by its floor, the lowest version its
+`package.json` spec lets npm install, recorded as
+`sdk_loader.bundled_dependency.floor_version`. Only an exact pin (`0.4.30`,
+`=0.4.30`, `v0.4.30`) or one `^`, `~` or `>=` range on a released version has
+a certain floor; `^0.4.25` is evaluated as `0.4.25`. Any other spec (`<0.4.39`,
+an `||`, hyphen or x-range, a tag) has none, so it gets no evaluation and
+raises the warning `version.sdk_dependency_floor_unknown` instead; a
+prerelease pin raises `version.sdk_prerelease_pin`. `resolved_version` stays
+the version text extracted from the spec, for reference.
+
 Both are also injectable from the CLI: pass
 `--sdk-support-policy <path-to-json>` and/or `--field-contract <path-to-json>`
 to `standardize`. Each file is read and JSON-parsed

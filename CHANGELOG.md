@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.53.0+agent.3] - 2026-10-06
+
+### Fixed
+
+- `standardize` now judges a bundled `campaign-cart` dependency against the SDK support policy by the lowest version its `package.json` spec allows. Earlier releases took the version written in the spec, so `<0.4.39` was evaluated as 0.4.39 and `0.4.41 || 0.4.10` as 0.4.41, and both could pass the minimum although npm may install an older SDK. An exact pin or one `^`, `~` or `>=` range on a released version is evaluated by that version, as before. Any other spec gets no policy evaluation and raises the new warning `version.sdk_dependency_floor_unknown`. The lowest version is recorded as `sdk_loader.bundled_dependency.floor_version`.
+
 ## [1.53.0+agent.2] - 2026-10-05
 
 ### Changed

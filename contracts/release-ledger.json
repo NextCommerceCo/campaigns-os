@@ -6197,6 +6197,27 @@
         }
       ],
       "entry_sha256": "197929e76610b701b015cac7ee37f1f8a75b18e350a8268b679b8ca51a9b7f14"
+    },
+    {
+      "id": "RL-0237",
+      "sequence": 228,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.3",
+      "changelog_sha256": "d93e2a6e96de6d7e17d3f1235ff2c9ca6984890fe1026df284c38eacdbcb5557",
+      "agent_impact": "standardize evaluates a campaign_cart_app root's bundled campaign-cart dependency against the SDK support policy by the lowest version its package.json spec allows, recorded as sdk_loader.bundled_dependency.floor_version. An exact pin (0.4.30, =0.4.30, v0.4.30) or one ^, ~ or >= range on a released version is evaluated by that version, unchanged from before. Any other spec (<0.4.39, an ||, hyphen or x-range, a tag) now gets no version_policy evaluation and raises the new warning version.sdk_dependency_floor_unknown; earlier releases evaluated the version written in the spec, so such a range could pass or fail the minimum on a version npm might not install. Prerelease pins still raise version.sdk_prerelease_pin only. resolved_version is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Describe judging a bundled dependency by its floor_version, which specs have a certain floor, and the version.sdk_dependency_floor_unknown warning for those that do not."
+        }
+      ],
+      "entry_sha256": "d98fbc7e8865f4ab5bb35bb7510a787af576ef23dfe5b50377fb2f744af8bf0b"
     }
   ]
 }
