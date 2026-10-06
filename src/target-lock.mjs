@@ -26,11 +26,11 @@ export function targetLockPath(targetRepo) {
 function unavailable(targetRepo, lockPath, command) {
   return (error) => {
     if (error?.code === "ENOTLOCK") {
-      return new Error(
-        `${command}: the target lock path ${lockPath} is occupied by ${error.obstruction}, not a campaigns-os lock. `
+      return Object.assign(new Error(
+        `${command}: the target lock path ${lockPath} is occupied by ${error.obstruction}. `
         + "It is never removed automatically. Move it out of the way, then retry.",
         { cause: error },
-      );
+      ), { code: error.code, obstruction: error.obstruction });
     }
     if (error?.code !== "EEXIST") {
       return new Error(`${command} could not take the target lock at ${lockPath}${error?.code ? ` (${error.code})` : ""}: ${error?.message}`, { cause: error });

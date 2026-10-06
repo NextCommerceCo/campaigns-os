@@ -304,6 +304,7 @@ test("release never removes a lock directory another holder now owns", () => wit
 // next holder sweeps the ones whose owner is a dead process, and only those.
 test("the holder sweeps lock siblings left by dead processes and keeps every other one (#514)", () => withScratch(async (dir) => {
   const lock = join(dir, "lock");
+  // spawnSync returns only after the child has exited and been reaped.
   const deadPid = spawnSync(process.execPath, ["-e", "process.exit(0)"]).pid;
   const token = () => randomBytes(16).toString("hex");
   const sibling = (name, owner) => {
@@ -318,8 +319,9 @@ test("the holder sweeps lock siblings left by dead processes and keeps every oth
     sibling(`lock.released-${token()}`, { pid: deadPid, token: "dead-releaser" }),
   ];
   const kept = [
-    // A live process may still be staging or releasing.
-    sibling(`lock.staging-${token()}`, { pid: process.ppid, token: "live" }),
+    // A live process may still be staging or releasing. This process is
+    // alive and can always signal itself, whatever the sandbox.
+    sibling(`lock.staging-${token()}`, { pid: process.pid, token: "live" }),
     sibling(`lock.released-${token()}`, { pid: process.pid, token: "live-releaser" }),
     // No readable owner: its process may be between mkdir and owner write.
     sibling(`lock.staging-${token()}`, null),
@@ -357,7 +359,7 @@ test("the refusal names a non-lock obstruction at the lock path and leaves it th
   writeFileSync(file, "notes");
   const fileError = await refusal(file);
   assert.equal(fileError.code, "ENOTLOCK");
-  assert.match(fileError.message, /a regular file/);
+  assert.equal(fileError.message, `Lock path is occupied by a regular file, not a lock: ${file}`);
   assert.equal(readFileSync(file, "utf8"), "notes", "the file is left in place");
 
   const foreign = join(dir, "dir-lock");
@@ -365,7 +367,7 @@ test("the refusal names a non-lock obstruction at the lock path and leaves it th
   writeFileSync(join(foreign, "draft.html"), "<p>work</p>");
   const foreignError = await refusal(foreign);
   assert.equal(foreignError.code, "ENOTLOCK");
-  assert.match(foreignError.message, /a directory that is not a lock .*draft\.html/);
+  assert.equal(foreignError.message, `Lock path is occupied by a directory that is not a lock (no owner.json; it holds draft.html): ${foreign}`);
   assert.deepEqual(readdirSync(foreign), ["draft.html"], "the directory is left in place");
 
   // An empty directory is what an older writer leaves before its owner

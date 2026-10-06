@@ -923,6 +923,7 @@ test("a stage writer names a non-lock obstruction at the target lock path and le
     (error) => {
       assert.match(error.message, /^unit waive: the target lock path .*\.design-source-package\.json\.lock is occupied by a directory that is not a lock \(no owner\.json; it holds notes\.txt\)/);
       assert.match(error.message, /never removed automatically/);
+      assert.equal(error.code, "ENOTLOCK", "the wrapped refusal keeps the obstruction code");
       return true;
     },
   );

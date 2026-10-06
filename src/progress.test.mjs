@@ -114,6 +114,14 @@ test('abandoned allocation owners recover while a live owner remains exclusive',
  rmSync(lock,{recursive:true});assert.equal(existsSync(lock),false);assert.equal((await persistProgressObservation(observation(),{dir})).reused,true);
 }));
 
+test('an obstruction at the allocation lock path keeps its code and is left in place (#514)',scratch(async dir=>{
+ const lock=join(dir,'.allocation-lock');mkdirSync(dir,{recursive:true});writeFileSync(lock,'not a lock');
+ await assert.rejects(persistProgressObservation(observation(),{dir}),error=>{
+  assert.equal(error.message,'progress.lock_unavailable');assert.equal(error.code,'ENOTLOCK');assert.equal(error.obstruction,'a regular file, not a lock');return true;
+ });
+ assert.equal(readFileSync(lock,'utf8'),'not a lock','the obstruction is never removed');
+}));
+
 test('multiple processes reclaim one dead owner without evicting new live allocation',scratch(async dir=>{
  const lock=join(dir,'.allocation-lock');mkdirSync(lock);const dead=spawnSync(process.execPath,['-e','process.exit(0)']);writeFileSync(join(lock,'owner.json'),JSON.stringify({pid:dead.pid,token:'dead-owner'}));
  const moduleUrl=new URL('./progress-node.mjs',import.meta.url).href;

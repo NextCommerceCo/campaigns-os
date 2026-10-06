@@ -230,8 +230,8 @@ function createLock(path, { budgetMs, unavailable, now = Date.now, ownerlessGrac
   const obstruction = () => {
     let stat;
     try { stat = lstatSync(path); } catch { return null; }
-    if (stat.isSymbolicLink()) return "a symbolic link";
-    if (!stat.isDirectory()) return stat.isFile() ? "a regular file" : "a special file";
+    if (stat.isSymbolicLink()) return "a symbolic link, not a lock";
+    if (!stat.isDirectory()) return stat.isFile() ? "a regular file, not a lock" : "a special file, not a lock";
     if (exists(ownerPath)) return null;
     let foreign;
     try { foreign = readdirSync(path).filter((entry) => !LOCK_ENTRIES.has(entry)).sort(); } catch { return null; }
@@ -244,7 +244,7 @@ function createLock(path, { budgetMs, unavailable, now = Date.now, ownerlessGrac
   const contended = () => {
     const found = obstruction();
     if (found) {
-      return Object.assign(new Error(`Lock path is occupied by ${found}, not a lock: ${path}`), { code: "ENOTLOCK", obstruction: found });
+      return Object.assign(new Error(`Lock path is occupied by ${found}: ${path}`), { code: "ENOTLOCK", obstruction: found });
     }
     if (ownerless()) return Object.assign(new Error(`Lock has no owner record: ${path}`), { code: "EEXIST" });
     return Object.assign(new Error(`Lock is held: ${path}`), { code: "EEXIST" });
