@@ -816,6 +816,42 @@ test("a bundled SDK pin below policy is evaluated and blocks, not a version-unkn
   });
 });
 
+test("version policy judges a bundled dependency by its certain floor, and flags a range without one", () => {
+  // [package.json spec, floor_version evaluated, expected policy codes]. The
+  // bundled policy is 0.4.20 minimum / 0.4.30 preferred.
+  for (const [spec, floor, expected] of [
+    ["0.4.30", "0.4.30", []],
+    ["=0.4.30", "0.4.30", []],
+    ["v0.4.30", "0.4.30", []],
+    ["~0.4.30", "0.4.30", []],
+    [">=0.4.30", "0.4.30", []],
+    ["^0.4.25", "0.4.25", ["version.sdk_below_preferred_policy"]],
+    ["^0.4.10", "0.4.10", ["version.sdk_below_minimum_supported"]],
+    ["<0.4.39", null, ["version.sdk_dependency_floor_unknown"]],
+    ["<=0.4.41", null, ["version.sdk_dependency_floor_unknown"]],
+    ["0.4.41 || 0.4.10", null, ["version.sdk_dependency_floor_unknown"]],
+    ["0.4.30 - 0.4.41", null, ["version.sdk_dependency_floor_unknown"]],
+    ["0.4.x", null, ["version.sdk_dependency_floor_unknown"]],
+    ["latest", null, ["version.sdk_dependency_floor_unknown"]],
+    ["^0.4.30-beta.1", null, ["version.sdk_prerelease_pin"]],
+  ]) {
+    withTempDir((dir) => {
+      writeBundledSdkAppFixture(dir, { sdkVersion: "0.4.30" });
+      const pkgPath = join(dir, "package.json");
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+      pkg.dependencies["campaign-cart"] = spec;
+      write(pkgPath, JSON.stringify(pkg, null, 2));
+
+      const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+      assert.equal(root.sdk_loader.bundled_dependency.floor_version, floor, spec);
+      assert.deepEqual(root.version_policy.evaluations.map((entry) => entry.version), floor ? [floor] : [], spec);
+      const policyCodes = codes(root).filter((code) => code.startsWith("version.") && code !== "version.sdk_version_unknown");
+      assert.deepEqual(policyCodes, expected, spec);
+      assert.ok(!codes(root).includes("version.sdk_version_unknown"), `${spec}: delivery is known`);
+    });
+  }
+});
+
 test("generic data-next-* anchors below the weak-anchor cutoff do not classify", () => {
   withTempDir((dir) => {
     write(join(dir, "package.json"), JSON.stringify({ name: "slider-widget" }, null, 2));
