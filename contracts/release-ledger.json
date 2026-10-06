@@ -6205,8 +6205,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.53.0+agent.3",
-      "changelog_sha256": "08e60e1a208a610a29403231b305ec9d3f02ade68e69fb92956f92f42fc612b2",
-      "agent_impact": "qa run --test-order now types the test card on Campaign Cart SDK 0.4.41 checkouts. 0.4.41 mounts the card number and CVV as iframe[id^=spreedly-hosted-number] and iframe[id^=spreedly-hosted-cvv] (Spreedly Checkout SDK fields loaded by payments.29next.com/js/v1/payment.js) instead of the iFrame v1 spreedly-number-frame / spreedly-cvv-frame ids, and the runner matched only the old ids, so the typed-card step timed out before submit on 0.4.41. The runner now matches either generation. The card_fields_filled step gains evidence {generation: spreedly-hosted | spreedly-iframe-v1, number_frame_id, cvv_frame_id}; its detail is unchanged. A checkout where more than one number or CVV iframe matches, or the two generations mix, fails card_fields_filled with an error naming the ids found, where Playwright previously raised a strict-mode violation; no order is submitted either way. No verdict field or flag changes; spreedly_tokenized still reads the core.spreedly.com payment_methods request, which 0.4.41 still makes. Pages pinned to 0.4.40 or earlier run as before.",
+      "changelog_sha256": "de4a1bda85d6a903dac23c8c3effcd2b4d41269fa1101d13d71f0938f296a772",
+      "agent_impact": "qa run --test-order now types the test card on Campaign Cart SDK 0.4.41 checkouts. 0.4.41 mounts the card number and CVV as iframe[id^=spreedly-hosted-number] and iframe[id^=spreedly-hosted-cvv] (Spreedly Checkout SDK fields loaded by payments.29next.com/js/v1/payment.js) instead of the iFrame v1 spreedly-number-frame / spreedly-cvv-frame ids, and the runner matched only the old ids, so the typed-card step timed out before submit on 0.4.41. The runner now matches either generation. Before typing, card_fields_filled waits until no element carries next-loading-spreedly (the SDK sets it from before the card iframes mount until the fields are ready, 0.4.38 to 0.4.41), because digits typed into a 0.4.41 field before then can be dropped, and the SDK then refuses the short number without tokenizing, so order_submitted timed out with no order. After typing, it reads both fields back and retypes, up to 3 attempts in all. The step gains evidence {generation: spreedly-hosted | spreedly-iframe-v1, number_frame_id, cvv_frame_id, ready_wait_ms, attempts}; its detail is unchanged. card_fields_filled now fails by name, with no order submitted, in two cases: when more than one number or CVV iframe matches or the two generations mix (Playwright previously raised a strict-mode violation), and when the fields still do not hold the typed card after 3 attempts (the error gives the digit counts and last four of the number). No verdict field or flag changes; spreedly_tokenized still reads the core.spreedly.com payment_methods request, which 0.4.41 still makes. Pages pinned to 0.4.40 or earlier run as before, plus the readiness wait and the read-back.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -6214,10 +6214,10 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "The typed-card step names both card-field generations: Spreedly iFrame fields on SDK 0.4.40 and earlier, and the Spreedly-hosted fields NEXT payments.29next.com script mounts on 0.4.41 and later."
+          "summary": "The typed-card step names both card-field generations (Spreedly iFrame fields on SDK 0.4.40 and earlier, the Spreedly-hosted fields NEXT payments.29next.com script mounts on 0.4.41 and later), waits for next-loading-spreedly to clear before typing, and reads both fields back, retyping up to three attempts in all."
         }
       ],
-      "entry_sha256": "e2429286596a45b3fc8c02c414ff396c794ee05461a2339b0ca922d3c7d640d9"
+      "entry_sha256": "c221b9020f623db8206ad27cb37d1732b529b03910e0b516067490b439b3512e"
     }
   ]
 }

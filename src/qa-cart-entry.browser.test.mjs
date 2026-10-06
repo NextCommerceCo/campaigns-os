@@ -55,10 +55,47 @@ function withBothCardFieldGenerations(html) {
 
 const CARD_FIELD_REWRITES = { "next-payment": withNextPaymentCardFields, both: withBothCardFieldGenerations };
 
+// How the card number field misbehaves, injected into checkout. Each acts on
+// the number frame's input from the page (srcdoc frames are same-origin):
+//   loading         the form carries next-loading-spreedly for 2.5s, and when
+//                   it clears the field wipes whatever was typed before, the
+//                   way 0.4.41's hosted field drops digits typed before its
+//                   script has loaded;
+//   drop-once       the first complete number typed is wiped once;
+//   always-truncate the field never keeps more than its last four digits.
+const CARD_BEHAVIOURS = {
+  loading: `form.classList.add("next-loading-spreedly");
+    setTimeout(function () { input.value = ""; form.classList.remove("next-loading-spreedly"); }, 2500);`,
+  "drop-once": `var dropped = false;
+    input.addEventListener("input", function () {
+      if (!dropped && input.value.replace(/\\D/g, "").length >= 16) { dropped = true; setTimeout(function () { input.value = ""; }, 50); }
+    });`,
+  "always-truncate": `input.addEventListener("input", function () {
+      var digits = input.value.replace(/\\D/g, "");
+      if (digits.length > 4) input.value = digits.slice(-4);
+    });`,
+};
+
+function withCardBehaviour(html, behaviour) {
+  const script = `<script>
+(function () {
+  var form = document.querySelector("form[data-fixture-checkout]");
+  var frame = document.querySelector('iframe[id^="spreedly-hosted-number"], iframe[id^="spreedly-number-frame"]');
+  function attach() {
+    var input = frame.contentDocument && frame.contentDocument.querySelector("input");
+    if (!input) return setTimeout(attach, 10);
+    ${CARD_BEHAVIOURS[behaviour]}
+  }
+  attach();
+})();
+</script>`;
+  return html.replace("</body>", `${script}\n</body>`);
+}
+
 // Serves one fixture under /x/ plus the shim and a fake orders API.
 // cardFields "next-payment" serves checkout with SDK 0.4.41's card iframes;
 // "both" serves the iFrame v1 and 0.4.41 pairs together.
-async function serveFixture(name, { cardFields = "iframe-v1" } = {}) {
+async function serveFixture(name, { cardFields = "iframe-v1", cardBehaviour = null } = {}) {
   const dir = join(FIXTURES, name);
   const orders = [];
   // Page-HTML loads by page name: every checkout load is an SDK boot and a
@@ -98,7 +135,8 @@ async function serveFixture(name, { cardFields = "iframe-v1" } = {}) {
       try {
         const html = await readFile(join(dir, `${page[1]}.html`), "utf8");
         const rewrite = page[1] === "checkout" ? CARD_FIELD_REWRITES[cardFields] : null;
-        return send(200, rewrite ? rewrite(html) : html);
+        const rewritten = rewrite ? rewrite(html) : html;
+        return send(200, page[1] === "checkout" && cardBehaviour ? withCardBehaviour(rewritten, cardBehaviour) : rewritten);
       } catch {
         return send(404, "not found");
       }
@@ -134,8 +172,8 @@ const ARGS = Object.freeze({
 });
 
 // beforeRun reads the served pages through the same server the run drives.
-async function runFixture(name, { withLanding = true, cardFields, beforeRun = null } = {}) {
-  const server = await serveFixture(name, { cardFields });
+async function runFixture(name, { withLanding = true, cardFields, cardBehaviour, beforeRun = null } = {}) {
+  const server = await serveFixture(name, { cardFields, cardBehaviour });
   try {
     if (beforeRun) await beforeRun(server);
     const result = await runBrowserTestOrders(topologies(server.base, { withLanding }), { ...ARGS }, `qa-cart-entry-${name}`);
@@ -172,10 +210,12 @@ browserTest("landing-entry: the runner enters through the landing page, the SDK 
 
   assert.equal(byName.opened_checkout.status, "ok");
   assert.match(byName.opened_checkout.detail, /arrived from the entry page via SDK navigation; not re-opened/);
-  assert.deepEqual(byName.card_fields_filled.evidence, {
+  const { generation, number_frame_id, cvv_frame_id, attempts } = byName.card_fields_filled.evidence;
+  assert.deepEqual({ generation, number_frame_id, cvv_frame_id, attempts }, {
     generation: "spreedly-iframe-v1",
     number_frame_id: "spreedly-number-frame-1",
     cvv_frame_id: "spreedly-cvv-frame-1",
+    attempts: 1,
   });
   assert.equal(byName.order_submitted.status, "ok");
   assert.deepEqual(byName.order_submitted.evidence.cart_before_submit, {
@@ -199,10 +239,12 @@ browserTest("landing-entry on SDK 0.4.41 card fields: the runner types into the 
   });
   const byName = stepsByName(steps);
   assert.equal(byName.card_fields_filled.status, "ok", byName.card_fields_filled.error);
-  assert.deepEqual(byName.card_fields_filled.evidence, {
+  const { generation, number_frame_id, cvv_frame_id, attempts } = byName.card_fields_filled.evidence;
+  assert.deepEqual({ generation, number_frame_id, cvv_frame_id, attempts }, {
     generation: "spreedly-hosted",
     number_frame_id: "spreedly-hosted-number-k3x9q2",
     cvv_frame_id: "spreedly-hosted-cvv-k3x9q2",
+    attempts: 1,
   }, "the card step typed into the 0.4.41 frames, not an iFrame v1 fallback");
   assert.equal(byName.order_submitted.status, "ok", byName.order_submitted.detail);
   assert.equal(server.orders.length, 1, "exactly one order was posted");
@@ -219,6 +261,40 @@ browserTest("landing-entry with both card-field generations: the card step fails
   );
   assert.equal(byName.order_submitted, undefined, "the ladder stops at the card step");
   assert.equal(server.orders.length, 0, "no order was posted");
+  assert.notEqual(assertion.status, "pass");
+});
+
+browserTest("card fields still loading: the runner waits for next-loading-spreedly to clear before typing, so no digits are lost", async () => {
+  const { steps, assertion, server } = await runFixture("landing-entry", { cardFields: "next-payment", cardBehaviour: "loading" });
+  const byName = stepsByName(steps);
+  assert.equal(byName.card_fields_filled.status, "ok", byName.card_fields_filled.error);
+  assert.ok(byName.card_fields_filled.evidence.ready_wait_ms > 0, "the step waited for the fields to report ready");
+  assert.equal(byName.card_fields_filled.evidence.attempts, 1, "typed once, after ready");
+  assert.equal(byName.order_submitted.status, "ok", byName.order_submitted.detail);
+  assert.equal(server.orders.length, 1);
+  assert.equal(assertion.status, "pass", assertion.actual);
+});
+
+browserTest("card field drops the typed number once: the runner reads it back, retypes, and submits", async () => {
+  const { steps, assertion, server } = await runFixture("landing-entry", { cardFields: "next-payment", cardBehaviour: "drop-once" });
+  const byName = stepsByName(steps);
+  assert.equal(byName.card_fields_filled.status, "ok", byName.card_fields_filled.error);
+  assert.equal(byName.card_fields_filled.evidence.attempts, 2, "the read-back caught the wiped number and the second attempt kept it");
+  assert.equal(byName.order_submitted.status, "ok", byName.order_submitted.detail);
+  assert.equal(server.orders.length, 1);
+  assert.equal(assertion.status, "pass", assertion.actual);
+});
+
+browserTest("card field never keeps the number: the card step fails by name and nothing is submitted", async () => {
+  const { steps, assertion, server } = await runFixture("landing-entry", { cardFields: "next-payment", cardBehaviour: "always-truncate" });
+  const byName = stepsByName(steps);
+  assert.equal(byName.card_fields_filled.status, "failed");
+  assert.match(
+    byName.card_fields_filled.error,
+    /card fields did not keep the typed card after 3 attempts: number field holds 4 digit\(s\) ending 1117 \(typed 16 ending 1117\), CVV field holds 3 digit\(s\)/,
+  );
+  assert.equal(byName.order_submitted, undefined, "the ladder stops at the card step instead of timing out at submit");
+  assert.equal(server.orders.length, 0);
   assert.notEqual(assertion.status, "pass");
 });
 

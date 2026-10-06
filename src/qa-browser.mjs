@@ -88,6 +88,9 @@ const DEFAULT_TEST_EXP_YEAR = "2030";
 // on whichever frame happens to come first.
 const CARD_NUMBER_FRAME = 'iframe[id^="spreedly-number-frame"], iframe[id^="spreedly-hosted-number"]';
 const CARD_CVV_FRAME = 'iframe[id^="spreedly-cvv-frame"], iframe[id^="spreedly-hosted-cvv"]';
+// Typing the card is read back and retried this many times in all before the
+// card step fails by name.
+const CARD_TYPE_ATTEMPTS = 3;
 const DEFAULT_MAX_TEST_ORDERS = 6;
 // Planned-path ids listed in a refused --max-test-orders message before the
 // remainder is counted rather than printed.
@@ -5095,15 +5098,44 @@ async function fillPaymentFields(page, args) {
   const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
   const cvv = stringArg(args["test-cvv"]) || DEFAULT_TEST_CVV;
   const frames = await cardFrames(page);
+  const readyWaitMs = await waitForCardFieldsReady(page);
   const numberInput = page.frameLocator(CARD_NUMBER_FRAME).locator("input").first();
   const cvvInput = page.frameLocator(CARD_CVV_FRAME).locator("input").first();
-  await numberInput.click();
-  await numberInput.pressSequentially(card, { delay: 20 });
-  await cvvInput.click();
-  await cvvInput.pressSequentially(cvv, { delay: 20 });
-  await page.locator("body").click({ position: { x: 20, y: 20 } }).catch(() => {});
-  await page.waitForTimeout(500);
-  return { evidence: frames };
+  const typed = async (input) => normalizeCard(await input.inputValue());
+  let attempts = 0;
+  let held = null;
+  while (attempts < CARD_TYPE_ATTEMPTS) {
+    attempts++;
+    if (attempts > 1) {
+      await numberInput.fill("");
+      await cvvInput.fill("");
+    }
+    await numberInput.click();
+    await numberInput.pressSequentially(card, { delay: 20 });
+    await cvvInput.click();
+    await cvvInput.pressSequentially(cvv, { delay: 20 });
+    await page.locator("body").click({ position: { x: 20, y: 20 } }).catch(() => {});
+    await page.waitForTimeout(500);
+    held = { number: await typed(numberInput), cvv: await typed(cvvInput) };
+    if (held.number === card && held.cvv === normalizeCard(cvv)) {
+      return { evidence: { ...frames, ready_wait_ms: readyWaitMs, attempts } };
+    }
+  }
+  throw new Error(`card fields did not keep the typed card after ${attempts} attempts: number field holds ${held.number.length} digit(s) ending ${held.number.slice(-4) || "(empty)"} (typed ${card.length} ending ${card.slice(-4)}), CVV field holds ${held.cvv.length} digit(s)`);
+}
+
+// Typing into the card fields before the SDK reports them ready can lose
+// keystrokes: on SDK 0.4.41 the Spreedly-hosted number input exists before
+// its script has loaded, and digits typed in that window are dropped (seen
+// as a number missing its leading digits, which the SDK then refuses without
+// tokenizing, so the order never posts). The checkout form carries
+// next-loading-spreedly from before the card iframes mount until the fields
+// are ready, in 0.4.38 through 0.4.41, so wait for it to clear. A page whose
+// SDK never set it is ready at once.
+async function waitForCardFieldsReady(page) {
+  const started = Date.now();
+  await page.waitForFunction(() => !document.querySelector(".next-loading-spreedly"));
+  return Date.now() - started;
 }
 
 // The card iframes the step is about to type into, once the SDK has mounted
