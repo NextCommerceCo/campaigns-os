@@ -11,7 +11,10 @@
 // landing route holds an image: one same-origin 600,000 B complete PNG
 // (F1.3-B2), 40×30 natural pixels, under the 250,000 px area floor, so its
 // oversize result passes. The other routes are text pages: the document's
-// weight passes and oversize lists one "cell" result that passes.
+// weight passes and oversize lists one "cell" result that passes. The built
+// site is the one root page the fixture writes; `polish capture` measures its
+// readability as well (every built page, at both widths), so the stub serves
+// it too.
 //
 // No network beyond loopback: src/qc-test-factories.mjs is imported first and
 // installs its Node-side guard before any module under test loads (the CLI is
@@ -24,6 +27,7 @@ import test, { after, afterEach } from "node:test";
 
 import {
   OTHER_BUILD_FP,
+  SLUG,
   assertAccepted,
   assertNoNetworkAttempts,
   campaignFixture,
@@ -71,6 +75,7 @@ if (browserUnavailableNote) test.skip(browserUnavailableNote, () => {});
 const LANDING = route("landing");
 const TEXT_ROUTES = Object.freeze(["checkout", "receipt", "upsell"].map(route));
 const IMAGE_PATH = "/img/landing-hero.png";
+const BUILT_ROOT = `/${SLUG}/`;
 
 // A campaign whose report names its packet (`polish capture` binds to it) and
 // records the build `record build` measured, and a stub origin serving every
@@ -88,6 +93,7 @@ async function campaign(t) {
   same.serve(LANDING, page(`<img alt="" src="${IMAGE_PATH}" width="40" height="30">`));
   same.serve(IMAGE_PATH, pngWire(40, 30, 600_000));
   for (const path of TEXT_ROUTES) same.serve(path, page("<p>Synthetic copy</p>"));
+  same.serve(BUILT_ROOT, page("<p>synthetic build one</p>"));
   return { f, same, image: same.url(IMAGE_PATH), buildOne: readJson(f.reportPath).stages.assembly.build_fingerprint };
 }
 
@@ -118,7 +124,7 @@ async function polishCapture({ f, same }, { afterCapture } = {}) {
   });
   guard.assertLoopbackOnly();
   assertNoNetworkAttempts();
-  assertRequestLog({ same }, { same: requests([LANDING, ...TEXT_ROUTES, IMAGE_PATH]) }, `setup (the command ${failure ? `threw: ${failure.message}` : "returned"})`);
+  assertRequestLog({ same }, { same: requests([LANDING, ...TEXT_ROUTES, BUILT_ROOT, IMAGE_PATH]) }, `setup (the command ${failure ? `threw: ${failure.message}` : "returned"})`);
   return { result, failure, reportWrites };
 }
 

@@ -433,6 +433,7 @@ test("F1.3-I9 report evidence from before this version (no media_weight), hidden
     [
       { check: "media.oversize", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
       { check: "media.weight", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
+      { check: "readability.contrast", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
       ...QA_LEG_NOT_RUN,
     ],
     "qc_handoff.coverage is exactly both 1.3 checks unexercised / not_captured_by_this_version plus the fixture's QA leg_not_run entries",

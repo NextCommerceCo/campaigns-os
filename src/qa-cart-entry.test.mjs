@@ -105,8 +105,8 @@ test("cartEntryHrefFor: href-shaped attributes and a wrapping form's action reso
 });
 
 // The primary-CTA inspection is serialised into the page as source text:
-// `inspectPrimaryCtaScript` and `cartEntryHrefFor` both travel by
-// `Function.prototype.toString`, so neither may reference a module-scope
+// `inspectPrimaryCtaScript`, `cartEntryHrefFor` and `contrastToolkit` all
+// travel by `Function.prototype.toString`, so none may reference a module-scope
 // identifier — an import or a top-level constant compiles and unit-tests fine
 // here and then throws ReferenceError inside the page. This evaluates the
 // exact text the runner sends, in a fresh vm context that holds only the
@@ -123,32 +123,70 @@ function pageContext({ base, elements }) {
     }
     return element.tagName.toLowerCase() === part.toLowerCase();
   });
+  // The document the shared contrast helper reads: no SDK, no stylesheets,
+  // fonts loaded, a light canvas.
+  const document = {
+    documentElement: { classList: { contains: () => false } },
+    body: null,
+    fonts: { status: "loaded" },
+  };
   const make = ({ tag = "button", attrs = {}, text = "", href }) => {
     const element = {
       tagName: tag.toUpperCase(),
+      localName: tag,
       nodeType: 1,
       id: "",
       className: attrs.class || "",
       innerText: text,
       textContent: text,
+      childNodes: text ? [{ nodeType: 3, nodeValue: text }] : [],
       parentElement: null,
+      shadowRoot: null,
+      assignedSlot: null,
+      ownerDocument: document,
       getAttribute: (name) => (name in attrs ? attrs[name] : null),
       hasAttribute: (name) => name in attrs,
       matches: (selector) => attrMatches(element, selector),
       closest: () => null,
-      getBoundingClientRect: () => ({ width: 200, height: 48 }),
+      querySelectorAll: () => [],
+      checkVisibility: () => true,
+      getBoundingClientRect: () => ({ width: 200, height: 48, left: 0, top: 0, right: 200, bottom: 48 }),
     };
     if (tag === "a" && href !== undefined) element.href = href;
     return element;
   };
   const nodes = elements.map(make);
+  document.querySelectorAll = (selector) => nodes.filter((node) => attrMatches(node, selector));
+  // Computed styles, as properties and through getPropertyValue.
+  const computed = {
+    display: "block",
+    visibility: "visible",
+    opacity: "1",
+    color: "rgb(255, 255, 255)",
+    "-webkit-text-fill-color": "rgb(255, 255, 255)",
+    "background-color": "rgb(17, 51, 34)",
+    "background-image": "none",
+    "background-clip": "border-box",
+    "-webkit-background-clip": "border-box",
+    filter: "none",
+    "backdrop-filter": "none",
+    "mix-blend-mode": "normal",
+    "mask-image": "none",
+    "-webkit-mask-image": "none",
+    position: "static",
+    "font-size": "16px",
+    "font-weight": "400",
+    "color-scheme": "normal",
+    content: "none",
+  };
   const context = {
     URL,
     Node: { ELEMENT_NODE: 1 },
     location: { href: base, origin: new URL(base).origin },
-    document: { querySelectorAll: (selector) => nodes.filter((node) => attrMatches(node, selector)) },
-    getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1", color: "rgb(255, 255, 255)", backgroundColor: "rgb(17, 51, 34)" }),
+    document,
+    getComputedStyle: () => ({ ...computed, backgroundColor: computed["background-color"], getPropertyValue: (name) => computed[name] ?? "" }),
   };
+  context.window = context;
   return vm.createContext(context);
 }
 
@@ -164,6 +202,7 @@ test("primary-CTA inspection script is self-contained: it evaluates in a fresh c
   assert.equal(typeof script, "string");
   assert.match(script, /^\(function inspectPrimaryCtaScript\(/);
   assert.match(script, /function cartEntryHrefFor\(/);
+  assert.match(script, /function contrastToolkit\(/);
 
   const context = pageContext({
     base,
@@ -181,7 +220,7 @@ test("primary-CTA inspection script is self-contained: it evaluates in a fresh c
   assert.deepEqual(Object.keys(evidence).sort(), ["candidates", "expected_url", "ignored_attributes", "ok", "primary", "reason"]);
   assert.equal(evidence.candidates.length, 3);
   for (const candidate of evidence.candidates) {
-    assert.deepEqual(Object.keys(candidate).sort(), ["background", "background_source", "contrast_ratio", "foreground", "height", "href", "ignored_attributes", "readable", "route_matches", "selector", "size_ok", "text", "width"]);
+    assert.deepEqual(Object.keys(candidate).sort(), ["contrast_ratio", "control_loading", "disabled", "elements", "height", "href", "ignored_attributes", "route_matches", "selector", "size_ok", "text", "text_rendered", "width"]);
     assert.ok(candidate.href === null || typeof candidate.href === "string", "href is a resolved URL or null");
   }
   const [sdkControl, anchor, undeclared] = evidence.candidates;
@@ -194,6 +233,9 @@ test("primary-CTA inspection script is self-contained: it evaluates in a fresh c
   assert.deepEqual(undeclared.ignored_attributes, ["data-next-href", "data-next-url"], "seen, reported, not consulted");
   assert.deepEqual(evidence.ignored_attributes, ["data-next-href", "data-next-url"]);
   assert.equal(evidence.primary.selector, "button");
+  assert.equal(sdkControl.elements.length, 1, "the route candidate's label is measured through the shared helper");
+  assert.deepEqual(Object.keys(sdkControl.elements[0]).sort(), ["contrast_ratio_exact", "required_ratio", "selector_path", "size_class", "review_reason"].sort());
+  assert.equal(anchor.elements, null, "a candidate off the route is not measured");
 });
 
 test("a page whose only route-shaped spelling is undeclared reads as a vocabulary gap in the verdict, not as a removed CTA", () => {
@@ -624,4 +666,52 @@ test("the probe cache keys on the canonical checkout URL, so a trailing-slash or
   assert.deepEqual(selectorProbeCache.get(`${BASE}/checkout/`), SELECTOR_SURFACE);
   assert.deepEqual(selectorProbeCache.get(`${BASE}/checkout/?utm=x`), SELECTOR_SURFACE);
   assert.equal(selectorProbeCache.get(`${BASE}/other/`), null);
+});
+
+// F2.4-B17 (contract 2.4 Surfaces "QA verdict"): the primary-CTA script in
+// a fresh vm page, beside the self-containment test above. The page is the
+// in-memory DOM of src/readability-harness.test.mjs (only browser globals;
+// computed styles as given). The label is white on #0080aa, 16px/400:
+// 4.4986:1 unrounded, below 4.5.
+//
+// API assumptions: the runner sends primaryCtaInspectionScript's text (its
+// value may be a promise); the assertion keeps its status, and the outcome's
+// reason code is evidence.reason, the field that carries it at BASE_SHA.
+test("F2.4-B17 QA CTA vm: white on #0080aa: browser-primary-cta status fail (low_contrast)", async () => {
+  const { hexToSrgb, ratioOf, vmPage } = await import("./readability-harness.test.mjs");
+  const ratio = ratioOf(hexToSrgb("#ffffff"), hexToSrgb("#0080aa"));
+  assert.ok(ratio > 4.498 && ratio < 4.5, `setup: white on #0080aa is 4.4986:1 unrounded (${ratio})`);
+  const page = vmPage({
+    url: "https://campaign.example/lp/",
+    body: [{ tag: "a", key: "cta", attrs: { href: "/checkout/" }, text: "Buy now", rect: { x: 16, y: 16, width: 200, height: 48 }, style: { display: "inline-block", color: "rgb(255, 255, 255)", backgroundColor: "rgb(0, 128, 170)", fontSize: "16px", fontWeight: "400" } }],
+  });
+  const style = page.window.getComputedStyle(page.byKey.cta);
+  assert.deepEqual([style.color, style.backgroundColor], ["rgb(255, 255, 255)", "rgb(0, 128, 170)"], "setup: the page reports the label's colours");
+  const evidence = JSON.parse(JSON.stringify(await page.run(primaryCtaInspectionScript("https://campaign.example/checkout/"))));
+  const entry = primaryCtaAssertionFromEvidence({ page_id: "landing", page_type: "product", url: "https://campaign.example/lp/", expected_next_url: "https://campaign.example/checkout/" }, evidence);
+  assert.equal(entry.id, "browser-primary-cta:landing", "setup: the browser-primary-cta assertion");
+  assert.deepEqual({ status: entry.status, reason: entry.evidence?.reason }, { status: "fail", reason: "low_contrast" }, `browser-primary-cta status fail (low_contrast) (${entry.actual})`);
+});
+
+// An inspection the page could not complete is an incomplete observation:
+// manual review at severity warn, never a pass and never a contrast failure.
+// Only the three outcomes the page actually earned (no route CTA, a measured
+// element below its requirement, no candidate at least 40x20) read fail.
+test("a primary-CTA inspection the page rejects reads manual_review at severity warn", async () => {
+  const { inspectPrimaryCta } = __qaBrowserTestHooks;
+  const page = { page_id: "landing", page_type: "product", expected_next_url: "https://campaign.example/checkout/" };
+  const rejecting = { evaluate: async () => { throw new Error("Execution context was destroyed"); } };
+  const evidence = await inspectPrimaryCta(rejecting, page.expected_next_url);
+  assert.equal(evidence.reason, "inspection_error", "setup: the runner's own rejection evidence");
+  const entry = primaryCtaAssertionFromEvidence(page, evidence);
+  assert.deepEqual([entry.status, entry.severity], ["manual_review", "warn"], entry.actual);
+
+  for (const missing of [undefined, null, {}, { ok: false }]) {
+    const unread = primaryCtaAssertionFromEvidence(page, missing);
+    assert.deepEqual([unread.status, unread.severity], ["manual_review", "warn"], `no reason recorded (${JSON.stringify(missing)})`);
+  }
+  for (const reason of ["missing_route_cta", "low_contrast", "cta_too_small"]) {
+    const failed = primaryCtaAssertionFromEvidence(page, { ok: false, reason, candidates: [], ignored_attributes: [] });
+    assert.deepEqual([failed.status, failed.severity], ["fail", "warn"], reason);
+  }
 });

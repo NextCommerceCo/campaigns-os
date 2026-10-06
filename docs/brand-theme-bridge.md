@@ -94,6 +94,8 @@ used and reported with `theme.foreground.low_contrast`. With no declared CTA
 foreground, the output is unchanged. Declarations inside CSS comments are not
 read, so a commented-out token or rule never supplies a CTA or body text colour.
 
+Contrast is computed with the same unrounded measurement Polish and QA use, so a declared colour at 4.495:1 now warns. The generator's colour choices are unchanged. Polish measures the rendered text at its real size and weight: a qualifying large label at 3:1 passes there, and smaller text produces a warning the operator can accept.
+
 ### Body text prefers the darkest declared text token
 
 A declared text token is a `:root` custom property in the selected source whose

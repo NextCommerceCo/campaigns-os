@@ -81,6 +81,7 @@ export function assertNoNetworkAttempts() {
   assert.equal(intact, true, "the no-network guard was left installed");
 }
 
+const { computeBuildFingerprint } = await import("./built-site-scope.mjs");
 const { checkpointStateFingerprint } = await import("./checkpoint-waiver.mjs");
 const { main } = await import("./cli.mjs");
 const { doctorPacket } = await import("./doctor/inspect.mjs");
@@ -368,7 +369,26 @@ export function qaAssertionFor(row, observation = row.observation) {
 }
 
 export const QA_RUN_ID = "qc-synthetic-run-0001";
-export const BUILD_FP = sha256("synthetic build one");
+// The synthetic build: BUILD_FP is the fingerprint of the built output
+// writeSyntheticBuild writes, so a fixture holding that output and recording
+// BUILD_FP reads doctor's output fingerprint as pass. The page carries the
+// head tags and the og:image file the built-output smoke checks look for, so
+// it adds no doctor warning of its own.
+export function writeSyntheticBuild(fixture) {
+  const root = join(fixture.targetRepo, "_site", SLUG);
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, "og.png"), "synthetic og image\n");
+  writeFileSync(join(root, "index.html"), `<!doctype html><html><head><title>Synthetic</title><link rel="icon" href="data:,"><meta property="og:title" content="Synthetic"><meta property="og:description" content="Synthetic build one"><meta property="og:image" content="${ORIGIN}/${SLUG}/og.png"></head><body><p>synthetic build one</p></body></html>\n`);
+}
+export const BUILD_FP = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "qc-build-fp-"));
+  try {
+    writeSyntheticBuild({ targetRepo: dir });
+    return computeBuildFingerprint(join(dir, "_site", SLUG)).fingerprint;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
 export const OTHER_BUILD_FP = sha256("synthetic build zero");
 
 export function fullVerdict({ assertions, runId = QA_RUN_ID, measuredAt }) {
@@ -674,7 +694,12 @@ export function twoCellFixture(firstCellResources, { firstCell = {}, buildFinger
   });
 }
 
+// A fixture with no built output whose report records BUILD_FP gets the
+// synthetic build, so the built output doctor fingerprints is the one
+// BUILD_FP names.
 export function installPolishEvidence(fixture, { pageLoad, record }, { buildFingerprint } = {}) {
+  const recorded = buildFingerprint ?? readJson(fixture.reportPath).stages?.assembly?.build_fingerprint;
+  if (recorded === BUILD_FP && fixture.targetRepo && !existsSync(join(fixture.targetRepo, "_site", SLUG))) writeSyntheticBuild(fixture);
   mutateReport(fixture, (report) => {
     if (buildFingerprint) report.stages.assembly.build_fingerprint = buildFingerprint;
     const polish = report.stages.polish || { stage: "polish" };

@@ -69,7 +69,7 @@ const PAGE_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Synth
 const NOT_CAPTURED = ["policy.availability", "policy.presence", "tracking.order", "tracking.tag", "tracking.url"];
 // The Polish checks, listed under coverage because the fixture has no Polish
 // stage.
-const POLISH_NOT_RUN = ["media.oversize", "media.weight"];
+const POLISH_NOT_RUN = ["media.oversize", "media.weight", "readability.contrast"];
 
 async function startPage() {
   const server = createServer((request, response) => {

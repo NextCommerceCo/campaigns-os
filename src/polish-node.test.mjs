@@ -5,12 +5,17 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { contrastToolkit } from "./contrast.mjs";
+import { createPolishBrowserAdapter } from "./polish-browser.mjs";
+import { buildPolishCaptureIntegrity } from "./polish-capture.mjs";
 
 import {
   assertPolishCaptureBindingUnchanged,
   capturePolishPageLoad,
+  capturePolishReadability,
   createPolishCaptureBinding,
   evaluateRecordedHiddenEagerMediaCheckpoint,
+  mergePolishCaptureEvidence,
   mergePolishPageLoadEvidence,
   MAX_POLISH_CAPTURE_ROUTES,
   planPolishCapture,
@@ -256,6 +261,47 @@ test("polish capture returns the plan and page-load evidence only; the checkpoin
   assert.deepEqual(Object.keys(result).sort(), ["page_load", "plan"]);
   assert.equal(Object.hasOwn(result, "checkpoint"), false);
   assert.equal(recordedCheckpoint(packet, result).status, "pass");
+});
+
+test("polish capture stamps page_load.captured_at from the merge clock, outside every capture's integrity and the checkpoint", async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const result = await capturePolishPageLoad({
+    packet,
+    report: completedReport(),
+    baseUrl: "http://127.0.0.1:4173",
+    createBrowserAdapter: async () => ({
+      async captureRoute({ url, viewport }) {
+        return {
+          finalDocumentUrl: url,
+          responseCollectionStatus: "complete",
+          networkidle: { status: "settled", duration_ms: 12 },
+          mediaElements: [],
+          responses: [mainDocumentResponse(url, { request_id: `document-${viewport.key}` })],
+        };
+      },
+      async close() {},
+    }),
+  });
+  const mergeClock = new Date(Date.UTC(2026, 9, 5, 8, 30, 15, 250));
+  const merged = mergePolishCaptureEvidence(completedReport(), { pageLoad: result.page_load, now: mergeClock });
+  const pageLoad = merged.stages.polish.evidence.visual_review.page_load;
+
+  assert.equal(pageLoad.captured_at, "2026-10-05T08:30:15.250Z", "captured_at is the injected merge clock as canonical ISO");
+  assert.equal(Object.hasOwn(result.page_load, "captured_at"), false, "the capture itself carries no time; the merge stamps it");
+  assert.ok(pageLoad.captures.length > 0, "setup: the capture holds cells");
+  for (const capture of pageLoad.captures) {
+    assert.deepEqual(buildPolishCaptureIntegrity(capture), capture.integrity, `${capture.subject.requested_route} ${capture.subject.viewport}: its integrity still validates`);
+  }
+  const { captured_at: _stamp, ...unstamped } = pageLoad;
+  const withoutStamp = structuredClone(merged);
+  withoutStamp.stages.polish.evidence.visual_review.page_load = unstamped;
+  const checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report: merged, now: mergeClock.toISOString() });
+  assert.equal(checkpoint.status, "pass", "setup: the stamped capture passes the checkpoint");
+  assert.deepEqual(checkpoint, evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report: withoutStamp, now: mergeClock.toISOString() }), "the checkpoint result is identical without captured_at");
 });
 
 test("injected producer-to-gate pass controls preserve the exact threshold and preload or visibility exemptions", async (t) => {
@@ -1147,3 +1193,421 @@ test("recorded hidden eager-media checkpoint gives packet repair actions for a m
   assert.equal(gate.required_actions.some((action) => action.id.endsWith(".waive")), false);
   assert.equal(gate.required_actions.some((action) => action.id.endsWith(".repair")), false);
 });
+
+// ---------------------------------------------------------------------------
+// Readability deadlines in the browser adapter: every browser call of the
+// readability path is a step of a readability bound, so a stalled call ends
+// as a recorded cell status and never reaches the adapter cell deadline.
+
+// A virtual clock: now() is virtual milliseconds; sleep(ms) settles when the
+// virtual time reaches its deadline (advance moves it).
+function virtualClock() {
+  let now = 0;
+  const sleepers = [];
+  return {
+    now: () => now,
+    sleep: (ms) => new Promise((done) => sleepers.push({ at: now + ms, done })),
+    advance(ms) {
+      now += ms;
+      for (const sleeper of sleepers.filter((entry) => entry.at <= now)) {
+        sleepers.splice(sleepers.indexOf(sleeper), 1);
+        sleeper.done();
+      }
+    },
+  };
+}
+
+const PNG_1PX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+const LOW_CONTRAST = contrastToolkit().deriveElementMeasurement({ fg_raw: "rgb(255, 255, 255)", fill_raw: "rgb(255, 255, 255)", bg_layers_raw: ["rgb(148, 148, 148)"], font_size_px: 16, font_weight: 400 });
+// The probe's read of a page with one low-contrast paragraph in the viewport,
+// so one crop is due.
+const WARNING_READ = {
+  status: "measured",
+  capped: false,
+  coverage_gaps: [],
+  viewport: { width: 1_440, height: 1_200 },
+  elements: [{
+    role: "body_text", selector_path: "html>body>p:nth-of-type(1)", state: "default", disabled: false, rendered: true,
+    font_size_px: 16, font_weight: 400, size_class: LOW_CONTRAST.size_class,
+    fg_raw: "rgb(255, 255, 255)", fill_raw: "rgb(255, 255, 255)", bg_layers_raw: ["rgb(148, 148, 148)"],
+    fg_srgb: LOW_CONTRAST.fg_srgb, bg_srgb: LOW_CONTRAST.bg_srgb, gamut_clipped: LOW_CONTRAST.gamut_clipped,
+    ratio: LOW_CONTRAST.ratio, required: LOW_CONTRAST.required, review_reason: null, crop_ref: null, crop_reason: null,
+    rect: { x: 0, y: 0, width: 200, height: 40 },
+  }],
+};
+const DESKTOP = { key: "desktop", width: 1_440, height: 1_200 };
+const LANDING_URL = "http://127.0.0.1:4173/merchant/landing/";
+
+// A Chromium stand-in for the real adapter's `chromium` seam. Navigation
+// answers at once with no network events, the image probe reads no images and
+// the readability probe reads WARNING_READ. `hold({ method, afterCrop })` may
+// return a promise a CDP command waits on first (`afterCrop`: a screenshot was
+// already taken in that context); `holdContext()` the same for newContext.
+function readabilityChromium({ hold = () => null, holdContext = () => null } = {}) {
+  const calls = [];
+  let contexts = 0;
+  const chromium = {
+    async launch() {
+      return {
+        async newContext() {
+          const index = contexts;
+          contexts += 1;
+          calls.push(["newContext", index]);
+          await holdContext();
+          let afterCrop = false;
+          const session = {
+            on() {},
+            async send(method, params) {
+              calls.push(["send", index, method]);
+              await hold({ method, afterCrop });
+              if (method === "Page.captureScreenshot") {
+                afterCrop = true;
+                return { data: PNG_1PX };
+              }
+              if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main-frame", loaderId: "main-loader" } } };
+              if (method === "Page.createIsolatedWorld") return { executionContextId: 7 };
+              if (method === "DOM.getDocument") return { root: { nodeName: "#document", children: [] } };
+              if (method === "Runtime.callFunctionOn") {
+                return { result: { value: params.functionDeclaration.includes("readabilityProbe") ? structuredClone(WARNING_READ) : { observed_count: 0, images: [], dpr: 1 } } };
+              }
+              return {};
+            },
+            async detach() {},
+          };
+          const page = {
+            async goto() { return { status: () => 200 }; },
+            async evaluate() { return { observed_element_count: 0, elements: [] }; },
+            async waitForLoadState() {},
+            url: () => LANDING_URL,
+          };
+          return {
+            async addCookies() {},
+            async newPage() { return page; },
+            async newCDPSession() { return session; },
+            async close() { calls.push(["context.close", index]); },
+          };
+        },
+        async close() { calls.push(["browser.close"]); },
+      };
+    },
+  };
+  return { chromium, calls };
+}
+
+const readabilityOptions = (clock, overrides = {}) => ({
+  ...(clock ? { clock } : {}),
+  cellBoundMs: 1_500,
+  probeRemainingMs: 120_000,
+  cropRemainingMs: 30_000,
+  addedRemainingMs: 300_000,
+  elementCap: 2_000,
+  cropsPerCell: 40,
+  ...overrides,
+});
+const never = () => new Promise(() => {});
+const sent = (calls, method) => calls.filter((call) => call[0] === "send" && call[2] === method).length;
+
+test("a shared cell's crop re-read is a crop step: stalled past the crop bound, it ends there, is charged to crop_ms, and its crop reads crop_unavailable", async () => {
+  const clock = virtualClock();
+  const fake = readabilityChromium({
+    hold: ({ method, afterCrop }) => {
+      if (method !== "Page.getFrameTree" || !afterCrop) return null;
+      clock.advance(25);
+      return never();
+    },
+  });
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 2_000 });
+  try {
+    const observation = await adapter.captureRoute({ url: LANDING_URL, viewport: DESKTOP, readabilityProbe: readabilityOptions(clock, { cropRemainingMs: 20, addedRemainingMs: 40 }) });
+    assert.equal(sent(fake.calls, "Page.captureScreenshot"), 1, "setup: the due crop was taken");
+    const { readability } = observation;
+    assert.equal(readability.status, "measured", "the measurement stands");
+    assert.deepEqual(readability.crops, [], "no crop the re-read could not confirm is kept");
+    assert.equal(readability.elements[0].crop_reason, "crop_unavailable");
+    assert.equal(readability.crop_ms, 25, "the re-read's time is charged to crop_ms");
+  } finally {
+    await adapter.close();
+  }
+});
+
+test("a shared cell's crops stop at the cell deadline's headroom: the page_load cell returns, never POLISH_PRODUCER_TIMEOUT, and the adapter stays usable", async () => {
+  const fake = readabilityChromium({ hold: ({ method }) => (method === "Page.captureScreenshot" ? never() : null) });
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 1_500 });
+  try {
+    const observation = await adapter.captureRoute({ url: LANDING_URL, viewport: DESKTOP, readabilityProbe: readabilityOptions(null) });
+    assert.equal(observation.finalDocumentUrl, LANDING_URL, "the page_load observation is returned");
+    assert.equal(observation.readability.status, "measured");
+    assert.equal(observation.readability.elements[0].crop_reason, "crop_unavailable", "the stalled crop is unavailable");
+    assert.ok(observation.readability.crop_ms < 1_500, `crop time stays inside the cell (${observation.readability.crop_ms} ms)`);
+    const next = await adapter.captureRoute({ url: LANDING_URL, viewport: DESKTOP });
+    assert.equal(next.finalDocumentUrl, LANDING_URL, "the next cell runs: the adapter is not poisoned");
+  } finally {
+    await adapter.close();
+  }
+});
+
+test("a readability-only cell's document re-read stalled past the added budget reads run_budget_exhausted and closes its context", async () => {
+  const clock = virtualClock();
+  const fake = readabilityChromium({
+    hold: ({ method }) => {
+      if (method !== "Page.getFrameTree") return null;
+      clock.advance(50);
+      return never();
+    },
+  });
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 2_000 });
+  try {
+    const observation = await adapter.probeReadabilityRoute({ route: "/merchant/stock/", url: "http://127.0.0.1:4173/merchant/stock/" }, DESKTOP, { probe: readabilityOptions(clock, { addedRemainingMs: 40 }) });
+    assert.equal(observation.status, "run_budget_exhausted");
+    assert.ok(fake.calls.some((call) => call[0] === "context.close" && call[1] === 0), "the cell's context is closed");
+  } finally {
+    await adapter.close();
+  }
+});
+
+test("a readability-only cell whose context creation outlasts the added budget reads run_budget_exhausted, and the late context is closed", async () => {
+  const clock = virtualClock();
+  const fake = readabilityChromium({
+    holdContext: () => {
+      clock.advance(50);
+      return new Promise((resolve) => setTimeout(resolve, 300));
+    },
+  });
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 1_400 });
+  try {
+    const observation = await adapter.probeReadabilityRoute({ route: "/merchant/stock/", url: "http://127.0.0.1:4173/merchant/stock/" }, DESKTOP, { probe: readabilityOptions(clock, { addedRemainingMs: 40 }) });
+    assert.equal(observation.status, "run_budget_exhausted");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.ok(fake.calls.some((call) => call[0] === "context.close" && call[1] === 0), "the context created after the bound ended is closed");
+    assert.equal(sent(fake.calls, "Page.getFrameTree"), 0, "no CDP command follows the ended bound");
+  } finally {
+    await adapter.close();
+  }
+});
+
+test("a readability-only cell whose context creation outlasts the cell deadline's headroom reads probe_timeout, the late context is closed, and the adapter stays usable", async () => {
+  // The run clock never advances, so the added budget cannot end the setup:
+  // only the cell deadline's headroom can. The context is created only once
+  // the cell has returned.
+  const clock = virtualClock();
+  let release = null;
+  const fake = readabilityChromium({
+    holdContext: () => {
+      if (release) return null;
+      return new Promise((resolve) => { release = resolve; });
+    },
+  });
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 1_200 });
+  try {
+    const observation = await adapter.probeReadabilityRoute({ route: "/merchant/stock/", url: "http://127.0.0.1:4173/merchant/stock/" }, DESKTOP, { probe: readabilityOptions(clock) });
+    assert.equal(observation.status, "probe_timeout");
+    release();
+    for (let turn = 0; turn < 10 && !fake.calls.some((call) => call[0] === "context.close" && call[1] === 0); turn += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.ok(fake.calls.some((call) => call[0] === "context.close" && call[1] === 0), "the context created after the bound ended is closed");
+    assert.equal(sent(fake.calls, "Page.getFrameTree"), 0, "no CDP command follows the ended bound");
+    const next = await adapter.captureRoute({ url: LANDING_URL, viewport: DESKTOP });
+    assert.equal(next.finalDocumentUrl, LANDING_URL, "the next cell runs: the adapter is not poisoned");
+  } finally {
+    await adapter.close();
+  }
+});
+
+test("polish capture: a stalled crop re-read in a shared cell leaves page_load as a capture without readability, and the readability cells are recorded", async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const run = async ({ targetRepo }) => {
+    const clock = virtualClock();
+    const fake = readabilityChromium({
+      hold: ({ method, afterCrop }) => {
+        if (method !== "Page.getFrameTree" || !afterCrop) return null;
+        clock.advance(25);
+        return never();
+      },
+    });
+    return capturePolishPageLoad({
+      packet,
+      report: completedReport(),
+      baseUrl: "http://127.0.0.1:4173",
+      targetRepo,
+      probeClock: clock,
+      createBrowserAdapter: () => createPolishBrowserAdapter({ chromium: fake.chromium, cellDeadlineMs: 2_000 }),
+    });
+  };
+  const problems = (pageLoad) => pageLoad.captures.map((capture) => [capture.subject.viewport, (capture.problems || []).map((problem) => problem.code).sort()]);
+  const withReadability = await run({ targetRepo: BUILT_REPO });
+  const without = await run({ targetRepo: null });
+  assert.equal(without.readability, undefined, "setup: the comparison run measures no readability");
+  assert.deepEqual(problems(withReadability.page_load), problems(without.page_load), "page_load reads the same with the stalled readability work");
+  assert.ok(!problems(withReadability.page_load).some(([, codes]) => codes.includes("producer_timeout")), "no page_load cell reads producer_timeout");
+  assert.deepEqual(withReadability.readability.cells.map((cell) => [cell.viewport, cell.cell_status, cell.elements.map((element) => element.crop_reason)]), [["desktop", "measured", ["crop_unavailable"]], ["mobile", "measured", ["crop_unavailable"]]]);
+});
+
+// A browser the run cannot obtain or keep is recorded on every readability
+// cell the run owed, on the all-stock path and after a page_load grid; it is
+// never a thrown failure or a missing record, and page_load reads the same as
+// the run without readability.
+function landingAndStockRepo(t) {
+  const targetRepo = mkdtempSync(join(tmpdir(), "campaigns-os-polish-node-stock-"));
+  t.after(() => rmSync(targetRepo, { recursive: true, force: true }));
+  for (const page of ["landing", "stock"]) {
+    mkdirSync(join(targetRepo, "_site", "merchant", page), { recursive: true });
+    writeFileSync(join(targetRepo, "_site", "merchant", page, "index.html"), `<html><body>${page}</body></html>`);
+  }
+  const report = completedReport();
+  report.stages.assembly.build_fingerprint = computeBuildFingerprint(join(targetRepo, "_site", "merchant")).fingerprint;
+  return { targetRepo, report };
+}
+
+const MAPPED_LANDING_PACKET = packetWithPages([{
+  page_id: "landing",
+  path: "landing.html",
+  page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+}]);
+const ALL_STOCK_PACKET = packetWithPages([
+  { page_id: "landing", path: "landing.html", skip_reason: "Synthetic template stock page." },
+  { page_id: "stock", path: "stock.html", skip_reason: "Synthetic template stock page." },
+]);
+const BUILT_ROUTES = ["/merchant/landing/", "/merchant/stock/"];
+const cellStatuses = (record) => record.cells.map((cell) => [cell.route, cell.viewport, cell.cell_status]);
+const everyCell = (status) => BUILT_ROUTES.flatMap((route) => ["desktop", "mobile"].map((viewport) => [route, viewport, status]));
+const unresolvedFactory = () => {
+  let resolveFactory;
+  const factoryPromise = new Promise((resolve) => { resolveFactory = resolve; });
+  return { factory: async () => factoryPromise, resolveFactory };
+};
+const launchFailure = async () => {
+  throw new Error("PRIVATE_LAUNCH_SECRET at /private/tmp/browser-profile");
+};
+
+async function allStockCapture(t, options) {
+  const { targetRepo, report } = landingAndStockRepo(t);
+  return capturePolishReadability({
+    packet: ALL_STOCK_PACKET,
+    report,
+    baseUrl: "http://127.0.0.1:4173",
+    targetRepo,
+    probeClock: virtualClock(),
+    adapterCloseDeadlineMs: 20,
+    ...options,
+  });
+}
+
+async function mappedCaptureWithAndWithoutReadability(t, options) {
+  const { targetRepo, report } = landingAndStockRepo(t);
+  const run = (repo) => capturePolishPageLoad({
+    packet: MAPPED_LANDING_PACKET,
+    report,
+    baseUrl: "http://127.0.0.1:4173",
+    targetRepo: repo,
+    probeClock: virtualClock(),
+    adapterCloseDeadlineMs: 20,
+    ...options(),
+  });
+  return { withReadability: await run(targetRepo), without: await run(null) };
+}
+
+test("all-stock capture: an adapter startup timeout records every built route at both widths as producer_timeout and closes the late adapter", {
+  timeout: 2_000,
+}, async (t) => {
+  const { factory, resolveFactory } = unresolvedFactory();
+  const result = await allStockCapture(t, { adapterStartupDeadlineMs: 15, createBrowserAdapter: factory });
+  assert.equal(result.page_load, undefined, "no page_load is produced");
+  assert.equal(result.media_weight, undefined, "no media_weight is produced");
+  assert.deepEqual(cellStatuses(result.readability), everyCell("producer_timeout"));
+  assert.deepEqual(result.readability.subject.routes, BUILT_ROUTES);
+  let probes = 0;
+  let closes = 0;
+  resolveFactory({
+    async captureRoute() {},
+    async probeReadabilityRoute() { probes += 1; },
+    async close() { closes += 1; },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(probes, 0, "the late adapter measures nothing");
+  assert.equal(closes, 1, "the late adapter is closed");
+});
+
+test("all-stock capture: a browser launch failure records every built route at both widths as navigation_failed without leaking the error", async (t) => {
+  const result = await allStockCapture(t, { createBrowserAdapter: launchFailure });
+  assert.equal(result.page_load, undefined, "no page_load is produced");
+  assert.deepEqual(cellStatuses(result.readability), everyCell("navigation_failed"));
+  const serialized = JSON.stringify(result);
+  for (const secret of ["PRIVATE_LAUNCH_SECRET", "/private/tmp/browser-profile"]) assert.equal(serialized.includes(secret), false, secret);
+});
+
+
+test("mapped capture: an adapter startup timeout records the readability-only cells after the grid as producer_timeout and leaves page_load unchanged", {
+  timeout: 2_000,
+}, async (t) => {
+  const { withReadability, without } = await mappedCaptureWithAndWithoutReadability(t, () => ({
+    adapterStartupDeadlineMs: 15,
+    createBrowserAdapter: unresolvedFactory().factory,
+  }));
+  assert.equal(without.readability, undefined, "setup: the comparison run measures no readability");
+  assert.deepEqual(withReadability.page_load, without.page_load, "page_load reads the same");
+  assert.deepEqual(withReadability.media_weight, without.media_weight, "media_weight reads the same");
+  assert.deepEqual(cellStatuses(withReadability.readability), everyCell("producer_timeout"));
+});
+
+test("mapped capture: a browser launch failure records the readability-only cells after the grid as navigation_failed and leaves page_load unchanged", async (t) => {
+  const { withReadability, without } = await mappedCaptureWithAndWithoutReadability(t, () => ({ createBrowserAdapter: launchFailure }));
+  assert.equal(without.readability, undefined, "setup: the comparison run measures no readability");
+  assert.deepEqual(withReadability.page_load, without.page_load, "page_load reads the same");
+  assert.deepEqual(withReadability.media_weight, without.media_weight, "media_weight reads the same");
+  assert.deepEqual(cellStatuses(withReadability.readability), everyCell("navigation_failed"));
+  assert.equal(JSON.stringify(withReadability).includes("PRIVATE_LAUNCH_SECRET"), false);
+});
+
+// A rejection carries no reason: the failure is the rejection, not its value.
+for (const [label, reason] of [["null", null], ["undefined", undefined]]) {
+  const rejectsWith = async () => { throw reason; };
+
+  test(`all-stock capture: a browser factory rejecting with ${label} records every built route at both widths as navigation_failed`, async (t) => {
+    const result = await allStockCapture(t, { createBrowserAdapter: rejectsWith });
+    assert.equal(result.page_load, undefined, "no page_load is produced");
+    assert.equal(result.media_weight, undefined, "no media_weight is produced");
+    assert.ok(result.readability, "the readability record is present");
+    assert.deepEqual(cellStatuses(result.readability), everyCell("navigation_failed"));
+    assert.deepEqual(result.readability.subject.routes, BUILT_ROUTES);
+  });
+
+  test(`mapped capture: a browser factory rejecting with ${label} records the readability-only cells after the grid as navigation_failed and page_load reads as a launch failure`, async (t) => {
+    const { withReadability, without } = await mappedCaptureWithAndWithoutReadability(t, () => ({ createBrowserAdapter: rejectsWith }));
+    const launchFailed = await mappedCaptureWithAndWithoutReadability(t, () => ({ createBrowserAdapter: launchFailure }));
+    assert.equal(without.readability, undefined, "setup: the comparison run measures no readability");
+    assert.deepEqual(withReadability.page_load, without.page_load, "page_load reads the same");
+    assert.deepEqual(withReadability.media_weight, without.media_weight, "media_weight reads the same");
+    assert.deepEqual(withReadability.page_load, launchFailed.withReadability.page_load, "page_load reads as a launch failure");
+    assert.ok(withReadability.readability, "the readability record is present");
+    assert.deepEqual(cellStatuses(withReadability.readability), everyCell("navigation_failed"));
+  });
+
+  test(`mapped capture: a browser close rejecting with ${label} reads as a close failure on page_load and readability`, async (t) => {
+    const adapter = (close) => async () => ({
+      async captureRoute({ url }) {
+        return {
+          finalDocumentUrl: url,
+          responseCollectionStatus: "complete",
+          networkidle: { status: "settled", duration_ms: 12 },
+          mediaElements: [],
+          responses: [],
+        };
+      },
+      async probeReadabilityRoute() { return null; },
+      close,
+    });
+    const rejected = await mappedCaptureWithAndWithoutReadability(t, () => ({ createBrowserAdapter: adapter(rejectsWith) }));
+    const closeFailed = await mappedCaptureWithAndWithoutReadability(t, () => ({
+      createBrowserAdapter: adapter(async () => { throw new Error("PRIVATE_CLOSE_SECRET"); }),
+    }));
+    assert.deepEqual(rejected.without.page_load, closeFailed.without.page_load, "page_load reads as a close failure");
+    assert.deepEqual(rejected.withReadability.page_load, closeFailed.withReadability.page_load);
+    assert.deepEqual(cellStatuses(rejected.withReadability.readability), everyCell("navigation_failed"));
+  });
+}
+

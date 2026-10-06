@@ -5,15 +5,18 @@
 // defect class; every setup is synthetic and uses the shared QC test factory
 // unchanged.
 import assert from "node:assert/strict";
-import { existsSync, linkSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { after, afterEach } from "node:test";
 
 import {
   BUILD_FP,
+  OPERATOR,
   ORIGIN,
   OTHER_ORIGIN,
   ROUTES,
+  SLUG,
   assertAccepted,
   assertNoNetworkAttempts,
   assertNothingWritten,
@@ -319,7 +322,7 @@ test("silence: recorded QA and Polish legs list every applicable check without a
   const handoff = handoffOf(await runNext(f, qcStandIns));
   const tuples = (leg) => [...new Set((handoff.coverage || []).filter((entry) => entry.leg === leg).map((entry) => JSON.stringify([entry.check, entry.result, entry.reason_code])))].map((text) => JSON.parse(text)).sort();
   assert.deepEqual(tuples("qa"), QA_UNIT_CHECKS.map((check) => [check, "unexercised", NOT_CAPTURED]).sort(), `QA coverage: ${JSON.stringify(handoff.coverage)}`);
-  assert.deepEqual(tuples("polish"), [["media.oversize", "unexercised", NOT_CAPTURED]], `Polish coverage: ${JSON.stringify(handoff.coverage)}`);
+  assert.deepEqual(tuples("polish"), [["media.oversize", "unexercised", NOT_CAPTURED], ["readability.contrast", "unexercised", NOT_CAPTURED]], `Polish coverage: ${JSON.stringify(handoff.coverage)}`);
   assert.ok((handoff.open || []).some((entry) => entry.leg === "polish" && entry.check === "media.weight"), "the Polish media.weight warnings stay open");
 });
 
@@ -361,6 +364,19 @@ test("QC handoff: one check and key warned on two pages is listed once with both
   for (const row of [...rows, other]) {
     assert.ok(handoff.accept_command.includes(`${row.id}@`), `accept_command lists ${row.id}`);
   }
+});
+
+test("QC handoff: a readability review entry carries its crop path, and an entry with no crop has no crop key", async () => {
+  const { buildQcHandoff, qcHandoffTextLines } = await import("./qc-accept.mjs");
+  const review = (page, members) => qcRow({ check: "readability.contrast", leg: "polish", page, key: "review:add_to_cart:background_gradient", result: "review", reason_code: "background_gradient", state: { page }, observation: { members }, producer: "campaigns-os polish capture", viewport: "desktop" });
+  const cropped = review("checkout", [{ crop_ref: null }, { crop_ref: { path: "polish-crops/checkout-desktop-1.png", sha256: `sha256:${"c".repeat(64)}` } }]);
+  const uncropped = review("index", [{ crop_ref: null }]);
+  const handoff = buildQcHandoff({ results: [cropped, uncropped], accepts: [] });
+  const entries = Object.fromEntries(handoff.review.map((entry) => [entry.page, entry]));
+  assert.equal(entries.checkout.crop, "polish-crops/checkout-desktop-1.png", "the cropped entry names its first member's crop");
+  assert.equal(Object.hasOwn(entries.index, "crop"), false, "the entry with no crop has no crop key");
+  assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(handoff)).review.find((entry) => entry.page === "index"), "crop"), false, "nor does its JSON");
+  assert.equal(qcHandoffTextLines(handoff).filter((line) => line.includes(" crop: ")).length, 1, "only the cropped entry prints a crop");
 });
 
 // ---------------------------------------------------------------------------
@@ -419,7 +435,7 @@ test("QA pairing: a qc.* assertion with malformed evidence.qc beside a healthy p
 test("silence: a recorded Polish stage without page_load or media_weight lists 1.3 as not_captured_by_this_version; only a failed module reads evidence_not_reproducible", async (t) => {
   const { handoffCoverage } = await import("./qc-results.mjs");
   const polishTuples = (coverage) => [...new Set(coverage.filter((entry) => entry.leg === "polish").map((entry) => JSON.stringify([entry.check, entry.result, entry.reason_code])))].map((text) => JSON.parse(text)).sort();
-  const everyPolish = (reasonCode) => [["media.oversize", "unexercised", reasonCode], ["media.weight", "unexercised", reasonCode]];
+  const everyPolish = (reasonCode) => [["media.oversize", "unexercised", reasonCode], ["media.weight", "unexercised", reasonCode], ["readability.contrast", "unexercised", reasonCode]];
   const polishStage = (patch) => ({ stage: "polish", status: "completed", inputs: [], outputs: [], commands: ["campaigns-os polish capture"], blockers: [], warnings: [], ...patch });
 
   const { pageLoad } = twoCellFixture([{ path: HERO, bytes: 600_000 }]);
@@ -442,10 +458,10 @@ test("silence: a recorded Polish stage without page_load or media_weight lists 1
   const report = {
     stages: {
       qa: { stage: "qa", status: "completed", evidence: { qc_results: [] } },
-      polish: polishStage({ evidence: { visual_review: { page_load: {}, media_weight: {} } } }),
+      polish: polishStage({ evidence: { visual_review: { page_load: {}, media_weight: {}, readability: {} } } }),
     },
   };
-  const allChecks = ["tracking.url", "tracking.order", "tracking.tag", "media.weight", "media.oversize"];
+  const allChecks = ["tracking.url", "tracking.order", "tracking.tag", "media.weight", "media.oversize", "readability.contrast"];
   const reasons = (rederivers) => {
     const coverage = handoffCoverage({ report, spec: {}, results: [], rederivers });
     return [...new Set(coverage.map((entry) => entry.reason_code))];
@@ -453,4 +469,163 @@ test("silence: a recorded Polish stage without page_load or media_weight lists 1
   assert.deepEqual(reasons({}), [NOT_CAPTURED], "not yet loaded: not_captured_by_this_version");
   assert.deepEqual(reasons(Object.fromEntries(allChecks.map((check) => [check, { status: "missing" }]))), [NOT_CAPTURED], "missing module: not_captured_by_this_version");
   assert.deepEqual(reasons(Object.fromEntries(allChecks.map((check) => [check, { status: "failed", error: "synthetic" }]))), [E], "failed load: evidence_not_reproducible");
+});
+
+// ---------------------------------------------------------------------------
+// Readability records that fail the reader checks
+
+const READABILITY = "readability.contrast";
+const READABILITY_ROUTES = Object.freeze([`/${SLUG}/`, `/${SLUG}/checkout/`]);
+const READABILITY_BUILD = `sha256:${"a".repeat(64)}`;
+const rgbOf = (hex) => `rgb(${[1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16)).join(", ")})`;
+
+// A built target with the two routes, the registry's real rules, and the
+// reader's bound context, so an untouched record reads as recorded.
+async function readabilityReader(t) {
+  const targetRepo = mkdtempSync(join(tmpdir(), "qc-readability-"));
+  t.after(() => rmSync(targetRepo, { recursive: true, force: true }));
+  for (const dir of ["", "checkout"]) {
+    mkdirSync(join(targetRepo, "_site", SLUG, dir), { recursive: true });
+    writeFileSync(join(targetRepo, "_site", SLUG, dir, "index.html"), "<!doctype html><p>Synthetic</p>\n");
+  }
+  const { loadQcRederivers } = await import("./qc-check-registry.mjs");
+  const { readReadability } = await import("./qc-results.mjs");
+  const { contrastToolkit } = await import("./contrast.mjs");
+  const rederivers = await loadQcRederivers();
+  const context = { currentBuild: READABILITY_BUILD, currentSource: null, buildOutput: { status: "pass" }, campaignSlug: SLUG, targetRepo, rederivers };
+  return { read: (record, patch = {}) => readReadability({ ...context, ...patch, record }), kit: contrastToolkit() };
+}
+
+// One element measured by the shared helper from its raw fields.
+function readabilityElement(kit, { fg = "#ffffff", bg = "#0080aa", px = 16, weight = 400, ...rest } = {}) {
+  const raw = { role: "body_text", selector_path: "html>body>p:nth-of-type(1)", state: "default", disabled: false, rendered: true, font_size_px: px, font_weight: weight, fg_raw: rgbOf(fg), fill_raw: rgbOf(fg), bg_layers_raw: [rgbOf(bg)], review_reason: null, crop_ref: null, crop_reason: "outside_viewport", ...rest };
+  const derived = kit.deriveElementMeasurement(raw);
+  return { ...raw, size_class: derived.size_class, fg_srgb: derived.fg_srgb, bg_srgb: derived.bg_srgb, gamut_clipped: derived.gamut_clipped, ratio: derived.ratio, required: derived.required };
+}
+
+const READABILITY_MEASURED_AT = new Date(Date.now() - 60_000).toISOString();
+function readabilityRecord(kit, { elements = () => [readabilityElement(kit)], cell = () => ({}) } = {}) {
+  return withRecomputedIntegrity({
+    schema_version: "campaigns-os-polish-readability/v0",
+    performed_by: "campaigns-os polish capture",
+    helper_version: "contrast/v1",
+    subject: { build_fingerprint: READABILITY_BUILD, source_package_material_fingerprint: null, campaign_slug: SLUG, route_source: "built_site", routes: [...READABILITY_ROUTES], viewports: ["desktop", "mobile"] },
+    thresholds: { normal: 4.5, large: 3, large_px: 24, large_bold_px: 18.66, large_bold_weight: 700 },
+    limits: { elements_per_cell: 2000, crops_per_cell: 40, probe_ms_per_cell: 1500, probe_ms_per_run: 120000, crop_ms_per_run: 30000, added_ms_per_run: 300000, routes: 128, route_enumeration: 500 },
+    cells: READABILITY_ROUTES.flatMap((route) => ["desktop", "mobile"].map((viewport) => ({ route, viewport, page_load_integrity: null, cell_status: "measured", capped: false, coverage_gaps: [], elements: elements(route, viewport), ...cell(route, viewport) }))),
+    uncaptured_routes: [],
+    route_enumeration_capped: false,
+    measured_at: READABILITY_MEASURED_AT,
+  });
+}
+
+// One accept per warning pair row of the untouched record, by the synthetic
+// operator; each is active before the record is tampered with.
+async function pairAccepts(rows) {
+  const { createQcAccept, qcAcceptAttribution, assessQcAccepts } = await import("./qc-accept.mjs");
+  const warnings = rows.filter((row) => row.check === READABILITY && row.result === "warning" && row.subject.key.startsWith("pair:"));
+  assert.equal(warnings.length, 4, "setup: the untouched record reads one warning pair row per route and viewport");
+  const attribution = qcAcceptAttribution({ reason: "Synthetic brand colour kept on purpose.", acceptedBy: OPERATOR, now: new Date().toISOString() });
+  const accepts = warnings.map((row) => createQcAccept(row, { measuredAt: READABILITY_MEASURED_AT, attribution }));
+  assert.deepEqual(assessQcAccepts(accepts, rows).map((entry) => entry.status), ["active", "active", "active", "active"], "setup: every pair accept is active on the untouched record");
+  return (current) => assessQcAccepts(accepts, current).map((entry) => [entry.status, entry.why]);
+}
+
+const everyLapsed = (count) => Array.from({ length: count }, () => ["lapsed", E]);
+
+async function assertPairAcceptsLapse(t, tamper, label) {
+  const { read, kit } = await readabilityReader(t);
+  const record = readabilityRecord(kit);
+  const assess = await pairAccepts(read(record));
+  const tampered = structuredClone(record);
+  tamper(tampered);
+  const rows = read(withRecomputedIntegrity(tampered));
+  assert.ok(rows.length > 0 && rows.every((row) => row.result === "unexercised" && row.reason_code === E), `${label}: every row reads unexercised / ${E}`);
+  assert.deepEqual(assess(rows), everyLapsed(4), `${label}: every prior pair accept reads lapsed / ${E}, never orphaned`);
+}
+
+test("readability reader: a record whose thresholds differ from the constants still names its pair rows, so prior pair accepts lapse", async (t) => {
+  await assertPairAcceptsLapse(t, (record) => {
+    record.thresholds.normal = 4.4;
+  }, "thresholds.normal = 4.4");
+});
+
+test("readability reader: a record with a cell_status outside the vocabulary still names its pair rows, so prior pair accepts lapse", async (t) => {
+  await assertPairAcceptsLapse(t, (record) => {
+    record.cells[0].cell_status = "measured_ok";
+  }, "cell_status measured_ok");
+});
+
+test("readability reader: a record with an element role outside the vocabulary still names its pair rows, so prior pair accepts lapse", async (t) => {
+  await assertPairAcceptsLapse(t, (record) => {
+    record.cells[0].elements[0].role = "hero_text";
+  }, "element role hero_text");
+});
+
+// An element field that selects a row other than the pair row never hides
+// the pair key its raw colours and typography still name.
+test("readability reader: an element review_reason outside the vocabulary still names its pair row, so prior pair accepts lapse", async (t) => {
+  await assertPairAcceptsLapse(t, (record) => {
+    record.cells[0].elements[0].review_reason = "foreign";
+  }, "element review_reason foreign");
+});
+
+test("readability reader: a review_reason background_gradient in a record whose thresholds differ still names its pair row, so prior pair accepts lapse", async (t) => {
+  await assertPairAcceptsLapse(t, (record) => {
+    record.thresholds.normal = 4.4;
+    record.cells[0].elements[0].review_reason = "background_gradient";
+  }, "thresholds.normal = 4.4 with review_reason background_gradient");
+});
+
+test("readability reader: an element rendered:false in a record whose thresholds differ still names its pair row, so prior pair accepts lapse", async (t) => {
+  await assertPairAcceptsLapse(t, (record) => {
+    record.thresholds.normal = 4.4;
+    record.cells[0].elements[0].rendered = false;
+  }, "thresholds.normal = 4.4 with rendered false");
+});
+
+test("readability reader: an element disabled:true in a record whose thresholds differ still names its pair row, so prior pair accepts lapse", async (t) => {
+  await assertPairAcceptsLapse(t, (record) => {
+    record.thresholds.normal = 4.4;
+    record.cells[0].elements[0].disabled = true;
+  }, "thresholds.normal = 4.4 with disabled true");
+});
+
+test("readability reader: a cell whose rules cannot evaluate it still names its pair row, so the prior pair accept lapses", async (t) => {
+  const { read, kit } = await readabilityReader(t);
+  const record = readabilityRecord(kit);
+  const assess = await pairAccepts(read(record));
+  const tampered = structuredClone(record);
+  tampered.cells[0].coverage_gaps = [{ reason: "state_not_observed", role: "price", selector_path: "html>body>span:nth-of-type(1)" }];
+  const rows = read(withRecomputedIntegrity(tampered));
+  const failed = rows.filter((row) => row.subject.page === READABILITY_ROUTES[0] && row.subject.viewport === "desktop");
+  assert.ok(failed.length > 0 && failed.every((row) => row.result === "unexercised" && row.reason_code === E), "the failed cell's rows read unexercised / evidence_not_reproducible");
+  assert.deepEqual(assess(rows), [["lapsed", E], ["active", null], ["active", null], ["active", null]], "the failed cell's accept lapses; the other cells' accepts stay active");
+});
+
+test("readability reader: a record missing a fixed viewport lists a cell row for every route at that viewport, never silence", async (t) => {
+  const { read, kit } = await readabilityReader(t);
+  const record = readabilityRecord(kit);
+  const tampered = structuredClone(record);
+  tampered.subject.viewports = ["desktop"];
+  tampered.cells = tampered.cells.filter((cell) => cell.viewport === "desktop");
+  const rows = read(withRecomputedIntegrity(tampered));
+  const mobile = rows.filter((row) => row.subject.viewport === "mobile").map((row) => [row.subject.page, row.subject.key, row.result, row.reason_code]);
+  assert.deepEqual(mobile, READABILITY_ROUTES.map((route) => [route, "cell", "unexercised", E]), "one mobile cell row per route reads unexercised / evidence_not_reproducible");
+});
+
+test("readability reader: an inactive control in a capped cell stays excluded / inactive_control, with the page_coverage member, and the handoff lists it as excluded", async (t) => {
+  const { read, kit } = await readabilityReader(t);
+  const disabled = { role: "submit_control", selector_path: "html>body>button:nth-of-type(1)", state: "default", disabled: true, rendered: true, font_size_px: 16, font_weight: 400, size_class: "normal", fg_raw: null, fill_raw: null, bg_layers_raw: null, fg_srgb: null, bg_srgb: null, gamut_clipped: null, ratio: null, required: 4.5, review_reason: null, crop_ref: null, crop_reason: null };
+  const record = readabilityRecord(kit, { elements: () => [readabilityElement(kit), disabled], cell: () => ({ capped: true }) });
+  const rows = read(record);
+  const inactive = rows.filter((row) => row.subject.key === "inactive_control");
+  assert.equal(inactive.length, 4, "setup: one inactive_control row per capped cell");
+  for (const row of inactive) {
+    assert.deepEqual([row.result, row.reason_code, row.accept_eligible], ["excluded", "inactive_control", false], `${row.id} stays excluded / inactive_control`);
+    assert.ok(row.members.some((member) => member.key === "page_coverage" && member.result === "unexercised" && member.reason_code === "element_cap_reached"), `${row.id} carries the page_coverage member`);
+  }
+  const { buildQcHandoff } = await import("./qc-accept.mjs");
+  const coverage = buildQcHandoff({ results: rows, accepts: [] }).coverage.filter((entry) => entry.check === READABILITY);
+  assert.deepEqual(coverage.filter((entry) => entry.reason_code === "inactive_control").map((entry) => [entry.result, entry.count]), [["excluded", 4]], "the handoff lists the inactive controls as excluded");
 });

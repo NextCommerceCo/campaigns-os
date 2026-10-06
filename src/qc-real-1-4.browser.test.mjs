@@ -80,7 +80,7 @@ const OUTCOMES = Object.freeze(["pass", "not_found", "server_error", "redirected
 // listed under coverage as not captured, and the Polish checks, listed
 // because the fixture has no Polish stage.
 const NOT_CAPTURED = ["tracking.order", "tracking.tag", "tracking.url"];
-const POLISH_NOT_RUN = ["media.oversize", "media.weight"];
+const POLISH_NOT_RUN = ["media.oversize", "media.weight", "readability.contrast"];
 const PAGE_HTML = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Synthetic campaign</title></head><body><main><h1>Synthetic campaign</h1></main><footer><a href=\"/policy/terms\">Synthetic footer link</a></footer></body></html>";
 const POLICY_HTML = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Synthetic policy</title></head><body><p>Synthetic policy page.</p></body></html>";
 const BODY_CHUNK = Buffer.alloc(16 * 1024, " ");

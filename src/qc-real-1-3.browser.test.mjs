@@ -452,6 +452,7 @@ browserTest("F1.0-I8 [real: 1.3] media_weight bound to an older build fingerprin
   assert.deepEqual(handoff.coverage, [
     { check: "media.oversize", leg: "polish", result: "unexercised", reason_code: "stale_binding", count: count("media.oversize"), pages },
     { check: "media.weight", leg: "polish", result: "unexercised", reason_code: "stale_binding", count: count("media.weight"), pages },
+    { check: "readability.contrast", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
     ...QA_LEG_NOT_RUN,
   ], "qc_handoff.coverage is exactly both 1.3 checks unexercised / stale_binding on every captured page, plus the fixture's QA leg_not_run entries");
   assert.deepEqual((handoff.open || []).filter((entry) => JSON.stringify(entry).includes("polish")), [], "a stale Polish result is never open");

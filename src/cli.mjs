@@ -2728,7 +2728,19 @@ export async function polishCaptureCommand(args, options = {}) {
     throw new Error(`polish capture needs an existing Assembly Report at ${reportPath}; run prepare-build/start first.`);
   }
   requireValidPolishCaptureReport(report, reportPath);
-  const plan = planPolishCapture({ packet, baseUrl });
+  // A campaign whose every mapping is template stock has no page_load route
+  // to capture: its plan error is held, and the capture measures readability
+  // on the built pages only, leaving page_load and media_weight as they are.
+  const { capturePolishReadability, isNoCapturableRoutesError } = await import("./polish-node.mjs");
+  const planOrHeld = (currentPacket) => {
+    try {
+      return { plan: planPolishCapture({ packet: currentPacket, baseUrl }), held: null };
+    } catch (error) {
+      if (!isNoCapturableRoutesError(error)) throw error;
+      return { plan: null, held: error };
+    }
+  };
+  const { plan, held: heldPlanError } = planOrHeld(packet);
   const initialBinding = createPolishCaptureBinding({
     packet,
     report,
@@ -2741,7 +2753,7 @@ export async function polishCaptureCommand(args, options = {}) {
   if (typeof createBrowserAdapter !== "function") {
     ({ createPolishBrowserAdapter: createBrowserAdapter } = await import("./polish-browser.mjs"));
   }
-  const capture = await capturePolishPageLoad({
+  const capture = await (heldPlanError ? capturePolishReadability : capturePolishPageLoad)({
     packet,
     report,
     baseUrl,
@@ -2751,7 +2763,11 @@ export async function polishCaptureCommand(args, options = {}) {
     adapterStartupDeadlineMs: options.adapterStartupDeadlineMs,
     captureCellDeadlineMs: options.captureCellDeadlineMs,
     adapterCloseDeadlineMs: options.adapterCloseDeadlineMs,
+    probeClock: options.probeClock,
+    targetRepo,
   });
+  // Nothing was measured: the held plan error stands.
+  if (heldPlanError && !capture.readability) throw heldPlanError;
 
   if (typeof options.afterCapture === "function") {
     await options.afterCapture({ packetPath, reportPath, targetRepo, capture });
@@ -2764,7 +2780,7 @@ export async function polishCaptureCommand(args, options = {}) {
   let checkpoint = null;
   commitAssemblyReport(workspace, (currentReport) => {
     requireValidPolishCaptureReport(currentReport, reportPath);
-    const currentPlan = planPolishCapture({ packet: currentPacket, baseUrl });
+    const { plan: currentPlan } = planOrHeld(currentPacket);
     const currentBinding = createPolishCaptureBinding({
       packet: currentPacket,
       report: currentReport,
@@ -2774,7 +2790,12 @@ export async function polishCaptureCommand(args, options = {}) {
     });
     assertPolishCaptureBindingUnchanged(initialBinding, currentBinding);
 
-    const merged = mergePolishCaptureEvidence(currentReport, { pageLoad: capture.page_load, mediaWeight: capture.media_weight });
+    const merged = mergePolishCaptureEvidence(currentReport, {
+      pageLoad: capture.page_load,
+      mediaWeight: capture.media_weight,
+      readability: capture.readability,
+      now: options.now ?? new Date(),
+    });
     checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({
       packet: currentPacket,
       report: merged,
@@ -2785,19 +2806,39 @@ export async function polishCaptureCommand(args, options = {}) {
     staleReason: `Package-owned polish page-load evidence changed after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
   });
 
+  if (heldPlanError) {
+    // The readability capture completed; page_load's own outcome stays the
+    // held no_capturable_routes message, reported as a warning.
+    return {
+      ok: true,
+      status: "captured_with_warnings",
+      action: "polish-capture",
+      report_path: reportPath,
+      measurement: null,
+      checkpoint,
+      observed_findings: [],
+      warnings: [{ code: heldPlanError.code, message: heldPlanError.message }],
+      capture: {
+        route_scope: null,
+        routes: [],
+        viewports: [],
+        readability_routes: capture.readability?.subject?.routes ?? [],
+      },
+    };
+  }
   const ok = checkpoint.status === "pass" || checkpoint.status === "waived";
   return {
     ok,
     status: ok ? (checkpoint.status === "waived" ? "ready_with_waivers" : "ready") : "blocked",
     action: "polish-capture",
     report_path: reportPath,
-    measurement: capture.page_load.measurement,
+    measurement: capture.page_load?.measurement ?? null,
     checkpoint,
-    observed_findings: capture.page_load.findings,
+    observed_findings: capture.page_load?.findings ?? [],
     capture: {
-      route_scope: capture.plan.route_scope,
-      routes: capture.plan.routes.map((route) => route.requested_route),
-      viewports: capture.plan.viewports.map((viewport) => viewport.key),
+      route_scope: capture.plan?.route_scope ?? null,
+      routes: (capture.plan?.routes ?? []).map((route) => route.requested_route),
+      viewports: (capture.plan?.viewports ?? []).map((viewport) => viewport.key),
     },
   };
 }
@@ -6396,7 +6437,7 @@ function safePolishByteCount(value) {
 }
 
 export function formatPolishCaptureText(result) {
-  const status = ["ready", "ready_with_waivers", "blocked"].includes(result?.status)
+  const status = ["ready", "ready_with_waivers", "captured_with_warnings", "blocked"].includes(result?.status)
     ? result.status
     : "unknown";
   const measurementStatus = ["complete", "incomplete"].includes(result?.measurement?.status)
@@ -6410,6 +6451,11 @@ export function formatPolishCaptureText(result) {
     `Status: ${status.toUpperCase()}`,
     `Measurement: ${measurementStatus.toUpperCase()}`,
   ];
+  // Outcomes that did not stop the capture, printed with their own message
+  // (the held page-load plan message on a campaign with no mapped pages).
+  for (const warning of Array.isArray(result?.warnings) ? result.warnings : []) {
+    if (warning?.code === "no_capturable_routes" && typeof warning.message === "string") lines.push(`Warning: ${warning.message}`);
+  }
   const incomplete = Array.isArray(result?.measurement?.incomplete)
     ? result.measurement.incomplete
     : [];
