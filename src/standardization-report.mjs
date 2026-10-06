@@ -24,6 +24,7 @@ import {
   loadSdkSupportPolicy,
   scanCampaignCartAppRoot,
 } from "./campaign-ecosystem.mjs";
+import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
 import { resolveCommerceCatalog } from "./private-template-source.mjs";
 import {
   assessTemplateFreshness,
@@ -509,11 +510,11 @@ function isPageKitRoot(dir) {
 // The SDK version a Page Kit source file's checkout bindings run against: its
 // campaign's campaigns.json sdk_version (src/<slug>/...), else, for a file no
 // one campaign owns, the lowest pin across campaigns. Unknown (null) when that
-// pin is missing or not an exact release, or when any campaign lacks one; the
-// field contract judges unknown as an earlier SDK.
+// pin is missing or not an exact release (isReleasedSdkVersion, as doctor
+// reads the same pin), or when any campaign lacks one; the field contract
+// judges unknown as an earlier SDK.
 function campaignsSdkVersionResolver(slugs) {
-  const EXACT = /^v?\d+\.\d+\.\d+$/;
-  const exact = new Map(slugs.map((entry) => [entry.slug, EXACT.test(entry.sdk_version || "") ? entry.sdk_version : null]));
+  const exact = new Map(slugs.map((entry) => [entry.slug, isReleasedSdkVersion(entry.sdk_version) ? entry.sdk_version : null]));
   const pins = [...exact.values()];
   const lowest = pins.length && pins.every(Boolean)
     ? { version: [...pins].sort(compareVersions)[0], source: "campaigns_json" }

@@ -297,7 +297,7 @@ for (const [sdkVersion, expected] of [
         const first = stale.evidence.find((entry) => entry.value === "first_name");
         assert.deepEqual([first.canonical, first.since, first.sdk_version], ["fname", "0.4.39", sdkVersion]);
         assert.match(stale.message, /consumes first_name only from 0\.4\.39.*run on SDK 0\.4\.38/);
-        assert.match(stale.next_action, /or pin the SDK at or after/);
+        assert.match(stale.next_action, /for an alias with a since-version in the evidence, pinning the SDK at or after that version also works/);
       } else {
         assert.equal(stale, undefined, `no stale-alias blocker on ${sdkVersion}`);
       }
@@ -309,6 +309,33 @@ for (const [sdkVersion, expected] of [
     });
   });
 }
+
+test("a stale-alias blocker mixing a version-gated alias with a plain one names both repairs", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.38", provinceField: "province", postalField: "zip" });
+    appendCheckoutFields(dir, ["first_name"]);
+
+    const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+    const stale = findingByCode(root, "checkout.unsupported_field_binding");
+    const evidence = new Map(stale.evidence.map((entry) => [entry.value, entry]));
+    assert.equal(evidence.get("first_name").since, "0.4.39");
+    assert.equal("since" in evidence.get("zip"), false, "a plain stale alias carries no since-version");
+    assert.match(stale.next_action, /^Rewrite each stale alias to its canonical Campaign Cart field name \(for an alias with a since-version/);
+  });
+});
+
+test("Page Kit campaigns.json pins outside the canonical released form are unknown, as doctor reads them", () => {
+  for (const pin of ["v0.4.41", "0.04.41", "0.4.41-rc.1"]) {
+    withTempDir((dir) => {
+      write(join(dir, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "^0.1.1" } }));
+      write(join(dir, "_data", "campaigns.json"), JSON.stringify({ acme: { name: "Acme", sdk_version: pin } }));
+      write(join(dir, "src", "acme", "checkout.html"), '<form data-next-checkout="form"><input data-next-checkout-field="first_name"></form>');
+      const [root] = createStandardizationReport({ targetRepo: dir }).roots;
+      const [binding] = root.checkout_fields.bindings;
+      assert.deepEqual([binding.sdk_version, binding.classification], [null, "stale_alias"], pin);
+    });
+  }
+});
 
 test("version-gated field names on an unpinned loader are judged as an earlier SDK", () => {
   withTempDir((dir) => {

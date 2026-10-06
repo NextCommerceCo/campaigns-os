@@ -261,7 +261,7 @@ const GATED_ROWS = [
 ];
 
 test("isKnownCheckoutFieldName: each version-gated name turns on at its since-version, older names on every version", () => {
-  for (const [version, blocked] of [...GATED_ROWS, [null, ["first_name", "last_name", "phone_number"]], ["0.4.39-beta.1", ["first_name", "last_name", "phone_number"]], ["0.5.0", []]]) {
+  for (const [version, blocked] of [...GATED_ROWS, [null, ["first_name", "last_name", "phone_number"]], ["0.4.39-beta.1", ["first_name", "last_name", "phone_number"]], ["v0.4.41", ["first_name", "last_name", "phone_number"]], ["0.04.41", ["first_name", "last_name", "phone_number"]], [" 0.4.41", ["first_name", "last_name", "phone_number"]], ["0.5.0", []]]) {
     for (const field of ["first_name", "last_name", "phone_number"]) {
       assert.equal(isKnownCheckoutFieldName(field, version), !blocked.includes(field), `${field} on ${version}`);
     }

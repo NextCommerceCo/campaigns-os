@@ -19,6 +19,8 @@
 // A name ending in "-" (data-next-class-) is a prefix the SDK reads with any
 // suffix.
 
+import { RELEASED_SDK_VERSION_PATTERN } from "../campaign-spec/dist/index.js";
+
 export const SDK_ATTRIBUTE_INDEX_VERSION = "0.4.38";
 
 export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
@@ -216,14 +218,15 @@ export const SDK_CHECKOUT_FIELD_NAMES_SINCE = Object.freeze({
   phone_number: Object.freeze({ since: "0.4.41", sdk_name: "phone" }),
 });
 
-const EXACT_SDK_VERSION = /^v?(\d+)\.(\d+)\.(\d+)$/;
-
 // Whether `version` is an exact released SDK version at or after `since`.
-// Anything else (null, a range, a prerelease, @latest) is not: a prerelease
-// sorts before its release, so 0.4.39-beta.1 does not carry 0.4.39's names.
+// "Exact released" is campaign-spec's RELEASED_SDK_VERSION_PATTERN, the one
+// doctor's campaigns.json pin check uses, so doctor and standardize agree.
+// Anything else (null, a range, a prerelease, @latest, a v prefix) is not: a
+// prerelease sorts before its release, so 0.4.39-beta.1 does not carry
+// 0.4.39's names.
 export function sdkVersionAtLeast(version, since) {
-  const have = EXACT_SDK_VERSION.exec(String(version ?? "").trim());
-  const need = EXACT_SDK_VERSION.exec(String(since ?? "").trim());
+  const have = typeof version === "string" ? RELEASED_SDK_VERSION_PATTERN.exec(version) : null;
+  const need = typeof since === "string" ? RELEASED_SDK_VERSION_PATTERN.exec(since) : null;
   if (!have || !need) return false;
   for (let index = 1; index <= 3; index += 1) {
     const diff = Number(have[index]) - Number(need[index]);

@@ -452,7 +452,7 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings, { sdk
         }))
         .slice(0, MAX_SAMPLE_COUNT),
       next_action: gated.length
-        ? "Rewrite each stale alias to its canonical Campaign Cart field name, or pin the SDK at or after the alias's since-version, then prove checkout binding in browser QA."
+        ? "Rewrite each stale alias to its canonical Campaign Cart field name (for an alias with a since-version in the evidence, pinning the SDK at or after that version also works), then prove checkout binding in browser QA."
         : "Rewrite each stale alias to its canonical Campaign Cart field name, then prove checkout binding in browser QA.",
     }));
   }
