@@ -77,6 +77,14 @@ const DEFAULT_TEST_CARD = "6011111111111117";
 const DEFAULT_TEST_CVV = "123";
 const DEFAULT_TEST_EXP_MONTH = "12";
 const DEFAULT_TEST_EXP_YEAR = "2030";
+// The card number and CVV iframes, matched by id prefix because each id ends
+// in a per-load suffix. SDK 0.4.40 and earlier mount Spreedly's iFrame v1
+// (spreedly-number-frame-1234); 0.4.41 mounts the Spreedly Checkout SDK fields
+// that NEXT's payments.29next.com/js/v1/payment.js loads
+// (spreedly-hosted-number-oujmii2uzjk). A page carries one generation or the
+// other, and each frame holds a single text input.
+const CARD_NUMBER_FRAME = 'iframe[id^="spreedly-number-frame"], iframe[id^="spreedly-hosted-number"]';
+const CARD_CVV_FRAME = 'iframe[id^="spreedly-cvv-frame"], iframe[id^="spreedly-hosted-cvv"]';
 const DEFAULT_MAX_TEST_ORDERS = 6;
 // Planned-path ids listed in a refused --max-test-orders message before the
 // remainder is counted rather than printed.
@@ -5083,8 +5091,8 @@ async function fillPaymentFields(page, args) {
 
   const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
   const cvv = stringArg(args["test-cvv"]) || DEFAULT_TEST_CVV;
-  const numberInput = page.frameLocator('iframe[id^="spreedly-number-frame"]').locator("input").first();
-  const cvvInput = page.frameLocator('iframe[id^="spreedly-cvv-frame"]').locator("input").first();
+  const numberInput = page.frameLocator(CARD_NUMBER_FRAME).locator("input").first();
+  const cvvInput = page.frameLocator(CARD_CVV_FRAME).locator("input").first();
   await numberInput.click();
   await numberInput.pressSequentially(card, { delay: 20 });
   await cvvInput.click();

@@ -6197,6 +6197,27 @@
         }
       ],
       "entry_sha256": "197929e76610b701b015cac7ee37f1f8a75b18e350a8268b679b8ca51a9b7f14"
+    },
+    {
+      "id": "RL-0236",
+      "sequence": 228,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.3",
+      "changelog_sha256": "7e1e148c1dc06bea3ed9a7cd24fa6ae2373217c8b1cf56a2ea72b82dd092e771",
+      "agent_impact": "qa run --test-order now types the test card on Campaign Cart SDK 0.4.41 checkouts. 0.4.41 mounts the card number and CVV as iframe[id^=spreedly-hosted-number] and iframe[id^=spreedly-hosted-cvv] (Spreedly Checkout SDK fields loaded by payments.29next.com/js/v1/payment.js) instead of the iFrame v1 spreedly-number-frame / spreedly-cvv-frame ids, and the runner matched only the old ids, so the typed-card step timed out before submit on 0.4.41. The runner now matches either generation. No verdict field, flag or evidence key changes; spreedly_tokenized still reads the core.spreedly.com payment_methods request, which 0.4.41 still makes. Pages pinned to 0.4.40 or earlier run as before.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The typed-card step names both card-field generations: Spreedly iFrame fields on SDK 0.4.40 and earlier, and the Spreedly-hosted fields NEXT payments.29next.com script mounts on 0.4.41 and later."
+        }
+      ],
+      "entry_sha256": "3b97b0957e49eef17e9d8f0dd9c75dc9e991f411c5442130bc6a5b03c6d36829"
     }
   ]
 }

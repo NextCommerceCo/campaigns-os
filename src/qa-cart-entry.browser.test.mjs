@@ -33,8 +33,20 @@ async function chromiumAvailable() {
   }
 }
 
+// The card iframes SDK 0.4.41 mounts, in place of the fixtures' iFrame v1
+// ones: ids are the Spreedly Checkout SDK's spreedly-hosted-<field>-<suffix>
+// and each frame's input carries its own id, as observed live on 0.4.41.
+function withNextPaymentCardFields(html) {
+  return html
+    .replace(/id="spreedly-number-frame-1"/g, 'id="spreedly-hosted-number-k3x9q2"')
+    .replace(/id="spreedly-cvv-frame-1"/g, 'id="spreedly-hosted-cvv-k3x9q2"')
+    .replace(/&lt;input aria-label=&quot;Card number&quot;&gt;/g, "&lt;input id=&quot;spreedly-hosted-number-input&quot; type=&quot;text&quot;&gt;")
+    .replace(/&lt;input aria-label=&quot;CVV&quot;&gt;/g, "&lt;input id=&quot;spreedly-hosted-cvv-input&quot; type=&quot;text&quot;&gt;");
+}
+
 // Serves one fixture under /x/ plus the shim and a fake orders API.
-async function serveFixture(name) {
+// cardFields "next-payment" serves checkout with SDK 0.4.41's card iframes.
+async function serveFixture(name, { cardFields = "iframe-v1" } = {}) {
   const dir = join(FIXTURES, name);
   const orders = [];
   // Page-HTML loads by page name: every checkout load is an SDK boot and a
@@ -72,7 +84,8 @@ async function serveFixture(name) {
     if (page) {
       pageLoads[page[1]] += 1;
       try {
-        return send(200, await readFile(join(dir, `${page[1]}.html`)));
+        const html = await readFile(join(dir, `${page[1]}.html`), "utf8");
+        return send(200, cardFields === "next-payment" && page[1] === "checkout" ? withNextPaymentCardFields(html) : html);
       } catch {
         return send(404, "not found");
       }
@@ -107,8 +120,8 @@ const ARGS = Object.freeze({
   "browser-timeout": 10000,
 });
 
-async function runFixture(name, { withLanding = true } = {}) {
-  const server = await serveFixture(name);
+async function runFixture(name, { withLanding = true, cardFields } = {}) {
+  const server = await serveFixture(name, { cardFields });
   try {
     const result = await runBrowserTestOrders(topologies(server.base, { withLanding }), { ...ARGS }, `qa-cart-entry-${name}`);
     const order = result.orders[0];
@@ -153,6 +166,23 @@ browserTest("landing-entry: the runner enters through the landing page, the SDK 
   assert.equal(server.pageLoads.landing, 1);
   assert.equal(assertion.status, "pass", assertion.actual);
   assert.equal(assertion.evidence.line_count, 1);
+});
+
+browserTest("landing-entry on SDK 0.4.41 card fields: the runner types into the spreedly-hosted iframes and submits the same order", async () => {
+  const server = await serveFixture("landing-entry", { cardFields: "next-payment" });
+  try {
+    const checkout = await (await fetch(`${server.base}/x/checkout/`)).text();
+    assert.match(checkout, /id="spreedly-hosted-number-k3x9q2"/, "the served checkout carries the 0.4.41 number iframe");
+    assert.doesNotMatch(checkout, /spreedly-number-frame/, "and no iFrame v1 frame the old selector could still find");
+  } finally {
+    await server.close();
+  }
+
+  const { steps, assertion, server: run } = await runFixture("landing-entry", { cardFields: "next-payment" });
+  const byName = stepsByName(steps);
+  assert.equal(byName.order_submitted.status, "ok", byName.order_submitted.detail);
+  assert.equal(run.orders.length, 1, "exactly one order was posted");
+  assert.equal(assertion.status, "pass", assertion.actual);
 });
 
 browserTest("landing-link-entry: a forcePackageId link is a cart entry; the visible link is the one clicked, by index, past a decoy and a hidden twin", async () => {
