@@ -91,6 +91,8 @@ const CARD_CVV_FRAME = 'iframe[id^="spreedly-cvv-frame"], iframe[id^="spreedly-h
 // Typing the card is read back and retried this many times in all before the
 // card step fails by name.
 const CARD_TYPE_ATTEMPTS = 3;
+// How long the card step waits for the SDK to report the card fields ready.
+const CARD_READY_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_TEST_ORDERS = 6;
 // Planned-path ids listed in a refused --max-test-orders message before the
 // remainder is counted rather than printed.
@@ -5131,10 +5133,16 @@ async function fillPaymentFields(page, args) {
 // tokenizing, so the order never posts). The checkout form carries
 // next-loading-spreedly from before the card iframes mount until the fields
 // are ready, in 0.4.38 through 0.4.41, so wait for it to clear. A page whose
-// SDK never set it is ready at once.
+// SDK never set it is ready at once. The SDK also clears it when the card
+// script fails to load, so a class still set after the wait means the card
+// script never answered; the step refuses by name rather than type into
+// fields that may drop the number.
 async function waitForCardFieldsReady(page) {
   const started = Date.now();
-  await page.waitForFunction(() => !document.querySelector(".next-loading-spreedly"));
+  await page.waitForFunction(() => !document.querySelector(".next-loading-spreedly"), null, { timeout: CARD_READY_TIMEOUT_MS }).catch((error) => {
+    if (error?.name !== "TimeoutError") throw error;
+    throw new Error(`card fields did not report ready within ${CARD_READY_TIMEOUT_MS / 1000}s: the checkout form still carries next-loading-spreedly, so the card script never finished loading`);
+  });
   return Date.now() - started;
 }
 

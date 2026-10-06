@@ -62,7 +62,9 @@ const CARD_FIELD_REWRITES = { "next-payment": withNextPaymentCardFields, both: w
 //                   way 0.4.41's hosted field drops digits typed before its
 //                   script has loaded;
 //   drop-once       the first complete number typed is wiped once;
-//   always-truncate the field never keeps more than its last four digits.
+//   always-truncate the field never keeps more than its last four digits;
+//   never-ready     the form carries next-loading-spreedly and never drops it,
+//                   as when the card script hangs.
 const CARD_BEHAVIOURS = {
   loading: `form.classList.add("next-loading-spreedly");
     setTimeout(function () { input.value = ""; form.classList.remove("next-loading-spreedly"); }, 2500);`,
@@ -70,6 +72,7 @@ const CARD_BEHAVIOURS = {
     input.addEventListener("input", function () {
       if (!dropped && input.value.replace(/\\D/g, "").length >= 16) { dropped = true; setTimeout(function () { input.value = ""; }, 50); }
     });`,
+  "never-ready": `form.classList.add("next-loading-spreedly");`,
   "always-truncate": `input.addEventListener("input", function () {
       var digits = input.value.replace(/\\D/g, "");
       if (digits.length > 4) input.value = digits.slice(-4);
@@ -294,6 +297,16 @@ browserTest("card field never keeps the number: the card step fails by name and 
     /card fields did not keep the typed card after 3 attempts: number field holds 4 digit\(s\) ending 1117 \(typed 16 ending 1117\), CVV field holds 3 digit\(s\)/,
   );
   assert.equal(byName.order_submitted, undefined, "the ladder stops at the card step instead of timing out at submit");
+  assert.equal(server.orders.length, 0);
+  assert.notEqual(assertion.status, "pass");
+});
+
+browserTest("card fields never report ready: the card step fails by name after its wait and nothing is submitted", async () => {
+  const { steps, assertion, server } = await runFixture("landing-entry", { cardFields: "next-payment", cardBehaviour: "never-ready" });
+  const byName = stepsByName(steps);
+  assert.equal(byName.card_fields_filled.status, "failed");
+  assert.match(byName.card_fields_filled.error, /card fields did not report ready within 15s: the checkout form still carries next-loading-spreedly/);
+  assert.equal(byName.order_submitted, undefined);
   assert.equal(server.orders.length, 0);
   assert.notEqual(assertion.status, "pass");
 });
