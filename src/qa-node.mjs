@@ -169,7 +169,7 @@ Options:
   --post-verdict                  (default) Publish the verdict to the QA portal at
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
                                   Publishing is automatic, except for a run whose base URL is a local
-                                  address (localhost, 127.0.0.1, [::1]): that verdict stays local unless
+                                  address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1]): that verdict stays local unless
                                   this flag is passed.
   --no-post-verdict, --local-only Skip publishing; write only the local verdict copy (offline / dev / CI).
                                   Publish it later, without a re-run, with qa publish.
@@ -3784,10 +3784,28 @@ export function decidePublishVerdict({ args = {}, portalManaged = false, consent
     flagInvalid = true;
   }
   const decorate = (decision) => (flagInvalid ? { ...decision, flag_invalid: true } : decision);
-  if (isLoopbackUrl(baseUrl)) return decorate({ publish: false, reason: "loopback_base_url" });
+  if (isLocalAddressUrl(baseUrl)) return decorate({ publish: false, reason: "loopback_base_url" });
   if (portalManaged) return decorate({ publish: true, reason: "portal_managed_default" });
   if (consent?.state === "off") return decorate({ publish: false, reason: "consent_off" });
   return decorate({ publish: true, reason: "default" });
+}
+
+// The publish default (#486) reads "local" more widely than the shared
+// LOOPBACK_HOSTNAMES list, which also decides where plain http is allowed and
+// so stays narrow: any 127.0.0.0/8 address, 0.0.0.0, [::1], an IPv4-mapped
+// loopback, and localhost or any *.localhost name (with or without a trailing
+// dot). Keeping such a run local is the safe direction: --post-verdict and
+// qa publish still send it.
+function isLocalAddressUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  let hostname;
+  try { hostname = new URL(value.trim()).hostname.toLowerCase(); } catch { return false; }
+  const name = hostname.replace(/\.$/, "");
+  if (name === "localhost" || name.endsWith(".localhost")) return true;
+  if (/^127(?:\.\d{1,3}){3}$/.test(name) || name === "0.0.0.0") return true;
+  if (name === "[::1]" || name === "[::]") return true;
+  // WHATWG URL serializes ::ffff:127.x.y.z as [::ffff:7fxx:xxxx].
+  return /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(name);
 }
 
 function policySnapshot(packet) {

@@ -726,7 +726,8 @@ spec resolved from the portal for the run — keep publish-by-default regardless
 of consent: those verdicts are the QA tab's product surface, not telemetry.
 Explicit flags always win in both directions for saved-Map QA.
 
-A run whose base URL is a local address (`localhost`, `127.0.0.1` or `[::1]`,
+A run whose base URL is a local address (`localhost` or any `*.localhost`
+name, any `127.x.x.x` address, `0.0.0.0`, `[::1]` or an IPv4-mapped loopback,
 from `--base-url` or the packet's `deploy.preview_url`) keeps its verdict local
 by default, whatever the spec source. Those runs are checks on your own
 machine, and people watching the Map's QA tab should not see them. The output
