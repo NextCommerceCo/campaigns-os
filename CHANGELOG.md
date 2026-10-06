@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- `qa run --test-order` types the test card on pages running Campaign Cart SDK 0.4.41. That release draws the card number and CVV with the fields NEXT's `payments.29next.com` script mounts, whose iframes are named `spreedly-hosted-number-…` and `spreedly-hosted-cvv-…`; the runner looked only for the `spreedly-number-frame-…` and `spreedly-cvv-frame-…` iframes of 0.4.40 and earlier, so on a 0.4.41 checkout it timed out before submitting. It now finds either, and nothing changes on pages pinned to 0.4.40 or earlier.
+- `qa run --test-order` types the test card on pages running Campaign Cart SDK 0.4.41. That release draws the card number and CVV with the fields NEXT's `payments.29next.com` script mounts, whose iframes are named `spreedly-hosted-number-…` and `spreedly-hosted-cvv-…`; the runner looked only for the `spreedly-number-frame-…` and `spreedly-cvv-frame-…` iframes of 0.4.40 and earlier, so on a 0.4.41 checkout it timed out before submitting. It now finds either, and nothing changes on pages pinned to 0.4.40 or earlier. A checkout carrying both kinds of card iframe, or two of either, fails at `card_fields_filled` with the iframe ids it found instead of typing into whichever comes first, and the step's evidence records which iframes it typed into.
 
 ## [1.53.0+agent.2] - 2026-10-05
 

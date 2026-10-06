@@ -6205,8 +6205,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.53.0+agent.3",
-      "changelog_sha256": "7e1e148c1dc06bea3ed9a7cd24fa6ae2373217c8b1cf56a2ea72b82dd092e771",
-      "agent_impact": "qa run --test-order now types the test card on Campaign Cart SDK 0.4.41 checkouts. 0.4.41 mounts the card number and CVV as iframe[id^=spreedly-hosted-number] and iframe[id^=spreedly-hosted-cvv] (Spreedly Checkout SDK fields loaded by payments.29next.com/js/v1/payment.js) instead of the iFrame v1 spreedly-number-frame / spreedly-cvv-frame ids, and the runner matched only the old ids, so the typed-card step timed out before submit on 0.4.41. The runner now matches either generation. No verdict field, flag or evidence key changes; spreedly_tokenized still reads the core.spreedly.com payment_methods request, which 0.4.41 still makes. Pages pinned to 0.4.40 or earlier run as before.",
+      "changelog_sha256": "08e60e1a208a610a29403231b305ec9d3f02ade68e69fb92956f92f42fc612b2",
+      "agent_impact": "qa run --test-order now types the test card on Campaign Cart SDK 0.4.41 checkouts. 0.4.41 mounts the card number and CVV as iframe[id^=spreedly-hosted-number] and iframe[id^=spreedly-hosted-cvv] (Spreedly Checkout SDK fields loaded by payments.29next.com/js/v1/payment.js) instead of the iFrame v1 spreedly-number-frame / spreedly-cvv-frame ids, and the runner matched only the old ids, so the typed-card step timed out before submit on 0.4.41. The runner now matches either generation. The card_fields_filled step gains evidence {generation: spreedly-hosted | spreedly-iframe-v1, number_frame_id, cvv_frame_id}; its detail is unchanged. A checkout where more than one number or CVV iframe matches, or the two generations mix, fails card_fields_filled with an error naming the ids found, where Playwright previously raised a strict-mode violation; no order is submitted either way. No verdict field or flag changes; spreedly_tokenized still reads the core.spreedly.com payment_methods request, which 0.4.41 still makes. Pages pinned to 0.4.40 or earlier run as before.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -6217,7 +6217,7 @@
           "summary": "The typed-card step names both card-field generations: Spreedly iFrame fields on SDK 0.4.40 and earlier, and the Spreedly-hosted fields NEXT payments.29next.com script mounts on 0.4.41 and later."
         }
       ],
-      "entry_sha256": "3b97b0957e49eef17e9d8f0dd9c75dc9e991f411c5442130bc6a5b03c6d36829"
+      "entry_sha256": "e2429286596a45b3fc8c02c414ff396c794ee05461a2339b0ca922d3c7d640d9"
     }
   ]
 }
