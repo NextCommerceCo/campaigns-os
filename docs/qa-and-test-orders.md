@@ -1967,6 +1967,14 @@ placeholder-text blocker and the other residue gates still run. The emitted
 minimal packet is marked `_synthesized` — it points doctor/QA at the built
 output and family, and is not a substitute for a real Build Packet.
 
+`doctor --built` reads the local built files only. `--base-url` is not
+fetched: it fills `deploy.preview_url` in the minimal packet, and the output
+says so (`derived.base_url.fetched: false` in JSON). A clean `doctor --built`
+run with a preview URL says nothing about the preview. To check the served
+pages, run `qa run --site <repo> --base-url <url> --family <family> --browser`.
+The emitted minimal packet does not drive packet QA: `qa resolve` and
+`qa run --packet` block on it, because it carries no local CampaignSpec.
+
 **Trade-off — non-packet QA is narrower than packet-driven QA.** It runs the
 built-output gates (residue, placeholder text, demo-asset, pricing-CSS, brand
 contract) but **skips the CampaignSpec/source-HTML-driven checks** a packet
