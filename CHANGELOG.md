@@ -2,12 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.53.0+agent.4] - 2026-10-06
+## [1.53.0+agent.5] - 2026-10-06
 
 ### Fixed
 
 - `qa run --test-order` types the test card on pages running Campaign Cart SDK 0.4.41. That release draws the card number and CVV with the fields NEXT's `payments.29next.com` script mounts, whose iframes are named `spreedly-hosted-number-…` and `spreedly-hosted-cvv-…`; the runner looked only for the `spreedly-number-frame-…` and `spreedly-cvv-frame-…` iframes of 0.4.40 and earlier, so on a 0.4.41 checkout it timed out before submitting. It now finds either, and nothing changes on pages pinned to 0.4.40 or earlier. A checkout carrying both kinds of card iframe, or two of either, fails at `card_fields_filled` with the iframe ids it found instead of typing into whichever comes first, and the step's evidence records which iframes it typed into.
 - `qa run --test-order` no longer loses card digits typed before the card fields are ready. On SDK 0.4.41 the hosted number input appears before its script has loaded, and digits typed in that window are dropped. The SDK then refuses the shortened number without tokenizing, so the run timed out at `order_submitted` 45 seconds later with no order created. This happened about once in 33 live runs, usually when the card fields loaded slowly. The runner now waits up to 15 seconds for the checkout form to drop its `next-loading-spreedly` class (SDK 0.4.38 to 0.4.41 set it until the card fields are ready); if it is still there, `card_fields_filled` fails and says the card script never finished loading. It then reads the card number and CVV back, and retypes up to three attempts in all. If the fields still don't hold the card, `card_fields_filled` fails and names what the fields held, instead of the run timing out at submit.
+
+## [1.53.0+agent.4] - 2026-10-06
+
+### Fixed
+
+- The checkout field-name checks now read the SDK version of the page they judge. `first_name` and `last_name` pass on Campaign Cart SDK 0.4.39 and later, and `phone_number` passes on 0.4.41 and later; `fname`, `lname` and `phone` still pass on every version. Earlier releases blocked `first_name` and `last_name` (`built_output.sdk_markup` `WRONG_FIELD_NAME`, and `checkout.unsupported_field_binding` in `standardize`) and flagged `phone_number` on every SDK, so a page written to the 0.4.41 field names failed doctor although the SDK maps them. Doctor reads the page's own exact loader pin, then the campaign's `sdk_version` in `_data/campaigns.json`. `standardize` reads the file's own loader pin, then the lowest exact pin the campaign declares (for a bundled `campaign-cart` dependency, an exact pin or the floor of a `^`, `~` or `>=` range). When neither gives an exact released version, the checks keep their earlier behaviour, because `fname`, `lname` and `phone` work on every version. Below a name's version the result is also unchanged, and the message names the version the name needs. Findings and bindings now record the SDK version they were judged against.
 
 ## [1.53.0+agent.3] - 2026-10-06
 

@@ -31,6 +31,16 @@
     "cc-year": "exp-year"
   },
   "prefixes": ["billing-"],
+  "version_gated_aliases": {
+    "first_name": { "canonical": "fname", "since": "0.4.39" },
+    "last_name": { "canonical": "lname", "since": "0.4.39" },
+    "phone_number": { "canonical": "phone", "since": "0.4.41" }
+  },
+  "version_gated_provenance": {
+    "source": "NextCommerceCo/campaign-cart src/utils/checkout-field-names.ts at v0.4.39 (first_name, last_name; v0.4.40 is the same SDK) and v0.4.41 (phone_number), and v0.4.41 docs/guides/reference/data-attributes.md (Field names)",
+    "rule": "A version-gated alias is supported when the binding's SDK version is an exact release at or after since. Below since, or when the version is unknown, the alias is judged as on an earlier SDK: a name also listed in stale_aliases is a stale alias, any other is unknown. The canonical name is supported on every version.",
+    "captured_at": "2026-10-06"
+  },
   "stale_aliases": {
     "state": "province",
     "region": "province",
