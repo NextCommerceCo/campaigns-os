@@ -29,7 +29,7 @@ const COMMAND_NAMES = [
 ];
 const DRY_RUN_IMPLEMENTERS = [
   "checkpoint accept", "checkpoint waive", "install-agent-context", "install-skills", "page-kit sync", "qa publish",
-  "record build", "record deploy", "record polish", "record setup", "record theme", "run end", "run-record", "spec derive", "theme waive",
+  "record brief", "record build", "record deploy", "record polish", "record setup", "record spec", "record theme", "run end", "run-record", "spec derive", "theme waive",
 ];
 
 // What a row's invocation needs beyond its own tokens to be the form the row

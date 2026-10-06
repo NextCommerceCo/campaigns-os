@@ -6,6 +6,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
 
+import { currentPacketInputs, inputStamps } from "../src/input-currency.mjs";
 import { PAGE_KIT_STORE_PROFILE_FIELDS } from "../src/page-kit-store-profile.mjs";
 import { buildPageLoadCapture } from "../src/polish-capture.mjs";
 import { buildPolishPageLoadEvidence } from "../src/polish-page-load.mjs";
@@ -1832,6 +1833,12 @@ try {
     writeJson(reportPath, report);
   }
 
+  // The input stamps a completed assembly, polish or qa record carries: the
+  // packet's brief and CampaignSpec material now.
+  function currentInputStamps() {
+    return inputStamps(currentPacketInputs({ packet: readJson(packetPath), packetPath }));
+  }
+
   function setDeployUrl(url) {
     const packet = readJson(packetPath);
     packet.deploy = packet.deploy || {};
@@ -1895,6 +1902,7 @@ try {
   markStageStatus("assembly", "completed", {
     build_fingerprint: FIXTURE_BUILD_FINGERPRINT,
     source_package_material_fingerprint: designSourceMaterialFingerprint,
+    ...currentInputStamps(),
   });
   step = nextNoStage();
   if (step.stage !== "polish") {
@@ -1919,6 +1927,7 @@ try {
       issues: [],
       commands: ["next-campaigns-polish"],
     },
+    ...currentInputStamps(),
   });
   step = nextNoStage();
   if (step.stage !== "deploy") {
@@ -1937,7 +1946,7 @@ try {
   }
 
   // Mark qa completed → picker should return "done".
-  markStageStatus("qa", "completed");
+  markStageStatus("qa", "completed", currentInputStamps());
   step = nextNoStage();
   if (step.stage !== "done") {
     throw new Error(`next-orchestration fixture: after all stages completed, expected "done", got ${step.stage}. picked_reason=${step.picked_reason}`);

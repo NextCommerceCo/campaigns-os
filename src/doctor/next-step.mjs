@@ -12,12 +12,12 @@ import {
 import {
   NEXT_STAGE_ORDER,
   NEXT_STAGE_OWNERS,
-  STAGE_TERMINAL_STATUS_PREFIXES,
   reportKeyForCliStage,
   stageIsBlocked,
   stageIsTerminal,
 } from "../orchestration-stage-contract.mjs";
 import { evaluatePolishGate } from "../polish-gate.mjs";
+import { effectiveStageStatus, effectiveStatusIsTerminal } from "../input-currency.mjs";
 import { cmd } from "../install-invocation.mjs";
 import { isObject, isNonEmptyString, optionalString, resolveFromFile, addIssue, filesystemPathsMatch } from "../cli-helpers.mjs";
 import { orderPathDepthDrift } from "./checks.mjs";
@@ -440,6 +440,16 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
     };
   }
 
+  // A build made against earlier brief or CampaignSpec content, or one whose
+  // inputs cannot be confirmed, is owed before anything downstream of it.
+  const inputCurrency = derived?.input_currency || null;
+  if (["owed", "unknown"].includes(inputCurrency?.stages?.assembly)) {
+    return {
+      stage: "build",
+      reason: inputCurrency.reasons?.assembly || "input_binding_unknown",
+    };
+  }
+
   if (polishGate.status === "blocked") {
     if (polishGateRequiresBuild(polishGate)) {
       return {
@@ -474,7 +484,9 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
         reason: `Stage "${reportKey}" is not recorded in the assembly report; run "${cliStage}" next.`,
       };
     }
-    const status = String(stage.status || "");
+    // The effective status: a stage owed again by an input change reads
+    // required, and one whose inputs or raw status cannot be read, unknown.
+    const status = effectiveStageStatus(reportKey, stage, inputCurrency);
     if (stageIsBlocked(status)) {
       return {
         stage: cliStage,
@@ -482,10 +494,7 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
         blocked: true,
       };
     }
-    // Match by prefix so "completed_with_warnings" and future suffixes
-    // (e.g. "completed_partial") count as terminal.
-    const isTerminal = STAGE_TERMINAL_STATUS_PREFIXES.some((t) => status.startsWith(t));
-    if (!isTerminal) {
+    if (!effectiveStatusIsTerminal(status)) {
       return {
         stage: cliStage,
         reason: `Stage "${reportKey}" has status "${status || "(unset)"}"; run "${cliStage}" next.`,

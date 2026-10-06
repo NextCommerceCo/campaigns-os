@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -163,3 +164,225 @@ test("start, build, and prepare-build keep their doctor / agent-context modes", 
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Intake guard (refusal only):
+// F2.1-B7, B8, B13, B19-B23, B26, B27. Without --force, intake also refuses
+// to discard recorded waivers, warning accepts, stage history, an applied
+// theme, non-host-strip report evidence, and deploy or order-path settings
+// the run would change. Every command runs under the no-network guard
+// (src/input-test-factories.mjs), which also reaches the child processes.
+//
+// A refused intake writes nothing: every file under the fixture directory
+// (the target, which holds the packet, context, report, normalized brief,
+// doctor sidecar and agent context) is byte-compared before and after the
+// refused run. No lifecycle journal is selected: an intake refusal appends
+// its lifecycle entry to a selected journal, as the stage-evidence refusal
+// above does.
+
+async function guarded(run) {
+  const factories = await import("./input-test-factories.mjs");
+  return factories.withNetworkGuard(() => withTempDir((dir) => run(dir, factories)));
+}
+
+// A fresh intake whose report then gains one piece of operator state and no
+// stage evidence. Returns the report path and its bytes after the edit.
+function intakeWithOperatorState(dir, edit) {
+  const first = runPrepare(dir);
+  assert.equal(first.status, 0, `setup: the first intake succeeds: ${first.stderr}`);
+  const reportPath = reportPathFor(first.target);
+  const report = readJson(reportPath);
+  edit(report);
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  for (const key of ["setup", "assembly", "polish", "deploy", "qa"]) {
+    const stage = report.stages[key];
+    assert.ok(["pending", "skipped"].includes(stage.status), `setup: stages.${key} is at its seed status (${stage.status})`);
+    for (const field of ["inputs", "outputs", "commands", "blockers", "warnings"]) {
+      assert.equal(Array.isArray(stage[field]) && stage[field].length > 0, false, `setup: stages.${key}.${field} records no stage evidence`);
+    }
+  }
+  return { target: first.target, reportPath, bytes: readFileSync(reportPath) };
+}
+
+const QC_ACCEPT = Object.freeze({
+  schema: "campaigns-os-qc-accept/v0",
+  scope: "qc_accept",
+  result_id: "policy.availability:campaign:store_terms",
+  check: "policy.availability",
+  leg: "qa",
+  subject: { check: "policy.availability", page: "campaign", key: "store_terms" },
+  state_fingerprint: `sha256:${"a".repeat(64)}`,
+  result_at_accept: "warning",
+  measured_at: "2026-10-01T10:00:00.000Z",
+  measured_source: "qa_verdict",
+  reason: "synthetic accept kept across intake",
+  accepted_by: "Jordan Lee",
+  accepted_at: "2026-10-01T10:05:00.000Z",
+  recorded_by: "campaigns-os checkpoint accept",
+});
+const withQcAccept = (report) => {
+  report.qc_accepts = [{ ...QC_ACCEPT }];
+};
+
+test("F2.1-B7: start without --force refuses (exit 1) a report with no stage evidence and one qc_accepts[] entry", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    intakeWithOperatorState(dir, withQcAccept);
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir, [], { command: "start" });
+    assert.equal(rerun.status, 1, `start exits 1: ${rerun.stderr.slice(0, 400)}`);
+    assertNothingWritten(dir, before, "the refused start");
+  });
+});
+
+test("F2.1-B26: the start refused over a report holding one qc_accepts[] entry leaves the Assembly Report sha256 unchanged", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    const { reportPath, bytes } = intakeWithOperatorState(dir, withQcAccept);
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir, [], { command: "start" });
+    assert.equal(rerun.status, 1, `setup: start ran and was refused (exit 1): ${rerun.stderr.slice(0, 400)}`);
+    assert.equal(createHash("sha256").update(readFileSync(reportPath)).digest("hex"), createHash("sha256").update(bytes).digest("hex"));
+    assertNothingWritten(dir, before, "the refused start");
+  });
+});
+
+test("F2.1-B27: the start refused over a report holding one qc_accepts[] entry names qc_accepts in its refusal message", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    intakeWithOperatorState(dir, withQcAccept);
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir, [], { command: "start" });
+    assert.equal(rerun.status, 1, `setup: start ran and was refused (exit 1): ${rerun.stderr.slice(0, 400)}`);
+    assert.equal(rerun.stderr.includes("qc_accepts"), true, rerun.stderr.slice(0, 600));
+    assertNothingWritten(dir, before, "the refused start");
+  });
+});
+
+test("F2.1-B13: start without --force refuses (exit 1) a report with no stage evidence and a non-empty stages.qa.history[]", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    intakeWithOperatorState(dir, (report) => {
+      report.stages.qa = {
+        ...report.stages.qa,
+        history: [{
+          archived_at: "2026-10-01T10:00:00.000Z",
+          archived_by: "qa run",
+          reason_code: "rerecorded",
+          status: "completed",
+          completed_at: "2026-10-01T09:00:00.000Z",
+          verdict_run_id: "qa-synthetic-run-0001",
+        }],
+      };
+    });
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir, [], { command: "start" });
+    assert.equal(rerun.status, 1, `start exits 1: ${rerun.stderr.slice(0, 400)}`);
+    assertNothingWritten(dir, before, "the refused start");
+  });
+});
+
+test("F2.1-B19: start without --force refuses (exit 1) a report with no stage evidence and one waivers[] entry", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    intakeWithOperatorState(dir, (report) => {
+      report.waivers = [{
+        scope: "polish.synthetic_scope",
+        reason: "synthetic waiver kept across intake",
+        applies_to: [],
+        waived_by: "Jordan Lee",
+        waived_at: "2026-10-01T10:00:00.000Z",
+        evidence_refs: [],
+      }];
+    });
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir, [], { command: "start" });
+    assert.equal(rerun.status, 1, `start exits 1: ${rerun.stderr.slice(0, 400)}`);
+    assertNothingWritten(dir, before, "the refused start");
+  });
+});
+
+test("F2.1-B20: start without --force refuses (exit 1) a report with no stage evidence and theme.status applied", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    intakeWithOperatorState(dir, (report) => {
+      report.theme = { ...(report.theme || {}), status: "applied" };
+    });
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir, [], { command: "start" });
+    assert.equal(rerun.status, 1, `start exits 1: ${rerun.stderr.slice(0, 400)}`);
+    assertNothingWritten(dir, before, "the refused start");
+  });
+});
+
+test("F2.1-B21: start without --force refuses (exit 1) a report with no stage evidence and one non-host-strip evidence[] line", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    intakeWithOperatorState(dir, (report) => {
+      report.evidence = [...(Array.isArray(report.evidence) ? report.evidence : []), "operator note: synthetic evidence line kept across intake"];
+    });
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir, [], { command: "start" });
+    assert.equal(rerun.status, 1, `start exits 1: ${rerun.stderr.slice(0, 400)}`);
+    assertNothingWritten(dir, before, "the refused start");
+  });
+});
+
+// `qa policy set` changes a packet setting the next intake would rewrite.
+function intakeThenPolicySet(dir, policyArgs) {
+  const first = runPrepare(dir);
+  assert.equal(first.status, 0, `setup: the first intake succeeds: ${first.stderr}`);
+  const packetPath = join(first.target, "campaign-runtime.build.json");
+  const before = readFileSync(packetPath, "utf8");
+  const set = spawnSync("node", [CLI, "qa", "policy", "set", "--packet", packetPath, ...policyArgs, "--json"], { encoding: "utf8", cwd: dir });
+  assert.equal(set.status, 0, `setup: qa policy set succeeds: ${set.stderr}`);
+  assert.notEqual(readFileSync(packetPath, "utf8"), before, "setup: qa policy set changed the packet");
+  return packetPath;
+}
+
+test("F2.1-B8: after qa policy set --preview-url on a loopback URL, re-running intake with the original args exits 1", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    const packetPath = intakeThenPolicySet(dir, ["--preview-url", "http://127.0.0.1:4173/x/"]);
+    assert.equal(readJson(packetPath).deploy.preview_url, "http://127.0.0.1:4173/x/", "setup: the packet records the preview URL");
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir);
+    assert.equal(rerun.status, 1, `intake exits 1: ${rerun.stderr.slice(0, 400)}`);
+    assertNothingWritten(dir, before, "the refused intake");
+  });
+});
+
+test("F2.1-B22: after qa policy set --deploy-target local-serve, re-running intake with the original args exits 1", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    const packetPath = intakeThenPolicySet(dir, ["--deploy-target", "local-serve"]);
+    assert.equal(readJson(packetPath).deploy.target, "local-serve", "setup: the packet records the deploy target");
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir);
+    assert.equal(rerun.status, 1, `intake exits 1: ${rerun.stderr.slice(0, 400)}`);
+    assertNothingWritten(dir, before, "the refused intake");
+  });
+});
+
+test("F2.1-B23: after qa policy set --order-path-depth full, re-running intake with the original args exits 1", async () => {
+  await guarded((dir, { treeDigest, assertNothingWritten }) => {
+    const packetPath = intakeThenPolicySet(dir, ["--order-path-depth", "full"]);
+    assert.equal(readJson(packetPath).qa.proof_policy.order_path_depth, "full", "setup: the packet records the order-path depth");
+    const before = treeDigest(dir);
+    const rerun = runPrepare(dir);
+    assert.equal(rerun.status, 1, `intake exits 1: ${rerun.stderr.slice(0, 400)}`);
+    assertNothingWritten(dir, before, "the refused intake");
+  });
+});
+
+for (const [field, policyArgs, read, value] of [
+  ["deploy.production_url", ["--production-url", "https://production.example.invalid/x/"], (packet) => packet.deploy.production_url, "https://production.example.invalid/x/"],
+  ["campaign.allowed_domains_confirmed", ["--allowed-domains-confirmed", "true"], (packet) => packet.campaign.allowed_domains_confirmed, true],
+]) {
+  test(`after qa policy set records ${field}, re-running intake with the original args refuses naming it, and --force clears it naming it`, async () => {
+    await guarded((dir, { treeDigest, assertNothingWritten }) => {
+      const packetPath = intakeThenPolicySet(dir, policyArgs);
+      assert.equal(read(readJson(packetPath)), value, `setup: the packet records ${field}`);
+      const before = treeDigest(dir);
+      const rerun = runPrepare(dir);
+      assert.equal(rerun.status, 1, `intake exits 1: ${rerun.stderr.slice(0, 400)}`);
+      assert.match(rerun.stderr, new RegExp(`would discard recorded operator state: [^\\n]*${field.replaceAll(".", "\\.")} \\(recorded ${JSON.stringify(value).replaceAll(".", "\\.").replaceAll("/", "\\/")}; this run would write `));
+      assertNothingWritten(dir, before, "the refused intake");
+      const forced = runPrepare(dir, ["--force"]);
+      assert.equal(forced.status, 0, `intake --force exits 0: ${forced.stderr.slice(0, 400)}`);
+      assert.match(forced.stderr, new RegExp(`--force: clearing recorded operator state: [^\\n]*${field.replaceAll(".", "\\.")} \\(recorded `));
+      assert.notEqual(read(readJson(packetPath)), value, `--force rewrites ${field}`);
+    });
+  });
+}

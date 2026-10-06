@@ -49,6 +49,10 @@
 // contacted.
 
 import assert from "node:assert/strict";
+import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
+
+// The brief and CampaignSpec content a record made by this release stamps.
+const recordStamps = (seed) => inputStamps(currentPacketInputs({ packet: JSON.parse(readFileSync(seed.packetPath, "utf8")), packetPath: seed.packetPath }));
 import { createHash } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -381,7 +385,7 @@ function seedPolishReady(seed) {
     }],
   })));
   const report = readJson(seed.reportPath);
-  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: buildFingerprint };
+  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: buildFingerprint, ...recordStamps(seed) };
   report.stages.polish = {
     ...report.stages.polish,
     status: "required",
@@ -411,7 +415,7 @@ function seedThemeReady(seed) {
     writeFileSync(join(dir, "index.html"), `<!doctype html><html><head><link rel="stylesheet" href="../css/next-core.css"><link rel="stylesheet" href="../css/brand-theme.css"><title>${page.page_id}</title></head><body><h1>${page.page_id}</h1></body></html>`);
   }
   const report = readJson(seed.reportPath);
-  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: computeBuildFingerprint(site).fingerprint };
+  report.stages.assembly = { ...report.stages.assembly, status: "completed", build_fingerprint: computeBuildFingerprint(site).fingerprint, ...recordStamps(seed) };
   writeJson(seed.reportPath, report);
 }
 
@@ -422,7 +426,7 @@ function seedThemeReady(seed) {
 function seedDeployReady(seed) {
   seedPolishReady(seed);
   const report = readJson(seed.reportPath);
-  report.stages.polish = { ...report.stages.polish, status: "completed" };
+  report.stages.polish = { ...report.stages.polish, status: "completed", ...recordStamps(seed) };
   writeJson(seed.reportPath, report);
   const packet = readJson(seed.packetPath);
   packet.deploy = { ...packet.deploy, target: "local-serve" };
@@ -448,6 +452,72 @@ function recordDryRunSucceeded(stage, wouldWrite) {
 function seedCleanIntake(seed) {
   rmSync(join(seed.targetRepo, ".campaign-runtime"), { recursive: true, force: true });
 }
+
+/**
+ * A real intake over the seeded target, with no run session, a retained doctor
+ * sidecar, and the intake's Build Packet as the packet the row names: the
+ * state `record brief` and `record spec` save over. It runs before the
+ * snapshot, so nothing it writes is an effect of the row.
+ */
+function seedIntake(seed) {
+  seedCleanIntake(seed);
+  execFileSync(process.execPath, [CLI, ...intake("prepare-build", seed, ["--no-run-session"])], {
+    cwd: seed.dir,
+    stdio: "pipe",
+    env: { ...process.env, HOME: seed.home, XDG_CONFIG_HOME: join(seed.home, ".config"), CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+  });
+  seed.packetPath = join(seed.targetRepo, "campaign-runtime.build.json");
+  writeJson(join(seed.targetRepo, ".campaign-runtime/doctor-output.json"), { ok: true, status: "ready" });
+}
+
+/** The intake's guided draft with an open question answered, as the target's brief file: a material change `record brief` saves. */
+function seedBriefChange(seed) {
+  seedIntake(seed);
+  const packet = readJson(seed.packetPath);
+  const brief = readJson(resolve(dirname(seed.packetPath), packet.build_brief.normalized_path));
+  brief.brand.cta_style = "solid dark button";
+  writeJson(join(seed.targetRepo, "campaign-build-brief.json"), brief);
+}
+
+/**
+ * A material CampaignSpec edit that the generated brief draft also reads (an
+ * exit offer on the checkout page), so `record spec` rebinds the spec and
+ * re-derives the normalized brief.
+ */
+function seedSpecChange(seed) {
+  seedIntake(seed);
+  const spec = readJson(seed.specPath);
+  const checkout = spec.funnels.flatMap((funnel) => funnel.pages).find((page) => page.type === "checkout");
+  checkout.exit_intent = { enabled: true };
+  writeJson(seed.specPath, spec);
+}
+
+/** What a `record brief|spec` row must print: exit 0 and the outcome the seed sets up. */
+function recordInputSucceeded(stage, outcome) {
+  return (result, seed, label) => {
+    assert.equal(result.code, 0, `${label}: record ${stage} exited ${result.code}\n${result.stderr.split("\n").slice(0, 3).join("\n")}`);
+    const out = JSON.parse(result.stdout);
+    assert.equal(out.stage, stage, label);
+    assert.equal(out.outcome, outcome, label);
+  };
+}
+
+/** A `record brief|spec --dry-run` row: the outcome the real run would reach, and the files it would write. */
+function recordInputDryRunSucceeded(stage, outcome, wouldWrite) {
+  const succeeded = recordDryRunSucceeded(stage, wouldWrite);
+  return (result, seed, label) => {
+    succeeded(result, seed, label);
+    assert.equal(JSON.parse(result.stdout).outcome, outcome, label);
+  };
+}
+
+const BRIEF_SAVE_WRITES = [
+  "target-page-kit/campaign-runtime.build.json",
+  "target-page-kit/.campaign-runtime/input/campaign-build-brief.normalized.json",
+  "target-page-kit/.campaign-runtime/build-context.json",
+  "target-page-kit/.campaign-runtime/assembly-report.json",
+];
+const SPEC_REFRESH_WRITES = BRIEF_SAVE_WRITES.slice(1);
 
 /**
  * The shipped parity fixture, copied INTO the disposable target: `qa parity`
@@ -586,6 +656,10 @@ const INVOCATIONS = {
   "spec derive|--from-store": { prepare: seedDerivablePin, argv: (s) => ["spec", "derive", "--packet", s.packetPath, "--from-store", "examplestore", "--json"] },
   "spec derive|--write-map": { prepare: seedDerivablePin, argv: (s, receiver) => ["spec", "derive", "--packet", s.packetPath, "--write-map", "--proxy-base", receiver, "--json"] },
   "polish capture": { argv: (s, receiver) => ["polish", "capture", "--packet", s.packetPath, "--base-url", receiver, "--json"] },
+  "record brief": { prepare: seedBriefChange, expect: recordInputSucceeded("brief", "saved_with_invalidation"), argv: (s) => ["record", "brief", "--packet", s.packetPath, "--json"] },
+  "record brief|--dry-run": { prepare: seedBriefChange, expect: recordInputDryRunSucceeded("brief", "saved_with_invalidation", BRIEF_SAVE_WRITES), argv: (s) => ["record", "brief", "--packet", s.packetPath, "--dry-run", "--json"] },
+  "record spec": { prepare: seedSpecChange, expect: recordInputSucceeded("spec", "refreshed"), argv: (s) => ["record", "spec", "--packet", s.packetPath, "--json"] },
+  "record spec|--dry-run": { prepare: seedSpecChange, expect: recordInputDryRunSucceeded("spec", "refreshed", SPEC_REFRESH_WRITES), argv: (s) => ["record", "spec", "--packet", s.packetPath, "--dry-run", "--json"] },
   "record setup": { prepare: seedSetupContext, argv: (s) => ["record", "setup", "--packet", s.packetPath, "--json"] },
   "record setup|--dry-run": { prepare: seedSetupContext, expect: recordDryRunSucceeded("setup", ["target-page-kit/.campaign-runtime/build-context.json", "target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "setup", "--packet", s.packetPath, "--dry-run", "--json"] },
   "record build": { prepare: seedBuildReady, argv: (s) => ["record", "build", "--packet", s.packetPath, "--json"] },
@@ -954,6 +1028,64 @@ test("effects: the other two refused shapes write nothing either", async () => {
         rmSync(seed.dir, { recursive: true, force: true });
       }
     }
+  }
+});
+
+// The `record` rows' journal line is the standard wrapper's: a run the handler
+// refuses or finds unchanged appends its entry like any other outcome, and
+// only --dry-run, or a flag refused before the handler runs, appends none. The
+// row cases above run only the outcome that writes, so the other outcomes are
+// asserted here, together with the row text that states them.
+test("effects: record refusals and unchanged saves keep the lifecycle entry; only --dry-run journals nothing", async () => {
+  // The save the unchanged case repeats, made before the snapshot.
+  const saveOnce = (s, subcommand) => execFileSync(process.execPath, [CLI, "record", subcommand, "--packet", s.packetPath, "--json"], {
+    cwd: s.dir,
+    stdio: "pipe",
+    env: { ...process.env, HOME: s.home, XDG_CONFIG_HOME: join(s.home, ".config"), CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+  });
+  const journalLines = (path) => (existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean).length : 0);
+  const cases = [
+    { row: "record brief", label: "a refused save (brief_file_missing)", prepare: seedIntake, argv: (s) => ["record", "brief", "--packet", s.packetPath, "--brief", join(s.dir, "missing-brief.json"), "--json"], refusal: /record brief refused; nothing was written[\s\S]*brief_file_missing/, entries: 1 },
+    { row: "record brief", label: "an unchanged save", prepare: (s) => { seedBriefChange(s); saveOnce(s, "brief"); }, argv: (s) => ["record", "brief", "--packet", s.packetPath, "--json"], outcome: "unchanged", entries: 1 },
+    { row: "record brief", label: "a dry run", prepare: seedBriefChange, argv: (s) => ["record", "brief", "--packet", s.packetPath, "--dry-run", "--json"], outcome: "saved_with_invalidation", entries: 0 },
+    { row: "record brief", label: "a flag refused before the handler runs", prepare: seedIntake, argv: (s) => ["record", "brief", "--packet", s.packetPath, "--nosuchflag", "--json"], refusal: /Unknown flag for record brief/, entries: 0 },
+    { row: "record spec", label: "a refused refresh (spec_unreadable)", prepare: (s) => { seedIntake(s); writeFileSync(s.specPath, "{"); }, argv: (s) => ["record", "spec", "--packet", s.packetPath, "--json"], refusal: /record spec refused; nothing was written[\s\S]*spec_unreadable/, entries: 1 },
+    { row: "record spec", label: "an unchanged refresh", prepare: seedIntake, argv: (s) => ["record", "spec", "--packet", s.packetPath, "--json"], outcome: "unchanged", entries: 1 },
+    { row: "record spec", label: "a dry run", prepare: seedSpecChange, argv: (s) => ["record", "spec", "--packet", s.packetPath, "--dry-run", "--json"], outcome: "refreshed", entries: 0 },
+    { row: "record build", label: "a refused record (no built output)", argv: (s) => ["record", "build", "--packet", s.packetPath, "--json"], refusal: /record build refused/, entries: 1 },
+    { row: "record polish", label: "a refused record (build not recorded)", prepare: (s) => cpSync(join(ROOT, "fixtures/stage-record/polish-evidence.json"), join(s.dir, "polish-evidence.json")), argv: (s) => ["record", "polish", "--packet", s.packetPath, "--evidence", join(s.dir, "polish-evidence.json"), "--json"], refusal: /record polish refused/, entries: 1 },
+    { row: "record theme", label: "a refused record (build not recorded)", argv: (s) => ["record", "theme", "--packet", s.packetPath, "--json"], refusal: /record theme refused/, entries: 1 },
+    { row: "record deploy", label: "a refused record (not local-serve)", argv: (s) => ["record", "deploy", "--packet", s.packetPath, "--base-url", "http://127.0.0.1:1/", "--json"], refusal: /record deploy refused/, entries: 1 },
+  ];
+  await Promise.all(cases.map(async (shape) => {
+    const seed = seedTarget();
+    const label = `${shape.row}: ${shape.label}`;
+    try {
+      shape.prepare?.(seed);
+      const lifecycleLog = join(seed.dir, "lifecycle.jsonl");
+      const before = snapshot(seed.dir);
+      const result = await runCli(shape.argv(seed), { cwd: seed.dir, home: seed.home, telemetry: "off", lifecycleLog });
+      if (shape.refusal) {
+        assert.notEqual(result.code, 0, `${label} was not refused`);
+        assert.match(result.stderr, shape.refusal, label);
+      } else {
+        assert.equal(result.code, 0, `${label} exited ${result.code}\n${result.stderr.split("\n").slice(0, 3).join("\n")}`);
+        assert.equal(JSON.parse(result.stdout).outcome, shape.outcome, label);
+      }
+      assert.equal(journalLines(lifecycleLog), shape.entries, `${label}: lifecycle entries appended`);
+      assert.deepEqual(changedPaths(before, snapshot(seed.dir)), shape.entries ? ["lifecycle.jsonl"] : [], `${label}: wrote more than its lifecycle entry`);
+    } finally {
+      rmSync(seed.dir, { recursive: true, force: true });
+    }
+  }));
+  // The row text says the same: no record row claims that a refusal journals
+  // nothing or that it is refused writing nothing at all.
+  for (const subcommand of ["brief", "spec", "build", "polish", "theme", "deploy"]) {
+    const row = CONTRACT.rows.find((candidate) => candidate.command === "record" && candidate.subcommand === subcommand && candidate.flags.length === 0);
+    const journal = row.writes.find((entry) => entry.path === "{lifecycle-journal}");
+    assert.ok(journal, `record ${subcommand} declares no lifecycle-journal write`);
+    assert.doesNotMatch(journal.when, /a refusal journals nothing/, `record ${subcommand}: the journal write excludes refusals`);
+    assert.doesNotMatch(row.notes, /writing nothing,/, `record ${subcommand}: the notes say a refusal writes nothing, journal entry included`);
   }
 });
 

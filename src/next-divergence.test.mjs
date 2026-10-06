@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { detectLedgerDivergence, nextStage } from "./cli.mjs";
+import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 
@@ -156,6 +157,11 @@ function doctorGreenFixture() {
   stages.polish.performed_by = "next-campaigns-polish";
   stages.polish.source_build_fingerprint = BUILD_FINGERPRINT;
   stages.polish.completed_at = "2026-08-01T00:00:00.000Z";
+  // Records made by this release say which brief and CampaignSpec content
+  // they were made against.
+  const stamps = inputStamps(currentPacketInputs({ packet, packetPath }));
+  Object.assign(stages.assembly, stamps);
+  Object.assign(stages.polish, stamps);
   stages.polish.evidence = {
     visual_review: {
       screenshots: ["qa-output/checkout-desktop.png", "qa-output/checkout-mobile.png"],
@@ -273,7 +279,7 @@ test("clean repo keeps the divergence shape while surfacing missing-spec checkpo
   // packet's `../contracts/commerce-surface-catalog.json` is dead in this
   // unstaged copy; doctor resolves that to the running toolkit's catalog, so
   // assembly.commerce_catalog.path no longer appears among the blockers.
-  assert.deepEqual(Object.keys(result), ["ok", "status", "stage", "reason", "errors", "warnings", "ready", "prompt", "gates", "next_actions", "qc_handoff"]);
+  assert.deepEqual(Object.keys(result), ["ok", "status", "stage", "reason", "errors", "warnings", "ready", "prompt", "gates", "input_currency", "next_actions", "qc_handoff"]);
   assert.equal(result.ok, false);
   assert.equal(result.status, "blocked");
   assert.equal(result.stage, "doctor-blocked");

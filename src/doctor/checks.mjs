@@ -1,6 +1,7 @@
 // Doctor checks: the check registries, validatePacket and the validators they run.
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "../spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanText } from "../html-scan.mjs";
+import { createHash } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "../sdk-meta-tags.mjs";
@@ -90,6 +91,7 @@ import { SMOKE_QC, SMOKE_QC_LIMITS, builtFileOf, evaluateSmokeQc, insideRoot, is
 import { recordQcResults } from "../qc-results.mjs";
 import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
+import { briefFileUnusable, deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
@@ -511,7 +513,10 @@ const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "build_brief.artifact",
     phase: "brief",
-    run: ({ packet, packetPath, spec, context, errors, warnings, ready }) => validateBuildBrief(packet, packetPath, spec, context, errors, warnings, ready),
+    run: ({ packet, packetPath, spec, context, report, errors, warnings, ready, derived }) => {
+      validateBuildBrief(packet, packetPath, spec, context, errors, warnings, ready);
+      validateInputCurrency({ packet, packetPath, spec, report, warnings, derived });
+    },
   },
 ], { registryId: "packet.always" });
 
@@ -731,22 +736,20 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     }
     buildState.specStatus = specStatus;
     if (specStatus === "ok") {
-      const specMapId = spec.spec_identity?.map_id || spec.map_id;
-      if ((specMapId && specMapId !== packet.spec.map_id)
-        || ((spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null)
-          && !campaignIdentitiesMatch(campaignSpecIdentity(spec), packet.spec))) {
-        const localIdentity = spec.spec_identity?.local_spec_id != null || packet.spec?.local_spec_id != null;
-        addIssue(errors, localIdentity ? "spec.local_identity" : "spec.map_id", "Packet identity does not match the CampaignSpec map_id/local_spec_id.", { kind: localIdentity ? "local_spec" : "saved_map" });
+      const identityKind = specIdentityMismatch(spec, packet.spec);
+      if (identityKind) {
+        addIssue(errors, identityKind === "local_spec" ? "spec.local_identity" : "spec.map_id", "Packet identity does not match the CampaignSpec map_id/local_spec_id.", { kind: identityKind });
       }
       ready.push("Local CampaignSpec parsed");
-      // QA refuses a local-spec run whose spec no longer has the material hash
-      // prepare-build bound on the Assembly Report; doctor (and next, which
-      // prints doctor's warnings) name it at the first read instead.
+      // The spec no longer has the material hash the Assembly Report binds:
+      // a local spec, or the copy a saved-Map or gateway packet fetched.
+      // Doctor (and next, which prints doctor's warnings) name it at the
+      // first read.
       const boundMaterialHash = buildState.report?.identity?.spec_material_hash;
-      if (packet.spec?.local_spec_id != null && isNonEmptyString(boundMaterialHash)) {
+      if (isNonEmptyString(boundMaterialHash)) {
         const currentMaterialHash = specMaterialHash(spec);
         if (!specHashesMatch(boundMaterialHash, currentMaterialHash)) {
-          addIssue(warnings, "spec.material_stale", `The CampaignSpec at ${localSpecPath} changed materially since prepare-build bound it (Assembly Report identity.spec_material_hash ${boundMaterialHash}; the spec now hashes to ${currentMaterialHash}). The build and its recorded evidence predate the edit, and QA refuses a stale spec. Re-run ${cmd("prepare-build")} from the edited spec before building on it further.`, { spec_path: localSpecPath, bound_material_hash: boundMaterialHash, current_material_hash: currentMaterialHash });
+          addIssue(warnings, "spec.material_stale", SPEC_MATERIAL_STALE_MESSAGE, { spec_path: localSpecPath, bound_material_hash: boundMaterialHash, current_material_hash: currentMaterialHash });
         }
       }
       runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
@@ -762,6 +765,9 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   if (synthesizedBuiltSite) {
     ready.push("Packet source/proof checks skipped for synthesized built-site packet");
   } else {
+    // Computed once, before the checks that read it (the QA gate pass the
+    // built-output residue scan defers to) and the input warnings below.
+    derived.input_currency = deriveInputCurrency({ packet, packetPath, report: buildState.report, spec: isObject(spec) ? spec : null });
     runDoctorChecks(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, context: buildState.context, report: buildState.report, errors, warnings, ready, derived, buildState });
   }
 
@@ -779,6 +785,25 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   // transactions, so they need no per-packet permission. The packet qa.* booleans
   // are retained as informational metadata but no longer gate test orders or QA
   // stage progression.
+}
+
+// A stage's spec stamp, as record build, record polish and the QA write store it.
+const SPEC_STAMP = /^sha256:[0-9a-f]{64}$/;
+const SPEC_MATERIAL_STALE_MESSAGE = "CampaignSpec material changed since it was bound; run `record spec` (keeps history). `prepare-build --force` resets every stage and archives their records.";
+
+/**
+ * Whether a parsed CampaignSpec names another campaign than `bound` (the
+ * packet's spec block, or an Assembly Report identity): null when they
+ * agree, otherwise the kind of identity that differs ("local_spec" when
+ * either side carries a local spec id, else "saved_map").
+ */
+export function specIdentityMismatch(spec, bound) {
+  const specMapId = spec?.spec_identity?.map_id || spec?.map_id;
+  const localIdentity = spec?.spec_identity?.local_spec_id != null || bound?.local_spec_id != null;
+  if ((specMapId && specMapId !== bound?.map_id) || (localIdentity && !campaignIdentitiesMatch(campaignSpecIdentity(spec), bound))) {
+    return localIdentity ? "local_spec" : "saved_map";
+  }
+  return null;
 }
 
 function validateCampaignSpecRuleRegistry(spec, errors, warnings) {
@@ -876,7 +901,17 @@ function validateBuildBrief(packet, packetPath, spec, context, errors, warnings,
     return;
   }
 
-  const brief = readJson(resolvedPath);
+  let brief;
+  try {
+    brief = readJson(resolvedPath);
+  } catch {
+    addIssue(errors, "build_brief.normalized_path", `Campaign Build Brief normalized artifact is not valid JSON: ${normalizedPath}. Restore it, or save the brief again with ${cmd("record")} brief --packet <packet>.`);
+    return;
+  }
+  if (!isObject(brief)) {
+    addIssue(errors, "build_brief.normalized_path", `Campaign Build Brief normalized artifact is not a valid brief object: ${normalizedPath}. Restore it, or save the brief again with ${cmd("record")} brief --packet <packet>.`);
+    return;
+  }
   const result = validateCampaignBuildBriefArtifact(brief, { spec, normalizedPath });
   for (const issue of result.errors) errors.push(issue);
   for (const issue of result.warnings) warnings.push(issue);
@@ -884,6 +919,86 @@ function validateBuildBrief(packet, packetPath, spec, context, errors, warnings,
 
   if (context?.build_brief?.status && brief.status && context.build_brief.status !== brief.status) {
     addIssue(warnings, "build_brief.context_status", `Build context says brief status is "${context.build_brief.status}" but normalized artifact says "${brief.status}". Rerun prepare-build to refresh the handoff.`);
+  }
+}
+
+// derived.input_currency, computed once per doctor read, and the warnings it
+// gives: a stage owed on the brief or on the CampaignSpec, a completed stage
+// with no valid brief or spec stamp, or read against a brief or CampaignSpec
+// that cannot be read, a brief file edited (or unreadable) since it was saved,
+// and the build replay after an input change (owed, or kept by the
+// operator's recorded decision). None is an error; `next` routes to the owed
+// stage itself.
+function validateInputCurrency({ packet, packetPath, spec, report, warnings, derived }) {
+  const currency = derived.input_currency || deriveInputCurrency({ packet, packetPath, report, spec: isObject(spec) ? spec : null });
+  derived.input_currency = currency;
+  if (!isObject(report?.stages)) return;
+  // A stage stamped with other spec content than the file holds now, while
+  // the report identity already names the file's content (an identity edited
+  // by hand): the same warning the identity comparison gives.
+  const owedOnSpec = Object.keys(currency.reasons).filter((key) => currency.reasons[key] === "spec_material_changed");
+  if (owedOnSpec.length && !warnings.some((issue) => issue.code === "spec.material_stale")) {
+    addIssue(warnings, "spec.material_stale", SPEC_MATERIAL_STALE_MESSAGE, { stages: owedOnSpec, bound_material_hash: currency.spec.bound, current_material_hash: currency.spec.current });
+  }
+  const specUnstamped = Object.keys(currency.stages).filter((key) => currency.reasons[key] === "input_binding_unknown" && !SPEC_STAMP.test(String(report.stages[key]?.source_spec_material_hash ?? "")));
+  if (specUnstamped.length) {
+    addIssue(warnings, "spec.binding_unknown", `Recorded ${specUnstamped.join(", ")} ${specUnstamped.length === 1 ? "does" : "do"} not say which CampaignSpec content ${specUnstamped.length === 1 ? "it was" : "they were"} made against, so ${specUnstamped.length === 1 ? "it reads" : "they read"} unconfirmed, not current. Record ${specUnstamped.join(", ")} again (${specUnstamped.map((key) => (key === "assembly" ? "record build" : key === "polish" ? "record polish" : "qa run")).join(", ")}).`, { stages: specUnstamped });
+  }
+  const owedOnBrief = Object.keys(currency.reasons).filter((key) => currency.reasons[key] === "brief_material_changed");
+  if (owedOnBrief.length) {
+    addIssue(warnings, "build_brief.material_changed", `The Campaign Build Brief's content changed since ${owedOnBrief.join(", ")} ${owedOnBrief.length === 1 ? "was" : "were"} recorded, so ${owedOnBrief.length === 1 ? "it is" : "they are"} owed again. Save the brief with ${cmd("record")} brief --packet <packet> (it keeps stage history), then record ${owedOnBrief.join(", ")} again.`, { stages: owedOnBrief });
+  }
+  const unstamped = Object.keys(currency.stages).filter((key) => {
+    const stage = report.stages[key];
+    if (currency.reasons[key] !== "input_binding_unknown") return false;
+    const stamp = stage?.source_brief_material;
+    return !wellFormedBriefMaterial(stamp);
+  });
+  if (unstamped.length) {
+    addIssue(warnings, "build_brief.binding_unknown", `Recorded ${unstamped.join(", ")} ${unstamped.length === 1 ? "does" : "do"} not say which Campaign Build Brief content ${unstamped.length === 1 ? "it was" : "they were"} made against, so ${unstamped.length === 1 ? "it reads" : "they read"} unconfirmed, not current. Record ${unstamped.join(", ")} again (${unstamped.map((key) => (key === "assembly" ? "record build" : key === "polish" ? "record polish" : "qa run")).join(", ")}).`, { stages: unstamped });
+  }
+  // A completed stage with a well-formed stamp also reads unknown when the
+  // current brief or CampaignSpec cannot be read: there is nothing to compare
+  // that stamp with. The warning names the file to restore; a stage whose
+  // stamp is missing or malformed is named by the stamp warning above only.
+  const unknownStages = Object.keys(currency.stages).filter((key) => currency.reasons[key] === "input_binding_unknown");
+  const unconfirmed = (stages) => `recorded ${stages.join(", ")} ${stages.length === 1 ? "reads" : "read"} unconfirmed, not current`;
+  const briefUnreadable = unknownStages.filter((key) => !unstamped.includes(key));
+  if (briefUnreadable.length && currency.brief.current === null) {
+    const normalizedPath = optionalString(packet?.build_brief?.normalized_path);
+    addIssue(warnings, "build_brief.binding_unknown", `${normalizedPath ? `The normalized Campaign Build Brief ${normalizedPath} cannot be read as a brief object` : "The Build Packet names no build_brief.normalized_path, so the current Campaign Build Brief cannot be read"}, so ${unconfirmed(briefUnreadable)}. Restore it, or save the brief again with ${cmd("record")} brief --packet <packet>.`, { stages: briefUnreadable, ...(normalizedPath ? { normalized_path: normalizedPath } : {}) });
+  }
+  const specPath = optionalString(packet?.spec?.local_path);
+  const specUnreadable = unknownStages.filter((key) => !specUnstamped.includes(key));
+  if (specUnreadable.length && currency.spec.current === null && specPath) {
+    addIssue(warnings, "spec.binding_unknown", `The CampaignSpec ${specPath} cannot be read as a JSON object, so ${unconfirmed(specUnreadable)}. Restore it, then run doctor again.`, { stages: specUnreadable, spec_path: specPath });
+  }
+  const inputPath = optionalString(packet?.build_brief?.input_path);
+  const savedSha = optionalString(report.build_brief?.input_sha256);
+  const briefFile = inputPath ? resolveFromFile(packetPath, inputPath) : null;
+  if (briefFile && savedSha && existsSync(briefFile)) {
+    // Read only a readable regular file: a pipe would block, a directory throws.
+    const unusable = briefFileUnusable(briefFile);
+    let bytes = null;
+    if (!unusable) {
+      try {
+        bytes = `sha256:${createHash("sha256").update(readFileSync(briefFile)).digest("hex")}`;
+      } catch {
+        bytes = null;
+      }
+    }
+    if (bytes === null) {
+      addIssue(warnings, "build_brief.input_unsaved", `The brief file ${inputPath} ${unusable || "cannot be read"}, so doctor cannot tell whether it changed since it was saved; the build reads the saved brief. Restore it, or save a readable brief file with ${cmd("record")} brief --packet <packet> --brief <file>.`, { input_path: inputPath });
+    } else if (bytes !== savedSha) {
+      addIssue(warnings, "build_brief.input_unsaved", `The brief file ${inputPath} changed since it was saved. Save it with ${cmd("record")} brief --packet <packet>; until then the build reads the saved brief.`, { input_path: inputPath });
+    }
+  }
+  if (currency.reasons.assembly === "output_unchanged_after_input_change") {
+    addIssue(warnings, "assembly.output_unchanged_after_input_change", `The build output is unchanged since the brief or CampaignSpec change was recorded, so the change has not reached the pages and build is owed again. Rebuild, or, only on the operator's explicit decision that the change needs no output change, record build with --deviation-reason "<the operator's reason>".`);
+  }
+  const keptReason = report.stages.assembly?.unchanged_output_reason;
+  if (currency.stages.assembly === "current" && isObject(keptReason) && typeof keptReason.text === "string") {
+    addIssue(warnings, "assembly.output_unchanged_by_operator_decision", `The build output was kept unchanged after an input change by the operator's recorded decision: "${keptReason.text}".`, { reason: keptReason.text });
   }
 }
 
@@ -4257,7 +4372,7 @@ export function validateBuiltPlaceholderTextResidue(brandContract, warnings, rea
     return;
   }
   const terms = [...new Set(hits.map((hit) => hit.label))].join(", ");
-  if (report && qaGatePassedForCurrentBuild(report, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: currentBuildFingerprint(report) })) {
+  if (report && qaGatePassedForCurrentBuild(report, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: currentBuildFingerprint(report), qaCurrency: derived.input_currency?.stages?.qa ?? "unknown" })) {
     ready.push(`Static scan still sees placeholder-term text (${terms}: ${summarizeCopyMatches(hits)}), but the browser residue gate passed on this build; QA's rendered-text verdict stands.`);
     return;
   }

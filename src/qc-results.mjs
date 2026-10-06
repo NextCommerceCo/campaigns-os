@@ -307,12 +307,18 @@ export function readQaFullVerdict({ stage, targetRepo, packetPath = null, report
   }
 }
 
-export function readQaResults({ stageEvidence, stage = null, fullVerdict = null, currentBuild = null, qcStandIns = null, rederivers = null } = {}) {
+// `qaCurrency` is QA's read-time input currency
+// (derived.input_currency.stages.qa). While QA is owed again or its inputs
+// cannot be confirmed, every row that reproduces reads stale_binding, as a
+// row bound to another build does; a row that fails reproduction still reads
+// evidence_not_reproducible first.
+export function readQaResults({ stageEvidence, stage = null, fullVerdict = null, currentBuild = null, qcStandIns = null, rederivers = null, qaCurrency = null } = {}) {
   const stored = Array.isArray(stageEvidence?.qc_results) ? stageEvidence.qc_results : null;
   if (!stored) return [];
   const verdictOk = qaFullVerdictProblem(fullVerdict, stage) === null;
   const measuredAt = verdictOk ? (validTime(fullVerdict.completed_at) ? fullVerdict.completed_at : fullVerdict.started_at) : null;
-  const bound = isNonEmptyString(currentBuild) && stageEvidence.qc_build_fingerprint === currentBuild;
+  const inputsCurrent = qaCurrency !== "owed" && qaCurrency !== "unknown";
+  const bound = inputsCurrent && isNonEmptyString(currentBuild) && stageEvidence.qc_build_fingerprint === currentBuild;
 
   // Rows pair with assertions by evidence.qc.result_id, never by assertion id.
   // A passing verdict holds only well-formed QC evidence (qaFullVerdictProblem),
@@ -1042,6 +1048,7 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
       currentBuild,
       qcStandIns,
       rederivers,
+      qaCurrency: doctor?.derived?.input_currency?.stages?.qa,
     })
     : [];
   const results = [...doctorResults, ...polishResults, ...qaResults];

@@ -57,6 +57,8 @@ import { test } from "node:test";
 
 import Ajv2020 from "ajv/dist/2020.js";
 
+import { absentBriefMaterial, inputStamps } from "./input-currency.mjs";
+
 import {
   ARTIFACT_TITLES,
   DEFAULT_RELATIVE_PATHS,
@@ -307,10 +309,27 @@ test("a zero-warning doctor renders zero counts", () => {
   assert.ok(!passingOutput.includes("contract-static ("));
 });
 
-test("all stages render completed", () => {
-  for (const stage of ["prepare_build", "doctor", "setup", "assembly", "polish", "deploy", "qa"]) {
-    assert.match(passingOutput, new RegExp(`${stage}\\s+completed`));
+test("all stages render completed once stamped with the current inputs; unstamped build, Polish and QA records read unknown", () => {
+  // The fixture's build, Polish and QA records name no brief or CampaignSpec
+  // content and no packet names the inputs, so their effective status is
+  // unknown, printed beside the recorded one.
+  for (const stage of ["prepare_build", "doctor", "setup", "deploy"]) {
+    assert.match(passingOutput, new RegExp(`${stage}\\s+completed\n`));
   }
+  for (const stage of ["assembly", "polish", "qa"]) {
+    assert.match(passingOutput, new RegExp(`${stage}\\s+unknown\\s+\\(recorded: completed; input_binding_unknown\\)`));
+  }
+  assert.ok(passingOutput.includes("STAGES  [assembly report; report status: qa_passed; effective: prepared]"));
+
+  // The same records stamped with the inputs the campaign holds now.
+  const views = loadArtifacts(fixturePaths("passing", PASSING_MAPPING));
+  const inputs = { briefMaterial: absentBriefMaterial(), specMaterial: `sha256:${"5".repeat(64)}` };
+  for (const stage of ["assembly", "polish", "qa"]) Object.assign(views.report.data.stages[stage], inputStamps(inputs));
+  const stamped = projectReadback(views, null, null, inputs);
+  for (const stage of ["prepare_build", "doctor", "setup", "assembly", "polish", "deploy", "qa"]) {
+    assert.match(stamped, new RegExp(`${stage}\\s+completed\n`));
+  }
+  assert.ok(stamped.includes("STAGES  [assembly report; report status: qa_passed; effective: completed]"));
 });
 
 // ---------------------------------------------------------------------------
