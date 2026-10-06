@@ -2,12 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.53.0+agent.3] - 2026-10-06
+## [1.53.0+agent.4] - 2026-10-06
 
 ### Fixed
 
 - `qa run --test-order` types the test card on pages running Campaign Cart SDK 0.4.41. That release draws the card number and CVV with the fields NEXT's `payments.29next.com` script mounts, whose iframes are named `spreedly-hosted-number-…` and `spreedly-hosted-cvv-…`; the runner looked only for the `spreedly-number-frame-…` and `spreedly-cvv-frame-…` iframes of 0.4.40 and earlier, so on a 0.4.41 checkout it timed out before submitting. It now finds either, and nothing changes on pages pinned to 0.4.40 or earlier. A checkout carrying both kinds of card iframe, or two of either, fails at `card_fields_filled` with the iframe ids it found instead of typing into whichever comes first, and the step's evidence records which iframes it typed into.
 - `qa run --test-order` no longer loses card digits typed before the card fields are ready. On SDK 0.4.41 the hosted number input appears before its script has loaded, and digits typed in that window are dropped. The SDK then refuses the shortened number without tokenizing, so the run timed out at `order_submitted` 45 seconds later with no order created. This happened about once in 33 live runs, usually when the card fields loaded slowly. The runner now waits until the checkout form drops its `next-loading-spreedly` class (SDK 0.4.38 to 0.4.41 set it until the card fields are ready). It then reads the card number and CVV back, and retypes up to three attempts in all. If the fields still don't hold the card, `card_fields_filled` fails and names what the fields held, instead of the run timing out at submit.
+
+## [1.53.0+agent.3] - 2026-10-06
+
+### Fixed
+
+- `standardize` now judges a bundled `campaign-cart` dependency against the SDK support policy by the lowest version its `package.json` spec allows. Earlier releases took the version written in the spec, so `<0.4.39` was evaluated as 0.4.39 and `0.4.41 || 0.4.10` as 0.4.41, and both could pass the minimum although npm may install an older SDK. An exact pin or one `^`, `~` or `>=` range on a released version is evaluated by that version, as before. Any other spec gets no policy evaluation and raises the new warning `version.sdk_dependency_floor_unknown`. The lowest version is recorded as `sdk_loader.bundled_dependency.floor_version`.
 
 ## [1.53.0+agent.2] - 2026-10-05
 

@@ -6199,13 +6199,34 @@
       "entry_sha256": "197929e76610b701b015cac7ee37f1f8a75b18e350a8268b679b8ca51a9b7f14"
     },
     {
-      "id": "RL-0236",
+      "id": "RL-0237",
       "sequence": 228,
       "date": "2026-10-06",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.53.0+agent.3",
-      "changelog_sha256": "de4a1bda85d6a903dac23c8c3effcd2b4d41269fa1101d13d71f0938f296a772",
+      "changelog_sha256": "d93e2a6e96de6d7e17d3f1235ff2c9ca6984890fe1026df284c38eacdbcb5557",
+      "agent_impact": "standardize evaluates a campaign_cart_app root's bundled campaign-cart dependency against the SDK support policy by the lowest version its package.json spec allows, recorded as sdk_loader.bundled_dependency.floor_version. An exact pin (0.4.30, =0.4.30, v0.4.30) or one ^, ~ or >= range on a released version is evaluated by that version, unchanged from before. Any other spec (<0.4.39, an ||, hyphen or x-range, a tag) now gets no version_policy evaluation and raises the new warning version.sdk_dependency_floor_unknown; earlier releases evaluated the version written in the spec, so such a range could pass or fail the minimum on a version npm might not install. Prerelease pins still raise version.sdk_prerelease_pin only. resolved_version is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Describe judging a bundled dependency by its floor_version, which specs have a certain floor, and the version.sdk_dependency_floor_unknown warning for those that do not."
+        }
+      ],
+      "entry_sha256": "d98fbc7e8865f4ab5bb35bb7510a787af576ef23dfe5b50377fb2f744af8bf0b"
+    },
+    {
+      "id": "RL-0238",
+      "sequence": 229,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.4",
+      "changelog_sha256": "d5cbc99bff2a75266dddef8efa047e19072f1df210dfb3bd76ada3aad9d44998",
       "agent_impact": "qa run --test-order now types the test card on Campaign Cart SDK 0.4.41 checkouts. 0.4.41 mounts the card number and CVV as iframe[id^=spreedly-hosted-number] and iframe[id^=spreedly-hosted-cvv] (Spreedly Checkout SDK fields loaded by payments.29next.com/js/v1/payment.js) instead of the iFrame v1 spreedly-number-frame / spreedly-cvv-frame ids, and the runner matched only the old ids, so the typed-card step timed out before submit on 0.4.41. The runner now matches either generation. Before typing, card_fields_filled waits until no element carries next-loading-spreedly (the SDK sets it from before the card iframes mount until the fields are ready, 0.4.38 to 0.4.41), because digits typed into a 0.4.41 field before then can be dropped, and the SDK then refuses the short number without tokenizing, so order_submitted timed out with no order. After typing, it reads both fields back and retypes, up to 3 attempts in all. The step gains evidence {generation: spreedly-hosted | spreedly-iframe-v1, number_frame_id, cvv_frame_id, ready_wait_ms, attempts}; its detail is unchanged. card_fields_filled now fails by name, with no order submitted, in two cases: when more than one number or CVV iframe matches or the two generations mix (Playwright previously raised a strict-mode violation), and when the fields still do not hold the typed card after 3 attempts (the error gives the digit counts and last four of the number). No verdict field or flag changes; spreedly_tokenized still reads the core.spreedly.com payment_methods request, which 0.4.41 still makes. Pages pinned to 0.4.40 or earlier run as before, plus the readiness wait and the read-back.",
       "compatibility": "additive",
       "migration": "none",
@@ -6217,7 +6238,7 @@
           "summary": "The typed-card step names both card-field generations (Spreedly iFrame fields on SDK 0.4.40 and earlier, the Spreedly-hosted fields NEXT payments.29next.com script mounts on 0.4.41 and later), waits for next-loading-spreedly to clear before typing, and reads both fields back, retyping up to three attempts in all."
         }
       ],
-      "entry_sha256": "c221b9020f623db8206ad27cb37d1732b529b03910e0b516067490b439b3512e"
+      "entry_sha256": "076a02d5a76a3afeedc2161422f9fd76aee2aa0badae70699bad4aa17aa03279"
     }
   ]
 }
