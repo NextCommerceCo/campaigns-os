@@ -120,6 +120,7 @@ import {
   SOURCE_HTML_MANIFEST_REL_PATH,
 } from "./source-html-manifest.mjs";
 import { crawlSourceAssetPaths } from "./source-asset-crawl.mjs";
+import { summarizeCampaignBrief } from "./brief-summary.mjs";
 import {
   THEME_POLICIES,
   inspectBrandTheme,
@@ -4237,6 +4238,8 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     followContextPointer: true,
   });
   const report = readJsonIfExists(reportPath);
+  // The campaign intent summary, computed once per call and only printed.
+  const intentSummary = readIntentSummary(packetPath, packet, contextPath);
   // Doctor reads the same sidecars through the same resolver (an operator's
   // explicit --context / --report passed through, the defaults derived), so
   // its prepare-build gate and its stage pick are this command's: `next`
@@ -4335,6 +4338,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     // after an input change, quoting the operator's reason.
     for (const issue of doctor.warnings) if (issue.code === "assembly.output_unchanged_by_operator_decision") (result.qc_handoff.notes ||= []).push(`Build output kept unchanged after an input change by the operator's decision: "${issue.detail.reason}"`);
     recordNextRecommendation(ambient, result);
+    result.intent_summary = intentSummary;
     return result;
   };
   const doctorHasOnlyPolishGateErrors = doctorErrorsAreOnlyPolishGate(doctor.errors);
@@ -4426,12 +4430,12 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   if (stage === "setup") {
     addPrepareBuildGateErrors(errors, report);
     if (!doctor.ok && !doctorHasOnlyPolishGateErrors) addIssue(errors, "next.setup.doctor", "Doctor is blocked; resolve packet errors before setup.");
-    prompt = setupPrompt(packetPath, contextPath, reportPath, packet);
+    prompt = setupPrompt(packetPath, contextPath, reportPath, packet, intentSummary);
   } else if (stage === "build") {
     addPrepareBuildGateErrors(errors, report);
     if (!doctor.ok && !doctorHasOnlyPolishGateErrors) addIssue(errors, "next.build.doctor", "Doctor is blocked; resolve packet errors before build.");
     if (doctor.derived?.scaffold_required) addIssue(errors, "next.build.setup", doctor.derived.scaffold_reason || "Setup is required before build.");
-    prompt = buildPrompt(packetPath, contextPath, reportPath, packet, doctor.derived);
+    prompt = buildPrompt(packetPath, contextPath, reportPath, packet, doctor.derived, intentSummary);
   } else if (stage === "polish") {
     addPrepareBuildGateErrors(errors, report);
     if (!report) addIssue(errors, "next.polish.report", "Assembly report is required before polish.");
@@ -4439,7 +4443,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     if (!assemblyStatus.startsWith("completed")) addIssue(errors, "next.polish.assembly", `Assembly status is "${assemblyStatus || "missing"}"; polish expects completed assembly or an explicit blocked/skipped handoff.`);
     if (polishGateRequiresBuild(polishGate)) addPolishGateErrors(errors, polishGate, "polish");
     addThemeGateErrors(errors, themeGate, "polish");
-    prompt = polishPrompt(packetPath, reportPath, packet);
+    prompt = polishPrompt(packetPath, reportPath, packet, intentSummary);
   } else if (stage === "deploy") {
     addPrepareBuildGateErrors(errors, report);
     // Slice 3 Phase 2: deploy is an out-of-band step (Netlify / CF Pages /
@@ -4458,7 +4462,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     addPolishGateErrors(errors, polishGate, "qa");
     addPolishCheckpointGateErrors(errors, polishCheckpointGate, "qa");
     addThemeGateErrors(errors, themeGate, "qa");
-    prompt = qaPrompt(packetPath, reportPath, packet, spec);
+    prompt = qaPrompt(packetPath, reportPath, packet, spec, intentSummary);
   }
   const status = errors.length
     ? "blocked"
@@ -5009,9 +5013,9 @@ function templateStockPromptLine(packet, derived = {}) {
   return `\n- Template-stock pages (declared out of source scope; no design source exists for them): ${pages.join(", ")}. Keep these routes unbuilt by default, especially presell/landing pages staying on another host; never publish stock placeholder copy to fill a partial build. Materialise a page only with explicit operator opt-in for that page (including a pre-checkout select stand-in required by the runtime). For opted-in pages, use the ${packet.assembly.template_family} family's own page for that role with its dependent _includes, _layouts, and assets, wire it from CampaignSpec, and build a required select step first. Once its built HTML exists, doctor lists it among the previewable routes.`;
 }
 
-function buildPrompt(packetPath, contextPath, reportPath, packet, derived = {}) {
+function buildPrompt(packetPath, contextPath, reportPath, packet, derived = {}, intent) {
   const briefPath = packet.build_brief?.normalized_path || "(missing; generate or confirm Campaign Build Brief before business-sensitive assembly)";
-  return `Use next-campaigns-build for this Campaigns OS handoff.
+  return `${campaignIntentPromptHeader(intent)}Use next-campaigns-build for this Campaigns OS handoff.
 
 Read first:
 - Build Packet: ${packetPath}
@@ -5024,6 +5028,7 @@ Read first:
 Rules:
 - Treat CampaignSpec/API as the source for package, shipping, voucher, payment, tracking, footer, and SEO values.
 - Treat the Campaign Build Brief as the merchandising/design presentation truth: page authority, palette/CTA style, variant media rules, pricing display strategy, the template's own promo placeholders, payment/trust surfaces, display-name policy, residue policy, and QA expectations. Agents may resolve implementation uncertainty; unresolved brief questions are business uncertainty and should be asked or recorded, not guessed.
+- Refresh a changed Campaign Build Brief with \`${cmd("record")} brief --packet ${packetPath}\` and a changed CampaignSpec with \`${cmd("record")} spec --packet ${packetPath}\` before building on the change.
 - Read the selected template family's agentContract and sharedFrontmatterVocabulary before commerce wiring.
 - Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes. Page Kit publishes src/<slug>/assets/config.js as /<slug>/config.js and src/<slug>/assets/products/foo.png as /<slug>/products/foo.png; do not leave raw /assets/... or /<slug>/assets/... references in rendered pages.
 - Preserve prepared source HTML for landing/presell pages when it is a real standalone design.
@@ -5050,9 +5055,44 @@ function localProofPromptLines(packet, packetPath = "<packet>") {
 - Local proof mode (deploy.target is local-serve): run the page-kit build in the ${LOCAL_PROOF_BUILD_ENVIRONMENT} environment — \`${LOCAL_PROOF_BUILD_COMMAND}\` — so _site/ is the development render, and record it with \`${cmd("record")} build --packet ${packetPath} --build-environment ${LOCAL_PROOF_BUILD_ENVIRONMENT}\`, which sets ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} to "${LOCAL_PROOF_BUILD_ENVIRONMENT}" on the assembly report (never hand-edit it). The starter templates gate every vendor loader on the environment and several loaders are protocol-relative (//host/...), which fail over a plain-HTTP local serve; the SDK's dl_* events still fire in development. Polish capture, browser QA and typed-card orders run against this served output. Before committing, run \`${asInvocation(LOCAL_PROOF_PARITY_COMMAND)}\` to prove the production render differs only in environment-gated output and pins the same Campaign Cart version; the PR preview is the second check. ${LOCAL_PROOF_NEVER_EDIT_RULE}`;
 }
 
-function setupPrompt(packetPath, contextPath, reportPath, packet) {
+// Read the normalized brief the packet records, resolved against the packet
+// file as doctor resolves it, and summarize it over the Build Context's active
+// pages in recorded order. A missing, unreadable or invalid brief reads
+// unavailable; this never fails `next`. Each read or summarising failure is
+// named on stderr, one line per failure, never on stdout.
+function readIntentSummary(packetPath, packet, contextPath) {
+  const reportFailure = (error) => process.stderr.write(`campaigns-os: intent summary unavailable: ${singleLineFragment(error?.message ?? error, "unknown error")}\n`);
+  const normalizedPath = resolveFromFile(packetPath, packet?.build_brief?.normalized_path);
+  let brief = null;
+  try {
+    brief = readJsonIfExists(normalizedPath);
+  } catch (error) {
+    reportFailure(error);
+    brief = null;
+  }
+  let activePageIds = [];
+  try {
+    const activePages = readJsonIfExists(contextPath)?.spec?.active_pages;
+    activePageIds = Array.isArray(activePages) ? activePages.map((page) => page?.id) : [];
+  } catch (error) {
+    reportFailure(error);
+    activePageIds = [];
+  }
+  return { ...summarizeCampaignBrief({ brief, activePageIds, onError: reportFailure }), normalized_path: normalizedPath };
+}
+
+// The setup, build, Polish and QA prompts start with the campaign intent
+// summary, framed as orientation only.
+function campaignIntentPromptHeader(intent) {
+  return `Campaign intent (from the Campaign Build Brief at ${intent.normalized_path || "(not recorded)"}; orientation only, never a source of prices or commerce behaviour):
+${intent.text}
+
+`;
+}
+
+function setupPrompt(packetPath, contextPath, reportPath, packet, intent) {
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
-  return `Use next-campaigns-os-setup for this Campaigns OS handoff.
+  return `${campaignIntentPromptHeader(intent)}Use next-campaigns-os-setup for this Campaigns OS handoff.
 
 Read first:
 - Build Packet: ${packetPath}
@@ -5071,9 +5111,9 @@ When copying a starter template family, copy the family as an atomic page-kit sl
 Do not wire checkout, upsell, receipt, payment, package, voucher, or shipping behavior during setup.`;
 }
 
-function polishPrompt(packetPath, reportPath, packet) {
+function polishPrompt(packetPath, reportPath, packet, intent) {
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
-  return `Use next-campaigns-polish for this built campaign.
+  return `${campaignIntentPromptHeader(intent)}Use next-campaigns-polish for this built campaign.
 
 Read first:
 - Build Packet: ${packetPath}
@@ -5216,14 +5256,14 @@ function orderBumpRunReason(bumpCart) {
   return `The checkout declares order bump ${bumpCart.bumps.join(", ")} (is_order_bump or is_upsell), and the default run never puts it in a test order. This run repeats QA with ${cart} in the cart.`;
 }
 
-function qaPrompt(packetPath, reportPath, packet, spec = null) {
+function qaPrompt(packetPath, reportPath, packet, spec = null, intent) {
   const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
   const bumpCart = checkoutOrderBumpCart(spec);
   const bumpCommand = bumpCart
     ? `\n\nOrder bump QA command (proves the charged add-on):\n${qaRunCommand(packetPath, url, bumpCart)}\n${orderBumpRunReason(bumpCart)}`
     : "";
-  return `Use next-campaigns-qa for this deployed campaign.
+  return `${campaignIntentPromptHeader(intent)}Use next-campaigns-qa for this deployed campaign.
 
 ${packet.spec.local_spec_id ? "Local spec ID" : "Map ID"}: ${packet.spec.local_spec_id || packet.spec.map_id}
 Base URL: ${url}
@@ -8417,6 +8457,8 @@ const WAIVE_ACTIONS = new Set(["theme-waive", "checkpoint-waive"]);
 // check's readiness line); they are text-only and never enter the JSON result.
 export function resultTextLines(result, { headerLines = [] } = {}) {
   const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`, ...headerLines];
+  // `next` only: the campaign intent summary, directly under the status.
+  if (result.intent_summary) lines.push("Campaign intent:", ...result.intent_summary.text.split("\n"));
   // A waive command's second line names what it recorded; the third is the
   // stage doctor now picks for the report the waiver was written to.
   if (WAIVE_ACTIONS.has(result.action) && result.gate) {

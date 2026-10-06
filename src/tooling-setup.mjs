@@ -119,7 +119,7 @@ export function setupTooling(args, { packageRoot, installSkills, installAgentCon
     regularDestination(target, dest);
     const source = { "CLAUDE.md": "agents/claude/CLAUDE.md", "AGENTS.md": "agents/codex/AGENTS.md", "campaigns-os.mdc": "agents/cursor/campaigns-os.mdc", "copilot-instructions.md": "agents/copilot/copilot-instructions.md" }[name];
     if (existsSync(dest) && readFileSync(dest, "utf8") !== readFileSync(join(packageRoot, source), "utf8")) {
-      throw new Error(`tooling setup: ${dest} differs from this toolkit's context. Preserve and reconcile it before rerunning setup; no files were changed.`);
+      throw new Error(`tooling setup: ${dest} differs from this toolkit's context. Preserve and reconcile it before rerunning setup; no files were changed. Refresh it with \`install-agent-context --target .\` (overwrites all four files; review the diff), then rerun setup.`);
     }
   }
   const prior = existsSync(instructions) ? readFileSync(instructions, "utf8") : "";
