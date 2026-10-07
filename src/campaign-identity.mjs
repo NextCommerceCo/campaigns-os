@@ -45,6 +45,7 @@ export const CAMPAIGN_IDENTITY = "built_output.campaign_identity";
 // Finding kinds, each with its own issue code under the gate id.
 export const CAMPAIGN_IDENTITY_KINDS = Object.freeze({
   api_key_drift: `${CAMPAIGN_IDENTITY}.api_key_drift`,
+  api_key_mismatch: `${CAMPAIGN_IDENTITY}.api_key_mismatch`,
   funnel_drift: `${CAMPAIGN_IDENTITY}.funnel_drift`,
   funnel_missing: `${CAMPAIGN_IDENTITY}.funnel_missing`,
   attribution_drift: `${CAMPAIGN_IDENTITY}.attribution_drift`,
@@ -270,7 +271,7 @@ function gateBase(subject) {
  *   file?: string|null, content: string, spec_page?: boolean,
  *   scripts?: Array<{ src: string, file?: string|null, content: string }> }> }} input
  */
-export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
+export function evaluateCampaignIdentity({ subject, pages = [], expectedApiKey = null } = {}) {
   const all = Array.isArray(pages) ? pages : [];
   const skipped = all
     .filter((page) => isParkedPage(page.route ?? page.file ?? page.page_id))
@@ -298,7 +299,7 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
   //    value. Meta and config are compared together on purpose: a page whose
   //    meta names one campaign while its config.js names another is drift
   //    inside a single page, and the SDK's precedence rule only hides it.
-  const keyObservations = identities.flatMap((identity) => identity.api_keys.map((key) => ({ page_id: identity.page_id, ...key })));
+  const keyObservations = identities.flatMap((identity) => identity.api_keys.map((key) => ({ page_id: identity.page_id, page_file: identity.file || identity.page_id, ...key })));
   const firstKey = keyObservations[0] || null;
   for (const observation of keyObservations.slice(1)) {
     if (observation.value === firstKey.value) continue;
@@ -311,6 +312,32 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
       message: `API key differs across pages: ${firstKey.where} has ${quote(firstKey.value)} (${firstKey.source}) but ${observation.where} has ${quote(observation.value)} (${observation.source}). One of these pages was borrowed from another campaign; make both name the same key.`,
     });
     break; // one finding per kind names the first pair; the rest follow from the same edit
+  }
+  const wrongKeys = new Map();
+  if (expectedApiKey?.key) {
+    for (const observation of keyObservations) {
+      if (observation.value === expectedApiKey.key) continue;
+      if (!wrongKeys.has(observation.value)) wrongKeys.set(observation.value, new Map());
+      const sources = wrongKeys.get(observation.value);
+      const sourceId = `${observation.where}\u0000${observation.source}`;
+      if (!sources.has(sourceId)) sources.set(sourceId, { file: observation.where, source: observation.source, pages: new Set() });
+      sources.get(sourceId).pages.add(observation.page_file);
+    }
+  }
+  const wrongSourceFiles = [...new Set([...wrongKeys.values()].flatMap((sources) => [...sources.values()].map((source) => source.file)))];
+  if (wrongKeys.size) {
+    const firstWrong = keyObservations.find((observation) => observation.value !== expectedApiKey.key);
+    const wrongDetails = [...wrongKeys].map(([value, sources]) =>
+      `${[...sources.values()].map(({ file, source, pages }) => `${file} (${source}; used by ${[...pages].join(", ")})`).join(" and ")} has ${quote(value)}`,
+    ).join("; ");
+    findings.push({
+      kind: "api_key_mismatch",
+      code: CAMPAIGN_IDENTITY_KINDS.api_key_mismatch,
+      a: { page_id: null, file: expectedApiKey.source, value: expectedApiKey.key },
+      b: { page_id: firstWrong.page_id, file: firstWrong.where, source: firstWrong.source, value: firstWrong.value },
+      evidence: `Built API key in ${wrongDetails} differs from the Campaigns API key in ${expectedApiKey.source}.`,
+      message: `Built API key in ${wrongDetails} differs from the Campaigns API key ${quote(expectedApiKey.key)} in ${expectedApiKey.source}. Replace the built key in the named source with the campaign's own key, then rebuild.`,
+    });
   }
 
   // 2. next-funnel: one value across pages, and present wherever the SDK is
@@ -422,7 +449,7 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
     // Short on purpose; the per-edit prose is findings[].message, which is
     // what each doctor error carries. A reason that concatenates them is
     // truncated by every single-line renderer.
-    reason: `${findings.length} campaign identity drift finding(s) across ${scanned.length} built page(s) (${[...new Set(findings.map((finding) => finding.kind))].join(", ")}); see findings[] for the two files and two values of each.`,
+    reason: `${findings.length} campaign identity ${findings.every((finding) => finding.kind === "api_key_mismatch") ? "API key mismatch" : "drift"} finding(s) across ${scanned.length} built page(s) (${[...new Set(findings.map((finding) => finding.kind))].join(", ")}); see findings[] for the sources and values to repair.`,
     findings,
     pages_scanned: scanned.length,
     pages_skipped: skipped,
@@ -432,7 +459,9 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
         id: "repair_identity",
         kind: "edit",
         command: null,
-        description: `Make every page name the same campaign: ${findings.map((finding) => `${finding.b?.file || finding.a.file} (${finding.kind.replace(/_/g, " ")})`).join("; ")}. Not waivable: two campaign identities on one funnel cannot both be intended.`,
+        description: findings.map((finding) => finding.kind === "api_key_mismatch"
+          ? `Replace the built key in ${wrongSourceFiles.join(", ")} with the campaign's key, then rebuild.`
+          : `Make every page name the same campaign: ${finding.b?.file || finding.a.file} (${finding.kind.replace(/_/g, " ")}).`).join(" "),
       },
     ],
   };

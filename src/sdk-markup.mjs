@@ -88,6 +88,7 @@ export const SDK_MARKUP_CODES = Object.freeze({
   WRONG_FIELD_NAME: { code: `${SDK_MARKUP}.wrong_field_name`, severity: "error" },
   MISSING_SELECTOR_ID_MATCH: { code: `${SDK_MARKUP}.missing_selector_id_match`, severity: "error" },
   ORPHANED_UPSELL_ACTION: { code: `${SDK_MARKUP}.orphaned_upsell_action`, severity: "error" },
+  RECEIPT_ORDER_ITEMS_CART_VISIBILITY: { code: `${SDK_MARKUP}.receipt_order_items_cart_visibility`, severity: "error" },
   DOUBLE_SELECTED: { code: `${SDK_MARKUP}.double_selected`, severity: "warning" },
   TEMPLATE_DOUBLE_BRACE: { code: `${SDK_MARKUP}.template_double_brace`, severity: "warning" },
   // Unknown data-next-* names are not a finding and carry no code: they are
@@ -121,6 +122,31 @@ export const TEMPLATE_CONTAINER_ATTRIBUTES = [
 
 // Elements that ARE a selector an add-to-cart button can link to by id.
 const SELECTOR_ATTRIBUTES = ["data-next-bundle-selector", "data-next-package-selector", "data-next-cart-selector", "data-next-upsell-selector"];
+
+function cartVisibilityCondition(entry) {
+  return ["data-next-hide", "data-next-show"]
+    .find((name) => referencesCartState(entry.attrs.get(name))) || null;
+}
+
+function referencesCartState(condition) {
+  const source = String(condition || "");
+  let outside = "";
+  let quote = null;
+  for (let at = 0; at < source.length; at += 1) {
+    const char = source[at];
+    if (quote) {
+      if (char === "\\") at += 1;
+      else if (char === quote) quote = null;
+      outside += " ";
+    } else if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      outside += " ";
+    } else {
+      outside += char;
+    }
+  }
+  return /(?:^|[^\w.])cart\.[A-Za-z_$][\w$]*/i.test(outside);
+}
 
 function attrs(node) {
   const map = new Map();
@@ -171,7 +197,7 @@ function describe(entry) {
  * `sdk_version` is the campaign's SDK pin, used when the page carries no
  * exact loader pin of its own.
  */
-export function scanPageMarkup({ page_id, file = null, content = "", sdk_version = null }) {
+export function scanPageMarkup({ page_id, file = null, content = "", sdk_version = null, page_type = null }) {
   const document = parse(String(content || ""));
   const where = file || page_id;
   const sdk = resolvePageSdkVersion(document, sdk_version);
@@ -183,6 +209,10 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
   const selectorIds = new Set(); // ids of elements that are themselves a selector
   const templates = []; // { entry, sdkOwned }
   const referencedTemplateIds = new Set();
+  let receiptPage = String(page_type || "").trim().toLowerCase() === "receipt";
+  walkElements(document, ({ tag, attrs: a }) => {
+    if (tag === "meta" && a.get("name")?.toLowerCase() === "next-page-type" && a.get("content")?.trim().toLowerCase() === "receipt") receiptPage = true;
+  });
 
   walkElements(document, (entry) => {
     const { tag, attrs: a, ancestors } = entry;
@@ -215,6 +245,16 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
       findings.push(finding("ORPHANED_UPSELL_ACTION", page_id, where,
         `${describe(entry)} data-next-upsell-action="${value}" on ${where} has no ancestor carrying data-next-upsell. The SDK binds upsell actions only inside that container, so this one never fires and the shopper cannot ${verb} the offer. Move it inside the data-next-upsell container it belongs to.`,
         { tag, action: value }));
+    }
+
+    if (receiptPage && a.has("data-next-order-items")) {
+      const holder = [entry, ...ancestors].find(cartVisibilityCondition);
+      if (holder) {
+        const conditionAttribute = cartVisibilityCondition(holder);
+        findings.push(finding("RECEIPT_ORDER_ITEMS_CART_VISIBILITY", page_id, where,
+          `${describe(entry)} on ${where} ${holder === entry ? "carries" : `is inside ${describe(holder)} with`} ${conditionAttribute}="${holder.attrs.get(conditionAttribute)}". After checkout the cart can be empty, so receipt order lines disappear. Remove the cart-state visibility condition from the order-items element and its ancestors.`,
+          { condition_attribute: conditionAttribute, condition: holder.attrs.get(conditionAttribute) }));
+      }
     }
 
     const action = (a.get("data-next-action") || "").trim().toLowerCase();
