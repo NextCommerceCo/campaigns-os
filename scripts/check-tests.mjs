@@ -3,7 +3,9 @@
 // `--shard <index>/<total>` runs one of `total` disjoint slices, so CI can split
 // a long lane across runners; together the slices run every discovered file.
 // The slices are balanced by the measured durations in scripts/test-durations.json;
-// `--record-durations` runs the lane (or shard) and refreshes them.
+// `--record-durations` runs the lane and refreshes its entries. Record whole
+// lanes: a shard records only the files that ran in it, so a new file in another
+// shard stays unrecorded (and weighs the lane's median) until that shard runs.
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
