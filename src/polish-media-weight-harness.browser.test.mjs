@@ -161,6 +161,13 @@ export const stalled = ({ sendBytes, declared = null, width = 100, height = 100,
   tick();
 };
 
+// The network-idle window (capture's `networkIdleMs`) for a capture of a page
+// whose transfer is held open: such a capture waits the whole window out on
+// every cell, 5 s in production. A held transfer has sent all its bytes in
+// its first ~100 ms and every other request completes at once, so a 2 s
+// window still closes on the same in-flight state.
+export const HELD_TRANSFER_IDLE_MS = 2_000;
+
 // Response headers with no Content-Length and zero body bytes, then nothing:
 // a zero-byte transfer with no measured and no declared length.
 export const zeroByteStall = () => (socket) => {
@@ -351,8 +358,11 @@ export function captureInputs({ routes, skipped = [], build = BUILD_FP }) {
 // F1.3-I14 and F1.3-I16; see the API assumption at F1.3-I16) is passed to the
 // producer in process, and only when a row gives one. `onLaunch`, when given,
 // receives the launched browser, so a row's probe clock can reach the page
-// under capture.
-export async function capture(origin, { routes, skipped = [], build = BUILD_FP, probeClock, onLaunch } = {}) {
+// under capture. `networkIdleMs` (the adapter's network-idle window, 5 s in
+// production) and `probeBudgetMs` (the image probe's run budget, 10 s in
+// production) can only shorten those bounds; a row passes one only when it
+// waits that bound out.
+export async function capture(origin, { routes, skipped = [], build = BUILD_FP, probeClock, onLaunch, networkIdleMs, probeBudgetMs } = {}) {
   const { capturePolishPageLoad } = await import("./polish-node.mjs");
   const { createPolishBrowserAdapter } = await import("./polish-browser.mjs");
   const guard = loopbackGuard();
@@ -372,8 +382,9 @@ export async function capture(origin, { routes, skipped = [], build = BUILD_FP, 
       packet,
       report,
       baseUrl: `${origin.origin}/`,
-      createBrowserAdapter: (options) => createPolishBrowserAdapter({ ...options, chromium }),
+      createBrowserAdapter: (options) => createPolishBrowserAdapter({ ...options, chromium, networkIdleTimeoutMs: networkIdleMs }),
       ...(probeClock ? { probeClock } : {}),
+      mediaProbeRunBudgetMs: probeBudgetMs,
     });
   } catch (error) {
     failure = error;

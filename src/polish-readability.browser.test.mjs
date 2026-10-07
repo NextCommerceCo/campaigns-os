@@ -32,6 +32,7 @@ import { after, afterEach } from "node:test";
 
 import {
   CHECK,
+  STALLED_IDLE_MS,
   VIEWPORTS,
   assertCaptureCompleted,
   both,
@@ -122,7 +123,8 @@ const shared = (() => {
           "/field/": respond("200 OK", "text/html; charset=utf-8", htmlPage("<label>Card number <input placeholder=\"Card number\"></label>")),
         },
       });
-      return { site: sharedSite, capture: await capturePolish(sharedSite) };
+      // i50's webfont is stalled, so its cells wait out the idle window.
+      return { site: sharedSite, capture: await capturePolish(sharedSite, { networkIdleMs: STALLED_IDLE_MS }) };
     })();
     return pending;
   };
@@ -742,7 +744,8 @@ const readinessCapture = (() => {
           [`${routeOf("shadow-styles-loaded")}loaded.css`]: respond("200 OK", "text/css; charset=utf-8", "p{letter-spacing:0}"),
         },
       });
-      const capture = await capturePolish(site);
+      // shadow-styles-pending's stylesheet is stalled.
+      const capture = await capturePolish(site, { networkIdleMs: STALLED_IDLE_MS });
       assertCaptureCompleted(capture);
       const record = readabilityRecord(capture.report);
       const rows = await readabilityRows(site);
@@ -812,7 +815,8 @@ const slottedCapture = (() => {
           [`${routeOf("frame-src-loaded")}inner.html`]: respond("200 OK", "text/html; charset=utf-8", htmlPage(FRAME_TEXT)),
         },
       });
-      const capture = await capturePolish(site);
+      // frame-pending's frame document and frame-incomplete's image are stalled.
+      const capture = await capturePolish(site, { networkIdleMs: STALLED_IDLE_MS });
       assertCaptureCompleted(capture);
       const record = readabilityRecord(capture.report);
       const rows = await readabilityRows(site);

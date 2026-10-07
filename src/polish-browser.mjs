@@ -1012,6 +1012,10 @@ function polishBrowserMissing(kind, error) {
     ].join(" "));
 }
 
+// `networkIdleTimeoutMs`, like the deadlines, can only shorten its bound: the
+// wait for network idle after each navigation (NETWORKIDLE_TIMEOUT_MS). The
+// CLI never passes it; a test whose page holds a transfer open passes a
+// shorter window rather than wait out the production one on every cell.
 export async function createPolishBrowserAdapter({
   headed = false,
   authCookie = null,
@@ -1019,6 +1023,7 @@ export async function createPolishBrowserAdapter({
   cellDeadlineMs,
   cleanupDeadlineMs,
   startupDeadlineMs,
+  networkIdleTimeoutMs,
 } = {}) {
   const authCookies = parseAuthCookie(authCookie);
   const boundedCellDeadlineMs = boundedPolishDeadline(cellDeadlineMs, POLISH_BROWSER_CELL_DEADLINE_MS);
@@ -1030,6 +1035,7 @@ export async function createPolishBrowserAdapter({
     startupDeadlineMs,
     POLISH_BROWSER_STARTUP_DEADLINE_MS,
   );
+  const networkIdleMs = boundedPolishDeadline(networkIdleTimeoutMs, NETWORKIDLE_TIMEOUT_MS);
   let browser;
   let startupTimedOut = false;
   const startupAbort = new AbortController();
@@ -1234,7 +1240,7 @@ export async function createPolishBrowserAdapter({
         const initialMediaElements = await awaitActive(collectMediaElements(page));
         let networkidle;
         try {
-          await awaitActive(page.waitForLoadState("networkidle", { timeout: NETWORKIDLE_TIMEOUT_MS }));
+          await awaitActive(page.waitForLoadState("networkidle", { timeout: networkIdleMs }));
           networkidle = { status: "settled", duration_ms: durationSince(navigationStartedAt) };
         } catch (error) {
           if (!timeoutError(error)) throw error;
@@ -1327,7 +1333,7 @@ export async function createPolishBrowserAdapter({
           if (initialTree === BOUND_ENDED) return unmeasured(boundEnded());
           if (initialTree.error) return unmeasured("document_changed");
           const initialMainFrame = initialTree.value?.frameTree?.frame;
-          const idleTimeout = Math.max(1, Math.min(NETWORKIDLE_TIMEOUT_MS, Math.floor(addedLeft()), Math.floor(cellLeftMs())));
+          const idleTimeout = Math.max(1, Math.min(networkIdleMs, Math.floor(addedLeft()), Math.floor(cellLeftMs())));
           const idle = await awaitActive(steps.step(() => page.waitForLoadState("networkidle", { timeout: idleTimeout })));
           if (idle === BOUND_ENDED) return unmeasured(boundEnded());
           if (idle.error && !timeoutError(idle.error)) throw idle.error;

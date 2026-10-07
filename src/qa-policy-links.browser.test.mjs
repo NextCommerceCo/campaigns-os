@@ -199,8 +199,9 @@ async function stubServer() {
 }
 
 // One runBrowserChecks call over a one-funnel topology of `paths`
-// ({ id, path }), with `campaign` as the spec's campaign block.
-async function runPages(pages, campaign) {
+// ({ id, path }), with `campaign` as the spec's campaign block. `args`
+// replaces ARGS fields for this run.
+async function runPages(pages, campaign, args = {}) {
   await installBrowserGuard();
   const server = await stubServer();
   const { runBrowserChecks } = await import("./qa-browser.mjs");
@@ -212,7 +213,7 @@ async function runPages(pages, campaign) {
   const start = server.log.length;
   const endsStart = server.ends.length;
   const qcResults = [];
-  const assertions = await runBrowserChecks(topologies, { ...ARGS }, { spec: { campaign: structuredClone(campaign) }, qcResults });
+  const assertions = await runBrowserChecks(topologies, { ...ARGS, ...args }, { spec: { campaign: structuredClone(campaign) }, qcResults });
   assert.ok(Array.isArray(assertions), "runBrowserChecks still returns its assertions");
   const policyRequests = server.log.slice(start).filter((entry) => POLICY_PATHS.has(new URL(entry.path, "http://127.0.0.1").pathname));
   return { assertions, qcResults, policyRequests, policyEnds: server.ends.slice(endsStart) };
@@ -522,9 +523,11 @@ browserTest("F1.4-I6 matching anchor present; an anchor with text \"Terms\" also
   await assertProbes(run, ["/policy/terms"]);
 });
 
+// Page B is never answered, so its load waits out --browser-timeout: 3 s here
+// instead of ARGS' 10 s. Page A is a loopback page that loads at once.
 browserTest("F1.4-I10 two enabled pages; page A links store_terms; page B times out before its anchors are read: presence unexercised (pages_not_read)", T, async () => {
   await stubServer();
-  const run = await runPages([{ id: "a", path: "/i10/a/" }, { id: "b", path: "/i10/b/" }], { store_terms: url("/policy/terms") });
+  const run = await runPages([{ id: "a", path: "/i10/a/" }, { id: "b", path: "/i10/b/" }], { store_terms: url("/policy/terms") }, { "browser-timeout": 3_000 });
   const policy = await policyRows(run, ["store_terms"]);
   await assertPresence(policy, "store_terms", { result: "unexercised", reasonCode: "pages_not_read", acceptEligible: false, configured: url("/policy/terms"), presence: counts(2, 1, 1, 0, false, 0, 0) });
   await assertAvailabilityPass(policy, "store_terms", { configured: url("/policy/terms") });
