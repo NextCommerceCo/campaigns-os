@@ -32,7 +32,7 @@ const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(im
 function cmd(verb, rest = "") {
   return `${invocationPrefixFor(PACKAGE_ROOT)} ${verb}${rest ? ` ${rest}` : ""}`;
 }
-import { isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, upsellActionCoverageWithoutOrders, validatedOrderCreationLimit } from "./qa-browser.mjs";
+import { QA_RUN_CURRENCY, isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, upsellActionCoverageWithoutOrders, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { trackingQaAssertion, trackingRunScopeRows } from "./qa-tracking-params.mjs";
 import { contentParamNotRequestedRows, contentParamQaAssertion } from "./qa-content-params.mjs";
@@ -190,8 +190,9 @@ Options:
                                   served page's shipping and package refs against the live campaign; the verdict
                                   records the check not_run with reason disabled, never a pass.
   --currency <code>               qa run: enter each funnel's entry page with ?currency=<CODE> (three letters, e.g. GBP),
-                                  keeping its existing query. One currency per run; the verdict records it as
-                                  evidence.currency on the entry page's http:<page> row.
+                                  keeping its existing query. The flag takes one code per run (given twice, the
+                                  last one is used); the verdict records it as evidence.currency on the entry
+                                  page's http:<page> row. Not supported by qa parity or --legacy-api-test-order.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
                                   Requires one-time setup: campaigns-os qa install-browser
@@ -2141,13 +2142,20 @@ const refuseBadOrderCreationLimit = (args) => refusing(() => validatedOrderCreat
 
 // `qa run --currency <code>`: one run proves one currency. The code is three
 // ASCII letters, upper-cased; anything else (no value, a list, a symbol) is
-// refused here, before anything is resolved, fetched or launched.
+// refused here, before anything is resolved, fetched or launched. So is a run
+// whose orders are legacy direct API orders: that request carries no
+// currency, so the order would be placed in the default one.
 function qaRunCurrency(args) {
   if (!Object.hasOwn(args, "currency")) return null;
   const value = args.currency;
   if (typeof value !== "string" || !/^[A-Za-z]{3}$/.test(value)) {
-    const got = typeof value === "string" ? JSON.stringify(value) : "no value";
+    const got = typeof value === "string" && value !== "" ? JSON.stringify(value) : "no value";
     throw refused(`--currency takes one three-letter currency code, such as GBP or EUR (got ${got}). Run qa run once per currency.`);
+  }
+  const browserMode = String(args["test-order"] || "off").toLowerCase();
+  const legacyMode = String(args["legacy-api-test-order"] || "off").toLowerCase();
+  if (browserMode === "off" && legacyMode !== "off") {
+    throw refused("--currency is not supported with --legacy-api-test-order: the direct API order carries no currency and would be placed in the default one. Use --test-order <mode> for orders in that currency, or drop --currency.");
   }
   return value.toUpperCase();
 }
@@ -2157,6 +2165,9 @@ async function runParityQa(args) {
   // browser has launched, and a flag the operator typed wrong should cost them
   // nothing. The budget stays the authority — this is fail-fast, not the gate.
   refuseBadOrderCreationLimit(args);
+  if (Object.hasOwn(args, "currency")) {
+    throw refused("qa parity does not support --currency: the scenario's fixture sets the currency it checks. Use qa run --currency <code> to prove a currency.");
+  }
   const fixturePath = stringArg(args.fixture);
   const scenarioId = stringArg(args.scenario) || stringArg(args._[2]);
   if (!fixturePath) throw refused("QA parity requires --fixture <parity-fixture.json>.");
@@ -2245,9 +2256,10 @@ async function runQa(args, options = {}) {
 async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, liveCampaign = undefined, liveCampaignFetch = globalThis.fetch } = {}) {
   // --currency: every leg below (HTTP rows, browser loads, test orders) reads
   // the entry page's URL from these topologies, so it is tagged once here;
-  // the upper-cased code rides on args for the order runner's own loads.
+  // the validated code rides on args, under QA_RUN_CURRENCY, for the order
+  // runner's own first load of each path.
   const currency = qaRunCurrency(args);
-  if (currency) args = { ...args, currency };
+  if (currency) args = { ...args, [QA_RUN_CURRENCY]: currency };
   const entryCurrency = withEntryCurrency(resolvedInputs.topologies, currency);
   const resolved = currency ? { ...resolvedInputs, topologies: entryCurrency.topologies } : resolvedInputs;
   const startedAt = new Date().toISOString();
@@ -2341,7 +2353,14 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   const bindingScriptLoader = createBindingScriptLoader();
   const pages = resolved.topologies.flatMap(topology => topology.pages);
   const pageResults = await mapConcurrent(pages, COMMERCIAL_QA_LIMITS.concurrency, page =>
-    runPageChecks(page, args, { sourceLoader, bindingExpected, bindingScriptLoader, captureCommercial: commercialIds.has(String(page.page_id)), currency: entryCurrency.entryPages.has(page) ? currency : null }));
+    runPageChecks(page, args, {
+      sourceLoader,
+      bindingExpected,
+      bindingScriptLoader,
+      captureCommercial: commercialIds.has(String(page.page_id)),
+      currency: entryCurrency.entryPages.has(page) ? currency : null,
+      currencyNotApplied: entryCurrency.notApplied.get(page) || null,
+    }));
   const livePages = new Map();
   for (const [index, page] of pages.entries()) {
     const pageResult = pageResults[index];
@@ -2799,25 +2818,33 @@ function entryPageOf(topology) {
 
 // Each funnel's entry page gets ?currency=<CODE> through the URL API, so the
 // query string and tracking params it already carries are kept. Returns the
-// topologies unchanged without a currency; `entryPages` holds the tagged pages.
+// topologies unchanged without a currency; `entryPages` holds the tagged pages
+// and `notApplied` the entry pages whose URL did not parse, with the reason
+// their http row records.
 function withEntryCurrency(topologies, currency) {
   const entryPages = new Set();
-  if (!currency) return { topologies, entryPages };
+  const notApplied = new Map();
+  if (!currency) return { topologies, entryPages, notApplied };
   const tagged = topologyList(topologies).map((topology) => {
     const entry = entryPageOf(topology);
+    // No URL at all: the page gets the route-url row, not an http row.
+    if (!entry?.url) return topology;
     let url = null;
     try {
-      url = entry ? new URL(entry.url) : null;
+      url = new URL(entry.url);
     } catch {
       url = null;
     }
-    if (!url) return topology;
+    if (!url) {
+      notApplied.set(entry, { currency, reason: "entry URL does not parse as an absolute URL" });
+      return topology;
+    }
     url.searchParams.set("currency", currency);
     const page = { ...entry, url: url.toString() };
     entryPages.add(page);
     return { ...topology, pages: topology.pages.map((item) => (item === entry ? page : item)) };
   });
-  return { topologies: tagged, entryPages };
+  return { topologies: tagged, entryPages, notApplied };
 }
 
 function deriveEntryUrls(topologies) {
@@ -2896,11 +2923,16 @@ async function runPageChecks(page, args, {
   bindingExpected = { value: null },
   bindingScriptLoader = createBindingScriptLoader(),
   currency = null,
+  currencyNotApplied = null,
 } = {}) {
   const assertions = [];
   // --currency is recorded on the entry page's HTTP row: the persisted
-  // verdict drops every URL query, so the fetched URL cannot carry it.
-  const currencyEvidence = currency ? { currency } : {};
+  // verdict drops every URL query, so the fetched URL cannot carry it. An
+  // entry URL the currency could not be added to says so on the same row.
+  const currencyEvidence = {
+    ...(currency ? { currency } : {}),
+    ...(currencyNotApplied ? { currency_not_applied: currencyNotApplied } : {}),
+  };
   if (!page.url) {
     assertions.push(bindingAssertion(page, await observeBinding({ source: null, page, expected: bindingExpected, scriptLoader: bindingScriptLoader })));
     assertions.push(assertion({
@@ -2954,7 +2986,7 @@ async function runPageChecks(page, args, {
     status: STATUS.PASS,
     expected: "2xx HTTP response",
     actual: `${source.status} ${source.status_text}`.trim(),
-    evidence: currency ? currencyEvidence : undefined,
+    evidence: Object.keys(currencyEvidence).length ? currencyEvidence : undefined,
   }));
 
   const expectedMeta = page.expected_meta_tags || {};

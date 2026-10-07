@@ -3828,6 +3828,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
   const selectedPackages = parseCart(args["select-package"]);
+  const currencyLoad = pathCurrencyLoad(args);
   let checkoutDisplay = null;
   let cartBeforeSubmit = null;
 
@@ -3843,7 +3844,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   // page the probe left there rather than loading the same URL a second time,
   // which would fire the SDK's page-view events twice into the same capture.
   const entry = await ladder.run(CART_ENTRY_STEP, () => enterCartViaLanding({
-    page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache, tracking,
+    page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache, tracking, currencyLoad,
   }), { timeoutMs: budget() });
   const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
   // Responses captured from here on belong to the checkout the ladder drives.
@@ -3851,7 +3852,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   // made before the hand-off.
   const checkoutResponseOffset = events.responses.length;
 
-  await ladder.run("opened_checkout", () => openCheckoutForPath({ page, checkoutPage, entry, args, tracking }), { timeoutMs: budget() });
+  await ladder.run("opened_checkout", () => openCheckoutForPath({ page, checkoutPage, entry, args, tracking, currencyLoad }), { timeoutMs: budget() });
   await ladder.run("selected_bundle", async () => {
     // The requested package was selected on the entry page, where the cards
     // live; checkout renders none, so re-running strict selection here would
@@ -4136,7 +4137,7 @@ function createSelectorProbeCache() {
 // loaded it and found a selection surface; either way a second load of the
 // same URL is what is avoided. Anywhere else (a cached probe answer skipped the
 // load; a fresh page) the checkout is opened here, once.
-async function openCheckoutForPath({ page, checkoutPage, entry, args, tracking = null }) {
+async function openCheckoutForPath({ page, checkoutPage, entry, args, tracking = null, currencyLoad = null }) {
   const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
   if (enteredViaLanding) {
     await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
@@ -4145,14 +4146,14 @@ async function openCheckoutForPath({ page, checkoutPage, entry, args, tracking =
   if (checkoutUrlPredicate(checkoutPage.url)(safePageUrl(page))) {
     return "already on checkout from the selector probe; not re-opened";
   }
-  await gotoAndSettle(page, checkoutPage.url, args, tracking);
+  await gotoAndSettle(page, checkoutPage.url, args, tracking, currencyLoad);
   return null;
 }
 
 // The entry step body. Resolves to `{ skip }` when the checkout selects for
 // itself, to `{ entered: true, ... }` when the runner came in through the entry
 // page, and throws a coded error (never a bare timeout) when it cannot.
-async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache = null, tracking = null }) {
+async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache = null, tracking = null, currencyLoad = null }) {
   // Probe the checkout first: whether it carries a selection surface is a fact
   // about the rendered page, not about the spec (the spec cannot say it yet —
   // that is the design half of #206). The probe's load is the checkout's only
@@ -4169,7 +4170,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   let probe = cached ? "reused" : "loaded";
   let probeError = null;
   if (!surface) {
-    await gotoAndSettle(page, checkoutPage.url, args, tracking);
+    await gotoAndSettle(page, checkoutPage.url, args, tracking, currencyLoad);
     const probed = await page.evaluate(checkoutSelectionSurfaceScript())
       .then((value) => ({ value }), (error) => ({ value: null, error: error?.message || String(error) }));
     if (probed.value) {
@@ -4195,7 +4196,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
     );
   }
 
-  await gotoAndSettle(page, entryPage.url, args, tracking);
+  await gotoAndSettle(page, entryPage.url, args, tracking, currencyLoad);
   const sdkReady = await waitForSdkReady(page, Math.min(budget(), DEFAULT_SETTLE_TIMEOUT_MS));
   await tracking?.readDocument(page);
   const controls = await page.evaluate(cartEntryControlsScript(), { selector: CART_ENTRY_CONTROL_SELECTOR, checkoutUrl: checkoutPage.url }).catch(() => []);
@@ -4491,12 +4492,32 @@ function assessReceiptRendering(persistedLineCount, evidence = {}) {
   };
 }
 
+// `qa run --currency <code>`, validated and upper-cased. qa-node.mjs sets it
+// after its own check; a symbol, so no command-line flag can set it, and a
+// command that never validates --currency (qa parity) never loads with one.
+export const QA_RUN_CURRENCY = Symbol("qa run --currency");
+
+// One order path's currency: added to the path's first runner load only —
+// the checkout probe, the entry page when the probe answer was reused, or the
+// checkout opened directly. Campaign Cart keeps a URL currency in session
+// storage for the rest of the tab's session, so later loads in the tab are
+// the plain URL; the receipt reload in recovery is not a path load at all.
+function pathCurrencyLoad(args) {
+  const code = args?.[QA_RUN_CURRENCY];
+  let pending = typeof code === "string" && /^[A-Z]{3}$/.test(code) ? code : null;
+  return (url) => {
+    if (!pending) return url;
+    const entered = withQueryParam(url, "currency", pending);
+    pending = null;
+    return entered;
+  };
+}
+
 // With a tracking observer, the load is a runner navigation: before the
-// attempt's first page-initiated hop it carries the run's synthetic seeds.
-// `qa run --currency` (validated and upper-cased by qa-node.mjs) rides on
-// every runner load, so an order path that enters at the checkout carries it.
-async function gotoAndSettle(page, url, args, tracking = null) {
-  const entered = /^[A-Z]{3}$/.test(String(args.currency ?? "")) ? withQueryParam(url, "currency", args.currency) : url;
+// attempt's first page-initiated hop it carries the run's synthetic seeds,
+// after the path's currency when this is the load that carries one.
+async function gotoAndSettle(page, url, args, tracking = null, currencyLoad = null) {
+  const entered = currencyLoad ? currencyLoad(url) : url;
   const target = tracking ? tracking.runnerUrl(entered, withQueryParam) : entered;
   await page.goto(target, { waitUntil: "domcontentloaded", timeout: numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS) });
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
@@ -8222,6 +8243,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   redactUrlQuery,
   enterCartViaLanding,
   openCheckoutForPath,
+  pathCurrencyLoad,
   createSelectorProbeCache,
   RESIDUE_PAGE_TYPES,
   computedStyleResidueAssertions,
