@@ -60,7 +60,7 @@
       "sha256": "65bcd8b5f41f1e9ecfc36f3b8838cd4ed531bd74c5a318ee5147131f6c9b4a1c"
     },
     "schemas/campaign-runtime-assembly-report.v0.schema.json": {
-      "sha256": "8a0d37be9a4bb34d0ed073c9d6bfa4406a7b499c801c34c5fbb26646e2665c0b"
+      "sha256": "625a6f2ed6bee726f9cddad750e64a54a7e03744c777f5a70afe4a39afdd9848"
     },
     "schemas/campaign-runtime-build-context.v0.schema.json": {
       "sha256": "f310c1b7844d9b1994864d15858ff0c6f17efc1e5285ba193d181bdb2dd4be2f"
@@ -120,7 +120,7 @@
       "sha256": "dfc9abed38d456969e47a21f606d308a03bdf036f3466f7d6e47a602747dacf4"
     },
     "contracts/effects.v1.json": {
-      "sha256": "acb68dca1ddcb20960b2794790c66744fd8c74ec339c6e2879e426ef0308e7dd"
+      "sha256": "10a9020aaba5780e2ee2f3ddf6d81127047f6caec0de774c48540d9b664e0a6a"
     },
     "schemas/campaigns-os-effects.v1.schema.json": {
       "sha256": "3eadd22169ab98bc7c2f682af2751267605170581182158d96be035b0cfe44dc"
