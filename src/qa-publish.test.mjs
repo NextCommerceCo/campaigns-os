@@ -121,3 +121,31 @@ test("--post-verdict false-ish strings and --local-only opt out explicitly", () 
   assert.equal(localOnly.publish, false);
   assert.equal(localOnly.reason, "flag_opt_out");
 });
+
+// #486: a loopback base URL is a local check. Its verdict stays local by
+// default for every spec source, and an explicit --post-verdict still posts.
+test("a loopback base URL keeps the verdict local by default, portal-managed or not", () => {
+  for (const baseUrl of [
+    "http://localhost:8080/", "http://127.0.0.1:4173/route/", "http://[::1]:3000/",
+    "http://127.0.0.2:8080/", "http://0.0.0.0:8080/", "http://app.localhost:8080/",
+    "http://localhost.:8080/", "http://[::ffff:127.0.0.1]:8080/", "http://LOCALHOST:8080/",
+  ]) {
+    for (const portalManaged of [true, false]) {
+      const decision = decidePublishVerdict({ args: {}, portalManaged, consent: CONSENT_ON, baseUrl });
+      assert.equal(decision.publish, false, `${baseUrl} portalManaged=${portalManaged}`);
+      assert.equal(decision.reason, "loopback_base_url");
+    }
+  }
+});
+
+test("--post-verdict still publishes a loopback run; a remote base URL keeps the default", () => {
+  const optIn = decidePublishVerdict({ args: { "post-verdict": true }, portalManaged: true, consent: CONSENT_ON, baseUrl: "http://localhost:8080/" });
+  assert.equal(optIn.publish, true);
+  assert.equal(optIn.reason, "flag_opt_in");
+  const remote = decidePublishVerdict({ args: {}, portalManaged: true, consent: CONSENT_ON, baseUrl: "https://preview.example.com/route/" });
+  assert.equal(remote.publish, true);
+  assert.equal(remote.reason, "portal_managed_default");
+  for (const baseUrl of ["https://localhost.example.com/", "http://128.0.0.1/", "http://[::ffff:8.8.8.8]/", "not a url"]) {
+    assert.equal(decidePublishVerdict({ args: {}, portalManaged: true, consent: CONSENT_ON, baseUrl }).publish, true, baseUrl);
+  }
+});
