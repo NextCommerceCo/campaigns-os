@@ -321,6 +321,7 @@ Usage:
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet. Reads the local files only: --base-url is not fetched, it fills deploy.preview_url in the minimal packet (check served pages with qa run --site)
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json]
+  campaigns-os sdk repin --target <static-campaign-repo> [--target-sdk <x.y.z>] [--apply] [--json]   # rewrite the version segment of each semver-pinned Campaign Cart loader.js / campaign-cart.css URL (the references standardize's scan finds, @vX.Y.Z or @X.Y.Z) below the target, default the SDK support policy's preferred_minimum; @latest, @main, commit and prerelease refs, and pins at or above the target, are reported and left alone. Preview by default (path:line, old -> new URL, nothing written); --apply writes the files and a change record at .campaign-runtime/sdk-repin.json (campaigns-os-sdk-repin/v0: files touched, reference count, from/to versions) a Run Record can cite. A repo with _data/campaigns.json is refused (exit 2): page-kit sync owns that pin
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
@@ -1052,7 +1053,25 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   }
 
   if (command === "sdk") {
-    if (args._[1] !== "storage-check" || args._.length !== 2) throw refused("Use: campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json].");
+    if (args._[1] === "repin" && args._.length === 2) {
+      const known = new Set(["_", "target", "target-sdk", "apply", "json"]);
+      for (const key of Object.keys(args)) if (!known.has(key)) throw refused(`Unknown SDK repin flag: --${key}`);
+      for (const flag of ["apply", "json"]) {
+        if (args[flag] !== undefined && args[flag] !== true) throw refused(`--${flag} is a boolean flag and takes no value.`);
+      }
+      const { runSdkRepin, formatSdkRepinReport, isRepinTargetVersion } = await import("./sdk-repin.mjs");
+      const targetSdk = args["target-sdk"] === undefined ? null : requireArg(args, "target-sdk");
+      if (targetSdk !== null && !isRepinTargetVersion(targetSdk)) throw refused(`--target-sdk ${targetSdk} is not a released SDK version (x.y.z).`);
+      const result = runSdkRepin({
+        targetRepo: requireArg(args, "target"),
+        targetSdk,
+        apply: args.apply === true,
+      });
+      console.log(args.json ? JSON.stringify(result, null, 2) : formatSdkRepinReport(result));
+      process.exitCode = result.ok ? 0 : 2;
+      return;
+    }
+    if (args._[1] !== "storage-check" || args._.length !== 2) throw refused("Use: campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json], or campaigns-os sdk repin --target <static-campaign-repo> [--target-sdk <x.y.z>] [--apply] [--json].");
     const known = new Set(["_", "target", "target-sdk", "manifest", "scope", "exclude", "json"]);
     if (args.json !== undefined && args.json !== true) throw refused("--json is a boolean flag and takes no value.");
     for (const key of Object.keys(args)) if (!known.has(key)) throw refused(`Unknown SDK storage-check flag: --${key}`);

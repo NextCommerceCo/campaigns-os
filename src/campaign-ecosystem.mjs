@@ -42,6 +42,7 @@ const MAX_SAMPLE_COUNT = 8;
 // are still discovered — they just can't be evaluated against version policy.
 const LOADER_URL_PATTERN = /https?:\/\/[^"'\s]*campaign-cart@([^"'\s/]+)[^"'\s]*/g;
 const LOADER_ARTIFACT_PATTERN = /\/loader(?:\.min)?\.js\b|\/dist\//;
+const LOADER_URL_INDEXED_PATTERN = new RegExp(LOADER_URL_PATTERN.source, "gd");
 const CAMPAIGN_ID_META_PATTERN = /<meta\s+[^>]*name=["']next-campaign-id["'][^>]*>/gi;
 const NEXT_CONFIG_PATTERN = /window\.nextConfig\s*=/;
 const DATA_NEXT_PATTERN = /\bdata-next-[a-zA-Z0-9_-]+/g;
@@ -337,16 +338,13 @@ function collectLoaderReferences(root, files) {
   for (const file of files) {
     const raw = safeReadText(file);
     if (raw === null) continue;
-    const content = HTML_EXTENSIONS.has(extname(file).toLowerCase()) ? maskHtmlComments(raw) : raw;
-    for (const match of content.matchAll(withGlobal(LOADER_URL_PATTERN))) {
-      if (!LOADER_ARTIFACT_PATTERN.test(match[0])) continue;
-      const semver = match[1].match(/^v?(\d+\.\d+\.\d+)$/);
+    for (const entry of campaignCartArtifactReferences(raw, { isHtml: HTML_EXTENSIONS.has(extname(file).toLowerCase()) })) {
       references.push({
         path: relPath(root, file),
-        line: lineOf(content, match.index || 0),
-        url: match[0],
-        ref: match[1],
-        version: semver ? semver[1] : null,
+        line: entry.line,
+        url: entry.url,
+        ref: entry.ref,
+        version: entry.version,
       });
     }
   }
@@ -354,6 +352,46 @@ function collectLoaderReferences(root, files) {
     references,
     versions: unique(references.map((entry) => entry.version)),
   };
+}
+
+// Every file the scan walks under `root`: its own skipped directories (.git,
+// .campaign-runtime, _site, node_modules, qa-output, dist, build) left out.
+export const listCampaignCartScanFiles = (root) => listFiles(root);
+
+// The HTML and script files among them, the ones the scan reads.
+export function listCampaignCartSourceFiles(root) {
+  return listFiles(root).filter((file) => {
+    const ext = extname(file).toLowerCase();
+    return HTML_EXTENSIONS.has(ext) || SCRIPT_EXTENSIONS.has(ext);
+  });
+}
+
+export const isCampaignCartHtmlFile = (file) => HTML_EXTENSIONS.has(extname(file).toLowerCase());
+
+// Every Campaign Cart loader/dist reference in one file's text, in order, read
+// exactly as the scan reads it: HTML comments masked in an HTML file, and only
+// URLs that point at a loader or dist artifact. `ref` is the segment after
+// `campaign-cart@` and `version` its x.y.z when the ref is a plain semver pin
+// (with or without a leading v), else null. `url_start` is the URL's offset
+// and `ref_start`/`ref_end` the offsets of that segment in the file text; masking preserves offsets, so they
+// index the unmasked text too. `sdk repin` rewrites only that span.
+export function campaignCartArtifactReferences(text, { isHtml = false } = {}) {
+  const content = isHtml ? maskHtmlComments(text) : String(text ?? "");
+  const references = [];
+  for (const match of content.matchAll(LOADER_URL_INDEXED_PATTERN)) {
+    if (!LOADER_ARTIFACT_PATTERN.test(match[0])) continue;
+    const semver = match[1].match(/^v?(\d+\.\d+\.\d+)$/);
+    references.push({
+      line: lineOf(content, match.index || 0),
+      url: match[0],
+      ref: match[1],
+      version: semver ? semver[1] : null,
+      url_start: match.index,
+      ref_start: match.indices[1][0],
+      ref_end: match.indices[1][1],
+    });
+  }
+  return references;
 }
 
 // The SDK version each HTML file's checkout bindings run against, for the

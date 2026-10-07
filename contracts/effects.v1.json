@@ -41,6 +41,7 @@
     },
     "observed_in": "The conditions in which the effect test must SEE this write or send. An empty list declares an effect the offline fixture cannot reach; it then requires a not_observed_reason, and check-effects refuses the row without one. The test always refuses an effect that is NOT declared, in every condition.",
     "effect_changing_flags": [
+      "--apply",
       "--browser",
       "--built",
       "--dry-run",
@@ -232,6 +233,72 @@
       "effect_test": "effects: sdk storage-check",
       "test_scope": "full",
       "notes": "A static scan of tracked source in a Git checkout. Exempted from lifecycle capture by name in persistLifecycleIfRequested, and it bypasses the stale-session sweep."
+    },
+    {
+      "command": "sdk",
+      "subcommand": "repin",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: sdk repin",
+      "test_scope": "full",
+      "notes": "The preview: it reads the target's HTML and script files and prints each semver-pinned Campaign Cart loader.js / campaign-cart.css reference below the target version with its rewrite, and the references it leaves alone. It writes nothing, appends no lifecycle entry (only --apply journals; the subcommand is declared journal-exempt without it in src/invocation.mjs), runs no stale-session closeout and sends nothing. A target holding _data/campaigns.json is refused (exit 2) with the same result: nothing written."
+    },
+    {
+      "command": "sdk",
+      "subcommand": "repin",
+      "flags": [
+        "--apply"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/**",
+          "when": "an HTML or script file under the target holds a semver-pinned Campaign Cart loader.js / campaign-cart.css URL below the target version; only the version segment of each such URL changes",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/sdk-repin.json",
+          "when": "at least one reference was rewritten: the change record (campaigns-os-sdk-repin/v0) is (re)written",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: sdk repin --apply",
+      "test_scope": "full",
+      "notes": "Rewrites the version segment of each semver-pinned reference below the target and writes the change record; @latest, @main, commit and prerelease refs and pins at or above the target are left alone. A second run with the same target finds nothing to change and writes nothing. `sdk repin --target <repo>` names no packet, so an ambient session bound to a packet elsewhere is not resolved for it and no entry is appended under that session. A target holding _data/campaigns.json is refused (exit 2) and nothing is written."
     },
     {
       "command": "tooling",
