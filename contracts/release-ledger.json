@@ -6733,7 +6733,7 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "qa",
-          "summary": "The qa run usage line lists --currency <code>."
+          "summary": "The qa run usage line lists --currency <code>; keep the existing QA recommendation command set while next routes owed Polish and QA stages; show an open adapter-decision template in the build prompt and document the single-list behavior, local proof environment, and build fingerprint source in help."
         },
         {
           "class": "named_surface",
@@ -6742,7 +6742,7 @@
           "summary": "Describe qa run --currency: one code per run, ?currency=<CODE> on the entry URL and on each test-order path's first load with the existing query kept, the three-letter refusal, the qa parity and legacy-order refusals, and evidence.currency (or evidence.currency_not_applied) on the entry page http row."
         }
       ],
-      "entry_sha256": "ff4511f2d717536bf576e9a2a6b93c2aa428dec244a37867418e0ad9fdc14b1c"
+      "entry_sha256": "ca7d3c91091fd6c5c857820ffe3ea6b9a62a9f428c0eab26cbf0b1df098fc942"
     },
     {
       "id": "RL-0251",
@@ -6763,19 +6763,13 @@
           "summary": "Pick Polish after a local theme waiver or rebuild, and re-owe QA for a different build while still requiring recorded deploy."
         },
         {
-          "class": "cli_surface",
-          "path": "src/cli.mjs",
-          "surface_entry": "next",
-          "summary": "Keep the existing QA recommendation command set while next routes owed Polish and QA stages."
-        },
-        {
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Explain the deploy record and QA order after a changed build."
+          "summary": "Explain the deploy record and QA order after a changed build; list recordable values, explain wrapper_policy intake and read precedence, and document one-list behavior and the report-only write."
         }
       ],
-      "entry_sha256": "e94664e13bf8d9855d6b1601ae6f119300a835ef2c7329b7c2d186ccd34eb4a8"
+      "entry_sha256": "7ffb028e273e591d224628ceea618df57233286a273e7813ec3a1fb0e47479c4"
     },
     {
       "id": "RL-0252",
@@ -6791,24 +6785,12 @@
       "changes": [
         {
           "class": "cli_surface",
-          "path": "src/cli.mjs",
-          "surface_entry": "record",
-          "summary": "Show an open adapter-decision template in the build prompt and document the single-list behavior, local proof environment, and build fingerprint source in help."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/build-packet.md",
-          "surface_entry": "docs/build-packet.md",
-          "summary": "List recordable values, explain wrapper_policy intake and read precedence, and document one-list behavior and the report-only write."
-        },
-        {
-          "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": "doctor",
           "summary": "Check leftover source document wrappers against the effective report, context, then packet conversion status."
         }
       ],
-      "entry_sha256": "69a1bd09fda7e8637f0e647c784e7cf1941ec33ae607014e8c3f0e4735328e81"
+      "entry_sha256": "2604e105b3c308004f617b3fd839acc01f32e75dbe4ebf28324f23569aebc5db"
     },
     {
       "id": "RL-0253",
