@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.53.0+agent.8] - 2026-10-06
+## [1.53.0+agent.11] - 2026-10-06
 
 ### Changed
 
 `qa run` no longer publishes a verdict to the QA portal by default when the base URL is a local address (`localhost` or any `*.localhost` name, any `127.x.x.x` address, `0.0.0.0`, `[::1]` or an IPv4-mapped loopback), whether the spec came from a saved Map or a local file. The verdict stays local, and the output names the destination plus `qa publish` and `--post-verdict`. Pass `--post-verdict` to publish a local-address run. `publish_decision.reason` reads `loopback_base_url` when this default applied. Runs against a remote base URL publish exactly as before.
+
+## [1.53.0+agent.9] - 2026-10-06
+
+### Fixed
+
+The per-target lock now tells an ownerless lock apart from something at the lock path that is not a lock. When the wait ends on an ordinary file, a symbolic link, or a directory with no owner record that holds other entries, the refusal names what is there and says it is never removed automatically; before, it read as a busy or ownerless lock. An empty ownerless lock directory is still refused as before. The holder of a lock also clears the staging, recovery-staging and released directories that a crashed process or a failed release left beside the lock, but only those whose recorded owner process no longer exists; a sibling with a live or unreadable owner is left alone.
 
 ## [1.53.0+agent.7] - 2026-10-06
 

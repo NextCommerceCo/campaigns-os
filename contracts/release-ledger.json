@@ -6307,13 +6307,40 @@
       "entry_sha256": "6382a67f50d12ae1999b352595ff6faa13fca3e122617e9ba43ce4cc8c77e659"
     },
     {
-      "id": "RL-0239",
+      "id": "RL-0241",
       "sequence": 232,
       "date": "2026-10-06",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.53.0+agent.8",
-      "changelog_sha256": "acc07a0cda4cd7409ffc9fe9a7429580619acc1886bee790c34f3ee3673564dc",
+      "changelog_section": "1.53.0+agent.9",
+      "changelog_sha256": "359d517828d411f329a3fe02bb421a676652ffb2662532599e435dd0cf38a5f7",
+      "agent_impact": "When the per-target lock or the progress allocation lock cannot be taken because a file, a symbolic link, or a directory with no owner record that holds other entries sits at the lock path, the refusal names what is there and says it is never removed automatically. Report it as an obstruction to move out of the way, not as a busy or ownerless lock. The holder of a lock also removes staging and released siblings whose recorded owner process no longer exists.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Say that a non-lock entry at the target lock path is named and never removed, and that the holder removes lock siblings left by dead processes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "Say that a file or other non-lock entry at the allocation lock path is named in the warning and never removed."
+        }
+      ],
+      "entry_sha256": "82debb74a4998923dd9cfb3bea6ed486ba408860001fe79c6dc2460de026bb4a"
+    },
+    {
+      "id": "RL-0239",
+      "sequence": 233,
+      "date": "2026-10-06",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.11",
+      "changelog_sha256": "67c82181ffa7210e4d5305c3cba3ebf1a60d10b5451bd5b256097360b5545026",
       "agent_impact": "qa run keeps the verdict local by default when the base URL (from --base-url or the packet's deploy.preview_url) is a local address (localhost or *.localhost, any 127.x.x.x, 0.0.0.0, [::1] or an IPv4-mapped loopback), for saved-Map and local-spec runs alike; publish_decision.reason reads loopback_base_url and the output names qa publish and --post-verdict. An agent that wants a local-address verdict on the Map's QA tab passes --post-verdict or runs qa publish afterwards. Remote base URLs publish as before.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6325,7 +6352,7 @@
           "summary": "Describe the local-address default and how to publish such a verdict."
         }
       ],
-      "entry_sha256": "ca9128f30cff6a04711afb1617a80ad0271bf0af668479c522ffe607087c26d0"
+      "entry_sha256": "9d57c54898e856a2c2a755c3cb04f3d63a865f097e5d462f0ecc78a5fea00eab"
     }
   ]
 }

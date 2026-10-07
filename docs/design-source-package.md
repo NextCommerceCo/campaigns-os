@@ -396,9 +396,13 @@ a minute. The lock directory and its owner record appear together, so a lock
 left by a process that died is recovered automatically, and a lock directory
 without an owner record (only an older release leaves one) is never taken
 over: the command refuses it after about a second and names it. Confirm no
-campaigns-os process is working on the target, then remove it. Do not run an
-older Campaigns OS release against the same target at the same time. A
-waiver's `--dry-run` preview takes no lock.
+campaigns-os process is working on the target, then remove it. Anything else
+at the lock path (a file, a symbolic link, or a directory with no owner record
+that holds other entries) is not a lock: once the wait ends the command names
+what is there and never removes it. The holder of the lock removes staging and
+released directories beside it whose recorded owner process no longer exists.
+Do not run an older Campaigns OS release against the same target at the same
+time. A waiver's `--dry-run` preview takes no lock.
 
 Before writing any output, `prepare-build` also requires distinct paths for the
 Build Packet, Build Context, Assembly Report, Doctor output, normalized Build

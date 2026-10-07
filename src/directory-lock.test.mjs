@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs, { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -296,6 +297,93 @@ test("release never removes a lock directory another holder now owns", () => wit
     writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: process.pid, token: "someone-else" })}\n`);
   }, { budgetMs: 1000, unavailable });
   assert.equal(JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")).token, "someone-else");
+}));
+
+// Staging, recovery-staging and released siblings outlive a process that dies
+// mid-acquisition, or a release whose tomb could not be put back (#514). The
+// next holder sweeps the ones whose owner is a dead process, and only those.
+test("the holder sweeps lock siblings left by dead processes and keeps every other one (#514)", () => withScratch(async (dir) => {
+  const lock = join(dir, "lock");
+  // spawnSync returns only after the child has exited and been reaped.
+  const deadPid = spawnSync(process.execPath, ["-e", "process.exit(0)"]).pid;
+  const token = () => randomBytes(16).toString("hex");
+  const sibling = (name, owner) => {
+    mkdirSync(join(dir, name));
+    if (owner) writeFileSync(join(dir, name, "owner.json"), `${JSON.stringify(owner)}\n`);
+    return name;
+  };
+  const deadToken = token();
+  const dead = [
+    sibling(`lock.staging-${deadToken}`, { pid: deadPid, token: deadToken }),
+    sibling(`lock.recovery-staging-${token()}`, { pid: deadPid, token: "dead-recoverer" }),
+    sibling(`lock.released-${token()}`, { pid: deadPid, token: "dead-releaser" }),
+  ];
+  const kept = [
+    // A live process may still be staging or releasing. This process is
+    // alive and can always signal itself, whatever the sandbox.
+    sibling(`lock.staging-${token()}`, { pid: process.pid, token: "live" }),
+    sibling(`lock.released-${token()}`, { pid: process.pid, token: "live-releaser" }),
+    // No readable owner: its process may be between mkdir and owner write.
+    sibling(`lock.staging-${token()}`, null),
+    // Not a name this lock produces, whatever its owner.
+    sibling("lock.staging-not-a-token", { pid: deadPid, token: "dead" }),
+    sibling(`lock.abandoned-${token()}`, { pid: deadPid, token: "dead" }),
+    sibling(`other.staging-${token()}`, { pid: deadPid, token: "dead" }),
+  ];
+  writeFileSync(join(dir, `lock.released-${token()}`), "not a directory");
+  let seen = null;
+  await withDirectoryLock(lock, () => { seen = readdirSync(dir); }, { budgetMs: 1000, unavailable });
+  for (const name of dead) assert.equal(seen.includes(name), false, `${name} belongs to a dead process and was swept`);
+  for (const name of kept) assert.equal(seen.includes(name), true, `${name} was left in place`);
+  assert.equal(seen.filter((name) => name.startsWith("lock.released-")).length, 2, "the live releaser's tomb and the plain file stay");
+  withDirectoryLockSync(lock, () => {}, { budgetMs: 1000, unavailable });
+  for (const name of kept) assert.equal(existsSync(join(dir, name)), true, `${name} survives the synchronous form too`);
+}));
+
+test("the refusal names a non-lock obstruction at the lock path and leaves it there (#514)", () => withScratch(async (dir) => {
+  const passThrough = (error) => error;
+  const refusal = async (lock) => {
+    let clock = 0;
+    const options = { budgetMs: 5000, unavailable: passThrough, now: () => clock, sleep: async () => { clock += 500; } };
+    const error = await withDirectoryLock(lock, () => assert.fail("entered"), options).then(() => null, (caught) => caught);
+    clock = 0;
+    const syncError = (() => {
+      try { withDirectoryLockSync(lock, () => assert.fail("entered"), { ...options, sleep: () => { clock += 500; } }); } catch (caught) { return caught; }
+      return null;
+    })();
+    assert.equal(syncError?.message, error?.message, "both forms refuse alike");
+    return error;
+  };
+
+  const file = join(dir, "file-lock");
+  writeFileSync(file, "notes");
+  const fileError = await refusal(file);
+  assert.equal(fileError.code, "ENOTLOCK");
+  assert.equal(fileError.message, `Lock path is occupied by a regular file, not a lock: ${file}`);
+  assert.equal(readFileSync(file, "utf8"), "notes", "the file is left in place");
+
+  const foreign = join(dir, "dir-lock");
+  mkdirSync(foreign);
+  writeFileSync(join(foreign, "draft.html"), "<p>work</p>");
+  const foreignError = await refusal(foreign);
+  assert.equal(foreignError.code, "ENOTLOCK");
+  assert.equal(foreignError.message, `Lock path is occupied by a directory that is not a lock (no owner.json; it holds draft.html): ${foreign}`);
+  assert.deepEqual(readdirSync(foreign), ["draft.html"], "the directory is left in place");
+
+  // An empty directory is what an older writer leaves before its owner
+  // record: an ownerless lock, not an obstruction.
+  const ownerless = join(dir, "ownerless-lock");
+  mkdirSync(ownerless);
+  const ownerlessError = await refusal(ownerless);
+  assert.equal(ownerlessError.code, "EEXIST");
+  assert.match(ownerlessError.message, /no owner record/);
+
+  const held = join(dir, "held-lock");
+  mkdirSync(held);
+  writeFileSync(join(held, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "foreign" })}\n`);
+  const heldError = await refusal(held);
+  assert.equal(heldError.code, "EEXIST");
+  assert.match(heldError.message, /Lock is held/);
 }));
 
 test("the holder re-enters its own lock, async and sync, without waiting on itself", () => withScratch(async (dir) => {
