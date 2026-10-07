@@ -1773,7 +1773,9 @@ check exits non-zero with the problems listed, one per line; a value outside a
 schema enum (for example an `adapter_decisions` policy) is listed with the
 values the schema allows and the value it got. Re-run `record
 build` after every page-kit build; a rebuild that changes the output needs
-`polish capture` and `record polish` again.
+`polish capture` and `record polish` again. After deploy is recorded for the
+rebuilt output, `next` asks for QA again if the last QA record names the
+previous build fingerprint, even while its stage status still says completed.
 
 Stage order: `setup → build → polish → deploy → qa`. The picker walks this list and returns the first stage whose recorded status isn't terminal (`completed`, `completed_with_warnings`, `skipped`). During Polish, install the package-owned browser first, then run `campaigns-os polish capture` against the served current build before recording a terminal `stages.polish.status` or proceeding to deploy/QA; the producer attaches package-owned `visual_review.page_load` evidence and never marks the stage complete itself.
 

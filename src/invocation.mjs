@@ -132,14 +132,15 @@ export function resolveInvocationPolicy(command, args) {
   const steps = CLASS_STEPS[rule.class];
   const noWrite = args["no-write"] === true;
   const implementsDryRun = rule.dryRun === true;
-  const sweepSuppressed = optsOutOfRunSession(args) || noWrite || (Object.hasOwn(args, "dry-run") && implementsDryRun);
+  const help = Boolean(args.help);
+  const sweepSuppressed = help || optsOutOfRunSession(args) || noWrite || (Object.hasOwn(args, "dry-run") && implementsDryRun);
   const inspection = Boolean(rule.journalExemptWhen && args[rule.journalExemptWhen.given] && args[rule.journalExemptWhen.unlessBare] !== true);
   return Object.freeze({
     class: rule.class,
     wrapper: steps.includes("wrapper"), ambient: steps.includes("ambient"),
     sweepRoot: steps.includes("sweep") && !sweepSuppressed ? rule.sweepRoot || null : null,
-    journalExempt: !steps.includes("journal") || rule.journalExempt === true || noWrite || (args["dry-run"] === true && implementsDryRun) || inspection,
-    implementsDryRun, autoEnd: rule.autoEnd === true,
+    journalExempt: help || !steps.includes("journal") || rule.journalExempt === true || noWrite || (args["dry-run"] === true && implementsDryRun) || inspection,
+    implementsDryRun, autoEnd: !help && rule.autoEnd === true,
   });
 }
 

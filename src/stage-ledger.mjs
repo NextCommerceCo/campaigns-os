@@ -541,14 +541,26 @@ export function qaGateEvidence(report, gate) {
   };
 }
 
+export function qaRecordedBuildFingerprint(report) {
+  return optionalString(report?.stages?.qa?.evidence?.qc_build_fingerprint)
+    || optionalString(report?.stages?.qa?.evidence?.source_build_fingerprint);
+}
+
+export function qaRecordedForCurrentBuild(report, buildFingerprint) {
+  const recorded = qaRecordedBuildFingerprint(report);
+  const current = optionalString(buildFingerprint);
+  return Boolean(recorded && current && recorded === current);
+}
+
 // `qaCurrency` is QA's read-time input currency
 // (derived.input_currency.stages.qa): while QA is owed again or its inputs
 // cannot be confirmed, no QA gate pass counts.
 export function qaGatePassedForCurrentBuild(report, gate, { buildFingerprint, qaCurrency = null }) {
   if (qaCurrency === "owed" || qaCurrency === "unknown") return false;
   const outcome = qaGateEvidence(report, gate);
-  const current = optionalString(buildFingerprint);
-  return Boolean(outcome && outcome.status === QA_STATUS.PASS && current && outcome.source_build_fingerprint === current);
+  return Boolean(outcome && outcome.status === QA_STATUS.PASS
+    && outcome.source_build_fingerprint === optionalString(buildFingerprint)
+    && qaRecordedForCurrentBuild(report, buildFingerprint));
 }
 
 /**

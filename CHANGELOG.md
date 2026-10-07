@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.8] - 2026-10-07
+
+### Changed
+
+- `next` asks for Polish when a theme waiver or changed build leaves it owed on a local preview. It asks for deploy until that stage is recorded, even if the Build Packet already has a preview URL.
+- After a changed build, `next` asks for QA again when the last QA verdict names the old build, even if its recorded stage still says completed.
+- `--help` commands leave lifecycle and deviation journals untouched. Re-running `start` later in a campaign is treated as re-intake rather than a deviation.
+
 ## [1.54.0+agent.7] - 2026-10-07
 
 ### Added

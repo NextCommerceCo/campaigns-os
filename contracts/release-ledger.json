@@ -6743,6 +6743,39 @@
         }
       ],
       "entry_sha256": "ff4511f2d717536bf576e9a2a6b93c2aa428dec244a37867418e0ad9fdc14b1c"
+    },
+    {
+      "id": "RL-0251",
+      "sequence": 240,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.8",
+      "changelog_sha256": "57049338b1514529ff826c0477082d1f9e31de77f0a1308473ab0d7cafb8c01b",
+      "agent_impact": "Next asks for Polish when a local preview theme waiver or changed build leaves it owed, and asks for QA again when the last recorded QA build differs from the current output. A packet preview URL does not replace record deploy. Help invocations never journal, and later start is valid re-intake. Follow next before recording downstream work.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "next",
+          "summary": "Pick Polish after a local theme waiver or rebuild, and re-owe QA for a different build while still requiring recorded deploy."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "Keep the existing QA recommendation command set while next routes owed Polish and QA stages."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Explain the deploy record and QA order after a changed build."
+        }
+      ],
+      "entry_sha256": "e94664e13bf8d9855d6b1601ae6f119300a835ef2c7329b7c2d186ccd34eb4a8"
     }
   ]
 }

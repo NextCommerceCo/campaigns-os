@@ -15,7 +15,7 @@ export const DEVIATION_JOURNAL_REL_PATH = ".campaign-runtime/agent-deviations.js
 
 // Commands that advance the pipeline. Read-only / bookkeeping commands
 // (doctor, next, findings, telemetry, run, validate-*) never deviate.
-export const TRACKED_STAGE_COMMANDS = Object.freeze(new Set(["start", "prepare-build", "theme", "polish", "qa", "run-record"]));
+export const TRACKED_STAGE_COMMANDS = Object.freeze(new Set(["prepare-build", "theme", "polish", "qa", "run-record"]));
 
 // Setup and metadata subcommands of a tracked command. They produce no stage
 // output, so running one outside the recommendation is not a detour:
@@ -77,6 +77,7 @@ export function buildRecommendation({ stage, status, expectedCommands, now = new
  * recommendation. Returns a deviation entry or null.
  */
 export function detectDeviation({ lastRecommendation, command, subcommand = null, argvShape = [], runId = null, deviationReason = null, now = new Date() }) {
+  if (argvShape.includes("--help")) return null;
   if (!TRACKED_STAGE_COMMANDS.has(command)) return null;
   if (subcommand && UNTRACKED_SUBCOMMANDS.has(`${command} ${subcommand}`)) return null;
   if (!lastRecommendation || !Array.isArray(lastRecommendation.expected_commands)) return null;

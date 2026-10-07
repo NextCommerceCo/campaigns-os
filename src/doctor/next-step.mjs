@@ -1,9 +1,9 @@
 // The next step doctor recommends, and the gate issues `next` reads from doctor.
 import { campaignIdentitiesMatch } from "../spec-source-identity.mjs";
-import { CARRIED_FORWARD } from "../local-preview-policy.mjs";
+import { polishCarriedForwardForLadder } from "../local-preview-policy.mjs";
 import { resolve } from "node:path";
 import { orderPathDepthDriftText } from "../proof-policy.mjs";
-import { anyAssemblyReportStageBlocked } from "../stage-ledger.mjs";
+import { anyAssemblyReportStageBlocked, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "../stage-ledger.mjs";
 import {
   SOURCE_PREP_DOCUMENT_WRAPPER,
   SOURCE_PREP_FRONTMATTER_RESIDUE,
@@ -16,7 +16,7 @@ import {
   stageIsBlocked,
   stageIsTerminal,
 } from "../orchestration-stage-contract.mjs";
-import { evaluatePolishGate } from "../polish-gate.mjs";
+import { currentBuildFingerprint, evaluatePolishGate } from "../polish-gate.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal } from "../input-currency.mjs";
 import { cmd } from "../install-invocation.mjs";
 import { isObject, isNonEmptyString, optionalString, resolveFromFile, addIssue, filesystemPathsMatch } from "../cli-helpers.mjs";
@@ -473,9 +473,9 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
   }
 
   for (const cliStage of NEXT_STAGE_ORDER) {
-    // On the local preview, missing polish is carried forward as a warning
-    // (local-preview-policy.mjs): the ladder moves on to deploy and QA.
-    if (cliStage === "polish" && polishGate.status === CARRIED_FORWARD) continue;
+    // A first local preview may carry missing Polish forward. A theme waiver
+    // or prior capture makes the recorded Polish stage owed again.
+    if (cliStage === "polish" && polishCarriedForwardForLadder(report, polishGate)) continue;
     const reportKey = reportKeyForCliStage(cliStage);
     const stage = report.stages[reportKey];
     if (!stage) {
@@ -499,6 +499,10 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
         stage: cliStage,
         reason: `Stage "${reportKey}" has status "${status || "(unset)"}"; run "${cliStage}" next.`,
       };
+    }
+    if (cliStage === "qa" && qaRecordedBuildFingerprint(report) && currentBuildFingerprint(report)
+      && !qaRecordedForCurrentBuild(report, currentBuildFingerprint(report))) {
+      return { stage: "qa", reason: "QA was recorded for a different build; run QA against the current build." };
     }
     // A terminal QA status is not the same claim as purchase proof. QA finalizes
     // a verdict and records a terminal status even when no order path ran, so a

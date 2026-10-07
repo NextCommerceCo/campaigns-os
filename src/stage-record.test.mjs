@@ -14,6 +14,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { parseArgs, polishCaptureCommand } from "./cli.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
+import { buildReadabilityRecord } from "./polish-readability.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { readdirSync } from "node:fs";
@@ -216,6 +217,57 @@ test("record build stamps exactly doctor's output fingerprint and next advances 
     assert.equal(doctor(f).derived.build_output_fingerprint.status, "stale");
     recordOk(f, "build");
     assert.equal(doctor(f).derived.build_output_fingerprint.status, "pass");
+  });
+});
+
+test("local theme waiver leaves Polish owed before deploy", () => {
+  withLifecycle((f) => {
+    mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    const waiver = runCli(["theme", "waive", "--packet", f.packetPath, "--reason", "Starter palette approved for preview", "--waived-by", "Reviewer"], f.dir);
+    assert.equal(waiver.status, 0, waiver.stderr);
+    const stage = nextStage(f).stage;
+    assert.equal(stage, "polish");
+  });
+});
+
+test("a packet preview URL without record deploy still leaves deploy next", async () => {
+  await withLifecycle(async (f) => {
+    await deployReady(f);
+    mutateJson(f.packetPath, (packet) => { packet.deploy.preview_url = `http://127.0.0.1:4173/${f.slug}/`; });
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "pending");
+    assert.equal(nextStage(f).stage, "deploy");
+  });
+});
+
+test("an all-template zero-cell capture keeps the local deploy path open", async () => {
+  await withLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => {
+      packet.deploy.target = "local-serve";
+      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
+    });
+    recordThroughBuild(f);
+    mutateJson(f.reportPath, (report) => {
+      report.stages.polish.evidence = { visual_review: {
+        readability: buildReadabilityRecord({ buildFingerprint: report.stages.assembly.build_fingerprint, slug: f.slug, routes: [`/${f.slug}/`], cells: [] }),
+      } };
+    });
+    assert.equal(nextStage(f).stage, "deploy");
+    const polish = record(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.notEqual(polish.status, 0);
+    assert.match(polish.stderr, /polish\.hidden_eager_media\.no_capturable_routes/);
+    assert.equal(nextStage(f).stage, "deploy");
+    const site = await serveSite(f);
+    try {
+      await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
+      assert.equal(readJson(f.reportPath).stages.deploy.status, "completed");
+      assert.equal(nextStage(f).stage, "qa");
+    } finally {
+      await site.close();
+    }
   });
 });
 
@@ -2800,6 +2852,22 @@ test("next answers qa when a qa_policy change after the QA verdict leaves build 
     });
     assert.deepEqual(inputCurrency(f).stages, { assembly: "current", polish: "current", qa: "owed" }, "setup: only QA is owed");
     assert.deepEqual(stageStatuses(f, ["assembly", "polish", "qa"]), { assembly: "completed", polish: "completed", qa: "completed" }, "setup: every recorded status stays completed");
+    assert.equal(nextOk(f).stage, "qa");
+  });
+});
+
+test("a changed build re-owes QA even when its old stage status remains completed", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    const before = readJson(f.reportPath).stages.qa.evidence.qc_build_fingerprint;
+    buildSite(f, " (new headline)");
+    recordOk(f, "build");
+    await capture(f);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    await recordDeploy(f);
+    const report = readJson(f.reportPath);
+    assert.notEqual(report.stages.assembly.build_fingerprint, before);
+    assert.equal(report.stages.qa.status, "completed");
     assert.equal(nextOk(f).stage, "qa");
   });
 });
