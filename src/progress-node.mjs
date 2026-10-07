@@ -96,7 +96,7 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
 }
 function lock(dir,fn,{budgetMs=1500}={}) {
   const lockPath=join(dir,'.allocation-lock');
-  return withDirectoryLock(lockPath,fn,{budgetMs,unavailable:()=>Object.assign(new Error('progress.lock_unavailable'),{lockPath})});
+  return withDirectoryLock(lockPath,fn,{budgetMs,unavailable:(error)=>Object.assign(new Error('progress.lock_unavailable'),{lockPath,code:error?.code,obstruction:error?.obstruction})});
 }
 export async function persistProgressObservation(observation,{dir,now=()=>new Date(),historyLimit=32}={}) {
   mkdirSync(dir,{recursive:true,mode:0o700});
@@ -164,7 +164,8 @@ export async function observeProgress(args,continuation,{qaResult=null,packageVe
     if(remit.state==='failed')warn('[campaigns-os] Progress delivery pending; the local observation is retained. Lifecycle result is unchanged.');
     return {...remit,snapshot_id:snapshot.snapshot_id,reused};
   } catch(error) {
-    if(error?.message==='progress.lock_unavailable')warn(`[campaigns-os] Progress allocation lock occupied${error.lockPath?` at ${error.lockPath}`:''}; wait for the current writer. If it stays occupied (an abandoned, ownerless or interrupted lock), stop all campaigns-os writers for this target, then remove that lock directory (docs/progress-snapshots.md). Lifecycle result is unchanged.`);
+    if(error?.message==='progress.lock_unavailable'&&error.obstruction)warn(`[campaigns-os] Progress allocation lock path ${error.lockPath} is occupied by ${error.obstruction}; it is never removed automatically. Move it out of the way. Lifecycle result is unchanged.`);
+    else if(error?.message==='progress.lock_unavailable')warn(`[campaigns-os] Progress allocation lock occupied${error.lockPath?` at ${error.lockPath}`:''}; wait for the current writer. If it stays occupied (an abandoned, ownerless or interrupted lock), stop all campaigns-os writers for this target, then remove that lock directory (docs/progress-snapshots.md). Lifecycle result is unchanged.`);
     else warn('[campaigns-os] Progress observation unavailable; lifecycle result is unchanged.');
     return {state:'failed',reason:'capture_unavailable'};
   }
