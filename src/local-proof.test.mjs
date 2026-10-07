@@ -103,7 +103,7 @@ test("next build under local-serve hands off the development build command and t
   const result = nextStage("build", { packet: packetPath, "no-write": true });
   assert.equal(result.stage, "build");
   assert.match(result.prompt, /Local proof mode \(deploy\.target is local-serve\): run the page-kit build in the development environment — `CPK_ENV=development npx campaign-build --json > \.campaign-runtime\/page-kit-build-summary\.json`/);
-  assert.match(result.prompt, /then record build before polish: `campaigns-os record build --packet \S+ --build-environment development`\. It stamps/);
+  assert.match(result.prompt, /then record build before polish: `campaigns-os record build --packet \S+ --build-environment development --adapter-decision raw_html_conversion_status=completed`\. Put several scalar adapter decisions in one flag/);
   assert.match(result.prompt, /record build --packet \S+ --build-environment development`, which sets stages\.assembly\.evidence\.build_environment to "development"/);
   assert.match(result.prompt, /page-kit parity --packet/);
   assert.match(result.prompt, /Never edit a generated include/);

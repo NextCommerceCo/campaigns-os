@@ -6530,6 +6530,33 @@
         }
       ],
       "entry_sha256": "5ab33ca302fa671ac78c3e9b752ed7b251e756b05256f97ff75acd08c58ad5ba"
+    },
+    {
+      "id": "RL-0252",
+      "sequence": 235,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.8",
+      "changelog_sha256": "00c71d1c2e23e9099d633d17e45c05aa5ede88c08c5dcce1a7da126dc7d0fd53",
+      "agent_impact": "After a page-kit build, use record build --adapter-decision with one comma-separated list of scalar key=value choices to write Assembly Report adapter decisions. Unknown keys, invalid values and duplicate keys are refused. The object-valued template_files_copied remains outside this flag and keeps its existing proof and doctor checks. The Build Context and Build Packet are not written by this option.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "record",
+          "summary": "Document the record build --adapter-decision comma-separated key=value flag in help and the build prompt."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Tell builders to record scalar adapter decisions through record build, explain its report-only write and the object-valued template_files_copied exception, and update the record build reference."
+        }
+      ],
+      "entry_sha256": "2c50c8588d7d2021ad9600c8f3f0b1197caf2d0d5a53c27d6c6d4871c5a8942d"
     }
   ]
 }

@@ -66,6 +66,21 @@ const SCRIPT_STYLE_REFERENCE_POLICIES = new Set(["frontmatter_or_campaign_asset"
 const CTA_REWRITE_POLICIES = ROUTE_REWRITE_POLICIES;
 const LAYOUT_CHOICES = new Set(["campaign_layout", "page_layout", "raw_passthrough", "not_applicable", "unknown"]);
 
+// The scalar choices record build can set; the object-valued template slice
+// stays with its existing proof fields and doctor checks.
+export const ADAPTER_DECISION_SCALAR_VALUES = Object.freeze(Object.assign(Object.create(null), {
+  raw_html_conversion_status: [...RAW_HTML_CONVERSION_STATUSES],
+  source_asset_strategy: [...SOURCE_ASSET_STRATEGIES],
+  commerce_shell_adoption: [...COMMERCE_SHELL_ADOPTIONS],
+  route_rewrite_policy: [...ROUTE_REWRITE_POLICIES],
+  config_script_strategy: [...CONFIG_SCRIPT_STRATEGIES],
+  wrapper_policy: [...WRAPPER_POLICIES],
+  frontmatter_policy: [...FRONTMATTER_POLICIES],
+  script_style_reference_policy: [...SCRIPT_STYLE_REFERENCE_POLICIES],
+  cta_rewrite_policy: [...CTA_REWRITE_POLICIES],
+  layout_choice: [...LAYOUT_CHOICES],
+}));
+
 /**
  * Seeds the adapter decision record written onto a new Build Packet.
  *

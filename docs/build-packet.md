@@ -1253,9 +1253,16 @@ coverage blocks source readiness.
 
 ## Adapter And Proof Fields
 
-Fresh packets now include `source_html.adapter_contract`. Build Context and
-Assembly Report carry the same values as `adapter_decisions`, and build agents
-should update the report as they complete work.
+Fresh packets include `source_html.adapter_contract`. Build Context and
+Assembly Report carry the same values as `adapter_decisions`. After building,
+record scalar decisions with `record build --adapter-decision
+raw_html_conversion_status=completed,layout_choice=campaign_layout` (one flag,
+comma-separated `key=value` pairs). The command writes the Assembly Report;
+doctor reads those values ahead of Build Context and the packet. It refuses an
+unknown key or a value outside that field's allowed values. The object-valued
+`template_files_copied` has no flag: its `status`, `required_groups`, `groups`,
+and `paths` remain required proof in the report and keep their existing doctor
+checks.
 
 Required adapter decisions:
 
@@ -1737,7 +1744,7 @@ hand-editing `.campaign-runtime/` JSON:
 | Command | Writes | Refused (nothing written) when |
 |---|---|---|
 | `campaigns-os record setup --packet <p>` | Build Context `scaffold.required=false` (`handoff_skill` next-campaigns-build) and `stages.setup` completed | the campaign output directory (`assembly.output_dir`) does not exist, or there is no Build Context or Assembly Report |
-| `campaigns-os record build --packet <p> [--build-environment <development\|production>]` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, `evidence.build_environment` = the `--build-environment` value when given (kept from the last record otherwise), and `stages.polish` reset to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output; a completed `stages.deploy` whose `source_build_fingerprint` names other output is reset to `required` the same way, without the old probe's `outputs` and `evidence`, and its prior record is kept in `stages.deploy.history` (a deploy with no `source_build_fingerprint`, recorded before deploy stamped it, is kept) | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, or `stages.setup` is not terminal |
+| `campaigns-os record build --packet <p> [--build-environment <development\|production>] [--adapter-decision <key=value[,key=value...]>]` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, `evidence.build_environment` = the `--build-environment` value when given (kept from the last record otherwise), and the specified scalar `report.adapter_decisions`; several decisions go in one comma-separated flag. `stages.polish` resets to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output; a completed `stages.deploy` whose `source_build_fingerprint` names other output resets to `required` the same way, without the old probe's `outputs` and `evidence`, and its prior record is kept in `stages.deploy.history` (a deploy with no `source_build_fingerprint`, recorded before deploy stamped it, is kept) | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, `stages.setup` is not terminal, or an adapter decision key/value is invalid |
 | `campaigns-os record polish --packet <p> --evidence <file>` | `stages.polish` from the file (`docs/polish-evidence.md` §7: completed, blocked or skipped), bound to doctor's current fingerprint; `report.theme.repair_loop_defect` when the file sets it | build is not recorded for the current output, the file has a shape error (named by field), or, for a completed status, the polish gate doctor evaluates would not pass on the result |
 | `campaigns-os record theme --packet <p>` | `report.theme`: status `applied`, `load_order` `after-next-core`, `css_path`, `commerce_pages` and per-page evidence read from each built commerce page's stylesheet links; any earlier theme waiver is cleared | build is not recorded for the current output, the campaign ships no commerce pages, a built commerce page that loads `next-core.css` does not load `brand-theme.css` (or `checkout-brand.css`) after it or links one missing from the built output, or no built commerce page loads `next-core.css` |
 | `campaigns-os record deploy --packet <p> --base-url <url>` | the packet's `deploy.preview_url` and `stages.deploy` completed with the URL in `outputs`, one evidence line per built page that answered (each page is requested under the URL first), and `source_build_fingerprint` = the recorded `stages.assembly.build_fingerprint` it probed, so a later `record build` of different output makes deploy owed again and `next` routes back to `record deploy` before QA; a byte-identical rebuild keeps it current | the packet is not `local-serve`, the URL is not a loopback origin naming the campaign's route root, a built page does not answer 2xx, polish is not recorded, the built output changed since build was recorded, or the theme gate is blocked |

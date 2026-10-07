@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.8] - 2026-10-07
+
+### Changed
+
+`record build --adapter-decision <key=value[,key=value...]>` now records scalar adapter decisions on the Assembly Report, so builders can give several decisions in one command and doctor reads the recorded values on the next pass. An unknown key, an invalid value, or a repeated key in the list is refused with the allowed choices. The packet and Build Context are unchanged. `template_files_copied` remains an object with status, required groups, groups, and proof paths; the new flag does not set it, and its existing doctor checks remain.
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).

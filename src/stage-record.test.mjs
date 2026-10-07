@@ -750,6 +750,119 @@ test("record build --build-environment records stages.assembly.evidence.build_en
   });
 });
 
+test("record build --adapter-decision writes the report and doctor reads its value", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    assert.ok(doctor(f).warnings.some((issue) => issue.code === "adapter.raw_html_conversion_status"));
+    const beforeContext = readFileSync(f.contextPath, "utf8");
+    const beforePacket = readFileSync(f.packetPath, "utf8");
+    const result = recordOk(f, "build", ["--adapter-decision", "raw_html_conversion_status=completed"]);
+    assert.deepEqual(result.written, [f.reportPath]);
+    assert.equal(readJson(f.reportPath).adapter_decisions.raw_html_conversion_status, "completed");
+    assert.equal(doctor(f).warnings.some((issue) => issue.code === "adapter.raw_html_conversion_status"), false);
+    assert.equal(readFileSync(f.contextPath, "utf8"), beforeContext);
+    assert.equal(readFileSync(f.packetPath, "utf8"), beforePacket);
+  });
+});
+
+test("record build --adapter-decision refuses invalid values with the allowed values", () => {
+  withLifecycle((f) => {
+    const before = snapshotFiles(f);
+    const result = record(f, "build", ["--adapter-decision", "wrapper_policy=strip"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /wrapper_policy.*strip_document_wrappers.*preserve_document_wrappers.*not_required.*unknown/);
+    for (const value of ["layout_choice", "layout_choice=campaign_layout,", "layout_choice=campaign_layout,,frontmatter_policy=not_required"]) {
+      const malformed = record(f, "build", ["--adapter-decision", value]);
+      assert.notEqual(malformed.status, 0);
+      assert.match(malformed.stderr, /must be key=value|empty pair/);
+    }
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record build --adapter-decision refuses unknown keys with the allowed keys", () => {
+  withLifecycle((f) => {
+    const before = snapshotFiles(f);
+    const result = record(f, "build", ["--adapter-decision", "other_policy=unknown"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /other_policy.*raw_html_conversion_status.*layout_choice/);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record build --adapter-decision accepts several comma-separated pairs", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build", ["--adapter-decision", "raw_html_conversion_status=completed,frontmatter_policy=not_required,layout_choice=page_layout"]);
+    const decisions = readJson(f.reportPath).adapter_decisions;
+    assert.equal(decisions.raw_html_conversion_status, "completed");
+    assert.equal(decisions.frontmatter_policy, "not_required");
+    assert.equal(decisions.layout_choice, "page_layout");
+    assert.ok(validReport(readJson(f.reportPath)), JSON.stringify(validReport.errors));
+  });
+});
+
+test("record build --adapter-decision starts from context when report decisions are absent", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    const report = readJson(f.reportPath);
+    delete report.adapter_decisions;
+    writeJson(f.reportPath, report);
+    const contextDecisions = readJson(f.contextPath).adapter_decisions;
+    recordOk(f, "build", ["--adapter-decision", "layout_choice=page_layout"]);
+    assert.deepEqual(readJson(f.reportPath).adapter_decisions, { ...contextDecisions, layout_choice: "page_layout" });
+  });
+});
+
+test("record build --adapter-decision refuses duplicate keys within one list", () => {
+  withLifecycle((f) => {
+    const before = snapshotFiles(f);
+    const result = record(f, "build", ["--adapter-decision", "layout_choice=campaign_layout,layout_choice=page_layout"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /duplicate.*layout_choice/i);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record build --adapter-decision rejects malformed input before any write", () => {
+  withLifecycle((f) => {
+    const before = snapshotFiles(f);
+    const cases = [
+      ["bare flag", [], null],
+      ["empty string", [""], null],
+      ["empty pair", ["layout_choice=page_layout,"], null],
+      ["missing equals", ["layout_choice"], null],
+      ["empty key", ["=page_layout"], null],
+      ["empty value", ["layout_choice="], "layout_choice"],
+      ["leading key whitespace", [" layout_choice=page_layout"], null],
+      ["trailing key whitespace", ["layout_choice =page_layout"], null],
+      ["inner key whitespace", ["layout_ choice=page_layout"], null],
+      ["leading value whitespace", ["layout_choice= page_layout"], "layout_choice"],
+      ["trailing value whitespace", ["layout_choice=page_layout "], "layout_choice"],
+      ["inner value whitespace", ["layout_choice=page_ layout"], "layout_choice"],
+      ["equals inside value", ["layout_choice=page_layout=extra"], "layout_choice"],
+      ["unknown key", ["other_policy=unknown"], null],
+      ...["__proto__", "constructor", "toString", "hasOwnProperty"].map((key) => [`inherited key ${key}`, [`${key}=unknown`], null]),
+      ["out of enum", ["layout_choice=invalid"], "layout_choice"],
+      ["duplicate key", ["layout_choice=page_layout,layout_choice=campaign_layout"], null],
+    ];
+    for (const [name, value, valueKey] of cases) {
+      const result = record(f, "build", ["--adapter-decision", ...value]);
+      assert.notEqual(result.status, 0, name);
+      assert.match(result.stderr, /allowed keys:.*raw_html_conversion_status.*layout_choice/is, name);
+      if (valueKey) assert.match(result.stderr, new RegExp(`${valueKey}.*campaign_layout.*page_layout`, "s"), name);
+      assert.deepEqual(snapshotFiles(f), before, name);
+    }
+  });
+});
+
 test("a record refused for a value outside a schema enum lists the allowed values", () => {
   withLifecycle((f) => {
     scaffold(f);
