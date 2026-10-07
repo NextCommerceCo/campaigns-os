@@ -263,3 +263,19 @@ browserTest("upsell action spellings (control): a value the SDK does not read is
   assert.equal(cta.status, "fail");
   assert.equal(cta.evidence.reason, "missing_route_cta");
 });
+
+// The SDK binds upsell actions only inside a [data-next-upsell] container, in
+// either spelling, so an accept outside one goes to no route.
+browserTest("upsell action spellings: an accept written data-next-upsell-action=\"accept\" outside any data-next-upsell container is no primary-CTA route control", async () => {
+  const html = htmlPage(`
+<div data-next-upsell="offer" data-next-package-id="7">
+  <a data-next-upsell-action="decline" href="#" class="upsell-decline" style="${BOX}">No thanks, I'll pass</a>
+</div>
+<section><a data-next-upsell-action="accept" href="#" class="orphan-accept" style="${BOX}">Yes, Add to My Order</a></section>`, { head: "<meta name=\"next-page-type\" content=\"upsell\">" });
+  const { cta } = await pageChecks(html);
+  assert.equal(cta.status, "fail", cta.actual);
+  assert.equal(cta.evidence.reason, "missing_route_cta");
+  const orphan = cta.evidence.candidates.find((candidate) => candidate.selector === "a.orphan-accept");
+  assert.ok(orphan, "setup: the orphaned accept action is listed");
+  assert.notEqual(new URL(orphan.href).pathname, "/receipt/", "an orphaned accept action does not go to the accept route");
+});

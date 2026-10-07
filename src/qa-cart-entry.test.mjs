@@ -150,13 +150,18 @@ test("cartEntryHrefFor: a control matching a page-declared route goes to that ro
 // downsell page, each read from the topology field the static route-link rows
 // read; nothing on any other page.
 // The SDK accepts the offer on add or accept and declines it on skip or
-// decline, so each route's control is either spelling.
+// decline, so each route's control is either spelling, and only inside a
+// [data-next-upsell] container, where the SDK binds it. The checkout's control
+// is any button that submits the checkout form, typeless ones included, but
+// not an express-checkout wallet button.
 test("primaryCtaDeclaredRoutes: checkout submit -> expected_next_url; upsell / downsell add or accept -> expected_accept_url, skip or decline -> expected_decline_url; nothing elsewhere", () => {
   const { primaryCtaDeclaredRoutes } = __qaBrowserTestHooks;
   const urls = { expected_next_url: `${BASE}/next/`, expected_accept_url: `${BASE}/accept/`, expected_decline_url: `${BASE}/decline/` };
-  const ACCEPT = '[data-next-upsell-action="add"], [data-next-upsell-action="accept"]';
-  const DECLINE = '[data-next-upsell-action="skip"], [data-next-upsell-action="decline"]';
-  assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: "checkout", ...urls }), [{ selector: `${CHECKOUT_FORM} button[type="submit"]`, url: `${BASE}/next/` }]);
+  const ACCEPT = '[data-next-upsell] [data-next-upsell-action="add"], [data-next-upsell] [data-next-upsell-action="accept"]';
+  const DECLINE = '[data-next-upsell] [data-next-upsell-action="skip"], [data-next-upsell] [data-next-upsell-action="decline"]';
+  const NOT_WALLET = ":not([data-next-express-checkout]):not([data-next-express-checkout] *)";
+  const SUBMIT = [`${CHECKOUT_FORM} button[type="submit"]${NOT_WALLET}`, `${CHECKOUT_FORM} button:not([type])${NOT_WALLET}`, `${CHECKOUT_FORM} input[type="submit"]${NOT_WALLET}`].join(", ");
+  assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: "checkout", ...urls }), [{ selector: SUBMIT, url: `${BASE}/next/` }]);
   for (const pageType of ["upsell", "downsell", "Upsell"]) {
     assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: pageType, ...urls }), [
       { selector: ACCEPT, url: `${BASE}/accept/` },

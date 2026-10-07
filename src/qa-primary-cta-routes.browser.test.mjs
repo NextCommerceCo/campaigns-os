@@ -35,8 +35,9 @@ function signupForm(action) {
 // The starter checkout's shape: bundle cards (role="button"), the express
 // wallet buttons the SDK mounts, and the submit block's button. `action`
 // adds a form action to the checkout form; `sdkForm: false` leaves the
-// checkout form out; `extra` is markup after it.
-function checkoutPage({ action = null, sdkForm = true, extra = "" } = {}) {
+// checkout form out; `submitType` is the submit block button's type attribute
+// (null for none); `extra` is markup after it.
+function checkoutPage({ action = null, sdkForm = true, submitType = "submit", extra = "" } = {}) {
   return htmlPage(`${sdkForm ? `
 <form data-next-checkout="form" id="combo_form" method="post"${action ? ` action="${action}"` : ""}>
   <div data-next-bundle-selector data-next-selector-id="main">
@@ -49,7 +50,7 @@ function checkoutPage({ action = null, sdkForm = true, extra = "" } = {}) {
       <button data-next-express-checkout="apple_pay" aria-label="Apple Pay" style="${WALLET}"></button>
     </div>
   </div>
-  <div class="submit-section"><div class="submit-section__button"><button os-checkout-payment="combo" data-action="submit" type="submit" class="submit-button" style="${BOX}">
+  <div class="submit-section"><div class="submit-section__button"><button os-checkout-payment="combo" data-action="submit"${submitType ? ` type="${submitType}"` : ""} class="submit-button" style="${BOX}">
     <div data-pb-element="checkout-button-info" class="submit-button__content"><div class="submit-button__main-text">COMPLETE PURCHASE</div></div>
   </button></div></div>
 </form>` : ""}${extra}`, { head: "<meta name=\"next-page-type\" content=\"checkout\">" });
@@ -167,6 +168,45 @@ browserTest("QA CTA routes: upsell with an unrelated form whose action is the ne
 
 browserTest("QA CTA routes: upsell with an unrelated form whose action is the next route: only the SDK add action is a route candidate", async () => {
   const entry = await primaryCta(upsellPage({ extra: signupForm("/receipt/") }), { pageType: "upsell", path: "/upsell/", next: "/receipt/", accept: "/receipt/", decline: "/downsell/" });
+  assert.deepEqual(outcome(entry), { status: "pass", reason: "ok" }, entry.actual);
+  assert.deepEqual(routeRows(entry).map((row) => row.selector), ["a.button.cc-xl"], JSON.stringify(entry.evidence.candidates));
+});
+
+// A <button> with no type attribute submits its form, so in the SDK checkout
+// form it is the submit control as much as a type="submit" one; a
+// type="button" control there submits nothing and is no route candidate.
+browserTest("QA CTA routes: checkout whose submit button has no type attribute: it submits the checkout form, so it is the route control and the row passes", async () => {
+  const entry = await primaryCta(checkoutPage({ submitType: null }), { pageType: "checkout", path: "/checkout/", next: "/upsell/" });
+  assert.deepEqual(outcome(entry), { status: "pass", reason: "ok" }, entry.actual);
+  const rows = routeRows(entry);
+  assert.deepEqual(rows.map((row) => row.selector), ["button.submit-button"], JSON.stringify(entry.evidence.candidates));
+  assert.equal(new URL(rows[0].href).pathname, "/upsell/");
+});
+
+browserTest("QA CTA routes: checkout whose only form button is type=\"button\": it is not a route candidate and the row reads missing_route_cta", async () => {
+  const entry = await primaryCta(checkoutPage({ submitType: "button" }), { pageType: "checkout", path: "/checkout/", next: "/upsell/" });
+  assert.deepEqual(outcome(entry), { status: "fail", reason: "missing_route_cta" }, entry.actual);
+  const button = entry.evidence.candidates.find((candidate) => candidate.selector === "button.submit-button");
+  assert.ok(button, "setup: the type=\"button\" control is listed");
+  assert.equal(button.href, null, "a type=\"button\" control does not submit the checkout form");
+});
+
+// The SDK binds upsell actions only inside a [data-next-upsell] container, so
+// an action outside one does nothing and goes to no route.
+function orphanedAction(action) {
+  return `<section><a data-next-upsell-action="${action}" href="#" class="orphan-${action}" style="${BOX}">Yes, add it</a></section>`;
+}
+
+browserTest("QA CTA routes: upsell whose only add action sits outside any data-next-upsell container: it is not a route candidate and the row reads missing_route_cta", async () => {
+  const entry = await primaryCta(upsellPage({ add: false, extra: orphanedAction("add") }), { pageType: "upsell", path: "/upsell/", next: "/receipt/", accept: "/receipt/", decline: "/downsell/" });
+  assert.deepEqual(outcome(entry), { status: "fail", reason: "missing_route_cta" }, entry.actual);
+  const orphan = entry.evidence.candidates.find((candidate) => candidate.selector === "a.orphan-add");
+  assert.ok(orphan, "setup: the orphaned add action is listed");
+  assert.notEqual(new URL(orphan.href).pathname, "/receipt/", "an orphaned add action does not go to the accept route");
+});
+
+browserTest("QA CTA routes: upsell with an in-offer add action and an orphaned one: only the in-offer action is a route candidate", async () => {
+  const entry = await primaryCta(upsellPage({ extra: orphanedAction("add") }), { pageType: "upsell", path: "/upsell/", next: "/receipt/", accept: "/receipt/", decline: "/downsell/" });
   assert.deepEqual(outcome(entry), { status: "pass", reason: "ok" }, entry.actual);
   assert.deepEqual(routeRows(entry).map((row) => row.selector), ["a.button.cc-xl"], JSON.stringify(entry.evidence.candidates));
 });

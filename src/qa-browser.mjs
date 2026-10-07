@@ -1346,15 +1346,25 @@ function primaryCtaRoutelessForms(page) {
 // decline route. The routes are the topology fields the static route-link
 // rows read, and the actions are the rendered upsell-control check's table.
 // A control is a route candidate when its route is the expected next route,
-// like any other.
+// like any other. The submit button is any button that submits the form, so a
+// typeless one too, but not an express-checkout wallet button, which starts
+// the wallet flow; an upsell action counts only inside a [data-next-upsell]
+// container, the only place the SDK binds it.
 function primaryCtaDeclaredRoutes(page) {
   if (!primaryCtaPageRoutesSdkControls(page)) return [];
   if (String(page.page_type).toLowerCase() === "checkout") {
-    return page.expected_next_url ? [{ selector: `${CHECKOUT_FORM_SELECTOR} button[type="submit"]`, url: page.expected_next_url }] : [];
+    const notWallet = ":not([data-next-express-checkout]):not([data-next-express-checkout] *)";
+    const submit = ['button[type="submit"]', "button:not([type])", 'input[type="submit"]']
+      .map((control) => `${CHECKOUT_FORM_SELECTOR} ${control}${notWallet}`)
+      .join(", ");
+    return page.expected_next_url ? [{ selector: submit, url: page.expected_next_url }] : [];
   }
   return UPSELL_CONTROL_ROUTES
     .filter(({ field }) => page[field])
-    .map(({ kind, field }) => ({ selector: upsellActionSelector(...UPSELL_ACTION_SPELLINGS[kind]), url: page[field] }));
+    .map(({ kind, field }) => ({
+      selector: UPSELL_ACTION_SPELLINGS[kind].map((action) => `[data-next-upsell] ${upsellActionSelector(action)}`).join(", "),
+      url: page[field],
+    }));
 }
 
 // Candidate CTAs: anything clickable, plus every SDK action control and the
