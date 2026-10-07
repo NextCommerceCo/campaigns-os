@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 
-import { runBrowserTestOrders } from "./qa-browser.mjs";
+import { runBrowserTestOrders, __qaBrowserTestHooks } from "./qa-browser.mjs";
 
 const FIXTURE = new URL("../fixtures/qa-bundle-order/checkout.html", import.meta.url).pathname;
 
@@ -45,10 +45,30 @@ const PACKAGES = [
 // Adds one more bundle card to the swap-mode selector, after the 3x tier.
 const addCard = (html, card) => html.replace(/\n {4}<\/div>\n {2}<\/div>\n {2}<aside/, `\n      ${card}\n    </div>\n  </div>\n  <aside`);
 
+const KIT_CARD = `<div data-next-bundle-card data-next-bundle-id="bundle-kit" data-next-bundle-items='[{"packageId":1,"quantity":2},{"packageId":4,"quantity":1}]' role="button" class="os-card"><div class="os-card__content" data-next-package-id="1">2x Demo Purifier + Stand</div></div>`;
+
+const BUNDLE_SELECTOR = '<div data-next-bundle-selector data-next-selector-id="main" data-next-selection-mode="swap" data-next-include-shipping="true" class="os-option">';
+
 const PLAIN_CARDS = `<div class="os-cards__vertical">
       <div data-next-selector-card data-next-package-id="1" data-next-selected="true" role="button" class="os-card next-selected">1x Demo Purifier</div>
       <div data-next-selector-card data-next-package-id="3" role="button" class="os-card">2x Demo Purifier</div>
     </div>`;
+
+// Plain cards each in their own wrapper, with no selector container at all.
+const WRAPPED_PLAIN_CARDS = `<div class="os-cards">
+    <div class="os-card-wrap"><div data-next-selector-card data-next-package-id="1" data-next-selected="true" role="button" class="os-card next-selected">1x Demo Purifier</div></div>
+    <div class="os-card-wrap"><div data-next-selector-card data-next-package-id="3" role="button" class="os-card">2x Demo Purifier</div></div>
+  </div>`;
+
+// After the 2x card is first clicked, the selector re-renders every card
+// node and adds the kit card.
+const RERENDER_SCRIPT = `<script>
+document.addEventListener("click", function (event) {
+  if (!event.target.closest('[data-next-bundle-id="bundle-2x"]') || document.querySelector('[data-next-bundle-id="bundle-kit"]')) return;
+  var list = document.querySelector(".os-cards__vertical");
+  list.innerHTML = list.innerHTML + ${JSON.stringify(KIT_CARD)};
+});
+</script>`;
 
 // Page rewrites, one per variant the cases need.
 const VARIANTS = {
@@ -61,13 +81,20 @@ const VARIANTS = {
   // A card for the two-pack package 3 in the same selector.
   pack: (html) => addCard(html, `<div data-next-bundle-card data-next-bundle-id="bundle-pack" data-next-bundle-items='[{"packageId":3,"quantity":1}]' role="button" class="os-card"><div class="os-card__content" data-next-package-id="3">Two-pack</div></div>`),
   // A kit card declaring two items: two purifiers and the stand.
-  kit: (html) => addCard(html, `<div data-next-bundle-card data-next-bundle-id="bundle-kit" data-next-bundle-items='[{"packageId":1,"quantity":2},{"packageId":4,"quantity":1}]' role="button" class="os-card"><div class="os-card__content" data-next-package-id="1">2x Demo Purifier + Stand</div></div>`),
+  kit: (html) => addCard(html, KIT_CARD),
+  // The kit card appears only once the 2x card has been clicked.
+  rerender: (html) => html.replace("</body>", `${RERENDER_SCRIPT}\n</body>`),
   // Only the 2x and 3x tiers, with the 3x tier preselected.
   "2x-3x": (html) => html
     .replace(/\n\s*<div data-next-bundle-card data-next-bundle-id="bundle-1x"[\s\S]*?<\/div>\n\s*<\/div>/, "")
     .replace('data-next-bundle-id="bundle-3x"', 'data-next-bundle-id="bundle-3x" data-next-selected="true"'),
-  // A plain package-card checkout: no bundle cards at all.
-  plain: (html) => html.replace(/<div class="os-cards__vertical">[\s\S]*?\n {4}<\/div>/, PLAIN_CARDS),
+  // A plain package-card checkout: no bundle cards at all, in the SDK's
+  // [data-next-cart-selector].
+  plain: (html) => html
+    .replace(BUNDLE_SELECTOR, '<div data-next-cart-selector data-next-selection-mode="swap" class="os-option">')
+    .replace(/<div class="os-cards__vertical">[\s\S]*?\n {4}<\/div>/, PLAIN_CARDS),
+  // Plain package cards in separate wrappers and no selector container.
+  "plain-wrapped": (html) => html.replace(/<div data-next-bundle-selector[\s\S]*?\n {2}<\/div>\n {2}<aside/, `${WRAPPED_PLAIN_CARDS}\n  <aside`),
 };
 
 const RECEIPT = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Receipt</title></head>
@@ -221,6 +248,16 @@ browserTest("--cart 1:2 when no card carries two units: the one-unit order fails
   assert.deepEqual(parity.evidence.quantity_mismatches.map((entry) => entry.package_ref_id), ["1"]);
 });
 
+browserTest("--cart 1:2,3:1 in a swap-mode selector that keeps only the 3:1 card fails the display-parity row naming 1:2", async () => {
+  const { parity, carts } = await runVariant("pack", { cart: "1:2,3:1" });
+
+  assert.deepEqual(carts, [["3:1"]], "the package-3 card replaced the two-unit card");
+  assert.equal(parity.status, "fail");
+  assert.equal(parity.severity, "blocker");
+  assert.match(parity.actual, /package 1 requested 2 unit\(s\) \(1 per package × 2\) but the order carries no line for it/);
+  assert.deepEqual(parity.evidence.quantity_mismatches.map((entry) => entry.package_ref_id), ["1"]);
+});
+
 browserTest("a bare --cart 1 clicks the first rendered card carrying package 1, as before", async () => {
   const { steps, parity, carts } = await runVariant("2x-3x", { cart: "1" });
 
@@ -274,6 +311,16 @@ browserTest("plain package cards: --select-package 3 with --cart 1 does not swit
   assert.equal(parity.status, "pass", parity.actual);
 });
 
+browserTest("plain package cards each in their own wrapper: --select-package 3 with --cart 1 does not switch to the package-1 card", async () => {
+  const { steps, parity, carts } = await runVariant("plain-wrapped", { "select-package": "3", cart: "1" });
+
+  assert.equal(steps.selected_bundle.status, "ok", steps.selected_bundle.error);
+  assert.deepEqual(carts, [["3:1"]], "the order is the card --select-package chose");
+  assert.match(steps.selected_bundle.detail, /3:1 via \[data-next-selector-card\]\[data-next-package-id="3"\]/);
+  assert.match(steps.selected_bundle.detail, /--cart 1:1 not applied: only another card in the selector --select-package chose carries it/);
+  assert.equal(parity.status, "pass", parity.actual);
+});
+
 browserTest("--select-package 1:2 with --cart for a package no card or control carries names it and keeps the selection", async () => {
   const { steps, parity, carts } = await runVariant("starter", { "select-package": "1:2", cart: "9:1" });
 
@@ -294,6 +341,40 @@ browserTest("a card declaring two items is selected by either item and reconcile
   const cart = await runVariant("kit", { cart: "4:1" });
   assert.deepEqual(cart.carts.map((lines) => [...lines].sort()), [["1:2", "4:1"]]);
   assert.equal(cart.parity.status, "pass", cart.parity.actual);
+});
+
+browserTest("--cart reads the cards again for each ref, so a card a re-render added is selected", async () => {
+  const { steps, parity, carts } = await runVariant("rerender", { cart: "1:2,4:1" });
+
+  assert.equal(steps.selected_bundle.status, "ok", steps.selected_bundle.error);
+  assert.deepEqual(carts.map((lines) => [...lines].sort()), [["1:2", "4:1"]], "the kit card the re-render added was clicked");
+  assert.equal(parity.status, "pass", parity.actual);
+});
+
+browserTest("every selected bundle card's items are collected and reconciled, past the tenth card", async () => {
+  const { checkoutDisplayEvidence, reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
+  const refs = Array.from({ length: 11 }, (_, index) => String(index + 1));
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    // Eleven selectors, each with its one card selected. The summary renders
+    // rows for the first ten packages only.
+    await page.setContent(`<main>
+      ${refs.map((ref) => `<div data-next-bundle-selector><div data-next-bundle-card data-next-bundle-id="bundle-${ref}" data-next-bundle-items='[{"packageId":${ref},"quantity":1}]' data-next-selected="true">Item ${ref}</div></div>`).join("\n")}
+      <aside data-next-cart-summary><div data-summary-lines>${refs.slice(0, 10).map((ref) => `<div data-package-id="${ref}">Item ${ref}</div>`).join("")}</div></aside>
+    </main>`);
+    const display = await checkoutDisplayEvidence(page);
+    assert.deepEqual(display.selected_bundle_items.map((card) => card.bundle_id), refs.map((ref) => `bundle-${ref}`));
+
+    const events = { responses: [{ body: { packages: refs.map((ref) => ({ ref_id: Number(ref), qty: 1, product_sku: `DEMO-${ref}` })) } }] };
+    const lines = refs.slice(0, 10).map((ref) => ({ title: `Item ${ref}`, quantity: 1, sku: `DEMO-${ref}` }));
+    const reconciliation = reconcileOrderAgainstDisplay({ lines, display, events });
+    assert.equal(reconciliation.ok, false);
+    assert.deepEqual(reconciliation.missing, ["11"], "the eleventh selected card's package was never charged");
+  } finally {
+    await browser.close();
+  }
 });
 
 browserTest("control: a plain package-card checkout selects, adds the bump and reconciles as before", async () => {

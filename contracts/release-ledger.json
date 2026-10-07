@@ -6565,8 +6565,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.54.0+agent.5",
-      "changelog_sha256": "d600cec0cb2ed42ddd1ae34831c86a07baf19232b4f247dd277b6f8196a22460",
-      "agent_impact": "qa run --test-order now drives a bundle-card checkout by each card's data-next-bundle-items. --select-package <pkg>:<qty> and --cart <pkg>:<qty> select the card one of whose declared items is that package at that quantity, preferring a card that declares it alone, even when no inner node repeats the package id; a kit card declaring several items is found by any of them. Beside --select-package, --cart never clicks another card in the chosen card's selector group (bundle or plain package cards): a ref the chosen card carries is left alone, a ref an order bump or a card in another selector group carries is applied through that control, and any other ref is left unapplied and named in the selected_bundle detail as '--cart <ref:qty> not applied: <reason>'. Read that note as a conflict between the two flags; the order and its reconciliation are those of the card --select-package chose. The browser-order-display-parity row reconciles against the packages and quantities the selected bundle card declares, not its data-next-bundle-id, and, without --select-package, fails when an explicit --cart quantity for such a package differs from the order, naming requested and persisted units. Read a failing row whose message says the ordered quantity differs from the request as a wrong-tier order, not a stray charge.",
+      "changelog_sha256": "b76dfa416d6d20c2ec5e9c94802e2b811ba7133bf248e9430c283f06e3882398",
+      "agent_impact": "qa run --test-order now drives a bundle-card checkout by each card's data-next-bundle-items. --select-package <pkg>:<qty> and --cart <pkg>:<qty> select the card one of whose declared items is that package at that quantity, preferring a card that declares it alone, even when no inner node repeats the package id; a kit card declaring several items is found by any of them. --cart reads the cards again before each ref. Beside --select-package, --cart never clicks another card in the chosen card's selector group (bundle or plain package cards; a card in no recognised selector container counts as in that group): a ref the chosen card carries is left alone, a ref an order bump or a card in another selector group carries is applied through that control, and any other ref is left unapplied and named in the selected_bundle detail as '--cart <ref:qty> not applied: <reason>'. Read that note as a conflict between the two flags; the order and its reconciliation are those of the card --select-package chose. The browser-order-display-parity row reconciles against the packages and quantities every selected bundle card declares, not its data-next-bundle-id, and, without --select-package, fails when an explicit --cart <ref:qty> is not in the order at that quantity, naming requested and persisted units or saying the order carries no line for the package. Read a failing row whose message says the ordered quantity differs from the request as a wrong-tier order, not a stray charge.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -6574,10 +6574,10 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "Say that --select-package and --cart resolve a bundle card by any one of its data-next-bundle-items, that --cart beside --select-package never clicks another card in the chosen card's selector group and names a ref it leaves unapplied, and that display parity reconciles against the selected card's declared packages and, without --select-package, fails on an explicit --cart quantity the order did not carry."
+          "summary": "Say that --select-package and --cart resolve a bundle card by any one of its data-next-bundle-items, that --cart reads the cards again before each ref, that --cart beside --select-package never clicks another card in the chosen card's selector group (a card in no recognised selector container counts as in it) and names a ref it leaves unapplied, and that display parity reconciles against every selected card's declared packages and, without --select-package, fails on an explicit --cart <ref:qty> the order did not carry at that quantity."
         }
       ],
-      "entry_sha256": "8e44d4ad622544b77203e008fb02f111bc47424a930dfa143619ba95e7c8c720"
+      "entry_sha256": "6c6626a9f3360ba798598e243cf13dc96bf93b17ba9488f6ea785c2fe7df90e9"
     }
   ]
 }

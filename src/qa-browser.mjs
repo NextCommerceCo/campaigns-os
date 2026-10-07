@@ -4521,10 +4521,11 @@ async function selectRequestedCart(page, args, { selectedPackages = [], selected
   // [data-next-package-id] for that package is usually the one-unit card's
   // inner node, so the plain click below would reset a multi-unit selection.
   // A bare ref names no quantity and clicks that first node, as it always has.
-  const bundleCards = (await renderedPackageCardCandidates(page))
-    .filter((candidate) => candidate.bundle_id && Array.isArray(candidate.items));
+  // The cards are read again for each ref: a click may re-render the selector.
   for (const item of cart) {
     const ref = String(item.packageId);
+    const bundleCards = (await renderedPackageCardCandidates(page))
+      .filter((candidate) => candidate.bundle_id && Array.isArray(candidate.items));
     if (item.quantityExplicit && bundleCards.some((card) => card.items.some((entry) => entry.package_id === ref))) {
       await selectCartBundleCard(page, bundleCards, item);
       continue;
@@ -4573,9 +4574,12 @@ async function applyCartBesideSelection(page, cart, { selectedPackages, selected
       }
       continue;
     }
+    // A card in no recognised selector container may share the chosen card's
+    // selection, so it is locked like a card in the chosen card's group.
     const lockedGroups = new Set(chosen.map((candidate) => candidate.group));
     const reachable = candidates.filter((candidate) => (
-      cardCarriesPackage(candidate, ref) && (candidate.toggle || !lockedGroups.has(candidate.group))
+      cardCarriesPackage(candidate, ref)
+      && (candidate.toggle || (candidate.group != null && !lockedGroups.has(candidate.group)))
     ));
     if (!reachable.length) {
       unapplied.push(candidates.some((candidate) => cardCarriesPackage(candidate, ref))
@@ -4666,7 +4670,9 @@ async function selectPackageCard(page, item, cards = []) {
 const PACKAGE_CARD_QUERY = "[data-next-bundle-card], [data-next-selector-card], [data-next-package-id], [data-next-bundle-id]";
 
 // `placement` adds where each card sits: its selector group (an index valid
-// for this read only), whether it is selected, whether it is an order-bump
+// for this read only, null for a card in no recognised selector container,
+// whose own wrapper says nothing about which cards it swaps with), whether it
+// is selected, whether it is an order-bump
 // style toggle rather than a selector card, and the index of its element in
 // PACKAGE_CARD_QUERY so that one exact element can be clicked.
 async function renderedPackageCardCandidates(page, { placement = false } = {}) {
@@ -4675,7 +4681,7 @@ async function renderedPackageCardCandidates(page, { placement = false } = {}) {
     const seen = new Set();
     const groups = new Map();
     const groupOf = (card) => {
-      const container = card.closest("[data-next-bundle-selector], [data-next-selector-id], [data-next-cart-selector]") || card.parentElement;
+      const container = card.closest("[data-next-bundle-selector], [data-next-selector-id], [data-next-cart-selector]");
       if (!container) return null;
       if (!groups.has(container)) groups.set(container, groups.size);
       return groups.get(container);
@@ -5819,7 +5825,9 @@ async function checkoutDisplayEvidence(browserPage) {
       summary_present: summaries.length > 0,
       summary_rows: summaryRows.slice(0, 40),
       selected_bundle_package_ids: [...new Set(selectedBundles)],
-      selected_bundle_items: selectedBundleItems.slice(0, 10),
+      // Uncapped, like selected_bundle_package_ids: every selected card's
+      // items are reconciled.
+      selected_bundle_items: selectedBundleItems,
       active_toggle_package_ids: [...new Set(activeToggles)],
       discount_rows: discountRows.slice(0, 20),
       total_text: totalNode ? clean(totalNode.textContent) : null,
@@ -5874,12 +5882,10 @@ function displayedPackageIds(display) {
 // The packages and per-package quantities the selected bundle card(s)
 // declare. A package two selected cards declare at different quantities is
 // left out of `quantities`: the display itself does not say which one holds.
-// `undeclared` is set when a selected card's items are malformed or empty.
+// A card whose items are malformed or empty declares nothing.
 function selectedBundleDeclarations(display) {
   const declared = new Map();
-  let undeclared = false;
   for (const card of display?.selected_bundle_items || []) {
-    if (!Array.isArray(card?.items) || !card.items.length) undeclared = true;
     for (const item of card?.items || []) {
       const ref = String(item?.package_id ?? "");
       const quantity = Number(item?.quantity);
@@ -5889,7 +5895,6 @@ function selectedBundleDeclarations(display) {
   }
   return {
     refs: new Set(declared.keys()),
-    undeclared,
     quantities: [...declared]
       .filter(([, quantities]) => quantities.length === 1)
       .map(([packageId, [quantity]]) => ({ packageId, quantity })),
@@ -5927,14 +5932,13 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
     ...(selected_packages || []),
     ...declarations.quantities.filter((item) => !strictRefs.has(item.packageId)),
   ];
-  // An explicit --cart quantity is judged for the packages the selected bundle
-  // card declares: there the quantity decides which card the runner clicks.
-  // Beside --select-package the order is judged against the card that flag
-  // chose; a --cart ref it left unapplied is named by selected_bundle. A
-  // selected card that declares nothing cannot say which refs it covers, so
-  // then every explicit --cart quantity is judged.
+  // Without --select-package, every explicit --cart <pkg>:<qty> is judged on
+  // its own: the order must carry that package at that quantity, whichever
+  // card, if any, declares it. Beside --select-package the order is judged
+  // against the card that flag chose; a --cart ref it left unapplied is named
+  // by selected_bundle.
   const requestedCart = (selected_packages || []).length ? [] : (requested_cart || [])
-    .filter((item) => item?.quantityExplicit && (declarations.undeclared || declarations.refs.has(String(item.packageId))));
+    .filter((item) => item?.quantityExplicit);
   const requestedCartByRef = new Map(requestedCart.map((item) => [String(item.packageId), Number(item.quantity || 1)]));
   const displayed = new Set(resolved.displayed_package_ids);
   const summaryIds = new Set(resolved.summary_package_ids);
@@ -5943,6 +5947,13 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
   // the quantity --select-package names or the selected card declares, so
   // for a declared item this proves the quantity too.
   const chargedRefs = new Set();
+  // --cart refs a line resolved to, or whose quantity mismatch is named.
+  const answeredCartRefs = new Set();
+  const unresolvedLines = [];
+  const extra = [];
+  const unresolved = [];
+  const matchedQuantities = [];
+  const quantityMismatches = [];
   // A checkout order bump persists with is_upsell: true (the platform's
   // reporting tag), yet the checkout summary displays it. Such a line charges
   // a displayed row; an is_upsell line the summary does not show is a
@@ -5957,12 +5968,13 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
     if (ref && summaryIds.has(ref)) {
       matchedSummaryIds.add(ref);
       bumpLineCount += 1;
+      if (requestedCartByRef.has(ref)) {
+        answeredCartRefs.add(ref);
+        const mismatch = packageQuantityMismatch(ref, Number(resolution.pkg.qty ?? resolution.pkg.quantity), requestedCartByRef.get(ref), Number(line.quantity));
+        if (mismatch) quantityMismatches.push(mismatch);
+      }
     }
   }
-  const extra = [];
-  const unresolved = [];
-  const matchedQuantities = [];
-  const quantityMismatches = [];
 
   for (const line of nonUpsellLines) {
     const resolution = events ? campaignPackageResolutionForLine(events, line, {
@@ -5976,8 +5988,12 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
       // same tolerance linePriceDeltaEvidence applies). An unresolvable line
       // cannot prove a stray charge, so it is reported, never counted as one.
       unresolved.push({ title: line.title, quantity: line.quantity });
+      unresolvedLines.push(line);
       const mismatch = requestedPackageQuantityMismatch(events, line, [...selected_packages, ...requestedCart]);
-      if (mismatch) quantityMismatches.push(mismatch);
+      if (mismatch) {
+        quantityMismatches.push(mismatch);
+        answeredCartRefs.add(mismatch.package_ref_id);
+      }
       continue;
     }
     chargedRefs.add(ref);
@@ -5991,6 +6007,7 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
     // The line resolved at the quantity the page selected; --cart asked for
     // another, so the order is not the one requested.
     if (requestedCartByRef.has(ref)) {
+      answeredCartRefs.add(ref);
       const mismatch = packageQuantityMismatch(ref, unitQuantity, requestedCartByRef.get(ref), Number(line.quantity));
       if (mismatch) quantityMismatches.push(mismatch);
     }
@@ -6004,6 +6021,19 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
       quantity: line.quantity,
       price: line.price,
     });
+  }
+  // An explicit --cart ref the order carries no line for is not the order
+  // requested either, as when a swap-mode selector kept only the last --cart
+  // ref's card. An unresolved line that is that package at that quantity
+  // still answers it.
+  const packages = latestEventPackages(events);
+  if (packages) {
+    for (const [ref, purchaseMultiplier] of requestedCartByRef) {
+      if (answeredCartRefs.has(ref)) continue;
+      const pkg = packages.find((candidate) => String(candidate?.ref_id ?? candidate?.package_id ?? candidate?.id ?? "") === ref);
+      if (pkg && unresolvedLines.some((line) => packageMatchesLine(pkg, line, { purchaseMultiplier }))) continue;
+      quantityMismatches.push(absentPackageMismatch(ref, Number(pkg?.qty ?? pkg?.quantity), purchaseMultiplier));
+    }
   }
 
   // Every item a selected bundle card declares must be charged, whether or not
@@ -6055,6 +6085,29 @@ function packageQuantityMismatch(ref, unitQuantity, purchaseMultiplier, persiste
     persisted_quantity: persistedQuantity,
     reason: `package ${ref} requested ${requestedQuantity} unit(s) (${unitQuantity} per package × ${purchaseMultiplier}) but persisted ${persistedQuantity}`,
   };
+}
+
+function absentPackageMismatch(ref, unitQuantity, purchaseMultiplier) {
+  const known = Number.isFinite(unitQuantity);
+  return {
+    package_ref_id: ref,
+    unit_quantity: known ? unitQuantity : null,
+    purchase_multiplier: purchaseMultiplier,
+    requested_quantity: known ? unitQuantity * purchaseMultiplier : null,
+    persisted_quantity: 0,
+    reason: known
+      ? `package ${ref} requested ${unitQuantity * purchaseMultiplier} unit(s) (${unitQuantity} per package × ${purchaseMultiplier}) but the order carries no line for it`
+      : `package ${ref} requested at quantity ${purchaseMultiplier} but the order carries no line for it`,
+  };
+}
+
+function latestEventPackages(events) {
+  const responses = events?.responses || [];
+  for (let index = responses.length - 1; index >= 0; index -= 1) {
+    const packages = responses[index]?.body?.packages;
+    if (Array.isArray(packages)) return packages;
+  }
+  return null;
 }
 
 function packageIdentityMatchesLine(pkg, line) {

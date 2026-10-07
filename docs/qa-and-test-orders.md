@@ -1585,17 +1585,24 @@ Two flags target funnels the default-tier drive cannot prove:
   the best-effort variant. For a package that bundle cards declare, `--cart
   <ref:qty>` clicks the card whose items carry that package at that quantity,
   and clicks nothing when the selected card already does; refs no bundle card
-  declares (an order bump) are clicked as before. Beside `--select-package`,
-  `--cart` never clicks another card in the chosen card's selector group: a
+  declares (an order bump) are clicked as before. The cards are read again
+  before each ref, so a selector that re-renders after a click is clicked as
+  it now stands. Beside `--select-package`,
+  `--cart` never clicks another card in the chosen card's selector group, and
+  a card in no recognised selector container
+  (`[data-next-bundle-selector]`, `[data-next-selector-id]`,
+  `[data-next-cart-selector]`) counts as in that group: a
   ref the chosen card carries is left as it is, a ref an order bump or a card
   in another selector group carries is applied through that control, and any
   other ref is left unapplied and named in the `selected_bundle` detail
   (`--cart 3:1 not applied: ...`). The display-parity row reconciles the order
-  against the packages and quantities the selected bundle card declares, not
-  its `data-next-bundle-id`. Without `--select-package` it also fails when the
-  ordered quantity of such a package differs from an explicit `--cart`
-  quantity (`--cart 1:2` that ordered one unit); beside `--select-package` it
-  judges the order against the card that flag chose.
+  against the packages and quantities every selected bundle card declares, not
+  its `data-next-bundle-id`. Without `--select-package` it also fails when an
+  explicit `--cart <ref:qty>` is not in the order at that quantity: a
+  different quantity (`--cart 1:2` that ordered one unit) or no line for the
+  package at all (`--cart 1:2,3:1` on a swap-mode selector that kept only the
+  `3:1` card); beside `--select-package` it judges the order against the card
+  that flag chose.
 - `--apply-coupon <code>` — types the code into the rendered coupon/promo input
   (the SDK's `[data-next-checkout-field="coupon"]` or
   `input[data-next-coupon="input"]`, then hand-rolled `coupon`/`voucher`/`promo`

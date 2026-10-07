@@ -175,6 +175,43 @@ test("a selected card with malformed data-next-bundle-items still has an explici
   assert.deepEqual(reconciliation.quantity_mismatches.map((entry) => entry.reason), ["package 1 requested 2 unit(s) (1 per package × 2) but persisted 1"]);
 });
 
+test("a malformed selected card does not change how --cart refs are judged beside a well-formed selected card", () => {
+  const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 1, qty: 1, product_sku: "DEMO-PURIFIER", product_id: 101 },
+    { ref_id: 4, qty: 1, product_sku: "DEMO-STAND", product_id: 104 },
+  ] } }] };
+  // bundle-2x declares [{"packageId":1,"quantity":2}]; the stand comes from a
+  // plain card no selected bundle card declares.
+  const wellFormed = { bundle_id: "bundle-2x", items: [{ package_id: "1", quantity: 2 }] };
+  const malformed = { bundle_id: "bundle-gift", items: null };
+  const display = (cards) => ({
+    summary_present: true,
+    summary_rows: [{ package_id: "1", text: "2x Demo Purifier" }, { package_id: "4", text: "1x Demo Stand" }],
+    selected_bundle_package_ids: ["1"],
+    selected_bundle_items: cards,
+    active_toggle_package_ids: [],
+  });
+  const lines = [
+    { title: "Demo Purifier", quantity: 2, sku: "DEMO-PURIFIER", product_id: 101 },
+    { title: "Demo Stand", quantity: 1, sku: "DEMO-STAND", product_id: 104 },
+  ];
+  const judge = (cards, cart) => reconcileOrderAgainstDisplay({ lines, display: display(cards), events, requested_cart: cart });
+  const asked = (refs) => refs.map(([packageId, quantity]) => ({ packageId, quantity, quantityExplicit: true }));
+
+  for (const cart of [asked([["1", 2], ["4", 1]]), asked([["1", 2], ["4", 2]]), asked([["1", 3]])]) {
+    const alone = judge([wellFormed], cart);
+    const beside = judge([wellFormed, malformed], cart);
+    assert.equal(beside.ok, alone.ok, JSON.stringify(cart));
+    assert.deepEqual(beside.quantity_mismatches, alone.quantity_mismatches, JSON.stringify(cart));
+  }
+  assert.equal(judge([wellFormed], asked([["1", 2], ["4", 1]])).ok, true);
+  assert.deepEqual(
+    judge([wellFormed], asked([["1", 2], ["4", 2]])).quantity_mismatches.map((entry) => entry.reason),
+    ["package 4 requested 2 unit(s) (1 per package × 2) but persisted 1"],
+  );
+});
+
 test("a displayed package that was never charged is a blocker too", () => {
   const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
   const display = {

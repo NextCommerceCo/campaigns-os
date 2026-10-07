@@ -28,9 +28,11 @@
   Served by src/qa-bundle-order.browser.test.mjs, which rewrites the page for
   its variants: inner package ids stripped (cards whose package identity is
   data-next-bundle-items alone), the two-unit card removed, a card for
-  another package added, a card declaring two items added, and plain
+  another package added, a card declaring two items added, a selector that
+  re-renders its cards after a click, and plain
   [data-next-selector-card][data-next-package-id] cards in place of bundle
-  cards (the non-bundle control).
+  cards, either in a [data-next-cart-selector] (the non-bundle control) or
+  each in its own wrapper with no selector container.
 -->
 <main>
   <h1>Checkout</h1>
@@ -77,7 +79,10 @@
 (function () {
   var UNIT_PRICE = { "1": 20, "2": 5, "3": 38, "4": 7 };
   var cart = [];
-  var cards = Array.prototype.slice.call(document.querySelectorAll("[data-next-bundle-card], [data-next-selector-card]"));
+  // Read on each use: a variant may re-render the selector's cards.
+  function allCards() {
+    return Array.prototype.slice.call(document.querySelectorAll("[data-next-bundle-card], [data-next-selector-card]"));
+  }
   var bump = document.querySelector("[data-next-toggle-card]");
   // A plain package card carries one unit of its own package.
   function cardItems(card) {
@@ -102,7 +107,7 @@
   }
 
   function select(card) {
-    cards.forEach(function (other) {
+    allCards().forEach(function (other) {
       other.setAttribute("data-next-selected", other === card ? "true" : "false");
       other.classList.toggle("next-selected", other === card);
     });
@@ -112,8 +117,9 @@
     render();
   }
 
-  cards.forEach(function (card) {
-    card.addEventListener("click", function () { select(card); });
+  document.addEventListener("click", function (event) {
+    var card = event.target.closest("[data-next-bundle-card], [data-next-selector-card]");
+    if (card) select(card);
   });
   bump.addEventListener("click", function () {
     var inCart = cart.some(function (item) { return item.bump; });
@@ -123,6 +129,7 @@
     bump.classList.toggle("next-in-cart", !inCart);
     render();
   });
+  var cards = allCards();
   var preselected = cards.filter(function (card) { return card.getAttribute("data-next-selected") === "true"; })[0] || cards[0];
   if (preselected) select(preselected);
 
