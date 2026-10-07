@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -31,9 +31,7 @@ test('lightweight CLI commands do not load QA, while QA dispatch still does', t 
   const qa = run(['qa', '--help', '--lifecycle-journal', journal]);
   assert.notEqual(qa.status, 0);
   assert.match(qa.stderr, /QA_MODULE_LOADED/);
-  const lifecycle = JSON.parse(readFileSync(journal, 'utf8').trim());
-  assert.equal(lifecycle.command, 'qa');
-  assert.equal(lifecycle.exit_status, 1);
+  assert.equal(existsSync(journal), false, 'help never journals, even when QA dispatch fails');
   const ordinaryQa = spawnSync(process.execPath, [cli, 'qa', '--help'], {
     cwd: dir, encoding: 'utf8', timeout: 10_000,
     env: { PATH: process.env.PATH, HOME: dir, CAMPAIGNS_OS_TELEMETRY: 'off' },

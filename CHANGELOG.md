@@ -2,6 +2,15 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.7] - 2026-10-07
+
+### Changed
+
+- `next` asks for Polish after a local preview theme waiver. A local preview URL already on the packet lets `next` advance to QA without repeatedly asking for deploy; `record` accepts the same stage order.
+- After a changed build, `next` asks for QA again when the last QA verdict names the old build, even if its recorded stage still says completed.
+- `--help` commands leave lifecycle and deviation journals untouched. Re-running `start` later in a campaign is treated as re-intake rather than a deviation. Polish capture while missing Polish is carried forward on a local preview creates no out-of-turn warning; hosted QA still treats it as a detour.
+- On a campaign with only template pages, a current readability-only Polish capture clears the page-load evidence demand when its capture completes without errors. Failed captures leave Polish open.
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).

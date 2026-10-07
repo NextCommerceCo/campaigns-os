@@ -121,10 +121,10 @@ test("invocation: the --dry-run implementers are exactly the twelve, and every -
 
 // Declared behaviour at this revision, preserved as it is: presence of
 // --dry-run suppresses the sweep but only a bare flag exempts the journal; the
-// `run status` exemption needs the explicit token; `<cmd> --help` is `<cmd>`.
+// `run status` exemption needs the explicit token; `--help` bypasses effects.
 test("invocation: the sweep exceptions, the valued --dry-run split, bare run and help routing", () => {
   assert.equal(policyOf(["start", "--target", "t"]).sweepRoot, "target");
-  assert.equal(policyOf(["start", "--target", "t", "--help"]).sweepRoot, "target");
+  assert.equal(policyOf(["start", "--target", "t", "--help"]).sweepRoot, null);
   assert.equal(policyOf(["start", "--target", "t", "--no-write"]).sweepRoot, null);
   assert.equal(policyOf(["build", "--target", "t", "--no-run-session"]).sweepRoot, null);
   assert.equal(policyOf(["run", "start"]).sweepRoot, "session");
@@ -138,7 +138,7 @@ test("invocation: the sweep exceptions, the valued --dry-run split, bare run and
   assert.equal(policyOf(["run"]).journalExempt, false);
   assert.equal(policyOf(["doctor", "--packet", "p", "--write"]).journalExempt, false);
   assert.equal(policyOf(["help"]).journalExempt, true);
-  assert.equal(policyOf(["tooling", "status", "--help"]).journalExempt, false);
+  assert.equal(policyOf(["tooling", "status", "--help"]).journalExempt, true);
   assert.equal(policyOf(["login", "--help"]).wrapper, false);
   assert.deepEqual(policyOf(["sdk", "storage-check"]), policyOf(["sdk", "storage-check", "extra"]));
   assert.equal(policyOf(["sdk", "storage-check"]).ambient, true);
@@ -161,4 +161,13 @@ test("invocation: sdk repin journals only under --apply, and never sweeps", () =
   assert.equal(policyOf(["sdk", "repin", "--target", "t"]).journalExempt, true);
   assert.equal(policyOf(["sdk", "repin", "--target", "t", "--apply"]).journalExempt, false);
   assert.equal(policyOf(["sdk", "repin", "--target", "t", "--apply"]).sweepRoot, null);
+});
+
+test("invocation: every --help bypasses journal, stale sweep, and QA auto-end", () => {
+  for (const argv of [["qa", "run", "--help"], ["start", "--help"], ["polish", "--help"], ["theme", "--help"], ["qa", "run", "--help", "yes"]]) {
+    const policy = policyOf(argv);
+    assert.equal(policy.journalExempt, true, argv.join(" "));
+    assert.equal(policy.sweepRoot, null, argv.join(" "));
+    assert.equal(policy.autoEnd, false, argv.join(" "));
+  }
 });

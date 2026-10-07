@@ -4356,7 +4356,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     // One note per operator decision that kept the build output unchanged
     // after an input change, quoting the operator's reason.
     for (const issue of doctor.warnings) if (issue.code === "assembly.output_unchanged_by_operator_decision") (result.qc_handoff.notes ||= []).push(`Build output kept unchanged after an input change by the operator's decision: "${issue.detail.reason}"`);
-    recordNextRecommendation(ambient, result);
+    recordNextRecommendation(ambient, result, { packet, report, polishGate });
     result.intent_summary = intentSummary;
     return result;
   };
@@ -4985,10 +4985,10 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
 // Record the recommendation on the active run session so deviation telemetry
 // can compare "what next said" against "what the agent actually ran".
 // Best-effort: telemetry never blocks orchestration.
-function recordNextRecommendation(ambient, result) {
+function recordNextRecommendation(ambient, result, { packet, report, polishGate } = {}) {
   if (!ambient) return;
   try {
-    const expected = expectedCommandsForStage(result.stage, result.next_actions || []);
+    const expected = expectedCommandsForStage(result.stage, result.next_actions || [], { packet, report, polishGate });
     const now = new Date();
     const session = {
       ...ambient.session,

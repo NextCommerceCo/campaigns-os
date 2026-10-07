@@ -30,7 +30,7 @@ import { computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-sco
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { isObject, optionalString, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
 import { LOCAL_PROOF_BUILD_ENVIRONMENT, LOCAL_PROOF_PRODUCTION_ENVIRONMENT, isLocalServePacket } from "./local-proof.mjs";
-import { CARRIED_FORWARD } from "./local-preview-policy.mjs";
+import { localPreviewUrlRecorded, polishCarriedForwardForLadder } from "./local-preview-policy.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 import { campaignRouteRoot } from "./route-identity.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
@@ -706,14 +706,19 @@ function bindingProblems(doctor, report, packet) {
 // The ladder `next` walks (pickNextStage), up to the stage being recorded:
 // doctor's prepare-build gate, on which `next` answers prepare-build whenever
 // it is set, then every earlier stage terminal by the picker's own predicate.
-function ladderProblems(stage, doctor, report) {
+function ladderProblems(stage, doctor, report, packet) {
   const gate = doctor.derived?.prepare_build_gate;
   if (gate) return [`next answers prepare-build: ${gate.reason}`];
   const problems = [];
   for (const earlier of NEXT_STAGE_ORDER.slice(0, NEXT_STAGE_ORDER.indexOf(stage))) {
-    // The rule next's stage picker reads: on the local preview a missing polish
-    // is carried forward (local-preview-policy), and next moves on to deploy.
-    if (earlier === "polish" && doctor.derived?.polish_gate?.status === CARRIED_FORWARD) continue;
+    // The same carried-forward rule next's stage picker reads.
+    if (earlier === "polish" && polishCarriedForwardForLadder(report, doctor.derived?.polish_gate)) continue;
+    if (earlier === "polish" && report.stages?.polish?.evidence?.visual_review?.readability
+      && doctor.derived?.polish_gate?.status === "blocked") {
+      problems.push(`Polish gate is blocked (${doctor.derived.polish_gate.code}), so next answers polish; resolve it before recording ${stage}.`);
+      continue;
+    }
+    if (earlier === "deploy" && localPreviewUrlRecorded(packet, report)) continue;
     // The effective status: a stage owed again by an input change reads
     // required, and one whose inputs cannot be confirmed reads unknown.
     const key = reportKeyForCliStage(earlier);
@@ -736,7 +741,7 @@ function doctorFacts(stage, doctor, report, packet) {
   const binding = bindingProblems(doctor, report, packet);
   if (binding.length) throw refuseRecord(stage, binding);
   // The brand layer is applied to built output, so theme is checked as polish is.
-  const ladder = ladderProblems(stage === "theme" ? "polish" : stage, doctor, report);
+  const ladder = ladderProblems(stage === "theme" ? "polish" : stage, doctor, report, packet);
   if (ladder.length) throw refuseRecord(stage, ladder);
   if (stage === "setup") {
     const outputDir = optionalString(derived.target_output_dir);

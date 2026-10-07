@@ -9,13 +9,14 @@
 // intentional detour is distinguishable from drift.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { isLocalPreview, polishCarriedForwardForLadder } from "./local-preview-policy.mjs";
 
 export const DEVIATION_SCHEMA = "campaigns-os-agent-deviation/v0";
 export const DEVIATION_JOURNAL_REL_PATH = ".campaign-runtime/agent-deviations.jsonl";
 
 // Commands that advance the pipeline. Read-only / bookkeeping commands
 // (doctor, next, findings, telemetry, run, validate-*) never deviate.
-export const TRACKED_STAGE_COMMANDS = Object.freeze(new Set(["start", "prepare-build", "theme", "polish", "qa", "run-record"]));
+export const TRACKED_STAGE_COMMANDS = Object.freeze(new Set(["prepare-build", "theme", "polish", "qa", "run-record"]));
 
 // Setup and metadata subcommands of a tracked command. They produce no stage
 // output, so running one outside the recommendation is not a detour:
@@ -53,14 +54,15 @@ export function commandWord(command) {
   return stripped.match(/^campaigns-os\s+([a-z-]+)/)?.[1] || null;
 }
 
-export function expectedCommandsForStage(stage, requiredActions = []) {
+export function expectedCommandsForStage(stage, requiredActions = [], { packet = null, report = null, polishGate = null } = {}) {
   const base = EXPECTED_COMMANDS_BY_STAGE[stage] || [];
+  const carriedPolish = stage === "qa" && isLocalPreview(packet) && polishCarriedForwardForLadder(report, polishGate);
   // Gate required_actions name exact commands ("campaigns-os theme generate
   // ..."); their command words are expected too.
   const fromActions = requiredActions
     .map((action) => commandWord(action?.command))
-    .filter(Boolean);
-  return [...new Set([...base, ...fromActions])];
+    .filter((command) => command && (stage !== "qa" || command !== "polish" || carriedPolish));
+  return [...new Set([...base, ...fromActions, ...(carriedPolish ? ["polish"] : [])])];
 }
 
 export function buildRecommendation({ stage, status, expectedCommands, now = new Date() }) {
@@ -77,6 +79,7 @@ export function buildRecommendation({ stage, status, expectedCommands, now = new
  * recommendation. Returns a deviation entry or null.
  */
 export function detectDeviation({ lastRecommendation, command, subcommand = null, argvShape = [], runId = null, deviationReason = null, now = new Date() }) {
+  if (argvShape.includes("--help")) return null;
   if (!TRACKED_STAGE_COMMANDS.has(command)) return null;
   if (subcommand && UNTRACKED_SUBCOMMANDS.has(`${command} ${subcommand}`)) return null;
   if (!lastRecommendation || !Array.isArray(lastRecommendation.expected_commands)) return null;

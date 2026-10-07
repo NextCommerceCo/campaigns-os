@@ -36,6 +36,25 @@ test("polish capture is a registered stage command for recommendation and deviat
   assert.equal(detectDeviation({ lastRecommendation: rec, command: "polish" })?.actual_command, "polish");
 });
 
+test("hosted QA keeps polish capture as a deviation", () => {
+  const expectedCommands = expectedCommandsForStage("qa", [], {
+    packet: { deploy: { target: "hosted" } }, report: {}, polishGate: { status: "carried_forward" },
+  });
+  const rec = buildRecommendation({ stage: "qa", status: "ready", expectedCommands });
+  assert.deepEqual(expectedCommands, ["qa", "theme"]);
+  assert.equal(detectDeviation({ lastRecommendation: rec, command: "polish", subcommand: "capture" })?.actual_command, "polish");
+});
+
+test("local-serve carried-forward QA allows polish capture without a deviation", () => {
+  const expectedCommands = expectedCommandsForStage("qa", [], {
+    packet: { deploy: { target: "local-serve" } }, report: { stages: { polish: { status: "required" } } },
+    polishGate: { status: "carried_forward" },
+  });
+  const rec = buildRecommendation({ stage: "qa", status: "ready", expectedCommands });
+  assert.deepEqual(expectedCommands, ["qa", "theme", "polish"]);
+  assert.equal(detectDeviation({ lastRecommendation: rec, command: "polish", subcommand: "capture" }), null);
+});
+
 test("detectDeviation flags a tracked command outside the recommendation", () => {
   const rec = buildRecommendation({ stage: "polish", status: "ready", expectedCommands: ["theme"], now: new Date("2026-06-11T00:00:00Z") });
   const entry = detectDeviation({
@@ -96,6 +115,14 @@ test("setup and metadata subcommands of a tracked command never deviate; qa run 
   assert.equal(detectDeviation({ lastRecommendation: rec, command: "qa", subcommand: "waive" })?.actual_command, "qa");
 });
 
+test("later-stage start is a valid re-intake, while help never deviates", () => {
+  const rec = buildRecommendation({ stage: "qa", status: "ready", expectedCommands: expectedCommandsForStage("qa") });
+  assert.equal(detectDeviation({ lastRecommendation: rec, command: "start" }), null);
+  for (const command of ["qa", "start", "polish", "theme"]) {
+    assert.equal(detectDeviation({ lastRecommendation: rec, command, subcommand: "run", argvShape: [command, "--help"] }), null, command);
+  }
+});
+
 // A project root holding an open run session whose last `next` recommended
 // the polish stage, and a copy of the example packet targeting that root.
 function withRecommendedPolishSession(run) {
@@ -133,6 +160,18 @@ test("CLI: qa resolve during another stage records no deviation", () => {
     assert.equal(run.status, 0, run.stderr);
     assert.doesNotMatch(run.stderr, /deviation recorded/);
     assert.equal(existsSync(journal), false);
+  });
+});
+
+test("CLI: help forms never append lifecycle or deviation entries in an active run", () => {
+  withRecommendedPolishSession(({ dir, packetPath, journal }) => {
+    const lifecycle = join(dir, ".campaign-runtime/command-lifecycle.jsonl");
+    for (const argv of [["qa", "run", "--help"], ["start", "--help"], ["polish", "--help"], ["theme", "--help"]]) {
+      const run = runCli(dir, [...argv, "--packet", packetPath]);
+      assert.equal(run.status, 0, `${argv.join(" ")}: ${run.stderr}`);
+      assert.equal(existsSync(lifecycle), false, `${argv.join(" ")} journaled`);
+      assert.equal(existsSync(journal), false, `${argv.join(" ")} deviated`);
+    }
   });
 });
 

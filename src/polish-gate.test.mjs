@@ -3,6 +3,9 @@ import { test } from "node:test";
 
 import { evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
+import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
+import { buildReadabilityCell, buildReadabilityRecord } from "./polish-readability.mjs";
+import { applyLocalPreviewToCheckpoint, polishCarriedForwardForLadder } from "./local-preview-policy.mjs";
 
 const FINGERPRINT = "sha256:build-current";
 const SOURCE_PACKAGE_FINGERPRINT = "sha256:source-package-current";
@@ -79,6 +82,73 @@ function validPolish(overrides = {}) {
 test("polish gate blocks missing or pending polish after build", () => {
   assert.equal(evaluatePolishGate({ report: baseReport(undefined) }).code, "polish.evidence_missing");
   assert.equal(evaluatePolishGate({ report: baseReport({ stage: "polish", status: "required" }) }).code, "polish.evidence_missing");
+});
+
+test("an all-template campaign's current readability-only capture clears the impossible page-load demand", () => {
+  const packet = {
+    campaign: { public_route_slug: "sample" },
+    source_html: { pages: [{ page_id: "landing", skip_reason: "template stock" }] },
+  };
+  const report = sourceAwareReport(validPolish({
+    source_package_material_fingerprint: SOURCE_PACKAGE_FINGERPRINT,
+    evidence: validEvidence({ visual_review: {
+      screenshots: ["qa-output/checkout-desktop.png", "qa-output/checkout-mobile.png"],
+      readability: buildReadabilityRecord({ buildFingerprint: FINGERPRINT, slug: "sample", routes: ["/landing/"], cells: [] }),
+    } }),
+  }), { identity: { public_route_slug: "sample" } });
+  const checkpoint = applyLocalPreviewToCheckpoint(evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }), { packet, report });
+  assert.equal(checkpoint.status, "pass");
+  assert.notEqual(checkpoint.code, "polish.hidden_eager_media.no_capturable_routes");
+  const polishGate = evaluatePolishGate({ report, hiddenEagerMediaGate: checkpoint });
+  assert.equal(polishGate.status, "pass", JSON.stringify(polishGate));
+  report.stages.assembly.build_fingerprint = "sha256:rebuilt";
+  assert.equal(applyLocalPreviewToCheckpoint(evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }), { packet, report }).status, "blocked");
+});
+
+for (const [name, statuses] of [
+  ["all navigation failures", ["navigation_failed", "navigation_failed"]],
+  ["one failed route among measured routes", ["measured", "navigation_failed"]],
+]) {
+  test(`an all-template capture with ${name} leaves the Polish checkpoint open`, () => {
+    const packet = {
+      campaign: { public_route_slug: "sample" },
+      source_html: { pages: [{ page_id: "landing", skip_reason: "template stock" }] },
+      deploy: { target: "local-serve" },
+    };
+    const cells = statuses.map((status, index) => buildReadabilityCell({
+      route: "/landing/", viewport: index ? "mobile" : "desktop", status,
+      ...(status === "measured" ? { observation: { capped: false, coverage_gaps: [], elements: [] } } : {}),
+    }));
+    const report = sourceAwareReport(validPolish({
+      source_package_material_fingerprint: SOURCE_PACKAGE_FINGERPRINT,
+      evidence: validEvidence({ visual_review: {
+        screenshots: ["qa-output/checkout-desktop.png", "qa-output/checkout-mobile.png"],
+        readability: buildReadabilityRecord({ buildFingerprint: FINGERPRINT, slug: "sample", routes: ["/landing/"], cells }),
+      } }),
+    }), { identity: { public_route_slug: "sample" } });
+    const checkpoint = applyLocalPreviewToCheckpoint(evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }), { packet, report });
+    assert.equal(checkpoint.status, "blocked");
+    assert.ok(checkpoint.required_actions.length);
+    assert.equal(evaluatePolishGate({ report, hiddenEagerMediaGate: checkpoint }).status, "blocked");
+  });
+}
+
+test("a required Polish stage with only an earlier readability capture cannot be skipped", () => {
+  const report = baseReport({ stage: "polish", status: "required", evidence: { visual_review: { readability: {} } } });
+  assert.equal(polishCarriedForwardForLadder(report, { status: "carried_forward" }), false);
+});
+
+test("unchanged-behaviour control: a hosted all-template target keeps missing capture evidence blocked", () => {
+  const packet = {
+    campaign: { public_route_slug: "sample" },
+    source_html: { pages: [{ page_id: "landing", skip_reason: "template stock" }] },
+    deploy: { target: "hosted" },
+  };
+  const report = sourceAwareReport({ stage: "polish", status: "required" });
+  const checkpoint = applyLocalPreviewToCheckpoint(evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }), { packet, report });
+  assert.equal(checkpoint.status, "blocked");
+  assert.equal(evaluatePolishGate({ report, hiddenEagerMediaGate: checkpoint }).status, "blocked");
+  assert.equal(polishCarriedForwardForLadder(report, checkpoint), false);
 });
 
 test("polish gate blocks build self-certified polish", () => {
