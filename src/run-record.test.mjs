@@ -398,6 +398,31 @@ test("assembleRunRecord with all signal absent is still a minimal valid record",
   assert.equal(record.primary_surface, undefined);
 });
 
+test("QA observation binds the verdict to its recorded build and treats missing fingerprints as unknown", () => {
+  const verdict = { run_id: "qa_run_one", disposition: "blocked", exceptions: [] };
+  const report = { stages: { assembly: { build_fingerprint: "sha256:build-one" }, qa: { verdict_run_id: "qa_run_one", evidence: { qc_build_fingerprint: "sha256:build-one" } } } };
+  const observation = (candidate) => assembleRunRecord(assembleArgs({ qaVerdict: verdict, report: candidate })).observations.qa;
+  assert.deepEqual(observation(report), { disposition: "blocked", gap_classes: [], verdict_run_id: "qa_run_one", build_fingerprint: "sha256:build-one", stale: false });
+  assert.equal(observation({ ...report, stages: { ...report.stages, assembly: { build_fingerprint: "sha256:build-two" } } }).stale, true);
+  assert.equal(observation({ ...report, stages: { ...report.stages, assembly: {} } }).stale, null);
+  assert.equal(observation({ ...report, stages: { ...report.stages, qa: { verdict_run_id: "another_verdict", evidence: { qc_build_fingerprint: "sha256:build-one" } } } }).build_fingerprint, null);
+  assert.equal(observation({ ...report, stages: { ...report.stages, qa: { verdict_run_id: "another_verdict", evidence: { qc_build_fingerprint: "sha256:build-one" } } } }).stale, null);
+});
+
+test("QA observation validator and schema reject invalid field types", () => {
+  const schema = JSON.parse(readFileSync(resolve(ROOT, "schemas/campaigns-os-run-record.v0.schema.json"), "utf8"));
+  const validateSchema = new Ajv2020({ strict: true, validateFormats: false }).compile(schema);
+  const qa = { disposition: "blocked", gap_classes: [], verdict_run_id: "qa_run_one", build_fingerprint: null, stale: null };
+  const valid = minimalRecord({ observations: { qa } });
+  assert.equal(validateRunRecord(valid).ok, true);
+  assert.equal(validateSchema(valid), true, JSON.stringify(validateSchema.errors));
+  for (const [field, value] of [["stale", "false"], ["verdict_run_id", 123]]) {
+    const invalid = minimalRecord({ observations: { qa: { ...qa, [field]: value } } });
+    assert.ok(validateRunRecord(invalid).errors.some((error) => error.code === `record.observations.qa.${field}`));
+    assert.equal(validateSchema(invalid), false);
+  }
+});
+
 test("assembleRunRecord auto-derives improvement surfaces from run observations and findings", () => {
   const record = assembleRunRecord(assembleArgs({
     doctor: {

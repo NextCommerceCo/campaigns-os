@@ -231,6 +231,9 @@
           "additionalProperties": false,
           "properties": {
             "disposition": { "type": ["string", "null"] },
+            "verdict_run_id": { "type": ["string", "null"], "minLength": 1, "description": "Run ID of the verdict supplying disposition." },
+            "build_fingerprint": { "type": ["string", "null"], "minLength": 1, "description": "QA build fingerprint from the Assembly Report stage bound to that verdict." },
+            "stale": { "type": ["boolean", "null"], "description": "Whether that QA fingerprint differs from the current recorded build; null when either fingerprint is unknown." },
             "gap_classes": {
               "type": "array",
               "items": { "type": "string" },

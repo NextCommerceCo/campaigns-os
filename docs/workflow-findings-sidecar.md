@@ -65,6 +65,15 @@ own schemas and evolve independently). Instead it carries:
   this run.
 - **Findings snapshot** — this run's Workflow Findings (see channel below).
 
+When a QA verdict is present, `observations.qa.verdict_run_id` names the same
+verdict that supplies `disposition`. `build_fingerprint` is the QA stage's
+recorded build fingerprint only when the Assembly Report binds that stage to
+the same verdict; otherwise it is `null`. `stale` compares that fingerprint
+with the Assembly Report's current build fingerprint using the same comparison
+as `next`: `true` when they differ, `false` when they match, and `null` when
+either fingerprint is unknown. All three fields are optional for older records;
+without a verdict, `observations.qa` is absent.
+
 ### Run identity
 
 A single canonical `campaigns_os_run_id` is minted at the run boundary and

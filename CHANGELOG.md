@@ -8,6 +8,8 @@ Notable supported-surface changes are recorded here.
 
 Run Records now carry the optional `qa_verdict_publish.reason` from the QA publish decision and `closed_by` from the command path that closed the record. The reason distinguishes loopback, portal managed, consent, flag, default, and local spec decisions; the closer distinguishes `run end`, QA auto-end, stale sweep, and direct `run-record`. The unused `agent_usage` field and its `--agent-*` input flags are removed. Older records with `agent_usage` remain readable as local JSON, but fail current Run Record validation if re-written.
 
+QA observations in a Run Record now carry the verdict's `run_id`, the build fingerprint recorded for that verdict, and whether it differs from the current recorded build. Currency is unknown when either fingerprint is missing or the report's QA stage belongs to a different verdict.
+
 ## [1.54.0+agent.10] - 2026-10-07
 
 ### Fixed

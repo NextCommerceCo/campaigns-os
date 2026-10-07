@@ -14,6 +14,8 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ADAPTER_DECISION_STRATEGY_FIELDS } from "./adapter-decision-contract.mjs";
+import { currentBuildFingerprint } from "./polish-gate.mjs";
+import { qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "./stage-ledger.mjs";
 
 export const RUN_RECORD_SCHEMA = "campaigns-os-run-record/v0";
 export const RUN_RECORDS_DIR_REL_PATH = ".campaign-runtime/run-records";
@@ -229,8 +231,14 @@ export function validateRunRecord(record) {
         const q = obs.qa;
         if (typeof q !== "object" || Array.isArray(q)) {
           add("record.observations.qa", "qa must be an object.");
-        } else if (q.gap_classes != null && !isStringArray(q.gap_classes)) {
-          add("record.observations.qa.gap_classes", "gap_classes must be an array of strings.");
+        } else {
+          if (q.gap_classes != null && !isStringArray(q.gap_classes)) add("record.observations.qa.gap_classes", "gap_classes must be an array of strings.");
+          if (q.verdict_run_id != null && !isNonEmptyString(q.verdict_run_id)) add("record.observations.qa.verdict_run_id", "verdict_run_id must be a non-empty string or null.");
+          if (q.build_fingerprint != null && !isNonEmptyString(q.build_fingerprint)) add("record.observations.qa.build_fingerprint", "build_fingerprint must be a non-empty string or null.");
+          if (q.stale != null && typeof q.stale !== "boolean") add("record.observations.qa.stale", "stale must be a boolean or null.");
+          for (const key of Object.keys(q)) {
+            if (!["disposition", "gap_classes", "verdict_run_id", "build_fingerprint", "stale"].includes(key)) add(`record.observations.qa.${key}`, `unknown qa observation field "${key}".`);
+          }
         }
       }
     }
@@ -397,8 +405,14 @@ function extractSpecValidationRuleIds(doctor) {
   return [...new Set(ids)];
 }
 
-function extractQaObservations(verdict) {
+function extractQaObservations(verdict, report) {
   if (!verdict || typeof verdict !== "object") return null;
+  const verdictRunId = isNonEmptyString(verdict.run_id) ? verdict.run_id : null;
+  // The verdict owns the disposition. The report owns QA's build stamp, so
+  // only bind the two when its QA stage names this exact verdict.
+  const sameVerdict = verdictRunId !== null && report?.stages?.qa?.verdict_run_id === verdictRunId;
+  const recorded = sameVerdict ? qaRecordedBuildFingerprint(report) : null;
+  const current = currentBuildFingerprint(report);
   const families = new Set();
   for (const exception of Array.isArray(verdict.exceptions) ? verdict.exceptions : []) {
     if (typeof exception?.family === "string") families.add(exception.family);
@@ -406,6 +420,9 @@ function extractQaObservations(verdict) {
   return {
     disposition: typeof verdict.disposition === "string" ? verdict.disposition : null,
     gap_classes: [...families],
+    verdict_run_id: verdictRunId,
+    build_fingerprint: recorded,
+    stale: recorded && current ? !qaRecordedForCurrentBuild(report, current) : null,
   };
 }
 
@@ -670,7 +687,7 @@ export function assembleRunRecord({
   }
   const adapter = extractAdapterDecisions(selectAdapterDecisions({ packet, report, context }));
   if (adapter) observations.adapter_decisions = adapter;
-  const qaObs = extractQaObservations(qaVerdict);
+  const qaObs = extractQaObservations(qaVerdict, report);
   if (qaObs) observations.qa = qaObs;
   observations.finding_ids = selectRunFindingIds(journal, runId);
   const malformedJournalLines = Array.isArray(journal?.malformed)

@@ -26,6 +26,7 @@ import { runSessionCommand, runSessionEndArgs } from "./cli.mjs";
 import { LIFECYCLE_JOURNAL_REL_PATH, readLifecycleJournal } from "./lifecycle.mjs";
 import { SESSION_ENDING_DISPOSITIONS } from "./qa-verdict.mjs";
 import { resolveRunRecordPath, validateRunRecord } from "./run-record.mjs";
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -1006,4 +1007,63 @@ test("CLI: loopback QA followed by run end keeps the publish decision reason", a
   assert.equal(ended.record.closed_by, "run_end");
   assert.equal(ended.record.qa_verdict_publish.state, "skipped");
   assert.equal(ended.record.qa_verdict_publish.reason, "loopback_base_url");
+});
+
+test("CLI: QA then run end records verdict binding and changed build currency", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-run-session-qa-binding-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(resolve(ROOT, "examples/target-page-kit"), dir, { recursive: true });
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  copyPacket(packetPath);
+  cpSync(resolve(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  const reportPath = join(dir, ".campaign-runtime/assembly-report.json");
+  cpSync(resolve(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json"), reportPath);
+  const site = join(dir, "_site", "runtime-packet-demo");
+  mkdirSync(site, { recursive: true });
+  const builtPage = join(site, "index.html");
+  writeFileSync(builtPage, "<html><body>First build</body></html>");
+  const firstBuild = computeBuildFingerprint(site).fingerprint;
+  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  report.stages.assembly.build_fingerprint = firstBuild;
+  writeFileSync(reportPath, JSON.stringify(report));
+  const run = async (argv) => {
+    try {
+      return JSON.parse((await promisify(execFile)(process.execPath, [CLI, ...argv], {
+        cwd: dir, encoding: "utf8",
+        env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+      })).stdout);
+    } catch (error) {
+      return JSON.parse(error.stdout || "{}");
+    }
+  };
+  await run(["run", "start", "--packet", packetPath, "--json"]);
+  const baseUrl = "http://127.0.0.1:1/runtime-packet-demo/";
+  const qa = await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-remit", "--json"]);
+  assert.equal(qa.status, "blocked");
+  const recorded = JSON.parse(readFileSync(reportPath, "utf8"));
+  assert.equal(recorded.stages.qa.verdict_run_id, qa.verdict.run_id);
+  assert.equal(recorded.stages.qa.evidence.qc_build_fingerprint, firstBuild);
+  const unchanged = await run(["run", "end", "--packet", packetPath, "--no-remit", "--json"]);
+  assert.equal(unchanged.record.observations.qa.verdict_run_id, qa.verdict.run_id);
+  assert.equal(unchanged.record.observations.qa.build_fingerprint, firstBuild);
+  assert.equal(unchanged.record.observations.qa.stale, false);
+  assert.equal(validateRunRecord(unchanged.record).ok, true);
+
+  await run(["run", "start", "--packet", packetPath, "--json"]);
+  const laterQa = await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-remit", "--json"]);
+  assert.equal(laterQa.status, "blocked");
+  const laterReport = JSON.parse(readFileSync(reportPath, "utf8"));
+  assert.equal(laterReport.stages.qa.verdict_run_id, laterQa.verdict.run_id);
+  assert.equal(laterReport.stages.qa.evidence.qc_build_fingerprint, firstBuild);
+  // As in the QA re-owed test, changed built output yields a new build stamp.
+  writeFileSync(builtPage, "<html><body>Second build</body></html>");
+  const nextBuild = computeBuildFingerprint(site).fingerprint;
+  assert.notEqual(nextBuild, firstBuild);
+  laterReport.stages.assembly.build_fingerprint = nextBuild;
+  writeFileSync(reportPath, JSON.stringify(laterReport));
+  const changed = await run(["run", "end", "--packet", packetPath, "--no-remit", "--json"]);
+  assert.equal(changed.record.observations.qa.verdict_run_id, laterQa.verdict.run_id);
+  assert.equal(changed.record.observations.qa.build_fingerprint, firstBuild);
+  assert.equal(changed.record.observations.qa.stale, true);
 });
