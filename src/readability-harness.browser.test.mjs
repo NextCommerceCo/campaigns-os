@@ -40,6 +40,13 @@ export const LANDING = htmlPage(`<main style="padding:16px;background:#ffffff;co
 // A response that never sends its headers (a stalled request).
 export const stall = () => () => {};
 
+// The network-idle window (capturePolish's `networkIdleMs`) for a capture
+// whose site serves a stall(): each cell of a page that requests one waits
+// the whole window out, 5 s in production. Every other request of these
+// loopback pages completes at once, so a 2 s window closes on the same
+// pending state.
+export const STALLED_IDLE_MS = 2_000;
+
 // A campaign fixture whose packet maps only `mapped` (every other example
 // page carries a skip_reason: a template stock page), whose built output is
 // exactly `pages` (+ the landing page when it is mapped), recorded by
@@ -109,11 +116,13 @@ export async function rebuildPages(site, pages) {
 // the loopback-guarded launcher. Returns the command result (or the error it
 // refused with) and the report it left.
 //
-// API assumption (F2.4-I49 only): `probeClock` is passed to the command in
-// process, beside the existing deadline options, and reaches the
+// API assumption (F2.4-I49 and the shared capture of
+// src/polish-readability.browser.test.mjs): `probeClock` is passed to the
+// command in process, beside the existing deadline options, and reaches the
 // readability probe the way capturePolishPageLoad's probeClock reaches the
-// image probe (src/polish-node.mjs:565, :642-644).
-export async function capturePolish(site, { probeClock, onLaunch } = {}) {
+// image probe (src/polish-node.mjs:565, :642-644). `networkIdleMs`, when
+// given, shortens the adapter's network-idle window (5 s in production).
+export async function capturePolish(site, { probeClock, onLaunch, networkIdleMs } = {}) {
   const { polishCaptureCommand } = await import("./cli.mjs");
   const { createPolishBrowserAdapter } = await import("./polish-browser.mjs");
   const guard = loopbackGuard();
@@ -130,7 +139,7 @@ export async function capturePolish(site, { probeClock, onLaunch } = {}) {
   try {
     result = await polishCaptureCommand(
       { _: ["polish", "capture"], packet: site.f.packetPath, "base-url": `${site.same.origin}/` },
-      { createBrowserAdapter: (options) => createPolishBrowserAdapter({ ...options, chromium }), ...(probeClock ? { probeClock } : {}) },
+      { createBrowserAdapter: (options) => createPolishBrowserAdapter({ ...options, chromium, networkIdleTimeoutMs: networkIdleMs }), ...(probeClock ? { probeClock } : {}) },
     );
   } catch (thrown) {
     error = thrown;

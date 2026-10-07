@@ -100,7 +100,10 @@ async function realReadinessTimeout() {
   const qcResults = [];
   try {
     const topologies = [{ funnel_id: "default", funnel_name: "Default", pages: [{ page_id: PAGE, page_type: "landing", order: 1, url: page.url }] }];
-    assertions = await runBrowserChecks(topologies, { "browser-timeout": 10_000 }, { spec: structuredClone(RUN_SPEC), qcResults });
+    // The page never signals readiness, so both loads wait out the readiness
+    // bound: 8 s each in production, 1.5 s each here (the in-process
+    // contentParamLimits).
+    assertions = await runBrowserChecks(topologies, { "browser-timeout": 10_000 }, { spec: structuredClone(RUN_SPEC), qcResults, contentParamLimits: { readinessMs: 1_500 } });
   } finally {
     await page.close();
   }
@@ -118,7 +121,7 @@ async function realReadinessTimeout() {
 }
 
 // A browser launch, the page checks' own load and two loads that each wait the
-// full 8 s readiness bound, then `next` twice: 120 s covers the worst case.
+// full readiness bound, then `next` twice: 120 s covers the worst case.
 browserTest("F1.0-I3 [real: 1.2] integrity-valid hand-written accept on the real unexercised / readiness_timeout result: accept inert (target_not_warning)", { timeout: 120_000 }, async (t) => {
   const { assessQcAccepts, qcAcceptIntegrity } = await import("./qc-accept.mjs");
   const { loadQcRederivers } = await import("./qc-check-registry.mjs");
