@@ -6530,6 +6530,27 @@
         }
       ],
       "entry_sha256": "5ab33ca302fa671ac78c3e9b752ed7b251e756b05256f97ff75acd08c58ad5ba"
+    },
+    {
+      "id": "RL-0248",
+      "sequence": 235,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.4",
+      "changelog_sha256": "e23fe41ff139a3b2c158f7a48d2e00fc770a15d5915a3f55f83299c9112ae62d",
+      "agent_impact": "qa run --test-order now drives a bundle-card checkout by each card's data-next-bundle-items. --select-package <pkg>:<qty> and --cart <pkg>:<qty> select the card one of whose declared items is that package at that quantity, preferring a card that declares it alone, even when no inner node repeats the package id; a kit card declaring several items is found by any of them. Beside --select-package, --cart never clicks another card in the chosen card's selector group (bundle or plain package cards): a ref the chosen card carries is left alone, a ref an order bump or a card in another selector group carries is applied through that control, and any other ref is left unapplied and named in the selected_bundle detail as '--cart <ref:qty> not applied: <reason>'. Read that note as a conflict between the two flags; the order and its reconciliation are those of the card --select-package chose. The browser-order-display-parity row reconciles against the packages and quantities the selected bundle card declares, not its data-next-bundle-id, and, without --select-package, fails when an explicit --cart quantity for such a package differs from the order, naming requested and persisted units. Read a failing row whose message says the ordered quantity differs from the request as a wrong-tier order, not a stray charge.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Say that --select-package and --cart resolve a bundle card by any one of its data-next-bundle-items, that --cart beside --select-package never clicks another card in the chosen card's selector group and names a ref it leaves unapplied, and that display parity reconciles against the selected card's declared packages and, without --select-package, fails on an explicit --cart quantity the order did not carry."
+        }
+      ],
+      "entry_sha256": "63994de55ab9933a817912895a399d177e715cead90cfc9cca669a41e6725812"
     }
   ]
 }

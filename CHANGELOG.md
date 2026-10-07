@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.4] - 2026-10-07
+
+### Fixed
+
+- `qa run --test-order` orders a multi-unit bundle card the way the checkout shows it. A starter bundle card declares its package and per-package quantity in `data-next-bundle-items` (`bundle-2x` is `[{"packageId":1,"quantity":2}]`), and the runner now reads them there:
+  - `--select-package 1:2` finds the card whose items carry package 1 at quantity 2 even when no inner node repeats the package id. A card matches when any one of its declared items is that package at that quantity, so a kit card declaring `[{"packageId":1,"quantity":2},{"packageId":4,"quantity":1}]` is found by `4:1`; when a card declares the item alone as well, that card is preferred. Before, it failed `selected_bundle` with "no rendered card exposes that package or bundle identity".
+  - `--cart 1:2` clicks that same card. Before, it clicked the first `[data-next-package-id="1"]`, which on the starter partial is the one-unit card's inner node, so the order carried one unit. Without `--select-package`, a `--cart` ref the selected card already carries at that quantity clicks nothing, and a ref that no bundle card declares is clicked as before.
+  - Beside `--select-package`, `--cart` never clicks another card in the selector group of the card `--select-package` chose, for bundle cards and plain package cards alike. A `--cart` ref that card carries is left as it is; a ref an order bump or a card in another selector group carries is applied through that control; any other ref is left unapplied and named in the `selected_bundle` detail (`--cart 3:1 not applied: only another card in the selector --select-package chose carries it`), and the order is reconciled against the card actually selected. Before, `--select-package 1:2 --cart 3:1` switched to the package-3 card while `selected_bundle` still reported the two-unit card, and `--select-package 1:2 --cart 1:2,2:1` reset the order to one unit.
+  - The `browser-order-display-parity` row reconciles the order against the packages and quantities the selected bundle card declares. Before, it counted the card's `data-next-bundle-id` as a displayed package and resolved lines at one unit per package, so a correct two-unit order failed with "displayed but never charged: 1".
+  - Without `--select-package`, the same row now fails when an explicit `--cart` quantity for a package the selected bundle card declares differs from what the order carried, as when `--cart 1:2` produced a one-unit order. Its message names the requested and persisted units. The row's message now also names `--select-package` quantity mismatches, which already failed the row but were not named in its message.
+- Checkouts built from plain package cards (`[data-next-package-id]`, no bundle cards) are selected and reconciled as before, except that `--cart` beside `--select-package` no longer switches to another card in the chosen card's selector group.
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).
