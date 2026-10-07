@@ -1318,12 +1318,58 @@ function sdkDebuggerEligible(page) {
 
 async function primaryCtaVisualAssertions(browserPage, page) {
   if (!primaryCtaCheckEligible(page)) return [];
-  const evidence = await inspectPrimaryCta(browserPage, page.expected_next_url);
+  const evidence = await inspectPrimaryCta(browserPage, page.expected_next_url, primaryCtaDeclaredRoutes(page), primaryCtaRoutelessForms(page));
   return [primaryCtaAssertionFromEvidence(page, evidence)];
 }
 
 function primaryCtaCheckEligible(page) {
   return Boolean(page?.expected_next_url);
+}
+
+// Checkout, upsell and downsell: the page types whose forward controls go
+// where the page declares, not where they point.
+function primaryCtaPageRoutesSdkControls(page) {
+  const pageType = String(page?.page_type || "").toLowerCase();
+  return pageType === "checkout" || OFFER_PAGE_TYPES.has(pageType);
+}
+
+// The forms whose action is no route on this page, handed to the route rule
+// as its checkout-form selector. On a checkout, upsell or downsell the only
+// form-borne route is the one the page declares for its SDK control
+// (primaryCtaDeclaredRoutes), so no form's action is a route there: a
+// newsletter or search form beside the checkout form does not make its
+// submit button the route control. Elsewhere only the SDK checkout form,
+// which the SDK submits itself.
+function primaryCtaRoutelessForms(page) {
+  return primaryCtaPageRoutesSdkControls(page) ? "form" : CHECKOUT_FORM_SELECTOR;
+}
+
+// The SDK controls on this page that go to a route the page declares rather
+// than one they carry, each with that route: on a checkout, the checkout
+// form's submit button goes to the success route (the page's forward route);
+// on an upsell or downsell, each SDK upsell action goes to its accept or
+// decline route. The routes are the topology fields the static route-link
+// rows read, and the actions are the rendered upsell-control check's table.
+// A control is a route candidate when its route is the expected next route,
+// like any other. The submit button is any button that submits the form, so a
+// typeless one too, but not an express-checkout wallet button, which starts
+// the wallet flow; an upsell action counts only inside a [data-next-upsell]
+// container, the only place the SDK binds it.
+function primaryCtaDeclaredRoutes(page) {
+  if (!primaryCtaPageRoutesSdkControls(page)) return [];
+  if (String(page.page_type).toLowerCase() === "checkout") {
+    const notWallet = ":not([data-next-express-checkout]):not([data-next-express-checkout] *)";
+    const submit = ['button[type="submit"]', "button:not([type])", 'input[type="submit"]']
+      .map((control) => `${CHECKOUT_FORM_SELECTOR} ${control}${notWallet}`)
+      .join(", ");
+    return page.expected_next_url ? [{ selector: submit, url: page.expected_next_url }] : [];
+  }
+  return UPSELL_CONTROL_ROUTES
+    .filter(({ field }) => page[field])
+    .map(({ kind, field }) => ({
+      selector: UPSELL_ACTION_SPELLINGS[kind].map((action) => `[data-next-upsell] ${upsellActionSelector(action)}`).join(", "),
+      url: page[field],
+    }));
 }
 
 // Candidate CTAs: anything clickable, plus every SDK action control and the
@@ -1341,19 +1387,21 @@ const PRIMARY_CTA_SELECTOR = ["a[href]", "button", "[role='button']", "[data-nex
 // stay free of module-scope references: the text is run in a fresh context by
 // a test (primary-CTA inspection script is self-contained) that would surface
 // a leaked identifier as a ReferenceError.
-function primaryCtaInspectionScript(expectedUrl) {
+function primaryCtaInspectionScript(expectedUrl, declaredRoutes = [], checkoutFormSelector = CHECKOUT_FORM_SELECTOR) {
   const args = {
     routeUrl: expectedUrl,
     ctaSelector: PRIMARY_CTA_SELECTOR,
     cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR,
     cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE,
+    declaredRoutes,
+    checkoutFormSelector,
     ignoredRouteAttributes: [...UNDECLARED_ROUTE_ATTRIBUTES],
   };
   return `(${inspectPrimaryCtaScript.toString()})(${JSON.stringify(args)}, ${cartEntryHrefFor.toString()}, ${contrastToolkit.toString()}, ${generatedTextRenders.toString()})`;
 }
 
-async function inspectPrimaryCta(browserPage, expectedUrl) {
-  return browserPage.evaluate(primaryCtaInspectionScript(expectedUrl)).catch((error) => ({
+async function inspectPrimaryCta(browserPage, expectedUrl, declaredRoutes = [], checkoutFormSelector = CHECKOUT_FORM_SELECTOR) {
+  return browserPage.evaluate(primaryCtaInspectionScript(expectedUrl, declaredRoutes, checkoutFormSelector)).catch((error) => ({
     ok: false,
     reason: "inspection_error",
     expected_url: expectedUrl,
@@ -1363,7 +1411,7 @@ async function inspectPrimaryCta(browserPage, expectedUrl) {
   }));
 }
 
-function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute, ignoredRouteAttributes }, hrefForImpl, contrastToolkitImpl, generatedTextImpl) {
+function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute, declaredRoutes, checkoutFormSelector, ignoredRouteAttributes }, hrefForImpl, contrastToolkitImpl, generatedTextImpl) {
   const CTA_SELECTOR = ctaSelector;
   const toolkit = contrastToolkitImpl();
 
@@ -1396,9 +1444,9 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
       .join("");
     return `${tag}${id}${classes}`;
   };
-  // The route a control leads to: the shared cart-entry rule, evaluated
-  // against this document's origin and base.
-  const hrefFor = (element) => hrefForImpl(element, { cartEntrySelector, cartEntryRouteAttribute, origin: location.origin, baseHref: location.href });
+  // The route a control leads to: the shared cart-entry rule, with the
+  // page's declared routes, evaluated against this document's origin and base.
+  const hrefFor = (element) => hrefForImpl(element, { cartEntrySelector, cartEntryRouteAttribute, declaredRoutes, checkoutFormSelector, origin: location.origin, baseHref: location.href });
   // Route-shaped attributes the element carries that the rule above does not
   // consult: the undeclared spellings, plus the SDK route attribute on an
   // element that is not an SDK control (a decoy, not a route). Reported, not
@@ -1587,15 +1635,48 @@ function primaryCtaAssertionFromEvidence(page, evidence) {
   });
 }
 
+// The SDK's spellings of each upsell action: its upsell handler accepts the
+// offer on add or accept and declines it on skip or decline, and does nothing
+// on any other value. Every place QA locates an upsell control reads this one
+// table. The first spelling is the one reported when a page has none.
+export const UPSELL_ACTION_SPELLINGS = Object.freeze({
+  accept: Object.freeze(["add", "accept"]),
+  decline: Object.freeze(["skip", "decline"]),
+});
+
+// The SDK upsell actions and the page field that declares where each goes.
+// The rendered upsell-control check and the primary-CTA route rule read this
+// one table.
+const UPSELL_CONTROL_ROUTES = Object.freeze([
+  Object.freeze({ kind: "accept", field: "expected_accept_url" }),
+  Object.freeze({ kind: "decline", field: "expected_decline_url" }),
+]);
+
+function upsellActionSelector(...actions) {
+  return actions.map((action) => `[data-next-upsell-action="${action}"]`).join(", ");
+}
+
+// The spelling of an upsell action this page renders: the first spelling
+// present, or the first spelling when the page has none.
+async function presentUpsellAction(page, kind) {
+  const spellings = UPSELL_ACTION_SPELLINGS[kind];
+  for (const action of spellings) {
+    if (await page.locator(upsellActionSelector(action)).first().count().catch(() => 0)) return action;
+  }
+  return spellings[0];
+}
+
 async function renderedUpsellControlAssertions(browserPage, page) {
-  const checks = [
-    ["accept", "add", page.expected_accept_url],
-    ["decline", "skip", page.expected_decline_url],
-  ];
   const assertions = [];
-  for (const [kind, action, expectedUrl] of checks) {
+  for (const { kind, field } of UPSELL_CONTROL_ROUTES) {
+    const expectedUrl = page[field];
     if (!expectedUrl) continue;
-    const count = await browserPage.locator(`[data-next-upsell-action="${action}"]`).count().catch(() => 0);
+    const spellings = UPSELL_ACTION_SPELLINGS[kind];
+    const counts = [];
+    for (const action of spellings) counts.push(await browserPage.locator(upsellActionSelector(action)).count().catch(() => 0));
+    const count = counts.reduce((sum, n) => sum + n, 0);
+    const present = spellings.filter((_, index) => counts[index] > 0);
+    const selector = upsellActionSelector(...(present.length ? present : spellings.slice(0, 1)));
     assertions.push(assertion({
       id: `browser-upsell-control:${page.page_id}:${kind}`,
       family: "browser-runtime",
@@ -1604,7 +1685,7 @@ async function renderedUpsellControlAssertions(browserPage, page) {
       severity: count > 0 ? undefined : SEVERITY.WARN,
       expected: `rendered SDK ${kind} control`,
       actual: count > 0 ? `${count} matching control(s)` : "not found",
-      evidence: { selector: `[data-next-upsell-action="${action}"]`, expected_url: expectedUrl },
+      evidence: { selector, expected_url: expectedUrl },
     }));
   }
   return assertions;
@@ -3194,8 +3275,10 @@ function createFieldTrace() {
 // before the bounded ladder step starts and updated before each operation that
 // can hang. Its synchronous summary survives when the timeout wins the race.
 function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path, inspectTimeoutMs = 1000 }) {
-  const requestedAction = path === "accept" ? "add" : "skip";
-  const selector = `[data-next-upsell-action="${requestedAction}"]`;
+  // The spelling the page renders, read again at each inspection.
+  const kind = path === "accept" ? "accept" : "decline";
+  let requestedAction = UPSELL_ACTION_SPELLINGS[kind][0];
+  let selector = upsellActionSelector(requestedAction);
   let actionNavigationCount = Array.isArray(events?.navigations) ? events.navigations.length : 0;
   let actionUpsellRequestCount = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url)).length;
   let element = { present: null, visible: null, enabled: null };
@@ -3205,6 +3288,8 @@ function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path, 
   let stepCompleted = false;
 
   const inspect = async () => {
+    requestedAction = await presentUpsellAction(page, kind);
+    selector = upsellActionSelector(requestedAction);
     const control = page.locator(selector).first();
     const count = await control.count().catch(() => 0);
     element = {
@@ -5435,14 +5520,15 @@ async function clickControl(locator, { timeout, forceFallback = true, perpetual 
 // single offer). Clicking the hidden action fails as not visible, so the
 // visible proxy is clicked instead, but only while the offer holds an SDK action
 // for it to forward to: otherwise the hidden action is clicked and fails as before.
+// The proxy forwards to the action of its own spelling.
 async function shopperUpsellControl(page, action) {
-  const actions = page.locator(`[data-next-upsell-action="${action}"]`);
+  const actions = page.locator(upsellActionSelector(action));
   if (!await actions.count().catch(() => 0)) return actions.first();
   const visibleAction = actions.filter({ visible: true }).first();
   if (await visibleAction.count().catch(() => 0)) return visibleAction;
   // The proxy forwards to `[data-next-upsell="offer"] [data-next-upsell-action]`
   // (upsells.js), so only an action inside the offer is a target.
-  const inOffer = page.locator(`[data-next-upsell="offer"] [data-next-upsell-action="${action}"]`);
+  const inOffer = page.locator(`[data-next-upsell="offer"] ${upsellActionSelector(action)}`);
   const proxy = page.locator(`[data-upsell-proxy="${action}"]`).filter({ visible: true }).first();
   if (await inOffer.count().catch(() => 0) && await proxy.count().catch(() => 0)) return proxy;
   return actions.first();
@@ -5455,8 +5541,8 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
   const clickMs = shorterBound(clickTimeoutMs, UPSELL_CLICK_TIMEOUT_MS);
   const mutationMs = shorterBound(mutationTimeoutMs, UPSELL_MUTATION_TIMEOUT_MS);
   const offerUrl = safePageUrl(page);
-  const action = path === "accept" ? "add" : "skip";
-  const selector = `[data-next-upsell-action="${action}"]`;
+  const action = await presentUpsellAction(page, path === "accept" ? "accept" : "decline");
+  const selector = upsellActionSelector(action);
   const control = await shopperUpsellControl(page, action);
   if (!await control.count().catch(() => 0)) {
     return { path, clicked: false, error: `Missing upsell control ${selector}` };
@@ -7681,7 +7767,7 @@ function extractReceiptLines(order) {
 
 async function waitForUpsellPageReady(page, args) {
   const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
-  await page.locator('[data-next-upsell], [data-next-upsell-action="add"], [data-next-upsell-action="skip"]').first()
+  await page.locator(`[data-next-upsell], ${upsellActionSelector(...UPSELL_ACTION_SPELLINGS.accept, ...UPSELL_ACTION_SPELLINGS.decline)}`).first()
     .waitFor({ state: "visible", timeout: timeoutMs })
     .catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
@@ -8192,9 +8278,12 @@ export const __qaBrowserTestHooks = Object.freeze({
   primaryCtaAssertionFromEvidence,
   inspectPrimaryCta,
   primaryCtaInspectionScript,
+  primaryCtaDeclaredRoutes,
+  primaryCtaRoutelessForms,
   clickCouponApplyControl,
   isOrderUpsellsUrl,
   clickUpsellPath,
+  waitForUpsellPageReady,
   isPerpetuallyAnimated,
   readJsonResponseBody,
   readJsonResponseBodyWithin,

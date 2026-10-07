@@ -488,6 +488,51 @@ test("a deep upsell timeout names the route, edge, action state, SDK readiness, 
   assert.equal(assertion.evidence.steps[0].evidence.last_upsell_api_request, null);
 });
 
+// The SDK accepts the offer on add or accept and declines it on skip or
+// decline: the trace names the spelling the page renders.
+test("an upsell action trace names the SDK spelling the page renders, and the first spelling when it renders none", async () => {
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topologyPlan = resolveTestOrderTopology({
+    funnel_id: "aliases",
+    pages: [
+      { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell/") },
+      { page_id: "upsell", page_type: "upsell", url: route("upsell/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+      { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+    ],
+  });
+  const pageRendering = (values) => ({
+    url: () => route("upsell/"),
+    locator: (selector) => {
+      const present = values.some((value) => selector === `[data-next-upsell-action="${value}"]`);
+      const control = { count: async () => (present ? 1 : 0), isVisible: async () => present, isEnabled: async () => present };
+      return { first: () => control };
+    },
+    evaluate: async () => ({ window_next_present: true, display_ready: true, sdk_loading: "false" }),
+  });
+  const traced = async (values, path) => {
+    const trace = createUpsellActionTrace({ page: pageRendering(values), events: { requests: [], navigations: [] }, topologyPlan, stepIndex: 0, path });
+    const evidence = await trace.inspect();
+    return { action: evidence.requested_action, selector: evidence.selector, present: evidence.element.present, error: trace.formatError(new Error("timed out")) };
+  };
+
+  const accept = await traced(["accept", "decline"], "accept");
+  assert.deepEqual([accept.action, accept.selector, accept.present], ["accept", '[data-next-upsell-action="accept"]', true]);
+  assert.match(accept.error, /action=accept; selector=\[data-next-upsell-action="accept"\]/);
+  const decline = await traced(["accept", "decline"], "decline");
+  assert.deepEqual([decline.action, decline.selector, decline.present], ["decline", '[data-next-upsell-action="decline"]', true]);
+
+  const add = await traced(["add", "accept"], "accept");
+  assert.deepEqual([add.action, add.present], ["add", true], "the first spelling wins when a page renders both");
+  const skip = await traced(["skip"], "decline");
+  assert.deepEqual([skip.action, skip.present], ["skip", true]);
+
+  for (const [path, first] of [["accept", "add"], ["decline", "skip"]]) {
+    const unknown = await traced(["maybe"], path);
+    assert.deepEqual([unknown.action, unknown.selector, unknown.present], [first, `[data-next-upsell-action="${first}"]`, false], path);
+  }
+});
+
 test("a failing customer field names itself in the step evidence", async () => {
   const { page } = fakePage({ postal: { fillError: "element is not editable" } });
   const trace = createFieldTrace();

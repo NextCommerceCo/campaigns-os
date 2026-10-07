@@ -306,3 +306,64 @@ test("an upsell decline that only proxies to a missing in-offer skip fails route
   const outsideOffer = await declineFor(page(`${offer}</div><div><a data-next-upsell-action="skip" href="#">No</a></div><a data-upsell-proxy="skip" href="#">No thanks</a>`));
   assert.equal(outsideOffer.status, "fail");
 });
+
+test("the static route-link SDK fallback reads every SDK spelling of the upsell actions, and no other value", async () => {
+  // The SDK accepts the offer on add or accept and declines it on skip or
+  // decline. The page carries neither route URL, so only the SDK action can
+  // stand for each route.
+  const byId = topologyFor([
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+  const routesFor = async (accept, decline) => {
+    const html = `<html><body><div data-next-upsell="offer"><button data-next-upsell-action="${accept}">Yes</button><a data-next-upsell-action="${decline}" href="#">No</a></div></body></html>`;
+    const { assertions } = await runPageChecks(byId.upsell, {}, { sourceLoader: stubbedSource(html) });
+    return ["accept", "decline"].map((kind) => assertions.find((a) => a.id === `route-link:upsell:${kind}`));
+  };
+
+  const [add, skip] = await routesFor("add", "skip");
+  assert.equal(add.status, "pass");
+  assert.equal(add.actual, 'SDK upsell accept control: data-next-upsell-action="add"');
+  assert.equal(skip.status, "pass");
+  assert.equal(skip.actual, 'SDK upsell decline control: data-next-upsell-action="skip"');
+
+  const [accept, decline] = await routesFor("accept", "decline");
+  assert.equal(accept.status, "pass");
+  assert.equal(accept.actual, 'SDK upsell accept control: data-next-upsell-action="accept"');
+  assert.deepEqual(accept.evidence.sdk_action, accept.actual);
+  assert.equal(decline.status, "pass");
+  assert.equal(decline.actual, 'SDK upsell decline control: data-next-upsell-action="decline"');
+
+  for (const assertion of await routesFor("maybe", "maybe")) {
+    assert.equal(assertion.status, "manual_review");
+    assert.equal(assertion.actual, "not found in static HTML");
+  }
+});
+
+test("an upsell proxy forwards to the in-offer action of its own spelling", async () => {
+  const byId = topologyFor([
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+  const page = (body) => `<html><head><meta name="next-upsell-decline-url" content="/campaign/receipt/"></head><body>${body}</body></html>`;
+  const offer = '<div data-next-upsell="offer"><a data-next-upsell-action="accept" href="#">Yes</a>';
+  const declineFor = async (html) => {
+    const { assertions } = await runPageChecks(byId.upsell, {}, { sourceLoader: stubbedSource(html) });
+    return assertions.find((a) => a.id === "route-link:upsell:decline");
+  };
+
+  const hiddenTarget = await declineFor(page(`${offer}<div style="display:none"><a data-next-upsell-action="decline" href="#">No</a></div></div><a data-upsell-proxy="decline" href="#">No thanks</a>`));
+  assert.equal(hiddenTarget.status, "pass");
+
+  const dead = await declineFor(page(`${offer}</div><a data-upsell-proxy="decline" href="#">No thanks</a>`));
+  assert.equal(dead.status, "fail");
+  assert.equal(dead.severity, "blocker");
+  assert.match(dead.actual, /data-upsell-proxy="decline" with no data-next-upsell-action="decline"/);
+
+  // A proxy forwards to its own spelling only: a decline proxy over an in-offer skip does nothing.
+  const mismatched = await declineFor(page(`${offer}<div style="display:none"><a data-next-upsell-action="skip" href="#">No</a></div></div><a data-upsell-proxy="decline" href="#">No thanks</a>`));
+  assert.equal(mismatched.status, "fail");
+
+  const unknown = await declineFor(page(`${offer}</div><a data-upsell-proxy="maybe" href="#">No thanks</a>`));
+  assert.equal(unknown.status, "pass", "an unknown proxy value is not a proxy QA judges; the meta route reference stands");
+});
