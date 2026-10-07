@@ -38,6 +38,7 @@ const PREREQUISITES = {
   doctor: { packet: "campaign-runtime.build.json" },
   "doctor|--no-write": { packet: "campaign-runtime.build.json", write: true },
   "doctor|--no-live-refs": { packet: "campaign-runtime.build.json" },
+  "sdk repin": { target: "static-campaign" },
 };
 
 const pairOf = (row) => [row.command, row.subcommand].filter(Boolean).join(" ");
@@ -154,4 +155,10 @@ test("invocation: the declaration is data, imports nothing from cli.mjs, and not
   for (const file of readdirSync(join(ROOT, "src"), { recursive: true }).filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"))) {
     assert.doesNotMatch(readText(`src/${file}`), /effects\.v1\.json["'`]/, `src/${file} names the effect contract as a path`);
   }
+});
+
+test("invocation: sdk repin journals only under --apply, and never sweeps", () => {
+  assert.equal(policyOf(["sdk", "repin", "--target", "t"]).journalExempt, true);
+  assert.equal(policyOf(["sdk", "repin", "--target", "t", "--apply"]).journalExempt, false);
+  assert.equal(policyOf(["sdk", "repin", "--target", "t", "--apply"]).sweepRoot, null);
 });

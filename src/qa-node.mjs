@@ -168,7 +168,9 @@ Options:
                                   qa publish reads the same directory when looking up the sidecar's run.
   --post-verdict                  (default) Publish the verdict to the QA portal at
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
-                                  Publishing is automatic; this flag is retained for clarity.
+                                  Publishing is automatic, except for a run whose base URL is a local
+                                  address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback): that verdict stays local unless
+                                  this flag is passed.
   --no-post-verdict, --local-only Skip publishing; write only the local verdict copy (offline / dev / CI).
                                   Publish it later, without a re-run, with qa publish.
   --verdict <path>                qa promote / qa publish: the full verdict file under qa-output/. qa publish
@@ -2668,7 +2670,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   const consent = resolveConsent({ proxyBase: resolved.proxyBase });
   const publishDecision = resolved.localSpecId
     ? { publish: false, reason: "local_spec", flag_invalid: false }
-    : decidePublishVerdict({ args, portalManaged: resolved.portalManaged === true, consent });
+    : decidePublishVerdict({ args, portalManaged: resolved.portalManaged === true, consent, baseUrl: resolved.baseUrl });
   if (publishDecision.flag_invalid) {
     process.stderr.write(`[campaigns-os] --post-verdict "${args["post-verdict"]}" is not a recognized value (use true|1|yes|y|on or false|0|no|n|off); the flag was ignored and the default publish decision applied.\n`);
   }
@@ -3472,6 +3474,9 @@ function output(value, args) {
     } else if (value.publish_skipped && value.publish_decision?.reason === "consent_off") {
       console.log(`QA portal: publish skipped — telemetry consent is off, so this non-portal-managed verdict stays local.`);
       console.log(`  Destination would be ${value.publish_decision.destination}. Opt in for this run with --post-verdict, or enable with \`${cmd("telemetry")} on\`.`);
+    } else if (value.publish_skipped && value.publish_decision?.reason === "loopback_base_url") {
+      console.log(`QA portal: publish skipped — the base URL is a local address, so this verdict stays local.`);
+      console.log(`  Destination would be ${value.publish_decision.destination}. Publish this run with \`${cmd("qa")} publish\`, or pass --post-verdict on the next run.`);
     } else if (value.publish_skipped) {
       console.log(`QA portal: publish skipped (--no-post-verdict); local verdict only.`);
     } else {
@@ -3757,8 +3762,13 @@ export function forcedAnalyticsCorrectness(args) {
 // else (client projects, fixtures, local shakeouts on a local spec), consent
 // off (CAMPAIGNS_OS_TELEMETRY=off / `campaigns-os telemetry off`) means the
 // verdict stays local, with the destination and the opt-in flag named in the
-// run output. Publishing for the portal path is never weakened.
-export function decidePublishVerdict({ args = {}, portalManaged = false, consent = null } = {}) {
+// run output. Publishing for the portal path is never weakened by consent.
+// #486: a run against a local-address base URL (localhost or any *.localhost
+// name, any 127.x.x.x, 0.0.0.0, [::1] or an IPv4-mapped loopback; see
+// isLocalAddressUrl below) is a local check, so by default its verdict stays
+// local whatever the spec source; the output names --post-verdict and qa
+// publish. An explicit --post-verdict still publishes.
+export function decidePublishVerdict({ args = {}, portalManaged = false, consent = null, baseUrl = null } = {}) {
   if (args["no-post-verdict"] === true || args["local-only"] === true) {
     return { publish: false, reason: "flag_opt_out" };
   }
@@ -3775,9 +3785,28 @@ export function decidePublishVerdict({ args = {}, portalManaged = false, consent
     flagInvalid = true;
   }
   const decorate = (decision) => (flagInvalid ? { ...decision, flag_invalid: true } : decision);
+  if (isLocalAddressUrl(baseUrl)) return decorate({ publish: false, reason: "loopback_base_url" });
   if (portalManaged) return decorate({ publish: true, reason: "portal_managed_default" });
   if (consent?.state === "off") return decorate({ publish: false, reason: "consent_off" });
   return decorate({ publish: true, reason: "default" });
+}
+
+// The publish default (#486) reads "local" more widely than the shared
+// LOOPBACK_HOSTNAMES list, which also decides where plain http is allowed and
+// so stays narrow: any 127.0.0.0/8 address, 0.0.0.0, [::1], an IPv4-mapped
+// loopback, and localhost or any *.localhost name (with or without a trailing
+// dot). Keeping such a run local is the safe direction: --post-verdict and
+// qa publish still send it.
+function isLocalAddressUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  let hostname;
+  try { hostname = new URL(value.trim()).hostname.toLowerCase(); } catch { return false; }
+  const name = hostname.replace(/\.$/, "");
+  if (name === "localhost" || name.endsWith(".localhost")) return true;
+  if (/^127(?:\.\d{1,3}){3}$/.test(name) || name === "0.0.0.0") return true;
+  if (name === "[::1]" || name === "[::]") return true;
+  // WHATWG URL serializes ::ffff:127.x.y.z as [::ffff:7fxx:xxxx].
+  return /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(name);
 }
 
 function policySnapshot(packet) {

@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.33
+version: 1.3.34
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.53.0+skills.2
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.53.0+skills.2`
+Bundle revision: 1.54.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.54.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read

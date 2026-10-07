@@ -329,6 +329,30 @@ function seedStorageScan(seed) {
 }
 
 /**
+ * A static campaign repo beside the page-kit target (which `sdk repin` refuses,
+ * since page-kit owns its pin): two pages pinning the loader and stylesheet
+ * below the policy version, and an @latest ref repin must leave alone.
+ */
+const STATIC_REPIN_REPO = "static-campaign";
+function seedStaticRepin(seed) {
+  const cdn = "https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart";
+  const page = (ref) => `<!doctype html><html><head><link rel="stylesheet" href="${cdn}@v0.4.20/dist/campaign-cart.css"><script src="${cdn}@${ref}/dist/loader.js"></script></head><body></body></html>\n`;
+  mkdirSync(join(seed.dir, STATIC_REPIN_REPO, "checkout"), { recursive: true });
+  writeFileSync(join(seed.dir, STATIC_REPIN_REPO, "index.html"), page("v0.4.20"));
+  writeFileSync(join(seed.dir, STATIC_REPIN_REPO, "checkout", "index.html"), page("latest"));
+}
+function repinSucceeded(mode) {
+  return (result, seed, label) => {
+    assert.equal(result.code, 0, `${label}: sdk repin exited ${result.code}\n${result.stderr.split("\n").slice(0, 3).join("\n")}`);
+    const out = JSON.parse(result.stdout);
+    assert.equal(out.mode, mode, label);
+    assert.equal(out.status, "changes", label);
+    assert.equal(out.rewrites.length, 3, label);
+    assert.equal(out.left_alone.not_semver.length, 1, label);
+  };
+}
+
+/**
  * A built `_site/` under the target, which `doctor --built` resolves its scope
  * from. Without it the command is blocked before it does anything — and a row
  * proved against a command that refuses on arrival proves nothing about what
@@ -630,6 +654,14 @@ const INVOCATIONS = {
   "sdk storage-check": {
     prepare: seedStorageScan,
     argv: (s) => ["sdk", "storage-check", "--target", s.targetRepo, "--target-sdk", "0.4.38", "--manifest", join(s.targetRepo, "SDK-manifest.json"), "--scope", "_data", "--json"],
+  },
+  "sdk repin": {
+    prepare: seedStaticRepin, target: () => STATIC_REPIN_REPO, expect: repinSucceeded("preview"),
+    argv: (s) => ["sdk", "repin", "--target", join(s.dir, STATIC_REPIN_REPO), "--json"],
+  },
+  "sdk repin|--apply": {
+    prepare: seedStaticRepin, target: () => STATIC_REPIN_REPO, expect: repinSucceeded("apply"),
+    argv: (s) => ["sdk", "repin", "--target", join(s.dir, STATIC_REPIN_REPO), "--apply", "--json"],
   },
   "tooling diagnose": { argv: (s) => ["tooling", "diagnose", "--packet", s.packetPath, "--json"] },
   "tooling setup": { argv: (s) => ["tooling", "setup", "--target", s.targetRepo, "--platform", "claude", "--json"], prepare: seedSetupProject, cli: (s) => s.setupCli, env: playwrightEnv },

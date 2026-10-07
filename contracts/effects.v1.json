@@ -41,6 +41,7 @@
     },
     "observed_in": "The conditions in which the effect test must SEE this write or send. An empty list declares an effect the offline fixture cannot reach; it then requires a not_observed_reason, and check-effects refuses the row without one. The test always refuses an effect that is NOT declared, in every condition.",
     "effect_changing_flags": [
+      "--apply",
       "--browser",
       "--built",
       "--dry-run",
@@ -232,6 +233,72 @@
       "effect_test": "effects: sdk storage-check",
       "test_scope": "full",
       "notes": "A static scan of tracked source in a Git checkout. Exempted from lifecycle capture by name in persistLifecycleIfRequested, and it bypasses the stale-session sweep."
+    },
+    {
+      "command": "sdk",
+      "subcommand": "repin",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "none",
+      "writes": [],
+      "sends": [],
+      "effect_test": "effects: sdk repin",
+      "test_scope": "full",
+      "notes": "The preview: it reads the target's HTML and script files and prints each semver-pinned Campaign Cart loader.js / campaign-cart.css reference below the target version with its rewrite, and the references it leaves alone. It writes nothing, appends no lifecycle entry (only --apply journals; the subcommand is declared journal-exempt without it in src/invocation.mjs), runs no stale-session closeout and sends nothing. A target holding _data/campaigns.json is refused (exit 2) with the same result: nothing written."
+    },
+    {
+      "command": "sdk",
+      "subcommand": "repin",
+      "flags": [
+        "--apply"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{target}/**",
+          "when": "an HTML or script file under the target holds a semver-pinned Campaign Cart loader.js / campaign-cart.css URL below the target version; only the version segment of each such URL changes",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/sdk-repin.json",
+          "when": "at least one reference was rewritten: the change record (campaigns-os-sdk-repin/v0) is (re)written",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [],
+      "effect_test": "effects: sdk repin --apply",
+      "test_scope": "full",
+      "notes": "Rewrites the version segment of each semver-pinned reference below the target and writes the change record; @latest, @main, commit and prerelease refs and pins at or above the target are left alone. A second run with the same target finds nothing to change and writes nothing. `sdk repin --target <repo>` names no packet, so an ambient session bound to a packet elsewhere is not resolved for it and no entry is appended under that session. A target holding _data/campaigns.json is refused (exit 2) and nothing is written."
     },
     {
       "command": "tooling",
@@ -2202,11 +2269,10 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
-          "observed_in": [
-            "persisted_consent"
-          ]
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
         },
         {
           "destination": "{base-url}",
@@ -2244,7 +2310,7 @@
       ],
       "effect_test": "effects: qa run",
       "test_scope": "full",
-      "notes": "Destructive and not idempotent: each attempt overwrites the committed verdict sidecar and the report's QA stage, and a ready verdict clears the ambient run session. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
+      "notes": "Destructive and not idempotent: each attempt overwrites the committed verdict sidecar and the report's QA stage, and a ready verdict clears the ambient run session. It SENDS on a blocked attempt too: the QA stage progress observation to {proxy-base}/api/progress under persisted consent for the endpoint, and the verdict to {proxy-base}/api/qa/verdicts under the same consent unless the base URL is a local address, which keeps the verdict local by default (#486; --post-verdict still sends it). Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
     },
     {
       "command": "qa",
@@ -2335,11 +2401,10 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
-          "observed_in": [
-            "persisted_consent"
-          ]
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
         },
         {
           "destination": "{base-url}",
@@ -2583,11 +2648,10 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
-          "observed_in": [
-            "persisted_consent"
-          ]
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
         },
         {
           "destination": "{base-url}",
@@ -2625,7 +2689,7 @@
       ],
       "effect_test": "effects: qa run --test-order",
       "test_scope": "full",
-      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
+      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the QA stage progress observation to {proxy-base}/api/progress under persisted consent for the endpoint, and the verdict to {proxy-base}/api/qa/verdicts under the same consent unless the base URL is a local address, which keeps the verdict local by default (#486; --post-verdict still sends it). Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
     },
     {
       "command": "qa",
@@ -2716,11 +2780,10 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
-          "observed_in": [
-            "persisted_consent"
-          ]
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
         },
         {
           "destination": "{base-url}",
@@ -2766,7 +2829,7 @@
       ],
       "effect_test": "effects: qa run --browser (preflight)",
       "test_scope": "preflight",
-      "notes": "PREFLIGHT-PROVED: --browser needs an installed Chromium and a reachable campaign, neither of which exists offline. The case proves the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. It SENDS on a blocked attempt too: the verdict is published to {proxy-base}/api/qa/verdicts and the QA stage progress observation to {proxy-base}/api/progress, both under persisted consent for the endpoint. Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row). Once the page checks run, it also sends the header-only GETs to the configured http(s) store policy URLs (their own row) to check the served pages' policy links; offline the run is blocked at the gate before any page is checked, so none is sent.",
+      "notes": "PREFLIGHT-PROVED: --browser needs an installed Chromium and a reachable campaign, neither of which exists offline. The case proves the attempt is blocked at the same gate as the node run and writes exactly the blocked-attempt evidence. It SENDS on a blocked attempt too: the QA stage progress observation to {proxy-base}/api/progress under persisted consent for the endpoint, and the verdict to {proxy-base}/api/qa/verdicts under the same consent unless the base URL is a local address, which keeps the verdict local by default (#486; --post-verdict still sends it). Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row). Once the page checks run, it also sends the header-only GETs to the configured http(s) store policy URLs (their own row) to check the served pages' policy links; offline the run is blocked at the gate before any page is checked, so none is sent.",
       "preflight": {
         "may_write": [
           "{target}/qa-output/**",
@@ -2872,11 +2935,10 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
-          "observed_in": [
-            "persisted_consent"
-          ]
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
         },
         {
           "destination": "{base-url}",
@@ -2998,11 +3060,10 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
-          "observed_in": [
-            "persisted_consent"
-          ]
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
         },
         {
           "destination": "{base-url}",
@@ -3232,11 +3293,10 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
-          "observed_in": [
-            "persisted_consent"
-          ]
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
         },
         {
           "destination": "{base-url}",
@@ -3358,11 +3418,10 @@
         {
           "destination": "{proxy-base}/api/qa/verdicts",
           "what": "the QA verdict for the attempt, published to the QA portal",
-          "when": "publish is not opted out (--no-post-verdict) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
           "requires_consent": true,
-          "observed_in": [
-            "persisted_consent"
-          ]
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
         },
         {
           "destination": "{base-url}",
@@ -5996,7 +6055,7 @@
       "sends": [],
       "effect_test": "effects: record build",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.assembly (the replaced record is kept in its history) and, when the output changed, resets stages.polish to required. When it detects a brief or CampaignSpec change since the replaced record, it writes input_change and also makes Polish and QA required. Re-recording output identical to the build an input change superseded keeps the build owed unless --deviation-reason records the operator's reason. The fingerprint is doctor's, never typed. Refused, writing nothing but the lifecycle entry, when next answers prepare-build, when doctor cannot compute the fingerprint (no built output), when setup is still required or stages.setup is not terminal, or when the report would fail its schema. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.assembly (the replaced record is kept in its history) and, when the output changed, resets stages.polish to required, and a completed stages.deploy stamped with other output to required, its prior record kept in its history (a deploy with no stamped build is kept). When it detects a brief or CampaignSpec change since the replaced record, it writes input_change and also makes Polish and QA required. Re-recording output identical to the build an input change superseded keeps the build owed unless --deviation-reason records the operator's reason. The fingerprint is doctor's, never typed. Refused, writing nothing but the lifecycle entry, when next answers prepare-build, when doctor cannot compute the fingerprint (no built output), when setup is still required or stages.setup is not terminal, or when the report would fail its schema. The Build Context is read, not written."
     },
     {
       "command": "record",
@@ -6222,7 +6281,7 @@
       ],
       "effect_test": "effects: record deploy",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.deploy and the packet's deploy.preview_url. The requests stay on this machine: --base-url must be a loopback origin. Refused, writing nothing but the lifecycle entry, when the packet is not local-serve, the URL is not loopback or not the campaign's route root, a built page does not answer 2xx, polish is not recorded, build or Polish is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, the built output changed since build was recorded, or the theme gate is blocked. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.deploy, stamped with the build fingerprint it probed, and the packet's deploy.preview_url. The requests stay on this machine: --base-url must be a loopback origin. Refused, writing nothing but the lifecycle entry, when the packet is not local-serve, the URL is not loopback or not the campaign's route root, a built page does not answer 2xx, polish is not recorded, build or Polish is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, the built output changed since build was recorded, or the theme gate is blocked. The Build Context is read, not written."
     },
     {
       "command": "record",

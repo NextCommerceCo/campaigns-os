@@ -290,6 +290,7 @@ npm run campaigns-os -- doctor --packet <page-kit-repo>/campaign-runtime.build.j
 npm run campaigns-os -- page-kit sync --packet <page-kit-repo>/campaign-runtime.build.json --dry-run
 npm run campaigns-os -- checkpoint waive --packet <packet.json> --gate source_html.producer_provenance --page <page_id> --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>" --dry-run
 npm run campaigns-os -- sdk storage-check --target <campaign-git-root> --target-sdk 0.4.38 --manifest <sdk-storage-manifest.json> --scope <campaign,shared> --json
+npm run campaigns-os -- sdk repin --target <static-campaign-repo> --target-sdk 0.4.38
 npm run campaigns-os -- standardize --target <page-kit-repo-or-cpk-repo> --json
 npm run campaigns-os -- theme inspect --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- theme generate --packet <page-kit-repo>/campaign-runtime.build.json --json

@@ -321,6 +321,7 @@ Usage:
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet. Reads the local files only: --base-url is not fetched, it fills deploy.preview_url in the minimal packet (check served pages with qa run --site)
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json]
+  campaigns-os sdk repin --target <static-campaign-repo> [--target-sdk <x.y.z>] [--apply] [--json]   # rewrite the version segment of each semver-pinned Campaign Cart loader.js / campaign-cart.css URL (the references standardize's scan finds, @vX.Y.Z or @X.Y.Z) below the target, default the SDK support policy's preferred_minimum; @latest, @main, commit and prerelease refs, and pins at or above the target, are reported and left alone. Preview by default (path:line, old -> new URL, nothing written); --apply writes the files and a change record at .campaign-runtime/sdk-repin.json (campaigns-os-sdk-repin/v0: files touched, reference count, from/to versions) a Run Record can cite. A repo with _data/campaigns.json is refused (exit 2): page-kit sync owns that pin
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
@@ -337,7 +338,7 @@ Usage:
   campaigns-os record build --packet <campaign-runtime.build.json> [--build-environment <development|production>] [--context <json>] [--report <json>] [--dry-run] [--json]   # after page-kit build (--build-environment records stages.assembly.evidence.build_environment; local proof mode records development): stages.assembly completed with build_fingerprint = doctor's derived.build_output_fingerprint.value (and the Design Source Package material fingerprint when the report has one); stages.polish becomes required unless its evidence is bound to this exact output
   campaigns-os record polish --packet <campaign-runtime.build.json> --evidence <polish-evidence.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after polish capture: stages.polish from the file's status (completed, completed_with_warnings, blocked with blockers, or skipped with skip_reason), evidence and optional repair_loop_defect, bound to doctor's current fingerprint; a completed status is refused, writing nothing, unless the polish gate doctor evaluates would pass. --dry-run runs every check and writes nothing
   campaigns-os record theme --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after the brand layer is linked and build is recorded: report.theme becomes applied with load_order after-next-core, css_path, commerce_pages and per-page evidence, only when each built commerce page that loads next-core.css loads brand-theme.css (or checkout-brand.css) after it and at least one does; a page loading neither is left out as the design's own markup; refused, writing nothing, otherwise. --dry-run runs every check and writes nothing
-  campaigns-os record deploy --packet <campaign-runtime.build.json> --base-url <served url> [--context <json>] [--report <json>] [--dry-run] [--json]   # a local preview (deploy.target local-serve) after polish is recorded: GETs every built page under the loopback URL (the campaign route root), then records deploy.preview_url on the packet and stages.deploy completed with the URL in outputs; refused, writing nothing, when the URL is not loopback or not the route root, a page does not answer 2xx, the build changed since it was recorded, or the theme gate is blocked. --dry-run runs every check, the requests included, and writes nothing
+  campaigns-os record deploy --packet <campaign-runtime.build.json> --base-url <served url> [--context <json>] [--report <json>] [--dry-run] [--json]   # a local preview (deploy.target local-serve) after polish is recorded: GETs every built page under the loopback URL (the campaign route root), then records deploy.preview_url on the packet and stages.deploy completed with the URL in outputs and the build fingerprint it probed (a later record build of other output makes deploy required again); refused, writing nothing, when the URL is not loopback or not the route root, a page does not answer 2xx, the build changed since it was recorded, or the theme gate is blocked. --dry-run runs every check, the requests included, and writes nothing
   campaigns-os readback <target-repo-root> [--json] [--packet <path>] [--doctor <path>] [--context <path>] [--report <path>] [--qa-verdict <path>] [--findings <path>]   # read-only projection of one run's emitted artifacts (packet, doctor output, build context, assembly report, QA verdict, findings export): artifact states, per-artifact freshness against the checkout's HEAD reflog, doctor warning grouping, skip cascades and cross-artifact divergences. Writes nothing, starts no process, touches no network, and records no lifecycle entry; --json emits one campaigns-os-readback/v2 object (docs/readback.md). Exit 2 for a missing target root or a Build Packet set freshness cannot single out.
   campaigns-os readback --example [--json]                                # project the bundled synthetic sample; freshness is not computable for it by design
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -1052,7 +1053,25 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   }
 
   if (command === "sdk") {
-    if (args._[1] !== "storage-check" || args._.length !== 2) throw refused("Use: campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json].");
+    if (args._[1] === "repin" && args._.length === 2) {
+      const known = new Set(["_", "target", "target-sdk", "apply", "json"]);
+      for (const key of Object.keys(args)) if (!known.has(key)) throw refused(`Unknown SDK repin flag: --${key}`);
+      for (const flag of ["apply", "json"]) {
+        if (args[flag] !== undefined && args[flag] !== true) throw refused(`--${flag} is a boolean flag and takes no value.`);
+      }
+      const { runSdkRepin, formatSdkRepinReport, isRepinTargetVersion } = await import("./sdk-repin.mjs");
+      const targetSdk = args["target-sdk"] === undefined ? null : requireArg(args, "target-sdk");
+      if (targetSdk !== null && !isRepinTargetVersion(targetSdk)) throw refused(`--target-sdk ${targetSdk} is not a released SDK version (x.y.z).`);
+      const result = runSdkRepin({
+        targetRepo: requireArg(args, "target"),
+        targetSdk,
+        apply: args.apply === true,
+      });
+      console.log(args.json ? JSON.stringify(result, null, 2) : formatSdkRepinReport(result));
+      process.exitCode = result.ok ? 0 : 2;
+      return;
+    }
+    if (args._[1] !== "storage-check" || args._.length !== 2) throw refused("Use: campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json], or campaigns-os sdk repin --target <static-campaign-repo> [--target-sdk <x.y.z>] [--apply] [--json].");
     const known = new Set(["_", "target", "target-sdk", "manifest", "scope", "exclude", "json"]);
     if (args.json !== undefined && args.json !== true) throw refused("--json is a boolean flag and takes no value.");
     for (const key of Object.keys(args)) if (!known.has(key)) throw refused(`Unknown SDK storage-check flag: --${key}`);
