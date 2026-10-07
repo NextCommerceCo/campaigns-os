@@ -6532,13 +6532,40 @@
       "entry_sha256": "5ab33ca302fa671ac78c3e9b752ed7b251e756b05256f97ff75acd08c58ad5ba"
     },
     {
-      "id": "RL-0253",
+      "id": "RL-0246",
       "sequence": 235,
       "date": "2026-10-07",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.54.0+agent.9",
-      "changelog_sha256": "2027d6b5d32da4c170cf5b5f1a5545856bf746a1d694185b719435d7e1279a40",
+      "changelog_section": "1.54.0+agent.2",
+      "changelog_sha256": "55155add247bb47b07b43252e374b504ac85aef51f6b3315b8b21e85c615df15",
+      "agent_impact": "None for package consumers: this changes repository CI and contributor scripts only. A contributor can run npm run check:fast before pushing, or install it as a pre-push hook with npm run hooks:install; CI runs the same gates on every pull request.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/ci.yml",
+          "surface_entry": null,
+          "summary": "Run the unit and browser lanes as two shards each on separate runners, and cancel a pull request's older run when a newer push arrives; pushes to main are never cancelled."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Add the contributor scripts check:fast and hooks:install; exports, bin, files and dependencies are unchanged."
+        }
+      ],
+      "entry_sha256": "ea7360b560411019e58bf65a1b389cbed5ec9589b7da6f09b7cee1b08b46aed8"
+    },
+    {
+      "id": "RL-0253",
+      "sequence": 236,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.10",
+      "changelog_sha256": "d0ef17b0a50f0df0fb3d090f0bfb43188396d59034a25d517d6e116eda073013",
       "agent_impact": "Theme inspection now excludes decorative sale and rating colours from primary and CTA selection when main brand and button evidence exists. An accent-only CTA fallback explicitly asks the operator to confirm its colour.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6550,7 +6577,7 @@
           "summary": "Explain primary and CTA colour ranking and the accent-only fallback warning."
         }
       ],
-      "entry_sha256": "11f525c8ddc4b6fd04feeb4c968a2cb2effedb5846149b450b5b1e7440c6ee26"
+      "entry_sha256": "e3c5d1561c42d99b4e92f1994371304741b7127db48963a83193704a514014f7"
     }
   ]
 }
