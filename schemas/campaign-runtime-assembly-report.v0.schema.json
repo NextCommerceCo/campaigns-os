@@ -329,7 +329,11 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "performed_by": { "type": "string", "minLength": 1 },
-        "source_build_fingerprint": { "type": "string", "minLength": 1 },
+        "source_build_fingerprint": {
+          "description": "The build output fingerprint (stages.assembly.build_fingerprint) this stage was recorded against. stages.polish and stages.deploy carry it; record build makes a completed stage that names other output required again (a demoted stages.deploy keeps its prior record, with that record's outputs and evidence, in its history). A stages.deploy without it was recorded before deploy stamped its build and is kept as recorded.",
+          "type": "string",
+          "minLength": 1
+        },
         "source_package_material_fingerprint": { "type": "string", "minLength": 1 },
         "build_fingerprint": { "type": "string", "minLength": 1 },
         "artifact_fingerprint": { "type": "string", "minLength": 1 },
