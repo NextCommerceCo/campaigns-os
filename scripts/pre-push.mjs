@@ -12,7 +12,7 @@
  * same gates either way.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -28,6 +28,25 @@ export function commitsToCheck(input) {
     if (!commits.includes(localSha)) commits.push(localSha);
   }
   return commits;
+}
+
+/**
+ * The pushed commit is checked in place only when this checkout holds it
+ * unmodified and its installed packages are at least as new as its lockfile
+ * (npm writes node_modules/.package-lock.json on every install). Otherwise a
+ * temporary worktree installs that commit's own dependencies.
+ */
+export function canCheckInPlace({ head, commit, porcelain, lockfileMtime, installedMtime }) {
+  return head === commit && porcelain === "" && lockfileMtime !== null && installedMtime !== null && installedMtime >= lockfileMtime;
+}
+
+function mtime(path) {
+  try {
+    return statSync(path).mtimeMs;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 // Git exports GIT_DIR and its relatives to hooks. A git command run against
@@ -61,7 +80,13 @@ function main() {
   let failed = false;
   for (const commit of commits) {
     const short = commit.slice(0, 7);
-    const inPlace = read(["rev-parse", "HEAD"]) === commit && read(["status", "--porcelain"]) === "" && existsSync(join(root, "node_modules"));
+    const inPlace = canCheckInPlace({
+      head: read(["rev-parse", "HEAD"]),
+      commit,
+      porcelain: read(["status", "--porcelain"]),
+      lockfileMtime: mtime(join(root, "package-lock.json")),
+      installedMtime: mtime(join(root, "node_modules/.package-lock.json")),
+    });
     if (inPlace) {
       console.error(`pre-push: fast gates on ${short}`);
       failed = run(process.execPath, ["scripts/check-fast.mjs", "--no-fetch"], root).status !== 0 || failed;

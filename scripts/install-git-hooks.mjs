@@ -29,12 +29,16 @@ script="$(git rev-parse --show-toplevel)/scripts/pre-push.mjs"
 exec node "$script" "$@"
 `;
 
+// A file is the gate when it opens the way SHIM does, not merely when the
+// marker text appears somewhere in it.
+const isGate = (content) => content.startsWith(`#!/bin/sh\n${MARKER}`);
+
 /** Where the gate goes, given the current hook files' contents (null when absent). */
 export function planInstall({ prePush, prePushLocal }) {
-  if (prePush === null || prePush.includes(MARKER)) return { file: "pre-push" };
+  if (prePush === null || isGate(prePush)) return { file: "pre-push" };
   // An existing hook that already hands its input to pre-push.local.
   if (prePush.includes("pre-push.local")) {
-    if (prePushLocal === null || prePushLocal.includes(MARKER)) return { file: "pre-push.local" };
+    if (prePushLocal === null || isGate(prePushLocal)) return { file: "pre-push.local" };
     return { refusal: "pre-push.local already holds another hook" };
   }
   return { refusal: "pre-push is a hook this command does not manage" };

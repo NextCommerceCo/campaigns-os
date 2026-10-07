@@ -17,6 +17,10 @@ test("the gate goes beside a hook that runs pre-push.local, or becomes the hook,
   assert.deepEqual(planInstall({ prePush: CHAINING, prePushLocal: SHIM }), { file: "pre-push.local" });
   assert.match(planInstall({ prePush: CHAINING, prePushLocal: "#!/bin/sh\nexit 0\n" }).refusal, /pre-push.local already holds another hook/);
   assert.match(planInstall({ prePush: "#!/bin/sh\nmake lint\n", prePushLocal: null }).refusal, /does not manage/);
+  // Quoting the marker does not make a hook the gate.
+  const quoting = `#!/bin/sh\n# see "${MARKER}" in campaigns-os\nmake lint\n`;
+  assert.match(planInstall({ prePush: quoting, prePushLocal: null }).refusal, /does not manage/);
+  assert.match(planInstall({ prePush: CHAINING, prePushLocal: quoting }).refusal, /pre-push.local already holds another hook/);
   assert.ok(SHIM.includes(MARKER));
 });
 
