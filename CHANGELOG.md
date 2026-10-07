@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.1] - 2026-10-07
+
+### Changed
+
+- When `start`, `prepare-build` or `build` refuses to overwrite a report that already carries stage evidence, the message now names `record brief` and `record spec` as the way to bind a changed brief or CampaignSpec while keeping that evidence. Before, it offered only `--force`, which resets the recorded stages.
+- README: the build steps and the `record` command list now include `record theme`, `record deploy` (bound to the build it probed), `record brief` and `record spec`. The SDK examples take `--target-sdk <x.y.z>` instead of 0.4.38. The `tooling status` note no longer says npm has no dist-tag, the Node floor reads 20.19.0 as in `engines`, and `--force` is described as moving completed records to stage history.
+- `docs/quickstart.md`: a QA run against a local-address base URL keeps its verdict local by default, whatever the telemetry consent.
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).

@@ -69,7 +69,7 @@ function guardAssemblyReportOverwrite(reportPath, args, { announced = null } = {
     throw new Error(
       `Assembly report at ${reportPath} ${announced ? "gained stage evidence while prepare-build was running" : "already carries stage evidence"} (${stageKeys.join(", ")}). `
       + `Rerunning prepare-build/start/build would reset ${stageKeys.length === 1 ? "this stage" : "these stages"} to pending and destroy that evidence. `
-      + `Pass --force to overwrite (destructive).`,
+      + `To bind a changed brief or CampaignSpec while keeping that evidence, run record brief or record spec instead. Pass --force only to overwrite (destructive).`,
     );
   }
   const unannounced = announced ? stageKeys.filter((key) => !announced.includes(key)) : stageKeys;

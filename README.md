@@ -13,7 +13,7 @@ This toolkit gives campaign developers and AI coding tools a clear path for asse
 7. Hand off to `next-campaigns-build`.
 8. Run build/lint and record the build with `campaigns-os record build`, then install the Campaigns OS Playwright browser once with `campaigns-os qa install-browser`.
 9. Run `next-campaigns-polish`, serve the current build, run the mandatory `campaigns-os polish capture` producer, then record Polish with `campaigns-os record polish --evidence <file>`.
-10. Deploy a preview.
+10. Deploy a preview. For a local preview (`--deploy-target local-serve`), serve the current build and record it with `campaigns-os record deploy --base-url <loopback route root>`; a later `record build` of different output makes the deploy owed again.
 11. Run `next-campaigns-qa` against the tested URL.
 12. Record launch blockers and follow-up work.
 
@@ -289,8 +289,8 @@ npm run campaigns-os -- prepare-build --spec <spec.json> --source <html-dir> --t
 npm run campaigns-os -- doctor --packet <page-kit-repo>/campaign-runtime.build.json
 npm run campaigns-os -- page-kit sync --packet <page-kit-repo>/campaign-runtime.build.json --dry-run
 npm run campaigns-os -- checkpoint waive --packet <packet.json> --gate source_html.producer_provenance --page <page_id> --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>" --dry-run
-npm run campaigns-os -- sdk storage-check --target <campaign-git-root> --target-sdk 0.4.38 --manifest <sdk-storage-manifest.json> --scope <campaign,shared> --json
-npm run campaigns-os -- sdk repin --target <static-campaign-repo> --target-sdk 0.4.38
+npm run campaigns-os -- sdk storage-check --target <campaign-git-root> --target-sdk <x.y.z> --manifest <sdk-storage-manifest.json> --scope <campaign,shared> --json
+npm run campaigns-os -- sdk repin --target <static-campaign-repo> --target-sdk <x.y.z>
 npm run campaigns-os -- standardize --target <page-kit-repo-or-cpk-repo> --json
 npm run campaigns-os -- theme inspect --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- theme generate --packet <page-kit-repo>/campaign-runtime.build.json --json
@@ -302,6 +302,10 @@ npm run qa:install-browser
 npm run campaigns-os -- next polish --packet <packet.json> --report <assembly-report.json>
 npm run campaigns-os -- polish capture --packet <packet.json> --base-url <served-current-build-url>
 npm run campaigns-os -- record polish --packet <packet.json> --evidence <polish-evidence.json>
+npm run campaigns-os -- record theme --packet <packet.json>
+npm run campaigns-os -- record deploy --packet <packet.json> --base-url <loopback-route-root>
+npm run campaigns-os -- record brief --packet <packet.json> --brief <campaign-build-brief.yaml>
+npm run campaigns-os -- record spec --packet <packet.json>
 npm run campaigns-os -- next qa --packet <packet.json> --report <assembly-report.json>
 npm run campaigns-os -- qa resolve --packet <packet.json>
 npm run campaigns-os -- qa run --packet <packet.json> --base-url <preview-url> --browser --test-order common
@@ -320,14 +324,24 @@ output path alone does not create or refresh the file. Build/QA producer
 commands continue to record their own stages.
 
 Record a stage's completion with `record setup`, `record build` (after every
-rebuild) and `record polish --evidence <file>` rather than hand-editing
-`.campaign-runtime/build-context.json` or `.campaign-runtime/assembly-report.json`.
-Each validates what it would write, refuses a stage `next` has not reached, and
-writes nothing on failure; `--dry-run` runs the checks without writing. See
+rebuild), `record polish --evidence <file>`, `record theme` (once the brand layer
+is linked) and, for a local preview, `record deploy --base-url <loopback route
+root>`, rather than hand-editing `.campaign-runtime/build-context.json` or
+`.campaign-runtime/assembly-report.json`. A recorded deploy is bound to the
+build it probed, so a later `record build` of different output makes it owed
+again. When the brief or the CampaignSpec changes after stages are recorded, save
+it with `record brief` or `record spec`: an unchanged or reformatted save keeps
+every stage, a material change moves the superseded build, Polish and QA records
+to stage history instead of discarding them, and `next` names the stage that is
+owed again. Re-running
+`start` or `prepare-build` over recorded stages is refused without `--force`.
+Each `record` command validates what it would write, refuses a stage `next` has
+not reached, and writes nothing on failure; `--dry-run` runs the checks without
+writing. See
 [Build Packet](docs/build-packet.md) and [Polish evidence](docs/polish-evidence.md).
 
 Do not use `prepare-build --force` merely to refresh a catalog path: doctor
-already resolves the running toolkit's catalog, and force clears stage evidence.
+already resolves the running toolkit's catalog, and `--force` resets the recorded stages (completed build, Polish and QA records move to stage history).
 
 
 `qa run` automatically checks contract-governed authored price, recurring
@@ -339,8 +353,8 @@ Run `tooling status` before a build session. It names the install mode — a
 pinned package (`npx`, or a consumer's `node_modules`) or a git checkout — and
 checks that the package metadata, CLI entrypoint, and installed Campaigns OS
 skills agree. For a checkout it also reports branch, upstream, and ahead/behind;
-for a package install the pinned commit is the freshness answer, and there is
-no npm dist-tag to compare against. Neither mode makes agent skills current on
+for a package install the pinned version is the freshness answer, and the
+status does not compare it with npm's `latest` dist-tag. Neither mode makes agent skills current on
 its own: when skills are stale, run the refresh command the status output
 prints (it names each stale platform, through the same prefix you ran
 `tooling status` with), then read the `SKILL.md` files it lists under `Read now`
@@ -393,7 +407,7 @@ registry — so a spec rule is authored once and reaches internal teams and
 third-party agencies alike. The rules are authored in TypeScript with no heavy
 dependencies and compiled to plain ESM (`npm run build:spec`, on `prepare`) and a
 stable subpath export `@nextcommerce/campaigns-os/campaign-spec`, so consumers run
-them on `engines.node` (>=20) with no type-stripping or build step of their own.
+them on `engines.node` (>=20.19.0) with no type-stripping or build step of their own.
 See [`campaign-spec/README.md`](campaign-spec/README.md).
 
 ## Docs
