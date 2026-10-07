@@ -2,13 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.54.0+agent.2] - 2026-10-07
+## [1.54.0+agent.3] - 2026-10-07
 
 ### Fixed
 
 The `qa run --browser` primary-CTA row (`browser-primary-cta:<page>`) no longer fails `missing_route_cta` on checkout and upsell pages that Campaign Cart routes. Since 1.53.0 those pages are checked, but the check found a route only through a control's own link, and these pages have none: a checkout advances through the submit button of its `<form data-next-checkout="form">`, and an upsell through its `data-next-upsell-action="add"` and `"skip"` controls, which are `href="#"` links. So every SDK-routed checkout and upsell failed, the starter templates' own pages included, while the `route-link:*` rows and test orders passed on the same pages. QA now takes the route a page declares for these controls, from the same page fields the `route-link:*` rows read. On a checkout, the checkout form's `button[type="submit"]` leads to the page's next route. On an upsell or downsell, the add control leads to the page's accept route and the skip control to its decline route. The control is checked as the primary CTA when that route is the page's next route, and its contrast, size and text are measured as before. On checkout, upsell and downsell pages these declared controls are the only controls a form can route. Any other form's `action`, for example a newsletter sign-up beside the checkout form, routes nothing there, even when it is the next route. So a page whose only route to the next page is such a form still fails `missing_route_cta`. On every other page a form's `action` is now the route of that form's own submit button only, and never inside the checkout form, which Campaign Cart submits itself. So bundle cards, wallet buttons and other controls inside a form no longer become CTA candidates because the form has an action; before, they did, and the row turned to `manual_review`. A page with no control leading to its next route still fails `missing_route_cta`.
 
 QA now recognises `data-next-upsell-action="accept"` and `data-next-upsell-action="decline"` on upsell pages. Campaign Cart treats `accept` exactly like `add` and `decline` exactly like `skip`, but QA only looked for `add` and `skip`. So on a page written with `accept` / `decline`, the test-order upsell step failed with `Missing upsell control`, the `browser-upsell-control:<page>:accept` and `:decline` rows read `not found`, the primary-CTA row failed `missing_route_cta`, and the `route-link:<page>:accept` and `:decline` rows fell to `manual_review` when the route URL was not in the page's HTML. QA now takes either spelling everywhere it looks for an upsell control: the test-order upsell step and its timeout evidence, the upsell-page readiness wait, the rendered upsell-control rows, the primary-CTA route rule, and the static `route-link:*` rows, including the check for a `data-upsell-proxy` button, which forwards to the in-offer action with its own spelling; Polish readability's contrast check also takes either spelling for its `upsell_accept` and `upsell_decline` roles. Pages written with `add` / `skip` are checked as before, and when a page has neither spelling, QA's messages still name `add` and `skip`. Other values are still not upsell controls.
+
+## [1.54.0+agent.2] - 2026-10-07
+
+### Changed
+
+Repository CI and contributor tooling only; the published package is unchanged. CI runs the unit and browser lanes as two shards each on separate runners, and a newer push to a pull request cancels that pull request's older run; pushes to `main` always finish. `npm run check:fast` runs the checks of CI's types and contracts lanes and the three PR-only release gates against `origin/main` in under a minute, and `npm run hooks:install` installs it as a pre-push hook for the clone and its worktrees (`docs/small-pr-review-path.md`).
+
+## [1.54.0+agent.1] - 2026-10-07
+
+### Changed
+
+- When `start`, `prepare-build` or `build` refuses to overwrite a report that already carries stage evidence, the message now says that, if the brief or CampaignSpec changed, `record brief` or `record spec` binds it while keeping that evidence. Before, it offered only `--force`, which resets the recorded stages.
+- README: the build steps and the `record` command list now include `record theme`, `record deploy` (bound to the build it probed), `record brief` and `record spec`. The SDK examples take `--target-sdk <x.y.z>` instead of 0.4.38. The `tooling status` note no longer says npm has no dist-tag, the Node floor reads 20.19.0 as in `engines`, and `--force` is described as moving completed records to stage history.
+- `docs/quickstart.md`: a QA run against a local-address base URL keeps its verdict local by default, whatever the telemetry consent.
 
 ## [1.54.0] - 2026-10-07
 
