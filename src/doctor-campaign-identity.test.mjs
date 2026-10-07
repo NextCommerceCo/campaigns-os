@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { CAMPAIGN_IDENTITY, CAMPAIGN_IDENTITY_KINDS } from "./campaign-identity.mjs";
+import { CAMPAIGN_IDENTITY, CAMPAIGN_IDENTITY_KINDS, evaluateCampaignIdentity } from "./campaign-identity.mjs";
 import { validateCampaignIdentity } from "./doctor/checks.mjs";
 import { doctorBuiltOutput } from "./doctor/inspect.mjs";
 
@@ -92,6 +92,73 @@ test("doctor compares a built config key with the campaign key when the packet c
     const matching = [];
     validateCampaignIdentity(packet, matching, [], { target_repo: repo, checkpoint_gates: [] });
     assert.deepEqual(matching, []);
+  });
+});
+
+test("mismatch names every distinct wrong key source and the pages loading it alongside drift", () => {
+  const built = (page_id, file, key) => ({
+    page_id,
+    file: `${page_id}/index.html`,
+    content: '<html><script src="config.js"></script></html>',
+    scripts: [{ src: "config.js", file, content: `window.nextConfig = { apiKey: "${key}" };` }],
+  });
+  const gate = evaluateCampaignIdentity({
+    expectedApiKey: { key: "examplecampaignkey", source: "CampaignSpec campaign.campaigns_api_key" },
+    pages: [
+      built("checkout", "shared/config.js", "examplecampaignkey"),
+      built("upsell-1", "borrowed/config.js", "examplewrongone"),
+      built("upsell-2", "borrowed/config.js", "examplewrongone"),
+      built("receipt", "receipt/config.js", "examplewrongtwo"),
+    ],
+  });
+  assert.deepEqual(gate.findings.map((finding) => finding.kind), ["api_key_drift", "api_key_mismatch"]);
+  const mismatch = gate.findings[1];
+  assert.match(mismatch.message, /borrowed\/config\.js.*upsell-1\/index\.html.*upsell-2\/index\.html/);
+  assert.match(mismatch.message, /receipt\/config\.js.*receipt\/index\.html/);
+  assert.doesNotMatch(mismatch.message, /shared\/config\.js/);
+  assert.equal(mismatch.message.match(/examplewrongone/g)?.length, 1);
+  assert.equal(mismatch.message.match(/examplewrongtwo/g)?.length, 1);
+  assert.match(gate.required_actions[0].description, /borrowed\/config\.js, receipt\/config\.js/);
+});
+
+function mismatchOnlyGate() {
+  return evaluateCampaignIdentity({
+    expectedApiKey: { key: "examplecampaignkey", source: "Build Packet campaign.campaigns_api_key" },
+    pages: ["checkout", "receipt"].map((page_id) => ({
+      page_id,
+      file: `${page_id}/index.html`,
+      content: '<html><script src="config.js"></script></html>',
+      scripts: [{ src: "config.js", file: "shared/config.js", content: 'window.nextConfig = { apiKey: "examplebuiltkey" };' }],
+    })),
+  });
+}
+
+test("a mismatch alone points the repair at the key source and names its loading pages", () => {
+  const gate = mismatchOnlyGate();
+  assert.deepEqual(gate.findings.map((finding) => finding.kind), ["api_key_mismatch"]);
+  assert.match(gate.findings[0].message, /shared\/config\.js.*checkout\/index\.html.*receipt\/index\.html/);
+});
+
+test("a mismatch alone gives a mismatch reason and a replacement action", () => {
+  const gate = mismatchOnlyGate();
+  assert.match(gate.reason, /API key mismatch/);
+  assert.doesNotMatch(gate.reason, /drift/);
+  assert.match(gate.required_actions[0].description, /Replace the built key in shared\/config\.js.*rebuild/);
+  assert.doesNotMatch(gate.required_actions[0].description, /Make every page name the same campaign/);
+});
+
+test("doctor compares a built key with the CampaignSpec key source", () => {
+  withTempDir((repo) => {
+    writeConfig(repo, "examplebuiltkey");
+    writePage(repo, "checkout", page(head()));
+    const errors = [];
+    validateCampaignIdentity(
+      { campaign: { public_route_slug: SLUG } }, errors, [],
+      { target_repo: repo, checkpoint_gates: [] },
+      { campaign: { campaigns_api_key: "examplecampaignkey" } },
+    );
+    assert.deepEqual(codes(errors), [CAMPAIGN_IDENTITY_KINDS.api_key_mismatch]);
+    assert.match(errors[0].message, /CampaignSpec.*campaign\.campaigns_api_key/);
   });
 });
 

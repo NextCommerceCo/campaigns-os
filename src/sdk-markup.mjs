@@ -252,7 +252,7 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
       if (holder) {
         const conditionAttribute = cartVisibilityCondition(holder);
         findings.push(finding("RECEIPT_ORDER_ITEMS_CART_VISIBILITY", page_id, where,
-          `${describe(entry)} on ${where} is inside ${describe(holder)} with ${conditionAttribute}="${holder.attrs.get(conditionAttribute)}". After checkout the cart can be empty, so receipt order lines disappear. Remove the cart-state visibility condition from the order-items element and its ancestors.`,
+          `${describe(entry)} on ${where} ${holder === entry ? "carries" : `is inside ${describe(holder)} with`} ${conditionAttribute}="${holder.attrs.get(conditionAttribute)}". After checkout the cart can be empty, so receipt order lines disappear. Remove the cart-state visibility condition from the order-items element and its ancestors.`,
           { condition_attribute: conditionAttribute, condition: holder.attrs.get(conditionAttribute) }));
       }
     }

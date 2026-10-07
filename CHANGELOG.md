@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-Doctor now blocks receipt order lines hidden by a cart-state visibility condition, including when only the CampaignSpec identifies the receipt page. When the Build Packet, CampaignSpec, or its declared environment variable supplies the campaign API key, doctor also blocks built pages whose key differs from it, even when every built page agrees with the others. Each finding names the repair before test orders begin.
+Doctor now blocks receipt order lines hidden by a cart-state visibility condition, including when only the CampaignSpec identifies the receipt page. When the campaign API key comes directly from the Build Packet or CampaignSpec, or from the environment variable named by Build Packet `campaign.api_key_source`, doctor blocks built pages with a different key even if those pages agree with one another. A mismatch names each wrong key source and the pages using it, so the built keys can be replaced before test orders begin.
 
 ## [1.54.0+agent.2] - 2026-10-07
 

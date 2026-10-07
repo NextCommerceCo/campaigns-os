@@ -160,6 +160,18 @@ test("receipt order items cannot sit under cart-state visibility, including on t
   }
   const clean = evaluateSdkMarkup({ pages: [receipt('<div data-next-order-items></div>')] });
   assert.equal(clean.status, "pass");
+  const selfCondition = evaluateSdkMarkup({ pages: [receipt('<div data-next-order-items data-next-hide="cart.isEmpty"></div>')] });
+  assert.match(selfCondition.findings[0].message, /receipt\.html carries data-next-hide="cart\.isEmpty"/);
+});
+
+test("cart visibility on a non-receipt page does not block order items", () => {
+  const gate = evaluateSdkMarkup({ pages: [{ page_id: "checkout", file: "checkout.html", content: '<html><head><meta name="next-page-type" content="checkout"></head><body><div data-next-hide="cart.isEmpty"><div data-next-order-items></div></div></body></html>' }] });
+  assert.deepEqual(codeNames(gate), []);
+});
+
+test("order-state visibility on a receipt does not count as cart visibility", () => {
+  const gate = evaluateSdkMarkup({ pages: [{ page_id: "receipt", file: "receipt.html", content: '<html><head><meta name="next-page-type" content="receipt"></head><body><div data-next-show="order.hasItems"><div data-next-order-items></div></div></body></html>' }] });
+  assert.deepEqual(codeNames(gate), []);
 });
 
 test("receipt cart visibility reads references outside quoted condition values", () => {
