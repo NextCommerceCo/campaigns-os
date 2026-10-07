@@ -170,19 +170,25 @@ test("recording keeps unmeasured files, drops files that left the lane, and roun
   );
 });
 
-test("--record-durations writes a passing run's timings and leaves them alone after a failure", (t) => {
+test("--record-durations writes a passing run's timings, and leaves them alone after a failure or a file with no run time", (t) => {
   const root = fixture(t);
   for (const name of ["a", "b"]) writeFileSync(join(root, `src/${name}.test.mjs`), "");
   writeFileSync(join(root, DURATIONS_PATH), JSON.stringify({ browser: { "src/x.browser.test.mjs": 5 }, unit: { "src/a.test.mjs": 1 } }));
-  const spawnWriting = (status) => (_command, args) => {
+  const spawnWriting = (status, milliseconds) => (_command, args) => {
     const destination = args.find((arg) => arg.startsWith("--durations=")).slice("--durations=".length);
     // The runner reports real paths, and the fixture root may sit behind a symlink (macOS /var).
-    writeFileSync(destination, JSON.stringify({ [join(realpathSync(root), "src/b.test.mjs")]: 2500 }));
+    writeFileSync(destination, JSON.stringify(Object.fromEntries(Object.entries(milliseconds).map(([file, ms]) => [join(realpathSync(root), file), ms]))));
     return { status };
   };
-  assert.equal(runTests(root, { record: true, spawn: spawnWriting(1), report: () => {} }), 1);
+  const both = { "src/a.test.mjs": 1500, "src/b.test.mjs": 2500 };
+  const messages = [];
+  const report = (message) => messages.push(message);
+  assert.equal(runTests(root, { record: true, spawn: spawnWriting(1, both), report }), 1);
   assert.deepEqual(readDurations(root, "unit"), { "src/a.test.mjs": 1 });
-  assert.equal(runTests(root, { record: true, spawn: spawnWriting(0), report: () => {} }), 0);
-  assert.deepEqual(readDurations(root, "unit"), { "src/a.test.mjs": 1, "src/b.test.mjs": 2.5 });
+  assert.equal(runTests(root, { record: true, spawn: spawnWriting(0, { "src/b.test.mjs": 2500 }), report }), 1);
+  assert.deepEqual(readDurations(root, "unit"), { "src/a.test.mjs": 1 });
+  assert.equal(messages.at(-1), "durations not recorded: no run time reported for 1 of 2 unit files (src/a.test.mjs)");
+  assert.equal(runTests(root, { record: true, spawn: spawnWriting(0, both), report }), 0);
+  assert.deepEqual(readDurations(root, "unit"), { "src/a.test.mjs": 1.5, "src/b.test.mjs": 2.5 });
   assert.deepEqual(readDurations(root, "browser"), { "src/x.browser.test.mjs": 5 }, "recording one lane leaves the other");
 });

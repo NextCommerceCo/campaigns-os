@@ -98,12 +98,21 @@ export function shardFromArgv(argv) {
   return parseShard(argv[at] === "--shard" ? argv[at + 1] : argv[at].slice("--shard=".length));
 }
 
-function recordDurations(root, lane, discovered, reportPath, report) {
+// Returns false, writing nothing, when a file that ran reported no run time:
+// the runner no longer reports files the way the reporter reads them, and
+// recording the rest would quietly keep stale entries.
+function recordDurations(root, lane, discovered, ran, reportPath, report) {
   const measured = {};
   // The runner reports real paths: its working directory is the root with any symlinks resolved.
   const realRoot = realpathSync(root);
   for (const [file, milliseconds] of Object.entries(JSON.parse(readFileSync(reportPath, "utf8")))) {
     measured[relative(realRoot, file)] = milliseconds / 1000;
+  }
+  const unmeasured = ran.filter((file) => !Number.isFinite(measured[file]));
+  if (unmeasured.length) {
+    const named = unmeasured.slice(0, 3).join(", ") + (unmeasured.length > 3 ? ", ..." : "");
+    report(`durations not recorded: no run time reported for ${unmeasured.length} of ${ran.length} ${lane} files (${named})`);
+    return false;
   }
   let manifest = {};
   try {
@@ -114,6 +123,7 @@ function recordDurations(root, lane, discovered, reportPath, report) {
   manifest[lane] = mergeDurations(manifest[lane] ?? {}, discovered, measured);
   writeFileSync(join(root, DURATIONS_PATH), `${JSON.stringify(manifest, null, 2)}\n`);
   report(`recorded ${Object.keys(measured).length} ${lane} test durations in ${DURATIONS_PATH}`);
+  return true;
 }
 
 // A lane starts its slowest files first, through run-test-files.mjs: `node
@@ -145,8 +155,8 @@ export function runTests(root, { browser = false, shard, record = false, spawn =
     if (result.signal) report(`Test process terminated by ${result.signal}`);
     const status = result.status ?? 1;
     // A failing run's timings describe failures, not the lane; keep the old ones.
-    if (scratch && status === 0) recordDurations(root, lane, discovered, join(scratch, "durations.json"), report);
     if (scratch && status !== 0) report(`durations not recorded: the ${lane} lane failed`);
+    if (scratch && status === 0 && !recordDurations(root, lane, discovered, files, join(scratch, "durations.json"), report)) return 1;
     return status;
   } finally {
     if (scratch) rmSync(scratch, { recursive: true, force: true });
