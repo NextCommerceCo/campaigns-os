@@ -110,6 +110,12 @@ const SHARED = ({ other }) => ({
   i55: htmlPage(`<a href="" aria-disabled="true" style="display:inline-block;${P};color:#bbbbbb;background:#eeeeee">Unavailable link</a>`),
 });
 
+// The shared capture's probe clock: time on it never passes, so no probe
+// bound ends by the clock, while each cell's real-time deadline still
+// applies. No shared row is about the probe's time bound, and on a busy
+// runner F2.4-I10's 2,000-element read can take most of its 1.5 s.
+const UNHURRIED_CLOCK = Object.freeze({ now: () => 0, sleep: () => new Promise(() => {}) });
+
 let sharedSite = null;
 const shared = (() => {
   let pending = null;
@@ -124,7 +130,7 @@ const shared = (() => {
         },
       });
       // i50's webfont is stalled, so its cells wait out the idle window.
-      return { site: sharedSite, capture: await capturePolish(sharedSite, { networkIdleMs: STALLED_IDLE_MS }) };
+      return { site: sharedSite, capture: await capturePolish(sharedSite, { networkIdleMs: STALLED_IDLE_MS, probeClock: UNHURRIED_CLOCK }) };
     })();
     return pending;
   };

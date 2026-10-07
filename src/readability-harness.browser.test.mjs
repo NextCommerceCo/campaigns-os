@@ -116,8 +116,9 @@ export async function rebuildPages(site, pages) {
 // the loopback-guarded launcher. Returns the command result (or the error it
 // refused with) and the report it left.
 //
-// API assumption (F2.4-I49 only): `probeClock` is passed to the command in
-// process, beside the existing deadline options, and reaches the
+// API assumption (F2.4-I49 and the shared capture of
+// src/polish-readability.browser.test.mjs): `probeClock` is passed to the
+// command in process, beside the existing deadline options, and reaches the
 // readability probe the way capturePolishPageLoad's probeClock reaches the
 // image probe (src/polish-node.mjs:565, :642-644). `networkIdleMs`, when
 // given, shortens the adapter's network-idle window (5 s in production).
