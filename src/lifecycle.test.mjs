@@ -89,6 +89,15 @@ test("sub-millisecond waits are summed before rounding, so wait never exceeds du
   assert.ok(lifecycle.wait_ms <= lifecycle.duration_ms);
 });
 
+test("a stage that recorded codes carries none when the command exits 0", async () => {
+  const { lifecycle } = await withCommandLifecycle({ command: "start", runId: "R", clock: fakeClock(), readExitStatus: () => 0 }, async (recorder) => {
+    await recorder.time("prepare-build", async () => recorder.recordFindingCodes(["doctor.example"]));
+  });
+  assert.equal("finding_codes" in lifecycle, false);
+  assert.equal(lifecycle.stages.length, 1);
+  assert.equal("finding_codes" in lifecycle.stages[0], false);
+});
+
 test("nested prompt hooks count one interval and attribute it to the active sub-stage", async () => {
   let tick = 0;
   const clock = { now: () => new Date("2026-06-07T00:00:00.000Z"), monotonic: () => tick };

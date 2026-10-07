@@ -6878,9 +6878,99 @@
           "path": "src/cli.mjs",
           "surface_entry": "run-record",
           "summary": "Pass each closer through internal options, route prompt wait and finding codes to lifecycle capture, and remove agent usage flags."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate at surface 1.55.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate at surface 1.55.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Advance the declared version to 1.55.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the 1.55.0 package in the local setup install command."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": null,
+          "summary": "Advance bundle_revision to 1.55.0+skills.1 and the patch version of each restamped skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
         }
       ],
-      "entry_sha256": "a4ef7fa0c3a1a5ee1111e85f360b6919e6f3d626df14a92e78b48f375a04ab47"
+      "entry_sha256": "1ca93068d9754bf372dfb98f54e110c2079a4a7635e026700a694618cd69d293"
     }
   ]
 }

@@ -903,7 +903,7 @@ test("(i') QA auto-end preserves a prior handler failure and closes on blank inh
     cwd: dir,
     env: childEnv(),
   });
-  assert.match(stderr, /run session auto-end skipped after QA: unknown primary_surface/);
+  assert.match(stderr, /run session auto-end skipped after QA: Run Record failed validation; refusing to write: \[record\.primary_surface\] unknown primary_surface/);
   const entries = readJournalEntries(session.lifecycle_journal);
   assert.equal(entries.length, before + 1, "QA appends exactly one entry before its auto-end");
   assert.equal(entries.at(-1).command, "qa");
