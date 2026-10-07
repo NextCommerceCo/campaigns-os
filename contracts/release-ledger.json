@@ -6809,6 +6809,27 @@
         }
       ],
       "entry_sha256": "69a1bd09fda7e8637f0e647c784e7cf1941ec33ae607014e8c3f0e4735328e81"
+    },
+    {
+      "id": "RL-0253",
+      "sequence": 242,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.10",
+      "changelog_sha256": "c693a2482b40ae5bc570dc591927fc60c2193d339a2c36df8489c885d0028fdd",
+      "agent_impact": "Theme inspection excludes decorative selector subjects from primary and CTA selection while keeping the primary and CTA matching used on main. An accent-only CTA fallback asks the operator to confirm its colour.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "Explain decorative subject exclusions, main-compatible primary and CTA matching, and the accent-only fallback warning."
+        }
+      ],
+      "entry_sha256": "446b7cc41c5af2352fecedebc543e9bb38a31b025afe2b60848d912e615f902b"
     }
   ]
 }

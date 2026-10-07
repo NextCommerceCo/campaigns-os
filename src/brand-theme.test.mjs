@@ -150,6 +150,177 @@ test("brand theme infers safe CTA tokens from linked button CSS when root tokens
   });
 });
 
+test("brand theme keeps sale and announcement colours out of primary when a button colour exists", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    mkdirSync(join(source, "styles"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="styles/theme.css"><main>Landing</main>`);
+    writeFileSync(join(source, "styles/theme.css"), `
+.announcement-bar, .sale-badge { background: #b51223; }
+.old-price { color: #b51223; text-decoration: line-through; }
+.hero-cta { background: #207d65; color: #ffffff; }
+.rating-stars { color: #e5ad43; }
+`);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const mappings = result.context_theme.mappings;
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--primary")?.value, "#207d65");
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--cta-primary")?.value, "#207d65");
+  });
+});
+
+test("brand theme ignores a sale badge inside a cart summary before a real CTA", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    mkdirSync(join(source, "styles"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="styles/theme.css"><main>Landing</main>`);
+    writeFileSync(join(source, "styles/theme.css"), `
+.cart-summary .sale-badge { background: #b51223; }
+.hero-cta { background: #207d65; color: #ffffff; }
+`);
+
+    const mappings = inspectBrandTheme({ packet, packetPath }).context_theme.mappings;
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--primary")?.value, "#207d65");
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--cta-primary")?.value, "#207d65");
+  });
+});
+
+test("brand theme maps a button background ahead of a rating accent for CTA", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    writeFileSync(join(source, "landing.html"), `<style>
+:root { --site-primary: #267968; --site-accent: #c99538; }
+.hero-stars { color: var(--site-accent); }
+.hero-cta { background: var(--site-primary); color: #ffffff; }
+</style><main>Landing</main>`);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const mappings = result.context_theme.mappings;
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--cta-primary")?.value, "#267968");
+    assert.equal(result.warnings.some((warning) => warning.code === "theme.cta.fallback"), false);
+  });
+});
+
+test("brand theme keeps a CTA button inside a rating section", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="theme.css"><main>Landing</main>`);
+    writeFileSync(join(source, "theme.css"), `:root { --site-accent: #c99538; }
+.rating-section .cta-button { background: #207d65; color: #ffffff; }`);
+    const result = inspectBrandTheme({ packet, packetPath });
+    assert.equal(result.context_theme.mappings.find((mapping) => mapping.target === "--brand--color--cta-primary")?.value, "#207d65");
+    assert.equal(result.warnings.some((warning) => warning.code === "theme.cta.fallback"), false);
+  });
+});
+
+test("brand theme keeps a brand badge primary token", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="theme.css"><main>Landing</main>`);
+    writeFileSync(join(source, "theme.css"), `:root { --brand-badge-primary: #b51223; }`);
+    const mappings = inspectBrandTheme({ packet, packetPath }).context_theme.mappings;
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--primary")?.value, "#b51223");
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--cta-primary")?.value, "#b51223");
+  });
+});
+
+test("brand theme keeps a brand badge header colour", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="theme.css"><main>Landing</main>`);
+    writeFileSync(join(source, "theme.css"), `:root { --brand-badge: #b51223; }
+.brand-badge-header { background: var(--brand-badge); }`);
+    const mappings = inspectBrandTheme({ packet, packetPath }).context_theme.mappings;
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--primary")?.value, "#b51223");
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--cta-primary")?.value, "#b51223");
+  });
+});
+
+test("brand theme keeps a header whose name contains star without a star part", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="theme.css"><main>Landing</main>`);
+    writeFileSync(join(source, "theme.css"), `.starling-header { background: #b51223; }`);
+    const mappings = inspectBrandTheme({ packet, packetPath }).context_theme.mappings;
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--primary")?.value, "#b51223");
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--cta-primary")?.value, "#b51223");
+  });
+});
+
+test("brand theme keeps a single ordinary brand colour in primary and CTA", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    writeFileSync(join(source, "landing.html"), `<style>:root { --brand-primary: #246a87; }</style><main>Landing</main>`);
+
+    const mappings = inspectBrandTheme({ packet, packetPath }).context_theme.mappings;
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--primary")?.value, "#246a87");
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--cta-primary")?.value, "#246a87");
+  });
+});
+
+function mappingsFromCss(css) {
+  return withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    writeFileSync(join(source, "landing.html"), '<link rel="stylesheet" href="theme.css"><main>Landing</main>');
+    writeFileSync(join(source, "theme.css"), css);
+    const mappings = inspectBrandTheme({ packet, packetPath }).context_theme.mappings;
+    return Object.fromEntries(mappings
+      .filter((mapping) => ["--brand--color--primary", "--brand--color--cta-primary"].includes(mapping.target))
+      .map((mapping) => [mapping.target, mapping.value]));
+  });
+}
+
+const primaryValue = (mappings) => mappings["--brand--color--primary"];
+const ctaValue = (mappings) => mappings["--brand--color--cta-primary"];
+
+for (const selector of [
+  ".add-to-cart", ".buy-now", ".primary-button", ".product-form__submit", "#buy-button", ".btn:first-of-type",
+]) {
+  test(`brand theme reads ${selector} CTA background as on main`, () => {
+    const mappings = mappingsFromCss(`:root { --site-accent: #c99538; } ${selector} { background: #207d65; }`);
+    assert.equal(ctaValue(mappings), "#207d65");
+  });
+}
+
+for (const selector of ["header", "nav", ".navbar", ".site-header .inner", ".header, .footer"]) {
+  test(`brand theme reads ${selector} primary background as on main`, () => {
+    const mappings = mappingsFromCss(`${selector} { background: #18395a; } .btn { background: #e4572e; }`);
+    assert.equal(primaryValue(mappings), "#18395a");
+  });
+}
+
+test("brand theme excludes a lone announcement before a real CTA", () => {
+  const mappings = mappingsFromCss(".announcement-bar { background: #b51223; } .hero-cta { background: #207d65; }");
+  assert.equal(primaryValue(mappings), "#207d65");
+  assert.equal(ctaValue(mappings), "#207d65");
+});
+
+test("brand theme keeps a button element whose class carries a decorative part as a CTA", () => {
+  const mappings = mappingsFromCss(":root { --site-accent: #c99538; } button.rating-submit { background: #207d65; }");
+  assert.equal(ctaValue(mappings), "#207d65");
+});
+
+test("brand theme keeps a CTA in a comma list with a decorative selector", () => {
+  const mappings = mappingsFromCss(".sale-badge, .hero-cta { background: #207d65; }");
+  assert.equal(primaryValue(mappings), "#207d65");
+  assert.equal(ctaValue(mappings), "#207d65");
+});
+
+test("brand theme reads a header after a top-of-file import", () => {
+  const mappings = mappingsFromCss('@import url("font.css"); .header { background: #18395a; }');
+  assert.equal(primaryValue(mappings), "#18395a");
+});
+
+test("brand theme reads a header after a charset declaration", () => {
+  const mappings = mappingsFromCss('@charset "UTF-8"; .header { background: #18395a; }');
+  assert.equal(primaryValue(mappings), "#18395a");
+});
+
+test("brand theme keeps a header accent as primary when accent is not a decorative part", () => {
+  const mappings = mappingsFromCss(".header-accent { background: #18395a; }");
+  assert.equal(primaryValue(mappings), "#18395a");
+});
+
 test("brand theme normalizes role-like source tokens into a complete commerce token family", () => {
   withTempDir((dir) => {
     const { source, packet, packetPath } = makePacket(dir, [{ page_id: "checkout", path: "checkout.html" }]);

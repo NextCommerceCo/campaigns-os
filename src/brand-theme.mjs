@@ -256,8 +256,11 @@ function inferDesignIntentTokens(content, rootTokens = {}) {
     const lower = name.toLowerCase();
     if (isTargetContractToken(lower)) continue;
     const parts = tokenNameParts(lower);
+    const decorativeName = hasTokenPart(parts, DECORATIVE_NAME_PARTS);
+    const namedRole = hasTokenPart(parts, EXPLICIT_BRAND_PARTS);
     const ctaName = hasTokenPart(parts, ["cta", "button", "btn"]);
-    if (!ctaName && (hasTokenSequence(parts, ["brand"], ["primary", "main"]) || (hasTokenPart(parts, ["primary"]) && !hasTokenPart(parts, ["text", "foreground", "surface", "background", "bg", "border", "outline"])))) {
+    if (!ctaName && (!decorativeName || namedRole)
+      && (hasTokenSequence(parts, ["brand"], ["primary", "main"]) || (hasTokenPart(parts, ["primary"]) && !hasTokenPart(parts, ["text", "foreground", "surface", "background", "bg", "border", "outline"])))) {
       addToken("--brand-primary", color);
     }
     if (ctaName) {
@@ -281,7 +284,7 @@ function inferDesignIntentTokens(content, rootTokens = {}) {
     if (hasTokenPart(parts, ["rating", "star", "review"])) addToken("--rating-star", color);
   }
 
-  const rulePattern = /([^{}]+)\{([^{}]+)\}/g;
+  const rulePattern = /([^{};]+)\{([^{}]+)\}/g;
   for (const match of stripCssComments(content).matchAll(rulePattern)) {
     const selector = match[1] || "";
     for (const declaration of match[2].split(";")) {
@@ -291,9 +294,11 @@ function inferDesignIntentTokens(content, rootTokens = {}) {
       const color = resolveDeclarationColor(rawValue, rootTokens);
       if (!color) continue;
       if (["background", "background-color"].includes(name)) {
-        if (/(header|nav|announcement|brand|hero)/i.test(selector) && isStrongBrandColor(color)) {
+        if (hasPrimarySelectorRole(selector)
+          && isStrongBrandColor(color)) {
           addToken("--brand-primary", color);
-        } else if (isCtaLikeSelector(selector) && isStrongBrandColor(color)) {
+        }
+        if (isCtaLikeSelector(eligibleSelectorText(selector)) && isStrongBrandColor(color)) {
           addToken("--button-primary-bg", color);
           addToken("--brand-cta", color);
           addToken("--brand-accent", color);
@@ -319,6 +324,32 @@ function inferDesignIntentTokens(content, rootTokens = {}) {
   return tokens;
 }
 
+const DECORATIVE_NAME_PARTS = ["sale", "discount", "badge", "rating", "star", "strike", "border", "announcement"];
+const EXPLICIT_BRAND_PARTS = ["brand", "primary", "cta", "button", "btn"];
+
+function selectorSubjectParts(compound) {
+  return [...compound.classes, ...compound.ids].flatMap(tokenNameParts);
+}
+
+function subjectHasDecorativeRole(compound) {
+  // A button or submit input is a control whatever its classes say.
+  if (compound.type === "button") return false;
+  if (compound.type === "input" && compound.attributes.some((attribute) => /^\s*type\s*=\s*(["']?)submit\1\s*(?:i\s*)?$/i.test(attribute))) return false;
+  const parts = selectorSubjectParts(compound);
+  return hasTokenPart(parts, DECORATIVE_NAME_PARTS) && !hasTokenPart(parts, EXPLICIT_BRAND_PARTS);
+}
+
+function eligibleSelectorText(selector) {
+  const compounds = rightmostCompounds(selector);
+  if (!compounds) return selector;
+  return compounds.filter((compound) => !subjectHasDecorativeRole(compound))
+    .map((compound) => compound.selectorText).join(", ");
+}
+
+function hasPrimarySelectorRole(selector) {
+  return /(header|nav|announcement|brand|hero)/i.test(eligibleSelectorText(selector));
+}
+
 function isCtaLikeSelector(selector) {
   return /(?:^|[.#\s:_-])(?:cta|button|btn|submit|cart|buy|order)(?:$|[.#\s:_-])/i.test(String(selector || ""));
 }
@@ -337,11 +368,12 @@ const SELECTOR_ARGUMENT_PSEUDOS = new Set(["not", "is", "where", "has"]);
 function rightmostCompounds(selectorList) {
   const text = String(selectorList || "");
   const compounds = [];
-  const fresh = () => ({ type: null, classes: [], attributes: [], pseudos: [] });
-  const isEmpty = (compound) => !compound.type && !compound.classes.length && !compound.attributes.length && !compound.pseudos.length;
+  const fresh = () => ({ type: null, classes: [], ids: [], attributes: [], pseudos: [] });
+  const isEmpty = (compound) => !compound.type && !compound.classes.length && !compound.ids.length && !compound.attributes.length && !compound.pseudos.length;
   let current = fresh();
   let afterCombinator = false;
   let i = 0;
+  let selectorStart = 0;
   const readName = () => {
     const start = i;
     while (i < text.length && (/[A-Za-z0-9_\- -￿]/.test(text[i]) || text[i] === "\\")) i += text[i] === "\\" ? 2 : 1;
@@ -371,10 +403,12 @@ function rightmostCompounds(selectorList) {
     if (/[\s>+~]/.test(ch)) { afterCombinator = true; i += 1; continue; }
     if (ch === ",") {
       if (isEmpty(current)) return null;
+      current.selectorText = text.slice(selectorStart, i);
       compounds.push(current);
       current = fresh();
       afterCombinator = false;
       i += 1;
+      selectorStart = i;
       continue;
     }
     if (afterCombinator) { current = fresh(); afterCombinator = false; }
@@ -383,6 +417,7 @@ function rightmostCompounds(selectorList) {
       const name = readName();
       if (!name) return null;
       if (ch === ".") current.classes.push(name);
+      else current.ids.push(name);
     } else if (ch === "[") {
       const attribute = readGroup("[", "]");
       if (attribute === null) return null;
@@ -404,6 +439,7 @@ function rightmostCompounds(selectorList) {
     }
   }
   if (isEmpty(current)) return null;
+  current.selectorText = text.slice(selectorStart);
   compounds.push(current);
   return compounds;
 }
@@ -469,7 +505,7 @@ function splitDeclarations(body) {
 // declaredCtaForegroundValue.
 function collectCtaLabelRules(content, rootTokens = {}) {
   const rules = [];
-  for (const match of stripCssComments(content).matchAll(/([^{}]+)\{([^{}]+)\}/g)) {
+  for (const match of stripCssComments(content).matchAll(/([^{};]+)\{([^{}]+)\}/g)) {
     if (!isButtonSelector(match[1])) continue;
     let color = null;
     let background = null;
@@ -975,7 +1011,7 @@ function mapTokens(tokens, targetTokens, { rootTokens = {}, ctaLabelRules = [] }
   const hasCta = mappings.some((mapping) => mapping.target === "--brand--color--cta-primary");
   if (!hasCta && isNonEmptyString(tokens["--brand-accent"])) {
     addMapping("--brand-accent", "--brand--color--cta-primary", tokens["--brand-accent"].trim(), "medium", { method: "cta-fallback-from-brand-accent" });
-    warnings.push(issue("theme.cta.fallback", "No explicit CTA token was found; using --brand-accent as --brand--color--cta-primary."));
+    warnings.push(issue("theme.cta.fallback", "No explicit CTA token or button background was found; using --brand-accent as --brand--color--cta-primary. This may be a rating or decorative accent; confirm the CTA colour against the design."));
   } else if (!hasCta && isNonEmptyString(tokens["--brand-primary"])) {
     addMapping("--brand-primary", "--brand--color--cta-primary", tokens["--brand-primary"].trim(), "medium", { method: "cta-fallback-from-brand-primary" });
     warnings.push(issue("theme.cta.fallback", "No explicit CTA token was found; using --brand-primary as --brand--color--cta-primary."));

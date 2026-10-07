@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.10] - 2026-10-07
+
+### Fixed
+
+Generated brand themes keep sale, discount, badge, rating, star, strike, border and announcement colours out of primary and CTA roles when those names describe the selector's subject. Brand and button names keep their role. Header, navigation and button colours continue to map as they do on main, including selectors after CSS at-rules. When a design has no CTA token or button background, the existing CTA fallback warning asks the operator to confirm an accent colour that may be decorative.
+
 ## [1.54.0+agent.9] - 2026-10-07
 
 ### Changed
