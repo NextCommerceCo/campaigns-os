@@ -209,13 +209,18 @@ const CASES = {
   // Nine fast pages, one (reviews, page) pair each.
   ...Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`/i8/p${index + 1}/`, () => ({ html: pageHtml({ main: hideSection("param.reviews") }) })])),
   // Two slow pages: after the page checks' own (fast) load, each load waits
-  // 15 s for its document, and page b's ?reviews=n load is never answered.
+  // SLOW_MS for its document, and page b's ?reviews=n load is never answered.
   "/i13/a/": () => ({ html: pageHtml({ main: hideSection("param.reviews") }) }),
   "/i13/b/": () => ({ html: pageHtml({ main: hideSection("param.reviews") }) }),
 };
 
+// F1.2-I13 runs the leg on a 10 s budget instead of the production 60 s
+// (runBrowserChecks' contentParamLimits). The three answered slow loads take
+// 3 s of it, plus four fresh contexts, which leaves several seconds before
+// the cut; the fourth load is held until the budget ends it.
+const I13_BUDGET_MS = 10_000;
 // Document delays by request (path and query) and its 1-based count.
-const SLOW_MS = 15_000;
+const SLOW_MS = 1_000;
 const DELAYS = {
   "/i13/a/": (nth) => (nth === 1 ? 0 : SLOW_MS),
   "/i13/a/?reviews=n": () => SLOW_MS,
@@ -275,8 +280,9 @@ async function closedLoopbackUrl(path) {
 }
 
 // One runBrowserChecks call over a one-funnel topology of `pages`
-// ([{ id, path, url? }]).
-async function runPages(pages, { spec = SPEC } = {}) {
+// ([{ id, path, url? }]). `limits` replaces fields of the leg's
+// CONTENT_PARAM_LIMITS (runBrowserChecks' in-process contentParamLimits).
+async function runPages(pages, { spec = SPEC, limits } = {}) {
   await installBrowserGuard();
   const server = await stubServer();
   const { runBrowserChecks } = await import("./qa-browser.mjs");
@@ -287,12 +293,12 @@ async function runPages(pages, { spec = SPEC } = {}) {
   }];
   const start = server.log.length;
   const qcResults = [];
-  const assertions = await runBrowserChecks(topologies, { ...ARGS }, { spec: structuredClone(spec), qcResults });
+  const assertions = await runBrowserChecks(topologies, { ...ARGS }, { spec: structuredClone(spec), qcResults, contentParamLimits: limits });
   const finishedAt = Date.now();
   assert.ok(Array.isArray(assertions), "runBrowserChecks still returns its assertions");
   return { assertions, qcResults, log: server.log.slice(start), finishedAt };
 }
-const runCase = (path, { url = null } = {}) => runPages([{ id: PAGE, path, url }]);
+const runCase = (path, { url = null, limits } = {}) => runPages([{ id: PAGE, path, url }], { limits });
 
 // ---------------------------------------------------------------------------
 // Reading the 1.2 rows of a run
@@ -545,8 +551,10 @@ browserTest("F1.2-I4 data-next-hide=\"param.reviews !== 'y'\": review (unsupport
   await assertUnsupported("/i4/", "param.reviews !== 'y'");
 });
 
+// The page never signals readiness, so both loads wait out the readiness
+// bound: 8 s each in production, 1.5 s each here.
 browserTest("F1.2-I5 data-next-sdk-loading stays \"true\": unexercised (readiness_timeout)", T, async () => {
-  const run = await runCase("/i5/");
+  const run = await runCase("/i5/", { limits: { readinessMs: 1_500 } });
   const row = await contentRow(run);
   assertResult(row, { result: "unexercised", reasonCode: "readiness_timeout", acceptEligible: false, members: {} });
   assertObservation(row, { readinessBaseline: "readiness_timeout" });
@@ -638,14 +646,14 @@ browserTest("F1.2-I12 applicable page returns 404: unexercised (page_not_served)
   assert.deepEqual(run.log.slice(0, 2).map((entry) => `${entry.path}${entry.query}`), ["/i12/", "/i12/"], "the page checks' load, then the baseline load");
 });
 
-browserTest("F1.2-I13 two pairs; the second pair's param_n load is still running when the 60 s budget ends (slow stub): the 2nd pair unexercised (budget_exhausted); the first measured", {
-  // Two fast page-check loads, then the leg: three 15 s loads and a fourth
-  // that is never answered until the 60 s budget ends it, plus the browser
-  // launch and cleanup: 180 s covers the worst case.
-  timeout: 180_000,
+browserTest("F1.2-I13 two pairs; the second pair's param_n load is still running when the budget ends (slow stub): the 2nd pair unexercised (budget_exhausted); the first measured", {
+  // Two fast page-check loads, then the leg: three SLOW_MS loads and a fourth
+  // that is never answered until the 10 s budget ends it, plus the browser
+  // launch and cleanup: 60 s covers the worst case.
+  timeout: 60_000,
 }, async () => {
   const pages = [{ id: "a", path: "/i13/a/" }, { id: "b", path: "/i13/b/" }];
-  const run = await runPages(pages);
+  const run = await runPages(pages, { limits: { budgetMs: I13_BUDGET_MS } });
   const rows = await contentRows(run, ["a", "b"]);
   assertResult(rows.get("a"), { result: "pass", reasonCode: null, acceptEligible: false, members: { [keyOf("hide", 0)]: ["pass", null] } });
   assertObservation(rows.get("a"), {
@@ -663,14 +671,14 @@ browserTest("F1.2-I13 two pairs; the second pair's param_n load is still running
   // opened that load's fresh context and began navigating, so the time
   // measured here undercounts the leg by that gap. TOLERANCE_MS allows 2 s for
   // it: far above a context opening and a loopback request (well under a
-  // second), far below the 15 s left if the leg gave up as soon as the 4th
-  // load started (about 45 s in). Lower bound: the 2nd pair was cut only after
-  // the 60 s budget was spent. A floor that needs no tolerance backs it: the
-  // leg starts after the page checks, so after the page checks' last load
-  // (log[1]). Upper bound: the leg ended within 60 s plus up to 5 s to close
-  // its contexts and the browser, and the budget, not the 20 s navigation
-  // timeout, ended the held load.
-  const BUDGET_MS = 60_000;
+  // second), well below the 6 s or more left if the leg gave up as soon as
+  // the 4th load started (after three SLOW_MS loads, under 4 s in). Lower
+  // bound: the 2nd pair was cut only after the budget was spent. A floor that
+  // needs no tolerance backs it: the leg starts after the page checks, so
+  // after the page checks' last load (log[1]). Upper bound: the leg ended
+  // within the budget plus up to 5 s to close its contexts and the browser,
+  // and the budget, not the 20 s navigation timeout, ended the held load.
+  const BUDGET_MS = I13_BUDGET_MS;
   const TOLERANCE_MS = 2_000;
   const CLEANUP_MS = 5_000;
   const held = run.log[5];

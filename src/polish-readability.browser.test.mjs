@@ -32,6 +32,7 @@ import { after, afterEach } from "node:test";
 
 import {
   CHECK,
+  STALLED_IDLE_MS,
   VIEWPORTS,
   assertCaptureCompleted,
   both,
@@ -109,6 +110,12 @@ const SHARED = ({ other }) => ({
   i55: htmlPage(`<a href="" aria-disabled="true" style="display:inline-block;${P};color:#bbbbbb;background:#eeeeee">Unavailable link</a>`),
 });
 
+// The shared capture's probe clock: time on it never passes, so no probe
+// bound ends by the clock, while each cell's real-time deadline still
+// applies. No shared row is about the probe's time bound, and on a busy
+// runner F2.4-I10's 2,000-element read can take most of its 1.5 s.
+const UNHURRIED_CLOCK = Object.freeze({ now: () => 0, sleep: () => new Promise(() => {}) });
+
 let sharedSite = null;
 const shared = (() => {
   let pending = null;
@@ -122,7 +129,8 @@ const shared = (() => {
           "/field/": respond("200 OK", "text/html; charset=utf-8", htmlPage("<label>Card number <input placeholder=\"Card number\"></label>")),
         },
       });
-      return { site: sharedSite, capture: await capturePolish(sharedSite) };
+      // i50's webfont is stalled, so its cells wait out the idle window.
+      return { site: sharedSite, capture: await capturePolish(sharedSite, { networkIdleMs: STALLED_IDLE_MS, probeClock: UNHURRIED_CLOCK }) };
     })();
     return pending;
   };
@@ -742,7 +750,8 @@ const readinessCapture = (() => {
           [`${routeOf("shadow-styles-loaded")}loaded.css`]: respond("200 OK", "text/css; charset=utf-8", "p{letter-spacing:0}"),
         },
       });
-      const capture = await capturePolish(site);
+      // shadow-styles-pending's stylesheet is stalled.
+      const capture = await capturePolish(site, { networkIdleMs: STALLED_IDLE_MS });
       assertCaptureCompleted(capture);
       const record = readabilityRecord(capture.report);
       const rows = await readabilityRows(site);
@@ -812,7 +821,8 @@ const slottedCapture = (() => {
           [`${routeOf("frame-src-loaded")}inner.html`]: respond("200 OK", "text/html; charset=utf-8", htmlPage(FRAME_TEXT)),
         },
       });
-      const capture = await capturePolish(site);
+      // frame-pending's frame document and frame-incomplete's image are stalled.
+      const capture = await capturePolish(site, { networkIdleMs: STALLED_IDLE_MS });
       assertCaptureCompleted(capture);
       const record = readabilityRecord(capture.report);
       const rows = await readabilityRows(site);
