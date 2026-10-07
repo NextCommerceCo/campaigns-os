@@ -231,9 +231,11 @@ test("a blocked gate surfaces one disposition: advisories stay on warned[] and a
 });
 
 test("the vendored attribute index names its SDK tag and holds the field-name contract the issue lists", () => {
-  assert.equal(SDK_ATTRIBUTE_INDEX_VERSION, "0.4.38");
+  assert.equal(SDK_ATTRIBUTE_INDEX_VERSION, "0.4.41");
   assert.ok(SDK_DATA_NEXT_ATTRIBUTES.length > 100);
-  for (const name of ["data-next-checkout", "data-next-checkout-field", "data-next-bundle-selector", "data-next-selected", "data-next-action"]) {
+  // The 0.4.41 address block and i18n names, and two names the SDK's 0.4.41
+  // attribute docs leave out but its source still reads.
+  for (const name of ["data-next-checkout", "data-next-checkout-field", "data-next-bundle-selector", "data-next-selected", "data-next-action", "data-next-address", "data-next-address-lang", "data-next-i18n", "data-next-package-selector", "data-next-remove-item"]) {
     assert.ok(isIndexedSdkAttribute(name), name);
   }
   for (const field of ["email", "fname", "lname", "phone", "address1", "address2", "city", "province", "postal", "country", "cc-number", "cc-month", "cc-year", "exp-year", "cvv", "billing-city"]) {

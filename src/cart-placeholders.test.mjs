@@ -408,7 +408,7 @@ test("F1.5-I3 data-item-template-selector=\".row-tpl\"; unowned live {item.name}
   assert.equal(rows[idOf(PAGE, "{item.name}")].accept_eligible, false);
 });
 
-test("F1.5-I4 pin 0.4.41; tokens only in <template>: unexercised (sdk_pin_unverified)", async () => {
+test("F1.5-I4 pin 0.4.37; tokens only in <template>: unexercised (sdk_pin_unverified)", async () => {
   const result = await builtDoctor(fixtureTree("i4-pin-unverified", "bad"));
   assertWired(result);
   assertRows(result, [pageRow(PAGE, "unexercised", "sdk_pin_unverified")]);

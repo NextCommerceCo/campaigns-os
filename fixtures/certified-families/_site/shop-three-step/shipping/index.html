@@ -27,6 +27,7 @@
     
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="dns-prefetch" href="//cdn-countries.muddy-wind-c7ca.workers.dev">
+    <link rel="dns-prefetch" href="//i18n-rules.nextcommerce.com">
     <link rel="prefetch" href="/shop-three-step/billing/" as="document">
     
 
@@ -44,7 +45,7 @@
     
 
     
-    <script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.40/dist/loader.js" type="module"></script>
+    <script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.41/dist/loader.js" type="module"></script>
 
     
 
@@ -214,7 +215,7 @@ window.CHECKOUT_CONFIG = {
             <div class="order-totals__label">Today You Saved</div>
             <div class="badge badge--small">
               <div class="label__wrapper cc-sm">
-                <div class="badge__text"><span data-next-display="cart.totalDiscountPercentage"></span> OFF</div>
+                <div class="badge__text">{totalDiscountPercentage} OFF</div>
               </div>
             </div>
           </div>
@@ -485,7 +486,7 @@ window.CHECKOUT_CONFIG = {
             <div class="order-totals__label">Today You Saved</div>
             <div class="badge badge--small">
               <div class="label__wrapper cc-sm">
-                <div class="badge__text"><span data-next-display="cart.totalDiscountPercentage"></span> OFF</div>
+                <div class="badge__text">{totalDiscountPercentage} OFF</div>
               </div>
             </div>
           </div>
