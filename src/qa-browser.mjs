@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { runWithDeadline } from "./deadline.mjs";
 import { PLACEHOLDER_TEXT_ASSERTION_SUFFIX, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { contrastToolkit } from "./contrast.mjs";
+import { boundedPolishDeadline } from "./polish-deadline.mjs";
 import { generatedTextRenders } from "./polish-readability.mjs";
 import {
   analyticsCaptureError,
@@ -16,7 +17,7 @@ import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-pari
 import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
 import { redactPersisted, redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
 import { TRACKING_ADDED_BOUND_MS, TRACKING_OBSERVATION, createTrackingRun, trackingQaAssertion } from "./qa-tracking-params.mjs";
-import { runContentParamChecks } from "./qa-content-params.mjs";
+import { CONTENT_PARAM_LIMITS, runContentParamChecks } from "./qa-content-params.mjs";
 import { createPolicyLinkBudget, hasPolicyLinkFields, readPageAnchors, runPolicyLinkChecks } from "./qa-policy-links.mjs";
 import {
   canonicalHttpUrl,
@@ -159,13 +160,17 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
     // Content parameters (options.spec analytics.params.content), after the
     // page checks: every load in its own fresh context with the same options,
     // closed after the load. The rows go to options.qcResults; their verdict
-    // assertions join the page checks'.
+    // assertions join the page checks'. options.contentParamLimits is an
+    // in-process test seam (never set from argv) that can only tighten the
+    // leg's CONTENT_PARAM_LIMITS, so a test of the budget or the readiness
+    // wait need not sit through the production bound.
     if (Array.isArray(options.qcResults)) {
       const contentParams = await runContentParamChecks({
         topologies,
         spec: options.spec,
         newContext: () => browser.newContext(contextOptions),
         withQueryParam,
+        limits: contentParamLimitsFrom(options.contentParamLimits),
       });
       options.qcResults.push(...contentParams.rows);
       assertions.push(...contentParams.assertions);
@@ -1313,12 +1318,58 @@ function sdkDebuggerEligible(page) {
 
 async function primaryCtaVisualAssertions(browserPage, page) {
   if (!primaryCtaCheckEligible(page)) return [];
-  const evidence = await inspectPrimaryCta(browserPage, page.expected_next_url);
+  const evidence = await inspectPrimaryCta(browserPage, page.expected_next_url, primaryCtaDeclaredRoutes(page), primaryCtaRoutelessForms(page));
   return [primaryCtaAssertionFromEvidence(page, evidence)];
 }
 
 function primaryCtaCheckEligible(page) {
   return Boolean(page?.expected_next_url);
+}
+
+// Checkout, upsell and downsell: the page types whose forward controls go
+// where the page declares, not where they point.
+function primaryCtaPageRoutesSdkControls(page) {
+  const pageType = String(page?.page_type || "").toLowerCase();
+  return pageType === "checkout" || OFFER_PAGE_TYPES.has(pageType);
+}
+
+// The forms whose action is no route on this page, handed to the route rule
+// as its checkout-form selector. On a checkout, upsell or downsell the only
+// form-borne route is the one the page declares for its SDK control
+// (primaryCtaDeclaredRoutes), so no form's action is a route there: a
+// newsletter or search form beside the checkout form does not make its
+// submit button the route control. Elsewhere only the SDK checkout form,
+// which the SDK submits itself.
+function primaryCtaRoutelessForms(page) {
+  return primaryCtaPageRoutesSdkControls(page) ? "form" : CHECKOUT_FORM_SELECTOR;
+}
+
+// The SDK controls on this page that go to a route the page declares rather
+// than one they carry, each with that route: on a checkout, the checkout
+// form's submit button goes to the success route (the page's forward route);
+// on an upsell or downsell, each SDK upsell action goes to its accept or
+// decline route. The routes are the topology fields the static route-link
+// rows read, and the actions are the rendered upsell-control check's table.
+// A control is a route candidate when its route is the expected next route,
+// like any other. The submit button is any button that submits the form, so a
+// typeless one too, but not an express-checkout wallet button, which starts
+// the wallet flow; an upsell action counts only inside a [data-next-upsell]
+// container, the only place the SDK binds it.
+function primaryCtaDeclaredRoutes(page) {
+  if (!primaryCtaPageRoutesSdkControls(page)) return [];
+  if (String(page.page_type).toLowerCase() === "checkout") {
+    const notWallet = ":not([data-next-express-checkout]):not([data-next-express-checkout] *)";
+    const submit = ['button[type="submit"]', "button:not([type])", 'input[type="submit"]']
+      .map((control) => `${CHECKOUT_FORM_SELECTOR} ${control}${notWallet}`)
+      .join(", ");
+    return page.expected_next_url ? [{ selector: submit, url: page.expected_next_url }] : [];
+  }
+  return UPSELL_CONTROL_ROUTES
+    .filter(({ field }) => page[field])
+    .map(({ kind, field }) => ({
+      selector: UPSELL_ACTION_SPELLINGS[kind].map((action) => `[data-next-upsell] ${upsellActionSelector(action)}`).join(", "),
+      url: page[field],
+    }));
 }
 
 // Candidate CTAs: anything clickable, plus every SDK action control and the
@@ -1336,19 +1387,21 @@ const PRIMARY_CTA_SELECTOR = ["a[href]", "button", "[role='button']", "[data-nex
 // stay free of module-scope references: the text is run in a fresh context by
 // a test (primary-CTA inspection script is self-contained) that would surface
 // a leaked identifier as a ReferenceError.
-function primaryCtaInspectionScript(expectedUrl) {
+function primaryCtaInspectionScript(expectedUrl, declaredRoutes = [], checkoutFormSelector = CHECKOUT_FORM_SELECTOR) {
   const args = {
     routeUrl: expectedUrl,
     ctaSelector: PRIMARY_CTA_SELECTOR,
     cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR,
     cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE,
+    declaredRoutes,
+    checkoutFormSelector,
     ignoredRouteAttributes: [...UNDECLARED_ROUTE_ATTRIBUTES],
   };
   return `(${inspectPrimaryCtaScript.toString()})(${JSON.stringify(args)}, ${cartEntryHrefFor.toString()}, ${contrastToolkit.toString()}, ${generatedTextRenders.toString()})`;
 }
 
-async function inspectPrimaryCta(browserPage, expectedUrl) {
-  return browserPage.evaluate(primaryCtaInspectionScript(expectedUrl)).catch((error) => ({
+async function inspectPrimaryCta(browserPage, expectedUrl, declaredRoutes = [], checkoutFormSelector = CHECKOUT_FORM_SELECTOR) {
+  return browserPage.evaluate(primaryCtaInspectionScript(expectedUrl, declaredRoutes, checkoutFormSelector)).catch((error) => ({
     ok: false,
     reason: "inspection_error",
     expected_url: expectedUrl,
@@ -1358,7 +1411,7 @@ async function inspectPrimaryCta(browserPage, expectedUrl) {
   }));
 }
 
-function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute, ignoredRouteAttributes }, hrefForImpl, contrastToolkitImpl, generatedTextImpl) {
+function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute, declaredRoutes, checkoutFormSelector, ignoredRouteAttributes }, hrefForImpl, contrastToolkitImpl, generatedTextImpl) {
   const CTA_SELECTOR = ctaSelector;
   const toolkit = contrastToolkitImpl();
 
@@ -1391,9 +1444,9 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
       .join("");
     return `${tag}${id}${classes}`;
   };
-  // The route a control leads to: the shared cart-entry rule, evaluated
-  // against this document's origin and base.
-  const hrefFor = (element) => hrefForImpl(element, { cartEntrySelector, cartEntryRouteAttribute, origin: location.origin, baseHref: location.href });
+  // The route a control leads to: the shared cart-entry rule, with the
+  // page's declared routes, evaluated against this document's origin and base.
+  const hrefFor = (element) => hrefForImpl(element, { cartEntrySelector, cartEntryRouteAttribute, declaredRoutes, checkoutFormSelector, origin: location.origin, baseHref: location.href });
   // Route-shaped attributes the element carries that the rule above does not
   // consult: the undeclared spellings, plus the SDK route attribute on an
   // element that is not an SDK control (a decoy, not a route). Reported, not
@@ -1582,15 +1635,48 @@ function primaryCtaAssertionFromEvidence(page, evidence) {
   });
 }
 
+// The SDK's spellings of each upsell action: its upsell handler accepts the
+// offer on add or accept and declines it on skip or decline, and does nothing
+// on any other value. Every place QA locates an upsell control reads this one
+// table. The first spelling is the one reported when a page has none.
+export const UPSELL_ACTION_SPELLINGS = Object.freeze({
+  accept: Object.freeze(["add", "accept"]),
+  decline: Object.freeze(["skip", "decline"]),
+});
+
+// The SDK upsell actions and the page field that declares where each goes.
+// The rendered upsell-control check and the primary-CTA route rule read this
+// one table.
+const UPSELL_CONTROL_ROUTES = Object.freeze([
+  Object.freeze({ kind: "accept", field: "expected_accept_url" }),
+  Object.freeze({ kind: "decline", field: "expected_decline_url" }),
+]);
+
+function upsellActionSelector(...actions) {
+  return actions.map((action) => `[data-next-upsell-action="${action}"]`).join(", ");
+}
+
+// The spelling of an upsell action this page renders: the first spelling
+// present, or the first spelling when the page has none.
+async function presentUpsellAction(page, kind) {
+  const spellings = UPSELL_ACTION_SPELLINGS[kind];
+  for (const action of spellings) {
+    if (await page.locator(upsellActionSelector(action)).first().count().catch(() => 0)) return action;
+  }
+  return spellings[0];
+}
+
 async function renderedUpsellControlAssertions(browserPage, page) {
-  const checks = [
-    ["accept", "add", page.expected_accept_url],
-    ["decline", "skip", page.expected_decline_url],
-  ];
   const assertions = [];
-  for (const [kind, action, expectedUrl] of checks) {
+  for (const { kind, field } of UPSELL_CONTROL_ROUTES) {
+    const expectedUrl = page[field];
     if (!expectedUrl) continue;
-    const count = await browserPage.locator(`[data-next-upsell-action="${action}"]`).count().catch(() => 0);
+    const spellings = UPSELL_ACTION_SPELLINGS[kind];
+    const counts = [];
+    for (const action of spellings) counts.push(await browserPage.locator(upsellActionSelector(action)).count().catch(() => 0));
+    const count = counts.reduce((sum, n) => sum + n, 0);
+    const present = spellings.filter((_, index) => counts[index] > 0);
+    const selector = upsellActionSelector(...(present.length ? present : spellings.slice(0, 1)));
     assertions.push(assertion({
       id: `browser-upsell-control:${page.page_id}:${kind}`,
       family: "browser-runtime",
@@ -1599,7 +1685,7 @@ async function renderedUpsellControlAssertions(browserPage, page) {
       severity: count > 0 ? undefined : SEVERITY.WARN,
       expected: `rendered SDK ${kind} control`,
       actual: count > 0 ? `${count} matching control(s)` : "not found",
-      evidence: { selector: `[data-next-upsell-action="${action}"]`, expected_url: expectedUrl },
+      evidence: { selector, expected_url: expectedUrl },
     }));
   }
   return assertions;
@@ -3189,8 +3275,10 @@ function createFieldTrace() {
 // before the bounded ladder step starts and updated before each operation that
 // can hang. Its synchronous summary survives when the timeout wins the race.
 function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path, inspectTimeoutMs = 1000 }) {
-  const requestedAction = path === "accept" ? "add" : "skip";
-  const selector = `[data-next-upsell-action="${requestedAction}"]`;
+  // The spelling the page renders, read again at each inspection.
+  const kind = path === "accept" ? "accept" : "decline";
+  let requestedAction = UPSELL_ACTION_SPELLINGS[kind][0];
+  let selector = upsellActionSelector(requestedAction);
   let actionNavigationCount = Array.isArray(events?.navigations) ? events.navigations.length : 0;
   let actionUpsellRequestCount = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url)).length;
   let element = { present: null, visible: null, enabled: null };
@@ -3200,6 +3288,8 @@ function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path, 
   let stepCompleted = false;
 
   const inspect = async () => {
+    requestedAction = await presentUpsellAction(page, kind);
+    selector = upsellActionSelector(requestedAction);
     const control = page.locator(selector).first();
     const count = await control.count().catch(() => 0);
     element = {
@@ -3745,6 +3835,9 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
         reserveOrderCreation,
         selectorProbeCache: options.selectorProbeCache,
         tracking,
+        // An in-process test seam only, like trackingTestHooks: unset in
+        // every production run, so the card step waits CARD_READY_TIMEOUT_MS.
+        cardReadyTimeoutMs: shorterBound(options.cardReadyTimeoutMs, CARD_READY_TIMEOUT_MS),
       }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
       `order-path:${planId(normalizedPlan)}`,
@@ -3823,7 +3916,7 @@ function stablePrivateCaptureError(value) {
   return projectAnalyticsCaptureError(value, { fallbackKind: "unreadable" });
 }
 
-async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null, selectorProbeCache = null, tracking = null }) {
+async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null, selectorProbeCache = null, tracking = null, cardReadyTimeoutMs = CARD_READY_TIMEOUT_MS }) {
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
@@ -3884,7 +3977,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     }, { timeoutMs: budget() });
     await ladder.run("card_fields_filled", async () => {
       ensurePageFillable(page, checkoutPage.url);
-      return fillPaymentFields(page, args);
+      return fillPaymentFields(page, args, { readyTimeoutMs: cardReadyTimeoutMs });
     }, { timeoutMs: budget() });
     await ladder.run("cart_created", async () => {
       const cart = cartCreationEvidence(events);
@@ -5092,7 +5185,7 @@ async function revealCheckoutForm(page, options = {}) {
   return true;
 }
 
-async function fillPaymentFields(page, args) {
+async function fillPaymentFields(page, args, { readyTimeoutMs = CARD_READY_TIMEOUT_MS } = {}) {
   await clickCreditPaymentMethod(page);
   await selectByField(page, "exp-month", stringArg(args["test-exp-month"]) || DEFAULT_TEST_EXP_MONTH);
   await selectYear(page, stringArg(args["test-exp-year"]) || DEFAULT_TEST_EXP_YEAR);
@@ -5100,7 +5193,7 @@ async function fillPaymentFields(page, args) {
   const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
   const cvv = stringArg(args["test-cvv"]) || DEFAULT_TEST_CVV;
   const frames = await cardFrames(page);
-  const readyWaitMs = await waitForCardFieldsReady(page);
+  const readyWaitMs = await waitForCardFieldsReady(page, readyTimeoutMs);
   const numberInput = page.frameLocator(CARD_NUMBER_FRAME).locator("input").first();
   const cvvInput = page.frameLocator(CARD_CVV_FRAME).locator("input").first();
   const typed = async (input) => normalizeCard(await input.inputValue());
@@ -5136,12 +5229,13 @@ async function fillPaymentFields(page, args) {
 // SDK never set it is ready at once. The SDK also clears it when the card
 // script fails to load, so a class still set after the wait means the card
 // script never answered; the step refuses by name rather than type into
-// fields that may drop the number.
-async function waitForCardFieldsReady(page) {
+// fields that may drop the number. `timeoutMs` is CARD_READY_TIMEOUT_MS in
+// every production run; only an in-process test passes a shorter wait.
+async function waitForCardFieldsReady(page, timeoutMs = CARD_READY_TIMEOUT_MS) {
   const started = Date.now();
-  await page.waitForFunction(() => !document.querySelector(".next-loading-spreedly"), null, { timeout: CARD_READY_TIMEOUT_MS }).catch((error) => {
+  await page.waitForFunction(() => !document.querySelector(".next-loading-spreedly"), null, { timeout: timeoutMs }).catch((error) => {
     if (error?.name !== "TimeoutError") throw error;
-    throw new Error(`card fields did not report ready within ${CARD_READY_TIMEOUT_MS / 1000}s: the checkout form still carries next-loading-spreedly, so the card script never finished loading`);
+    throw new Error(`card fields did not report ready within ${timeoutMs / 1000}s: the checkout form still carries next-loading-spreedly, so the card script never finished loading`);
   });
   return Date.now() - started;
 }
@@ -5426,23 +5520,29 @@ async function clickControl(locator, { timeout, forceFallback = true, perpetual 
 // single offer). Clicking the hidden action fails as not visible, so the
 // visible proxy is clicked instead, but only while the offer holds an SDK action
 // for it to forward to: otherwise the hidden action is clicked and fails as before.
+// The proxy forwards to the action of its own spelling.
 async function shopperUpsellControl(page, action) {
-  const actions = page.locator(`[data-next-upsell-action="${action}"]`);
+  const actions = page.locator(upsellActionSelector(action));
   if (!await actions.count().catch(() => 0)) return actions.first();
   const visibleAction = actions.filter({ visible: true }).first();
   if (await visibleAction.count().catch(() => 0)) return visibleAction;
   // The proxy forwards to `[data-next-upsell="offer"] [data-next-upsell-action]`
   // (upsells.js), so only an action inside the offer is a target.
-  const inOffer = page.locator(`[data-next-upsell="offer"] [data-next-upsell-action="${action}"]`);
+  const inOffer = page.locator(`[data-next-upsell="offer"] ${upsellActionSelector(action)}`);
   const proxy = page.locator(`[data-upsell-proxy="${action}"]`).filter({ visible: true }).first();
   if (await inOffer.count().catch(() => 0) && await proxy.count().catch(() => 0)) return proxy;
   return actions.first();
 }
 
-async function clickUpsellPath(page, path, { trace = null } = {}) {
+// `clickTimeoutMs` and `mutationTimeoutMs` are UPSELL_CLICK_TIMEOUT_MS and
+// UPSELL_MUTATION_TIMEOUT_MS in every production run; only an in-process test
+// that waits one of them out passes a shorter bound.
+async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutationTimeoutMs } = {}) {
+  const clickMs = shorterBound(clickTimeoutMs, UPSELL_CLICK_TIMEOUT_MS);
+  const mutationMs = shorterBound(mutationTimeoutMs, UPSELL_MUTATION_TIMEOUT_MS);
   const offerUrl = safePageUrl(page);
-  const action = path === "accept" ? "add" : "skip";
-  const selector = `[data-next-upsell-action="${action}"]`;
+  const action = await presentUpsellAction(page, path === "accept" ? "accept" : "decline");
+  const selector = upsellActionSelector(action);
   const control = await shopperUpsellControl(page, action);
   if (!await control.count().catch(() => 0)) {
     return { path, clicked: false, error: `Missing upsell control ${selector}` };
@@ -5475,10 +5575,10 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
         if (!root || root.method() !== "POST" || !isOrderUpsellsUrl(root.url())) return false;
         const startedAt = responseRequestStartedAt(response);
         return startedAt === null || startedAt >= armedAt;
-      }, { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
+      }, { timeout: mutationMs + (perpetual ? 0 : clickMs) }).catch(() => null)
     : Promise.resolve(null);
   trace?.markClickAttempted();
-  await clickControl(control, { timeout: UPSELL_CLICK_TIMEOUT_MS, perpetual });
+  await clickControl(control, { timeout: clickMs, perpetual });
   trace?.markClickCompleted();
   const mutationResponse = await mutationPromise;
   const bodyRead = mutationResponse
@@ -7667,7 +7767,7 @@ function extractReceiptLines(order) {
 
 async function waitForUpsellPageReady(page, args) {
   const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
-  await page.locator('[data-next-upsell], [data-next-upsell-action="add"], [data-next-upsell-action="skip"]').first()
+  await page.locator(`[data-next-upsell], ${upsellActionSelector(...UPSELL_ACTION_SPELLINGS.accept, ...UPSELL_ACTION_SPELLINGS.decline)}`).first()
     .waitFor({ state: "visible", timeout: timeoutMs })
     .catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
@@ -8117,6 +8217,26 @@ function numberArg(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+// A bound an in-process test seam passes, as the Polish deadlines take one
+// (boundedPolishDeadline): `value` when it is a positive safe integer no
+// larger than the production `fallback`, else `fallback`. A seam can shorten
+// a production wait, never lengthen it or switch it off (Playwright reads a
+// 0 timeout as none).
+const shorterBound = boundedPolishDeadline;
+
+// The content parameter leg's limits with options.contentParamLimits (an
+// in-process test seam, never set from argv) applied field by field, each
+// only where it is no larger than CONTENT_PARAM_LIMITS: a time bound is a
+// shorterBound, and maxPairs may also be zero, as runContentParamChecks
+// allows.
+function contentParamLimitsFrom(overrides) {
+  return Object.fromEntries(Object.entries(CONTENT_PARAM_LIMITS).map(([field, production]) => {
+    const value = overrides?.[field];
+    if (field !== "maxPairs") return [field, shorterBound(value, production)];
+    return [field, Number.isSafeInteger(value) && value >= 0 && value <= production ? value : production];
+  }));
+}
+
 function trim(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -8158,9 +8278,12 @@ export const __qaBrowserTestHooks = Object.freeze({
   primaryCtaAssertionFromEvidence,
   inspectPrimaryCta,
   primaryCtaInspectionScript,
+  primaryCtaDeclaredRoutes,
+  primaryCtaRoutelessForms,
   clickCouponApplyControl,
   isOrderUpsellsUrl,
   clickUpsellPath,
+  waitForUpsellPageReady,
   isPerpetuallyAnimated,
   readJsonResponseBody,
   readJsonResponseBodyWithin,

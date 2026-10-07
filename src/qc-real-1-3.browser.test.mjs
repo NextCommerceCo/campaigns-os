@@ -35,6 +35,7 @@ import test, { after, afterEach } from "node:test";
 
 import {
   BUILD_FP,
+  HELD_TRANSFER_IDLE_MS,
   NO_IMAGE_KEY,
   VIEWPORTS,
   assertLedgerLowerBound,
@@ -197,7 +198,8 @@ async function sharedCapture() {
     same.serve("/img/pl-b4.png", pngWire(40, 30, 600_000));
     same.serve(route("pl-video"), page(`<video src="/media/pl.mp4" preload="none" width="320" height="180"></video>`));
     same.serve("/media/pl.mp4", respond("200 OK", "video/mp4", Buffer.alloc(4_096, 7)));
-    const output = await capture(same, { routes: ROUTES });
+    // pl-lower's transfer is held open, so its cells wait out the idle window.
+    const output = await capture(same, { routes: ROUTES, networkIdleMs: HELD_TRANSFER_IDLE_MS });
     const log = { same: same.takeLog(), other: other.takeLog() };
     return { output, urls, log, subjects: subjectsOf(urls) };
   })();

@@ -167,19 +167,25 @@ function topologies(base, { withLanding = true } = {}) {
   return [{ funnel_id: "default", funnel_name: "Default", pages }];
 }
 
+// The fixtures fire no analytics tag and push no dl_purchase: at its 5 s
+// default, --analytics-settle would wait 5 s after the receipt and up to 5 s
+// more for a purchase event that never comes. These cases prove cart entry.
 const ARGS = Object.freeze({
   "test-order": "checkout",
   "step-timeout-ms": 20000,
   "order-timeout-ms": 90000,
   "browser-timeout": 10000,
+  "analytics-settle": 250,
 });
 
 // beforeRun reads the served pages through the same server the run drives.
-async function runFixture(name, { withLanding = true, cardFields, cardBehaviour, beforeRun = null } = {}) {
+// cardReadyTimeoutMs, when given, replaces the card step's 15 s ready wait
+// (the runner's in-process seam).
+async function runFixture(name, { withLanding = true, cardFields, cardBehaviour, beforeRun = null, cardReadyTimeoutMs } = {}) {
   const server = await serveFixture(name, { cardFields, cardBehaviour });
   try {
     if (beforeRun) await beforeRun(server);
-    const result = await runBrowserTestOrders(topologies(server.base, { withLanding }), { ...ARGS }, `qa-cart-entry-${name}`);
+    const result = await runBrowserTestOrders(topologies(server.base, { withLanding }), { ...ARGS }, `qa-cart-entry-${name}`, { cardReadyTimeoutMs });
     const order = result.orders[0];
     const attemptAssertion = result.assertions.find((entry) => entry.id === "browser-test-order:checkout");
     return { result, order, steps: order?.evidence?.steps || [], assertion: attemptAssertion, server };
@@ -301,11 +307,14 @@ browserTest("card field never keeps the number: the card step fails by name and 
   assert.notEqual(assertion.status, "pass");
 });
 
+// The form never drops next-loading-spreedly, so the step waits out its ready
+// wait on each attempt (the first and its one re-run); a 2 s wait in place of
+// the 15 s one ends the same way.
 browserTest("card fields never report ready: the card step fails by name after its wait and nothing is submitted", async () => {
-  const { steps, assertion, server } = await runFixture("landing-entry", { cardFields: "next-payment", cardBehaviour: "never-ready" });
+  const { steps, assertion, server } = await runFixture("landing-entry", { cardFields: "next-payment", cardBehaviour: "never-ready", cardReadyTimeoutMs: 2000 });
   const byName = stepsByName(steps);
   assert.equal(byName.card_fields_filled.status, "failed");
-  assert.match(byName.card_fields_filled.error, /card fields did not report ready within 15s: the checkout form still carries next-loading-spreedly/);
+  assert.match(byName.card_fields_filled.error, /card fields did not report ready within 2s: the checkout form still carries next-loading-spreedly/);
   assert.equal(byName.order_submitted, undefined);
   assert.equal(server.orders.length, 0);
   assert.notEqual(assertion.status, "pass");

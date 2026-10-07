@@ -97,7 +97,9 @@ browserTest("a proxy is not clicked when the hidden skip sits outside the offer"
   assert.doesNotMatch(html, /cc-decline-wrapper/);
   const { context, page } = await openOffer(html);
   try {
-    const step = await hooks.clickUpsellPath(page, "decline").catch((error) => ({ clicked: false, error: error.message }));
+    // The hidden skip never becomes visible, so the click waits out its
+    // timeout: 10 s in production, 2 s here.
+    const step = await hooks.clickUpsellPath(page, "decline", { clickTimeoutMs: 2000 }).catch((error) => ({ clicked: false, error: error.message }));
     assert.equal(step.clicked, false);
     assert.match(step.error, /not visible/);
   } finally {

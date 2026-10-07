@@ -32,6 +32,7 @@ import { after, afterEach } from "node:test";
 
 import {
   CHECK,
+  STALLED_IDLE_MS,
   VIEWPORTS,
   assertCaptureCompleted,
   both,
@@ -107,7 +108,16 @@ const SHARED = ({ other }) => ({
   i53: htmlPage(`<div class="layer" style="padding:8px;background:#333333"><span data-next-action="add-to-cart" style="color:#ffffff">Add to cart</span></div>`, { head: "<style>.layer::before{content:\"\";display:block;height:4px;background:#000}</style>" }),
   i54: htmlPage(ATC("font-size:24px;color:#ffffff;background-color:#e0662b;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent")),
   i55: htmlPage(`<a href="" aria-disabled="true" style="display:inline-block;${P};color:#bbbbbb;background:#eeeeee">Unavailable link</a>`),
+  "upsell-accept": htmlPage(`<button data-next-upsell-action="accept" type="button" style="${BTN};color:#ffffff;background:#111111">Yes, add it</button>`),
+  "upsell-decline": htmlPage(`<button data-next-upsell-action="decline" type="button" style="${BTN};color:#ffffff;background:#111111">No thanks</button>`),
+  "upsell-unknown": htmlPage(`<button data-next-upsell-action="maybe" type="button" style="${BTN};color:#ffffff;background:#111111">Maybe later</button>`),
 });
+
+// The shared capture's probe clock: time on it never passes, so no probe
+// bound ends by the clock, while each cell's real-time deadline still
+// applies. No shared row is about the probe's time bound, and on a busy
+// runner F2.4-I10's 2,000-element read can take most of its 1.5 s.
+const UNHURRIED_CLOCK = Object.freeze({ now: () => 0, sleep: () => new Promise(() => {}) });
 
 let sharedSite = null;
 const shared = (() => {
@@ -122,7 +132,8 @@ const shared = (() => {
           "/field/": respond("200 OK", "text/html; charset=utf-8", htmlPage("<label>Card number <input placeholder=\"Card number\"></label>")),
         },
       });
-      return { site: sharedSite, capture: await capturePolish(sharedSite) };
+      // i50's webfont is stalled, so its cells wait out the idle window.
+      return { site: sharedSite, capture: await capturePolish(sharedSite, { networkIdleMs: STALLED_IDLE_MS, probeClock: UNHURRIED_CLOCK }) };
     })();
     return pending;
   };
@@ -265,6 +276,17 @@ browserTest("F2.4-W21 <input type=\"submit\" value=\"Buy\"> #fff on #767676: mea
   const { record } = await sharedRecord();
   const cells = cellsOf(record, "w21");
   assert.deepEqual(VIEWPORTS.map((viewport) => cells[viewport].elements.map((element) => [element.role, element.review_reason, typeof element.ratio])), [[["submit_control", null, "number"]], [["submit_control", null, "number"]]], "the submit input is measured with role submit_control");
+});
+
+browserTest("[data-next-upsell-action=\"accept\"] and \"decline\" (the SDK's spellings of add and skip): measured element role = upsell_accept / upsell_decline; another value is body_text", async () => {
+  const { record } = await sharedRecord();
+  const roles = (name) => {
+    const cells = cellsOf(record, name);
+    return VIEWPORTS.map((viewport) => cells[viewport].elements.map((element) => element.role));
+  };
+  assert.deepEqual(roles("upsell-accept"), [["upsell_accept"], ["upsell_accept"]], "the accept control is measured with role upsell_accept");
+  assert.deepEqual(roles("upsell-decline"), [["upsell_decline"], ["upsell_decline"]], "the decline control is measured with role upsell_decline");
+  assert.deepEqual(roles("upsell-unknown"), [["body_text"], ["body_text"]], "a control with another upsell action value is not an upsell role");
 });
 
 browserTest("F2.4-W22 bump text inside .next-active, #fff on #333: member state = active", async () => {
@@ -742,7 +764,8 @@ const readinessCapture = (() => {
           [`${routeOf("shadow-styles-loaded")}loaded.css`]: respond("200 OK", "text/css; charset=utf-8", "p{letter-spacing:0}"),
         },
       });
-      const capture = await capturePolish(site);
+      // shadow-styles-pending's stylesheet is stalled.
+      const capture = await capturePolish(site, { networkIdleMs: STALLED_IDLE_MS });
       assertCaptureCompleted(capture);
       const record = readabilityRecord(capture.report);
       const rows = await readabilityRows(site);
@@ -812,7 +835,8 @@ const slottedCapture = (() => {
           [`${routeOf("frame-src-loaded")}inner.html`]: respond("200 OK", "text/html; charset=utf-8", htmlPage(FRAME_TEXT)),
         },
       });
-      const capture = await capturePolish(site);
+      // frame-pending's frame document and frame-incomplete's image are stalled.
+      const capture = await capturePolish(site, { networkIdleMs: STALLED_IDLE_MS });
       assertCaptureCompleted(capture);
       const record = readabilityRecord(capture.report);
       const rows = await readabilityRows(site);

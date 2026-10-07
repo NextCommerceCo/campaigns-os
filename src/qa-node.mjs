@@ -32,7 +32,7 @@ const PACKAGE_ROOT = installModeResolve(installModeDirname(installModeFileUrl(im
 function cmd(verb, rest = "") {
   return `${invocationPrefixFor(PACKAGE_ROOT)} ${verb}${rest ? ` ${rest}` : ""}`;
 }
-import { isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, upsellActionCoverageWithoutOrders, validatedOrderCreationLimit } from "./qa-browser.mjs";
+import { isSameAnalyticsCapturePage, runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, UPSELL_ACTION_SPELLINGS, upsellActionCoverageWithoutOrders, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { trackingQaAssertion, trackingRunScopeRows } from "./qa-tracking-params.mjs";
 import { contentParamNotRequestedRows, contentParamQaAssertion } from "./qa-content-params.mjs";
@@ -4034,16 +4034,23 @@ function htmlIncludesRouteReference(html, expectedUrl) {
   return html.includes(expectedUrl) || html.includes(path);
 }
 
-// A data-upsell-proxy button forwards its click to the SDK action inside the
-// offer. With no such action, the route's URL can still sit in the page's meta
-// tags, so the reference match would pass a control that does nothing.
+// A data-upsell-proxy button forwards its click to the SDK action of its own
+// spelling inside the offer. With no such action, the route's URL can still sit
+// in the page's meta tags, so the reference match would pass a control that
+// does nothing.
 function findDeadUpsellProxy(html, kind, page) {
   if (page.page_type !== "upsell" || kind === "next") return null;
-  const action = kind === "accept" ? "add" : "skip";
-  if (!new RegExp(`\\bdata-upsell-proxy\\s*=\\s*["']${action}["']`, "i").test(html)) return null;
-  const target = new RegExp(`\\bdata-next-upsell-action\\s*=\\s*["']${action}["']`, "i");
-  if (upsellOfferElements(html).some((offer) => target.test(offer))) return null;
-  return `data-upsell-proxy="${action}" with no data-next-upsell-action="${action}" inside the offer to forward to`;
+  for (const action of UPSELL_ACTION_SPELLINGS[kind]) {
+    if (!new RegExp(`\\bdata-upsell-proxy\\s*=\\s*["']${action}["']`, "i").test(html)) continue;
+    const target = upsellActionPattern(action);
+    if (upsellOfferElements(html).some((offer) => target.test(offer))) continue;
+    return `data-upsell-proxy="${action}" with no data-next-upsell-action="${action}" inside the offer to forward to`;
+  }
+  return null;
+}
+
+function upsellActionPattern(action) {
+  return new RegExp(`\\bdata-next-upsell-action\\s*=\\s*["']${action}["']`, "i");
 }
 
 // The markup of each [data-next-upsell="offer"] element, read to its closing
@@ -4072,14 +4079,9 @@ function upsellOfferElements(html) {
 }
 
 function findSdkRouteAction(html, kind, page) {
-  if (page.page_type !== "upsell") return null;
-  if (kind === "accept" && /\bdata-next-upsell-action\s*=\s*["']add["']/i.test(html)) {
-    return 'SDK upsell accept control: data-next-upsell-action="add"';
-  }
-  if (kind === "decline" && /\bdata-next-upsell-action\s*=\s*["']skip["']/i.test(html)) {
-    return 'SDK upsell decline control: data-next-upsell-action="skip"';
-  }
-  return null;
+  if (page.page_type !== "upsell" || kind === "next") return null;
+  const action = UPSELL_ACTION_SPELLINGS[kind].find((spelling) => upsellActionPattern(spelling).test(html));
+  return action ? `SDK upsell ${kind} control: data-next-upsell-action="${action}"` : null;
 }
 
 function decodeHtml(value) {

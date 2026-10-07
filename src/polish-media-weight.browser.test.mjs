@@ -33,6 +33,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import {
   BUILD_FP,
+  HELD_TRANSFER_IDLE_MS,
   NO_IMAGE_KEY,
   VIEWPORTS,
   assertLedgerLowerBound,
@@ -92,11 +93,12 @@ const doc = (origin, name) => rid(origin.url(route(name)));
 const img = (attributes) => `<img alt="" ${attributes}>`;
 const FIRST_IMG = imgPath(1);
 
-// One route captured in both viewports; `serve` installs the setup.
-async function captureOne(t, name, serve) {
+// One route captured in both viewports; `serve` installs the setup. `held`
+// marks a setup whose transfer is held open past the network-idle window.
+async function captureOne(t, name, serve, { held = false } = {}) {
   const { same, other } = await origins(t);
   serve({ same, other });
-  const output = await capture(same, { routes: [name] });
+  const output = await capture(same, { routes: [name], ...(held ? { networkIdleMs: HELD_TRANSFER_IDLE_MS } : {}) });
   return { same, other, output };
 }
 
@@ -122,13 +124,14 @@ async function readCells(output) {
 // A same-origin image row: one 40×30 <img> (natural area 1,200 px, under the
 // 250,000 px floor, so a loaded one is never oversized), its weight result
 // `weight` and its oversize result `oversize` in both cells, beside the
-// document's weight pass. `side` marks a lower-bound row (D2).
+// document's weight pass. `side` marks a lower-bound row (D2), whose transfer
+// is held open.
 async function sameOriginWeightRow(t, name, serveImage, { weight, oversize, entry, measurement, side = null }) {
   const path = `/img/${name}.png`;
   const { same, other, output } = await captureOne(t, name, ({ same: origin }) => {
     origin.serve(route(name), page(img(`src="${path}" width="40" height="30"`)));
     origin.serve(path, serveImage);
-  });
+  }, { held: side !== null });
   const url = same.url(path);
   assertRequestLog({ same, other }, { same: requests([route(name), path]) }, "setup");
   eachCapture(output, name, (part, viewport) => {
@@ -615,14 +618,16 @@ const b5Stalled = () => stalled({ sendBytes: 600_000, extra: B5_PAD });
 const PAIR_CAPTURES = 5;
 const LOWER_BOUND_CAPTURES = 14;
 
-// Each capture of a page whose transfer is held open waits the 5 s
-// network-idle bound on both viewports (about 10 s per capture). The rows
-// below run several captures, so they carry an explicit timeout sized to
-// their worst case instead of relying on the runner's default (none).
+// Each capture of a page whose transfer is held open waits out the
+// network-idle window on both viewports (HELD_TRANSFER_IDLE_MS each, so about
+// 5 s per capture with the cells' own work). The rows below run several
+// captures, so they carry an explicit timeout sized to their worst case, at a
+// generous CAPTURE_MS per capture, instead of relying on the runner's default
+// (none).
 const CAPTURE_MS = 10_000;
 const B12_TIMEOUT_MS = (PAIR_CAPTURES + 1) * CAPTURE_MS + 50_000; // accepted and control captures, complete re-serve
 const B13_TIMEOUT_MS = LOWER_BOUND_CAPTURES * CAPTURE_MS + 40_000; // accepted, control and re-serve captures
-const I16_TIMEOUT_MS = 90_000; // twelve routes on two viewports, eleven of them with a slow probe, about 40 s
+const I16_TIMEOUT_MS = 90_000; // four routes on two viewports, three of them with a slow probe, about 15 s
 async function capturesAtOneLowerBound({ same, other }, name, path, reServe = null) {
   const url = same.url(path);
   const accepted = b5Stalled();
@@ -633,7 +638,8 @@ async function capturesAtOneLowerBound({ same, other }, name, path, reServe = nu
   for (let attempt = 1; attempt <= budget; attempt += 1) {
     const kind = reServe && pairs.size > 0 && seen.at(-1)?.kind !== "re-serve" ? "re-serve" : "F1.3-B5";
     same.serve(path, kind === "re-serve" ? reServe : accepted);
-    const output = await capture(same, { routes: [name] });
+    // Both the F1.3-B5 transfer and a re-serve passed in here are held open.
+    const output = await capture(same, { routes: [name], networkIdleMs: HELD_TRANSFER_IDLE_MS });
     assertRequestLog({ same, other }, { same: requests([route(name), path]) }, `setup (${kind} capture, attempt ${attempt})`);
     const bytes = desktopEntry(output, name, url)?.transferred_bytes;
     seen.push({ kind, desktop: bytes, mobile: ledgerEntry(pageLoadCapture(output.page_load, route(name), "mobile"), url)?.transferred_bytes });
@@ -888,7 +894,7 @@ browserTest("F1.3-I10 canceled other-origin image, lower bound 300,000 B, not fa
   const { same, other, output } = await captureOne(t, "i10", ({ same: origin, other: cdn }) => {
     origin.serve(route("i10"), page(img(`src="${cdn.url("/img/i10.png")}" width="40" height="30"`)));
     cdn.serve("/img/i10.png", stalled({ sendBytes: 300_000 }));
-  });
+  }, { held: true });
   const url = other.url("/img/i10.png");
   assertRequestLog({ same, other }, { same: requests([route("i10")]), other: requests(["/img/i10.png"]) }, "setup");
   eachCapture(output, "i10", (part, viewport) => {
@@ -1057,13 +1063,19 @@ function virtualProbeClock() {
   };
 }
 
-browserTest("F1.3-I16 run whose earlier cells consume the 10 s probe budget (injected slow probe): next cell's oversize results unexercised (probe_budget_exhausted)", { timeout: I16_TIMEOUT_MS }, async (t) => {
-  // Eleven slow routes (22 cells) sort before the target. Each slow probe is
+// F1.3-I16 runs on a 2 s probe budget instead of the production 10 s
+// (capture's probeBudgetMs). The cell bound stays 500 ms, so four cut probes
+// spend the budget where twenty would, and every slow cell is a real page
+// held by busy loops, about 1.5 s of browser time each.
+const I16_BUDGET_MS = 2_000;
+
+browserTest("F1.3-I16 run whose earlier cells consume the probe budget (injected slow probe): next cell's oversize results unexercised (probe_budget_exhausted)", { timeout: I16_TIMEOUT_MS }, async (t) => {
+  // Three slow routes (6 cells) sort before the target. Each slow probe is
   // held by the page's busy loops (the F1.3-I14 stimulus); the injected clock ends
   // its 500 ms bound one macrotask after the probe starts, so every slow cell
   // that starts while budget remains is cut at the bound and spends exactly
   // 500 ms of clock time.
-  const slow = Array.from({ length: 11 }, (_, index) => `i16-slow-${String(index + 1).padStart(2, "0")}`);
+  const slow = Array.from({ length: 3 }, (_, index) => `i16-slow-${String(index + 1).padStart(2, "0")}`);
   const target = "i16-target";
   const { same, other } = await origins(t);
   for (const name of slow) {
@@ -1073,7 +1085,7 @@ browserTest("F1.3-I16 run whose earlier cells consume the 10 s probe budget (inj
   same.serve(route(target), page(img(`src="/img/i16.png" style="${OVERSIZED.style}"`)));
   same.serve("/img/i16.png", pngFile(...OVERSIZED.natural));
   const probeClock = virtualProbeClock();
-  const output = await capture(same, { routes: [...slow, target], probeClock });
+  const output = await capture(same, { routes: [...slow, target], probeClock, probeBudgetMs: I16_BUDGET_MS });
   assertRequestLog({ same, other }, {
     same: [...requests([...slow.map(route), route(target), "/img/i16.png"]), ...requests(["/img/i16-small.png"], slow.length * VIEWPORTS.length)],
   }, "setup");
@@ -1085,18 +1097,18 @@ browserTest("F1.3-I16 run whose earlier cells consume the 10 s probe budget (inj
   // The slow cells in capture order, each reason a literal from the setup.
   // On the injected clock each cut probe spends exactly 500 ms and nothing
   // else spends any, so cell n (0-based) starts at exactly n × 500 ms:
-  // - cells 0 to 18 start at 0 to 9,000 ms and end at their bound inside
+  // - cells 0 to 2 start at 0 to 1,000 ms and end at their bound inside
   //   the budget (probe_timeout);
-  // - cell 19 starts at 9,500 ms with 500 ms of budget left, so the budget
-  //   did not end before it; its 500 ms bound ends it at exactly 10,000 ms,
+  // - cell 3 starts at 1,500 ms with 500 ms of budget left, so the budget
+  //   did not end before it; its 500 ms bound ends it at exactly 2,000 ms,
   //   the end of the budget (probe_timeout, the cell bound ended);
-  // - cells 20 and 21 (i16-slow-11) start at 10,000 ms, after the budget
+  // - cells 4 and 5 (i16-slow-03) start at 2,000 ms, after the budget
   //   ended (probe_budget_exhausted), like the target.
-  const REASONS = [...Array(20).fill("probe_timeout"), ...Array(2).fill("probe_budget_exhausted")];
-  assert.equal(probeClock.now(), 10_000, "setup: the injected clock advanced exactly 20 cut-probe bounds of 500 ms");
+  const REASONS = [...Array(4).fill("probe_timeout"), ...Array(2).fill("probe_budget_exhausted")];
+  assert.equal(probeClock.now(), I16_BUDGET_MS, "setup: the injected clock advanced exactly 4 cut-probe bounds of 500 ms");
   const viewports = output.plan.viewports.map((viewport) => viewport.key);
   const order = slow.flatMap((name) => viewports.map((viewport) => [name, viewport]));
-  assert.equal(order.length, 22, "setup: 22 slow cells before the target");
+  assert.equal(order.length, 6, "setup: 6 slow cells before the target");
   order.forEach(([name, viewport], index) => {
     assert.equal(mediaWeightCell(record, route(name), viewport).probe_status, REASONS[index], `${route(name)} ${viewport} (cell ${index}): probe_status is ${REASONS[index]}`);
   });
