@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.5] - 2026-10-07
+
+### Fixed
+
+Doctor now blocks receipt order lines hidden by a cart-state visibility condition, including when only the CampaignSpec identifies the receipt page. When the Build Packet, CampaignSpec, or its declared environment variable supplies the campaign API key, doctor also blocks built pages whose key differs from it, even when every built page agrees with the others. Each finding names the repair before test orders begin.
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).

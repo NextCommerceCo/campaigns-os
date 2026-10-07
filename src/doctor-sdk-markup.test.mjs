@@ -5,12 +5,12 @@
 // registration and non-waivability).
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { doctorBuiltOutput } from "./doctor/inspect.mjs";
+import { doctorBuiltOutput, doctorPacket } from "./doctor/inspect.mjs";
 import { SDK_ATTRIBUTE_INDEX_VERSION, SDK_CHECKOUT_FIELD_NAMES_SINCE, SDK_DATA_NEXT_ATTRIBUTES, isIndexedSdkAttribute, isKnownCheckoutFieldName } from "./sdk-attribute-index.mjs";
 import { SDK_MARKUP, SDK_MARKUP_CODES, evaluateSdkMarkup, scanPageMarkup } from "./sdk-markup.mjs";
 
@@ -147,6 +147,38 @@ test("ORPHANED_UPSELL_ACTION names what the shopper cannot do: accept for add/ac
   // The SDK creates the upsell enhancer for data-next-upsell with any value or none.
   const gate = evaluateSdkMarkup({ pages: [page('<div data-next-upsell=""><button data-next-upsell-action="add">Yes</button></div>')] });
   assert.equal(gate.status, "pass");
+});
+
+test("receipt order items cannot sit under cart-state visibility, including on the item element", () => {
+  const receipt = (body) => ({ page_id: "receipt", file: "receipt.html", content: `<html><head><meta name="next-page-type" content="receipt"></head><body>${body}</body></html>` });
+  for (const body of [
+    '<div data-next-hide="cart.isEmpty"><div data-next-order-items></div></div>',
+    '<div data-next-order-items data-next-show="cart.items.length > 0"></div>',
+  ]) {
+    const gate = evaluateSdkMarkup({ pages: [receipt(body)] });
+    assert.deepEqual(codeNames(gate), ["RECEIPT_ORDER_ITEMS_CART_VISIBILITY"]);
+  }
+  const clean = evaluateSdkMarkup({ pages: [receipt('<div data-next-order-items></div>')] });
+  assert.equal(clean.status, "pass");
+});
+
+test("receipt cart visibility reads references outside quoted condition values", () => {
+  const receipt = (condition) => ({ page_id: "receipt", file: "receipt.html", content: `<html><head><meta name="next-page-type" content="receipt"></head><body><div data-next-hide="${condition}"><div data-next-order-items></div></div></body></html>` });
+  for (const condition of ["cart.isEmpty", "!cart.hasItems", "cart.items.length == 0"]) {
+    assert.deepEqual(codeNames(evaluateSdkMarkup({ pages: [receipt(condition)] })), ["RECEIPT_ORDER_ITEMS_CART_VISIBILITY"], condition);
+  }
+  assert.deepEqual(codeNames(evaluateSdkMarkup({ pages: [receipt("param.mode == &quot;cart.items&quot;")] })), []);
+});
+
+test("packet doctor uses a declared receipt type when built markup has no page-type meta", () => {
+  withTempDir((dir) => {
+    cpSync(new URL("../examples", import.meta.url).pathname, join(dir, "examples"), { recursive: true });
+    const site = join(dir, "examples", "target-page-kit", "_site", "runtime-packet-demo", "receipt");
+    mkdirSync(site, { recursive: true });
+    writeFileSync(join(site, "index.html"), '<html><body><div data-next-hide="cart.isEmpty"><div data-next-order-items></div></div></body></html>');
+    const result = doctorPacket(join(dir, "examples", "build-packet.basic.json"));
+    assert.ok(markupCodes(result.errors).includes(SDK_MARKUP_CODES.RECEIPT_ORDER_ITEMS_CART_VISIBILITY.code), JSON.stringify(result.errors.map((issue) => issue.code)));
+  });
 });
 
 test("CHECKOUT_NOT_FORM is about data-next-checkout exactly, not the checkout-field / -review / -step attributes", () => {

@@ -6530,6 +6530,27 @@
         }
       ],
       "entry_sha256": "5ab33ca302fa671ac78c3e9b752ed7b251e756b05256f97ff75acd08c58ad5ba"
+    },
+    {
+      "id": "RL-0249",
+      "sequence": 235,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.5",
+      "changelog_sha256": "74f74828a01988463eaa4c4e3168ade8b899e1f10b33e26a24faaf39a67216e3",
+      "agent_impact": "Doctor blocks receipt order lines hidden by cart state, including when the CampaignSpec alone identifies the receipt page. When a Build Packet, CampaignSpec, or declared environment variable supplies the campaign API key, doctor compares it with the built key even when all pages agree. Correct these findings before test orders.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Compare the built API key with the packet, spec, or declared environment key while collecting the existing campaign identity gate."
+        }
+      ],
+      "entry_sha256": "002782b6f43ff72073794db56da552355322f6dfa8aad7f0ac0469dbedb0dfd0"
     }
   ]
 }

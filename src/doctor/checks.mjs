@@ -440,7 +440,7 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: SDK_MARKUP,
     phase: "built-output",
-    run: ({ packet, errors, warnings, ready, derived }) => validateSdkMarkup(packet, errors, warnings, ready, derived),
+    run: ({ spec, packet, errors, warnings, ready, derived }) => validateSdkMarkup(packet, errors, warnings, ready, derived, spec),
   },
   {
     id: SCRIPT_SYNTAX,
@@ -2147,6 +2147,10 @@ export function validateCampaignIdentity(packet, errors, ready, derived, spec = 
       site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
     },
     pages,
+    expectedApiKey: (() => {
+      const resolved = resolveCampaignsApiKeySource(packet, null, process.env, { spec });
+      return resolved.key ? { key: resolved.key, source: resolved.origin } : null;
+    })(),
     errors,
     ready,
     derived,
@@ -2290,8 +2294,8 @@ function readBoundedScript(realSiteRoot, path, maxBytes) {
   }
 }
 
-function recordCampaignIdentityGate({ subject, pages, errors, ready, derived }) {
-  const gate = evaluateCampaignIdentity({ subject, pages });
+function recordCampaignIdentityGate({ subject, pages, expectedApiKey = null, errors, ready, derived }) {
+  const gate = evaluateCampaignIdentity({ subject, pages, expectedApiKey });
   if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(gate);
 
   if (gate.status === "blocked") {
@@ -2315,17 +2319,23 @@ function recordCampaignIdentityGate({ subject, pages, errors, ready, derived }) 
 // Static SDK markup checks (#303). Every doctor invocation, both entry points,
 // filesystem enumeration, blocking regardless of stage status — the same
 // contract as the two gates above, for the same reasons.
-function validateSdkMarkup(packet, errors, warnings, ready, derived) {
+function validateSdkMarkup(packet, errors, warnings, ready, derived, spec = null) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
   const scope = siteRoot && existsSync(siteRoot) ? resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug }) : null;
+  const declaredTypes = new Map(activeSpecPages(spec).filter((page) => ["receipt", "thankyou"].includes(page.type)).map((page) => [
+    builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived), "receipt",
+  ]));
   recordSdkMarkupGate({
     subject: {
       public_route_slug: publicRouteSlug || null,
       site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
     },
-    pages: scope?.ok ? collectBuiltPageIdentityInputs(scope, targetRepo) : [],
+    pages: scope?.ok ? collectBuiltPageIdentityInputs(scope, targetRepo).map((page) => ({
+      ...page,
+      page_type: declaredTypes.get(resolve(targetRepo, page.file)) || null,
+    })) : [],
     errors,
     warnings,
     ready,

@@ -45,6 +45,7 @@ export const CAMPAIGN_IDENTITY = "built_output.campaign_identity";
 // Finding kinds, each with its own issue code under the gate id.
 export const CAMPAIGN_IDENTITY_KINDS = Object.freeze({
   api_key_drift: `${CAMPAIGN_IDENTITY}.api_key_drift`,
+  api_key_mismatch: `${CAMPAIGN_IDENTITY}.api_key_mismatch`,
   funnel_drift: `${CAMPAIGN_IDENTITY}.funnel_drift`,
   funnel_missing: `${CAMPAIGN_IDENTITY}.funnel_missing`,
   attribution_drift: `${CAMPAIGN_IDENTITY}.attribution_drift`,
@@ -270,7 +271,7 @@ function gateBase(subject) {
  *   file?: string|null, content: string, spec_page?: boolean,
  *   scripts?: Array<{ src: string, file?: string|null, content: string }> }> }} input
  */
-export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
+export function evaluateCampaignIdentity({ subject, pages = [], expectedApiKey = null } = {}) {
   const all = Array.isArray(pages) ? pages : [];
   const skipped = all
     .filter((page) => isParkedPage(page.route ?? page.file ?? page.page_id))
@@ -311,6 +312,16 @@ export function evaluateCampaignIdentity({ subject, pages = [] } = {}) {
       message: `API key differs across pages: ${firstKey.where} has ${quote(firstKey.value)} (${firstKey.source}) but ${observation.where} has ${quote(observation.value)} (${observation.source}). One of these pages was borrowed from another campaign; make both name the same key.`,
     });
     break; // one finding per kind names the first pair; the rest follow from the same edit
+  }
+  if (firstKey && expectedApiKey?.key && firstKey.value !== expectedApiKey.key) {
+    findings.push({
+      kind: "api_key_mismatch",
+      code: CAMPAIGN_IDENTITY_KINDS.api_key_mismatch,
+      a: { page_id: null, file: expectedApiKey.source, value: expectedApiKey.key },
+      b: { page_id: firstKey.page_id, file: firstKey.where, source: firstKey.source, value: firstKey.value },
+      evidence: `Built API key in ${firstKey.where} differs from the Campaigns API key in ${expectedApiKey.source}.`,
+      message: `Built API key in ${firstKey.where} differs from the Campaigns API key in ${expectedApiKey.source}. Replace the built key with the campaign's own key, then rebuild.`,
+    });
   }
 
   // 2. next-funnel: one value across pages, and present wherever the SDK is

@@ -77,6 +77,46 @@ test("#301 clean fixture: three pages sharing one config.js and one funnel pass"
   assert.ok(result.ready.some((note) => /agree on campaign identity/.test(note)), "a pass emits a ready line");
 });
 
+test("doctor compares a built config key with the campaign key when the packet carries one", () => {
+  withTempDir((repo) => {
+    writeConfig(repo, "examplebuiltkey");
+    writePage(repo, "checkout", page(head()));
+    const packet = { campaign: { public_route_slug: SLUG, campaigns_api_key: "examplecampaignkey" } };
+    const errors = [], ready = [];
+    const derived = { target_repo: repo, checkpoint_gates: [] };
+    validateCampaignIdentity(packet, errors, ready, derived);
+    assert.deepEqual(codes(errors), [CAMPAIGN_IDENTITY_KINDS.api_key_mismatch]);
+    assert.match(errors[0].message, /config\.js.*Campaigns API key/);
+
+    writeConfig(repo, "examplecampaignkey");
+    const matching = [];
+    validateCampaignIdentity(packet, matching, [], { target_repo: repo, checkpoint_gates: [] });
+    assert.deepEqual(matching, []);
+  });
+});
+
+test("doctor compares a built key with a declared env key only when that variable is set", () => {
+  withTempDir((repo) => {
+    writeConfig(repo, "examplebuiltkey");
+    writePage(repo, "checkout", page(head()));
+    const packet = { campaign: { public_route_slug: SLUG, api_key_source: "env:CAMPAIGNS_API_KEY" } };
+    const previous = process.env.CAMPAIGNS_API_KEY;
+    try {
+      process.env.CAMPAIGNS_API_KEY = "examplecampaignkey";
+      const errors = [];
+      validateCampaignIdentity(packet, errors, [], { target_repo: repo, checkpoint_gates: [] });
+      assert.deepEqual(codes(errors), [CAMPAIGN_IDENTITY_KINDS.api_key_mismatch]);
+      delete process.env.CAMPAIGNS_API_KEY;
+      const unsetErrors = [];
+      validateCampaignIdentity(packet, unsetErrors, [], { target_repo: repo, checkpoint_gates: [] });
+      assert.deepEqual(unsetErrors, []);
+    } finally {
+      if (previous === undefined) delete process.env.CAMPAIGNS_API_KEY;
+      else process.env.CAMPAIGNS_API_KEY = previous;
+    }
+  });
+});
+
 test("#301 key-drift fixture: a borrowed page's next-api-key meta blocks and names both files and both keys", () => {
   const result = fixture("key-drift");
   assert.equal(result.ok, false);
