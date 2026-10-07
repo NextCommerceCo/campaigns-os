@@ -148,6 +148,7 @@ function parseAdapterDecisions(value) {
     const key = pair.slice(0, equal);
     const choice = pair.slice(equal + 1);
     if (!key || /\s/.test(key)) reject(`--adapter-decision key ${JSON.stringify(key)} must be a nonempty key without whitespace.`);
+    if (key === "wrapper_policy") reject("wrapper_policy is selected at intake with prepare-build --wrapper-policy or the source-html manifest's wrapper_policy option; record build cannot change it.");
     if (!Object.hasOwn(ADAPTER_DECISION_SCALAR_VALUES, key)) reject(`Unknown --adapter-decision key ${JSON.stringify(key)}.`);
     if (Object.hasOwn(decisions, key)) reject(`Duplicate --adapter-decision key ${JSON.stringify(key)} in one list.`);
     const allowed = ADAPTER_DECISION_SCALAR_VALUES[key];

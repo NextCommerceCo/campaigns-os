@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Changed
 
-`record build --adapter-decision <key=value[,key=value...]>` now records scalar adapter decisions on the Assembly Report, so builders can give several decisions in one command and doctor reads the recorded values on the next pass. An unknown key, an invalid value, or a repeated key in the list is refused with the allowed choices. The packet and Build Context are unchanged. `template_files_copied` remains an object with status, required groups, groups, and proof paths; the new flag does not set it, and its existing doctor checks remain.
+After a page-kit build, `record build --adapter-decision <key>=<value>[,<key>=<value>...]` records the choices that are true for that build on the Assembly Report. Put all pairs in one flag: a repeated flag keeps only the last list. The build prompt now asks for actual values instead of supplying a completed status. Help and the Build Packet list the allowed values. `wrapper_policy` is selected at intake with `prepare-build --wrapper-policy` or the source-html manifest option; `record build` refuses it and names those options. Doctor checks leftover document wrappers against the effective recorded conversion status, and its adapter warnings name the recording command. The packet and Build Context are unchanged by `record build`. `template_files_copied` remains object-valued proof outside the flag.
 
 ## [1.54.0+agent.2] - 2026-10-07
 

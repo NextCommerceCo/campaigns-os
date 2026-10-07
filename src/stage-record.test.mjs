@@ -12,6 +12,7 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
+import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
 import { parseArgs, polishCaptureCommand } from "./cli.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
@@ -768,12 +769,68 @@ test("record build --adapter-decision writes the report and doctor reads its val
   });
 });
 
+test("record build refuses wrapper_policy because intake owns that choice", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
+    const before = snapshotFiles(f);
+    const result = record(f, "build", ["--adapter-decision", "wrapper_policy=not_required"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /wrapper_policy.*--wrapper-policy.*source-html manifest/i);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record build --adapter-decision keeps other report values and dry-run writes nothing", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    const report = readJson(f.reportPath);
+    report.adapter_decisions.frontmatter_policy = "not_required";
+    writeJson(f.reportPath, report);
+    const before = snapshotFiles(f);
+    const dry = record(f, "build", ["--adapter-decision", "layout_choice=page_layout", "--dry-run"]);
+    assert.equal(dry.status, 0, dry.stderr);
+    assert.deepEqual(snapshotFiles(f), before);
+    recordOk(f, "build", ["--adapter-decision", "layout_choice=page_layout"]);
+    const after = readJson(f.reportPath).adapter_decisions;
+    assert.equal(after.frontmatter_policy, "not_required");
+    assert.equal(after.layout_choice, "page_layout");
+  });
+});
+
+test("build packet documents every recordable adapter decision value", () => {
+  const doc = readFileSync(join(ROOT, "docs/build-packet.md"), "utf8");
+  const table = doc.match(/Required adapter decisions:\n\n([\s\S]*?)\n\nFresh build context/);
+  assert.ok(table);
+  const rows = [...table[1].matchAll(/^\| `([^`]+)` \| [^\n|]+ \| ([^\n]+) \|$/gm)];
+  const actual = Object.fromEntries(rows.map(([, key, values]) => [key, [...values.matchAll(/`([^`]+)`/g)].map((match) => match[1])]));
+  for (const [key, values] of Object.entries(ADAPTER_DECISION_SCALAR_VALUES)) {
+    assert.deepEqual(actual[key], values, key);
+  }
+});
+
+test("record build help names local proof mode and the build fingerprint source", () => {
+  const help = runCli(["--help"], ROOT);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /record build.*local proof mode records development/);
+  assert.match(help.stdout, /record build.*stages\.assembly\.build_fingerprint from doctor's derived\.build_output_fingerprint\.value/);
+  assert.match(help.stdout, /record build.*repeated flag keeps only the last/);
+});
+
 test("record build --adapter-decision refuses invalid values with the allowed values", () => {
   withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
     const before = snapshotFiles(f);
-    const result = record(f, "build", ["--adapter-decision", "wrapper_policy=strip"]);
+    const result = record(f, "build", ["--adapter-decision", "raw_html_conversion_status=done"]);
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /wrapper_policy.*strip_document_wrappers.*preserve_document_wrappers.*not_required.*unknown/);
+    assert.match(result.stderr, /raw_html_conversion_status.*pending.*in_progress.*completed.*not_required.*blocked/);
     for (const value of ["layout_choice", "layout_choice=campaign_layout,", "layout_choice=campaign_layout,,frontmatter_policy=not_required"]) {
       const malformed = record(f, "build", ["--adapter-decision", value]);
       assert.notEqual(malformed.status, 0);
@@ -785,6 +842,10 @@ test("record build --adapter-decision refuses invalid values with the allowed va
 
 test("record build --adapter-decision refuses unknown keys with the allowed keys", () => {
   withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
     const before = snapshotFiles(f);
     const result = record(f, "build", ["--adapter-decision", "other_policy=unknown"]);
     assert.notEqual(result.status, 0);
@@ -823,6 +884,10 @@ test("record build --adapter-decision starts from context when report decisions 
 
 test("record build --adapter-decision refuses duplicate keys within one list", () => {
   withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
     const before = snapshotFiles(f);
     const result = record(f, "build", ["--adapter-decision", "layout_choice=campaign_layout,layout_choice=page_layout"]);
     assert.notEqual(result.status, 0);
@@ -833,6 +898,10 @@ test("record build --adapter-decision refuses duplicate keys within one list", (
 
 test("record build --adapter-decision rejects malformed input before any write", () => {
   withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
     const before = snapshotFiles(f);
     const cases = [
       ["bare flag", [], null],

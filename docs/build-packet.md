@@ -1255,30 +1255,37 @@ coverage blocks source readiness.
 
 Fresh packets include `source_html.adapter_contract`. Build Context and
 Assembly Report carry the same values as `adapter_decisions`. After building,
-record scalar decisions with `record build --adapter-decision
-raw_html_conversion_status=completed,layout_choice=campaign_layout` (one flag,
-comma-separated `key=value` pairs). The command writes the Assembly Report;
-doctor reads those values ahead of Build Context and the packet. It refuses an
-unknown key or a value outside that field's allowed values. The object-valued
+record the true scalar decisions with `record build --adapter-decision
+<key>=<value>[,<key>=<value>...]` (one flag, comma-separated `key=value`
+pairs). For example, set `raw_html_conversion_status=completed` after source
+HTML conversion, or `not_required` when there is no source HTML to convert.
+A repeated `--adapter-decision` flag keeps only the last list. The command
+writes the Assembly Report only. Doctor's adapter gates and leftover-wrapper
+check read the effective decisions in report → Build Context → packet order;
+doctor still validates each copy's shape separately. Source preparation reads
+the packet's `wrapper_policy`, which is selected at intake with
+`prepare-build --wrapper-policy` or the source-html manifest's `wrapper_policy`
+option. The record flag refuses that key, an unknown key, or a value outside
+the allowed values below. The object-valued
 `template_files_copied` has no flag: its `status`, `required_groups`, `groups`,
 and `paths` remain required proof in the report and keep their existing doctor
 checks.
 
 Required adapter decisions:
 
-| Field | Purpose |
-| --- | --- |
-| `raw_html_conversion_status` | Whether prepared HTML has been converted into page-kit-ready source. |
-| `source_asset_strategy` | How images/fonts/CSS/JS are moved and referenced. Prefer `pagekit_campaign_asset_root`. |
-| `commerce_shell_adoption` | Whether checkout/upsell/downsell/receipt use a template-clone-first SDK surface. |
-| `route_rewrite_policy` | How page links, CTAs, and SDK routing values were rewritten from CampaignSpec routes. |
-| `template_files_copied` | Whether the selected template family was copied/verified as one atomic page-kit slice. |
-| `config_script_strategy` | How campaign config scripts are loaded. |
-| `wrapper_policy` | Whether document wrappers are stripped, preserved, or not required. |
-| `frontmatter_policy` | How Page Kit YAML frontmatter is created or preserved. |
-| `script_style_reference_policy` | How scripts/styles move into frontmatter, campaign assets, inline blocks, or passthrough. |
-| `cta_rewrite_policy` | How CTA destinations are rewritten from CampaignSpec routes. |
-| `layout_choice` | Which Page Kit layout strategy wraps the prepared source. |
+| Field | Purpose | `record build` allowed values |
+| --- | --- | --- |
+| `raw_html_conversion_status` | Whether prepared HTML has been converted into page-kit-ready source. | `pending`, `in_progress`, `completed`, `not_required`, `blocked` |
+| `source_asset_strategy` | How images/fonts/CSS/JS are moved and referenced. | `pagekit_campaign_asset_root`, `external_cdn`, `raw_passthrough`, `not_applicable`, `unknown` |
+| `commerce_shell_adoption` | Whether checkout/upsell/downsell/receipt use a template-clone-first SDK surface. | `not_required`, `template_clone_first_required`, `template_clone_first_verified`, `sdk_surfaces_preserved`, `custom_html_experimental` |
+| `route_rewrite_policy` | How page links, CTAs, and SDK routing values were rewritten from CampaignSpec routes. | `campaignspec_routes_via_campaign_link`, `pagekit_public_routes`, `raw_passthrough`, `not_applicable`, `unknown` |
+| `template_files_copied` | Whether the selected template family was copied/verified as one atomic page-kit slice. | Object-valued proof; no flag |
+| `config_script_strategy` | How campaign config scripts are loaded. | `campaign_asset`, `frontmatter_script`, `inline`, `not_required`, `unknown` |
+| `wrapper_policy` | Whether document wrappers are stripped, preserved, or not required. | Intake only: `strip_document_wrappers`, `preserve_document_wrappers`, `not_required`, `unknown` |
+| `frontmatter_policy` | How Page Kit YAML frontmatter is created or preserved. | `pagekit_yaml_frontmatter`, `raw_passthrough`, `not_required`, `unknown` |
+| `script_style_reference_policy` | How scripts/styles move into frontmatter, campaign assets, inline blocks, or passthrough. | `frontmatter_or_campaign_asset`, `frontmatter`, `campaign_asset`, `inline`, `raw_passthrough`, `not_required`, `unknown` |
+| `cta_rewrite_policy` | How CTA destinations are rewritten from CampaignSpec routes. | `campaignspec_routes_via_campaign_link`, `pagekit_public_routes`, `raw_passthrough`, `not_applicable`, `unknown` |
+| `layout_choice` | Which Page Kit layout strategy wraps the prepared source. | `campaign_layout`, `page_layout`, `raw_passthrough`, `not_applicable`, `unknown` |
 
 Fresh build context also includes `source.asset_crawl`
 (`source-asset-crawl/v0`). `prepare-build` scans the source HTML files and
@@ -1744,7 +1751,7 @@ hand-editing `.campaign-runtime/` JSON:
 | Command | Writes | Refused (nothing written) when |
 |---|---|---|
 | `campaigns-os record setup --packet <p>` | Build Context `scaffold.required=false` (`handoff_skill` next-campaigns-build) and `stages.setup` completed | the campaign output directory (`assembly.output_dir`) does not exist, or there is no Build Context or Assembly Report |
-| `campaigns-os record build --packet <p> [--build-environment <development\|production>] [--adapter-decision <key=value[,key=value...]>]` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, `evidence.build_environment` = the `--build-environment` value when given (kept from the last record otherwise), and the specified scalar `report.adapter_decisions`; several decisions go in one comma-separated flag. `stages.polish` resets to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output; a completed `stages.deploy` whose `source_build_fingerprint` names other output resets to `required` the same way, without the old probe's `outputs` and `evidence`, and its prior record is kept in `stages.deploy.history` (a deploy with no `source_build_fingerprint`, recorded before deploy stamped it, is kept) | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, `stages.setup` is not terminal, or an adapter decision key/value is invalid |
+| `campaigns-os record build --packet <p> [--build-environment <development\|production>] [--adapter-decision <key>=<value>[,<key>=<value>...]]` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, `evidence.build_environment` = the `--build-environment` value when given (kept from the last record otherwise), and the specified scalar `report.adapter_decisions`; all recordable decisions go in one comma-separated flag (a repeated flag keeps only the last list); `wrapper_policy` stays an intake choice. `stages.polish` resets to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output; a completed `stages.deploy` whose `source_build_fingerprint` names other output resets to `required` the same way, without the old probe's `outputs` and `evidence`, and its prior record is kept in `stages.deploy.history` (a deploy with no `source_build_fingerprint`, recorded before deploy stamped it, is kept) | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, `stages.setup` is not terminal, or an adapter decision key/value is invalid |
 | `campaigns-os record polish --packet <p> --evidence <file>` | `stages.polish` from the file (`docs/polish-evidence.md` §7: completed, blocked or skipped), bound to doctor's current fingerprint; `report.theme.repair_loop_defect` when the file sets it | build is not recorded for the current output, the file has a shape error (named by field), or, for a completed status, the polish gate doctor evaluates would not pass on the result |
 | `campaigns-os record theme --packet <p>` | `report.theme`: status `applied`, `load_order` `after-next-core`, `css_path`, `commerce_pages` and per-page evidence read from each built commerce page's stylesheet links; any earlier theme waiver is cleared | build is not recorded for the current output, the campaign ships no commerce pages, a built commerce page that loads `next-core.css` does not load `brand-theme.css` (or `checkout-brand.css`) after it or links one missing from the built output, or no built commerce page loads `next-core.css` |
 | `campaigns-os record deploy --packet <p> --base-url <url>` | the packet's `deploy.preview_url` and `stages.deploy` completed with the URL in `outputs`, one evidence line per built page that answered (each page is requested under the URL first), and `source_build_fingerprint` = the recorded `stages.assembly.build_fingerprint` it probed, so a later `record build` of different output makes deploy owed again and `next` routes back to `record deploy` before QA; a byte-identical rebuild keeps it current | the packet is not `local-serve`, the URL is not a loopback origin naming the campaign's route root, a built page does not answer 2xx, polish is not recorded, the built output changed since build was recorded, or the theme gate is blocked |

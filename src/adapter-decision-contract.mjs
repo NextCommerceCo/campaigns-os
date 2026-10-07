@@ -74,7 +74,6 @@ export const ADAPTER_DECISION_SCALAR_VALUES = Object.freeze(Object.assign(Object
   commerce_shell_adoption: [...COMMERCE_SHELL_ADOPTIONS],
   route_rewrite_policy: [...ROUTE_REWRITE_POLICIES],
   config_script_strategy: [...CONFIG_SCRIPT_STRATEGIES],
-  wrapper_policy: [...WRAPPER_POLICIES],
   frontmatter_policy: [...FRONTMATTER_POLICIES],
   script_style_reference_policy: [...SCRIPT_STYLE_REFERENCE_POLICIES],
   cta_rewrite_policy: [...CTA_REWRITE_POLICIES],
@@ -185,7 +184,7 @@ export function validateAdapterSourceFiles({ decisions, sourceRoot, pages = [], 
   addIssue(
     warnings,
     "source_html.raw_html_wrappers",
-    `source_html.adapter_contract.raw_html_conversion_status is "${status}", but mapped source HTML still contains document wrapper tags: ${sample}${more}. Strip <!doctype>, <html>, <head>, and <body> before treating the page as page-kit-ready source.`
+    `Effective raw_html_conversion_status is "${status}", but mapped source HTML still contains document wrapper tags: ${sample}${more}. Strip <!doctype>, <html>, <head>, and <body> before treating the page as page-kit-ready source.`
   );
 }
 
@@ -199,32 +198,32 @@ export function validateAdapterDecisionGates({ decisions, location, specPages = 
       addIssue(
         warnings,
         "adapter.raw_html_conversion_status",
-        `Assembly is recorded complete, but ${location}.raw_html_conversion_status is "${decisions.raw_html_conversion_status}". Record completed/not_required after wrapper stripping, frontmatter, asset moves, script/style refs, CTA rewrites, route policy, and layout choice are settled.`
+        `Assembly is recorded complete, but ${location}.raw_html_conversion_status is "${decisions.raw_html_conversion_status}". Use record build --adapter-decision raw_html_conversion_status=<value> to record completed/not_required after wrapper stripping, frontmatter, asset moves, script/style refs, CTA rewrites, route policy, and layout choice are settled.`
       );
     }
     if (["raw_passthrough", "unknown"].includes(decisions.source_asset_strategy)) {
-      addIssue(warnings, "adapter.source_asset_strategy", `Assembly is recorded complete with ${location}.source_asset_strategy="${decisions.source_asset_strategy}". Page-kit builds should normally use pagekit_campaign_asset_root so src/<slug>/assets/* publishes at /<slug>/*.`);
+      addIssue(warnings, "adapter.source_asset_strategy", `Assembly is recorded complete with ${location}.source_asset_strategy="${decisions.source_asset_strategy}". Use record build --adapter-decision source_asset_strategy=<value> to record pagekit_campaign_asset_root when src/<slug>/assets/* publishes at /<slug>/*.`);
     }
     if (["raw_passthrough", "unknown"].includes(decisions.route_rewrite_policy)) {
-      addIssue(warnings, "adapter.route_rewrite_policy", `Assembly is recorded complete with ${location}.route_rewrite_policy="${decisions.route_rewrite_policy}". Record how CampaignSpec routes and CTA destinations were rewritten before QA.`);
+      addIssue(warnings, "adapter.route_rewrite_policy", `Assembly is recorded complete with ${location}.route_rewrite_policy="${decisions.route_rewrite_policy}". Use record build --adapter-decision route_rewrite_policy=<value> to record how CampaignSpec routes and CTA destinations were rewritten before QA.`);
     }
     if (decisions.config_script_strategy === "unknown") {
-      addIssue(warnings, "adapter.config_script_strategy", `Assembly is recorded complete but ${location}.config_script_strategy is unknown. Record whether config scripts load via campaign assets, frontmatter scripts, inline config, or not_required.`);
+      addIssue(warnings, "adapter.config_script_strategy", `Assembly is recorded complete but ${location}.config_script_strategy is unknown. Use record build --adapter-decision config_script_strategy=<value> to record whether config scripts load via campaign assets, frontmatter scripts, inline config, or not_required.`);
     }
     if (["preserve_document_wrappers", "unknown"].includes(decisions.wrapper_policy)) {
-      addIssue(warnings, "adapter.wrapper_policy", `Assembly is recorded complete with ${location}.wrapper_policy="${decisions.wrapper_policy}". Page-kit source should normally strip document wrappers unless preserving them is explicitly not_required.`);
+      addIssue(warnings, "adapter.wrapper_policy", `Assembly is recorded complete with ${location}.wrapper_policy="${decisions.wrapper_policy}". Select wrapper_policy at intake with prepare-build --wrapper-policy or the source-html manifest's wrapper_policy option; page-kit source should normally strip document wrappers unless preserving them is explicitly not_required.`);
     }
     if (["raw_passthrough", "unknown"].includes(decisions.frontmatter_policy)) {
-      addIssue(warnings, "adapter.frontmatter_policy", `Assembly is recorded complete with ${location}.frontmatter_policy="${decisions.frontmatter_policy}". Record how Page Kit YAML frontmatter was created or why it is not_required.`);
+      addIssue(warnings, "adapter.frontmatter_policy", `Assembly is recorded complete with ${location}.frontmatter_policy="${decisions.frontmatter_policy}". Use record build --adapter-decision frontmatter_policy=<value> to record how Page Kit YAML frontmatter was created or why it is not_required.`);
     }
     if (["raw_passthrough", "unknown"].includes(decisions.script_style_reference_policy)) {
-      addIssue(warnings, "adapter.script_style_reference_policy", `Assembly is recorded complete with ${location}.script_style_reference_policy="${decisions.script_style_reference_policy}". Record how scripts/styles load via frontmatter, campaign assets, inline blocks, or not_required.`);
+      addIssue(warnings, "adapter.script_style_reference_policy", `Assembly is recorded complete with ${location}.script_style_reference_policy="${decisions.script_style_reference_policy}". Use record build --adapter-decision script_style_reference_policy=<value> to record how scripts/styles load via frontmatter, campaign assets, inline blocks, or not_required.`);
     }
     if (["raw_passthrough", "unknown"].includes(decisions.cta_rewrite_policy)) {
-      addIssue(warnings, "adapter.cta_rewrite_policy", `Assembly is recorded complete with ${location}.cta_rewrite_policy="${decisions.cta_rewrite_policy}". Record how CTA destinations were rewritten from CampaignSpec routes before QA.`);
+      addIssue(warnings, "adapter.cta_rewrite_policy", `Assembly is recorded complete with ${location}.cta_rewrite_policy="${decisions.cta_rewrite_policy}". Use record build --adapter-decision cta_rewrite_policy=<value> to record how CTA destinations were rewritten from CampaignSpec routes before QA.`);
     }
     if (["raw_passthrough", "unknown"].includes(decisions.layout_choice)) {
-      addIssue(warnings, "adapter.layout_choice", `Assembly is recorded complete with ${location}.layout_choice="${decisions.layout_choice}". Record the Page Kit layout strategy before handoff.`);
+      addIssue(warnings, "adapter.layout_choice", `Assembly is recorded complete with ${location}.layout_choice="${decisions.layout_choice}". Use record build --adapter-decision layout_choice=<value> to record the Page Kit layout strategy before handoff.`);
     }
   }
 
@@ -234,13 +233,13 @@ export function validateAdapterDecisionGates({ decisions, location, specPages = 
       addIssue(
         errors,
         "adapter.commerce_shell_adoption",
-        `Runtime commerce pages (${runtimePages.map((page) => page.id).join(", ")}) are marked custom_html_experimental for template family "${family}". Use template_clone_first_verified or sdk_surfaces_preserved before treating checkout/upsell/downsell/receipt as build-ready.`
+        `Runtime commerce pages (${runtimePages.map((page) => page.id).join(", ")}) are marked custom_html_experimental for template family "${family}". Use record build --adapter-decision commerce_shell_adoption=<value> to record template_clone_first_verified or sdk_surfaces_preserved before treating checkout/upsell/downsell/receipt as build-ready.`
       );
     } else if (assemblyComplete && !["template_clone_first_verified", "sdk_surfaces_preserved"].includes(adoption)) {
       addIssue(
         warnings,
         "adapter.commerce_shell_adoption",
-        `Assembly is recorded complete, but ${location}.commerce_shell_adoption is "${adoption || "missing"}" for runtime commerce pages (${runtimePages.map((page) => page.id).join(", ")}). Commerce pages should be template-clone-first, then styled, with SDK-owned surfaces preserved.`
+        `Assembly is recorded complete, but ${location}.commerce_shell_adoption is "${adoption || "missing"}" for runtime commerce pages (${runtimePages.map((page) => page.id).join(", ")}). Use record build --adapter-decision commerce_shell_adoption=<value> after commerce pages are template-clone-first, then styled, with SDK-owned surfaces preserved.`
       );
     }
   }

@@ -30,7 +30,7 @@ The first slice should own only deterministic, schema-backed work:
    - rewrite local page links/CTAs to `page_kit.public_route` values.
 3. Verify or record the selected starter family slice for commerce pages without editing SDK-owned checkout/payment/totals/submit regions.
 4. Copy an existing generated brand theme artifact into `src/<slug>/assets/css/brand-theme.css` and append it to commerce page `styles` after `next-core.css` when `report.theme.status` is ready to apply.
-5. Record completed or not-required scalar adapter decisions for the operations performed with `campaigns-os record build --adapter-decision <key=value[,key=value...]>`; the command writes `report.adapter_decisions` only.
+5. Record the true scalar adapter decisions for the operations performed with `campaigns-os record build --adapter-decision <key>=<value>[,<key>=<value>...]`; put all pairs in one flag, since a repeated flag keeps only the last list. The command writes `report.adapter_decisions` only. Select `wrapper_policy` at intake with `prepare-build --wrapper-policy` or the source-html manifest option.
 6. Record `stages.assembly.source_build_fingerprint` and `stages.assembly.source_package_material_fingerprint` when the Design Source Package fields are present.
 
 ## Deferred
