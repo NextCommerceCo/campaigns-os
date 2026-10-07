@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { runWithDeadline } from "./deadline.mjs";
 import { PLACEHOLDER_TEXT_ASSERTION_SUFFIX, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { contrastToolkit } from "./contrast.mjs";
+import { boundedPolishDeadline } from "./polish-deadline.mjs";
 import { generatedTextRenders } from "./polish-readability.mjs";
 import {
   analyticsCaptureError,
@@ -160,7 +161,7 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
     // page checks: every load in its own fresh context with the same options,
     // closed after the load. The rows go to options.qcResults; their verdict
     // assertions join the page checks'. options.contentParamLimits is an
-    // in-process test seam (never set from argv): fields that shorten the
+    // in-process test seam (never set from argv) that can only tighten the
     // leg's CONTENT_PARAM_LIMITS, so a test of the budget or the readiness
     // wait need not sit through the production bound.
     if (Array.isArray(options.qcResults)) {
@@ -169,7 +170,7 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
         spec: options.spec,
         newContext: () => browser.newContext(contextOptions),
         withQueryParam,
-        limits: Object.fromEntries(Object.entries(CONTENT_PARAM_LIMITS).map(([field, production]) => [field, shorterBound(options.contentParamLimits?.[field], production)])),
+        limits: contentParamLimitsFrom(options.contentParamLimits),
       });
       options.qcResults.push(...contentParams.rows);
       assertions.push(...contentParams.assertions);
@@ -8130,12 +8131,24 @@ function numberArg(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-// A bound an in-process test seam passes: `value` when it is a positive
-// number no larger than the production `fallback`, else `fallback`. A seam
-// can shorten a production wait, never lengthen it or switch it off
-// (Playwright reads a 0 timeout as none).
-function shorterBound(value, fallback) {
-  return Number.isFinite(value) && value > 0 && value <= fallback ? value : fallback;
+// A bound an in-process test seam passes, as the Polish deadlines take one
+// (boundedPolishDeadline): `value` when it is a positive safe integer no
+// larger than the production `fallback`, else `fallback`. A seam can shorten
+// a production wait, never lengthen it or switch it off (Playwright reads a
+// 0 timeout as none).
+const shorterBound = boundedPolishDeadline;
+
+// The content parameter leg's limits with options.contentParamLimits (an
+// in-process test seam, never set from argv) applied field by field, each
+// only where it is no larger than CONTENT_PARAM_LIMITS: a time bound is a
+// shorterBound, and maxPairs may also be zero, as runContentParamChecks
+// allows.
+function contentParamLimitsFrom(overrides) {
+  return Object.fromEntries(Object.entries(CONTENT_PARAM_LIMITS).map(([field, production]) => {
+    const value = overrides?.[field];
+    if (field !== "maxPairs") return [field, shorterBound(value, production)];
+    return [field, Number.isSafeInteger(value) && value >= 0 && value <= production ? value : production];
+  }));
 }
 
 function trim(value) {
