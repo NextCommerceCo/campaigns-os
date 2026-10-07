@@ -6716,6 +6716,33 @@
         }
       ],
       "entry_sha256": "b56a454c0160f664fd473cbc834146630c207885c2cbf5c2c8e37d294208da4e"
+    },
+    {
+      "id": "RL-0250",
+      "sequence": 239,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.7",
+      "changelog_sha256": "8c43339dac5e7fc33ad1bdff344c5db50b2e7b7f8a5d7b631f309676d70e79ce",
+      "agent_impact": "qa run takes --currency <code> to run QA in one currency of a multi-currency campaign: the run adds ?currency=<CODE> to each funnel entry URL it fetches and loads and to the first page load of each test-order path, keeping the existing query; later loads in that tab and a receipt reload carry none, because Campaign Cart keeps the currency for the tab's session. The code must be three letters and is upper-cased; anything else, an empty value included, is refused before any request. The flag takes one code per run (given twice, the last is used): run qa run once per currency. qa parity --currency, and --currency with --legacy-api-test-order, are refused. Read the run currency from evidence.currency on the entry page http:<page_id> assertion of the full verdict; the stored verdict removes URL queries. An entry URL that does not parse carries evidence.currency_not_applied with the reason instead. A run without the flag is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "The qa run usage line lists --currency <code>."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe qa run --currency: one code per run, ?currency=<CODE> on the entry URL and on each test-order path's first load with the existing query kept, the three-letter refusal, the qa parity and legacy-order refusals, and evidence.currency (or evidence.currency_not_applied) on the entry page http row."
+        }
+      ],
+      "entry_sha256": "ff4511f2d717536bf576e9a2a6b93c2aa428dec244a37867418e0ad9fdc14b1c"
     }
   ]
 }

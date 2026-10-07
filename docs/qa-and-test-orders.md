@@ -341,6 +341,24 @@ npm run campaigns-os -- qa run \
 
 The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags` (a key the Campaign Cart SDK does not read, `next-currency` or `next-predictive-address` from `src/sdk-meta-tags.mjs`, is a `warn` row at severity `warn` carrying the shared note, never `manual_review` and never a blocker, whether or not the tag rendered; doctor reports the same key as `sdk_hints.meta_tags.ignored_by_sdk`), writes a local verdict JSON under `<target-repo>/qa-output/<qa-storage-key>/<run-id>.json` (the packet's `assembly.target_repo`, else the packet's directory; `--output-dir` overrides it, and a packet-less run uses `qa-output/` under the current directory), and returns exit code `4` when the verdict is blocked. The storage key is the Map ID for saved-Map QA and `local-spec-<local_spec_id>` for local-spec packet QA. The target's managed ignore block lists `qa-output/`, because full verdicts carry live storefront URLs; the committed form is the `.campaign-runtime/qa-verdict.json` projection.
 
+`--currency <code>` proves one currency per run: the runner adds
+`?currency=<CODE>` to each funnel's entry URL (the HTTP fetch, the browser load
+and `entry_urls`) and to the first page load of each test-order path (the
+checkout probe, or the entry page or checkout when that load comes first),
+keeping any query or tracking params already there. Campaign Cart keeps the URL
+currency for the rest of that tab's session, so the runner adds it to no other
+load (upsell pages and the receipt reload in recovery go without it); a later
+load of the entry URL still carries it, because that URL is tagged. The flag takes one code per run (the
+shared parser keeps the last one if it is given twice). The code must be three
+letters (upper-cased: `gbp` runs as `GBP`); anything else is refused before any
+request. A campaign set up for three currencies takes three runs. `qa parity`
+refuses `--currency`, and so does a run whose orders come from
+`--legacy-api-test-order`, since a direct API order would be placed in the
+default currency. The persisted verdict redacts every URL query, so the
+currency is recorded as `evidence.currency` on the entry page's
+`http:<page_id>` assertion; an entry URL that does not parse gets no currency,
+and its row records `evidence.currency_not_applied` with the reason instead.
+
 ### Automatic commercial parity
 
 When the CampaignSpec has enabled pages with package rows, the same `qa run`
