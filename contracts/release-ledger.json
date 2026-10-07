@@ -6339,8 +6339,8 @@
       "date": "2026-10-07",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.53.0+agent.12",
-      "changelog_sha256": "6a61b4d3c0f353b35d839569764b453fa1e309e65286527cf5c7b146a209aed4",
+      "changelog_section": "1.53.0+agent.10",
+      "changelog_sha256": "7b0402af57d09ba68a5ca4fc1b8e9044eafa8f2b8a3d921bf26c6803958126db",
       "agent_impact": "The vendored starter catalog and the SDK attribute index now describe Campaign Cart SDK 0.4.41. A certified family is verified against 0.4.41, so a missing SDK pin is reported against that version. built_output.sdk_markup accepts the 0.4.41 address block, data-next-i18n and phone attributes and reports sdk_attribute_index_version 0.4.41; built_output.cart_placeholders checks pages pinned to 0.4.41 instead of reporting them unexercised. Read a WRONG_FIELD_NAME finding as naming the 0.4.41 field set, which is the same as 0.4.38 plus the version-gated aliases.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6352,7 +6352,7 @@
           "summary": "Say the vendored checkout field names are taken at SDK v0.4.41."
         }
       ],
-      "entry_sha256": "9b8b067ebd5f3c2dc92a35ea0962d9f19ae927c1073abc8de745f2401a74d91c"
+      "entry_sha256": "41994901ffbce1dbdf74e020465ba9622ed062cb310b6021265fe848ae12a559"
     }
   ]
 }

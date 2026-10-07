@@ -2,13 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.53.0+agent.13] - 2026-10-07
+## [1.53.0+agent.11] - 2026-10-07
 
 ### Changed
 
-The bundled Campaign Cart SDK support policy records 0.4.41 as the latest known release (`provenance.latest_known_release`, was 0.4.38). With the starter catalog verified against 0.4.41 (1.53.0+agent.12), template freshness already took 0.4.41 as the current SDK, so no family's freshness changes; the policy now agrees with the catalog instead of naming a release three behind it, and "current SDK" is reported from the policy. `minimum_supported` (0.4.20) and `preferred_minimum` (0.4.30) are unchanged.
+The bundled Campaign Cart SDK support policy records 0.4.41 as the latest known release (`provenance.latest_known_release`, was 0.4.38). With the starter catalog verified against 0.4.41 (1.53.0+agent.10), template freshness already took 0.4.41 as the current SDK, so no family's freshness changes; the policy now agrees with the catalog instead of naming a release three behind it, and "current SDK" is reported from the policy. `minimum_supported` (0.4.20) and `preferred_minimum` (0.4.30) are unchanged.
 
-## [1.53.0+agent.12] - 2026-10-07
+## [1.53.0+agent.10] - 2026-10-07
 
 ### Changed
 
