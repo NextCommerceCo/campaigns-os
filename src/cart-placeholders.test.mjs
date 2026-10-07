@@ -34,6 +34,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { after, afterEach } from "node:test";
 
+import { SDK_TEMPLATE_PLACEHOLDERS_VERIFIED_PINS } from "./sdk-attribute-index.mjs";
+
 import {
   OPERATOR,
   ROOT,
@@ -409,6 +411,7 @@ test("F1.5-I3 data-item-template-selector=\".row-tpl\"; unowned live {item.name}
 });
 
 test("F1.5-I4 pin 0.4.37; tokens only in <template>: unexercised (sdk_pin_unverified)", async () => {
+  assert.equal(SDK_TEMPLATE_PLACEHOLDERS_VERIFIED_PINS.includes("0.4.37"), false, "setup: the i4 fixture pins 0.4.37 because it is not a verified placeholder pin; pick another unverified release if it becomes one");
   const result = await builtDoctor(fixtureTree("i4-pin-unverified", "bad"));
   assertWired(result);
   assertRows(result, [pageRow(PAGE, "unexercised", "sdk_pin_unverified")]);
