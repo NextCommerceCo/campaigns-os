@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { runWithDeadline } from "./deadline.mjs";
 import { PLACEHOLDER_TEXT_ASSERTION_SUFFIX, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { contrastToolkit } from "./contrast.mjs";
+import { boundedPolishDeadline } from "./polish-deadline.mjs";
 import { generatedTextRenders } from "./polish-readability.mjs";
 import {
   analyticsCaptureError,
@@ -16,7 +17,7 @@ import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-pari
 import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
 import { redactPersisted, redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
 import { TRACKING_ADDED_BOUND_MS, TRACKING_OBSERVATION, createTrackingRun, trackingQaAssertion } from "./qa-tracking-params.mjs";
-import { runContentParamChecks } from "./qa-content-params.mjs";
+import { CONTENT_PARAM_LIMITS, runContentParamChecks } from "./qa-content-params.mjs";
 import { createPolicyLinkBudget, hasPolicyLinkFields, readPageAnchors, runPolicyLinkChecks } from "./qa-policy-links.mjs";
 import {
   canonicalHttpUrl,
@@ -159,13 +160,17 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
     // Content parameters (options.spec analytics.params.content), after the
     // page checks: every load in its own fresh context with the same options,
     // closed after the load. The rows go to options.qcResults; their verdict
-    // assertions join the page checks'.
+    // assertions join the page checks'. options.contentParamLimits is an
+    // in-process test seam (never set from argv) that can only tighten the
+    // leg's CONTENT_PARAM_LIMITS, so a test of the budget or the readiness
+    // wait need not sit through the production bound.
     if (Array.isArray(options.qcResults)) {
       const contentParams = await runContentParamChecks({
         topologies,
         spec: options.spec,
         newContext: () => browser.newContext(contextOptions),
         withQueryParam,
+        limits: contentParamLimitsFrom(options.contentParamLimits),
       });
       options.qcResults.push(...contentParams.rows);
       assertions.push(...contentParams.assertions);
@@ -3745,6 +3750,9 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
         reserveOrderCreation,
         selectorProbeCache: options.selectorProbeCache,
         tracking,
+        // An in-process test seam only, like trackingTestHooks: unset in
+        // every production run, so the card step waits CARD_READY_TIMEOUT_MS.
+        cardReadyTimeoutMs: shorterBound(options.cardReadyTimeoutMs, CARD_READY_TIMEOUT_MS),
       }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
       `order-path:${planId(normalizedPlan)}`,
@@ -3823,7 +3831,7 @@ function stablePrivateCaptureError(value) {
   return projectAnalyticsCaptureError(value, { fallbackKind: "unreadable" });
 }
 
-async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null, selectorProbeCache = null, tracking = null }) {
+async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null, selectorProbeCache = null, tracking = null, cardReadyTimeoutMs = CARD_READY_TIMEOUT_MS }) {
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
@@ -3885,7 +3893,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     }, { timeoutMs: budget() });
     await ladder.run("card_fields_filled", async () => {
       ensurePageFillable(page, checkoutPage.url);
-      return fillPaymentFields(page, args);
+      return fillPaymentFields(page, args, { readyTimeoutMs: cardReadyTimeoutMs });
     }, { timeoutMs: budget() });
     await ladder.run("cart_created", async () => {
       const cart = cartCreationEvidence(events);
@@ -5232,7 +5240,7 @@ async function revealCheckoutForm(page, options = {}) {
   return true;
 }
 
-async function fillPaymentFields(page, args) {
+async function fillPaymentFields(page, args, { readyTimeoutMs = CARD_READY_TIMEOUT_MS } = {}) {
   await clickCreditPaymentMethod(page);
   await selectByField(page, "exp-month", stringArg(args["test-exp-month"]) || DEFAULT_TEST_EXP_MONTH);
   await selectYear(page, stringArg(args["test-exp-year"]) || DEFAULT_TEST_EXP_YEAR);
@@ -5240,7 +5248,7 @@ async function fillPaymentFields(page, args) {
   const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
   const cvv = stringArg(args["test-cvv"]) || DEFAULT_TEST_CVV;
   const frames = await cardFrames(page);
-  const readyWaitMs = await waitForCardFieldsReady(page);
+  const readyWaitMs = await waitForCardFieldsReady(page, readyTimeoutMs);
   const numberInput = page.frameLocator(CARD_NUMBER_FRAME).locator("input").first();
   const cvvInput = page.frameLocator(CARD_CVV_FRAME).locator("input").first();
   const typed = async (input) => normalizeCard(await input.inputValue());
@@ -5276,12 +5284,13 @@ async function fillPaymentFields(page, args) {
 // SDK never set it is ready at once. The SDK also clears it when the card
 // script fails to load, so a class still set after the wait means the card
 // script never answered; the step refuses by name rather than type into
-// fields that may drop the number.
-async function waitForCardFieldsReady(page) {
+// fields that may drop the number. `timeoutMs` is CARD_READY_TIMEOUT_MS in
+// every production run; only an in-process test passes a shorter wait.
+async function waitForCardFieldsReady(page, timeoutMs = CARD_READY_TIMEOUT_MS) {
   const started = Date.now();
-  await page.waitForFunction(() => !document.querySelector(".next-loading-spreedly"), null, { timeout: CARD_READY_TIMEOUT_MS }).catch((error) => {
+  await page.waitForFunction(() => !document.querySelector(".next-loading-spreedly"), null, { timeout: timeoutMs }).catch((error) => {
     if (error?.name !== "TimeoutError") throw error;
-    throw new Error(`card fields did not report ready within ${CARD_READY_TIMEOUT_MS / 1000}s: the checkout form still carries next-loading-spreedly, so the card script never finished loading`);
+    throw new Error(`card fields did not report ready within ${timeoutMs / 1000}s: the checkout form still carries next-loading-spreedly, so the card script never finished loading`);
   });
   return Date.now() - started;
 }
@@ -5579,7 +5588,12 @@ async function shopperUpsellControl(page, action) {
   return actions.first();
 }
 
-async function clickUpsellPath(page, path, { trace = null } = {}) {
+// `clickTimeoutMs` and `mutationTimeoutMs` are UPSELL_CLICK_TIMEOUT_MS and
+// UPSELL_MUTATION_TIMEOUT_MS in every production run; only an in-process test
+// that waits one of them out passes a shorter bound.
+async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutationTimeoutMs } = {}) {
+  const clickMs = shorterBound(clickTimeoutMs, UPSELL_CLICK_TIMEOUT_MS);
+  const mutationMs = shorterBound(mutationTimeoutMs, UPSELL_MUTATION_TIMEOUT_MS);
   const offerUrl = safePageUrl(page);
   const action = path === "accept" ? "add" : "skip";
   const selector = `[data-next-upsell-action="${action}"]`;
@@ -5615,10 +5629,10 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
         if (!root || root.method() !== "POST" || !isOrderUpsellsUrl(root.url())) return false;
         const startedAt = responseRequestStartedAt(response);
         return startedAt === null || startedAt >= armedAt;
-      }, { timeout: UPSELL_MUTATION_TIMEOUT_MS + (perpetual ? 0 : UPSELL_CLICK_TIMEOUT_MS) }).catch(() => null)
+      }, { timeout: mutationMs + (perpetual ? 0 : clickMs) }).catch(() => null)
     : Promise.resolve(null);
   trace?.markClickAttempted();
-  await clickControl(control, { timeout: UPSELL_CLICK_TIMEOUT_MS, perpetual });
+  await clickControl(control, { timeout: clickMs, perpetual });
   trace?.markClickCompleted();
   const mutationResponse = await mutationPromise;
   const bodyRead = mutationResponse
@@ -8343,6 +8357,26 @@ function viewportFromArgs(args) {
 function numberArg(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+// A bound an in-process test seam passes, as the Polish deadlines take one
+// (boundedPolishDeadline): `value` when it is a positive safe integer no
+// larger than the production `fallback`, else `fallback`. A seam can shorten
+// a production wait, never lengthen it or switch it off (Playwright reads a
+// 0 timeout as none).
+const shorterBound = boundedPolishDeadline;
+
+// The content parameter leg's limits with options.contentParamLimits (an
+// in-process test seam, never set from argv) applied field by field, each
+// only where it is no larger than CONTENT_PARAM_LIMITS: a time bound is a
+// shorterBound, and maxPairs may also be zero, as runContentParamChecks
+// allows.
+function contentParamLimitsFrom(overrides) {
+  return Object.fromEntries(Object.entries(CONTENT_PARAM_LIMITS).map(([field, production]) => {
+    const value = overrides?.[field];
+    if (field !== "maxPairs") return [field, shorterBound(value, production)];
+    return [field, Number.isSafeInteger(value) && value >= 0 && value <= production ? value : production];
+  }));
 }
 
 function trim(value) {

@@ -280,13 +280,15 @@ async function stubServer() {
 
 // One runBrowserChecks call over `path`; returns its one content_param row
 // after checking that the 1.0 QA reader re-derives it with the real module.
-async function contentRow(path) {
+// `limits` replaces fields of the leg's CONTENT_PARAM_LIMITS
+// (runBrowserChecks' in-process contentParamLimits).
+async function contentRow(path, { limits } = {}) {
   await installBrowserGuard();
   const server = await stubServer();
   const { runBrowserChecks } = await import("./qa-browser.mjs");
   const topologies = [{ funnel_id: "default", funnel_name: "Default", pages: [{ page_id: PAGE, page_type: "landing", order: 1, url: `${server.base}${path}` }] }];
   const qcResults = [];
-  const assertions = await runBrowserChecks(topologies, { ...ARGS }, { spec: structuredClone(SPEC), qcResults });
+  const assertions = await runBrowserChecks(topologies, { ...ARGS }, { spec: structuredClone(SPEC), qcResults, contentParamLimits: limits });
   assert.deepEqual(qcResults.map((row) => row?.id), [ID], "one content_param row");
   const qcAssertions = assertions.filter((entry) => String(entry?.id || "").startsWith("qc."));
   const { loadQcRederivers } = await import("./qc-check-registry.mjs");
@@ -323,8 +325,11 @@ browserTest("the variant page also overrides querySelectorAll, Element.prototype
   assert.deepEqual(row.observation.counts, { baseline: 1, param_n: 1 }, "the target is found in both contexts");
 });
 
+// The faked signal is in place from the page's first script, so a reader it
+// fooled would read the page as ready at once. The real signal never comes,
+// so each load waits out the readiness bound: 8 s in production, 1.5 s here.
 browserTest("a page whose getAttribute and classList report the readiness signal it never sets: unexercised (readiness_timeout)", T, async () => {
-  const row = await contentRow("/spoof-readiness/");
+  const row = await contentRow("/spoof-readiness/", { limits: { readinessMs: 1_500 } });
   assertResult(row, { result: "unexercised", reasonCode: "readiness_timeout", acceptEligible: false, members: {} });
   assert.deepEqual(row.observation.readiness, { baseline: "readiness_timeout", param_n: "readiness_timeout" }, "neither context reached the signal");
 });
