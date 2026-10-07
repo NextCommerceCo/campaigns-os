@@ -16,7 +16,7 @@ import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-pari
 import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
 import { redactPersisted, redactUrlQueriesInText, redactUrlQuery } from "./qa-url-privacy.mjs";
 import { TRACKING_ADDED_BOUND_MS, TRACKING_OBSERVATION, createTrackingRun, trackingQaAssertion } from "./qa-tracking-params.mjs";
-import { runContentParamChecks } from "./qa-content-params.mjs";
+import { CONTENT_PARAM_LIMITS, runContentParamChecks } from "./qa-content-params.mjs";
 import { createPolicyLinkBudget, hasPolicyLinkFields, readPageAnchors, runPolicyLinkChecks } from "./qa-policy-links.mjs";
 import {
   canonicalHttpUrl,
@@ -160,7 +160,7 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
     // page checks: every load in its own fresh context with the same options,
     // closed after the load. The rows go to options.qcResults; their verdict
     // assertions join the page checks'. options.contentParamLimits is an
-    // in-process test seam (never set from argv): fields that replace the
+    // in-process test seam (never set from argv): fields that shorten the
     // leg's CONTENT_PARAM_LIMITS, so a test of the budget or the readiness
     // wait need not sit through the production bound.
     if (Array.isArray(options.qcResults)) {
@@ -169,7 +169,7 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
         spec: options.spec,
         newContext: () => browser.newContext(contextOptions),
         withQueryParam,
-        limits: options.contentParamLimits,
+        limits: Object.fromEntries(Object.entries(CONTENT_PARAM_LIMITS).map(([field, production]) => [field, shorterBound(options.contentParamLimits?.[field], production)])),
       });
       options.qcResults.push(...contentParams.rows);
       assertions.push(...contentParams.assertions);
