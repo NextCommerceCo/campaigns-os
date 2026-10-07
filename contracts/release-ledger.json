@@ -6565,8 +6565,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.54.0+agent.10",
-      "changelog_sha256": "d0ef17b0a50f0df0fb3d090f0bfb43188396d59034a25d517d6e116eda073013",
-      "agent_impact": "Theme inspection now excludes decorative sale and rating colours from primary and CTA selection when main brand and button evidence exists. An accent-only CTA fallback explicitly asks the operator to confirm its colour.",
+      "changelog_sha256": "c693a2482b40ae5bc570dc591927fc60c2193d339a2c36df8489c885d0028fdd",
+      "agent_impact": "Theme inspection excludes decorative selector subjects from primary and CTA selection while keeping the primary and CTA matching used on main. An accent-only CTA fallback asks the operator to confirm its colour.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -6574,10 +6574,10 @@
           "class": "named_surface",
           "path": "docs/brand-theme-bridge.md",
           "surface_entry": "docs/brand-theme-bridge.md",
-          "summary": "Explain primary and CTA colour ranking and the accent-only fallback warning."
+          "summary": "Explain decorative subject exclusions, main-compatible primary and CTA matching, and the accent-only fallback warning."
         }
       ],
-      "entry_sha256": "e3c5d1561c42d99b4e92f1994371304741b7127db48963a83193704a514014f7"
+      "entry_sha256": "d1599b534d2c9a5fdb93aa2ecb7251e750ee0ea82084513b139c384945451147"
     }
   ]
 }

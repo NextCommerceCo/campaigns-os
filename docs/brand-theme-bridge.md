@@ -22,10 +22,14 @@ It compares source tokens against known `figma-sections-export` scaffold
 defaults, maps real brand values onto a local versioned next-core target-token
 contract, and writes evidence into a theme report.
 
-Sale, badge and rating colours do not supply primary or CTA roles merely
-because their selectors mention a cart, order or hero. Button backgrounds can
-supply the CTA; primary still needs a brand token or a main brand area such as
-a header or hero. If no CTA token or button background exists, the CTA uses
+A rule whose selector subject has a whole sale, discount, badge, rating, star,
+strike, border or announcement name part does not supply primary or CTA unless
+that subject also has a brand, primary, cta, button or btn part, or is a `button`
+element or a submit input. In comma lists,
+the other selectors still count. Primary keeps the header, navigation, brand
+and hero matching used on main, including element selectors and ancestors;
+button backgrounds keep the same CTA matching, including cart, buy, order and
+submit names and IDs. If no CTA token or button background exists, the CTA uses
 the accent fallback and the warning asks the operator to confirm it.
 
 `campaigns-os theme generate` writes:

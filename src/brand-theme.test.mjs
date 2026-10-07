@@ -258,6 +258,69 @@ test("brand theme keeps a single ordinary brand colour in primary and CTA", () =
   });
 });
 
+function mappingsFromCss(css) {
+  return withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    writeFileSync(join(source, "landing.html"), '<link rel="stylesheet" href="theme.css"><main>Landing</main>');
+    writeFileSync(join(source, "theme.css"), css);
+    const mappings = inspectBrandTheme({ packet, packetPath }).context_theme.mappings;
+    return Object.fromEntries(mappings
+      .filter((mapping) => ["--brand--color--primary", "--brand--color--cta-primary"].includes(mapping.target))
+      .map((mapping) => [mapping.target, mapping.value]));
+  });
+}
+
+const primaryValue = (mappings) => mappings["--brand--color--primary"];
+const ctaValue = (mappings) => mappings["--brand--color--cta-primary"];
+
+for (const selector of [
+  ".add-to-cart", ".buy-now", ".primary-button", ".product-form__submit", "#buy-button", ".btn:first-of-type",
+]) {
+  test(`brand theme reads ${selector} CTA background as on main`, () => {
+    const mappings = mappingsFromCss(`:root { --site-accent: #c99538; } ${selector} { background: #207d65; }`);
+    assert.equal(ctaValue(mappings), "#207d65");
+  });
+}
+
+for (const selector of ["header", "nav", ".navbar", ".site-header .inner", ".header, .footer"]) {
+  test(`brand theme reads ${selector} primary background as on main`, () => {
+    const mappings = mappingsFromCss(`${selector} { background: #18395a; } .btn { background: #e4572e; }`);
+    assert.equal(primaryValue(mappings), "#18395a");
+  });
+}
+
+test("brand theme excludes a lone announcement before a real CTA", () => {
+  const mappings = mappingsFromCss(".announcement-bar { background: #b51223; } .hero-cta { background: #207d65; }");
+  assert.equal(primaryValue(mappings), "#207d65");
+  assert.equal(ctaValue(mappings), "#207d65");
+});
+
+test("brand theme keeps a button element whose class carries a decorative part as a CTA", () => {
+  const mappings = mappingsFromCss(":root { --site-accent: #c99538; } button.rating-submit { background: #207d65; }");
+  assert.equal(ctaValue(mappings), "#207d65");
+});
+
+test("brand theme keeps a CTA in a comma list with a decorative selector", () => {
+  const mappings = mappingsFromCss(".sale-badge, .hero-cta { background: #207d65; }");
+  assert.equal(primaryValue(mappings), "#207d65");
+  assert.equal(ctaValue(mappings), "#207d65");
+});
+
+test("brand theme reads a header after a top-of-file import", () => {
+  const mappings = mappingsFromCss('@import url("font.css"); .header { background: #18395a; }');
+  assert.equal(primaryValue(mappings), "#18395a");
+});
+
+test("brand theme reads a header after a charset declaration", () => {
+  const mappings = mappingsFromCss('@charset "UTF-8"; .header { background: #18395a; }');
+  assert.equal(primaryValue(mappings), "#18395a");
+});
+
+test("brand theme keeps a header accent as primary when accent is not a decorative part", () => {
+  const mappings = mappingsFromCss(".header-accent { background: #18395a; }");
+  assert.equal(primaryValue(mappings), "#18395a");
+});
+
 test("brand theme normalizes role-like source tokens into a complete commerce token family", () => {
   withTempDir((dir) => {
     const { source, packet, packetPath } = makePacket(dir, [{ page_id: "checkout", path: "checkout.html" }]);
