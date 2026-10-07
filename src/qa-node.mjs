@@ -3763,8 +3763,9 @@ export function forcedAnalyticsCorrectness(args) {
 // off (CAMPAIGNS_OS_TELEMETRY=off / `campaigns-os telemetry off`) means the
 // verdict stays local, with the destination and the opt-in flag named in the
 // run output. Publishing for the portal path is never weakened by consent.
-// #486: a run against a loopback base URL (localhost, 127.0.0.1, [::1]) is a
-// local check, so by default its verdict stays local whatever the spec
+// #486: a run against a local-address base URL (localhost or any *.localhost
+// name, any 127.x.x.x, 0.0.0.0, [::1] or an IPv4-mapped loopback; see
+// isLocalAddressUrl below) is a local check, so by default its verdict stays local whatever the spec
 // source; the output names --post-verdict and qa publish. An explicit
 // --post-verdict still publishes.
 export function decidePublishVerdict({ args = {}, portalManaged = false, consent = null, baseUrl = null } = {}) {
