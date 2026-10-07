@@ -149,18 +149,22 @@ test("cartEntryHrefFor: a control matching a page-declared route goes to that ro
 // route on a checkout page, the accept / decline routes on an upsell or
 // downsell page, each read from the topology field the static route-link rows
 // read; nothing on any other page.
-test("primaryCtaDeclaredRoutes: checkout submit -> expected_next_url; upsell / downsell add -> expected_accept_url, skip -> expected_decline_url; nothing elsewhere", () => {
+// The SDK accepts the offer on add or accept and declines it on skip or
+// decline, so each route's control is either spelling.
+test("primaryCtaDeclaredRoutes: checkout submit -> expected_next_url; upsell / downsell add or accept -> expected_accept_url, skip or decline -> expected_decline_url; nothing elsewhere", () => {
   const { primaryCtaDeclaredRoutes } = __qaBrowserTestHooks;
   const urls = { expected_next_url: `${BASE}/next/`, expected_accept_url: `${BASE}/accept/`, expected_decline_url: `${BASE}/decline/` };
+  const ACCEPT = '[data-next-upsell-action="add"], [data-next-upsell-action="accept"]';
+  const DECLINE = '[data-next-upsell-action="skip"], [data-next-upsell-action="decline"]';
   assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: "checkout", ...urls }), [{ selector: `${CHECKOUT_FORM} button[type="submit"]`, url: `${BASE}/next/` }]);
   for (const pageType of ["upsell", "downsell", "Upsell"]) {
     assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: pageType, ...urls }), [
-      { selector: '[data-next-upsell-action="add"]', url: `${BASE}/accept/` },
-      { selector: '[data-next-upsell-action="skip"]', url: `${BASE}/decline/` },
+      { selector: ACCEPT, url: `${BASE}/accept/` },
+      { selector: DECLINE, url: `${BASE}/decline/` },
     ], pageType);
   }
   assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: "upsell", expected_next_url: `${BASE}/next/`, expected_decline_url: `${BASE}/decline/` }), [
-    { selector: '[data-next-upsell-action="skip"]', url: `${BASE}/decline/` },
+    { selector: DECLINE, url: `${BASE}/decline/` },
   ], "an undeclared accept route lists no accept control");
   for (const pageType of ["landing", "select", "receipt", "thankyou"]) assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: pageType, ...urls }), [], pageType);
 });

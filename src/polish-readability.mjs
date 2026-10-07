@@ -433,8 +433,8 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
   // ancestor matches. checkout_label and checkout_hint are read separately.
   const ROLES = [
     ["add_to_cart", "[data-next-action=\"add-to-cart\"]"],
-    ["upsell_accept", "[data-next-upsell-action=\"add\"]"],
-    ["upsell_decline", "[data-next-upsell-action=\"skip\"]"],
+    ["upsell_accept", "[data-next-upsell-action=\"add\"], [data-next-upsell-action=\"accept\"]"],
+    ["upsell_decline", "[data-next-upsell-action=\"skip\"], [data-next-upsell-action=\"decline\"]"],
     ["submit_control", "button.submit-button[os-checkout-payment=\"combo\"], button[os-checkout-payment=\"combo\"], button[type=\"submit\"], input[type=\"submit\"], input[type=\"button\"]"],
     ["sdk_action", "[data-next-action]"],
     ["bundle_card", "[data-next-bundle-card], [data-next-selector-card], [data-next-package-id], [data-next-bundle-id]"],

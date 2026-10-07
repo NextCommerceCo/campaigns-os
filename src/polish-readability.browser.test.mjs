@@ -107,6 +107,9 @@ const SHARED = ({ other }) => ({
   i53: htmlPage(`<div class="layer" style="padding:8px;background:#333333"><span data-next-action="add-to-cart" style="color:#ffffff">Add to cart</span></div>`, { head: "<style>.layer::before{content:\"\";display:block;height:4px;background:#000}</style>" }),
   i54: htmlPage(ATC("font-size:24px;color:#ffffff;background-color:#e0662b;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent")),
   i55: htmlPage(`<a href="" aria-disabled="true" style="display:inline-block;${P};color:#bbbbbb;background:#eeeeee">Unavailable link</a>`),
+  "upsell-accept": htmlPage(`<button data-next-upsell-action="accept" type="button" style="${BTN};color:#ffffff;background:#111111">Yes, add it</button>`),
+  "upsell-decline": htmlPage(`<button data-next-upsell-action="decline" type="button" style="${BTN};color:#ffffff;background:#111111">No thanks</button>`),
+  "upsell-unknown": htmlPage(`<button data-next-upsell-action="maybe" type="button" style="${BTN};color:#ffffff;background:#111111">Maybe later</button>`),
 });
 
 let sharedSite = null;
@@ -265,6 +268,17 @@ browserTest("F2.4-W21 <input type=\"submit\" value=\"Buy\"> #fff on #767676: mea
   const { record } = await sharedRecord();
   const cells = cellsOf(record, "w21");
   assert.deepEqual(VIEWPORTS.map((viewport) => cells[viewport].elements.map((element) => [element.role, element.review_reason, typeof element.ratio])), [[["submit_control", null, "number"]], [["submit_control", null, "number"]]], "the submit input is measured with role submit_control");
+});
+
+browserTest("[data-next-upsell-action=\"accept\"] and \"decline\" (the SDK's spellings of add and skip): measured element role = upsell_accept / upsell_decline; another value is body_text", async () => {
+  const { record } = await sharedRecord();
+  const roles = (name) => {
+    const cells = cellsOf(record, name);
+    return VIEWPORTS.map((viewport) => cells[viewport].elements.map((element) => element.role));
+  };
+  assert.deepEqual(roles("upsell-accept"), [["upsell_accept"], ["upsell_accept"]], "the accept control is measured with role upsell_accept");
+  assert.deepEqual(roles("upsell-decline"), [["upsell_decline"], ["upsell_decline"]], "the decline control is measured with role upsell_decline");
+  assert.deepEqual(roles("upsell-unknown"), [["body_text"], ["body_text"]], "a control with another upsell action value is not an upsell role");
 });
 
 browserTest("F2.4-W22 bump text inside .next-active, #fff on #333: member state = active", async () => {
