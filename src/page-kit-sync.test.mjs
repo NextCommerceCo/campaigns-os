@@ -1264,7 +1264,7 @@ test("page-kit sync warns that a terminal build is now stale and points at the r
     const result = pageKitSyncCommand({ _: ["page-kit", "sync"], packet: packetPath });
     assert.equal(result.status, "synced");
     assert.deepEqual(result.warnings.map((issue) => issue.code), ["page_kit.sync.build_stale"]);
-    assert.match(result.next, /then rebuild/);
+    assert.match(result.next, /then rebuild.*record build --packet/);
     const dry = pageKitSyncCommand({ _: ["page-kit", "sync"], packet: packetPath, "dry-run": true });
     assert.equal(dry.status, "unchanged");
     assert.deepEqual(dry.warnings, [], "a run that wrote nothing staled nothing");

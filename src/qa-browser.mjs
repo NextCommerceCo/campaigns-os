@@ -1716,7 +1716,7 @@ async function checkoutPaymentSurfaceAssertions(browserPage, page) {
       card_number_selector: '[data-next-checkout-field="cc-number"], #spreedly-number',
       cvv_selector: '[data-next-checkout-field="cvv"], #spreedly-cvv',
       spreedly_frame_urls: spreedlyFrames.map((frame) => frame.url()).slice(0, 5),
-      next_step: "Run --test-order common for typed-card checkout proof (test cards bypass the gateway; no approval needed).",
+      next_step: "Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing test orders, which leave real store order records. Then run --test-order common for typed-card checkout proof (test cards bypass the gateway and create no transactions; no permission flag).",
     },
   }), assertion({
     id: `browser-payment-geometry:${page.page_id}`,

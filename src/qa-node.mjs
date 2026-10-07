@@ -199,8 +199,9 @@ Options:
   --browser-timeout <ms>          Browser navigation timeout. Default: 30000.
   --test-order <off|common|checkout|accept|decline|both|full|tiers[:checkout|common|full]|accept-decline[-accept...]>
                                   Create Playwright typed-card test orders through the tested checkout page.
-                                  Test cards bypass the gateway and create no transactions, so no permission
-                                  flags or packet policy are needed — just pick a mode. Default mode (bare
+                                  Test cards bypass the gateway and create no transactions, but each creates a real
+                                  store order record. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing orders.
+                                  No permission flag or packet policy is needed. Default mode (bare
                                   --test-order, or "common") runs every actual terminal path when they fit under
                                   the cap (--max-test-orders, default 6). Above the cap it runs checkout,
                                   first-offer accept/decline, and a deduplicated shortest real receipt path, then
@@ -1861,7 +1862,7 @@ function updateQaPolicy(args) {
   // the packet and before the packet write: refusals, so they journal nothing.
   const removedFlags = REMOVED_QA_POLICY_FLAGS.filter((flag) => flag in args);
   if (removedFlags.length) {
-    throw refused(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders run from --test-order <mode> alone; there is no permission flag). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth.`);
+    throw refused(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders use --test-order <mode>, with no permission flag; unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing these real store order records). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth.`);
   }
   // Validated with the other argv checks, before anything is written: a
   // refusal at this call site, like the removed-flag check above.
@@ -3117,9 +3118,9 @@ async function maybeRunTestOrders(
     return { orders: [], receiptAnalytics: emptyReceiptAnalytics(), qc_results: notRequestedRows() };
   }
   if (mode && mode !== "off") {
-    // Test Orders use global test cards: they bypass the payment gateway, create
-    // no transactions, and need no merchant setup or approval. `--test-order
-    // <mode>` is sufficient intent — no permission flags or packet policy gate.
+    // Test Orders use global test cards: they bypass the payment gateway and create
+    // no transactions, but each leaves a real store order record. Ask the operator
+    // once in the first turn; `--test-order <mode>` has no permission flag or packet policy gate.
     const result = await operations.runBrowser(resolved.topologies, args, runId, { captureAnalytics, spec: resolved.spec });
     assertions.push(...result.assertions);
     return {
@@ -3462,6 +3463,9 @@ function output(value, args) {
     printEntryUrlLines(value.entry_urls);
     console.log(`Run ID: ${value.run_id}`);
     console.log(`Disposition: ${value.verdict.disposition}`);
+    if (value.verdict.disposition === "ready_with_exceptions") {
+      console.log("This is a passing proof with exceptions. Report these exceptions to the operator; do not clear or waive them, or change markup just to make them pass.");
+    }
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
     printCauseLines(value.verdict);
     printThemeGateLines(value.theme_gate, value.packet_path, value.report_path);
@@ -3584,14 +3588,21 @@ function printCauseLines(verdict) {
   // One formatter, shared with the doctor report: a prior record that exists
   // but has no usable QA verdict is not the same state as no prior record, and
   // the two commands must not describe it differently.
-  for (const line of formatCauseReportLines(verdict?.cause_summary)) console.log(line);
+  if (verdict?.disposition !== "ready_with_exceptions") {
+    for (const line of formatCauseReportLines(verdict?.cause_summary)) console.log(line);
+  }
   const exceptions = Array.isArray(verdict.exceptions) ? verdict.exceptions : [];
   if (!exceptions.length) return;
   console.log("Findings:");
   for (const exception of exceptions) {
-    const identity = [exception.id, exception.page].filter(Boolean).join(" @ ") || "(unidentified finding)";
     const tag = formatCauseTag(exception);
-    console.log(`- ${identity} (${exception.status || "unknown"})${tag ? ` ${tag}` : ""}`);
+    if (verdict.disposition === "ready_with_exceptions") {
+      const severity = exception.severity ? `; severity: ${exception.severity}` : "";
+      console.log(`- id: ${exception.id || "(none)"}; page: ${exception.page || "(none)"} (${exception.status || "unknown"}${severity})${tag ? ` ${tag}` : ""}`);
+    } else {
+      const identity = [exception.id, exception.page].filter(Boolean).join(" @ ") || "(unidentified finding)";
+      console.log(`- ${identity} (${exception.status || "unknown"})${tag ? ` ${tag}` : ""}`);
+    }
   }
 }
 
@@ -3606,7 +3617,7 @@ export function themeGateLines(themeGate, packetPath = null, reportPath = null) 
   for (const action of themeGate.required_actions || []) {
     lines.push(`  - ${requiredActionText(action, { packetPath, reportPath })}`);
   }
-  lines.push("Or rerun with --theme-waive \"<reason>\" to record an ephemeral waiver for this run.");
+  lines.push('Or rerun once with --theme-waive "<reason>"; this waiver applies only to that run. A recorded theme waive requires --waived-by "<named human>".');
   return lines;
 }
 
@@ -3644,8 +3655,8 @@ export function qaResolveNextProofLines(value) {
     `Next expected proof: ${qaRunCommandFromResolve(value)}`,
     `Entry URL(s) resolved: ${formatEntryUrlsForProof(value.entry_urls)}`,
     value.local_spec_id
-      ? "Typed-card test orders use global test cards (no transactions/no permission gate); local-spec QA stays in the repository."
-      : "Typed-card test orders use global test cards (no transactions/no permission gate); QA publishes to the portal by default.",
+      ? "Typed-card test cards create no transactions but leave real store order records. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing them; there is no permission flag. Local-spec QA stays in the repository."
+      : "Typed-card test cards create no transactions but leave real store order records. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing them; there is no permission flag. QA publishes to the portal by default.",
   ];
 }
 
@@ -4130,6 +4141,7 @@ function extractApiError(raw) {
 }
 
 export const __qaNodeTestHooks = Object.freeze({
+  output,
   extractTopologies,
   validatedOrderCreationLimit,
   resolveQaInputs,

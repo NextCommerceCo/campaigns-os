@@ -711,6 +711,12 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
   const fallbackAction = picked.stage === "done"
     ? `All stages are recorded as terminal; run ${cmd("next")} to confirm the closeout actions.`
     : `Run ${command}.`;
+  if (picked.stage === "done") {
+    actions.unshift(fallbackAction);
+    if (report?.stages?.qa?.status === "completed_with_warnings") {
+      actions.push("QA passed with exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass.");
+    }
+  }
   return {
     stage: picked.stage,
     status: blocked ? "blocked" : readinessStatus(warnings, derived),

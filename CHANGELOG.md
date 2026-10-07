@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.4] - 2026-10-07
+
+### Fixed
+
+`qa run` now calls `ready_with_exceptions` a passing proof, lists each exception once with its id and page (and severity when present), and tells the agent to report exceptions to the operator. `next` gives the same guidance when QA completed with exceptions while keeping the closeout action.
+
+The completed-pipeline prompt and Build Packet guide now point to `record build` for repeated build work and distinguish local-serve recording from hosted deploy instructions. The starter-palette advisory prints the named-human argument required by a recorded `theme waive`, while help and QA guidance distinguish it from the one-run `--theme-waive` form. QA prompts, help, and guides ask once, up front, before typed-card test orders unless the operator already said they are fine for this campaign. Those orders leave real store records even though no transaction or money movement occurs. `ready` and `blocked` QA text keeps its existing finding format.
+
 ## [1.54.0+agent.3] - 2026-10-07
 
 ### Fixed

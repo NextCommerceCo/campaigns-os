@@ -114,6 +114,38 @@ test("the agent context asks about test orders once, up front, instead of callin
   assert.deepEqual(silent, [], "tell the agent to ask once, up front, unless the operator already said test orders are fine");
 });
 
+test("published and runtime test-order guidance does not call store orders approval-free", () => {
+  const guidance = [
+    "README.md",
+    "CONTEXT.md",
+    "docs/quickstart.md",
+    "docs/campaigns-os-build-flow.md",
+    "docs/developer-evaluation.md",
+    "docs/qa-and-test-orders.md",
+    "src/cli.mjs",
+    "src/qa-node.mjs",
+    "src/qa-browser.mjs",
+  ];
+  const approvalFree = /no permission\/approval needed|no approval (?:is needed|needed|step is involved|gate)|need no merchant setup or approval|no transactions\/no permission gate|safe to run any time/gi;
+  const claims = guidance.flatMap((path) => [...readFileSync(join(ROOT, path), "utf8").matchAll(approvalFree)]
+    .map((match) => `${path}: ${match[0]}`));
+  assert.deepEqual(claims, []);
+  const consentWording = "Unless the operator has already said test orders are fine for this campaign, ask once, up front";
+  const missing = guidance.filter((path) => !readFileSync(join(ROOT, path), "utf8").replace(/\s+/g, " ").toLowerCase().includes(consentWording.toLowerCase()));
+  assert.deepEqual(missing, [], "carry the existing test-order clause into each changed guidance surface");
+  const firstTurn = guidance.filter((path) => readFileSync(join(ROOT, path), "utf8").includes("in your first turn"));
+  assert.deepEqual(firstTurn, [], "QA-time text cannot assume it is still the first turn");
+});
+
+test("done guidance distinguishes local-serve recording from hosted deploys", () => {
+  const guide = readFileSync(join(ROOT, "docs/build-packet.md"), "utf8");
+  const done = guide.split('**`stage: "done"`**')[1]?.split("\n-")[0] || "";
+  assert.match(done, /`record build`; it makes downstream stages owed/);
+  assert.match(done, /`record deploy` records a local-serve target/);
+  assert.match(done, /hosted deploy.*deploy prompt/);
+  assert.doesNotMatch(done, /never hand-edit stage status/);
+});
+
 // The printed prefix cannot show this: from a checkout it is the bare form
 // wherever ROOT points. The install mode is decided from ROOT, so ROOT itself
 // is pinned to the package root.
