@@ -4493,8 +4493,11 @@ function assessReceiptRendering(persistedLineCount, evidence = {}) {
 
 // With a tracking observer, the load is a runner navigation: before the
 // attempt's first page-initiated hop it carries the run's synthetic seeds.
+// `qa run --currency` (validated and upper-cased by qa-node.mjs) rides on
+// every runner load, so an order path that enters at the checkout carries it.
 async function gotoAndSettle(page, url, args, tracking = null) {
-  const target = tracking ? tracking.runnerUrl(url, withQueryParam) : url;
+  const entered = /^[A-Z]{3}$/.test(String(args.currency ?? "")) ? withQueryParam(url, "currency", args.currency) : url;
+  const target = tracking ? tracking.runnerUrl(entered, withQueryParam) : entered;
   await page.goto(target, { waitUntil: "domcontentloaded", timeout: numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS) });
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
   await page.waitForTimeout(750);

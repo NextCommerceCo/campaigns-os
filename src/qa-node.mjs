@@ -128,7 +128,7 @@ const HELP = `campaigns-os qa — Node/npm spec-aware QA
 Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
-  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--no-live-refs] [--json]
+  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--currency <code>] [--output-dir <dir>] [--no-remit] [--no-live-refs] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
@@ -189,6 +189,9 @@ Options:
   --no-live-refs                  qa run: skip the one read-only GET of <proxy-base>/api/campaign that checks each
                                   served page's shipping and package refs against the live campaign; the verdict
                                   records the check not_run with reason disabled, never a pass.
+  --currency <code>               qa run: enter each funnel's entry page with ?currency=<CODE> (three letters, e.g. GBP),
+                                  keeping its existing query. One currency per run; the verdict records it as
+                                  evidence.currency on the entry page's http:<page> row.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
                                   Requires one-time setup: campaigns-os qa install-browser
@@ -2136,6 +2139,19 @@ function parityReplayEvidence(bundle) {
 // validator's own.
 const refuseBadOrderCreationLimit = (args) => refusing(() => validatedOrderCreationLimit(args));
 
+// `qa run --currency <code>`: one run proves one currency. The code is three
+// ASCII letters, upper-cased; anything else (no value, a list, a symbol) is
+// refused here, before anything is resolved, fetched or launched.
+function qaRunCurrency(args) {
+  if (!Object.hasOwn(args, "currency")) return null;
+  const value = args.currency;
+  if (typeof value !== "string" || !/^[A-Za-z]{3}$/.test(value)) {
+    const got = typeof value === "string" ? JSON.stringify(value) : "no value";
+    throw refused(`--currency takes one three-letter currency code, such as GBP or EUR (got ${got}). Run qa run once per currency.`);
+  }
+  return value.toUpperCase();
+}
+
 async function runParityQa(args) {
   // Checked here as well as on the budget itself: the budget is built after a
   // browser has launched, and a flag the operator typed wrong should cost them
@@ -2211,6 +2227,7 @@ async function runQa(args, options = {}) {
   // Fail-fast before anything resolves or launches. The authoritative check
   // lives on the creation budget itself, which every browser path builds.
   refuseBadOrderCreationLimit(args);
+  qaRunCurrency(args);
   // Match dispatch: an active browser mode takes precedence over legacy API
   // diagnostics. Only the selected legacy path requires a cart and API mode.
   const browserMode = String(args["test-order"] || "off").toLowerCase();
@@ -2225,7 +2242,14 @@ async function runQa(args, options = {}) {
 // `runSessionActive` is threaded in from the CLI's single ambient-session read
 // rather than re-discovered here, so the closeout command this run prints and
 // the run_id the session will close under come from the same observation.
-async function runResolvedQa(args, resolved, { runSessionActive = false, liveCampaign = undefined, liveCampaignFetch = globalThis.fetch } = {}) {
+async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, liveCampaign = undefined, liveCampaignFetch = globalThis.fetch } = {}) {
+  // --currency: every leg below (HTTP rows, browser loads, test orders) reads
+  // the entry page's URL from these topologies, so it is tagged once here;
+  // the upper-cased code rides on args for the order runner's own loads.
+  const currency = qaRunCurrency(args);
+  if (currency) args = { ...args, currency };
+  const entryCurrency = withEntryCurrency(resolvedInputs.topologies, currency);
+  const resolved = currency ? { ...resolvedInputs, topologies: entryCurrency.topologies } : resolvedInputs;
   const startedAt = new Date().toISOString();
   const runId = generateRunId();
   const gate = resolved.themeGate;
@@ -2317,7 +2341,7 @@ async function runResolvedQa(args, resolved, { runSessionActive = false, liveCam
   const bindingScriptLoader = createBindingScriptLoader();
   const pages = resolved.topologies.flatMap(topology => topology.pages);
   const pageResults = await mapConcurrent(pages, COMMERCIAL_QA_LIMITS.concurrency, page =>
-    runPageChecks(page, args, { sourceLoader, bindingExpected, bindingScriptLoader, captureCommercial: commercialIds.has(String(page.page_id)) }));
+    runPageChecks(page, args, { sourceLoader, bindingExpected, bindingScriptLoader, captureCommercial: commercialIds.has(String(page.page_id)), currency: entryCurrency.entryPages.has(page) ? currency : null }));
   const livePages = new Map();
   for (const [index, page] of pages.entries()) {
     const pageResult = pageResults[index];
@@ -2765,14 +2789,42 @@ const ENTRY_PAGE_TYPES = new Set([
   "review",
 ]);
 
+function entryPageOf(topology) {
+  const pages = Array.isArray(topology?.pages) ? topology.pages.filter((page) => page?.url) : [];
+  if (!pages.length) return null;
+  // #482: a partial build enters at its first in-scope page, which can be
+  // an opted-in select or checkout rather than a later landing/presell.
+  return topology.partial_build_scope ? pages[0] : pages.find(isEntryLikePage) || pages[0];
+}
+
+// Each funnel's entry page gets ?currency=<CODE> through the URL API, so the
+// query string and tracking params it already carries are kept. Returns the
+// topologies unchanged without a currency; `entryPages` holds the tagged pages.
+function withEntryCurrency(topologies, currency) {
+  const entryPages = new Set();
+  if (!currency) return { topologies, entryPages };
+  const tagged = topologyList(topologies).map((topology) => {
+    const entry = entryPageOf(topology);
+    let url = null;
+    try {
+      url = entry ? new URL(entry.url) : null;
+    } catch {
+      url = null;
+    }
+    if (!url) return topology;
+    url.searchParams.set("currency", currency);
+    const page = { ...entry, url: url.toString() };
+    entryPages.add(page);
+    return { ...topology, pages: topology.pages.map((item) => (item === entry ? page : item)) };
+  });
+  return { topologies: tagged, entryPages };
+}
+
 function deriveEntryUrls(topologies) {
   const entries = [];
   for (const topology of topologyList(topologies)) {
-    const pages = Array.isArray(topology?.pages) ? topology.pages.filter((page) => page?.url) : [];
-    if (!pages.length) continue;
-    // #482: a partial build enters at its first in-scope page, which can be
-    // an opted-in select or checkout rather than a later landing/presell.
-    const page = topology.partial_build_scope ? pages[0] : pages.find(isEntryLikePage) || pages[0];
+    const page = entryPageOf(topology);
+    if (!page) continue;
     entries.push({
       funnel_id: topology.funnel_id || "default",
       funnel_name: topology.funnel_name || topology.funnel_id || "default",
@@ -2843,8 +2895,12 @@ async function runPageChecks(page, args, {
   captureCommercial = false,
   bindingExpected = { value: null },
   bindingScriptLoader = createBindingScriptLoader(),
+  currency = null,
 } = {}) {
   const assertions = [];
+  // --currency is recorded on the entry page's HTTP row: the persisted
+  // verdict drops every URL query, so the fetched URL cannot carry it.
+  const currencyEvidence = currency ? { currency } : {};
   if (!page.url) {
     assertions.push(bindingAssertion(page, await observeBinding({ source: null, page, expected: bindingExpected, scriptLoader: bindingScriptLoader })));
     assertions.push(assertion({
@@ -2880,7 +2936,7 @@ async function runPageChecks(page, args, {
       severity: SEVERITY.BLOCKER,
       expected: isHttpStatus ? "2xx HTTP response" : "fetchable bounded deployed page",
       actual: isHttpStatus ? `${source.status} ${source.status_text}`.trim() : null,
-      evidence: { transport_error: { code: source.error_code, message: source.error } },
+      evidence: { transport_error: { code: source.error_code, message: source.error }, ...currencyEvidence },
     }));
     return {
       assertions,
@@ -2898,6 +2954,7 @@ async function runPageChecks(page, args, {
     status: STATUS.PASS,
     expected: "2xx HTTP response",
     actual: `${source.status} ${source.status_text}`.trim(),
+    evidence: currency ? currencyEvidence : undefined,
   }));
 
   const expectedMeta = page.expected_meta_tags || {};
@@ -4152,6 +4209,8 @@ export const __qaNodeTestHooks = Object.freeze({
   themeGateSummary,
   templateBrandContractAssertion,
   deriveEntryUrls,
+  qaRunCurrency,
+  withEntryCurrency,
   derivePageUrls,
   deriveTestedUrlsFromAssertions,
   resolvePayload,

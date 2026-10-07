@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.6] - 2026-10-07
+
+### Added
+
+`qa run --currency <code>` runs QA in one of a campaign's currencies. The run adds `?currency=<CODE>` to each funnel's entry URL, so the HTTP fetch, the `--browser` load and the reported `entry_urls` carry it, and the test-order runner's own page loads (the checkout it opens, the entry page it fills the cart from, a receipt reload) carry it too. Query and tracking parameters already on the URL are kept. The code must be three letters and is upper-cased (`gbp` runs as `GBP`); anything else, including no value or a list, is refused before any request. One run covers one currency. Before this, a run could prove only the default currency, and testing another took a hand-made copy of the built site that forced the parameter. The stored verdict removes URL queries, so the currency is recorded as `evidence.currency` on the entry page's `http:<page_id>` assertion. The verdict schema is unchanged, and a run without the flag is unchanged.
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).
