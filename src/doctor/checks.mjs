@@ -832,7 +832,7 @@ function validateAdapterContracts(packet, packetPath, spec, errors, warnings, re
   const packetContract = packet.source_html?.adapter_contract;
   validateAdapterDecisionShape(packetContract, "source_html.adapter_contract", warnings, ready, { addIssue });
   validateAdapterSourceFiles({
-    decisions: packetContract,
+    decisions: buildState.report?.adapter_decisions || buildState.context?.adapter_decisions || packetContract,
     sourceRoot: resolveFromFile(packetPath, packet.source_html?.root),
     pages: packet.source_html?.pages || [],
     warnings,

@@ -52,11 +52,15 @@ the target Page Kit file, route, CPK `page_type`, and frontmatter projection.
 - `report.adapter_decisions`
 
 These fields are intentionally machine-readable so doctor can name unfinished
-work instead of relying on chat history:
+work instead of relying on chat history. After the build, record each true
+scalar choice with `record build --adapter-decision <key>=<value>`; put several
+choices in one comma-separated flag. A repeated flag keeps only the last list.
+`wrapper_policy` is selected at intake, not through this record flag.
 
 - `raw_html_conversion_status`: wrapper stripping, frontmatter, asset moves,
   script/style refs, CTA rewrites, route policy, and layout choice are still
-  `pending` until build records `completed` or `not_required`.
+  `pending` until build records `completed` or `not_required` with
+  `record build --adapter-decision raw_html_conversion_status=<value>`.
 - `source_asset_strategy`: page-kit campaigns should normally use
   `pagekit_campaign_asset_root`, where `src/<slug>/assets/*` publishes as
   `/<slug>/*`.

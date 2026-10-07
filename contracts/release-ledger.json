@@ -6716,6 +6716,102 @@
         }
       ],
       "entry_sha256": "b56a454c0160f664fd473cbc834146630c207885c2cbf5c2c8e37d294208da4e"
+    },
+    {
+      "id": "RL-0250",
+      "sequence": 239,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.7",
+      "changelog_sha256": "8c43339dac5e7fc33ad1bdff344c5db50b2e7b7f8a5d7b631f309676d70e79ce",
+      "agent_impact": "qa run takes --currency <code> to run QA in one currency of a multi-currency campaign: the run adds ?currency=<CODE> to each funnel entry URL it fetches and loads and to the first page load of each test-order path, keeping the existing query; later loads in that tab and a receipt reload carry none, because Campaign Cart keeps the currency for the tab's session. The code must be three letters and is upper-cased; anything else, an empty value included, is refused before any request. The flag takes one code per run (given twice, the last is used): run qa run once per currency. qa parity --currency, and --currency with --legacy-api-test-order, are refused. Read the run currency from evidence.currency on the entry page http:<page_id> assertion of the full verdict; the stored verdict removes URL queries. An entry URL that does not parse carries evidence.currency_not_applied with the reason instead. A run without the flag is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "The qa run usage line lists --currency <code>; keep the existing QA recommendation command set while next routes owed Polish and QA stages; show an open adapter-decision template in the build prompt and document the single-list behavior, local proof environment, and build fingerprint source in help."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe qa run --currency: one code per run, ?currency=<CODE> on the entry URL and on each test-order path's first load with the existing query kept, the three-letter refusal, the qa parity and legacy-order refusals, and evidence.currency (or evidence.currency_not_applied) on the entry page http row."
+        }
+      ],
+      "entry_sha256": "ca7d3c91091fd6c5c857820ffe3ea6b9a62a9f428c0eab26cbf0b1df098fc942"
+    },
+    {
+      "id": "RL-0251",
+      "sequence": 240,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.8",
+      "changelog_sha256": "57049338b1514529ff826c0477082d1f9e31de77f0a1308473ab0d7cafb8c01b",
+      "agent_impact": "Next asks for Polish when a local preview theme waiver or changed build leaves it owed, and asks for QA again when the last recorded QA build differs from the current output. A packet preview URL does not replace record deploy. Help invocations never journal, and later start is valid re-intake. Follow next before recording downstream work.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "next",
+          "summary": "Pick Polish after a local theme waiver or rebuild, and re-owe QA for a different build while still requiring recorded deploy."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Explain the deploy record and QA order after a changed build; list recordable values, explain wrapper_policy intake and read precedence, and document one-list behavior and the report-only write."
+        }
+      ],
+      "entry_sha256": "7ffb028e273e591d224628ceea618df57233286a273e7813ec3a1fb0e47479c4"
+    },
+    {
+      "id": "RL-0252",
+      "sequence": 241,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.9",
+      "changelog_sha256": "14a10e9c78458f100c075cff330d5a72364dcd5b00c720a3bf5809843269f542",
+      "agent_impact": "After a page-kit build, record the true scalar adapter choices in one record build --adapter-decision list; a repeated flag keeps only the last list. wrapper_policy remains an intake choice. Doctor reads the effective report, context, then packet conversion status for leftover wrappers and its adapter warnings name the recording command. The Build Packet and Build Context are not written by record build.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Check leftover source document wrappers against the effective report, context, then packet conversion status."
+        }
+      ],
+      "entry_sha256": "2604e105b3c308004f617b3fd839acc01f32e75dbe4ebf28324f23569aebc5db"
+    },
+    {
+      "id": "RL-0253",
+      "sequence": 242,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.10",
+      "changelog_sha256": "c693a2482b40ae5bc570dc591927fc60c2193d339a2c36df8489c885d0028fdd",
+      "agent_impact": "Theme inspection excludes decorative selector subjects from primary and CTA selection while keeping the primary and CTA matching used on main. An accent-only CTA fallback asks the operator to confirm its colour.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "Explain decorative subject exclusions, main-compatible primary and CTA matching, and the accent-only fallback warning."
+        }
+      ],
+      "entry_sha256": "446b7cc41c5af2352fecedebc543e9bb38a31b025afe2b60848d912e615f902b"
     }
   ]
 }

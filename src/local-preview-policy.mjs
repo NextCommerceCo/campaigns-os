@@ -75,6 +75,12 @@ export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = 
 
 // The polish gate folds the checkpoint in, so it is carried forward only when
 // whatever it owns from the checkpoint was carried forward too.
+export function polishCarriedForwardForLadder(report, gate) {
+  return gate?.status === CARRIED_FORWARD
+    && !report?.theme?.waiver
+    && !report?.stages?.polish?.evidence?.visual_review?.page_load;
+}
+
 export function applyLocalPreviewToPolishGate(gate, { packet, checkpointGate = null, baseUrl = null } = {}) {
   if (gate?.status !== "blocked" || !isLocalPreview(packet, { baseUrl })) return gate;
   const checkpointCarried = checkpointGate?.status === CARRIED_FORWARD;

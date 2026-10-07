@@ -2,6 +2,32 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.10] - 2026-10-07
+
+### Fixed
+
+Generated brand themes keep sale, discount, badge, rating, star, strike, border and announcement colours out of primary and CTA roles when those names describe the selector's subject. Brand and button names keep their role. Header, navigation and button colours continue to map as they do on main, including selectors after CSS at-rules. When a design has no CTA token or button background, the existing CTA fallback warning asks the operator to confirm an accent colour that may be decorative.
+
+## [1.54.0+agent.9] - 2026-10-07
+
+### Changed
+
+After a page-kit build, `record build --adapter-decision <key>=<value>[,<key>=<value>...]` records the choices that are true for that build on the Assembly Report. Put all pairs in one flag: a repeated flag keeps only the last list. The build prompt now asks for actual values instead of supplying a completed status. Help and the Build Packet list the allowed values. `wrapper_policy` is selected at intake with `prepare-build --wrapper-policy` or the source-html manifest option; `record build` refuses it and names those options. Doctor checks leftover document wrappers against the effective recorded conversion status, and its adapter warnings name the recording command. The packet and Build Context are unchanged by `record build`. `template_files_copied` remains object-valued proof outside the flag.
+
+## [1.54.0+agent.8] - 2026-10-07
+
+### Changed
+
+- `next` asks for Polish when a theme waiver or changed build leaves it owed on a local preview. It asks for deploy until that stage is recorded, even if the Build Packet already has a preview URL.
+- After a changed build, `next` asks for QA again when the last QA verdict names the old build, even if its recorded stage still says completed.
+- `--help` commands leave lifecycle and deviation journals untouched. Re-running `start` later in a campaign is treated as re-intake rather than a deviation.
+
+## [1.54.0+agent.7] - 2026-10-07
+
+### Added
+
+`qa run --currency <code>` runs QA in one of a campaign's currencies. The run adds `?currency=<CODE>` to each funnel's entry URL, so the HTTP fetch, the `--browser` load and the reported `entry_urls` carry it, and each test-order path's first page load (the checkout probe, or the entry page or checkout when that load comes first) carries it too. Campaign Cart keeps the currency for the rest of that tab's session, so the runner adds it to no other load (an upsell page or a receipt reload goes without it), while a later load of the entry URL still carries it because that URL is tagged. Query and tracking parameters already on the URL are kept. The code must be three letters and is upper-cased (`gbp` runs as `GBP`); anything else, including no value, an empty value or a list, is refused before any request. The flag takes one code per run; given twice, the last one is used. `qa parity --currency` is refused, and so is `--currency` with `--legacy-api-test-order`, whose direct API order would be placed in the default currency. Before this, a run could prove only the default currency, and testing another took a hand-made copy of the built site that forced the parameter. The stored verdict removes URL queries, so the currency is recorded as `evidence.currency` on the entry page's `http:<page_id>` assertion; an entry URL that does not parse gets `evidence.currency_not_applied` with the reason instead. The verdict schema is unchanged, and a run without the flag is unchanged.
+
 ## [1.54.0+agent.6] - 2026-10-07
 
 ### Fixed

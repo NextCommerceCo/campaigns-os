@@ -12,8 +12,10 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
+import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
 import { parseArgs, polishCaptureCommand } from "./cli.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
+import { buildReadabilityRecord } from "./polish-readability.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { readdirSync } from "node:fs";
@@ -216,6 +218,57 @@ test("record build stamps exactly doctor's output fingerprint and next advances 
     assert.equal(doctor(f).derived.build_output_fingerprint.status, "stale");
     recordOk(f, "build");
     assert.equal(doctor(f).derived.build_output_fingerprint.status, "pass");
+  });
+});
+
+test("local theme waiver leaves Polish owed before deploy", () => {
+  withLifecycle((f) => {
+    mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    const waiver = runCli(["theme", "waive", "--packet", f.packetPath, "--reason", "Starter palette approved for preview", "--waived-by", "Reviewer"], f.dir);
+    assert.equal(waiver.status, 0, waiver.stderr);
+    const stage = nextStage(f).stage;
+    assert.equal(stage, "polish");
+  });
+});
+
+test("a packet preview URL without record deploy still leaves deploy next", async () => {
+  await withLifecycle(async (f) => {
+    await deployReady(f);
+    mutateJson(f.packetPath, (packet) => { packet.deploy.preview_url = `http://127.0.0.1:4173/${f.slug}/`; });
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "pending");
+    assert.equal(nextStage(f).stage, "deploy");
+  });
+});
+
+test("an all-template zero-cell capture keeps the local deploy path open", async () => {
+  await withLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => {
+      packet.deploy.target = "local-serve";
+      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
+    });
+    recordThroughBuild(f);
+    mutateJson(f.reportPath, (report) => {
+      report.stages.polish.evidence = { visual_review: {
+        readability: buildReadabilityRecord({ buildFingerprint: report.stages.assembly.build_fingerprint, slug: f.slug, routes: [`/${f.slug}/`], cells: [] }),
+      } };
+    });
+    assert.equal(nextStage(f).stage, "deploy");
+    const polish = record(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.notEqual(polish.status, 0);
+    assert.match(polish.stderr, /polish\.hidden_eager_media\.no_capturable_routes/);
+    assert.equal(nextStage(f).stage, "deploy");
+    const site = await serveSite(f);
+    try {
+      await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
+      assert.equal(readJson(f.reportPath).stages.deploy.status, "completed");
+      assert.equal(nextStage(f).stage, "qa");
+    } finally {
+      await site.close();
+    }
   });
 });
 
@@ -747,6 +800,187 @@ test("record build --build-environment records stages.assembly.evidence.build_en
     // A later record build without the flag keeps what was recorded.
     recordOk(f, "build");
     assert.equal(readJson(f.reportPath).stages.assembly.evidence.build_environment, "development");
+  });
+});
+
+test("record build --adapter-decision writes the report and doctor reads its value", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    assert.ok(doctor(f).warnings.some((issue) => issue.code === "adapter.raw_html_conversion_status"));
+    const beforeContext = readFileSync(f.contextPath, "utf8");
+    const beforePacket = readFileSync(f.packetPath, "utf8");
+    const result = recordOk(f, "build", ["--adapter-decision", "raw_html_conversion_status=completed"]);
+    assert.deepEqual(result.written, [f.reportPath]);
+    assert.equal(readJson(f.reportPath).adapter_decisions.raw_html_conversion_status, "completed");
+    assert.equal(doctor(f).warnings.some((issue) => issue.code === "adapter.raw_html_conversion_status"), false);
+    assert.equal(readFileSync(f.contextPath, "utf8"), beforeContext);
+    assert.equal(readFileSync(f.packetPath, "utf8"), beforePacket);
+  });
+});
+
+test("record build refuses wrapper_policy because intake owns that choice", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
+    const before = snapshotFiles(f);
+    const result = record(f, "build", ["--adapter-decision", "wrapper_policy=not_required"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /wrapper_policy.*--wrapper-policy.*source-html manifest/i);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record build --adapter-decision keeps other report values and dry-run writes nothing", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    const report = readJson(f.reportPath);
+    report.adapter_decisions.frontmatter_policy = "not_required";
+    writeJson(f.reportPath, report);
+    const before = snapshotFiles(f);
+    const dry = record(f, "build", ["--adapter-decision", "layout_choice=page_layout", "--dry-run"]);
+    assert.equal(dry.status, 0, dry.stderr);
+    assert.deepEqual(snapshotFiles(f), before);
+    recordOk(f, "build", ["--adapter-decision", "layout_choice=page_layout"]);
+    const after = readJson(f.reportPath).adapter_decisions;
+    assert.equal(after.frontmatter_policy, "not_required");
+    assert.equal(after.layout_choice, "page_layout");
+  });
+});
+
+test("build packet documents every recordable adapter decision value", () => {
+  const doc = readFileSync(join(ROOT, "docs/build-packet.md"), "utf8");
+  const table = doc.match(/Required adapter decisions:\n\n([\s\S]*?)\n\nFresh build context/);
+  assert.ok(table);
+  const rows = [...table[1].matchAll(/^\| `([^`]+)` \| [^\n|]+ \| ([^\n]+) \|$/gm)];
+  const actual = Object.fromEntries(rows.map(([, key, values]) => [key, [...values.matchAll(/`([^`]+)`/g)].map((match) => match[1])]));
+  for (const [key, values] of Object.entries(ADAPTER_DECISION_SCALAR_VALUES)) {
+    assert.deepEqual(actual[key], values, key);
+  }
+});
+
+test("record build help names local proof mode and the build fingerprint source", () => {
+  const help = runCli(["--help"], ROOT);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /record build.*local proof mode records development/);
+  assert.match(help.stdout, /record build.*stages\.assembly\.build_fingerprint from doctor's derived\.build_output_fingerprint\.value/);
+  assert.match(help.stdout, /record build.*repeated flag keeps only the last/);
+});
+
+test("record build --adapter-decision refuses invalid values with the allowed values", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
+    const before = snapshotFiles(f);
+    const result = record(f, "build", ["--adapter-decision", "raw_html_conversion_status=done"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /raw_html_conversion_status.*pending.*in_progress.*completed.*not_required.*blocked/);
+    for (const value of ["layout_choice", "layout_choice=campaign_layout,", "layout_choice=campaign_layout,,frontmatter_policy=not_required"]) {
+      const malformed = record(f, "build", ["--adapter-decision", value]);
+      assert.notEqual(malformed.status, 0);
+      assert.match(malformed.stderr, /must be key=value|empty pair/);
+    }
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record build --adapter-decision refuses unknown keys with the allowed keys", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
+    const before = snapshotFiles(f);
+    const result = record(f, "build", ["--adapter-decision", "other_policy=unknown"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /other_policy.*raw_html_conversion_status.*layout_choice/);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record build --adapter-decision accepts several comma-separated pairs", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build", ["--adapter-decision", "raw_html_conversion_status=completed,frontmatter_policy=not_required,layout_choice=page_layout"]);
+    const decisions = readJson(f.reportPath).adapter_decisions;
+    assert.equal(decisions.raw_html_conversion_status, "completed");
+    assert.equal(decisions.frontmatter_policy, "not_required");
+    assert.equal(decisions.layout_choice, "page_layout");
+    assert.ok(validReport(readJson(f.reportPath)), JSON.stringify(validReport.errors));
+  });
+});
+
+test("record build --adapter-decision starts from context when report decisions are absent", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    const report = readJson(f.reportPath);
+    delete report.adapter_decisions;
+    writeJson(f.reportPath, report);
+    const contextDecisions = readJson(f.contextPath).adapter_decisions;
+    recordOk(f, "build", ["--adapter-decision", "layout_choice=page_layout"]);
+    assert.deepEqual(readJson(f.reportPath).adapter_decisions, { ...contextDecisions, layout_choice: "page_layout" });
+  });
+});
+
+test("record build --adapter-decision refuses duplicate keys within one list", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
+    const before = snapshotFiles(f);
+    const result = record(f, "build", ["--adapter-decision", "layout_choice=campaign_layout,layout_choice=page_layout"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /duplicate.*layout_choice/i);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+test("record build --adapter-decision rejects malformed input before any write", () => {
+  withLifecycle((f) => {
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
+    const before = snapshotFiles(f);
+    const cases = [
+      ["bare flag", [], null],
+      ["empty string", [""], null],
+      ["empty pair", ["layout_choice=page_layout,"], null],
+      ["missing equals", ["layout_choice"], null],
+      ["empty key", ["=page_layout"], null],
+      ["empty value", ["layout_choice="], "layout_choice"],
+      ["leading key whitespace", [" layout_choice=page_layout"], null],
+      ["trailing key whitespace", ["layout_choice =page_layout"], null],
+      ["inner key whitespace", ["layout_ choice=page_layout"], null],
+      ["leading value whitespace", ["layout_choice= page_layout"], "layout_choice"],
+      ["trailing value whitespace", ["layout_choice=page_layout "], "layout_choice"],
+      ["inner value whitespace", ["layout_choice=page_ layout"], "layout_choice"],
+      ["equals inside value", ["layout_choice=page_layout=extra"], "layout_choice"],
+      ["unknown key", ["other_policy=unknown"], null],
+      ...["__proto__", "constructor", "toString", "hasOwnProperty"].map((key) => [`inherited key ${key}`, [`${key}=unknown`], null]),
+      ["out of enum", ["layout_choice=invalid"], "layout_choice"],
+      ["duplicate key", ["layout_choice=page_layout,layout_choice=campaign_layout"], null],
+    ];
+    for (const [name, value, valueKey] of cases) {
+      const result = record(f, "build", ["--adapter-decision", ...value]);
+      assert.notEqual(result.status, 0, name);
+      assert.match(result.stderr, /allowed keys:.*raw_html_conversion_status.*layout_choice/is, name);
+      if (valueKey) assert.match(result.stderr, new RegExp(`${valueKey}.*campaign_layout.*page_layout`, "s"), name);
+      assert.deepEqual(snapshotFiles(f), before, name);
+    }
   });
 });
 
@@ -2800,6 +3034,22 @@ test("next answers qa when a qa_policy change after the QA verdict leaves build 
     });
     assert.deepEqual(inputCurrency(f).stages, { assembly: "current", polish: "current", qa: "owed" }, "setup: only QA is owed");
     assert.deepEqual(stageStatuses(f, ["assembly", "polish", "qa"]), { assembly: "completed", polish: "completed", qa: "completed" }, "setup: every recorded status stays completed");
+    assert.equal(nextOk(f).stage, "qa");
+  });
+});
+
+test("a changed build re-owes QA even when its old stage status remains completed", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    const before = readJson(f.reportPath).stages.qa.evidence.qc_build_fingerprint;
+    buildSite(f, " (new headline)");
+    recordOk(f, "build");
+    await capture(f);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    await recordDeploy(f);
+    const report = readJson(f.reportPath);
+    assert.notEqual(report.stages.assembly.build_fingerprint, before);
+    assert.equal(report.stages.qa.status, "completed");
     assert.equal(nextOk(f).stage, "qa");
   });
 });
