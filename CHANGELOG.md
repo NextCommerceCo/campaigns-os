@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.2] - 2026-10-07
+
+### Changed
+
+Repository CI and contributor tooling only; the published package is unchanged. CI runs the unit and browser lanes as two shards each on separate runners, and a newer push to a pull request cancels that pull request's older run; pushes to `main` always finish. `npm run check:fast` runs the checks of CI's types and contracts lanes and the three PR-only release gates against `origin/main` in under a minute, and `npm run hooks:install` installs it as a pre-push hook for the clone and its worktrees (`docs/small-pr-review-path.md`).
+
 ## [1.54.0+agent.1] - 2026-10-07
 
 ### Changed

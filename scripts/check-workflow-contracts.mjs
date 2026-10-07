@@ -168,11 +168,37 @@ function runsNpmScript(step, command) {
   return new RegExp(`^\\s*npm\\s+run(?:\\s+(?:--silent|-s))?\\s+${escaped}(?=\\s|$)`, "m").test(runText(step));
 }
 
+// The runners the matrix starts, as { lane, shard } pairs. A lane may be listed
+// in `lane:` or as `include:` entries (the form sharded lanes need).
+export function matrixRunners(matrix) {
+  const listed = Array.isArray(matrix?.lane) ? matrix.lane.map((lane) => ({ lane })) : [];
+  const included = Array.isArray(matrix?.include)
+    ? matrix.include.filter((entry) => typeof entry?.lane === "string").map(({ lane, shard }) => ({ lane, shard }))
+    : [];
+  return [...listed, ...included];
+}
+
+// A sharded lane must start exactly the runners 1/N..N/N: a missing shard
+// would silently drop its slice of the tests. Returns the shard total, or 0 for
+// an unsharded lane.
+function laneShardTotal(lane, runners, errors) {
+  const shards = runners.filter((runner) => runner.lane === lane).map((runner) => runner.shard);
+  if (shards.every((shard) => shard === undefined)) return 0;
+  const parsed = shards.map((shard) => /^([1-9]\d*)\/([1-9]\d*)$/.exec(String(shard ?? "")));
+  const total = parsed[0] ? Number(parsed[0][2]) : 0;
+  const indexes = parsed.map((match) => (match && Number(match[2]) === total ? Number(match[1]) : 0)).sort((a, b) => a - b);
+  if (!total || indexes.join(",") !== Array.from({ length: total }, (_, i) => i + 1).join(",")) {
+    errors.push(`${lane} must run every shard 1/N..N/N exactly once (found ${shards.map(String).join(", ")})`);
+  }
+  return total;
+}
+
 export function validateCiWorkflow(workflow) {
   const errors = [];
   if (!Object.hasOwn(workflow?.on ?? {}, "pull_request")) errors.push("CI must run on pull requests");
   const validate = workflow?.jobs?.validate;
-  const lanes = validate?.strategy?.matrix?.lane ?? [];
+  const runners = matrixRunners(validate?.strategy?.matrix);
+  const lanes = runners.map((runner) => runner.lane);
   for (const lane of ["types", "unit", "contracts", "browser"]) {
     if (!lanes.includes(lane)) errors.push(`CI is missing the ${lane} lane`);
   }
@@ -182,6 +208,18 @@ export function validateCiWorkflow(workflow) {
   for (const [lane, command] of [["types", "check:spec"], ["types", "check:pack"], ["unit", "check:tests"], ["contracts", "check:contracts"], ["browser", "check:browser"], ["browser", "check:consumer"]]) {
     const step = steps.find((s) => runsNpmScript(s, command) && s.if === `matrix.lane == '${lane}'`);
     if (!step || step["continue-on-error"]) errors.push(`${lane} must require ${command}`);
+  }
+  // A sharded lane's tests must take the runner's shard, and an unsharded
+  // lane's must not, or each runner would rerun (or skip) the whole lane.
+  for (const [lane, command] of [["unit", "check:tests"], ["browser", "check:browser"]]) {
+    const sharded = laneShardTotal(lane, runners, errors) > 0;
+    const step = steps.find((s) => runsNpmScript(s, command) && s.if === `matrix.lane == '${lane}'`);
+    const takesShard = runText(step).includes("--shard ${{ matrix.shard }}");
+    if (step && sharded !== takesShard) {
+      errors.push(sharded
+        ? `${lane} is sharded, so ${command} must pass --shard \${{ matrix.shard }}`
+        : `${lane} is not sharded, so ${command} must not pass --shard`);
+    }
   }
   const browserInstall = steps.findIndex((s) =>
     runText(s).includes("playwright install --with-deps chromium") &&
