@@ -1183,8 +1183,7 @@ Fixture essentials:
 
 Test Orders use **global test cards** that work on any live store and integration.
 They **bypass the payment gateway and create no transactions** (and no fulfillment),
-but each creates a real order record on the store. Ask the operator once, up front
-in your first turn, before placing test orders; then proceed. No permission flag,
+but each creates a real order record on the store. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing test orders; then proceed. No permission flag,
 packet policy, or merchant sandbox routing is required. They leave a small,
 easy-to-clean footprint: Test orders are deletable in bulk, and the resulting
 Customer record is reused (see the test email note below) rather than multiplied.
@@ -1710,7 +1709,7 @@ browser launch, prints the planned count, lists the planned paths (up to 40 ids;
 past that the remainder is counted, never cut silently, and `--select-package
 <ref[:qty]>` lists one tier's paths), and names the exact `--max-test-orders <count>` raise. For example, a linear three-offer graph has
 eight terminal paths plus the checkout baseline, so it requires
-`--max-test-orders 9`. Ask the operator once, up front in your first turn, before placing these real store order records; then proceed. The command has no permission flag.
+`--max-test-orders 9`. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing these real store order records; then proceed. The command has no permission flag.
 
 `--max-test-orders` bounds **planned paths**, which is not the same as real
 purchases. `--max-order-creations` bounds **actual order creations**, defaults to
@@ -1850,8 +1849,7 @@ and hardcoded phone numbers that differ from CampaignSpec `campaign.store_phone`
 If a static claim is intentionally preserved, wrap it in an element with
 `data-skip-market-lint="true"` and record why in the assembly report.
 
-Test orders need no allowlist and no permission flag; ask the operator once, up
-front, before the first one (each is a real order record). A separate concern is the
+Test orders need no allowlist and no permission flag; unless the operator has already said test orders are fine for this campaign, ask once, up front, before the first one (each is a real order record). A separate concern is the
 **SDK origin allowlist**: the Campaign Cart SDK must be allowed to load on the
 tested origin for the campaign API key, or runtime checks (and the live page
 itself) may not initialize. Localhost on any port is globally available as a
@@ -1866,8 +1864,7 @@ npm run campaigns-os -- qa policy set \
   --allowed-domains-confirmed true
 ```
 
-There is no permission flag for test orders; ask the operator once in your first
-turn before placing these real store order records, then run `--test-order
+There is no permission flag for test orders; unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing these real store order records, then run `--test-order
 <mode>`. The former `--test-orders-allowed` /
 `--sandbox-test-card-confirmed` flags and the `qa.test_orders_allowed` /
 `qa.sandbox_test_card_confirmed` packet fields they set were removed in

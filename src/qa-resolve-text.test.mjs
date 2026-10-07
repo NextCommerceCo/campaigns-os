@@ -20,9 +20,10 @@ test("ready_with_exceptions text identifies passing proof and every exception by
     __qaNodeTestHooks.output({
       verdict: {
         disposition: "ready_with_exceptions",
+        cause_summary: { total: 2, counts: { unknown: 2 }, comparison: "no_prior_run", surface: "qa" },
         exceptions: [
           { id: "contrast:checkout", page: "checkout", status: "warn", severity: "warn" },
-          { id: "review:receipt", page: "receipt", status: "manual_review", severity: "info" },
+          { id: "review:receipt", page: "receipt", status: "manual_review" },
         ],
       },
       counts: { warn: 1, manual_review: 1 },
@@ -36,7 +37,11 @@ test("ready_with_exceptions text identifies passing proof and every exception by
   const report = lines.join("\n");
   assert.match(report, /Disposition: ready_with_exceptions\nThis is a passing proof/);
   assert.match(report, /id: contrast:checkout; page: checkout.*severity: warn/);
-  assert.match(report, /id: review:receipt; page: receipt.*severity: info/);
+  assert.match(report, /id: review:receipt; page: receipt \(manual_review\)/);
+  assert.doesNotMatch(report, /severity: unknown/);
+  assert.doesNotMatch(report, /Causes: 2 findings/);
+  assert.equal((report.match(/contrast:checkout/g) || []).length, 1);
+  assert.equal((report.match(/review:receipt/g) || []).length, 1);
   assert.match(report, /Report these exceptions to the operator/);
 });
 

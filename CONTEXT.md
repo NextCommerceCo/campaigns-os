@@ -678,9 +678,9 @@ and your username. The patterns are the value, not the raw dumps."
 **Domain Expert**: "No. Campaigns OS should show QA as the Expected Proof Step.
 Browser QA still needs the deployed URL (and SDK-origin allowlist confirmation
 for non-localhost). Typed-card test orders use global test cards that bypass
-the gateway and move no money, but each leaves a real store order record. Ask
-the operator once, up front in your first turn, before placing them; then
-proceed. There is no permission flag."
+the gateway and move no money, but each leaves a real store order record.
+Unless the operator has already said test orders are fine for this campaign,
+ask once, up front, before placing them; then proceed. There is no permission flag."
 
 **Developer**: "Build and polish finished, but there is no QA verdict."
 

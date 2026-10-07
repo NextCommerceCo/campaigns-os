@@ -417,7 +417,7 @@ Build is not launch readiness. A complete run still needs:
   --preview-url http://localhost:<port>/<slug>/`); localhost on any port is a
   Development domain, so no SDK origin allowlist entry is needed there
 - Node/npm QA with a saved Map ID or local-spec Build Packet, and the tested URL
-- typed-card test-order proof via `--test-order common` (global test cards bypass the gateway and move no money, but each leaves a real store order record; ask the operator once, up front in your first turn, before placing test orders, then proceed; there is no permission flag)
+- typed-card test-order proof via `--test-order common` (global test cards bypass the gateway and move no money, but each leaves a real store order record; unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing test orders, then proceed; there is no permission flag)
 
 ```bash
 npx --no-install campaigns-os qa install-browser

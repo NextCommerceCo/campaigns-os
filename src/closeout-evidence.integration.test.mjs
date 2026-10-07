@@ -132,7 +132,7 @@ function target({ prefix = "closeout-evidence-", orderPathDepth = "common", muta
 
 // A synthesized verdict. Not copied from any run: no merchant, campaign, order
 // or customer value appears anywhere in this repository.
-function verdict({ runId, completedAt, orders = 1, assertions = [] }) {
+function verdict({ runId, completedAt, orders = 1, assertions = [], disposition = "ready", exceptions = [] }) {
   return {
     schema_version: "1.0",
     run_id: runId,
@@ -140,9 +140,9 @@ function verdict({ runId, completedAt, orders = 1, assertions = [] }) {
     public_route_slug: SLUG,
     started_at: completedAt,
     completed_at: completedAt,
-    disposition: "ready",
+    disposition,
     assertions,
-    exceptions: [],
+    exceptions,
     test_orders: Array.from({ length: orders }, (unused, index) => ({
       path: "accept",
       ok: true,
@@ -157,8 +157,8 @@ function verdict({ runId, completedAt, orders = 1, assertions = [] }) {
 }
 
 // The producer, writing real files exactly as `qa run` does.
-function runProducer({ dir, packetPath }, { runId, completedAt, orders = 1, assertions = [] }) {
-  const built = verdict({ runId, completedAt, orders, assertions });
+function runProducer({ dir, packetPath }, { runId, completedAt, orders = 1, assertions = [], disposition = "ready", exceptions = [] }) {
+  const built = verdict({ runId, completedAt, orders, assertions, disposition, exceptions });
   // What qa run records at run start: the spec material and the brief material.
   const inputs = currentPacketInputs({ packet: JSON.parse(readFileSync(packetPath, "utf8")), packetPath });
   built.spec_hash = inputs.specMaterial;
@@ -201,9 +201,24 @@ test("QA prompt asks once before test orders because they create store records",
   const fixture = target();
   const next = runNext(fixture.packetPath);
   assert.equal(next.stage, "qa");
-  assert.match(next.prompt, /Ask the operator once.*before placing test orders/);
+  assert.match(next.prompt, /ask once, up front, before placing test orders/);
+  assert.match(next.prompt, /Unless the operator has already said test orders are fine for this campaign/);
+  assert.doesNotMatch(next.prompt, /in your first turn/);
   assert.match(next.prompt, /real order record/);
   assert.doesNotMatch(next.prompt, /safe to run any time/);
+});
+
+test("QA with exceptions records the operator warning on its stage", () => {
+  const fixture = target();
+  runProducer(fixture, {
+    runId: "SYNTHRUN000000000000000001",
+    completedAt: "2026-09-11T02:00:00.000Z",
+    disposition: "ready_with_exceptions",
+    exceptions: [{ id: "contrast:checkout", page: "checkout", status: "warn", severity: "warn" }],
+  });
+  assert.deepEqual(readReport(fixture.reportPath).stages.qa.warnings, [
+    "QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass.",
+  ]);
 });
 
 test("a closed Run Record for the current verdict stops next demanding a second one", () => {
@@ -213,6 +228,8 @@ test("a closed Run Record for the current verdict stops next demanding a second 
   const before = runNext(fixture.packetPath);
   assert.equal(before.stage, "done", "the ladder must reach done once QA is recorded");
   assert.match(before.prompt, /record build --packet <path>/);
+  assert.doesNotMatch(before.prompt, /record.{0,3}deploy/);
+  assert.match(before.prompt, /For a hosted deploy, record the URL and stage outcome as the deploy prompt describes/);
   assert.doesNotMatch(before.prompt, /set its status back to "pending"/);
   assert.equal(action(before, "run_record_closeout")?.required, true, "with no record on disk, closeout stays required");
 
@@ -403,6 +420,11 @@ test("an old-format report is read, advised about, and migrated without loss", (
   // summary must be an advisory, never a new block on a finished campaign.
   const legacy = runNext(fixture.packetPath);
   assert.equal(legacy.stage, "done", "an unknown proof summary must not un-finish an existing campaign");
+  assert.match(legacy.prompt, /QA passed with exceptions;/);
+  assert.match(legacy.prompt, /Run Record is assembled and the session closes\. QA passed with exceptions/);
+  const nextActions = doctorPacket(fixture.packetPath).next.actions;
+  assert.ok(nextActions.some((entry) => /All stages are recorded as terminal; run/.test(entry)));
+  assert.ok(nextActions.some((entry) => /QA passed with exceptions/.test(entry)));
   const advisory = action(legacy, "purchase_proof_unknown");
   assert.ok(advisory, "unknown coverage is stated, not silently assumed");
   assert.notEqual(advisory.required, true);

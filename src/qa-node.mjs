@@ -200,7 +200,7 @@ Options:
   --test-order <off|common|checkout|accept|decline|both|full|tiers[:checkout|common|full]|accept-decline[-accept...]>
                                   Create Playwright typed-card test orders through the tested checkout page.
                                   Test cards bypass the gateway and create no transactions, but each creates a real
-                                  store order record. Ask the operator once in your first turn before placing orders.
+                                  store order record. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing orders.
                                   No permission flag or packet policy is needed. Default mode (bare
                                   --test-order, or "common") runs every actual terminal path when they fit under
                                   the cap (--max-test-orders, default 6). Above the cap it runs checkout,
@@ -1862,7 +1862,7 @@ function updateQaPolicy(args) {
   // the packet and before the packet write: refusals, so they journal nothing.
   const removedFlags = REMOVED_QA_POLICY_FLAGS.filter((flag) => flag in args);
   if (removedFlags.length) {
-    throw refused(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders use --test-order <mode>, with no permission flag; ask the operator once in your first turn before placing these real store order records). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth.`);
+    throw refused(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders use --test-order <mode>, with no permission flag; unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing these real store order records). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url, --order-path-depth.`);
   }
   // Validated with the other argv checks, before anything is written: a
   // refusal at this call site, like the removed-flag check above.
@@ -3588,14 +3588,17 @@ function printCauseLines(verdict) {
   // One formatter, shared with the doctor report: a prior record that exists
   // but has no usable QA verdict is not the same state as no prior record, and
   // the two commands must not describe it differently.
-  for (const line of formatCauseReportLines(verdict?.cause_summary)) console.log(line);
+  if (verdict?.disposition !== "ready_with_exceptions") {
+    for (const line of formatCauseReportLines(verdict?.cause_summary)) console.log(line);
+  }
   const exceptions = Array.isArray(verdict.exceptions) ? verdict.exceptions : [];
   if (!exceptions.length) return;
   console.log("Findings:");
   for (const exception of exceptions) {
     const tag = formatCauseTag(exception);
     if (verdict.disposition === "ready_with_exceptions") {
-      console.log(`- id: ${exception.id || "(none)"}; page: ${exception.page || "(none)"} (${exception.status || "unknown"}; severity: ${exception.severity || "unknown"})${tag ? ` ${tag}` : ""}`);
+      const severity = exception.severity ? `; severity: ${exception.severity}` : "";
+      console.log(`- id: ${exception.id || "(none)"}; page: ${exception.page || "(none)"} (${exception.status || "unknown"}${severity})${tag ? ` ${tag}` : ""}`);
     } else {
       const identity = [exception.id, exception.page].filter(Boolean).join(" @ ") || "(unidentified finding)";
       console.log(`- ${identity} (${exception.status || "unknown"})${tag ? ` ${tag}` : ""}`);
@@ -3652,8 +3655,8 @@ export function qaResolveNextProofLines(value) {
     `Next expected proof: ${qaRunCommandFromResolve(value)}`,
     `Entry URL(s) resolved: ${formatEntryUrlsForProof(value.entry_urls)}`,
     value.local_spec_id
-      ? "Typed-card test cards create no transactions but leave real store order records. Ask the operator once in your first turn before placing them; there is no permission flag. Local-spec QA stays in the repository."
-      : "Typed-card test cards create no transactions but leave real store order records. Ask the operator once in your first turn before placing them; there is no permission flag. QA publishes to the portal by default.",
+      ? "Typed-card test cards create no transactions but leave real store order records. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing them; there is no permission flag. Local-spec QA stays in the repository."
+      : "Typed-card test cards create no transactions but leave real store order records. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing them; there is no permission flag. QA publishes to the portal by default.",
   ];
 }
 
