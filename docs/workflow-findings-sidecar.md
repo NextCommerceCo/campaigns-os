@@ -99,9 +99,9 @@ interval once. Authentication prompts are outside lifecycle capture by policy.
 
 On a non-zero doctor or QA exit, optional `finding_codes` is an array of at most
 five distinct string codes in first-seen order; null is invalid. Codes belong
-to the phase where they were recorded. When a legacy Tier-2 entry has only
-invocation-level codes and their phase is unknown, aggregation assigns them to
-the last phase. A successful stage has no finding codes. The optional run-level
+to the phase active when they were recorded. Codes recorded outside any phase,
+and codes in a legacy entry, are invocation-level only; aggregation assigns them
+to the entry's last phase. A successful stage has no finding codes. The optional run-level
 `needs_input_count` and `failure_count` are non-negative integer counts; null is
 invalid and absence means a legacy record did not report the count.
 `needs_input_count` counts journal entries with exit 2 and `failure_count`

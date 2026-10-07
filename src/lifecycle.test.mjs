@@ -120,11 +120,23 @@ test("doctor failure journals the first five distinct codes; success has none", 
   assert.equal(Object.hasOwn(passed.lifecycle, "finding_codes"), false);
 });
 
-test("Tier-2 start attributes doctor codes only to prepare-build", async () => {
+test("codes recorded outside any phase stay invocation-level; aggregation places them on the last phase", async () => {
   const { lifecycle } = await withCommandLifecycle({ command: "start", runId: "R", clock: fakeClock(), readExitStatus: () => 2 }, async (recorder) => {
     await recorder.time("resolve-spec", async () => {});
     await recorder.time("prepare-build", async () => {});
-    recorder.recordFindingCodes(["doctor.blocked", "doctor.blocked", "doctor.missing"]);
+    recorder.recordFindingCodes(["doctor.blocked"]);
+  });
+  assert.deepEqual(lifecycle.finding_codes, ["doctor.blocked"]);
+  assert.equal(lifecycle.stages.some((stage) => Object.hasOwn(stage, "finding_codes")), false);
+  const stages = aggregateLifecycleForRun({ entries: [lifecycle] }, "R").stages;
+  assert.equal(Object.hasOwn(stages[0], "finding_codes"), false);
+  assert.deepEqual(stages[1].finding_codes, ["doctor.blocked"]);
+});
+
+test("Tier-2 start attributes doctor codes only to prepare-build", async () => {
+  const { lifecycle } = await withCommandLifecycle({ command: "start", runId: "R", clock: fakeClock(), readExitStatus: () => 2 }, async (recorder) => {
+    await recorder.time("resolve-spec", async () => {});
+    await recorder.time("prepare-build", async () => recorder.recordFindingCodes(["doctor.blocked", "doctor.blocked", "doctor.missing"]));
   });
   assert.deepEqual(lifecycle.stages.map((stage) => stage.name), ["resolve-spec", "prepare-build"]);
   assert.equal(Object.hasOwn(lifecycle.stages[0], "finding_codes"), false);

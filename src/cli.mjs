@@ -1022,9 +1022,14 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     args.spec = resolved.specPath;
     // `command` rides along for the doctor sidecar's generated_by stamp when
     // the mode runs doctor (#312): threaded from here, not re-read from argv.
-    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, command, specInput, publishSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag }));
+    // Doctor runs inside prepare-build, so its codes are recorded while that
+    // phase is active and attach to it.
+    const result = await recorder.time("prepare-build", async () => {
+      const prepared = await prepareBuild(args, { ...mode, command, specInput, publishSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag });
+      if (prepared.doctor && !prepared.doctor.ok) recorder.recordFindingCodes(prepared.doctor.errors?.map((issue) => issue.code));
+      return prepared;
+    });
     result.spec_source = resolved;
-    if (result.doctor && !result.doctor.ok) recorder.recordFindingCodes(result.doctor.errors?.map((issue) => issue.code));
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
     return;

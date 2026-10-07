@@ -205,7 +205,9 @@ export function createLifecycleRecorder(clock = defaultClock) {
       }
     },
     recordFindingCodes(codes) {
-      const phase = activeStages.at(-1) ?? stages.at(-1);
+      // Codes attach to the phase active when they are recorded; outside any
+      // phase they stay invocation-level only.
+      const phase = activeStages.at(-1);
       for (const code of Array.isArray(codes) ? codes : []) {
         if (typeof code !== "string") continue;
         if (!findingCodes.includes(code) && findingCodes.length < 5) findingCodes.push(code);
