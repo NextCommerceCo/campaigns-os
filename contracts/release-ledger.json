@@ -6532,13 +6532,40 @@
       "entry_sha256": "5ab33ca302fa671ac78c3e9b752ed7b251e756b05256f97ff75acd08c58ad5ba"
     },
     {
-      "id": "RL-0247",
+      "id": "RL-0246",
       "sequence": 235,
       "date": "2026-10-07",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.54.0+agent.3",
-      "changelog_sha256": "cfc67c7698cab1cdbe6001b7fad55f4048affca219a865de87c06992e412106f",
+      "changelog_section": "1.54.0+agent.2",
+      "changelog_sha256": "55155add247bb47b07b43252e374b504ac85aef51f6b3315b8b21e85c615df15",
+      "agent_impact": "None for package consumers: this changes repository CI and contributor scripts only. A contributor can run npm run check:fast before pushing, or install it as a pre-push hook with npm run hooks:install; CI runs the same gates on every pull request.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/ci.yml",
+          "surface_entry": null,
+          "summary": "Run the unit and browser lanes as two shards each on separate runners, and cancel a pull request's older run when a newer push arrives; pushes to main are never cancelled."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Add the contributor scripts check:fast and hooks:install; exports, bin, files and dependencies are unchanged."
+        }
+      ],
+      "entry_sha256": "ea7360b560411019e58bf65a1b389cbed5ec9589b7da6f09b7cee1b08b46aed8"
+    },
+    {
+      "id": "RL-0247",
+      "sequence": 236,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.4",
+      "changelog_sha256": "e5b75c807340f73487315c49cb843a17ff574e5ca00d86e92e230c6fc4b00db1",
       "agent_impact": "Treat ready_with_exceptions as passing QA proof and report every exception to the operator without clearing or waiving it or changing markup just to make it pass. Reopen work through the existing record commands, not by editing stage status. A recorded theme waive needs --waived-by with a named human; qa run --theme-waive is one-run only. Ask the operator once in the first turn before typed-card test orders because they create real store order records, although no transaction or money movement occurs. No command, gate, flag or verdict-schema behavior changes.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6646,7 +6673,7 @@
           "summary": "Tell the operator that completed QA with exceptions is passing proof and to report the exceptions."
         }
       ],
-      "entry_sha256": "b5854de23c904d158f4efb51c0158fdbc5abaf33c9c5fd1394caa11be3137a99"
+      "entry_sha256": "ee8d74d82889a063dcd040bdc771732b16db28cc4410bcfc33ef4609b2cb7ff1"
     }
   ]
 }

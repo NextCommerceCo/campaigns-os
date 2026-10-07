@@ -2,13 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.54.0+agent.3] - 2026-10-07
+## [1.54.0+agent.4] - 2026-10-07
 
 ### Fixed
 
 `qa run` now calls `ready_with_exceptions` a passing proof, prints each exception's id, page and severity, and tells the agent to report exceptions to the operator. `next` gives the same guidance when QA completed with exceptions.
 
 The completed-pipeline prompt and Build Packet guide now use the existing `record` commands to repeat work instead of telling agents to edit stage status. The starter-palette advisory prints the named-human argument required by a recorded `theme waive`, while help and QA guidance distinguish it from the one-run `--theme-waive` form. QA prompts, help, and guides ask the operator once, up front, before typed-card test orders, which leave real order records on the store even though no transaction or money movement occurs. `ready` and `blocked` QA text keeps its existing finding format.
+
+## [1.54.0+agent.2] - 2026-10-07
+
+### Changed
+
+Repository CI and contributor tooling only; the published package is unchanged. CI runs the unit and browser lanes as two shards each on separate runners, and a newer push to a pull request cancels that pull request's older run; pushes to `main` always finish. `npm run check:fast` runs the checks of CI's types and contracts lanes and the three PR-only release gates against `origin/main` in under a minute, and `npm run hooks:install` installs it as a pre-push hook for the clone and its worktrees (`docs/small-pr-review-path.md`).
+
+## [1.54.0+agent.1] - 2026-10-07
+
+### Changed
+
+- When `start`, `prepare-build` or `build` refuses to overwrite a report that already carries stage evidence, the message now says that, if the brief or CampaignSpec changed, `record brief` or `record spec` binds it while keeping that evidence. Before, it offered only `--force`, which resets the recorded stages.
+- README: the build steps and the `record` command list now include `record theme`, `record deploy` (bound to the build it probed), `record brief` and `record spec`. The SDK examples take `--target-sdk <x.y.z>` instead of 0.4.38. The `tooling status` note no longer says npm has no dist-tag, the Node floor reads 20.19.0 as in `engines`, and `--force` is described as moving completed records to stage history.
+- `docs/quickstart.md`: a QA run against a local-address base URL keeps its verdict local by default, whatever the telemetry consent.
 
 ## [1.54.0] - 2026-10-07
 
