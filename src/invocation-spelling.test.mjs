@@ -114,6 +114,22 @@ test("the agent context asks about test orders once, up front, instead of callin
   assert.deepEqual(silent, [], "tell the agent to ask once, up front, unless the operator already said test orders are fine");
 });
 
+test("published and runtime test-order guidance does not call store orders approval-free", () => {
+  const guidance = [
+    "README.md",
+    "CONTEXT.md",
+    "docs/quickstart.md",
+    "docs/campaigns-os-build-flow.md",
+    "docs/qa-and-test-orders.md",
+    "src/qa-node.mjs",
+    "src/qa-browser.mjs",
+  ];
+  const approvalFree = /no permission\/approval needed|no approval (?:is needed|needed|step is involved|gate)|need no merchant setup or approval|no transactions\/no permission gate/gi;
+  const claims = guidance.flatMap((path) => [...readFileSync(join(ROOT, path), "utf8").matchAll(approvalFree)]
+    .map((match) => `${path}: ${match[0]}`));
+  assert.deepEqual(claims, []);
+});
+
 // The printed prefix cannot show this: from a checkout it is the bare form
 // wherever ROOT points. The install mode is decided from ROOT, so ROOT itself
 // is pinned to the package root.

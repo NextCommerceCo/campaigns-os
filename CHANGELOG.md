@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.3] - 2026-10-07
+
+### Fixed
+
+`qa run` now calls `ready_with_exceptions` a passing proof, prints each exception's id, page and severity, and tells the agent to report exceptions to the operator. `next` gives the same guidance when QA completed with exceptions.
+
+The completed-pipeline prompt and Build Packet guide now use the existing `record` commands to repeat work instead of telling agents to edit stage status. The starter-palette advisory prints the named-human argument required by a recorded `theme waive`, while help and QA guidance distinguish it from the one-run `--theme-waive` form. QA prompts, help, and guides ask the operator once, up front, before typed-card test orders, which leave real order records on the store even though no transaction or money movement occurs. `ready` and `blocked` QA text keeps its existing finding format.
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).

@@ -22,9 +22,10 @@ The deterministic decision point that blocks `next polish|deploy|qa` and
 `qa run` when theme inspect proved a brand theme is generatable, the campaign
 ships commerce pages, and the brand layer is neither applied (after
 `next-core.css`) nor explicitly waived. Evaluated once in the doctor
-(`derived.theme_gate`) and consumed identically by `next` and QA. A waiver
-(`theme waive` / `--theme-waive`) is the only sanctioned bypass and is recorded
-on the Assembly Report with a reason.
+(`derived.theme_gate`) and consumed identically by `next` and QA. A waiver is
+the only sanctioned bypass: `theme waive --reason "<why>" --waived-by "<named
+human>"` records it on the Assembly Report; `qa run --theme-waive "<reason>"`
+waives the gate for that one run only.
 _Avoid_: advisory warning, recommendation, soft check
 
 **Template Brand Contract**:
@@ -676,8 +677,10 @@ and your username. The patterns are the value, not the raw dumps."
 
 **Domain Expert**: "No. Campaigns OS should show QA as the Expected Proof Step.
 Browser QA still needs the deployed URL (and SDK-origin allowlist confirmation
-for non-localhost), but typed-card test orders have no approval gate — they use
-global test cards that bypass the gateway; depth is the only control."
+for non-localhost). Typed-card test orders use global test cards that bypass
+the gateway and move no money, but each leaves a real store order record. Ask
+the operator once, up front in your first turn, before placing them; then
+proceed. There is no permission flag."
 
 **Developer**: "Build and polish finished, but there is no QA verdict."
 

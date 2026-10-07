@@ -197,12 +197,23 @@ function readReport(reportPath) {
   return JSON.parse(readFileSync(reportPath, "utf8"));
 }
 
+test("QA prompt asks once before test orders because they create store records", () => {
+  const fixture = target();
+  const next = runNext(fixture.packetPath);
+  assert.equal(next.stage, "qa");
+  assert.match(next.prompt, /Ask the operator once.*before placing test orders/);
+  assert.match(next.prompt, /real order record/);
+  assert.doesNotMatch(next.prompt, /safe to run any time/);
+});
+
 test("a closed Run Record for the current verdict stops next demanding a second one", () => {
   const fixture = target();
   runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z" });
 
   const before = runNext(fixture.packetPath);
   assert.equal(before.stage, "done", "the ladder must reach done once QA is recorded");
+  assert.match(before.prompt, /record build --packet <path>/);
+  assert.doesNotMatch(before.prompt, /set its status back to "pending"/);
   assert.equal(action(before, "run_record_closeout")?.required, true, "with no record on disk, closeout stays required");
 
   const record = writeRunRecord(fixture, "run_synth_0000000001");

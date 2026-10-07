@@ -663,6 +663,9 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
   // command, so a recovery reads the same artifacts the recommendation did.
   const packetRef = `${derived.packet_path || "<packet>"}${sidecarArgs}`;
   const actions = doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate, packetRef });
+  if (picked.stage === "done" && report?.stages?.qa?.status === "completed_with_warnings") {
+    actions.push("QA passed with exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass.");
+  }
   const deployStatus = String(report?.stages?.deploy?.status || "");
   const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
     || Boolean(deployUrlFromReportOutputs(report));
