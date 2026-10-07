@@ -6,9 +6,9 @@ Notable supported-surface changes are recorded here.
 
 ### Changed
 
-Run Records now carry the optional `qa_verdict_publish.reason` from the QA publish decision and `closed_by` from the command path that closed the record. The reason distinguishes loopback, portal managed, consent, flag, default, and local spec decisions; the closer distinguishes `run end`, QA auto-end, stale sweep, and direct `run-record`. The unused `agent_usage` field and its `--agent-*` input flags are removed. Older records with `agent_usage` remain readable as local JSON, but fail current Run Record validation if re-written.
+Run Records now carry the optional `qa_verdict_publish.reason` from the QA publish decision and `closed_by` from the command path that closed the record. The reason distinguishes loopback, portal managed, consent, flag, default, and local spec decisions; the closer distinguishes `run end`, QA auto-end, stale sweep, and direct `run-record`. The unused `agent_usage` field and its `--agent-*` input flags are removed. Re-emitting an older record with `agent_usage` replaces it with a fresh record without carrying forward its prior remit state. `qa publish` posts its verdict but cannot stamp that older record as published.
 
-QA observations in a Run Record now carry the verdict's `run_id`, the build fingerprint recorded for that verdict, and whether it differs from the current recorded build. Currency is unknown when either fingerprint is missing or the report's QA stage belongs to a different verdict.
+QA observations in a Run Record now carry the verdict's `run_id`, the build fingerprint recorded for that verdict, and whether it differs from the build recorded in the Assembly Report. A rebuild without `record build` still reads `stale: false` when those recorded fingerprints match; doctor's `built_output.fingerprint_stale` checks the output on disk. Currency is unknown when either fingerprint is missing or the report's QA stage belongs to a different verdict.
 
 Lifecycle stages now carry prompt `wait_ms` and, on a blocked doctor or QA exit, up to five distinct `finding_codes`. Run lifecycle separates exit 2 invocations in `needs_input_count` from other non-zero exits in `failure_count`. Legacy journal entries keep wait unknown, while new commands without prompts record zero. Duration continues to include prompt wait.
 

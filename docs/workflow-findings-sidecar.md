@@ -69,10 +69,12 @@ When a QA verdict is present, `observations.qa.verdict_run_id` names the same
 verdict that supplies `disposition`. `build_fingerprint` is the QA stage's
 recorded build fingerprint only when the Assembly Report binds that stage to
 the same verdict; otherwise it is `null`. `stale` compares that fingerprint
-with the Assembly Report's current build fingerprint using the same comparison
+with the Assembly Report's recorded build fingerprint using the same comparison
 as `next`: `true` when they differ, `false` when they match, and `null` when
-either fingerprint is unknown. All three fields are optional for older records;
-without a verdict, `observations.qa` is absent.
+either fingerprint is unknown. A rebuild without `record build` therefore reads
+`stale: false` when the recorded fingerprints still match; doctor's
+`built_output.fingerprint_stale` checks the output on disk. All three fields
+are optional for older records; without a verdict, `observations.qa` is absent.
 
 ### Run identity
 

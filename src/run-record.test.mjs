@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -43,6 +43,14 @@ function withTempDir(run) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+function cliResult(dir, argv) {
+  return spawnSync(process.execPath, [CLI, ...argv], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" },
+  });
 }
 
 function minimalRecord(overrides = {}) {
@@ -1045,6 +1053,102 @@ test("CLI: prepare-build sub-phases flow through the journal into the aggregated
     assert.ok(stageNames.includes("prepare-build:prepare-build"), JSON.stringify(stageNames));
     assert.equal(validateRunRecord(out.record).ok, true);
   });
+});
+
+test("CLI: blocked qa run journals verdict finding codes", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    const packet = JSON.parse(readFileSync(join(ROOT, "examples/build-packet.basic.json"), "utf8"));
+    packet.assembly.target_repo = ".";
+    writeFileSync(packetPath, `${JSON.stringify(packet)}\n`);
+    cpSync(join(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+    mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+    cpSync(join(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json"),
+      join(dir, ".campaign-runtime/assembly-report.json"));
+    const journal = join(dir, "lifecycle.jsonl");
+    const result = cliResult(dir, ["qa", "run", "--packet", packetPath,
+      "--base-url", "http://127.0.0.1:1/", "--no-post-verdict",
+      "--no-remit", "--json", "--lifecycle-journal", journal]);
+    assert.equal(result.status, 4, result.stderr);
+    const verdict = JSON.parse(result.stdout).verdict;
+    assert.equal(verdict.disposition, "blocked");
+    const expected = [...new Set(verdict.assertions
+      .filter((item) => item.status === "fail" || item.severity === "blocker")
+      .map((item) => item.evidence?.code || item.id)
+      .filter(Boolean))].slice(0, 5);
+    assert.ok(expected.length > 0, "fixture must yield a coded blocked assertion");
+    const { entries } = readLifecycleJournal(journal);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].command, "qa");
+    assert.deepEqual(entries[0].finding_codes, expected);
+  });
+});
+
+test("CLI: start journals doctor errors on its prepare-build phase", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    cpSync(join(ROOT, "examples/target-page-kit"), target, { recursive: true });
+    const journal = join(dir, "lifecycle.jsonl");
+    const result = cliResult(dir, ["start",
+      "--spec", join(ROOT, "examples/campaignspec.v42.basic.json"),
+      "--source", join(ROOT, "examples/source-html"),
+      "--target", target, "--template-family", "olympus",
+      "--no-run-session", "--no-remit", "--json", "--lifecycle-journal", journal]);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.doctor.ok, false, result.stderr);
+    const expected = [...new Set(output.doctor.errors.map((issue) => issue.code).filter(Boolean))].slice(0, 5);
+    assert.ok(expected.length > 0, "fixture must yield a coded doctor error");
+    const { entries } = readLifecycleJournal(journal);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].command, "start");
+    assert.deepEqual(entries[0].stages.find((stage) => stage.name === "prepare-build").finding_codes, expected);
+  });
+});
+
+test("CLI: interactive findings add journals time spent at its prompt", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-findings-wait-"));
+  try {
+    const journal = join(dir, "lifecycle.jsonl");
+    // Python's standard-library pty gives the CLI a real TTY without a socket
+    // or a production input seam. Delay the one answer until the prompt appears.
+    const ptyDriver = `import os, pty, sys, time
+pid, master = pty.fork()
+if pid == 0:
+    os.execv(sys.argv[1], sys.argv[1:])
+seen = b''
+answered = False
+while True:
+    try:
+        chunk = os.read(master, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    seen += chunk
+    if not answered and b'Summary:' in seen:
+        time.sleep(0.05)
+        os.write(master, b'A prompted finding\\n')
+        answered = True
+_, status = os.waitpid(pid, 0)
+sys.stdout.buffer.write(seen)
+sys.exit(os.waitstatus_to_exitcode(status))`;
+    const result = spawnSync("python3", ["-c", ptyDriver, process.execPath, CLI,
+      "findings", "add", "--stage", "doctor", "--kind", "friction",
+      "--details", "Prompt timing", "--no-remit", "--lifecycle-journal", journal], {
+      cwd: dir,
+      env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" },
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /Summary:/);
+    const { entries } = readLifecycleJournal(journal);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].command, "findings");
+    assert.ok(entries[0].wait_ms > 0, JSON.stringify(entries[0]));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("CLI: lifecycle persists on the THROW path (failure telemetry is captured, not dropped)", () => {
