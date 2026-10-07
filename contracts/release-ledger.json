@@ -6532,13 +6532,40 @@
       "entry_sha256": "5ab33ca302fa671ac78c3e9b752ed7b251e756b05256f97ff75acd08c58ad5ba"
     },
     {
-      "id": "RL-0252",
+      "id": "RL-0246",
       "sequence": 235,
       "date": "2026-10-07",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.54.0+agent.8",
-      "changelog_sha256": "00c71d1c2e23e9099d633d17e45c05aa5ede88c08c5dcce1a7da126dc7d0fd53",
+      "changelog_section": "1.54.0+agent.2",
+      "changelog_sha256": "55155add247bb47b07b43252e374b504ac85aef51f6b3315b8b21e85c615df15",
+      "agent_impact": "None for package consumers: this changes repository CI and contributor scripts only. A contributor can run npm run check:fast before pushing, or install it as a pre-push hook with npm run hooks:install; CI runs the same gates on every pull request.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/ci.yml",
+          "surface_entry": null,
+          "summary": "Run the unit and browser lanes as two shards each on separate runners, and cancel a pull request's older run when a newer push arrives; pushes to main are never cancelled."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Add the contributor scripts check:fast and hooks:install; exports, bin, files and dependencies are unchanged."
+        }
+      ],
+      "entry_sha256": "ea7360b560411019e58bf65a1b389cbed5ec9589b7da6f09b7cee1b08b46aed8"
+    },
+    {
+      "id": "RL-0252",
+      "sequence": 236,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.9",
+      "changelog_sha256": "89407537b3fa0ec0fb48300a1d81ff7e87a4c7dfbae515e1935d9d4dcc1852a0",
       "agent_impact": "After a page-kit build, use record build --adapter-decision with one comma-separated list of scalar key=value choices to write Assembly Report adapter decisions. Unknown keys, invalid values and duplicate keys are refused. The object-valued template_files_copied remains outside this flag and keeps its existing proof and doctor checks. The Build Context and Build Packet are not written by this option.",
       "compatibility": "additive",
       "migration": "none",
@@ -6556,7 +6583,7 @@
           "summary": "Tell builders to record scalar adapter decisions through record build, explain its report-only write and the object-valued template_files_copied exception, and update the record build reference."
         }
       ],
-      "entry_sha256": "2c50c8588d7d2021ad9600c8f3f0b1197caf2d0d5a53c27d6c6d4871c5a8942d"
+      "entry_sha256": "db94b59d156db328cf554e8b6e9a262409eebaf30593fcc592a5677a98e02f9b"
     }
   ]
 }
