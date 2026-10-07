@@ -6532,13 +6532,40 @@
       "entry_sha256": "5ab33ca302fa671ac78c3e9b752ed7b251e756b05256f97ff75acd08c58ad5ba"
     },
     {
-      "id": "RL-0249",
+      "id": "RL-0246",
       "sequence": 235,
       "date": "2026-10-07",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.54.0+agent.5",
-      "changelog_sha256": "74f74828a01988463eaa4c4e3168ade8b899e1f10b33e26a24faaf39a67216e3",
+      "changelog_section": "1.54.0+agent.2",
+      "changelog_sha256": "55155add247bb47b07b43252e374b504ac85aef51f6b3315b8b21e85c615df15",
+      "agent_impact": "None for package consumers: this changes repository CI and contributor scripts only. A contributor can run npm run check:fast before pushing, or install it as a pre-push hook with npm run hooks:install; CI runs the same gates on every pull request.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/ci.yml",
+          "surface_entry": null,
+          "summary": "Run the unit and browser lanes as two shards each on separate runners, and cancel a pull request's older run when a newer push arrives; pushes to main are never cancelled."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Add the contributor scripts check:fast and hooks:install; exports, bin, files and dependencies are unchanged."
+        }
+      ],
+      "entry_sha256": "ea7360b560411019e58bf65a1b389cbed5ec9589b7da6f09b7cee1b08b46aed8"
+    },
+    {
+      "id": "RL-0249",
+      "sequence": 236,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.6",
+      "changelog_sha256": "54c316880e1bbe5681b5c3192fac8092d2ca7f93dbaf43104e4549c7e1dc04f0",
       "agent_impact": "Doctor blocks receipt order lines hidden by cart state, including when the CampaignSpec alone identifies the receipt page. When a Build Packet, CampaignSpec, or declared environment variable supplies the campaign API key, doctor compares it with the built key even when all pages agree. Correct these findings before test orders.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6550,7 +6577,7 @@
           "summary": "Compare the built API key with the packet, spec, or declared environment key while collecting the existing campaign identity gate."
         }
       ],
-      "entry_sha256": "002782b6f43ff72073794db56da552355322f6dfa8aad7f0ac0469dbedb0dfd0"
+      "entry_sha256": "df75ccb33d1d425e4f5cfcc478a72a9d594c544fa8d3e920ed6ae42c0c081bc1"
     }
   ]
 }
