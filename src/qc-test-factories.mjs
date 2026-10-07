@@ -442,7 +442,7 @@ export function installQaStage(fixture, {
     outputs: [verdictPath, fixture.qaSidecarPath],
     commands: ["campaigns-os qa run"],
     blockers: [],
-    warnings: ["QA completed with explicitly attributed exceptions; inspect the verdict artifact."],
+    warnings: ["QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass."],
     completed_at: measuredAt,
     identity: { verdict_run_id: QA_RUN_ID },
     evidence,

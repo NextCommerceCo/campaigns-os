@@ -70,12 +70,21 @@ export const CART_ENTRY_ROUTE_ATTRIBUTE = "data-next-url";
 // preventDefault() unconditionally, so its href never navigates, and it
 // resolves the attribute against the origin (campaign-cart url-utils), not the
 // document base. Without the attribute such a control adds to the cart and
-// stays put — no route. Anywhere else the SDK attribute has no navigation
+// stays put — no route. A control matching one of `declaredRoutes` (each
+// `{ selector, url }`, a route the page declares rather than one the control
+// carries: the SDK checkout form's submit button and an upsell's accept /
+// decline actions) goes to that url and nothing else, because the SDK
+// handles the submission or the click itself, so an href="#" or the form's
+// action never navigates. Anywhere else the SDK attribute has no navigation
 // semantics: an HTML anchor's own resolved href (native, so a <base href> is
 // honoured), then an href attribute, then `data-href`, then a wrapping form's
-// action. Only spellings with real navigation semantics count — an attribute
-// the SDK does not declare is not a route.
-export function cartEntryHrefFor(element, { cartEntrySelector, cartEntryRouteAttribute, origin, baseHref }) {
+// action — for that form's submit button only, and never inside a form
+// matching `checkoutFormSelector`: the SDK checkout form, which the SDK
+// submits itself, or, on a checkout or upsell / downsell page, every form,
+// since there the only form-borne route is the one in `declaredRoutes`. Only
+// spellings with real navigation semantics count — an attribute the SDK does
+// not declare is not a route.
+export function cartEntryHrefFor(element, { cartEntrySelector, cartEntryRouteAttribute, declaredRoutes = [], checkoutFormSelector = null, origin, baseHref }) {
   if (!element || typeof element.getAttribute !== "function") return null;
   if (typeof element.matches === "function" && element.matches(cartEntrySelector)) {
     const sdkRoute = String(element.getAttribute(cartEntryRouteAttribute) || "").trim();
@@ -88,12 +97,26 @@ export function cartEntryHrefFor(element, { cartEntrySelector, cartEntryRouteAtt
       return null;
     }
   }
+  const declared = typeof element.matches === "function"
+    ? (declaredRoutes || []).find((route) => route?.selector && element.matches(route.selector))
+    : null;
+  if (declared) {
+    try {
+      return new URL(declared.url, baseHref).href;
+    } catch {
+      return null;
+    }
+  }
   // An HTML anchor resolves its own href (an SVG <a> exposes an object, not a
   // string, and falls through to the attribute reading).
-  if (String(element.tagName || "").toUpperCase() === "A" && typeof element.href === "string" && element.href) return element.href;
+  const tag = String(element.tagName || "").toUpperCase();
+  if (tag === "A" && typeof element.href === "string" && element.href) return element.href;
+  // The reflected type, so a <button> with no type attribute submits too.
+  const submits = (tag === "BUTTON" || tag === "INPUT") && String(element.type || "").toLowerCase() === "submit";
+  const insideRoutelessForm = Boolean(checkoutFormSelector) && typeof element.closest === "function" && Boolean(element.closest(checkoutFormSelector));
   const attr = element.getAttribute("href")
     || element.getAttribute("data-href")
-    || (typeof element.closest === "function" ? element.closest("form")?.getAttribute("action") : null);
+    || (submits && !insideRoutelessForm && typeof element.closest === "function" ? element.closest("form")?.getAttribute("action") : null);
   if (!attr) return null;
   try {
     return new URL(attr, baseHref).href;
